@@ -5,6 +5,11 @@ from suite.mail.utils.user import is_jmap_configured
 
 
 @frappe.whitelist()
+def is_setup_complete() -> bool:
+	return bool(frappe.is_setup_complete())
+
+
+@frappe.whitelist()
 @redis_cache(user=True)
 def get_logged_in_user() -> dict | None:
 	user = frappe.session.user
