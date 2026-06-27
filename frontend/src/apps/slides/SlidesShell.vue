@@ -43,11 +43,13 @@ onMounted(() => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   registerServiceWorker()
+  document.documentElement.style.overscrollBehavior = 'none'
 })
 
 onUnmounted(() => {
   window.removeEventListener('online', handleOnline)
   window.removeEventListener('offline', handleOffline)
+  document.documentElement.style.overscrollBehavior = ''
 })
 
 provide('isOnline', isOnline)
