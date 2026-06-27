@@ -16,8 +16,6 @@
 import { ref, computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { call } from 'frappe-ui'
-
 import { unsyncedPresentationRecord, updatePresentationTitle } from '@/apps/slides/stores/presentation'
 import { setCursorPositionAtEnd } from '@/apps/slides/utils/helpers'
 
@@ -37,12 +35,12 @@ const inputClasses = computed(() => {
 		'p-1 px-2',
 		'text-base font-medium cursor-text',
 		'outline-none rounded-sm',
-		'focus:ring-1 focus:ring-gray-400',
+		'focus:ring-1 focus:ring-outline-gray-3',
 		'transition ease-in-out duration-400',
 		'whitespace-nowrap',
 	]
 	if (editingTitle.value) {
-		return [...baseClasses, 'text-gray-800', 'max-w-[500px]']
+		return [...baseClasses, 'text-ink-gray-8', 'max-w-[500px]']
 	} else {
 		return [...baseClasses, 'truncate', 'max-w-[500px]']
 	}
