@@ -16,9 +16,9 @@
 					<div v-for="presentation in presentations" :key="presentation.name">
 						<div class="flex flex-col gap-3">
 							<!-- Presentation Card -->
-							<!-- added bg-white temporarily to support for first slides with no generated thumbnail -->
+							<!-- added bg temporarily to support for first slides with no generated thumbnail -->
 							<div
-								class="aspect-[16/9] cursor-pointer rounded-lg bg-white shadow"
+								class="aspect-[16/9] cursor-pointer rounded-lg bg-surface-base shadow"
 								:style="getThumbnailCardStyles(presentation.thumbnail || '')"
 								@click="$emit('navigate', presentation.name)"
 							></div>
@@ -34,7 +34,7 @@
 									placement="right"
 								>
 									<template #default>
-										<LucideEllipsis class="size-3.5 cursor-pointer text-gray-600" />
+										<LucideEllipsis class="size-3.5 cursor-pointer text-ink-gray-5" />
 									</template>
 								</Dropdown>
 							</div>
@@ -42,7 +42,7 @@
 					</div>
 				</div>
 				<LoadingIndicator v-else-if="loading" class="w-3" />
-				<div v-else class="text-sm text-gray-600">No presentations created yet.</div>
+				<div v-else class="text-sm text-ink-gray-5">No presentations created yet.</div>
 			</div>
 		</div>
 	</div>
