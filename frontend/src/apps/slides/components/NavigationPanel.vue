@@ -9,7 +9,7 @@
 	>
 		<div
 			ref="scrollableArea"
-			class="h-svh overflow-y-auto p-4 pe-3 custom-scrollbar"
+			class="h-svh overflow-y-auto p-4 no-scrollbar"
 			:class="{ 'pb-14': !inReadonlyMode }"
 			:style="scrollbarStyles"
 		>
@@ -25,24 +25,26 @@
 					<ThumbnailContainer
 						:slide="orderedSlides[virtualRow.index]"
 						:isActive="isSlideActive(orderedSlides[virtualRow.index])"
+						:scale="thumbnailScale"
+						:height="thumbnailHeight"
 					/>
 				</div>
 			</div>
 
 			<!-- add slide option -->
-			<div
+			<!-- <div
 				v-if="!inReadonlyMode"
 				:class="insertButtonClasses"
 				@click="emit('openLayoutDialog')"
 			>
 				<LucidePlus class="size-3.5" />
-			</div>
+			</div> -->
 		</div>
 	</div>
 
 	<!-- Slide Navigator Toggle -->
 	<div v-if="!isNavigationPanelOpen" :class="toggleButtonClasses" @click="toggleNavigationPanel">
-		<LucideChevronRight class="size-3.5 text-gray-500" />
+		<LucideChevronRight class="size-4 stroke-[1.5]" />
 	</div>
 </template>
 
@@ -68,9 +70,16 @@ const inReadonlyMode = inject('inReadonlyMode', ref(false))
 
 const emit = defineEmits(['changeSlide', 'openLayoutDialog'])
 
-const ROW_HEIGHT = 90
+const SLIDE_WIDTH = 960
+const SLIDE_ASPECT = 540 / 960
 const ROW_GAP = 8
-const ROW_SIZE = ROW_HEIGHT + ROW_GAP * 2
+
+// Available thumbnail width = panel width (w-56 = 224px) minus the scroll area's
+// horizontal padding (p-4 + pe-3 = 28px). Keep in sync if the panel width changes.
+const THUMBNAIL_WIDTH = 224 - 28
+const thumbnailScale = THUMBNAIL_WIDTH / SLIDE_WIDTH
+const thumbnailHeight = THUMBNAIL_WIDTH * SLIDE_ASPECT
+const rowSize = thumbnailHeight + ROW_GAP * 2
 
 const scrollableArea = useTemplateRef('scrollableArea')
 
@@ -83,7 +92,7 @@ const handleSortEnd = (sortChange) => {
 	commandHistory.execute(reorderSlidesCommand(sortChange))
 }
 
-const slideSort = useDragSort(scrollableArea, slidesLength, ROW_SIZE, handleSortEnd)
+const slideSort = useDragSort(scrollableArea, slidesLength, rowSize, handleSortEnd)
 
 const showCollapseShortcut = ref(false)
 
@@ -92,11 +101,11 @@ const insertButtonClasses =
 
 const panelClasses = computed(() => {
 	// can't add it from parent attrs.class since attrs is not reactive
-	const positionClass = isNavigationPanelOpen.value ? 'left-0' : '-left-48'
+	const positionClass = isNavigationPanelOpen.value ? 'left-0' : '-left-56'
 	const baseClasses = [
-		'w-48',
+		'w-56',
 		'border-r',
-		'bg-white',
+		'bg-surface-base',
 		'transition-all',
 		'duration-300',
 		'ease-in-out',
@@ -105,9 +114,9 @@ const panelClasses = computed(() => {
 })
 
 const toggleButtonClasses = computed(() => {
-	const baseClasses = 'flex cursor-pointer items-center border bg-white'
+	const baseClasses = 'flex cursor-pointer items-center bg-surface-base'
 	if (isNavigationPanelOpen.value) {
-		return `${baseClasses} fixed -left-0.4 bottom-0 h-10 w-48 justify-between p-4`
+		return `${baseClasses} border fixed -left-0.4 bottom-0 h-10 w-48 justify-between p-4`
 	}
 	return `${baseClasses} absolute top-1/2 transform -transform-y-1/2 h-12 w-4 justify-center rounded-r-lg shadow-xl`
 })
@@ -136,7 +145,7 @@ const rowVirtualizer = useVirtualizer(
 	computed(() => ({
 		count: slides.value.length,
 		getScrollElement: () => scrollableArea.value,
-		estimateSize: () => ROW_SIZE,
+		estimateSize: () => rowSize,
 		overscan: 3,
 	})),
 )
@@ -227,15 +236,10 @@ watch(
 </script>
 
 <style scoped>
-.virtual-row-wrapper.is-active::before {
-	content: '';
-	position: absolute;
-	left: -1.25rem;
-	top: 0;
-	width: 0.5rem;
-	height: 90px;
-	border-radius: 0 0.25rem 0.25rem 0;
-	background: rgb(59 130 246 / 0.9);
-	pointer-events: none;
+.no-scrollbar {
+	scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+	display: none;
 }
 </style>

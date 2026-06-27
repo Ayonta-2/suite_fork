@@ -1,6 +1,6 @@
 <template>
 	<div :class="getThumbnailClasses(slide)" :style="getThumbnailStyles(slide)">
-		<SlidePreview :slide="slide" :scale="THUMBNAIL_SCALE" />
+		<SlidePreview :slide="slide" :scale="scale" />
 		<div
 			class="absolute inset-0 flex w-full justify-between rounded p-2"
 			:style="getGradientOverlayStyles(slide)"
@@ -20,11 +20,11 @@ import TransitionIcon from '@/apps/slides/icons/TransitionIcon.vue'
 
 import { isBackgroundColorDark } from '@/apps/slides/utils/color'
 
-const THUMBNAIL_SCALE = 160 / 960
-
 const props = defineProps({
 	slide: { type: Object, required: true },
 	isActive: { type: Boolean, default: false },
+	scale: { type: Number, default: 160 / 960 },
+	height: { type: Number, default: 90 },
 })
 
 const getGradientOverlayStyles = (slide) => {
@@ -74,6 +74,6 @@ const getThumbnailClasses = (slide) => {
 
 const getThumbnailStyles = (s) => ({
 	backgroundColor: s.background || '#ffffff',
-	height: `${540 * THUMBNAIL_SCALE}px`,
+	height: `${props.height}px`,
 })
 </script>
