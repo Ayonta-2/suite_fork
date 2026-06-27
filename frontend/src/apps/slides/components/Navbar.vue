@@ -1,23 +1,21 @@
 <template>
 	<div
-		class="relative z-10 grid items-center justify-between border-b bg-white p-2"
+		class="relative z-10 grid h-12 shrink-0 items-center justify-between border-b bg-white px-3"
 		:class="$slots.default ? 'grid-cols-3' : 'grid-cols-2'"
 		@wheel.prevent
 	>
 		<router-link
 			v-if="!showNavbarDropdown"
-			class="flex items-center gap-2"
+			class="flex w-fit items-center gap-2"
 			:to="{ name: 'slides-home' }"
 		>
 			<img :src="slidesLogo" class="h-7" />
-			<div class="text-base-semibold">Slides</div>
 		</router-link>
 
 		<Dropdown v-else :options="getContextMenuOptions()" :offset="16">
 			<template #default="{ open }">
-				<div class="flex cursor-pointer items-center gap-2">
+				<div class="flex w-fit cursor-pointer items-center gap-2">
 					<img :src="slidesLogo" class="h-7" />
-					<div class="text-base-semibold">Slides</div>
 					<LucideChevronUp v-if="open" class="w-4 stroke-[1.5]" />
 					<LucideChevronDown v-else class="w-4 stroke-[1.5]" />
 				</div>
@@ -43,7 +41,7 @@
 </template>
 
 <script setup>
-import { h, ref } from 'vue'
+import { h } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dropdown, Button } from 'frappe-ui'
 import { ArrowLeft, Palette, Plus, Copy, Trash, Download } from 'lucide-vue-next'
