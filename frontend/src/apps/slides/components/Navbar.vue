@@ -29,13 +29,10 @@
 			<Button
 				v-if="!primaryButton.hide"
 				variant="solid"
+				iconLeft="lucide-plus"
 				:label="primaryButton.label"
 				@click="primaryButton.onClick"
-			>
-				<template #prefix>
-					<component :is="primaryButton.icon" size="14" class="stroke-[1.5] text-white" />
-				</template>
-			</Button>
+			/>
 		</div>
 	</div>
 </template>

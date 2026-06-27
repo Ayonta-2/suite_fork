@@ -7,42 +7,52 @@
 			</div>
 		</div>
 
-		<div class="min-h-0 flex-1 overflow-y-auto py-1">
-			<div class="mx-auto w-full max-w-[1088px] px-8">
-				<div
-					v-if="presentations?.length"
-					class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-8"
-				>
-					<div v-for="presentation in presentations" :key="presentation.name">
-						<div class="flex flex-col gap-3">
-							<!-- Presentation Card -->
-							<!-- added bg temporarily to support for first slides with no generated thumbnail -->
-							<div
-								class="aspect-[16/9] cursor-pointer rounded-lg bg-surface-base shadow"
-								:style="getThumbnailCardStyles(presentation.thumbnail || '')"
-								@click="$emit('navigate', presentation.name)"
-							></div>
+		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto py-1">
+			<div
+				v-if="presentations?.length"
+				class="mx-auto grid w-full max-w-[1088px] grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-8 px-8"
+			>
+				<div v-for="presentation in presentations" :key="presentation.name">
+					<div class="flex flex-col gap-3">
+						<!-- Presentation Card -->
+						<!-- added bg temporarily to support for first slides with no generated thumbnail -->
+						<div
+							class="aspect-[16/9] cursor-pointer rounded-lg bg-surface-base shadow"
+							:style="getThumbnailCardStyles(presentation.thumbnail || '')"
+							@click="$emit('navigate', presentation.name)"
+						></div>
 
-							<!-- Presentation Title -->
-							<div class="flex items-center justify-between">
-								<div class="cursor-default truncate text-base-medium text-ink-gray-7">
-									{{ presentation.title }}
-								</div>
-								<Dropdown
-									v-if="presentation"
-									:options="getContextMenuOptions(presentation)"
-									placement="right"
-								>
-									<template #default>
-										<LucideEllipsis class="size-3.5 cursor-pointer text-ink-gray-5" />
-									</template>
-								</Dropdown>
+						<!-- Presentation Title -->
+						<div class="flex items-center justify-between">
+							<div class="cursor-default truncate text-base-medium text-ink-gray-7">
+								{{ presentation.title }}
 							</div>
+							<Dropdown
+								v-if="presentation"
+								:options="getContextMenuOptions(presentation)"
+								placement="right"
+							>
+								<template #default>
+									<LucideEllipsis class="size-3.5 cursor-pointer text-ink-gray-5" />
+								</template>
+							</Dropdown>
 						</div>
 					</div>
 				</div>
-				<LoadingIndicator v-else-if="loading" class="w-3" />
-				<div v-else class="text-sm text-ink-gray-5">No presentations created yet.</div>
+			</div>
+			<LoadingIndicator v-else-if="loading" class="m-auto w-3" />
+			<div v-else class="m-auto flex flex-col items-center gap-6">
+				<LucidePanelsTopLeft class="size-8 text-ink-gray-4" />
+				<div class="flex flex-col items-center gap-2">
+					<div class="text-xl-medium text-ink-gray-7">No presentations yet.</div>
+					<div class="text-base text-ink-gray-5">Add a new presentation to get started!</div>
+				</div>
+				<Button
+					variant="subtle"
+					label="New Presentation"
+					iconLeft="lucide-plus"
+					@click="$emit('openDialog', 'New')"
+				/>
 			</div>
 		</div>
 	</div>
@@ -51,7 +61,7 @@
 <script setup>
 import { h } from 'vue'
 
-import { Dropdown, LoadingIndicator } from 'frappe-ui'
+import { Dropdown, LoadingIndicator, Button } from 'frappe-ui'
 import { Eye, Trash, PenLine, Copy, TvMinimalPlay } from 'lucide-vue-next'
 
 import { getThumbnailCardStyles } from '@/apps/slides/utils/helpers'
