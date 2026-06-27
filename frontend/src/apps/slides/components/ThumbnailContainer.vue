@@ -48,7 +48,7 @@ const getThumbnailClasses = (slide) => {
 		'cursor-pointer',
 		'border',
 		'rounded',
-		'transition-all',
+		'transition-transform',
 		'duration-400',
 		'ease-in-out',
 		'overflow-hidden',
@@ -59,10 +59,10 @@ const getThumbnailClasses = (slide) => {
 	const isFocused = focusedSlide.value == slides.value.indexOf(slide)
 
 	let outlineClasses = []
-	if (isFocused) {
-		outlineClasses.push('ring-blue-500', 'ring-[2px]', 'ring-offset-2')
-	} else if (isActive && recentlyRestored.value) {
+	if (isActive && recentlyRestored.value) {
 		outlineClasses.push('ring-blue-500', 'ring-[2px]', 'ring-offset-2', 'scale-[1.02]')
+	} else if (isFocused) {
+		outlineClasses.push('ring-blue-500', 'ring-[2px]', 'ring-offset-2')
 	} else if (isActive) {
 		outlineClasses.push('ring-gray-400', 'ring-[1.5px]', 'ring-offset-0.5')
 	} else {
