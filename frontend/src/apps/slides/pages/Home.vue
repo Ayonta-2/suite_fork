@@ -1,5 +1,5 @@
 <template>
-	<div class="flex h-screen w-screen flex-col">
+	<div class="flex h-screen w-screen flex-col bg-surface-white ">
 		<Navbar
 			:primaryButton="{
 				label: 'New',
