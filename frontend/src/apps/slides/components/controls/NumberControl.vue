@@ -6,6 +6,7 @@
 			:min="min"
 			:max="max"
 			:step="step"
+			:placeholder="placeholder"
 			:style="{ width: inputWidth }"
 			:class="inputClasses"
 			@change="clampToRange"
@@ -22,6 +23,10 @@ const model = defineModel({ type: Number })
 const props = defineProps({
 	maxDigits: Number,
 	suffix: String,
+	placeholder: {
+		type: String,
+		default: '',
+	},
 	min: Number,
 	max: Number,
 	step: {
@@ -49,6 +54,10 @@ const inputClasses = `text-right ${textStyles} ${resetStyles} ${hideSpinners}`
 const suffixClasses = textStyles
 
 const inputWidth = computed(() => {
+	const isEmpty = model.value == null || model.value === ''
+	if (isEmpty && props.placeholder) {
+		return `${props.placeholder.length}ch`
+	}
 	const digits = String(model.value ?? '').length || 1
 	const capped = props.maxDigits ? Math.min(digits, props.maxDigits) : digits
 	return `${capped}ch`
