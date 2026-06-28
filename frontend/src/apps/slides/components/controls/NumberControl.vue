@@ -3,8 +3,12 @@
 		<input
 			v-model.number="model"
 			type="number"
+			:min="min"
+			:max="max"
+			:step="step"
 			:style="{ width: inputWidth }"
 			:class="inputClasses"
+			@change="clampToRange"
 		/>
 		<span v-if="suffix" :class="suffixClasses">{{ suffix }}</span>
 	</label>
@@ -18,7 +22,19 @@ const model = defineModel({ type: Number })
 const props = defineProps({
 	maxDigits: Number,
 	suffix: String,
+	min: Number,
+	max: Number,
+	step: {
+		type: Number,
+		default: 1,
+	},
 })
+
+function clampToRange() {
+	if (model.value == null || Number.isNaN(model.value)) return
+	if (props.min != null && model.value < props.min) model.value = props.min
+	if (props.max != null && model.value > props.max) model.value = props.max
+}
 
 const textStyles = 'align-middle font-text text-base text-ink-gray-9'
 
