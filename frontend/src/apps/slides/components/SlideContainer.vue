@@ -28,9 +28,10 @@
 				:highlight="highlightElement(element)"
 				@mousedown="(e) => handleMouseDown(e, element)"
 			/>
+
+			<OverflowContentOverlay />
 		</div>
 		<DropTargetOverlay v-show="mediaDragOver" @hideOverlay="hideOverlay" />
-		<OverflowContentOverlay />
 	</div>
 </template>
 
