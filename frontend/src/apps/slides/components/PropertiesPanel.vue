@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="flex h-full w-64 flex-col overflow-y-auto border-l bg-white pb-4 custom-scrollbar"
+		class="flex h-full w-72 flex-col overflow-y-auto border-l bg-surface-base pb-4 custom-scrollbar"
 		@wheel="handleScrollBarWheelEvent"
 	>
 		<div v-if="activeElementIds.length">

@@ -8,7 +8,7 @@
 			@performDropdownAction="performNavbarDropdownAction"
 		/>
 
-		<div class="relative flex h-screen bg-gray-300">
+		<div class="relative flex h-screen bg-surface-gray-1">
 			<SlideContainer
 				ref="slideContainer"
 				v-if="presentationDoc"
