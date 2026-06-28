@@ -2,28 +2,24 @@
     <Section label="Position" class="border-b py-4">
 		<div class="flex flex-col gap-2">
 			<NumberControl
-				v-for="field in fields"
-				:key="field.label"
-				v-model="field.value"
+				v-for="field in positionFields"
+				:key="field.axis"
+				:modelValue="Math.round(selectionBounds[field.property])"
 				:label="field.label"
-				:suffix="field.suffix"
+				suffix="px"
 				:max-digits="4"
-				:min="field.min"
-				:max="field.max"
-				:step="field.step"
-				:placeholder="field.placeholder"
-				:disabled="field.disabled"
+				:min="0"
+				:step="1"
+				@update:modelValue="(value) => updatePosition(field.axis, value)"
 			/>
-			<ButtonGroup label="Arrange" :options="arrangeOptions" />
-			<ButtonGroup label="Align Horizontal" :options="alignHorizontalOptions" />
-			<ButtonGroup label="Align Vertical" :options="alignVerticalOptions" />
+			<ButtonGroup label="Arrange" :options="arrangeOptions" @select="arrangeElements" />
+			<ButtonGroup label="Align Horizontal" :options="alignHorizontalOptions" @select="alignElement" />
+			<ButtonGroup label="Align Vertical" :options="alignVerticalOptions" @select="alignElement" />
 		</div>
 	</Section>
 </template>
 
 <script setup>
-import { reactive } from 'vue'
-
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import ButtonGroup from '@/apps/slides/components/controls/ButtonGroup.vue'
 import Section from '@/apps/slides/components/Section.vue'
@@ -40,11 +36,14 @@ import AlignTop from '@/apps/slides/icons/AlignTop.vue'
 import AlignCenterVertical from '@/apps/slides/icons/AlignCenterVertical.vue'
 import AlignBottom from '@/apps/slides/icons/AlignBottom.vue'
 
+import { selectionBounds } from '@/apps/slides/stores/slide'
+import { updatePosition } from '@/apps/slides/stores/element'
+import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
 
-const fields = reactive([
-	{ label: 'X axis', value: 100, suffix: 'px', min: 0, max: 9999, step: 1 },
-	{ label: 'Y axis', value: 100, suffix: 'px', min: 0, max: 9999, step: 1 }
-])
+const positionFields = [
+	{ axis: 'X', property: 'left', label: 'X axis' },
+	{ axis: 'Y', property: 'top', label: 'Y axis' },
+]
 
 const arrangeOptions = [
 	{ value: 'front', label: 'Bring to front', icon: BringToFront },
@@ -55,13 +54,13 @@ const arrangeOptions = [
 
 const alignHorizontalOptions = [
 	{ value: 'left', label: 'Align left', icon: AlignLeft },
-	{ value: 'center', label: 'Align center', icon: AlignCenter },
+	{ value: 'centerY', label: 'Align center', icon: AlignCenter },
 	{ value: 'right', label: 'Align right', icon: AlignRight },
 ]
 
 const alignVerticalOptions = [
 	{ value: 'top', label: 'Align top', icon: AlignTop },
-	{ value: 'middle', label: 'Align middle', icon: AlignCenterVertical },
+	{ value: 'centerX', label: 'Align middle', icon: AlignCenterVertical },
 	{ value: 'bottom', label: 'Align bottom', icon: AlignBottom },
 ]
 </script>
