@@ -131,7 +131,14 @@ const { activeGuides, snapForDrag, snapForResize } = useSnapping(
 	hasOngoingInteraction,
 )
 
-const { allowPanAndZoom, transform, transformOrigin } = usePanAndZoom(slideContainerRef, slideRef)
+const SLIDE_WIDTH = 960
+const DISPLAY_WIDTH = 900
+
+const { allowPanAndZoom, transform, transformOrigin } = usePanAndZoom(
+	slideContainerRef,
+	slideRef,
+	DISPLAY_WIDTH / SLIDE_WIDTH,
+)
 
 const slideClasses = computed(() => {
 	const classes = ['absolute', 'h-[540px]', 'w-[960px]', 'shadow-2xl', 'shadow-gray-400']
@@ -140,8 +147,8 @@ const slideClasses = computed(() => {
 		props.highlight || mediaDragOver.value ? ['outline', 'outline-2', 'outline-blue-400'] : []
 
 	const positionClasses = inReadonlyMode.value
-		? ['left-[calc(50%-384.5px)]', 'top-[calc(50%-270px)]']
-		: ['left-[calc(50%-512px)]', 'top-[calc(50%-270px)]']
+		? ['left-[calc(50%-354.5px)]', 'top-[calc(50%-253.125px)]']
+		: ['left-[calc(50%-482px)]', 'top-[calc(50%-253.125px)]']
 
 	return [...classes, outlineClasses, positionClasses]
 })

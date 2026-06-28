@@ -14,7 +14,7 @@ type Transform = {
 	}
 }
 
-export const usePanAndZoom = (containerElement: any, targetElement: any) => {
+export const usePanAndZoom = (containerElement: any, targetElement: any, initialScale = 1) => {
 	const allowPanAndZoom = ref(true)
 
 	const SCALE_SPEED = 0.8
@@ -28,7 +28,7 @@ export const usePanAndZoom = (containerElement: any, targetElement: any) => {
 
 	let wheelTimeout: ReturnType<typeof setTimeout>
 
-	const transform = ref('matrix(1, 0, 0, 1, 0, 0)')
+	const transform = ref(`matrix(${initialScale}, 0, 0, ${initialScale}, 0, 0)`)
 	const transformOrigin = ref('0 0')
 
 	const isPanningOrZooming = ref(false)
@@ -171,7 +171,7 @@ export const usePanAndZoom = (containerElement: any, targetElement: any) => {
 
 	const addPanAndZoom = () => {
 		if (!containerElement.value || !targetElement.value) return
-		initialMatrix = new DOMMatrix()
+		initialMatrix = new DOMMatrix().scale(initialScale)
 		gestureMatrix = new DOMMatrix()
 		let rect = targetElement.value.getBoundingClientRect()
 		initialX = rect.x
@@ -183,7 +183,7 @@ export const usePanAndZoom = (containerElement: any, targetElement: any) => {
 
 	const removePanAndZoom = () => {
 		if (!containerElement.value) return
-		transform.value = 'matrix(1, 0, 0, 1, 0, 0)'
+		transform.value = `matrix(${initialScale}, 0, 0, ${initialScale}, 0, 0)`
 		transformOrigin.value = '0 0'
 		containerElement.value.removeEventListener('wheel', handlePanAndZoom)
 	}
