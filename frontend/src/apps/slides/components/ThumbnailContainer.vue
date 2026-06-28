@@ -47,6 +47,7 @@ const getThumbnailClasses = (slide) => {
 		'my-8',
 		'cursor-pointer',
 		'border',
+		'border-outline-gray-1',
 		'rounded',
 		'transition-transform',
 		'duration-400',
@@ -60,13 +61,13 @@ const getThumbnailClasses = (slide) => {
 
 	let outlineClasses = []
 	if (isActive && recentlyRestored.value) {
-		outlineClasses.push('ring-blue-500', 'ring-[2px]', 'ring-offset-2', 'scale-[1.02]')
+		outlineClasses.push('ring-outline-blue-2', 'ring-[2px]', 'ring-offset-2', 'scale-[1.02]')
 	} else if (isFocused) {
-		outlineClasses.push('ring-blue-500', 'ring-[2px]', 'ring-offset-2')
+		outlineClasses.push('ring-outline-blue-2', 'ring-[2px]', 'ring-offset-2')
 	} else if (isActive) {
-		outlineClasses.push('ring-gray-400', 'ring-[1.5px]', 'ring-offset-0.5')
+		outlineClasses.push('ring-outline-gray-3', 'ring-[1.5px]', 'ring-offset-0.5')
 	} else {
-		outlineClasses.push('ring-white', 'hover:border-gray-300')
+		outlineClasses.push('ring-transparent', 'hover:border-outline-gray-2')
 	}
 
 	return [...baseClasses, ...outlineClasses].join(' ')

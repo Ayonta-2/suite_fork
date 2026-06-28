@@ -105,6 +105,7 @@ const panelClasses = computed(() => {
 	const baseClasses = [
 		'w-56',
 		'border-r',
+		'border-outline-gray-1',
 		'bg-surface-base',
 		'transition-all',
 		'duration-300',
@@ -116,7 +117,7 @@ const panelClasses = computed(() => {
 const toggleButtonClasses = computed(() => {
 	const baseClasses = 'flex cursor-pointer items-center bg-surface-base'
 	if (isNavigationPanelOpen.value) {
-		return `${baseClasses} border fixed -left-0.4 bottom-0 h-10 w-48 justify-between p-4`
+		return `${baseClasses} border border-outline-gray-1 fixed -left-0.4 bottom-0 h-10 w-48 justify-between p-4`
 	}
 	return `${baseClasses} absolute top-1/2 transform -transform-y-1/2 h-12 w-4 justify-center rounded-r-lg shadow-xl`
 })

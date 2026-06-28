@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="relative z-10 grid h-12 shrink-0 items-center justify-between border-b bg-surface-base px-3"
+		class="relative z-10 grid h-12 shrink-0 items-center justify-between border-b border-outline-gray-1 bg-surface-base px-3"
 		:class="$slots.default ? 'grid-cols-3' : 'grid-cols-2'"
 		@wheel.prevent
 	>
