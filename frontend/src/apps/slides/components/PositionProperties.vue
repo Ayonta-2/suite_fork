@@ -26,10 +26,10 @@ import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import ButtonGroup from '@/apps/slides/components/controls/ButtonGroup.vue'
 import Section from '@/apps/slides/components/Section.vue'
 
-import placementFront from '@/apps/slides/assets/icons/placement-front.svg'
-import placementBack from '@/apps/slides/assets/icons/placement-back.svg'
-import placementForward from '@/apps/slides/assets/icons/placement-forward.svg'
-import placementBackward from '@/apps/slides/assets/icons/placement-backward.svg'
+import BringToFront from '@/apps/slides/icons/BringToFront.vue'
+import SendToBack from '@/apps/slides/icons/SendToBack.vue'
+import Forward from '@/apps/slides/icons/Forward.vue'
+import Backward from '@/apps/slides/icons/Backward.vue'
 
 
 const fields = reactive([
@@ -38,9 +38,9 @@ const fields = reactive([
 ])
 
 const arrangeOptions = [
-	{ value: 'front', label: 'Bring to front', icon: placementFront },
-	{ value: 'back', label: 'Send to back', icon: placementBack },
-	{ value: 'forward', label: 'Bring forward', icon: placementForward },
-	{ value: 'backward', label: 'Send backward', icon: placementBackward },
+	{ value: 'front', label: 'Bring to front', icon: BringToFront },
+	{ value: 'back', label: 'Send to back', icon: SendToBack },
+	{ value: 'forward', label: 'Bring forward', icon: Forward },
+	{ value: 'backward', label: 'Send backward', icon: Backward },
 ]
 </script>

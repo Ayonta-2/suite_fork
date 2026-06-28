@@ -10,7 +10,7 @@
 				:class="buttonClasses"
 				@click="emit('select', option.value)"
 			>
-				<img :src="option.icon" :alt="option.label" class="size-4" />
+				<component :is="option.icon" />
 			</button>
 		</div>
 	</div>
@@ -30,5 +30,5 @@ const emit = defineEmits(['select'])
 const rowClasses = 'flex h-7 w-full items-center justify-between'
 const labelClasses = 'select-none align-middle font-text text-base text-ink-gray-5'
 const buttonClasses =
-	'flex cursor-pointer items-center justify-center rounded p-1 hover:bg-gray-100'
+	'flex cursor-pointer items-center justify-center rounded p-1 text-ink-gray-9 hover:bg-surface-gray-3'
 </script>
