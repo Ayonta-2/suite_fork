@@ -8,9 +8,9 @@
 		stroke="currentColor"
 	>
 		<g clip-path="url(#send-to-back-clip)">
-			<rect x="1" y="1" width="6" height="6" rx="1" />
-			<rect x="9" y="9" width="6" height="6" rx="1" />
-			<rect x="4" y="4" width="8" height="8" rx="1" style="fill: var(--surface-gray-3)" />
+			<rect x="4" y="4" width="8" height="8" rx="1" />
+			<rect x="1" y="1" width="6" height="6" rx="1" style="fill: var(--surface-gray-3)" />
+			<rect x="9" y="9" width="6" height="6" rx="1" style="fill: var(--surface-gray-3)" />
 		</g>
 		<defs>
 			<clipPath id="send-to-back-clip">
