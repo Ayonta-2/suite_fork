@@ -1,5 +1,5 @@
 <template>
-	<div class="flex flex-col gap-3">
+	<div class="flex flex-col gap-4">
 		<div class="flex cursor-pointer items-center justify-between" @click="showContent = !showContent">
 			<span :class="labelClasses">{{ label }}</span>
 			<lucide-minus v-if="showContent" class="size-4 stroke-[1.5] text-ink-gray-7" />
