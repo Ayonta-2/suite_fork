@@ -62,6 +62,10 @@ function incrementFor(event) {
 	return props.step
 }
 
+function applyDelta(base, units, increment) {
+	model.value = clamp(snapToStep(base + units * increment, increment))
+}
+
 function clampToRange() {
 	if (model.value == null || Number.isNaN(model.value)) return
 	model.value = clamp(model.value)
@@ -70,10 +74,8 @@ function clampToRange() {
 function onArrowStep(event) {
 	if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
 	event.preventDefault()
-	const increment = incrementFor(event)
 	const direction = event.key === 'ArrowUp' ? 1 : -1
-	const base = Number(model.value) || 0
-	model.value = clamp(snapToStep(base + direction * increment, increment))
+	applyDelta(Number(model.value) || 0, direction, incrementFor(event))
 }
 
 const SCRUB_THRESHOLD = 3
@@ -103,9 +105,8 @@ function onScrubMove(event) {
 		document.body.style.cursor = 'ew-resize'
 	}
 	event.preventDefault()
-	const increment = incrementFor(event)
 	const steps = Math.round(dx / SCRUB_PX_PER_STEP)
-	model.value = clamp(snapToStep(scrubStartValue + steps * increment, increment))
+	applyDelta(scrubStartValue, steps, incrementFor(event))
 }
 
 function onScrubEnd() {
@@ -147,7 +148,7 @@ const inputClasses = computed(() => ['text-right', typography, textColor.value, 
 const suffixClasses = computed(() => [typography, textColor.value])
 
 const inputWidth = computed(() => {
-	const isEmpty = model.value == null || model.value === ''
+	const isEmpty = model.value == null
 	if (isEmpty && props.placeholder) {
 		return `${props.placeholder.length}ch`
 	}
