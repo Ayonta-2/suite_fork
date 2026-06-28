@@ -29,7 +29,7 @@
 			<Button
 				v-if="!primaryButton.hide"
 				variant="solid"
-				iconLeft="lucide-plus"
+				:iconLeft="primaryButton.icon"
 				:label="primaryButton.label"
 				@click="primaryButton.onClick"
 			/>
