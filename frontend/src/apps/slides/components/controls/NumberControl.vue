@@ -14,6 +14,7 @@
 				:style="{ width: inputWidth }"
 				:class="inputClasses"
 				@change="clampToRange"
+				@keydown="onArrowStep"
 			/>
 			<span v-if="suffix" :class="suffixClasses">{{ suffix }}</span>
 		</label>
@@ -50,14 +51,29 @@ function clamp(value) {
 	return value
 }
 
-function snapToStep(value) {
-	const decimals = (String(props.step).split('.')[1] || '').length
+function snapToStep(value, step) {
+	const decimals = (String(step).split('.')[1] || '').length
 	return Number(value.toFixed(decimals))
+}
+
+function incrementFor(event) {
+	if (event.shiftKey) return props.step * 10
+	if (event.metaKey || event.altKey) return props.step / 10
+	return props.step
 }
 
 function clampToRange() {
 	if (model.value == null || Number.isNaN(model.value)) return
 	model.value = clamp(model.value)
+}
+
+function onArrowStep(event) {
+	if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+	event.preventDefault()
+	const increment = incrementFor(event)
+	const direction = event.key === 'ArrowUp' ? 1 : -1
+	const base = Number(model.value) || 0
+	model.value = clamp(snapToStep(base + direction * increment, increment))
 }
 
 const SCRUB_THRESHOLD = 3
@@ -87,8 +103,9 @@ function onScrubMove(event) {
 		document.body.style.cursor = 'ew-resize'
 	}
 	event.preventDefault()
+	const increment = incrementFor(event)
 	const steps = Math.round(dx / SCRUB_PX_PER_STEP)
-	model.value = clamp(snapToStep(scrubStartValue + steps * props.step))
+	model.value = clamp(snapToStep(scrubStartValue + steps * increment, increment))
 }
 
 function onScrubEnd() {
@@ -120,7 +137,7 @@ const rowClasses = computed(() => [
 const labelClasses = ['select-none', typography, 'text-ink-gray-5']
 
 const fieldClasses = computed(() => [
-	'-m-0.5 inline-flex items-center gap-0.5 rounded-sm p-0.5',
+	'-m-1 inline-flex items-center gap-0.5 rounded-sm p-1',
 	'focus-within:ring-1 focus-within:ring-outline-gray-3',
 	props.disabled ? 'cursor-not-allowed' : 'cursor-text',
 ])
