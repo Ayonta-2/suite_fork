@@ -5,7 +5,7 @@
 	>
 		<div v-if="activeElementIds.length">
 			<AlignmentControls />
-			<LayoutProperties />
+			<LayoutPropertiesReference />
 			<component :is="activeProperties" />
 			<AppearanceProperties v-if="activeElement" />
 		</div>
@@ -22,7 +22,7 @@ import ImageProperties from '@/apps/slides/components/ImageProperties.vue'
 import VideoProperties from '@/apps/slides/components/VideoProperties.vue'
 import ShapeProperties from '@/apps/slides/components/ShapeProperties.vue'
 import AlignmentControls from '@/apps/slides/components/AlignmentControls.vue'
-import LayoutProperties from '@/apps/slides/components/LayoutProperties.vue'
+import LayoutPropertiesReference from '@/apps/slides/components/LayoutPropertiesReference.vue'
 import AppearanceProperties from '@/apps/slides/components/AppearanceProperties.vue'
 
 import { useDeferredCommit } from '@/apps/slides/composables/useDeferredCommit'
