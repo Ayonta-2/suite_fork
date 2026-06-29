@@ -14,6 +14,17 @@
 				@change-start="beginSizeChange"
 				@change-end="commitSizeChange"
 			/>
+			<NumberControl
+				v-if="canRotate"
+				:modelValue="rotationValue"
+				label="Rotate"
+				suffix="°"
+				:max-digits="3"
+				:step="1"
+				@update:modelValue="previewRotate"
+				@change-start="beginRotateChange"
+				@change-end="commitRotateChange"
+			/>
 			<ButtonGroup label="Flip" :options="flipOptions" @select="flipElement" />
 		</div>
 	</Section>
@@ -32,10 +43,22 @@ import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
 import { activeElement, activeElementIds } from '@/apps/slides/stores/element'
 import { selectionBounds } from '@/apps/slides/stores/slide'
 import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
+import { rotationDelta } from '@/apps/slides/composables/useRotator'
+import { normalizeRotation } from '@/apps/slides/utils/helpers'
 
 const canEditHeight = computed(() => {
 	if (activeElementIds.value?.length > 1) return false
 	return activeElement.value?.type == 'shape'
+})
+
+const canRotate = computed(() => {
+	if (activeElementIds.value?.length > 1) return false
+	return ['shape', 'image'].includes(activeElement.value?.type)
+})
+
+const rotationValue = computed(() => {
+	const deg = (activeElement.value?.rotation || 0) + rotationDelta.value
+	return Math.round(normalizeRotation(deg))
 })
 
 let scrubStartBounds = null
@@ -53,6 +76,24 @@ const previewSize = (property, value) => {
 const commitSizeChange = () => {
 	if (!scrubStartBounds) return
 	scrubStartBounds = null
+	commitInteraction()
+}
+
+let rotateStartAngle = null
+
+const beginRotateChange = () => {
+	if (rotateStartAngle != null) return
+	rotateStartAngle = activeElement.value?.rotation || 0
+}
+
+const previewRotate = (value) => {
+	if (rotateStartAngle == null) return
+	rotationDelta.value = value - rotateStartAngle
+}
+
+const commitRotateChange = () => {
+	if (rotateStartAngle == null) return
+	rotateStartAngle = null
 	commitInteraction()
 }
 

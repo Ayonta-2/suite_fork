@@ -5,6 +5,7 @@ import { activeElements, activeElementIds } from './element'
 import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
 import { rotationDelta } from '@/apps/slides/composables/useRotator'
+import { normalizeRotation } from '@/apps/slides/utils/helpers'
 
 const interactionOffset = reactive({ left: 0, top: 0, width: 0, height: 0 })
 
@@ -31,7 +32,7 @@ const commitInteraction = () => {
 
 		if (rotationDelta.value && ['shape', 'image'].includes(element.type)) {
 			const rotation = element.rotation || 0
-			addCommand('rotation', rotation, rotation + rotationDelta.value)
+			addCommand('rotation', rotation, normalizeRotation(rotation + rotationDelta.value))
 		}
 	})
 

@@ -82,6 +82,8 @@ const isCmdOrCtrl = (e: KeyboardEvent | MouseEvent) => {
 	return e.metaKey || e.ctrlKey
 }
 
+const normalizeRotation = (deg: number) => ((deg % 360) + 360) % 360
+
 export {
 	handleSingleAndDoubleClick,
 	debounce,
@@ -92,4 +94,5 @@ export {
 	getThumbnailCardStyles,
 	getDocFromHTML,
 	isCmdOrCtrl,
+	normalizeRotation,
 }

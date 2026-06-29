@@ -13,7 +13,7 @@ import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
 import { getElementDiv } from './elementRegistry'
 import { markDirty } from './saving'
-import { generateUniqueId, cloneObj } from '../utils/helpers'
+import { generateUniqueId, cloneObj, normalizeRotation } from '../utils/helpers'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
 import { presentationId } from './presentation'
 import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from './transition'
@@ -171,7 +171,7 @@ const lineBoundsFromEndpoints = ({ x1, y1, x2, y2 }, height) => {
 		height,
 		left: (x1 + x2) / 2 - length / 2,
 		top: (y1 + y2) / 2 - height / 2,
-		rotation: Math.atan2(dy, dx) * (180 / Math.PI),
+		rotation: normalizeRotation(Math.atan2(dy, dx) * (180 / Math.PI)),
 	}
 }
 
