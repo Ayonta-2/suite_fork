@@ -41,6 +41,7 @@ const commitInteraction = () => {
 				slideId: currentSlide.value.clientId,
 				elementIds: activeElementIds.value,
 				commands,
+				skipJumpOnExecute: true,
 			}),
 		)
 	}
