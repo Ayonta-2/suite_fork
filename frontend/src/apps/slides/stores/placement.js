@@ -146,19 +146,14 @@ const getPlacementUpdateCommands = (action) => {
 }
 
 const arrangeElements = (action) => {
-	if (action == 'backward') {
-		const commands = getPlacementUpdateCommands('backward')
-		commandHistory.execute(
-			batchCommand({
-				slideId: currentSlide.value.clientId,
-				elementIds: activeElementIds.value,
-				commands,
-			}),
-		)
-		return
-	}
-
-	currentSlide.value.elements = getElementsWithUpdatedZIndices(action)
+	const commands = getPlacementUpdateCommands(action)
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: activeElementIds.value,
+			commands,
+		}),
+	)
 }
 
 export { alignElement, arrangeElements }
