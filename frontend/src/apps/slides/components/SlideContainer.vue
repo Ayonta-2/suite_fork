@@ -126,6 +126,9 @@ const { activeGuides, snapForDrag, snapForResize } = useSnapping(
 	hasOngoingInteraction,
 )
 
+// Elements are stored in a fixed 960x540 coordinate space, so the slide keeps
+// that authored size and is only scaled down to DISPLAY_WIDTH for display —
+// shrinking the authored width instead would shift every existing element.
 const SLIDE_WIDTH = 960
 const DISPLAY_WIDTH = 900
 
@@ -149,6 +152,8 @@ const slideClasses = computed(() => {
 	const outlineClasses =
 		props.highlight || mediaDragOver.value ? ['outline', 'outline-2', 'outline-blue-400'] : []
 
+	// Offsets center the scaled slide (900x506.25), shifted for the side panels
+	// (edit: nav + properties; readonly: nav only). Recompute if widths change.
 	const positionClasses = inReadonlyMode.value
 		? ['left-[calc(50%-354.5px)]', 'top-[calc(50%-253.125px)]']
 		: ['left-[calc(50%-482px)]', 'top-[calc(50%-253.125px)]']

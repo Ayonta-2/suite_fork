@@ -1,5 +1,5 @@
 <template>
-    <Section label="Position" class="border-b py-4">
+	<Section label="Position" class="border-b py-4">
 		<div class="flex flex-col gap-2">
 			<NumberControl
 				v-for="field in positionFields"
