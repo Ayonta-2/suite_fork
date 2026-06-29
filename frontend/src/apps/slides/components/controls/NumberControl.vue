@@ -96,6 +96,7 @@ function onBlur() {
 
 function onArrowStep(event) {
 	if (event.key === 'Enter') {
+		event.stopPropagation()
 		inputRef.value?.blur()
 		return
 	}
