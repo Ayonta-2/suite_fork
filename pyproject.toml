@@ -33,6 +33,8 @@ dependencies = [
     "dns-lexicon~=3.20.1",
     "markdown-it-py~=4.0.0",
     "ansible-runner~=2.4.1",
+    # sheets — AI Assist (Claude)
+    "anthropic>=0.40",
 ]
 
 [deploy.dependencies.apt]

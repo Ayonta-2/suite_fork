@@ -38,6 +38,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 
 			if (socket.scope === 'full') {
 				deps.registry.joinScope(socket, scopedRoomId, 'full');
+				deps.registry.claimParticipant(socket, scopedRoomId, participantId);
 				deps.mediasoup.addPeer(scopedRoomId, participantId, userData);
 
 				if (isRealParticipant(userData.userId)) {
@@ -119,27 +120,42 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			const participantId = socket.participantId;
 			if (roomId && participantId) {
 				try {
-					await deps.mediasoup.removePeer(roomId, participantId);
+					const shouldCleanupPeer = deps.registry.releaseParticipant(
+						socket,
+						roomId,
+						participantId,
+					);
+					if (shouldCleanupPeer) {
+						await deps.mediasoup.removePeer(roomId, participantId);
 
-					if (isRealParticipant(participantId)) {
-						socket
-							.to(roomId)
-							.emit('participant_left', { roomId, participantId });
-					}
+						if (isRealParticipant(participantId)) {
+							socket
+								.to(roomId)
+								.emit('participant_left', { roomId, participantId });
+						}
 
-					if (deps.registry.hasRaisedHand(roomId, participantId)) {
-						deps.registry.clearRaisedHand(roomId, participantId);
-						deps.registry.emitToFullAccessParticipants(roomId, 'hand_raised', {
-							participantId,
-							raised: false,
-							timestamp: new Date().toISOString(),
-						});
+						if (deps.registry.hasRaisedHand(roomId, participantId)) {
+							deps.registry.clearRaisedHand(roomId, participantId);
+							deps.registry.emitToFullAccessParticipants(
+								roomId,
+								'hand_raised',
+								{
+									participantId,
+									raised: false,
+									timestamp: new Date().toISOString(),
+								},
+							);
+						}
 					}
 
 					socket.leave(roomId);
 					socket.leave(`${roomId}:full`);
 					socket.leave(`${roomId}:preview`);
 					socket.roomId = undefined;
+					if (deps.registry.isEmpty(roomId)) {
+						deps.registry.cleanupRoom(roomId);
+						deps.mediasoup.closeRoom(roomId);
+					}
 					loggers.socketHandler.info('%s left room %s', participantId, roomId);
 				} catch (e) {
 					loggers.socketHandler.warn(

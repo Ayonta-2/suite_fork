@@ -17,7 +17,7 @@
 				logo: branding.data?.brand_html || MailLogo,
 			}"
 			:sections="sidebarItems"
-			:class="{ 'fixed left-0 top-0 z-10 w-60': isMobile }"
+			:class="{ 'fixed left-0 top-0 z-10 w-60 !bg-surface-base': isMobile }"
 			:disable-collapse="isMobile"
 		>
 			<template #footer-items="{ isCollapsed }">

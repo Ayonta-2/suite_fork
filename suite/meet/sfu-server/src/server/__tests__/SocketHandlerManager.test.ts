@@ -220,6 +220,66 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.closeRoom).toHaveBeenCalledWith('room-1');
 	});
 
+	it('disconnect of an older duplicate full-access socket does not remove the current peer', async () => {
+		const harness = createManager();
+
+		const older = connectFullSocket(harness, {
+			id: 'sock-old',
+			userId: 'user-1',
+		});
+		emitJoin(older);
+		await new Promise((r) => setImmediate(r));
+
+		const current = connectFullSocket(harness, {
+			id: 'sock-current',
+			userId: 'user-1',
+		});
+		emitJoin(current);
+		await new Promise((r) => setImmediate(r));
+
+		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
+		older.fire('disconnect');
+		await new Promise((r) => setImmediate(r));
+
+		expect(harness.mediasoup.removePeer).not.toHaveBeenCalled();
+
+		current.fire('disconnect');
+		await new Promise((r) => setImmediate(r));
+
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
+			'room-1',
+			'user-1',
+		);
+	});
+
+	it('leave_room from an older duplicate socket still closes an empty room', async () => {
+		const harness = createManager();
+
+		const older = connectFullSocket(harness, {
+			id: 'sock-old',
+			userId: 'user-1',
+		});
+		emitJoin(older);
+		await new Promise((r) => setImmediate(r));
+
+		const current = connectFullSocket(harness, {
+			id: 'sock-current',
+			userId: 'user-1',
+		});
+		emitJoin(current);
+		await new Promise((r) => setImmediate(r));
+
+		current.leave('room-1:full');
+		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
+		(harness.mediasoup.closeRoom as ReturnType<typeof vi.fn>).mockClear();
+
+		older.fire('leave_room');
+		await new Promise((r) => setImmediate(r));
+
+		expect(harness.mediasoup.removePeer).not.toHaveBeenCalled();
+		expect(harness.mediasoup.closeRoom).toHaveBeenCalledWith('room-1');
+	});
+
 	it('host_control with mute_participant sends host_control_update to the target; non-host gets sfu_error and target gets nothing', async () => {
 		const harness = createManager();
 
@@ -304,6 +364,52 @@ describe('SocketHandlerManager characterization', () => {
 		expect(
 			anotherTarget.emitCalls.some((c) => c.event === 'host_control_update'),
 		).toBe(false);
+	});
+
+	it('create_producer broadcasts screen producers to existing full-access participants', async () => {
+		const harness = createManager();
+
+		const sharer = connectFullSocket(harness, {
+			id: 'sock-sharer',
+			userId: 'sharer-1',
+		});
+		emitJoin(sharer, { userId: 'sharer-1', name: 'Sharer' });
+		await new Promise((r) => setImmediate(r));
+
+		const viewer = connectFullSocket(harness, {
+			id: 'sock-viewer',
+			userId: 'viewer-1',
+		});
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((r) => setImmediate(r));
+
+		viewer.emitCalls.length = 0;
+		const callback = vi.fn();
+
+		sharer.fire(
+			'create_producer',
+			{
+				transportId: 'transport-1',
+				rtpParameters: {},
+				kind: 'video',
+				appData: { type: 'screen' },
+			},
+			callback,
+		);
+		await new Promise((r) => setImmediate(r));
+
+		expect(callback).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true, isScreen: true }),
+		);
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'producer_created',
+			data: expect.objectContaining({
+				participantId: 'sharer-1',
+				producerId: 'producer-1',
+				kind: 'video',
+				isScreen: true,
+			}),
+		});
 	});
 
 	it('chat:send broadcasts to other full-access participants in the same room and not back to the sender', async () => {
