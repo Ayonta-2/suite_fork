@@ -8,9 +8,28 @@
 </template>
 
 <script setup>
-import { activeElementIds } from '@/apps/slides/stores/element'
+import { provide } from 'vue'
+
+import { activeElement, activeElementIds } from '@/apps/slides/stores/element'
+import { currentSlide } from '@/apps/slides/stores/slide'
+import { commandHistory } from '@/apps/slides/stores/historyMeta'
+import { editElementCommand } from '@/apps/slides/stores/commands'
 
 import PositionProperties from './PositionProperties.vue'
 import LayoutProperties from './LayoutProperties.vue'
 
+const setProperty = (property, value) => {
+	const oldValue = activeElement.value[property]
+	commandHistory.execute(
+		editElementCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: activeElementIds.value,
+			property,
+			oldValue,
+			newValue: value,
+		}),
+	)
+}
+
+provide('setProperty', setProperty)
 </script>

@@ -229,6 +229,7 @@ const shapeStyles = computed(() => {
 		height: '100%',
 		opacity: (element.value?.opacity || 100) / 100,
 		overflow: hasMarkers.value || shadow.value.hasShadow || isLine.value ? 'visible' : '',
+		transform: `scale(${element.value?.invertX || 1}, ${element.value?.invertY || 1})`,
 	}
 	return {
 		...styles,

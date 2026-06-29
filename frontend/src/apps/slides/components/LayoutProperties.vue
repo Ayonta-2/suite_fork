@@ -7,18 +7,26 @@
 </template>
 
 <script setup>
+import { inject } from 'vue'
+
 import ButtonGroup from '@/apps/slides/components/controls/ButtonGroup.vue'
 import Section from '@/apps/slides/components/Section.vue'
 
 import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
 import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
 
+import { activeElement } from '@/apps/slides/stores/element'
+
 const flipOptions = [
 	{ value: 'horizontal', label: 'Flip horizontal', icon: FlipHorizontal },
 	{ value: 'vertical', label: 'Flip vertical', icon: FlipVertical },
 ]
 
+const setProperty = inject('setProperty')
+
 const flipElement = (direction) => {
-	// TODO: wire up flip behaviour
+	const property = direction == 'horizontal' ? 'invertX' : 'invertY'
+	const current = activeElement.value[property]
+	setProperty(property, !current || current == 1 ? -1 : 1)
 }
 </script>
