@@ -7,7 +7,6 @@
 				ref="selectionBox"
 				v-if="!inReadonlyMode"
 				:isDragging
-				:elementOffset
 				@mousedown="(e) => handleMouseDown(e)"
 			/>
 
@@ -23,7 +22,6 @@
 				:ref="(comp) => registerElementDiv(element.id, comp?.$el)"
 				mode="editor"
 				:element
-				:elementOffset
 				:data-index="element.id"
 				:highlight="highlightElement(element)"
 				@mousedown="(e) => handleMouseDown(e, element)"
@@ -45,7 +43,6 @@ import {
 	onMounted,
 	onBeforeUnmount,
 	provide,
-	reactive,
 	onActivated,
 	onDeactivated,
 	inject,
@@ -80,7 +77,7 @@ import {
 	cropSelectionToFitContent,
 } from '@/apps/slides/stores/element'
 
-import { commandHistory } from '@/apps/slides/stores/historyMeta'
+import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
 
 import { handleCopy, handlePaste } from '@/apps/slides/stores/copyPaste'
 
@@ -91,8 +88,6 @@ import { useResizer } from '@/apps/slides/composables/useResizer'
 import { useRotator } from '@/apps/slides/composables/useRotator'
 import { usePanAndZoom } from '@/apps/slides/composables/usePanAndZoom'
 import { useSnapping } from '@/apps/slides/composables/useSnapping'
-import { editElementCommand, batchCommand } from '@/apps/slides/stores/commands'
-
 import { isCmdOrCtrl } from '@/apps/slides/utils/helpers'
 import {
 	getResizedBox,
@@ -119,7 +114,7 @@ const { isDragging, positionDelta, startDragging } = useDragAndDrop()
 
 const { isResizing, pointerDelta, currentResizer, resizeCursor, startResize } = useResizer()
 
-const { isRotating, rotationDelta, startRotate, resetRotation } = useRotator()
+const { isRotating, rotationDelta, startRotate } = useRotator()
 
 const hasOngoingInteraction = computed(
 	() => isDragging.value || isResizing.value || isRotating.value,
@@ -321,8 +316,8 @@ useResizeObserver(activeDiv, (entries) => {
 		updateSelectionBounds({
 			width: width,
 			height: height,
-			left: activeElement.value.left + elementOffset.left,
-			top: activeElement.value.top + elementOffset.top,
+			left: activeElement.value.left + interactionOffset.left,
+			top: activeElement.value.top + interactionOffset.top,
 		})
 		return
 	}
@@ -342,13 +337,6 @@ useResizeObserver(activeDiv, (entries) => {
 const togglePanZoom = () => {
 	allowPanAndZoom.value = !allowPanAndZoom.value
 }
-
-const elementOffset = reactive({
-	left: 0,
-	top: 0,
-	width: 0,
-	height: 0,
-})
 
 // selection bounds at drag start — captured synchronously in triggerDrag
 let dragStartBounds = null
@@ -374,8 +362,8 @@ const handlePositionChange = (total) => {
 	const rotation = activeElement.value?.rotation
 	const desired = rotation ? snapRotatedPosition(target, rotation) : snapForDrag(target)
 
-	elementOffset.left = desired.left - dragStartBounds.left
-	elementOffset.top = desired.top - dragStartBounds.top
+	interactionOffset.left = desired.left - dragStartBounds.left
+	interactionOffset.top = desired.top - dragStartBounds.top
 	updateSelectionBounds({ left: desired.left, top: desired.top })
 }
 
@@ -396,10 +384,10 @@ const startElementResize = (e, resizer) => {
 }
 
 const setOffsetFromBox = (box) => {
-	elementOffset.left = box.left - resizeStartBounds.left
-	elementOffset.top = box.top - resizeStartBounds.top
-	elementOffset.width = box.width - resizeStartBounds.width
-	elementOffset.height = box.height - resizeStartBounds.height
+	interactionOffset.left = box.left - resizeStartBounds.left
+	interactionOffset.top = box.top - resizeStartBounds.top
+	interactionOffset.width = box.width - resizeStartBounds.width
+	interactionOffset.height = box.height - resizeStartBounds.height
 
 	updateSelectionBounds({ left: box.left, top: box.top, width: box.width, height: box.height })
 }
@@ -430,8 +418,8 @@ const setOffsetFromTextBox = (box) => {
 	const width = Math.max(minWidth, box.width)
 	const centre = grabbingRight ? fixedEdge + width / 2 : fixedEdge - width / 2
 
-	elementOffset.width = width - resizeStartBounds.width
-	elementOffset.left = centre - (resizeStartBounds.left + resizeStartBounds.width / 2)
+	interactionOffset.width = width - resizeStartBounds.width
+	interactionOffset.left = centre - (resizeStartBounds.left + resizeStartBounds.width / 2)
 }
 
 const resizeText = (cursorMovement) => {
@@ -537,67 +525,10 @@ defineExpose({
 	togglePanZoom,
 })
 
-const getInteractionCommands = () => {
-	const commands = []
-
-	activeElementIds.value.forEach((id) => {
-		const element = currentSlide.value.elements.find((el) => el.id === id)
-		if (!element) return
-
-		const createCommand = (property, oldValue, newValue) => {
-			if (newValue == oldValue) return null
-			return editElementCommand({
-				slideId: currentSlide.value.clientId,
-				elementIds: [id],
-				property,
-				oldValue,
-				newValue,
-			})
-		}
-
-		const offsetKeys = ['left', 'top', 'width', 'height']
-
-		offsetKeys.forEach((key) => {
-			if (elementOffset[key]) {
-				const oldValue = element[key]
-				const newValue = element[key] + elementOffset[key]
-
-				const command = createCommand(key, oldValue, newValue)
-
-				if (command) commands.push(command)
-			}
-		})
-
-		if (rotationDelta.value && ['shape', 'image'].includes(element.type)) {
-			const oldValue = element.rotation || 0
-			const newValue = oldValue + rotationDelta.value
-			const command = createCommand('rotation', oldValue, newValue)
-
-			if (command) commands.push(command)
-		}
-	})
-
-	return commands
-}
-
 const applyInteractionOffsets = () => {
 	pairElementId.value = null
 	requestAnimationFrame(() => {
-		const commands = getInteractionCommands()
-
-		commandHistory.execute(
-			batchCommand({
-				slideId: currentSlide.value.clientId,
-				elementIds: activeElementIds.value,
-				commands,
-			}),
-		)
-
-		elementOffset.left = 0
-		elementOffset.top = 0
-		elementOffset.width = 0
-		elementOffset.height = 0
-		resetRotation()
+		commitInteraction()
 	})
 }
 

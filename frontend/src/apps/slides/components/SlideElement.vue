@@ -5,7 +5,6 @@
 			:key="getElementKey(element)"
 			:element="element"
 			:mode="mode"
-			:elementOffset="elementOffset"
 			:transitionStyles="transitionStyles"
 		/>
 	</div>
@@ -22,6 +21,7 @@ import ShapeElement from '@/apps/slides/components/ShapeElement.vue'
 import { activeElementIds } from '@/apps/slides/stores/element'
 
 import { slideBounds } from '@/apps/slides/stores/slide'
+import { interactionOffset } from '@/apps/slides/stores/interaction'
 
 import { rotationDelta } from '@/apps/slides/composables/useRotator'
 
@@ -33,10 +33,6 @@ const props = defineProps({
 	highlight: {
 		type: Boolean,
 		default: false,
-	},
-	elementOffset: {
-		type: Object,
-		default: () => ({ left: 0, top: 0 }),
 	},
 	transitionStyles: {
 		type: Object,
@@ -59,10 +55,11 @@ const element = defineModel('element', {
 })
 
 const elementStyle = computed(() => {
-	const offsetLeft = isActive.value ? props.elementOffset.left : 0
-	const offsetTop = isActive.value ? props.elementOffset.top : 0
-	const offsetWidth = isActive.value ? props.elementOffset.width : 0
-	const offsetHeight = isActive.value ? props.elementOffset.height : 0
+	const isActiveInEditor = isActive.value && props.mode == 'editor'
+	const offsetLeft = isActiveInEditor ? interactionOffset.left : 0
+	const offsetTop = isActiveInEditor ? interactionOffset.top : 0
+	const offsetWidth = isActiveInEditor ? interactionOffset.width : 0
+	const offsetHeight = isActiveInEditor ? interactionOffset.height : 0
 
 	let elementWidth = element.value.width
 	if (elementWidth) {

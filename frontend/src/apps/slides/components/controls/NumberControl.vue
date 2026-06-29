@@ -4,7 +4,7 @@
 		<label :class="fieldClasses">
 			<input
 				ref="inputRef"
-				v-model.number="model"
+				:value="current"
 				type="number"
 				:min="min"
 				:max="max"
@@ -13,7 +13,10 @@
 				:disabled="disabled"
 				:style="{ width: inputWidth }"
 				:class="inputClasses"
-				@change="clampToRange"
+				@input="onInput"
+				@change="onChange"
+				@focus="onFocus"
+				@blur="onBlur"
 				@keydown="onArrowStep"
 			/>
 			<span v-if="suffix" :class="suffixClasses">{{ suffix }}</span>
@@ -25,6 +28,10 @@
 import { computed, ref } from 'vue'
 
 const model = defineModel({ type: Number })
+const emit = defineEmits(['changeStart', 'changeEnd'])
+
+const live = ref(null)
+const current = computed(() => (live.value !== null ? live.value : model.value))
 
 const props = defineProps({
 	label: String,
@@ -66,12 +73,32 @@ function applyDelta(base, units, increment) {
 	model.value = clamp(snapToStep(base + units * increment, increment))
 }
 
-function clampToRange() {
-	if (model.value == null || Number.isNaN(model.value)) return
-	model.value = clamp(model.value)
+function onInput(event) {
+	live.value = event.target.value
+}
+
+function onChange() {
+	if (live.value === null) return
+	const parsed = parseFloat(live.value)
+	live.value = null
+	if (Number.isNaN(parsed)) return
+	model.value = clamp(parsed)
+}
+
+function onFocus() {
+	emit('changeStart')
+}
+
+function onBlur() {
+	onChange()
+	emit('changeEnd')
 }
 
 function onArrowStep(event) {
+	if (event.key === 'Enter') {
+		inputRef.value?.blur()
+		return
+	}
 	if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
 	event.preventDefault()
 	const direction = event.key === 'ArrowUp' ? 1 : -1
@@ -103,6 +130,7 @@ function onScrubMove(event) {
 		window.getSelection()?.removeAllRanges()
 		document.body.style.userSelect = 'none'
 		document.body.style.cursor = 'ew-resize'
+		emit('changeStart')
 	}
 	event.preventDefault()
 	const steps = Math.round(dx / SCRUB_PX_PER_STEP)
@@ -116,6 +144,7 @@ function onScrubEnd() {
 	isScrubbing = false
 	document.body.style.userSelect = ''
 	document.body.style.cursor = ''
+	emit('changeEnd')
 }
 
 const typography = 'align-middle font-text text-base'
@@ -148,11 +177,11 @@ const inputClasses = computed(() => ['text-right', typography, textColor.value, 
 const suffixClasses = computed(() => [typography, textColor.value])
 
 const inputWidth = computed(() => {
-	const isEmpty = model.value == null
+	const isEmpty = current.value == null
 	if (isEmpty && props.placeholder) {
 		return `${props.placeholder.length}ch`
 	}
-	const digits = String(model.value ?? '').length || 1
+	const digits = String(current.value ?? '').length || 1
 	const capped = props.maxDigits ? Math.min(digits, props.maxDigits) : digits
 	return `${capped}ch`
 })

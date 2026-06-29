@@ -8,9 +8,10 @@
 				:label="field.label"
 				suffix="px"
 				:max-digits="4"
-				:min="0"
 				:step="1"
-				@update:modelValue="(value) => updatePosition(field.axis, value)"
+				@update:modelValue="(value) => previewPosition(field.axis, value)"
+				@change-start="beginPositionChange"
+				@change-end="commitPositionChange"
 			/>
 			<ButtonGroup label="Arrange" :options="arrangeOptions" @select="arrangeElements" />
 			<ButtonGroup label="Align Horizontal" :options="alignHorizontalOptions" @select="alignElement" />
@@ -37,8 +38,27 @@ import AlignCenterVertical from '@/apps/slides/icons/AlignCenterVertical.vue'
 import AlignBottom from '@/apps/slides/icons/AlignBottom.vue'
 
 import { selectionBounds } from '@/apps/slides/stores/slide'
-import { updatePosition } from '@/apps/slides/stores/element'
+import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
 import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
+
+let scrubStartBounds = null
+
+const beginPositionChange = () => {
+	if (scrubStartBounds) return
+	scrubStartBounds = { left: selectionBounds.left, top: selectionBounds.top }
+}
+
+const previewPosition = (axis, value) => {
+	const property = axis == 'X' ? 'left' : 'top'
+	selectionBounds[property] = value
+	if (scrubStartBounds) interactionOffset[property] = value - scrubStartBounds[property]
+}
+
+const commitPositionChange = () => {
+	if (!scrubStartBounds) return
+	scrubStartBounds = null
+	commitInteraction()
+}
 
 const positionFields = [
 	{ axis: 'X', property: 'left', label: 'X axis' },
@@ -54,13 +74,13 @@ const arrangeOptions = [
 
 const alignHorizontalOptions = [
 	{ value: 'left', label: 'Align left', icon: AlignLeft },
-	{ value: 'centerY', label: 'Align center', icon: AlignCenter },
+	{ value: 'horizontalCenter', label: 'Align center', icon: AlignCenter },
 	{ value: 'right', label: 'Align right', icon: AlignRight },
 ]
 
 const alignVerticalOptions = [
 	{ value: 'top', label: 'Align top', icon: AlignTop },
-	{ value: 'centerX', label: 'Align middle', icon: AlignCenterVertical },
+	{ value: 'verticalCenter', label: 'Align middle', icon: AlignCenterVertical },
 	{ value: 'bottom', label: 'Align bottom', icon: AlignBottom },
 ]
 </script>

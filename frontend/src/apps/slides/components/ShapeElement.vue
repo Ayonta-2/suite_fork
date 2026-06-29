@@ -122,15 +122,12 @@ import { computed, inject, ref } from 'vue'
 import TextElement from '@/apps/slides/components/TextElement.vue'
 import { useSVGShadow } from '@/apps/slides/composables/useSVGShadow'
 import { focusElementId, activeElementIds } from '@/apps/slides/stores/element'
+import { interactionOffset } from '@/apps/slides/stores/interaction'
 
 const props = defineProps({
 	transitionStyles: {
 		type: Object,
 		default: () => ({}),
-	},
-	elementOffset: {
-		type: Object,
-		default: () => ({ left: 0, top: 0 }),
 	},
 	mode: {
 		type: String,
@@ -161,8 +158,9 @@ const polygonPoints = computed(() => {
 	const sides = POLYGON_SIDES[element.value?.shapeType]
 	if (!sides) return ''
 
-	const offsetWidth = isActive.value ? (props.elementOffset.width ?? 0) : 0
-	const offsetHeight = isActive.value ? (props.elementOffset.height ?? 0) : 0
+	const isActiveInEditor = isActive.value && props.mode == 'editor'
+	const offsetWidth = isActiveInEditor ? interactionOffset.width : 0
+	const offsetHeight = isActiveInEditor ? interactionOffset.height : 0
 	const width = (element.value?.width ?? 0) + offsetWidth
 	const height = (element.value?.height ?? 0) + offsetHeight
 	const strokeInset = (element.value?.strokeWidth ?? 0) / 2

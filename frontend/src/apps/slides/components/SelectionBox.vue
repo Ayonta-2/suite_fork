@@ -14,6 +14,7 @@ import { computed } from 'vue'
 import Resizer from '@/apps/slides/components/Resizer.vue'
 
 import { slideBounds, selectionBounds } from '@/apps/slides/stores/slide'
+import { interactionOffset } from '@/apps/slides/stores/interaction'
 import { rotationDelta } from '@/apps/slides/composables/useRotator'
 import {
 	activeElementIds,
@@ -26,10 +27,6 @@ const props = defineProps({
 	isDragging: {
 		type: Boolean,
 		default: false,
-	},
-	elementOffset: {
-		type: Object,
-		default: () => ({ left: 0, top: 0 }),
 	},
 })
 
@@ -54,8 +51,8 @@ const selectionRotation = computed(() => {
 })
 
 const boxStyles = computed(() => {
-	const offsetLeft = props.elementOffset.left
-	const offsetTop = props.elementOffset.top
+	const offsetLeft = interactionOffset.left
+	const offsetTop = interactionOffset.top
 
 	// selectionBounds track the live position; rendering subtracts the
 	// transient offset and reapplies it as a transform so moving the box
