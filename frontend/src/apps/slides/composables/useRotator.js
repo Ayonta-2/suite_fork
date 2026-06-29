@@ -60,9 +60,5 @@ export const useRotator = () => {
 		window.removeEventListener('mousemove', rotate)
 	}
 
-	const resetRotation = () => {
-		rotationDelta.value = 0
-	}
-
-	return { isRotating, rotationDelta, startRotate, resetRotation }
+	return { isRotating, rotationDelta, startRotate }
 }
