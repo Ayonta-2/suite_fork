@@ -18,10 +18,10 @@ const getAlignmentPosition = (direction) => {
 
 	const positions = {
 		left: 0,
-		centerY: (slideWidth - selectionWidth) / 2,
+		horizontalCenter: (slideWidth - selectionWidth) / 2,
 		right: slideWidth - selectionWidth,
 		top: 0,
-		centerX: (slideHeight - selectionHeight) / 2,
+		verticalCenter: (slideHeight - selectionHeight) / 2,
 		bottom: slideHeight - selectionHeight,
 	}
 
@@ -29,7 +29,7 @@ const getAlignmentPosition = (direction) => {
 }
 
 const alignElement = (direction) => {
-	const axis = ['left', 'centerY', 'right'].includes(direction) ? 'X' : 'Y'
+	const axis = ['left', 'horizontalCenter', 'right'].includes(direction) ? 'X' : 'Y'
 	updatePosition(axis, Math.round(getAlignmentPosition(direction)))
 }
 
@@ -131,6 +131,8 @@ const getPlacementUpdateCommands = (action) => {
 	elementsWithUpdatedZIndices.forEach((updatedElement) => {
 		const originalElement = currentSlide.value.elements.find((el) => el.id == updatedElement.id)
 
+		if (originalElement.zIndex == updatedElement.zIndex) return
+
 		commands.push(
 			editElementCommand({
 				slideId: currentSlide.value.clientId,
@@ -147,6 +149,7 @@ const getPlacementUpdateCommands = (action) => {
 
 const arrangeElements = (action) => {
 	const commands = getPlacementUpdateCommands(action)
+	if (!commands.length) return
 	commandHistory.execute(
 		batchCommand({
 			slideId: currentSlide.value.clientId,
