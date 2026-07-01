@@ -109,7 +109,9 @@ const getShapeDefaults = (shapeType) => {
 	let markerStart = false
 	let markerEnd = false
 
-	const { fillColor, strokeColor: defaultStrokeColor } = guessShapeColorsFromBackground(currentSlide.value?.background)
+	const { fillColor, strokeColor: defaultStrokeColor } = guessShapeColorsFromBackground(
+		currentSlide.value?.background,
+	)
 
 	switch (shapeType) {
 		case 'rectangle':
@@ -221,10 +223,11 @@ const addShapeElement = async (shapeType, bounds = null) => {
 		borderRadius,
 		markerStart,
 		markerEnd,
-		shadowOffsetX: 0,
-		shadowOffsetY: 0,
-		shadowSpread: 0,
 		shadowColor: '#7C7C7CFF',
+		shadowOpacity: 100,
+		shadowBlur: 0,
+		shadowOffset: 0,
+		shadowAngle: 45,
 	}
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
@@ -480,10 +483,11 @@ const addMediaElement = async (file, type) => {
 		borderWidth: 0,
 		borderRadius: 0,
 		borderColor: '',
-		shadowOffsetX: 0,
-		shadowOffsetY: 0,
-		shadowSpread: 0,
 		shadowColor: '#7C7C7CFF',
+		shadowOpacity: 100,
+		shadowBlur: 0,
+		shadowOffset: 0,
+		shadowAngle: 45,
 	}
 	if (type == 'video') {
 		element.poster = videoPoster

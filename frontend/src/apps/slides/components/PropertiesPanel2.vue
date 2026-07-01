@@ -4,6 +4,7 @@
 			<PositionSection />
 			<LayoutSection />
 			<AppearanceSection />
+			<ShadowSection v-if="['image', 'video', 'shape'].includes(activeElement?.type)" />
 		</div>
 	</div>
 </template>
@@ -21,6 +22,7 @@ import { editElementCommand } from '@/apps/slides/stores/commands'
 import PositionSection from './PositionSection.vue'
 import LayoutSection from './LayoutSection.vue'
 import AppearanceSection from './AppearanceSection.vue'
+import ShadowSection from './ShadowSection.vue'
 
 const setProperty = (property, value) => {
 	const oldValue = activeElement.value[property]

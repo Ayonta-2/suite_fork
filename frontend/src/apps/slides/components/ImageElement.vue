@@ -39,6 +39,7 @@ import { presentationId } from '@/apps/slides/stores/presentation'
 import { activeElement } from '@/apps/slides/stores/element'
 import { allowedImageFileTypes } from '@/apps/slides/utils/constants'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
+import { useBoxShadow } from '@/apps/slides/composables/useShadow'
 
 const props = defineProps({
 	mode: {
@@ -82,6 +83,8 @@ const isGifImage = computed(() => {
 	return element.value.src?.split('?')[0].toLowerCase().endsWith('.gif')
 })
 
+const boxShadow = useBoxShadow(element)
+
 const imageStyle = computed(() => {
 	const styles = {
 		width: '100%',
@@ -90,7 +93,7 @@ const imageStyle = computed(() => {
 		borderStyle: element.value.borderStyle || 'none',
 		borderColor: element.value.borderColor,
 		borderWidth: `${element.value.borderWidth}px`,
-		boxShadow: `${element.value.shadowOffsetX}px ${element.value.shadowOffsetY}px ${element.value.shadowSpread}px ${element.value.shadowColor}`,
+		boxShadow: boxShadow.value,
 		transform: `scale(${element.value.invertX || 1}, ${element.value.invertY || 1})`,
 		userSelect: 'none',
 	}

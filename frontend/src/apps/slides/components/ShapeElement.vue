@@ -120,7 +120,7 @@
 import { computed, inject, ref } from 'vue'
 
 import TextElement from '@/apps/slides/components/TextElement.vue'
-import { useSVGShadow } from '@/apps/slides/composables/useSVGShadow'
+import { useSvgShadow } from '@/apps/slides/composables/useShadow'
 import { focusElementId, activeElementIds } from '@/apps/slides/stores/element'
 import { interactionOffset } from '@/apps/slides/stores/interaction'
 
@@ -221,7 +221,7 @@ const markerStartId = computed(() => `line-marker-start-${element.value?.id || '
 const markerEndId = computed(() => `line-marker-end-${element.value?.id || ''}`)
 
 const shadowFilterId = computed(() => `shape-shadow-${element.value?.id || ''}`)
-const shadow = useSVGShadow(element)
+const shadow = useSvgShadow(element)
 
 const shapeStyles = computed(() => {
 	const styles = {

@@ -1,6 +1,8 @@
 import { ref, computed } from 'vue'
 import { createResource, call, createDocumentResource } from 'frappe-ui'
 
+import tinycolor from 'tinycolor2'
+
 import { router } from '@/apps/slides/router'
 import { slides } from './slide'
 import { markClean } from './saving'
@@ -117,6 +119,27 @@ const transformElements = async (elements) => {
 	return newEls
 }
 
+const migrateShadow = (el) => {
+	// legacy px shadow (shadowSpread/shadowOffsetX/shadowOffsetY) -> size-relative model
+	if (el.shadowOffset != null) return
+	const hasLegacyShadow =
+		el.shadowSpread != null || el.shadowOffsetX != null || el.shadowOffsetY != null
+	if (!hasLegacyShadow) return
+
+	const refSize = Number(el.width) || 1
+	const offsetX = Number(el.shadowOffsetX || 0)
+	const offsetY = Number(el.shadowOffsetY || 0)
+
+	el.shadowBlur = Math.round((Number(el.shadowSpread || 0) / refSize) * 100)
+	el.shadowOffset = Math.round((Math.hypot(offsetX, offsetY) / refSize) * 100)
+	el.shadowAngle = Math.round(((Math.atan2(offsetY, offsetX) * 180) / Math.PI + 360) % 360)
+	el.shadowOpacity = Math.round(tinycolor(el.shadowColor || '#000000ff').getAlpha() * 100)
+
+	delete el.shadowSpread
+	delete el.shadowOffsetX
+	delete el.shadowOffsetY
+}
+
 const parseElements = (value) => {
 	if (!value) return []
 
@@ -141,6 +164,7 @@ const parseElements = (value) => {
 			// 'circle' was renamed to 'oval' to match the display name
 			el.shapeType = 'oval'
 		}
+		migrateShadow(el)
 		return el
 	})
 
