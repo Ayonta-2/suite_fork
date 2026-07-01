@@ -6,6 +6,10 @@
 			<LayoutSection />
 			<Divider flexItem />
 			<AppearanceSection />
+			<template v-if="activeElement?.type === 'video'">
+				<Divider flexItem />
+				<PlaybackSection />
+			</template>
 			<template v-if="['image', 'video'].includes(activeElement?.type)">
 				<Divider flexItem />
 				<BorderSection />
@@ -33,6 +37,7 @@ import { Divider } from 'frappe-ui'
 import PositionSection from './PositionSection.vue'
 import LayoutSection from './LayoutSection.vue'
 import AppearanceSection from './AppearanceSection.vue'
+import PlaybackSection from './PlaybackSection.vue'
 import BorderSection from './BorderSection.vue'
 import ShadowSection from './ShadowSection.vue'
 
