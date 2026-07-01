@@ -1,12 +1,12 @@
 <template>
-	<div class="flex flex-col gap-4">
-		<div class="flex cursor-pointer items-center justify-between" @click="showContent = !showContent">
+	<div class="flex flex-col gap-3 py-3">
+		<div class="flex cursor-pointer items-center justify-between" @click="toggleContent">
 			<span :class="labelClasses">{{ label }}</span>
 			<lucide-minus v-if="showContent" class="size-4 stroke-[1.5] text-ink-gray-7" />
 			<lucide-plus v-else class="size-4 stroke-[1.5] text-ink-gray-7" />
 		</div>
 
-		<div v-if="showContent">
+		<div v-if="showContent" class="flex flex-col gap-1">
 			<slot />
 		</div>
 	</div>
@@ -24,6 +24,10 @@ const props = defineProps({
 })
 
 const showContent = ref(props.initialState)
+
+const toggleContent = () => {
+	showContent.value = !showContent.value
+}
 
 const labelClasses = 'select-none align-middle font-text text-base font-medium text-ink-gray-7'
 </script>

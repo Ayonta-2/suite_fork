@@ -2,9 +2,14 @@
 	<div class="flex h-full w-72 flex-col overflow-y-auto border-l bg-surface-base px-4">
 		<div v-if="activeElementIds.length">
 			<PositionSection />
+			<Divider flexItem />
 			<LayoutSection />
+			<Divider flexItem />
 			<AppearanceSection />
-			<ShadowSection v-if="['image', 'video', 'shape'].includes(activeElement?.type)" />
+			<template v-if="['image', 'video', 'shape'].includes(activeElement?.type)">
+				<Divider flexItem />
+				<ShadowSection />
+			</template>
 		</div>
 	</div>
 </template>
@@ -18,6 +23,8 @@ import { activeElement, activeElementIds } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { editElementCommand } from '@/apps/slides/stores/commands'
+
+import { Divider } from 'frappe-ui'
 
 import PositionSection from './PositionSection.vue'
 import LayoutSection from './LayoutSection.vue'

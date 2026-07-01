@@ -1,32 +1,30 @@
 <template>
-	<Section label="Layout" class="border-b py-4">
-		<div class="flex flex-col gap-2">
-			<NumberControl
-				v-for="field in sizeFields"
-				:key="field.property"
-				:modelValue="Math.round(selectionBounds[field.property])"
-				:label="field.label"
-				suffix="px"
-				:max-digits="4"
-				:step="1"
-				:disabled="field.property == 'height' && !canEditHeight"
-				@update:modelValue="(value) => previewSize(field.property, value)"
-				@change-start="beginSizeChange"
-				@change-end="commitSizeChange"
-			/>
-			<NumberControl
-				v-if="canRotate"
-				:modelValue="rotationValue"
-				label="Rotate"
-				suffix="°"
-				:max-digits="3"
-				:step="1"
-				@update:modelValue="previewRotate"
-				@change-start="beginRotateChange"
-				@change-end="commitRotateChange"
-			/>
-			<ButtonGroup label="Flip" :options="flipOptions" @select="flipElement" />
-		</div>
+	<Section label="Layout">
+		<NumberControl
+			v-for="field in sizeFields"
+			:key="field.property"
+			:modelValue="Math.round(selectionBounds[field.property])"
+			:label="field.label"
+			suffix="px"
+			:max-digits="4"
+			:step="1"
+			:disabled="field.property == 'height' && !canEditHeight"
+			@update:modelValue="(value) => previewSize(field.property, value)"
+			@change-start="beginSizeChange"
+			@change-end="commitSizeChange"
+		/>
+		<NumberControl
+			v-if="canRotate"
+			:modelValue="rotationValue"
+			label="Rotate"
+			suffix="°"
+			:max-digits="3"
+			:step="1"
+			@update:modelValue="previewRotate"
+			@change-start="beginRotateChange"
+			@change-end="commitRotateChange"
+		/>
+		<ButtonGroup label="Flip" :options="flipOptions" @select="flipElement" />
 	</Section>
 </template>
 

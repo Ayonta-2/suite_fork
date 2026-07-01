@@ -1,5 +1,5 @@
 <template>
-	<Section label="Appearance" class="border-b py-4">
+	<Section label="Appearance">
 		<NumberControl
 			v-if="activeElement.type == 'text'"
 			:modelValue="parseFloat(editorStyles.opacity)"

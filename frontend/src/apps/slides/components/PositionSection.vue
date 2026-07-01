@@ -1,22 +1,24 @@
 <template>
-	<Section label="Position" class="border-b py-4">
-		<div class="flex flex-col gap-2">
-			<NumberControl
-				v-for="field in positionFields"
-				:key="field.axis"
-				:modelValue="Math.round(selectionBounds[field.property])"
-				:label="field.label"
-				suffix="px"
-				:max-digits="4"
-				:step="1"
-				@update:modelValue="(value) => previewPosition(field.axis, value)"
-				@change-start="beginPositionChange"
-				@change-end="commitPositionChange"
-			/>
-			<ButtonGroup label="Arrange" :options="arrangeOptions" @select="arrangeElements" />
-			<ButtonGroup label="Align Horizontal" :options="alignHorizontalOptions" @select="alignElement" />
-			<ButtonGroup label="Align Vertical" :options="alignVerticalOptions" @select="alignElement" />
-		</div>
+	<Section label="Position">
+		<NumberControl
+			v-for="field in positionFields"
+			:key="field.axis"
+			:modelValue="Math.round(selectionBounds[field.property])"
+			:label="field.label"
+			suffix="px"
+			:max-digits="4"
+			:step="1"
+			@update:modelValue="(value) => previewPosition(field.axis, value)"
+			@change-start="beginPositionChange"
+			@change-end="commitPositionChange"
+		/>
+		<ButtonGroup label="Arrange" :options="arrangeOptions" @select="arrangeElements" />
+		<ButtonGroup
+			label="Align Horizontal"
+			:options="alignHorizontalOptions"
+			@select="alignElement"
+		/>
+		<ButtonGroup label="Align Vertical" :options="alignVerticalOptions" @select="alignElement" />
 	</Section>
 </template>
 
