@@ -54,3 +54,13 @@ onUnmounted(() => {
 
 provide('isOnline', isOnline)
 </script>
+
+<style>
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+</style>

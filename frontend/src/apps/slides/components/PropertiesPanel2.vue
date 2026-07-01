@@ -1,5 +1,5 @@
 <template>
-	<div class="flex h-full w-72 flex-col overflow-y-auto border-l bg-surface-base px-4">
+	<div class="no-scrollbar flex h-full w-72 flex-col overflow-y-auto border-l bg-surface-base px-4">
 		<div v-if="activeElementIds.length">
 			<PositionSection />
 			<Divider flexItem />

@@ -239,12 +239,3 @@ watch(
 	},
 )
 </script>
-
-<style scoped>
-.no-scrollbar {
-	scrollbar-width: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-	display: none;
-}
-</style>
