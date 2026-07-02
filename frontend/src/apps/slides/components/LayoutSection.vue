@@ -7,6 +7,7 @@
 				:modelValue="Math.round(selectionBounds[field.property])"
 				:label="field.label"
 				suffix="px"
+				:min="1"
 				:max-digits="4"
 				:step="1"
 				:disabled="field.property == 'height' && !canEditHeight"

@@ -88,7 +88,7 @@ const boxShadow = useBoxShadow(element)
 const imageStyle = computed(() => {
 	const styles = {
 		width: '100%',
-		opacity: element.value.opacity / 100,
+		opacity: (element.value.opacity ?? 100) / 100,
 		borderRadius: `${element.value.borderRadius}px`,
 		borderStyle: element.value.borderStyle || 'none',
 		borderColor: element.value.borderColor,
