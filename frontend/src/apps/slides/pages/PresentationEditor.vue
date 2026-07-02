@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="flex h-screen w-screen select-none flex-col overflow-hidden"
+		class="isolate flex h-screen w-screen select-none flex-col overflow-hidden"
 		@click="focusedSlide = null"
 	>
 		<EditorNavbar

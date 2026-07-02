@@ -7,7 +7,7 @@
 		@wheel="handleScrollBarWheelEvent"
 		@click.stop
 	>
-		<div class="flex items-center justify-between px-4 py-3 font-text text-sm">
+		<div v-if="slidesLength" class="flex items-center justify-between px-4 py-3 font-text text-sm">
 			<span class="text-ink-gray-6">Slide</span>
 			<span class="text-ink-gray-6">{{ (slideIndex ?? 0) + 1 }} of {{ slidesLength }}</span>
 		</div>
