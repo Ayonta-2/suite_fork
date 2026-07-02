@@ -8,7 +8,7 @@
 				<Divider flexItem />
 				<TypographySection />
 			</template>
-			<template v-if="activeElement?.type === 'shape'">
+			<template v-if="activeElement?.type === 'shape' && !isEditingShapeText">
 				<Divider flexItem />
 				<ShapeStyleSection />
 			</template>
