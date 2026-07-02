@@ -1,3 +1,5 @@
+import { nextTick } from 'vue'
+
 import { selectionBounds, slideBounds, currentSlide } from './slide'
 import {
 	activeElements,
@@ -6,6 +8,7 @@ import {
 	isWithinOverlappingBounds,
 	normalizeZIndices,
 	updatePosition,
+	cropSelectionToFitContent,
 } from './element'
 import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
@@ -28,7 +31,45 @@ const getAlignmentPosition = (direction) => {
 	return positions[direction]
 }
 
+const alignElementsToEachOther = (direction) => {
+	const isHorizontal = ['left', 'horizontalCenter', 'right'].includes(direction)
+	const property = isHorizontal ? 'left' : 'top'
+	const start = isHorizontal ? selectionBounds.left : selectionBounds.top
+	const extent = isHorizontal ? selectionBounds.width : selectionBounds.height
+
+	const commands = activeElements.value.map((element) => {
+		const position = getElementPosition(element.id)
+		const current = isHorizontal ? position.left : position.top
+		const size = isHorizontal ? position.right - position.left : position.bottom - position.top
+
+		let target
+		if (['left', 'top'].includes(direction)) target = start
+		else if (['right', 'bottom'].includes(direction)) target = start + extent - size
+		else target = start + (extent - size) / 2
+
+		return editElementCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: [element.id],
+			property,
+			oldValue: element[property],
+			newValue: Math.round(element[property] + (target - current)),
+		})
+	})
+
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: activeElementIds.value,
+			commands,
+		}),
+	)
+
+	nextTick(() => cropSelectionToFitContent(activeElementIds.value))
+}
+
 const alignElement = (direction) => {
+	if (activeElementIds.value.length > 1) return alignElementsToEachOther(direction)
+
 	const axis = ['left', 'horizontalCenter', 'right'].includes(direction) ? 'X' : 'Y'
 	updatePosition(axis, Math.round(getAlignmentPosition(direction)))
 }
