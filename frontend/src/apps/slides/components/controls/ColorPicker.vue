@@ -294,6 +294,7 @@ watch(sRGBHex, (newColor) => {
 })
 
 const setColor = (newColor) => {
+	emit('colordown')
 	currentColor.value = newColor
 	const initialHsv = tinycolor(newColor).toHsv()
 	colorHue.value = initialHsv.h
@@ -301,6 +302,7 @@ const setColor = (newColor) => {
 	colorValue.value = initialHsv.v
 	currentOpacity.value = initialHsv.a
 	currentHue.value = tinycolor({ h: colorHue.value, s: 1, l: 0.5 })
+	emit('colorup')
 }
 
 const getDisplayColor = () => {
