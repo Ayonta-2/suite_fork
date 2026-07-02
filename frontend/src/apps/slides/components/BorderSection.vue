@@ -69,7 +69,7 @@ const borderStyleClasses = {
 }
 
 const linePreviewClasses = (style) => [
-	'block w-16 border-t-[1.5px] border-outline-gray-7',
+	'block w-10 border-t-[1.5px] border-outline-gray-7',
 	borderStyleClasses[style],
 ]
 

@@ -6,7 +6,7 @@
 			<lucide-plus v-else class="size-4 stroke-[1.5] text-ink-gray-7" />
 		</div>
 
-		<div v-if="showContent" class="flex flex-col gap-1">
+		<div v-if="showContent" class="flex flex-col gap-2">
 			<slot />
 		</div>
 	</div>

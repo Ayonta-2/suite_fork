@@ -56,6 +56,8 @@
 				:fill="element.fillColor"
 				:stroke="element.strokeColor"
 				:stroke-width="`${element.strokeWidth}px`"
+				:stroke-dasharray="strokeDashArray"
+				:stroke-linecap="strokeLineCap"
 				:rx="element.borderRadius"
 				:ry="element.borderRadius"
 				:filter="shadow.hasShadow ? `url(#${shadowFilterId})` : null"
@@ -70,6 +72,8 @@
 				:fill="element.fillColor"
 				:stroke="element.strokeColor"
 				:stroke-width="`${element.strokeWidth}px`"
+				:stroke-dasharray="strokeDashArray"
+				:stroke-linecap="strokeLineCap"
 				:filter="shadow.hasShadow ? `url(#${shadowFilterId})` : null"
 			/>
 
@@ -79,6 +83,8 @@
 				:fill="element.fillColor"
 				:stroke="element.strokeColor"
 				:stroke-width="`${element.strokeWidth}px`"
+				:stroke-dasharray="strokeDashArray"
+				:stroke-linecap="strokeLineCap"
 				:filter="shadow.hasShadow ? `url(#${shadowFilterId})` : null"
 			/>
 
@@ -99,6 +105,8 @@
 					:y2="element.strokeWidth / 2"
 					:stroke="`${element.strokeColor}`"
 					:stroke-width="`${element.strokeWidth}px`"
+					:stroke-dasharray="strokeDashArray"
+					:stroke-linecap="strokeLineCap"
 					:marker-start="element.markerStart ? `url(#${markerStartId})` : null"
 					:marker-end="element.markerEnd ? `url(#${markerEndId})` : null"
 					:filter="shadow.hasShadow ? `url(#${shadowFilterId})` : null"
@@ -222,6 +230,16 @@ const markerEndId = computed(() => `line-marker-end-${element.value?.id || ''}`)
 
 const shadowFilterId = computed(() => `shape-shadow-${element.value?.id || ''}`)
 const shadow = useSvgShadow(element)
+
+const strokeDashArray = computed(() => {
+	const w = element.value?.strokeWidth || 0
+	const style = element.value?.strokeStyle
+	if (style === 'dashed') return `${w * 3} ${w * 2}`
+	if (style === 'dotted') return `${w} ${w * 1.5}`
+	return null
+})
+
+const strokeLineCap = computed(() => (element.value?.strokeStyle === 'dotted' ? 'round' : null))
 
 const shapeStyles = computed(() => {
 	const styles = {

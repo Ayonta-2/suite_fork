@@ -223,6 +223,7 @@ const addShapeElement = async (shapeType, bounds = null) => {
 		borderRadius,
 		markerStart,
 		markerEnd,
+		strokeStyle: 'solid',
 		shadowColor: '#7C7C7CFF',
 		shadowOpacity: 100,
 		shadowBlur: 0,
