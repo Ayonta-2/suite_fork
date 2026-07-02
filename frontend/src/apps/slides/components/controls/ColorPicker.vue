@@ -164,6 +164,7 @@ const shadeRectStyles = computed(() => {
 })
 
 const handleUpdateHue = (e) => {
+	emit('colordown')
 	updateHue(e)
 	window.addEventListener('mousemove', updateHue)
 	window.addEventListener('mouseup', endUpdateHue)
