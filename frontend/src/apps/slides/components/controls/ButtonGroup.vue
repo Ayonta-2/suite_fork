@@ -9,6 +9,8 @@
 				:title="option.label"
 				:class="buttonClasses"
 				@click="emit('select', option.value)"
+				@mouseenter="emit('hover', option.value)"
+				@mouseleave="emit('hover', null)"
 			>
 				<component :is="option.icon" />
 			</button>
@@ -25,7 +27,7 @@ defineProps({
 	},
 })
 
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'hover'])
 
 const rowClasses = 'flex h-7 w-full items-center justify-between'
 const labelClasses = 'select-none align-middle font-text text-base text-ink-gray-5'

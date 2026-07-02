@@ -17,8 +17,14 @@
 			label="Align Horizontal"
 			:options="alignHorizontalOptions"
 			@select="alignElement"
+			@hover="onAlignHover"
 		/>
-		<ButtonGroup label="Align Vertical" :options="alignVerticalOptions" @select="alignElement" />
+		<ButtonGroup
+			label="Align Vertical"
+			:options="alignVerticalOptions"
+			@select="alignElement"
+			@hover="onAlignHover"
+		/>
 	</Section>
 </template>
 
@@ -39,8 +45,9 @@ import AlignTop from '@/apps/slides/icons/AlignTop.vue'
 import AlignCenterVertical from '@/apps/slides/icons/AlignCenterVertical.vue'
 import AlignBottom from '@/apps/slides/icons/AlignBottom.vue'
 
-import { selectionBounds } from '@/apps/slides/stores/slide'
+import { selectionBounds, guideVisibilityMap } from '@/apps/slides/stores/slide'
 import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
+import { activeElementIds } from '@/apps/slides/stores/element'
 import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
 
 let scrubStartBounds = null
@@ -85,4 +92,19 @@ const alignVerticalOptions = [
 	{ value: 'verticalCenter', label: 'Align middle', icon: AlignCenterVertical },
 	{ value: 'bottom', label: 'Align bottom', icon: AlignBottom },
 ]
+
+const alignGuideMap = {
+	left: 'leftEdge',
+	horizontalCenter: 'centerY',
+	right: 'rightEdge',
+	top: 'topEdge',
+	verticalCenter: 'centerX',
+	bottom: 'bottomEdge',
+}
+
+const onAlignHover = (direction) => {
+	for (const key in guideVisibilityMap) guideVisibilityMap[key] = false
+	if (!direction || activeElementIds.value.length > 1) return
+	guideVisibilityMap[alignGuideMap[direction]] = true
+}
 </script>

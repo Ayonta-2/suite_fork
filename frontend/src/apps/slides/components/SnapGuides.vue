@@ -22,6 +22,7 @@ const props = defineProps({
 })
 
 const GUIDE_COLOR = '#70b6f080'
+const EDGE_GUIDE_COLOR = '#70b6f0ff'
 const commonStyles = { position: 'absolute', zIndex: 9999 }
 
 const getScaledValue = (value, axis) => {
@@ -131,13 +132,16 @@ const getEdgeStyle = (direction) => {
 	if (!guideVisibilityMap[direction]) return null
 
 	const isVertical = ['leftEdge', 'rightEdge'].includes(direction)
+	const thickness = `${2 / (slideBounds.scale || 1)}px`
 	return {
 		...commonStyles,
-		backgroundColor: GUIDE_COLOR,
-		width: isVertical ? '1.5px' : '100%',
-		height: isVertical ? '100%' : '1.5px',
-		left: direction == 'rightEdge' ? 'calc(100% - 1.5px)' : '0',
-		top: direction == 'bottomEdge' ? 'calc(100% - 1.5px)' : '0',
+		backgroundColor: EDGE_GUIDE_COLOR,
+		width: isVertical ? thickness : '100%',
+		height: isVertical ? '100%' : thickness,
+		left: direction == 'leftEdge' ? '0.2px' : direction == 'rightEdge' ? 'auto' : '0',
+		right: direction == 'rightEdge' ? '0.2px' : 'auto',
+		top: direction == 'topEdge' ? '0.2px' : direction == 'bottomEdge' ? 'auto' : '0',
+		bottom: direction == 'bottomEdge' ? '0.2px' : 'auto',
 	}
 }
 
