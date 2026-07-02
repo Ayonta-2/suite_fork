@@ -182,8 +182,11 @@ const inputWidth = computed(() => {
 	if (isEmpty && props.placeholder) {
 		return `${props.placeholder.length}ch`
 	}
-	const digits = String(current.value ?? '').length || 1
-	const capped = props.maxDigits ? Math.min(digits, props.maxDigits) : digits
-	return `${capped}ch`
+	const text = String(current.value ?? '')
+	const whole = text.split('.')[0]
+	const wholeDigits = whole.length || 1
+	const capped = props.maxDigits ? Math.min(wholeDigits, props.maxDigits) : wholeDigits
+	const fractionDigits = text.length - whole.length
+	return `${capped + fractionDigits}ch`
 })
 </script>
