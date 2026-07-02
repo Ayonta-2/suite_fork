@@ -16,8 +16,8 @@
 			<template #default="{ open }">
 				<div class="flex w-fit cursor-pointer items-center gap-2">
 					<img :src="slidesLogo" class="h-7" />
-					<LucideChevronUp v-if="open" class="w-4 stroke-[1.5]" />
-					<LucideChevronDown v-else class="w-4 stroke-[1.5]" />
+					<LucideChevronUp v-if="open" class="w-4 stroke-[1.5] text-ink-gray-7" />
+					<LucideChevronDown v-else class="w-4 stroke-[1.5] text-ink-gray-7" />
 				</div>
 			</template>
 		</Dropdown>
