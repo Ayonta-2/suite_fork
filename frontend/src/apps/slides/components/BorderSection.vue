@@ -21,6 +21,18 @@
 			@change-start="onBorderWidthStart"
 			@change-end="onBorderWidthEnd"
 		/>
+		<NumberControl
+			:modelValue="activeElement.borderRadius ?? 0"
+			label="Radius"
+			suffix="px"
+			:min="0"
+			:max="50"
+			:max-digits="3"
+			:step="0.5"
+			@update:modelValue="(value) => (activeElement.borderRadius = value)"
+			@change-start="onRadiusStart"
+			@change-end="onRadiusEnd"
+		/>
 		<div class="flex h-7 w-full items-center justify-between">
 			<span :class="labelClasses">Style</span>
 			<Select
@@ -75,7 +87,9 @@ const linePreviewClasses = (style) => [
 
 const chevronClasses = 'lucide-chevron-down ml-auto size-4 shrink-0 text-ink-gray-4'
 
-const hasBorder = computed(() => Boolean(Number(activeElement.value.borderWidth)))
+const hasBorder = computed(() =>
+	Boolean(Number(activeElement.value.borderWidth) || Number(activeElement.value.borderRadius)),
+)
 
 const displayStyle = computed(() => {
 	const style = activeElement.value.borderStyle
@@ -94,9 +108,14 @@ const { onStart: onWidthStart, onEnd: onBorderWidthEnd } = setPropertyDeferred(
 	'borderWidth',
 )
 
+const { onStart: onRadiusStart, onEnd: onRadiusEnd } = setPropertyDeferred(
+	'element',
+	'borderRadius',
+)
+
 const onBorderWidthStart = () => {
 	const style = activeElement.value.borderStyle
-	if (!style || style === 'none') setProperty('borderStyle', displayStyle.value)
+	if (!style || style === 'none') activeElement.value.borderStyle = displayStyle.value
 	onWidthStart()
 }
 
