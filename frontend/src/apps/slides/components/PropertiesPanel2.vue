@@ -4,7 +4,7 @@
 			<PositionSection />
 			<Divider flexItem />
 			<LayoutSection />
-			<template v-if="activeElement?.type === 'text'">
+			<template v-if="activeElement?.type === 'text' || isEditingShapeText">
 				<Divider flexItem />
 				<TypographySection />
 			</template>
@@ -33,11 +33,11 @@
 </template>
 
 <script setup>
-import { provide } from 'vue'
+import { computed, provide } from 'vue'
 
 import { useDeferredCommit } from '@/apps/slides/composables/useDeferredCommit'
 
-import { activeElement, activeElementIds } from '@/apps/slides/stores/element'
+import { activeElement, activeElementIds, focusElementId } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { editElementCommand } from '@/apps/slides/stores/commands'
@@ -81,6 +81,10 @@ const setPropertyDeferred = (level, property) => {
 		)
 	}
 }
+
+const isEditingShapeText = computed(
+	() => activeElement.value?.type === 'shape' && focusElementId.value === activeElement.value?.id,
+)
 
 provide('setProperty', setProperty)
 provide('setPropertyDeferred', setPropertyDeferred)
