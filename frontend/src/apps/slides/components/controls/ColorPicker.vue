@@ -252,7 +252,6 @@ const handleUpdateOpacity = (e) => {
 
 const updateOpacity = (e) => {
 	e.preventDefault()
-	emit('colordown')
 
 	const clientX = e.clientX - unref(colorRect.left)
 
