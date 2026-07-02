@@ -9,7 +9,7 @@
 				align="end"
 				:options="textFonts"
 				:modelValue="displayFont"
-				class="-me-2"
+				class="-me-1"
 				@update:modelValue="(value) => onUpdate('fontFamily', value)"
 			/>
 		</div>

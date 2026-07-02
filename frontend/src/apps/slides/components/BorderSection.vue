@@ -3,7 +3,7 @@
 		<div class="flex h-7 w-full items-center justify-between">
 			<span :class="labelClasses">Color</span>
 			<ColorPicker
-				:modelValue="activeElement.borderColor || '#EDEDEDFF'"
+				:modelValue="activeElement.borderColor || '#d2d2d2ff'"
 				@update:modelValue="(value) => (activeElement.borderColor = value)"
 				@colordown="onBorderColorStart"
 				@colorup="onBorderColorEnd"
@@ -39,7 +39,7 @@
 				:modelValue="displayStyle"
 				variant="ghost"
 				:options="borderStyleOptions"
-				class="-me-2"
+				class="-me-1"
 				@update:modelValue="setBorderStyle"
 			>
 				<template #trigger="{ selectedOption }">

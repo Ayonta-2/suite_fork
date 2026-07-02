@@ -6,7 +6,7 @@
 				:modelValue="displayStrokeStyle"
 				variant="ghost"
 				:options="strokeStyleOptions"
-				class="-me-2"
+				class="-me-1"
 				@update:modelValue="setStrokeStyle"
 			>
 				<template #trigger="{ selectedOption }">
@@ -73,7 +73,7 @@
 				:modelValue="arrowDirection"
 				variant="ghost"
 				:options="arrowOptions"
-				class="-me-2"
+				class="-me-1"
 				@update:modelValue="setArrowDirection"
 			>
 				<template #trigger="{ selectedOption }">
@@ -132,7 +132,7 @@ const strokeStyleClasses = {
 }
 
 const linePreviewClasses = (style) => [
-	'block w-10 border-t-[1.5px] border-outline-gray-7',
+	'block w-16 border-t-[1.5px] border-outline-gray-7',
 	strokeStyleClasses[style],
 ]
 
@@ -160,6 +160,6 @@ const { onStart: onStrokeColorStart, onEnd: onStrokeColorEnd } = setPropertyDefe
 )
 
 const labelClasses = 'select-none font-text text-base text-ink-gray-5'
-const valueClasses = 'block w-10 text-right font-text text-base text-ink-gray-8'
+const valueClasses = 'block w-16 font-text text-base text-ink-gray-8'
 const chevronClasses = 'lucide-chevron-down ml-auto size-4 shrink-0 text-ink-gray-4'
 </script>
