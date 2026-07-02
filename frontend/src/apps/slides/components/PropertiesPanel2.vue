@@ -24,9 +24,10 @@
 				<Divider flexItem />
 				<ShadowSection :key="activeElement?.id" />
 			</template>
-			<Divider flexItem />
-			<AppearanceSection />
-			<Divider flexItem />
+			<template v-if="activeElement">
+				<Divider flexItem />
+				<AppearanceSection />
+			</template>
 		</div>
 	</div>
 </template>

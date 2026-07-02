@@ -985,6 +985,29 @@ const updateDimension = (axis, value) => {
 	selectionBounds[property] = numericValue
 }
 
+const flipElements = (direction) => {
+	const property = direction == 'horizontal' ? 'invertX' : 'invertY'
+
+	const commands = activeElements.value.map((element) => {
+		const current = element[property]
+		return editElementCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: [element.id],
+			property,
+			oldValue: current,
+			newValue: !current || current == 1 ? -1 : 1,
+		})
+	})
+
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: activeElementIds.value,
+			commands,
+		}),
+	)
+}
+
 const getElementCenter = (axis) => {
 	let elementStart, elementSize, slideStart
 
@@ -1028,6 +1051,7 @@ export {
 	isWithinOverlappingBounds,
 	updatePosition,
 	updateDimension,
+	flipElements,
 	findElement,
 	cropSelectionToFitContent,
 	getElementCenter,

@@ -1,18 +1,20 @@
 <template>
 	<Section label="Layout">
-		<NumberControl
-			v-for="field in sizeFields"
-			:key="field.property"
-			:modelValue="Math.round(selectionBounds[field.property])"
-			:label="field.label"
-			suffix="px"
-			:max-digits="4"
-			:step="1"
-			:disabled="field.property == 'height' && !canEditHeight"
-			@update:modelValue="(value) => previewSize(field.property, value)"
-			@change-start="beginSizeChange"
-			@change-end="commitSizeChange"
-		/>
+		<template v-if="!isMultiSelect">
+			<NumberControl
+				v-for="field in sizeFields"
+				:key="field.property"
+				:modelValue="Math.round(selectionBounds[field.property])"
+				:label="field.label"
+				suffix="px"
+				:max-digits="4"
+				:step="1"
+				:disabled="field.property == 'height' && !canEditHeight"
+				@update:modelValue="(value) => previewSize(field.property, value)"
+				@change-start="beginSizeChange"
+				@change-end="commitSizeChange"
+			/>
+		</template>
 		<NumberControl
 			v-if="canRotate"
 			:modelValue="rotationValue"
@@ -24,12 +26,12 @@
 			@change-start="beginRotateChange"
 			@change-end="commitRotateChange"
 		/>
-		<ButtonGroup label="Flip" :options="flipOptions" @select="flipElement" />
+		<ButtonGroup label="Flip" :options="flipOptions" @select="flipElements" />
 	</Section>
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
+import { computed } from 'vue'
 
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import ButtonGroup from '@/apps/slides/components/controls/ButtonGroup.vue'
@@ -38,14 +40,16 @@ import Section from '@/apps/slides/components/Section.vue'
 import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
 import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
 
-import { activeElement, activeElementIds } from '@/apps/slides/stores/element'
+import { activeElement, activeElementIds, flipElements } from '@/apps/slides/stores/element'
 import { selectionBounds } from '@/apps/slides/stores/slide'
 import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
 import { rotationDelta } from '@/apps/slides/composables/useRotator'
 import { normalizeRotation } from '@/apps/slides/utils/helpers'
 
+const isMultiSelect = computed(() => activeElementIds.value?.length > 1)
+
 const canEditHeight = computed(() => {
-	if (activeElementIds.value?.length > 1) return false
+	if (isMultiSelect.value) return false
 	return activeElement.value?.type == 'shape'
 })
 
@@ -105,11 +109,4 @@ const flipOptions = [
 	{ value: 'vertical', label: 'Flip vertical', icon: FlipVertical },
 ]
 
-const setProperty = inject('setProperty')
-
-const flipElement = (direction) => {
-	const property = direction == 'horizontal' ? 'invertX' : 'invertY'
-	const current = activeElement.value[property]
-	setProperty(property, !current || current == 1 ? -1 : 1)
-}
 </script>
