@@ -51,7 +51,8 @@ const isMultiSelect = computed(() => activeElementIds.value?.length > 1)
 
 const canEditHeight = computed(() => {
 	if (isMultiSelect.value) return false
-	return activeElement.value?.type == 'shape'
+	if (activeElement.value?.type != 'shape') return false
+	return activeElement.value?.shapeType != 'line'
 })
 
 const canRotate = computed(() => {
