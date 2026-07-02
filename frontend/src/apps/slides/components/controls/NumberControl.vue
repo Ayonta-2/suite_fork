@@ -1,5 +1,5 @@
 <template>
-	<div :class="rowClasses" @mousedown="onScrubStart">
+	<div :class="rowClasses" @mousedown="startScrub">
 		<span v-if="label" :class="labelClasses">{{ label }}</span>
 		<label :class="fieldClasses">
 			<input
@@ -14,7 +14,6 @@
 				:style="{ width: inputWidth }"
 				:class="inputClasses"
 				@input="onInput"
-				@change="onChange"
 				@focus="onFocus"
 				@blur="onBlur"
 				@keydown="onArrowStep"
@@ -22,17 +21,21 @@
 			<span v-if="suffix" :class="suffixClasses">{{ suffix }}</span>
 		</label>
 	</div>
+	<Teleport to="body">
+		<lucide-move-horizontal
+			v-if="isScrubbing"
+			class="pointer-events-none fixed z-[10000] size-5 -translate-x-1/2 -translate-y-1/2 text-white [filter:drop-shadow(0_0_1.5px_rgb(0_0_0/0.9))]"
+			:style="cursorStyle"
+		/>
+	</Teleport>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useDragScrub } from '@/apps/slides/composables/useDragScrub'
 
 const model = defineModel({ type: Number })
 const emit = defineEmits(['changeStart', 'changeEnd'])
-
-const live = ref(null)
-const current = computed(() => (live.value !== null ? live.value : model.value))
-
 const props = defineProps({
 	label: String,
 	maxDigits: Number,
@@ -49,6 +52,9 @@ const props = defineProps({
 	},
 	disabled: Boolean,
 })
+
+const live = ref(null)
+const current = computed(() => (live.value !== null ? live.value : model.value))
 
 const inputRef = ref(null)
 
@@ -106,47 +112,19 @@ function onArrowStep(event) {
 	applyDelta(Number(model.value) || 0, direction, incrementFor(event))
 }
 
-const SCRUB_THRESHOLD = 3
-const SCRUB_PX_PER_STEP = 4
-
-let scrubStartX = 0
 let scrubStartValue = 0
-let isScrubbing = false
-
-function onScrubStart(event) {
-	if (props.disabled) return
-	scrubStartX = event.clientX
-	scrubStartValue = Number(model.value) || 0
-	isScrubbing = false
-	window.addEventListener('mousemove', onScrubMove)
-	window.addEventListener('mouseup', onScrubEnd)
-}
-
-function onScrubMove(event) {
-	const dx = event.clientX - scrubStartX
-	if (!isScrubbing) {
-		if (Math.abs(dx) < SCRUB_THRESHOLD) return
-		isScrubbing = true
+const { isScrubbing, cursorStyle, start: startScrub } = useDragScrub({
+	disabled: computed(() => props.disabled),
+	onStart: () => {
+		// Blur flushes any pending typed edit into model before we snapshot the base, and
+		// must run before the first applyDelta so the whole scrub commits as one undo step.
 		inputRef.value?.blur()
-		window.getSelection()?.removeAllRanges()
-		document.body.style.userSelect = 'none'
-		document.body.style.cursor = 'ew-resize'
+		scrubStartValue = Number(model.value) || 0
 		emit('changeStart')
-	}
-	event.preventDefault()
-	const steps = Math.round(dx / SCRUB_PX_PER_STEP)
-	applyDelta(scrubStartValue, steps, incrementFor(event))
-}
-
-function onScrubEnd() {
-	window.removeEventListener('mousemove', onScrubMove)
-	window.removeEventListener('mouseup', onScrubEnd)
-	if (!isScrubbing) return
-	isScrubbing = false
-	document.body.style.userSelect = ''
-	document.body.style.cursor = ''
-	emit('changeEnd')
-}
+	},
+	onStep: (steps, event) => applyDelta(scrubStartValue, steps, incrementFor(event)),
+	onEnd: () => emit('changeEnd'),
+})
 
 const typography = 'align-middle font-text text-base'
 
