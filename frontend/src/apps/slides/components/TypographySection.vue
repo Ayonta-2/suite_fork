@@ -49,21 +49,45 @@
 			:step="1"
 			@update:modelValue="(value) => onUpdate('letterSpacing', value, true)"
 		/>
+		<ToggleGroup
+			label="Decor"
+			:modelValue="decorValues"
+			:options="decorOptions"
+			@update:modelValue="onDecorToggle"
+		/>
+		<div class="flex h-7 w-full items-center justify-between">
+			<span :class="labelClasses">Align</span>
+			<TabButtons
+				:modelValue="editorStyles.textAlign"
+				:options="alignOptions"
+				@update:modelValue="(value) => onUpdate('textAlign', value)"
+			/>
+		</div>
+		<div class="flex h-7 w-full items-center justify-between">
+			<span :class="labelClasses">List Style</span>
+			<TabButtons
+				:modelValue="listStyle"
+				:options="listStyleOptions"
+				@update:modelValue="(value) => onUpdate('list', value)"
+			/>
+		</div>
 	</Section>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 
-import { Combobox } from 'frappe-ui'
+import { Combobox, TabButtons } from 'frappe-ui'
+import { Bold, Italic, Underline, Strikethrough } from 'lucide-vue-next'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
+import ToggleGroup from '@/apps/slides/components/controls/ToggleGroup.vue'
 import Section from '@/apps/slides/components/Section.vue'
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
-const { editorStyles, updateProperty } = useTextEditor()
+const { editorStyles, updateProperty, toggleMark } = useTextEditor()
 
 const textFonts = [
 	'Arial',
@@ -83,11 +107,46 @@ const textFonts = [
 	'Inter',
 ]
 
+const decorOptions = [
+	{ value: 'bold', label: 'Bold', icon: Bold },
+	{ value: 'italic', label: 'Italic', icon: Italic },
+	{ value: 'underline', label: 'Underline', icon: Underline },
+	{ value: 'strike', label: 'Strikethrough', icon: Strikethrough },
+]
+
+const alignOptions = [
+	{ value: 'left', tooltip: 'Align left', icon: 'lucide-align-left' },
+	{ value: 'center', tooltip: 'Align center', icon: 'lucide-align-center' },
+	{ value: 'right', tooltip: 'Align right', icon: 'lucide-align-right' },
+	{ value: 'justify', tooltip: 'Justify', icon: 'lucide-align-justify' },
+]
+
+const listStyleOptions = [
+	{ value: 'none', tooltip: 'None', icon: 'lucide-ban' },
+	{ value: 'bullet', tooltip: 'Bulleted', icon: 'lucide-list' },
+	{ value: 'ordered', tooltip: 'Numbered', icon: 'lucide-list-ordered' },
+]
+
+const decorValues = computed(() =>
+	decorOptions.filter((option) => editorStyles[option.value]).map((option) => option.value),
+)
+
+const listStyle = computed(() =>
+	editorStyles.orderedList ? 'ordered' : editorStyles.bulletList ? 'bullet' : 'none',
+)
+
 const displayFont = computed(() => editorStyles.fontFamily?.replace(/['"]/g, ''))
 
 const onUpdate = (property, value, parse = false) => {
 	const nextValue = parse ? parseFloat(value) : value
 	updateProperty(property, nextValue)
+}
+
+const onDecorToggle = (values) => {
+	const changed = decorOptions.find(
+		(option) => decorValues.value.includes(option.value) !== values.includes(option.value),
+	)
+	if (changed) toggleMark(changed.value)
 }
 
 const labelClasses = 'select-none font-text text-base text-ink-gray-5'
