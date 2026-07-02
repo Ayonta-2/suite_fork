@@ -29,6 +29,11 @@
 				<AppearanceSection />
 			</template>
 		</div>
+		<div v-else-if="currentSlide">
+			<BackgroundSection />
+			<Divider flexItem />
+			<TransitionSection />
+		</div>
 	</div>
 </template>
 
@@ -40,7 +45,7 @@ import { useDeferredCommit } from '@/apps/slides/composables/useDeferredCommit'
 import { activeElement, activeElementIds, focusElementId } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
-import { editElementCommand } from '@/apps/slides/stores/commands'
+import { editElementCommand, editSlideCommand } from '@/apps/slides/stores/commands'
 
 import { Divider } from 'frappe-ui'
 
@@ -52,6 +57,8 @@ import ShapeStyleSection from './ShapeStyleSection.vue'
 import PlaybackSection from './PlaybackSection.vue'
 import BorderSection from './BorderSection.vue'
 import ShadowSection from './ShadowSection.vue'
+import BackgroundSection from './BackgroundSection.vue'
+import TransitionSection from './TransitionSection.vue'
 
 const setProperty = (property, value) => {
 	const oldValue = activeElement.value[property]
@@ -74,6 +81,17 @@ const setPropertyDeferred = (level, property) => {
 				editElementCommand({
 					slideId: currentSlide.value?.clientId,
 					elementIds: activeElementIds.value,
+					property,
+					oldValue,
+					newValue,
+				}),
+		)
+	} else if (level === 'slide') {
+		return useDeferredCommit(
+			() => currentSlide.value?.[property],
+			(oldValue, newValue) =>
+				editSlideCommand({
+					slideId: currentSlide.value?.clientId,
 					property,
 					oldValue,
 					newValue,

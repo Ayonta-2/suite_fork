@@ -483,7 +483,7 @@ const addMediaElement = async (file, type) => {
 		borderStyle: 'none',
 		borderWidth: 0,
 		borderRadius: 0,
-		borderColor: '',
+		borderColor: '#d2d2d2ff',
 		shadowColor: '#7C7C7CFF',
 		shadowOpacity: 100,
 		shadowBlur: 0,
