@@ -6,6 +6,10 @@
 			<LayoutSection />
 			<Divider flexItem />
 			<AppearanceSection />
+			<template v-if="activeElement?.type === 'text'">
+				<Divider flexItem />
+				<TypographySection />
+			</template>
 			<template v-if="activeElement?.type === 'shape'">
 				<Divider flexItem />
 				<ShapeStyleSection />
@@ -41,6 +45,7 @@ import { Divider } from 'frappe-ui'
 import PositionSection from './PositionSection.vue'
 import LayoutSection from './LayoutSection.vue'
 import AppearanceSection from './AppearanceSection.vue'
+import TypographySection from './TypographySection.vue'
 import ShapeStyleSection from './ShapeStyleSection.vue'
 import PlaybackSection from './PlaybackSection.vue'
 import BorderSection from './BorderSection.vue'
