@@ -30,7 +30,7 @@
 				@delete="deleteSlide(true)"
 			/>
 
-			<PropertiesPanel2
+			<PropertiesPanel
 				v-if="!inReadonlyMode"
 				class="absolute bottom-0 right-0 top-0"
 			/>
@@ -79,7 +79,7 @@ import { call, usePageMeta } from 'frappe-ui'
 import ExportView from '@/apps/slides/pages/ExportView.vue'
 import EditorNavbar from '@/apps/slides/components/EditorNavbar.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
-import PropertiesPanel2 from '@/apps/slides/components/PropertiesPanel2.vue'
+import PropertiesPanel from '@/apps/slides/components/PropertiesPanel.vue'
 
 import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
 import Toolbar from '@/apps/slides/components/Toolbar.vue'

@@ -92,7 +92,7 @@ import { Select } from 'frappe-ui'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
-import Section from '@/apps/slides/components/Section.vue'
+import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
 

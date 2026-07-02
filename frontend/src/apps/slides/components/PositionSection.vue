@@ -31,7 +31,7 @@
 <script setup>
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import ButtonGroup from '@/apps/slides/components/controls/ButtonGroup.vue'
-import Section from '@/apps/slides/components/Section.vue'
+import Section from '@/apps/slides/components/controls/Section.vue'
 
 import BringToFront from '@/apps/slides/icons/BringToFront.vue'
 import SendToBack from '@/apps/slides/icons/SendToBack.vue'

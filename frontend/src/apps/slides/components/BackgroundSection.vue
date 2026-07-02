@@ -16,7 +16,7 @@
 import { inject } from 'vue'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
-import Section from '@/apps/slides/components/Section.vue'
+import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { currentSlide } from '@/apps/slides/stores/slide'
 

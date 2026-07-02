@@ -36,7 +36,7 @@ import { computed } from 'vue'
 
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import ButtonGroup from '@/apps/slides/components/controls/ButtonGroup.vue'
-import Section from '@/apps/slides/components/Section.vue'
+import Section from '@/apps/slides/components/controls/Section.vue'
 
 import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
 import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
