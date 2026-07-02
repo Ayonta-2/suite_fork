@@ -4,8 +4,6 @@
 			<PositionSection />
 			<Divider flexItem />
 			<LayoutSection />
-			<Divider flexItem />
-			<AppearanceSection />
 			<template v-if="activeElement?.type === 'text'">
 				<Divider flexItem />
 				<TypographySection />
@@ -20,12 +18,15 @@
 			</template>
 			<template v-if="['image', 'video'].includes(activeElement?.type)">
 				<Divider flexItem />
-				<BorderSection />
+				<BorderSection :key="activeElement?.id" />
 			</template>
 			<template v-if="['image', 'video', 'shape'].includes(activeElement?.type)">
 				<Divider flexItem />
-				<ShadowSection />
+				<ShadowSection :key="activeElement?.id" />
 			</template>
+			<Divider flexItem />
+			<AppearanceSection />
+			<Divider flexItem />
 		</div>
 	</div>
 </template>

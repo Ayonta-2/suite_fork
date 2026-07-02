@@ -1,5 +1,5 @@
 <template>
-	<Section label="Shadow">
+	<Section label="Shadow" :initialState="hasShadow">
 		<div class="flex h-7 w-full items-center justify-between">
 			<span class="select-none font-text text-base text-ink-gray-5">Color</span>
 			<ColorPicker
@@ -61,7 +61,7 @@
 </template>
 
 <script setup>
-import { inject } from 'vue'
+import { computed, inject } from 'vue'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
@@ -70,6 +70,10 @@ import Section from '@/apps/slides/components/Section.vue'
 import { activeElement } from '@/apps/slides/stores/element'
 
 const setPropertyDeferred = inject('setPropertyDeferred')
+
+const hasShadow = computed(() =>
+	Boolean(activeElement.value.shadowBlur || activeElement.value.shadowOffset),
+)
 
 const { onStart: onShadowColorStart, onEnd: onShadowColorEnd } = setPropertyDeferred(
 	'element',

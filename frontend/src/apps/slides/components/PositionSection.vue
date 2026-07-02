@@ -63,8 +63,8 @@ const commitPositionChange = () => {
 }
 
 const positionFields = [
-	{ axis: 'X', property: 'left', label: 'X axis' },
-	{ axis: 'Y', property: 'top', label: 'Y axis' },
+	{ axis: 'X', property: 'left', label: 'Left' },
+	{ axis: 'Y', property: 'top', label: 'Top' },
 ]
 
 const arrangeOptions = [

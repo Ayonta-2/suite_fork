@@ -1,5 +1,5 @@
 <template>
-	<Section label="Border">
+	<Section label="Border" :initialState="hasBorder">
 		<div class="flex h-7 w-full items-center justify-between">
 			<span :class="labelClasses">Color</span>
 			<ColorPicker
@@ -74,6 +74,8 @@ const linePreviewClasses = (style) => [
 ]
 
 const chevronClasses = 'lucide-chevron-down ml-auto size-4 shrink-0 text-ink-gray-4'
+
+const hasBorder = computed(() => Boolean(Number(activeElement.value.borderWidth)))
 
 const displayStyle = computed(() => {
 	const style = activeElement.value.borderStyle
