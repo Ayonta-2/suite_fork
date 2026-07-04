@@ -57,11 +57,11 @@ const insertSlide = async (newSlide, index) => {
 	)
 }
 
-const getNewSlide = (toDuplicate = false, layoutObject) => {
+const getNewSlide = (toDuplicate = false, layoutObject, source = currentSlide.value) => {
 	let layout = null
 
 	if (toDuplicate) {
-		layout = currentSlide.value
+		layout = source
 		layout.elements = layout.elements.map((e) => ({
 			...e,
 			refId: e.refId || generateUniqueId(),
@@ -130,8 +130,8 @@ const saveSlide = (e) => {
 	resetAndSave()
 }
 
-const deleteSlide = (deleteActive) => {
-	let deleteIndex = focusedSlide.value
+const deleteSlide = (deleteActive, index) => {
+	let deleteIndex = index ?? focusedSlide.value
 	if (!deleteIndex && deleteActive) deleteIndex = slideIndex.value
 	if (deleteIndex == null) return
 
@@ -162,19 +162,18 @@ const changeEditorSlide = async (index, focus = true) => {
 }
 
 const insertDuplicateSlide = async (index, layoutObj, toDuplicate) => {
-	if (toDuplicate || !index) index = slideIndex.value
+	if (index == null) index = slideIndex.value
 
-	const newSlide = getNewSlide(toDuplicate, layoutObj)
+	const source = slides.value[index]
+	const newSlide = getNewSlide(toDuplicate, layoutObj, source)
 
 	if (!toDuplicate) newSlide.elements = await transformElements(newSlide.elements)
 
 	insertSlide(newSlide, index)
 }
 
-const duplicateSlide = (e) => {
-	e.preventDefault()
-
-	insertDuplicateSlide(slideIndex.value, null, true)
+const duplicateSlide = (index = slideIndex.value) => {
+	insertDuplicateSlide(index, null, true)
 }
 
 const addEmptySlide = (e, index) => {

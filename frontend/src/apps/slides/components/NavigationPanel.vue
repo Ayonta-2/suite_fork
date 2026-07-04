@@ -13,36 +13,39 @@
 		</div>
 		<div
 			ref="scrollableArea"
-			class="h-svh overflow-y-auto p-4 pt-0 no-scrollbar"
+			class="h-svh overflow-y-auto p-4 pt-1 no-scrollbar"
 			:class="{ 'pb-14': !inReadonlyMode }"
 			:style="scrollbarStyles"
 		>
-			<div :style="virtualContainerStyles">
-				<div
-					v-for="virtualRow in virtualRows"
-					:key="virtualRow.key"
-					:class="getRowClasses(orderedSlides[virtualRow.index])"
-					:style="getRowStyles(virtualRow)"
-					@click="handleSlideClick(orderedSlides[virtualRow.index])"
-					@mousedown="slideSort.handleSortStart($event, virtualRow.index)"
-				>
-					<ThumbnailContainer
-						:slide="orderedSlides[virtualRow.index]"
-						:isActive="isSlideActive(orderedSlides[virtualRow.index])"
-						:scale="thumbnailScale"
-						:height="thumbnailHeight"
-					/>
+			<ContextMenu :options="activeOptions">
+				<div :style="virtualContainerStyles">
+					<div
+						v-for="virtualRow in virtualRows"
+						:key="virtualRow.key"
+						:class="getRowClasses(orderedSlides[virtualRow.index])"
+						:style="getRowStyles(virtualRow)"
+						@click="handleSlideClick(orderedSlides[virtualRow.index])"
+						@mousedown="slideSort.handleSortStart($event, virtualRow.index)"
+						@contextmenu="activeOptions = buildSlideOptions(virtualRow.index)"
+					>
+						<ThumbnailContainer
+							:slide="orderedSlides[virtualRow.index]"
+							:isActive="isSlideActive(orderedSlides[virtualRow.index])"
+							:scale="thumbnailScale"
+							:height="thumbnailHeight"
+						/>
+					</div>
 				</div>
-			</div>
+			</ContextMenu>
 
-			<!-- add slide option -->
-			<!-- <div
+			<div
 				v-if="!inReadonlyMode"
 				:class="insertButtonClasses"
-				@click="emit('openLayoutDialog')"
+				@click="emit('openLayoutDialog', slidesLength - 1)"
 			>
-				<LucidePlus class="size-3.5" />
-			</div> -->
+				<LucidePlus class="size-4 stroke-[1.5]" />
+				<span class="font-text text-base">Add Slide</span>
+			</div>
 		</div>
 	</div>
 
@@ -54,6 +57,8 @@
 
 <script setup>
 import { ref, computed, watch, useTemplateRef, useAttrs, inject } from 'vue'
+
+import { ContextMenu } from 'frappe-ui'
 
 import ThumbnailContainer from '@/apps/slides/components/ThumbnailContainer.vue'
 
@@ -72,7 +77,28 @@ const attrs = useAttrs()
 
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
 
-const emit = defineEmits(['changeSlide', 'openLayoutDialog'])
+const emit = defineEmits(['changeSlide', 'openLayoutDialog', 'duplicate', 'delete'])
+
+const activeOptions = ref([])
+
+const buildSlideOptions = (index) => [
+	{
+		label: 'New Slide',
+		icon: 'lucide-plus',
+		onClick: () => emit('openLayoutDialog', index),
+	},
+	{
+		label: 'Duplicate',
+		icon: 'lucide-copy',
+		onClick: () => emit('duplicate', index),
+	},
+	{
+		label: 'Delete',
+		icon: 'lucide-trash-2',
+		theme: 'red',
+		onClick: () => emit('delete', index),
+	},
+]
 
 const SLIDE_WIDTH = 960
 const SLIDE_ASPECT = 540 / 960
@@ -101,7 +127,7 @@ const slideSort = useDragSort(scrollableArea, slidesLength, rowSize, handleSortE
 const showCollapseShortcut = ref(false)
 
 const insertButtonClasses =
-	'flex w-full aspect-video cursor-pointer items-center justify-center rounded border border-dashed border-gray-400 hover:border-blue-400 hover:bg-blue-50'
+	'mb-4 flex aspect-video w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-surface-gray-2 text-ink-gray-5 hover:bg-surface-gray-3'
 
 const panelClasses = computed(() => {
 	// can't add it from parent attrs.class since attrs is not reactive

@@ -157,7 +157,10 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 				deleteSlide()
 				break
 			case 'd':
-				if (isCmdOrCtrl(e)) duplicateSlide(e)
+				if (isCmdOrCtrl(e)) {
+					e.preventDefault()
+					duplicateSlide()
+				}
 				break
 		}
 	}

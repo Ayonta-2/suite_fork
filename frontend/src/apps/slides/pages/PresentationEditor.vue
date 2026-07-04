@@ -19,16 +19,12 @@
 			<NavigationPanel
 				class="absolute bottom-0 top-0"
 				@changeSlide="changeEditorSlide"
-				@openLayoutDialog="openLayoutDialog('insert')"
+				@openLayoutDialog="(index) => openLayoutDialog('insert', index)"
+				@duplicate="duplicateSlide"
+				@delete="(index) => deleteSlide(false, index)"
 			/>
 
-			<Toolbar
-				v-if="!inReadonlyMode && presentationDoc"
-				@setHighlight="setHighlight"
-				@openLayoutDialog="openLayoutDialog('insert')"
-				@duplicate="duplicateSlide"
-				@delete="deleteSlide(true)"
-			/>
+			<Toolbar v-if="!inReadonlyMode && presentationDoc" />
 
 			<PropertiesPanel
 				v-if="!inReadonlyMode"
@@ -39,7 +35,7 @@
 
 	<LayoutDialog
 		v-model="showLayoutDialog"
-		@insert="(layoutObj) => handleInsertSlide(null, layoutObj)"
+		@insert="(layoutObj) => handleInsertSlide(insertIndex, layoutObj)"
 	/>
 
 	<ThemeDialog
@@ -172,10 +168,6 @@ usePageMeta(() => {
 		title: presentationDoc.value?.title || 'Slides',
 	}
 })
-
-const setHighlight = (value) => {
-	slideHighlight.value = value
-}
 
 const handleAutoSave = () => {
 	if (isSlideInteractionActive.value || focusElementId.value != null) return
