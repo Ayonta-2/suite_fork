@@ -8,18 +8,18 @@
 			</Button>
 		</template>
 		<template #body="{ close }">
-			<div class="my-4 flex w-[24rem] flex-col gap-2 rounded-lg bg-white p-4 shadow-xl">
+			<div class="my-4 flex w-[24rem] flex-col gap-2 rounded-lg bg-surface-elevation-1 p-4 shadow-xl">
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2">
-						<LucideEarth class="size-4 stroke-[1.5] text-gray-700" />
-						<div class="text-base-medium text-gray-900">Allow Public Access</div>
+						<LucideEarth class="size-4 stroke-[1.5] text-ink-gray-7" />
+						<div class="text-base-medium text-ink-gray-8">Allow Public Access</div>
 					</div>
 					<Switch
 						:modelValue="publicPresentation"
 						@update:modelValue="(value) => updateAccessLevel(value)"
 					/>
 				</div>
-				<div class="pl-0.5 text-sm text-gray-600">
+				<div class="pl-0.5 text-sm text-ink-gray-6">
 					Anyone with the link can view this presentation.
 				</div>
 				<Button
