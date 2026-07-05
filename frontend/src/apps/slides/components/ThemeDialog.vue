@@ -15,7 +15,7 @@
 					class="flex flex-col gap-3"
 				>
 					<div
-						class="m-1 aspect-video cursor-pointer overflow-hidden rounded-lg border border-gray-200 hover:border-gray-300"
+						class="m-1 aspect-video cursor-pointer overflow-hidden rounded-lg border border-outline-gray-1 hover:border-outline-gray-2"
 						:class="getThemeThumbnailClasses(theme.name)"
 						:style="getThemeThumbnailStyles(theme)"
 						@click="performAction(theme.name)"
@@ -92,7 +92,7 @@ watch(
 
 const getThemeThumbnailClasses = (theme) => {
 	return props.update && theme == presentationTheme.value
-		? 'ring-2 ring-offset-1 ring-gray-400'
+		? 'ring-2 ring-offset-1 ring-outline-gray-2'
 		: ''
 }
 
@@ -103,7 +103,10 @@ const getThemePreviewLayout = (theme) => {
 
 const getThemeThumbnailStyles = (theme) => {
 	const layout = getThemePreviewLayout(theme)
-	return getThumbnailCardStyles(layout?.thumbnail)
+	return {
+		...getThumbnailCardStyles(layout?.thumbnail),
+		'--tw-ring-offset-color': 'var(--surface-base)',
+	}
 }
 
 const shouldRenderPreview = (theme) => {

@@ -34,12 +34,17 @@
 							:scale="thumbnailScale"
 							:height="thumbnailHeight"
 						/>
+						<div
+							v-if="isSlideActive(orderedSlides[virtualRow.index])"
+							class="pointer-events-none absolute -left-4 top-0 z-10 w-1.5 rounded-r-full bg-blue-400"
+							:style="{ height: `${thumbnailHeight}px` }"
+						/>
 					</div>
 				</div>
 			</ContextMenu>
 
 			<div
-				v-if="!inReadonlyMode"
+				v-if="!inReadonlyMode && presentationDoc"
 				:class="insertButtonClasses"
 				@click="emit('openLayoutDialog', slidesLength - 1)"
 			>
@@ -70,7 +75,7 @@ import { slides, slideIndex, focusedSlide } from '@/apps/slides/stores/slide'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { reorderSlidesCommand } from '@/apps/slides/stores/commands'
 import { resetFocus } from '@/apps/slides/stores/element'
-import { slidesLength } from '@/apps/slides/stores/presentation'
+import { slidesLength, presentationDoc } from '@/apps/slides/stores/presentation'
 import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
 
 const attrs = useAttrs()
@@ -127,7 +132,7 @@ const slideSort = useDragSort(scrollableArea, slidesLength, rowSize, handleSortE
 const showCollapseShortcut = ref(false)
 
 const insertButtonClasses =
-	'mb-4 flex aspect-video w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-surface-gray-2 text-ink-gray-5 hover:bg-surface-gray-3'
+	'mb-10 flex aspect-video w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-surface-gray-2 text-ink-gray-5 hover:bg-surface-gray-3'
 
 const panelClasses = computed(() => {
 	// can't add it from parent attrs.class since attrs is not reactive

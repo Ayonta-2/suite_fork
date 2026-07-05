@@ -51,6 +51,7 @@ export const routes: RouteRecordRaw[] = [
         name: 'slides-editor',
         component: () => import('@/apps/slides/pages/PresentationEditor.vue'),
         props: withPresentationProps,
+        meta: { isPublic: true },
       },
       {
         path: 'presentation/view/:presentationId/:slug?',
@@ -65,6 +66,7 @@ export const routes: RouteRecordRaw[] = [
         name: 'slides-slideshow',
         component: () => import('@/apps/slides/pages/Slideshow.vue'),
         props: withPresentationProps,
+        meta: { isPublic: true },
       },
       {
         path: 'not-permitted',

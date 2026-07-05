@@ -2,7 +2,7 @@
 	<div :class="getThumbnailClasses(slide)" :style="getThumbnailStyles(slide)">
 		<SlidePreview :slide="slide" :scale="scale" />
 		<div
-			class="absolute inset-0 flex w-full justify-between rounded p-2"
+			class="absolute inset-0 flex w-full justify-between rounded-sm p-2"
 			:style="getGradientOverlayStyles(slide)"
 		>
 			<div class="text-[10px] font-medium">{{ slide.idx }}</div>
@@ -61,11 +61,11 @@ const getThumbnailClasses = (slide) => {
 
 	let outlineClasses = []
 	if (isActive && recentlyRestored.value) {
-		outlineClasses.push('ring-outline-blue-2', 'ring-[2px]', 'ring-offset-2', 'scale-[1.02]')
+		outlineClasses.push('ring-blue-400', 'ring-2', 'ring-offset-2', 'scale-[1.02]')
 	} else if (isFocused) {
-		outlineClasses.push('ring-outline-blue-2', 'ring-[2px]', 'ring-offset-2')
+		outlineClasses.push('ring-blue-400', 'ring-2', 'ring-offset-2')
 	} else if (isActive) {
-		outlineClasses.push('ring-outline-gray-3', 'ring-[1.5px]', 'ring-offset-0.5')
+		outlineClasses.push('ring-outline-gray-3', 'ring-2', 'ring-offset-0.5')
 	} else {
 		outlineClasses.push('ring-transparent', 'hover:border-outline-gray-2')
 	}
@@ -76,5 +76,6 @@ const getThumbnailClasses = (slide) => {
 const getThumbnailStyles = (s) => ({
 	backgroundColor: s.background || '#ffffff',
 	height: `${props.height}px`,
+	'--tw-ring-offset-color': 'var(--surface-base)',
 })
 </script>
