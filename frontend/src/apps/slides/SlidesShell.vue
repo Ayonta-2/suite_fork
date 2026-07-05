@@ -11,6 +11,7 @@ import { h, onMounted, onUnmounted, provide, ref } from 'vue'
 import { toast } from 'frappe-ui'
 import { Wifi, WifiOff } from 'lucide-vue-next'
 import { saveCurrentState } from '@/apps/slides/stores/saving'
+import { setupTheme } from '@/apps/slides/utils/setupTheme'
 
 const isOnline = ref(navigator?.onLine ?? true)
 
@@ -43,6 +44,7 @@ onMounted(() => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   registerServiceWorker()
+  setupTheme()
   document.documentElement.style.overscrollBehavior = 'none'
 })
 

@@ -5,14 +5,18 @@
 		@wheel.prevent
 	>
 		<router-link
-			v-if="!showNavbarDropdown"
+			v-if="!showNavbarDropdown && !showHomeDropdown"
 			class="flex w-fit items-center gap-2"
 			:to="{ name: 'slides-home' }"
 		>
 			<img :src="slidesLogo" class="h-7" />
 		</router-link>
 
-		<Dropdown v-else :options="getContextMenuOptions()" :offset="16">
+		<Dropdown
+			v-else
+			:options="showHomeDropdown ? getHomeMenuOptions() : getContextMenuOptions()"
+			:offset="16"
+		>
 			<template #default="{ open }">
 				<div class="flex w-fit cursor-pointer items-center gap-2">
 					<img :src="slidesLogo" class="h-7" />
@@ -38,14 +42,20 @@
 </template>
 
 <script setup>
-import { h } from 'vue'
+import { h, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dropdown, Button } from 'frappe-ui'
-import { ArrowLeft, Palette, Plus, Copy, Trash, Download } from 'lucide-vue-next'
+import { ArrowLeft, Palette, Plus, Copy, Trash, Download, SunMoon, Sun, Moon, Monitor, Check, LogOut } from 'lucide-vue-next'
 import slidesLogo from '@/apps/slides/assets/slides-logo.svg'
+import { getThemeMode, switchTheme } from '@/apps/slides/utils/setupTheme'
+import { useSessionStore } from '@/boot/session'
 
 const props = defineProps({
 	showNavbarDropdown: {
+		type: Boolean,
+		default: false,
+	},
+	showHomeDropdown: {
 		type: Boolean,
 		default: false,
 	},
@@ -55,6 +65,54 @@ const props = defineProps({
 const emit = defineEmits(['performDropdownAction'])
 
 const router = useRouter()
+
+const themeMode = ref(getThemeMode())
+
+const selectTheme = (theme) => {
+	switchTheme(theme)
+	themeMode.value = theme.toLowerCase()
+}
+
+const getThemeMenuOption = () => ({
+	label: 'Theme',
+	icon: h(SunMoon, { class: 'stroke-[1.5] !size-3.5' }),
+	submenu: [
+		{
+			label: 'Light',
+			icon: h(themeMode.value === 'light' ? Check : Sun, { class: 'stroke-[1.5] !size-3.5' }),
+			onClick: () => selectTheme('Light'),
+		},
+		{
+			label: 'Dark',
+			icon: h(themeMode.value === 'dark' ? Check : Moon, { class: 'stroke-[1.5] !size-3.5' }),
+			onClick: () => selectTheme('Dark'),
+		},
+		{
+			label: 'Automatic',
+			icon: h(themeMode.value === 'automatic' ? Check : Monitor, { class: 'stroke-[1.5] !size-3.5' }),
+			onClick: () => selectTheme('Automatic'),
+		},
+	],
+})
+
+const getHomeMenuOptions = () => {
+	return [
+		{
+			group: '',
+			options: [getThemeMenuOption()],
+		},
+		{
+			group: '',
+			options: [
+				{
+					label: 'Log out',
+					icon: h(LogOut, { class: 'stroke-[1.5] !size-3.5' }),
+					onClick: () => useSessionStore().logout.submit(),
+				},
+			],
+		},
+	]
+}
 
 const getContextMenuOptions = () => {
 	return [
@@ -116,6 +174,10 @@ const getContextMenuOptions = () => {
 					},
 				},
 			],
+		},
+		{
+			group: '',
+			options: [getThemeMenuOption()],
 		},
 	]
 }
