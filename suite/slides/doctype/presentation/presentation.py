@@ -11,7 +11,10 @@ import uuid
 import frappe
 from frappe.core.doctype.file.file import get_local_image
 from frappe.model.document import Document
+from frappe.utils import sbool
 from frappe.utils.caching import redis_cache
+
+from suite.drive.api.permissions import user_has_permission
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
 MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
@@ -20,8 +23,6 @@ MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 class Presentation(Document):
 	def before_save(self):
 		self.slug = slug(self.title)
-		if self.is_composite:
-			self.is_public = 1
 
 	def validate(self):
 		if self.is_composite:
@@ -32,12 +33,46 @@ class Presentation(Document):
 
 			for ref in self.reference_presentations:
 				ref_doc = frappe.get_cached_doc("Presentation", ref.presentation)
-				is_public = ref_doc.is_public
-				ref_name = ref_doc.title
-				if not is_public:
+				if not is_public_presentation(ref_doc.name):
 					frappe.throw(
-						f"Reference presentation '{ref_name}' must be public to create a composite presentation."
+						f"Reference presentation '{ref_doc.title}' must be public to create a composite presentation."
 					)
+
+	def after_insert(self):
+		if self.is_template:
+			return
+		self.create_drive_file()
+
+	def on_update(self):
+		# composite decks are always public
+		if self.is_composite and not is_public_presentation(self.name):
+			file = get_linked_file(self.name)
+			if file:
+				frappe.get_doc("File", file).share(read=1)
+
+	def create_drive_file(self, parent: str | None = None):
+		from suite.drive.utils import create_file, get_default_team
+
+		parent = parent or self.flags.get("drive_parent")
+		if not parent and not get_default_team():
+			return None
+
+		return create_file(
+			title=self.title or "Untitled",
+			parent=parent,
+			mime_type="frappe/slides",
+			file_type="Presentation",
+			content_doctype="Presentation",
+			content_docname=self.name,
+		)
+
+
+def get_linked_file(presentation: str) -> str | None:
+	return frappe.db.get_value(
+		"File",
+		{"content_doctype": "Presentation", "content_docname": presentation},
+		"name",
+	)
 
 
 @frappe.whitelist()
@@ -269,12 +304,23 @@ def set_template_metadata(presentation, template):
 
 
 @frappe.whitelist()
-def create_presentation(template: str | None = None, duplicate_from: str | None = None):
+def create_presentation(
+	template: str | None = None, duplicate_from: str | None = None, parent: str | None = None
+):
+	if parent and not user_has_permission(parent, "upload"):
+		frappe.throw(
+			"Cannot access folder due to insufficient permissions",
+			frappe.PermissionError,
+		)
+
 	presentation = frappe.new_doc("Presentation")
 	if duplicate_from:
+		if not frappe.has_permission("Presentation", "read", duplicate_from):
+			frappe.throw("You cannot duplicate this presentation", frappe.PermissionError)
 		set_duplicate_metadata(presentation, duplicate_from)
 	else:
 		set_template_metadata(presentation, template)
+	presentation.flags.drive_parent = parent
 	presentation.insert()
 
 	presentation.slides = get_slides_from_ref(presentation.name, template, duplicate_from)
@@ -290,7 +336,10 @@ def delete_presentation(name: str):
 
 @frappe.whitelist()
 def update_title(name: str, title: str):
-	frappe.set_value("Presentation", name, "title", title)
+	presentation = frappe.get_doc("Presentation", name)
+	presentation.check_permission("write")
+	presentation.title = title
+	presentation.save()
 	return slug(title)
 
 
@@ -325,23 +374,57 @@ def get_updated_json(presentation: str, json: list[dict]):
 
 
 def get_permission_query_conditions(user):
+	user = user or frappe.session.user
 	if user == "Administrator":
 		return ""
 
-	if frappe.has_permission("Presentation", "read", user=user):
-		return f"`tabPresentation`.owner = '{user}' OR `tabPresentation`.is_template = 1"
+	# folder-inherited and public grants need Drive's recursive path traversal,
+	# impractical in SQL — left to `has_permission`
+	user_lit = frappe.db.escape(user)
+	return (
+		f"(`tabPresentation`.owner = {user_lit} "
+		f"OR `tabPresentation`.is_template = 1 "
+		f"OR `tabPresentation`.name IN ("
+		f"SELECT `tabFile`.content_docname FROM `tabFile` "
+		f"INNER JOIN `tabDrive Permission` ON `tabDrive Permission`.entity = `tabFile`.name "
+		f"WHERE `tabFile`.content_doctype = 'Presentation' "
+		f"AND `tabDrive Permission`.user = {user_lit} "
+		f"AND `tabDrive Permission`.`read` = 1))"
+	)
 
 
 def has_permission(doc, ptype="read", user=None):
-	if user == "Administrator":
+	user = user or frappe.session.user
+	if user == "Administrator" or ptype == "create":
 		return True
+	if doc.is_template:
+		return ptype == "read" or doc.owner == user
 
-	return doc.owner == user or (doc.is_template and ptype == "read")
+	file = get_linked_file(doc.name)
+	if not file:
+		return doc.owner == user
+	return bool(user_has_permission(file, ptype, user))
 
 
 @frappe.whitelist(allow_guest=True)
 def is_public_presentation(name: str):
-	return frappe.db.get_value("Presentation", name, "is_public") == 1
+	file = get_linked_file(name)
+	if not file:
+		return False
+	return bool(user_has_permission(file, "read", "Guest"))
+
+
+@frappe.whitelist()
+def set_public_access(name: str, public: bool):
+	file = get_linked_file(name)
+	if not file:
+		frappe.throw("This presentation is not backed by a Drive file")
+
+	file_doc = frappe.get_doc("File", file)
+	if sbool(public):
+		file_doc.share(read=1)
+	else:
+		file_doc.unshare("$GENERAL")
 
 
 @frappe.whitelist(allow_guest=True)
@@ -483,12 +566,9 @@ def get_editor_access(presentation_id: str) -> str:
 	if is_composite:
 		return "view"
 
-	has_access = frappe.has_permission("Presentation", "write", presentation_id)
-	if has_access:
+	if frappe.has_permission("Presentation", "write", presentation_id):
 		return "edit"
-	else:
-		is_public = frappe.db.get_value("Presentation", presentation_id, "is_public")
-		if is_public:
-			return "view"
+	if frappe.has_permission("Presentation", "read", presentation_id):
+		return "view"
 
 	return "none"

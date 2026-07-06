@@ -8,8 +8,6 @@ import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { v4 as uuid4 } from 'uuid'
 import { commandHistory } from './historyMeta'
 
-const isDriveInstalled = window.apps?.includes('drive') ?? false
-
 const presentationDoc = ref()
 
 const presentationId = ref('')
@@ -23,6 +21,7 @@ const createPresentationResource = createResource({
 		return {
 			duplicate_from: args.duplicateFrom,
 			template: args.template,
+			parent: args.parent,
 		}
 	},
 	transform: (doc) => {
@@ -340,16 +339,8 @@ const deletePresentation = async (presentation) => {
 const duplicatePresentation = async (presentation) => {
 	const newPresentation = await createPresentationResource.submit({
 		duplicateFrom: presentation,
+		parent: router.currentRoute.value.query.parent || '',
 	})
-
-	if (isDriveInstalled) {
-		const parent = router.currentRoute.value.query.parent || ''
-		call('suite.slides.api.file.create_drive_file', {
-			title: newPresentation.title,
-			name: newPresentation.name,
-			parent: parent,
-		})
-	}
 
 	return newPresentation.name
 }

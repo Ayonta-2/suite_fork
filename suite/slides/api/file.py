@@ -7,24 +7,6 @@ from werkzeug.exceptions import Forbidden, NotFound
 from werkzeug.wrappers import Response
 
 
-@frappe.whitelist()
-def create_drive_file(name: str, parent: str | None = None, title: str | None = "Untitled") -> str:
-	"""
-	Creates a corresponding Drive File for a Slides Presentation.
-	"""
-	from suite.drive.utils import create_file
-
-	file = create_file(
-		title=title,
-		parent=parent,
-		mime_type="frappe/slides",
-		file_type="Presentation",
-		content_doctype="Presentation",
-		content_docname=name,
-	)
-	return file.name
-
-
 def get_file_size(file_path: str) -> int:
 	"""
 	Returns the size of the file at the given path.
