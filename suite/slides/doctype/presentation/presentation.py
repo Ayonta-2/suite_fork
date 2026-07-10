@@ -13,7 +13,9 @@ from frappe.core.doctype.file.file import get_local_image
 from frappe.model.document import Document
 from frappe.utils.caching import redis_cache
 
-from suite.drive.api.permissions import get_entity_with_permissions, user_has_permission
+from suite.drive.api.permissions import user_has_permission
+from suite.drive.overrides.file import File as DriveFile
+from suite.drive.overrides.file import content_has_permission, content_query_conditions
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
 MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
@@ -45,33 +47,17 @@ class Presentation(Document):
 	def on_update(self):
 		# composite decks are always public
 		if self.is_composite and not is_public_presentation(self.name):
-			file = get_linked_file(self.name)
+			file = DriveFile.get_for_doc("Presentation", self.name)
 			if file:
 				frappe.get_doc("File", file).share(read=1)
 
 	def create_drive_file(self, parent: str | None = None):
-		from suite.drive.utils import create_file, get_default_team
-
-		parent = parent or self.flags.get("drive_parent")
-		if not parent and not get_default_team():
-			return None
-
-		return create_file(
-			title=self.title or "Untitled",
-			parent=parent,
+		return DriveFile.create_for_doc(
+			self,
+			parent=parent or self.flags.get("drive_parent"),
 			mime_type="frappe/slides",
 			file_type="Presentation",
-			content_doctype="Presentation",
-			content_docname=self.name,
 		)
-
-
-def get_linked_file(presentation: str) -> str | None:
-	return frappe.db.get_value(
-		"File",
-		{"content_doctype": "Presentation", "content_docname": presentation},
-		"name",
-	)
 
 
 @frappe.whitelist()
@@ -373,52 +359,22 @@ def get_updated_json(presentation: str, json: list[dict]):
 
 
 def get_permission_query_conditions(user):
-	user = user or frappe.session.user
-	if user == "Administrator":
-		return ""
-
-	# folder-inherited and public grants need Drive's recursive path traversal,
-	# impractical in SQL — left to `has_permission`
-	user_lit = frappe.db.escape(user)
-	return (
-		f"(`tabPresentation`.owner = {user_lit} "
-		f"OR `tabPresentation`.is_template = 1 "
-		f"OR `tabPresentation`.name IN ("
-		f"SELECT `tabFile`.content_docname FROM `tabFile` "
-		f"INNER JOIN `tabDrive Permission` ON `tabDrive Permission`.entity = `tabFile`.name "
-		f"WHERE `tabFile`.content_doctype = 'Presentation' "
-		f"AND `tabDrive Permission`.user = {user_lit} "
-		f"AND `tabDrive Permission`.`read` = 1))"
-	)
+	return content_query_conditions("Presentation", user, extra="`tabPresentation`.is_template = 1")
 
 
 def has_permission(doc, ptype="read", user=None):
 	user = user or frappe.session.user
-	if user == "Administrator" or ptype == "create":
-		return True
-	if doc.is_template:
+	if doc.is_template and user != "Administrator":
 		return ptype == "read" or doc.owner == user
-
-	file = get_linked_file(doc.name)
-	if not file:
-		return doc.owner == user
-	return bool(user_has_permission(file, ptype, user))
+	return content_has_permission(doc, ptype, user)
 
 
 @frappe.whitelist(allow_guest=True)
 def is_public_presentation(name: str):
-	file = get_linked_file(name)
+	file = DriveFile.get_for_doc("Presentation", name)
 	if not file:
 		return False
-	return bool(user_has_permission(file, "read", "Guest"))
-
-
-@frappe.whitelist()
-def get_drive_file(name: str):
-	file = get_linked_file(name)
-	if not file:
-		frappe.throw("This presentation is not backed by a Drive file")
-	return get_entity_with_permissions(file)
+	return frappe.get_doc("File", file).is_public()
 
 
 @frappe.whitelist(allow_guest=True)

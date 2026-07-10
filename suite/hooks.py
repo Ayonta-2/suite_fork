@@ -151,7 +151,7 @@ has_permission = {
 	# slides
 	"Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
 	# writer
-	"Writer Document": "suite.writer.perms.has_permission",
+	"Writer Document": "suite.drive.overrides.file.content_has_permission",
 	# sheets
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_has_permission",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
@@ -212,8 +212,8 @@ override_whitelisted_methods = {
 # ============================================================================
 doc_events = {
 	"Presentation": {
-		"on_update": ["suite.drive.api.integration.presentation"],
-		"on_trash": ["suite.drive.api.integration.presentation"],
+		"on_update": ["suite.drive.overrides.file.sync_content_file"],
+		"on_trash": ["suite.drive.overrides.file.sync_content_file"],
 	},
 	"User": {
 		"after_insert": [

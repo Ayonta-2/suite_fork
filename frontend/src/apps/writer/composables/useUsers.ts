@@ -1,4 +1,4 @@
-import { allUsers } from '@/apps/drive/ui/drive/js/resources'
+import { allUsers } from '@/apps/drive/sdk'
 
 /**
  * The suite main.ts does not set global properties, so components that use

@@ -14,7 +14,7 @@
 import { ref, watch, computed } from 'vue'
 import emitter from '@/apps/writer/emitter'
 
-import { ShareDialog, MoveDialog, InfoDialog, RenameDialog } from '@/apps/drive/ui/drive'
+import { ShareDialog, MoveDialog, InfoDialog, RenameDialog } from '@/apps/drive/sdk'
 import RemoveDialog from './RemoveDialog.vue'
 import SearchDialog from './SearchDialog.vue'
 

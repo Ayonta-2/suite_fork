@@ -1,6 +1,6 @@
 import { MaybeRefOrGetter, toValue, ref } from 'vue'
 import { useDoc, createResource } from 'frappe-ui'
-import { prettyData } from '@/apps/drive/ui/drive/js/utils'
+import { prettyData } from '@/apps/drive/sdk'
 import { getDocuments } from '@/apps/writer/resources/'
 
 const trackVisit = createResource({

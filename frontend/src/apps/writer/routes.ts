@@ -4,7 +4,7 @@ import { createResource } from 'frappe-ui'
 
 // Boot side-effects the suite's shared main.ts does not run, so trigger them
 // on writer module load.
-import { allUsers } from '@/apps/drive/ui/drive/js/resources'
+import { allUsers } from '@/apps/drive/sdk'
 
 allUsers.fetch()
 
