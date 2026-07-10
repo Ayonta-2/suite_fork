@@ -187,7 +187,6 @@ const getPresentationResource = (name) => {
 			for (const slide of doc.slides || []) {
 				slide.elements = await transformElements(slide.elements)
 			}
-			isPublicPresentation.value = Boolean(doc.is_public)
 
 			// restore unsynced local edits, but only if the server hasn't moved past them
 			const local = await getPresentationFromLocalDB(name)
@@ -234,7 +233,6 @@ const getPublicPresentationResource = (name) => {
 		onSuccess(doc) {
 			slidesLength.value = doc.slides?.length || 0
 			slides.value = JSON.parse(JSON.stringify(doc.slides || []))
-			isPublicPresentation.value = Boolean(doc.is_public)
 			markClean()
 		},
 	})
@@ -265,7 +263,6 @@ const getCompositePresentationResource = (name) => {
 		onSuccess(doc) {
 			slidesLength.value = doc.slides?.length || 0
 			slides.value = JSON.parse(JSON.stringify(doc.slides || []))
-			isPublicPresentation.value = true
 			markClean()
 		},
 	})
@@ -311,8 +308,6 @@ const initPresentationDoc = async (id, readonly = false) => {
 
 const unsyncedPresentationRecord = ref({})
 
-const isPublicPresentation = ref(false)
-
 const templateList = ref([])
 
 const templateListResource = createResource({
@@ -349,7 +344,6 @@ const resetEditorState = () => {
 	presentationDoc.value = null
 	slides.value = []
 	slidesLength.value = 0
-	isPublicPresentation.value = false
 	commandHistory.clearHistory()
 	markClean()
 }
@@ -361,7 +355,6 @@ export {
 	presentationDoc,
 	transformElements,
 	unsyncedPresentationRecord,
-	isPublicPresentation,
 	slidesLength,
 	templateList,
 	templateListResource,

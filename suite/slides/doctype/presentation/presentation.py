@@ -11,10 +11,9 @@ import uuid
 import frappe
 from frappe.core.doctype.file.file import get_local_image
 from frappe.model.document import Document
-from frappe.utils import sbool
 from frappe.utils.caching import redis_cache
 
-from suite.drive.api.permissions import user_has_permission
+from suite.drive.api.permissions import get_entity_with_permissions, user_has_permission
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
 MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
@@ -415,16 +414,11 @@ def is_public_presentation(name: str):
 
 
 @frappe.whitelist()
-def set_public_access(name: str, public: bool):
+def get_drive_file(name: str):
 	file = get_linked_file(name)
 	if not file:
 		frappe.throw("This presentation is not backed by a Drive file")
-
-	file_doc = frappe.get_doc("File", file)
-	if sbool(public):
-		file_doc.share(read=1)
-	else:
-		file_doc.unshare("$GENERAL")
+	return get_entity_with_permissions(file)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -434,8 +428,8 @@ def is_composite_presentation(name: str):
 
 @frappe.whitelist(allow_guest=True)
 def get_public_presentation(name: str):
-	if not is_public_presentation(name):
-		frappe.throw("Presentation is not public", frappe.PermissionError)
+	if not frappe.has_permission("Presentation", "read", name):
+		frappe.throw("You cannot access this presentation", frappe.PermissionError)
 
 	return frappe.get_doc("Presentation", name).as_dict()
 
