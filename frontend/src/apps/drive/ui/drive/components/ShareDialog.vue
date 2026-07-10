@@ -1,58 +1,37 @@
 <template>
   <Dialog v-model:open="open" size="lg">
-    <template #body-main>
-      <div class="p-4">
-        <!-- Header -->
-        <div class="flex w-full justify-between gap-x-2 mb-4">
-          <div class=" text-4xl-semibold flex text-nowrap overflow-hidden">
-            Sharing "
-            <div class="truncate max-w-[80%]">
-              {{ entity?.file_name }}
-            </div>
-            "
-          </div>
-          <div class="ml-auto flex gap-2">
-            <Button class="shrink-0" variant="ghost" @click="open = false">
-              <template #icon>
-                <LucideX class="size-4" />
-              </template>
-            </Button>
-          </div>
+    <template #title>
+      <div class="text-2xl-semibold flex text-nowrap overflow-hidden">
+        Sharing "
+        <div class="truncate max-w-[80%]">
+          {{ file?.file_name }}
         </div>
-        <div>
+        "
+      </div>
+    </template>
+    <template #default>
+      <div>
           <!-- General section -->
-          <div class="border-b pb-4 mb-4">
+          <div class="border-b pb-5 mb-5">
             <div class="mb-2 text-ink-gray-5 text-base-medium">
               General Access
             </div>
-            <div class="flex justify-between mt-3">
+            <div class="flex justify-between gap-2">
               <div class="flex flex-col gap-2">
                 <Select
                   v-model="generalAccessLevel"
+                  variant="outline"
                   :options="levelOptions"
                   @update:model-value="
                     (val) => updateGeneralAccess(val, generalPerms)
                   "
-                >
-                  <template #prefix>
-                    <component
-                      :is="generalAccessLevel.icon"
-                      class="mr-2 size-4 text-ink-gray-6"
-                    />
-                  </template>
-                  <template #item-prefix="{ option }">
-                    <component
-                      :is="option.icon"
-                      class="size-4 text-ink-gray-6"
-                    />
-                  </template>
-                </Select>
+                />
                 <TeamSelector
                   v-if="generalAccessLevel == 'team'"
                   v-model="chosenTeam"
                 />
               </div>
-              <Select
+              <AccessSelect
                 v-if="generalAccessLevel !== 'restricted'"
                 v-model="generalPerms"
                 :options="accessOptions"
@@ -64,10 +43,14 @@
           </div>
           <!-- Members section -->
           <div class="text-ink-gray-5 text-base-medium mb-2">Members</div>
-          <div class="flex gap-3 pb-2">
+          <div
+            class="flex items-start gap-2 rounded bg-surface-white p-1.5 ring-1 ring-outline-gray-2 mb-4"
+          >
             <TagInput
+              autofocus
               v-model="usersToAdd"
               v-model:options="filteredUsers"
+              class="flex-1 min-w-0"
               :render-icon="
                 (k) =>
                   h(Avatar, {
@@ -76,18 +59,19 @@
                     size: 'xs',
                   })
               "
-              placeholder="Add people..."
+              placeholder="Add people"
             />
-            <Select
+            <AccessSelect
               v-if="usersToAdd.length"
               v-model="accessToAdd"
+              variant="ghost"
               :options="accessOptions"
             />
           </div>
 
           <div
             v-if="usersWithAccess.data"
-            class="flex flex-col gap-4 overflow-y-auto text-base max-h-64 py-4 mb-3 overflow-auto"
+            class="flex flex-col gap-3 overflow-y-auto text-base max-h-64 py-1 overflow-auto"
           >
             <div
               v-for="(user, idx) in usersWithAccess.data"
@@ -101,39 +85,32 @@
               />
 
               <div class="flex items-start flex-col gap-1">
-                <span class=" text-base-medium text-ink-gray-9">{{
+                <span class="text-base-medium text-ink-gray-9">{{
                   user.full_name || user.user || user.email
                 }}</span>
-                <span class="text-ink-gray-7 text-sm">{{
-                  user.full_name ? user.user || user.email : ''
-                }}</span>
+                <span
+                  v-if="user.full_name && user.full_name !== (user.user || user.email)"
+                  class="text-ink-gray-7 text-sm"
+                  >{{ user.user || user.email }}</span
+                >
               </div>
-              <div class="ml-auto">
+              <div class="ml-auto flex items-center">
                 <span
                   v-if="user.user == currentUserId"
                   class="mr-1 text-ink-gray-7"
                 >
-                  <div v-if="user.user === entity.owner" class="flex gap-1">
-                    Owner (you)
-                  </div>
+                  <template v-if="user.user === file.owner">Owner (you)</template>
                   <template v-else>You</template>
                 </span>
-                <Select
-                  v-else-if="user.user !== entity.owner"
+                <AccessSelect
+                  v-else-if="user.user !== file.owner"
+                  variant="ghost"
                   :modelValue="
-                    user.write ? 'editor' : user.upload ? 'uploader' : 'reader'
+                    user.write ? 'editor' : user.upload ? 'upload' : 'reader'
                   "
-                  :options="[
-                    ...accessOptions,
-                    {
-                      group: true,
-                      options: [
-                        { value: 'remove', label: 'Remove', theme: 'red' },
-                      ],
-                    },
-                  ]"
+                  :options="[...accessOptions, REMOVE_OPTION]"
                   @update:model-value="
-                    (val) => updatePermissions(user, val, entity.name, idx)
+                    (val) => updatePermissions(user, val, file.name, idx)
                   "
                 />
                 <span v-else class="flex items-center gap-1 text-ink-gray-5">
@@ -143,7 +120,7 @@
               </div>
             </div>
           </div>
-          <div v-else class="flex flex-col gap-4 min-h-[19.2vh] py-4 mb-3">
+          <div v-else class="flex flex-col gap-3 min-h-[19.2vh] py-1">
             <div v-for="i in 3" :key="i" class="flex items-center gap-3 pr-1">
               <Skeleton class="size-10 rounded-full shrink-0" />
               <div class="flex flex-col gap-1.5 flex-1">
@@ -153,12 +130,13 @@
               <Skeleton class="ml-auto h-7 w-20 rounded" />
             </div>
           </div>
-          <div class="w-full flex items-center justify-end">
+          <!-- match the card's pb-6 so the footer is vertically centered -->
+          <div class="w-full flex items-center justify-end mt-5">
             <div class="flex gap-2">
               <Button
                 class="text-base"
                 variant="outline"
-                @click="getFileLink(entity)"
+                @click="getFileLink(file)"
               >
                 <template #prefix>
                   <LucideLink2 class="w-4 text-ink-gray-6" />
@@ -174,79 +152,90 @@
             </div>
           </div>
         </div>
-      </div>
     </template>
   </Dialog>
 </template>
 <script setup>
-import { ref, computed, watch, markRaw, h } from 'vue'
+import { ref, computed, watch, h } from 'vue'
 import { useSessionStore } from '@/boot/session'
-const currentUserId = computed(() => useSessionStore().user)
 import {
   Avatar,
   Dialog,
+  Select,
   Skeleton,
-  createResource, Button} from 'frappe-ui'
-import Select from './Select/Select.vue'
+  createResource,
+  Button,
+} from 'frappe-ui'
+import AccessSelect from './AccessSelect.vue'
 import TeamSelector from './TeamSelector.vue'
 import TagInput from './TagInput/TagInput.vue'
 import { getFileLink, dynamicList } from '../js/utils'
 
 import { usersWithAccess, updateAccess, allUsers } from '../js/resources'
 
-import LucideBuilding2 from '~icons/lucide/building-2'
 import LucideDiamond from '~icons/lucide/diamond'
-import LucideX from '~icons/lucide/x'
-import LucideLock from '~icons/lucide/lock'
-import LucideGlobe2 from '~icons/lucide/globe-2'
-import LucideEye from '~icons/lucide/eye'
-import LucideUpload from '~icons/lucide/upload'
-import LucidePencil from '~icons/lucide/pencil'
 import LucideLink2 from '~icons/lucide/link-2'
+
+const currentUserId = computed(() => useSessionStore().user)
 
 const open = defineModel()
 const props = defineProps({
-  entity: Object,
+  file: Object,
   users: {
     default: allUsers,
   },
   usersWithAccess: { default: usersWithAccess },
   updateAccess: { default: updateAccess },
+  /** Highest access level offered by the dialog ('reader' | 'upload' | 'editor'). */
+  allowedAccess: { type: String, default: 'editor' },
 })
 const emit = defineEmits(['success'])
 
-props.usersWithAccess.fetch({ entity: props.entity.name })
-props.users.fetch({ team: props.entity.team || 'all' })
+props.usersWithAccess.fetch({ entity: props.file.name })
+props.users.fetch({ team: 'all' })
+
+// focus the people input once the dialog's own focus trap has settled
 
 const levelOptions = [
   {
     label: 'Accessible to invited members',
     value: 'restricted',
-    icon: markRaw(LucideLock),
+    icon: 'lucide-lock',
   },
   {
     label: 'Accessible to a team',
     value: 'team',
-    icon: markRaw(LucideBuilding2),
+    icon: 'lucide-building-2',
   },
-  { label: 'Accessible to all', value: 'public', icon: markRaw(LucideGlobe2) },
+  { label: 'Accessible to all', value: 'public', icon: 'lucide-globe-2' },
 ]
+
+const ACCESS_RANK = { reader: 0, upload: 1, editor: 2 }
+const REMOVE_OPTION = {
+  value: 'remove',
+  label: 'Remove',
+  icon: 'lucide-trash-2',
+}
+
 const accessOptions = computed(() =>
   dynamicList([
-    { value: 'reader', label: 'Can view', icon: LucideEye },
+    { value: 'reader', label: 'Can view', icon: 'lucide-eye' },
     {
       value: 'upload',
       label: 'Can upload',
-      cond: props.entity.is_folder && props.entity.upload,
-      icon: LucideUpload,
+      cond: props.file.is_folder && props.file.upload,
+      icon: 'lucide-upload',
     },
     {
       value: 'editor',
       label: 'Can edit',
-      cond: props.entity.write,
-      icon: LucidePencil,
+      cond: props.file.write,
+      icon: 'lucide-pencil',
     },
-  ]),
+  ]).map((opt) => ({
+    ...opt,
+    disabled: ACCESS_RANK[opt.value] > ACCESS_RANK[props.allowedAccess],
+  })),
 )
 
 // General access
@@ -258,7 +247,7 @@ const getGeneralAccess = createResource({
   url: 'suite.drive.api.permissions.get_user_access',
   makeParams: (params) => ({
     ...params,
-    entity: props.entity.name,
+    entity: props.file.name,
   }),
   onSuccess: (data) => {
     if (!data || !data.read) {
@@ -284,7 +273,7 @@ const updateGeneralAccess = (level, perms) => {
   }
   if (level !== 'restricted') {
     props.updateAccess.submit({
-      entity_name: props.entity.name,
+      entity_name: props.file.name,
       user: level === 'public' ? '' : chosenTeam.value,
       team: level === 'team',
       read: 1,
@@ -296,7 +285,7 @@ const updateGeneralAccess = (level, perms) => {
     selectingTeam = false
   } else {
     props.updateAccess.submit({
-      entity_name: props.entity.name,
+      entity_name: props.file.name,
       user: '$GENERAL',
       method: 'unshare',
     })
@@ -323,14 +312,15 @@ watch(
       (k) => !existingUsers.find(({ user }) => user === k.name),
     )
   },
-  { immediate: true },
+  // deep: removals/invites splice/push `usersWithAccess.data` in place
+  { immediate: true, deep: true },
 )
 
 const inviteUsers = () => {
   const access = getAccess(accessToAdd.value)
   for (let user of usersToAdd.value) {
     const r = {
-      entity_name: props.entity.name,
+      entity_name: props.file.name,
       user,
       ...access,
     }

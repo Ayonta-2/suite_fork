@@ -21,6 +21,6 @@ export {
   rename,
 } from '@/apps/drive/ui/drive/js/resources'
 
-/** Drive entity (with the caller's access) backing a content document. */
-export const getEntityForDoc = (doctype, docname) =>
-  call('suite.drive.overrides.file.get_entity_for_doc', { doctype, docname })
+/** The Drive File (with the caller's access) backing a content document. */
+export const getFileForDoc = (doctype, docname) =>
+  call('suite.drive.overrides.file.get_file_for_doc', { doctype, docname })

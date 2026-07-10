@@ -489,8 +489,8 @@ def sync_content_file(doc, event):
 
 
 @frappe.whitelist()
-def get_entity_for_doc(doctype: str, docname: str):
-	"""Drive entity (with the caller's access) backing a content document."""
+def get_file_for_doc(doctype: str, docname: str):
+	"""The Drive File (with the caller's access) backing a content document."""
 	file = File.get_for_doc(doctype, docname)
 	if not file:
 		frappe.throw(f"This {doctype} is not backed by a Drive file")
