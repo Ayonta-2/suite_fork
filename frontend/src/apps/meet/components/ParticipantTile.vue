@@ -370,7 +370,7 @@ video.remote-video::-moz-focus-inner {
 	100% { transform: scale(1); opacity: 1 }
 }
 
-/* Raised-hand wave (was a global rule in the standalone app's index.css) */
+/* Raised-hand wave */
 .wave {
 	display: inline-block;
 	transform-origin: 70% 70%;

@@ -23,7 +23,7 @@ export interface SuiteApp {
   id: string
   /** Display name shown in the launcher / top-nav. */
   name: string
-  /** URL prefix this app owns; preserved from the original standalone app. */
+  /** URL prefix this app owns. */
   prefix: string
   /** Imported, build-fingerprinted brand-logo URL. */
   logo: string

@@ -202,7 +202,7 @@ import { useUsers } from '@/apps/writer/composables/useUsers'
 import CommentEditor from './CommentEditor.vue'
 import { rebuild, getEditorPos } from '@/apps/writer/extensions/comments'
 
-// Template compat: standalone app exposed `$store` (Vuex) and `$user` globals.
+// Template compat for the `$store` / `$user` globals the templates reference.
 const $store = store
 const { getUser: $user } = useUsers()
 
