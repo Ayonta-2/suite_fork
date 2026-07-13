@@ -304,20 +304,10 @@ def remove_user(team: str, user_id: str):
 @frappe.whitelist()
 @default_team
 def get_team_users(team: str = "all"):
-	if team == "all":
-		# The whole site is one org — offer every enabled user, e.g. for sharing
-		return frappe.get_all(
-			"User",
-			filters={
-				"enabled": 1,
-				"user_type": "System User",
-				"name": ["not in", ["Administrator", "Guest"]],
-			},
-			fields=["name", "email", "full_name", "user_image"],
-		)
-
 	user_teams = get_teams()
-	if team in user_teams:
+	if team == "all":
+		teams = user_teams
+	elif team in user_teams:
 		teams = [team]
 	else:
 		frappe.throw(_("You don't have access to this team."), frappe.PermissionError)
