@@ -56,6 +56,13 @@
             @click="setViewMode('grid')"
           />
         </div>
+        <!-- Overflow menu for secondary home-level destinations. Kept separate
+             from the New Sheet CTA so a nav item isn't styled as a peer action. -->
+        <Dropdown :options="overflowActions" placement="bottom-end">
+          <template #default="{ open }">
+            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis-vertical" tooltip="More" />
+          </template>
+        </Dropdown>
         <Button variant="solid" @click="newSheet()">New Sheet</Button>
       </div>
     </div>
@@ -191,11 +198,12 @@
     <!-- Delete confirm dialog -->
     <Dialog
       v-model="showDeleteDialog"
-      :options="{ title: 'Delete sheet?', size: 'sm' }"
+      :options="{ title: 'Move to trash?', size: 'sm' }"
     >
       <template #body-content>
         <p class="home-confirm-text">
-          "<strong>{{ deleteTarget?.title }}</strong>" will be permanently deleted.
+          "<strong>{{ deleteTarget?.title }}</strong>" will be moved to Trash. You
+          can restore it from there before it's permanently deleted.
         </p>
       </template>
       <template #actions>
@@ -205,7 +213,7 @@
             theme="red"
             :loading="deleting"
             @click="doDelete"
-          >Delete</Button>
+          >Move to trash</Button>
           <Button @click="showDeleteDialog = false">Cancel</Button>
         </div>
       </template>
@@ -242,6 +250,12 @@ function openSheet(name) {
 function newSheet() {
   router.push({ name: 'sheets-editor', params: { id: 'new' } })
 }
+
+// Top-level overflow menu (the ⋮ next to New Sheet). Just Trash for now; this
+// is the home for future home-level destinations (Shared, Settings, …).
+const overflowActions = [
+  { label: 'Trash', icon: 'trash-2', onClick: () => router.push({ name: 'sheets-trash' }) },
+]
 
 const sheets       = ref([])
 const loading      = ref(true)
