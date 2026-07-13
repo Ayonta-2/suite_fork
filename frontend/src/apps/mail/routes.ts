@@ -140,6 +140,19 @@ export const routes: RouteRecordRaw[] = [
 				props: true,
 			},
 			{
+				path: 'contacts-exchanges',
+				name: 'mail-contacts-exchanges',
+				component: () => import('@/apps/mail/pages/ContactsExchangesView.vue'),
+				meta: { noLayout: true },
+			},
+			{
+				path: 'contacts-exchanges/:id',
+				name: 'mail-contacts-exchange',
+				component: () => import('@/apps/mail/pages/ContactsExchangeView.vue'),
+				meta: { noLayout: true },
+				props: true,
+			},
+			{
 				path: 'dashboard',
 				redirect: { name: 'mail-domains' },
 				meta: { isDashboard: true },
