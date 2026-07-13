@@ -3,7 +3,7 @@ import os
 
 import frappe
 from frappe import _
-from werkzeug.exceptions import Forbidden
+from werkzeug.exceptions import Forbidden, NotFound
 from werkzeug.wrappers import Response
 
 
@@ -97,8 +97,11 @@ def get_media_response(src: str) -> Response:
 
 
 def validate_media_file(src) -> None:
-	file_doc = frappe.get_doc("File", {"file_url": src})
+	file_name = frappe.db.exists("File", {"file_url": src})
+	if not file_name:
+		raise NotFound
 
+	file_doc = frappe.get_doc("File", file_name)
 	if frappe.has_permission("File", "read", file_doc):
 		return
 
