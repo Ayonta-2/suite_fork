@@ -10,7 +10,6 @@ import {
 import { Combobox } from 'frappe-ui'
 import { getLabel, getIcon, RenderIcon, getValue } from './utils'
 import { type SimpleOption, type TagInputProps } from './types'
-import LucideX from '~icons/lucide/x'
 
 const isEmail = (value: string) => /^\S+@\S+\.\S+$/.test(value)
 
@@ -118,7 +117,7 @@ function removeTag(tag: string) {
         class="p-0.5 rounded-sm bg-transparent hover:bg-surface-gray-3"
         @click="removeTag(getValue(item))"
       >
-        <LucideX class="size-3.5 text-ink-gray-6" />
+        <span class="lucide-x size-3.5 text-ink-gray-6" aria-hidden="true" />
       </TagsInputItemDelete>
     </TagsInputItem>
     <TagsInputInput :as-child="true">
