@@ -45,11 +45,20 @@ class Presentation(Document):
 		self.create_drive_file()
 
 	def on_update(self):
-		# composite decks are always public
+		# composite decks are always public — a system invariant, enforced directly
+		# since File.share() would require the saver to hold a share grant
 		if self.is_composite and not is_public_presentation(self.name):
 			file = DriveFile.get_for_doc("Presentation", self.name)
-			if file:
-				frappe.get_doc("File", file).share(read=1)
+			if not file:
+				return
+			existing = frappe.db.get_value("Drive Permission", {"entity": file, "user": "", "team": 0})
+			perm = (
+				frappe.get_doc("Drive Permission", existing)
+				if existing
+				else frappe.new_doc("Drive Permission").update({"entity": file, "user": ""})
+			)
+			perm.read = 1
+			perm.save(ignore_permissions=True)
 
 	def create_drive_file(self, parent: str | None = None):
 		return DriveFile.create_for_doc(
