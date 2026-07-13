@@ -64,7 +64,6 @@ website_route_rules = [
 
 # mail — website redirects
 website_redirects = [
-	{"source": "/", "target": "/suite"},
 	{
 		"source": "/auth/validate",
 		"target": "/api/method/suite.mail.api.auth.validate",
@@ -223,6 +222,9 @@ doc_events = {
 		],
 		"on_update": [
 			"suite.mail.events.update_account_password",
+			"suite.mail.events.clear_sessions_on_disable",
+			"suite.mail.events.apply_disabled_account_role",
+			"suite.mail.events.remove_disabled_account_role",
 		],
 		"on_trash": [
 			"suite.mail.events.delete_account",
@@ -246,6 +248,7 @@ scheduler_events = {
 		# mail
 		"suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
 		"suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
+		"suite.mail.doctype.push_subscription.push_subscription.renew_expiring_push_subscriptions",
 		"suite.mail.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
 	],
 	"hourly": [
