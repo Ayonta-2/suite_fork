@@ -1,13 +1,11 @@
 <template>
 	<div class="flex size-full flex-col overflow-hidden py-8">
-		<div class="mx-auto w-full max-w-[1088px] px-8 pb-8">
+		<div class="mx-auto w-full max-w-[1088px] px-8 pb-5">
 			<!-- Header -->
-			<div class="cursor-default text-3xl-semibold text-ink-gray-9">
-				All Presentations
-			</div>
+			<div class="cursor-default text-3xl-semibold text-ink-gray-9">All Presentations</div>
 		</div>
 
-		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto py-1">
+		<div class="faded-scroll flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
 			<div
 				v-if="presentations?.length"
 				class="mx-auto grid w-full max-w-[1088px] grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-8 px-8"
@@ -118,3 +116,31 @@ const getContextMenuOptions = (presentation) => {
 	]
 }
 </script>
+
+<style scoped>
+.faded-scroll {
+	--fade-length: 12px;
+	--fade-mask: linear-gradient(
+		to bottom,
+		rgb(0 0 0 / 0) 0,
+		rgb(0 0 0 / 0.08) calc(var(--fade-length) * 0.25),
+		rgb(0 0 0 / 0.29) calc(var(--fade-length) * 0.5),
+		rgb(0 0 0 / 0.61) calc(var(--fade-length) * 0.7),
+		rgb(0 0 0 / 0.89) calc(var(--fade-length) * 0.88),
+		rgb(0 0 0 / 1) var(--fade-length),
+		rgb(0 0 0 / 1) calc(100% - var(--fade-length)),
+		rgb(0 0 0 / 0.89) calc(100% - var(--fade-length) * 0.88),
+		rgb(0 0 0 / 0.61) calc(100% - var(--fade-length) * 0.7),
+		rgb(0 0 0 / 0.29) calc(100% - var(--fade-length) * 0.5),
+		rgb(0 0 0 / 0.08) calc(100% - var(--fade-length) * 0.25),
+		rgb(0 0 0 / 0) 100%
+	);
+	-webkit-mask-image: var(--fade-mask);
+	mask-image: var(--fade-mask);
+	scrollbar-width: none;
+}
+
+.faded-scroll::-webkit-scrollbar {
+	display: none;
+}
+</style>
