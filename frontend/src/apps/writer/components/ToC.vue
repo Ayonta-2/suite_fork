@@ -1,6 +1,6 @@
 <template>
   <div v-if="editor && (hasContent || editor.isEditable)"
-    class="px-2.5 pt-3 gap-2 hidden md:block overflow-y-auto overflow-x-hidden flex-shrink-0 h-full transition-[width] duration-200"
+    class="px-2.5 pt-3 gap-2 hidden md:block overflow-y-auto overflow-x-hidden flex-shrink-0 h-full transition-[width] duration-300 ease-in-out"
     :class="show ? 'w-64' : 'w-12'">
     <div v-if="!show">
       <Button variant="ghost" :icon="h(show ? LucidePanelLeftClose : LucideTableOfContents, {
