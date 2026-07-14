@@ -1,8 +1,8 @@
 <template>
   <div v-if="editor && (hasContent || editor.isEditable)"
-    class="py-2 gap-2 hidden md:block overflow-y-auto overflow-x-hidden flex-shrink-0 h-full transition-[width] duration-300 ease-in-out"
-    :class="[show ? 'w-64 px-2' : 'w-9']">
-    <div v-if="!show">
+    class="gap-2 hidden md:block overflow-y-auto overflow-x-hidden flex-shrink-0 h-full transition-[width] duration-300 ease-in-out"
+    :class="[show ? 'w-64 p-2' : 'w-12 p-2.5']">
+    <div v-if="!show" class="flex justify-center">
       <Button variant="ghost" :icon="LucideTableOfContents" tooltip="Table of Contents" @click="show = !show" />
     </div>
     <div v-if="show" class="grow flex flex-col gap-0.5">

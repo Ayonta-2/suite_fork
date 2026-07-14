@@ -6,7 +6,7 @@
     <div class="relative flex flex-1 overflow-hidden">
       <ToC v-if="editor" :editor :anchors />
       <div id="editor-scroll-container" class="flex w-full min-w-0 overflow-y-auto overflow-x-hidden relative">
-        <div class="self-start flex flex-col flex-grow min-h-full md:border-x border-outline-gray-2"
+        <div class="self-start flex flex-col flex-grow min-h-full md:border-l md:pl-72 border-outline-gray-2"
           @click="onBackgroundClick" @keydown="onEditorKeydown">
           <FTextEditor ref="textEditor" :upload-function="uploadFunction"
             :autofocus="true" v-model="localContent" placeholder="Start thinking..." :extensions="editorExtensions"
@@ -30,6 +30,7 @@
 
         <FloatingComments v-if="commentsPainted" v-model:active-comment="activeComment" :y-comments="comments" :file
           :show-comments :show-resolved :show-unanchored :editor @save="saveComments" />
+        <div v-else class="hidden md:block w-72 shrink-0" />
       </div>
       <div v-if="commentsPainted && comments._map.size" class="hidden md:block absolute top-4 right-4">
         <Dropdown :options="commentFilterOptions" placement="right">
