@@ -1,8 +1,10 @@
 <template>
 	<div class="flex size-full flex-col overflow-hidden py-8">
-		<div class="mx-auto w-full max-w-[1088px] px-8 pb-5">
+		<div class="mx-auto flex w-full max-w-[1088px] items-center justify-between px-8 pb-5">
 			<!-- Header -->
 			<div class="cursor-default text-3xl-semibold text-ink-gray-9">All Presentations</div>
+
+			<SortControl v-model="sortOrder" :options="sortFields" />
 		</div>
 
 		<div class="faded-scroll flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
@@ -10,7 +12,7 @@
 				v-if="presentations?.length"
 				class="mx-auto grid w-full max-w-[1088px] grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-8 px-8"
 			>
-				<div v-for="presentation in presentations" :key="presentation.name">
+				<div v-for="presentation in sortedPresentations" :key="presentation.name">
 					<div class="flex flex-col gap-3">
 						<!-- Presentation Card -->
 						<!-- added bg temporarily to support for first slides with no generated thumbnail -->
@@ -57,11 +59,12 @@
 </template>
 
 <script setup>
-import { h } from 'vue'
+import { computed, h, ref } from 'vue'
 
 import { Dropdown, LoadingIndicator, Button } from 'frappe-ui'
 import { Eye, Trash, PenLine, Copy, TvMinimalPlay } from 'lucide-vue-next'
 
+import SortControl from '@/components/SortControl.vue'
 import { getThumbnailCardStyles } from '@/apps/slides/utils/helpers'
 
 const props = defineProps({
@@ -73,6 +76,22 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['navigate', 'setPreview', 'openDialog', 'duplicatePresentation'])
+
+const sortOrder = ref({ field: 'modified', label: 'Modified', ascending: false })
+
+const sortFields = [
+	{ label: 'Name', field: 'title' },
+	{ label: 'Modified', field: 'modified' },
+	{ label: 'Created', field: 'creation' },
+]
+
+const sortedPresentations = computed(() => {
+	const { field, ascending } = sortOrder.value
+
+	return [...(props.presentations || [])].sort((a, b) =>
+		ascending ? a[field].localeCompare(b[field]) : b[field].localeCompare(a[field]),
+	)
+})
 
 const contextMenuIconClasses = 'stroke-[1.5] !size-3.5'
 
