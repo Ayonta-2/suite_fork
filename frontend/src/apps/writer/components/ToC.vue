@@ -1,18 +1,14 @@
 <template>
   <div v-if="editor && (hasContent || editor.isEditable)"
-    class="px-2.5 pt-3 gap-2 hidden md:block overflow-y-auto overflow-x-hidden flex-shrink-0 h-full transition-[width] duration-300 ease-in-out"
-    :class="show ? 'w-64' : 'w-12'">
+    class="py-2 gap-2 hidden md:block overflow-y-auto overflow-x-hidden flex-shrink-0 h-full transition-[width] duration-300 ease-in-out"
+    :class="[show ? 'w-64 px-2' : 'w-9']">
     <div v-if="!show">
-      <Button variant="ghost" :icon="h(show ? LucidePanelLeftClose : LucideTableOfContents, {
-        class: 'text-ink-gray-6',
-      })
-        " :tooltip="show ? 'Hide' : 'Table of Contents'" @click="show = !show" />
+      <Button variant="ghost" :icon="LucideTableOfContents" tooltip="Table of Contents" @click="show = !show" />
     </div>
     <div v-if="show" class="grow flex flex-col gap-0.5">
       <div v-if="hasContent" class="flex justify-between items-center ps-2 pr-1 pb-1">
         <span class="text-base-medium text-ink-gray-8 select-none">Table of Contents</span>
-        <Button :icon="LucideLeftClose" variant="ghost" @click="show = !show"
-          :tooltip="show ? 'Hide' : 'Table of Contents'" />
+        <Button :icon="LucideLeftClose" variant="ghost" @click="show = !show" tooltip="Hide" />
       </div>
       <div v-if="tabs.length > 0" class="flex flex-col gap-0.5 mb-2" @drop.prevent="onDrop">
         <div v-for="(tab, index) in tabs" :key="tab.id" :class="[

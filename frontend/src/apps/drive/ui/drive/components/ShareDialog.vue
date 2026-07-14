@@ -4,19 +4,12 @@
       <div class="p-4">
         <!-- Header -->
         <div class="flex w-full justify-between gap-x-2 mb-4">
-          <div class=" text-4xl-semibold flex text-nowrap overflow-hidden">
+          <div class="text-2xl-semibold flex text-nowrap overflow-hidden">
             Sharing "
             <div class="truncate max-w-[80%]">
               {{ entity?.file_name }}
             </div>
             "
-          </div>
-          <div class="ml-auto flex gap-2">
-            <Button class="shrink-0" variant="ghost" @click="open = false">
-              <template #icon>
-                <LucideX class="size-4" />
-              </template>
-            </Button>
           </div>
         </div>
         <div>
@@ -196,7 +189,6 @@ import { usersWithAccess, updateAccess, allUsers } from '../js/resources'
 
 import LucideBuilding2 from '~icons/lucide/building-2'
 import LucideDiamond from '~icons/lucide/diamond'
-import LucideX from '~icons/lucide/x'
 import LucideLock from '~icons/lucide/lock'
 import LucideGlobe2 from '~icons/lucide/globe-2'
 import LucideEye from '~icons/lucide/eye'

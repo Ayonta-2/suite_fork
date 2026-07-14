@@ -31,7 +31,7 @@
         <FloatingComments v-if="commentsPainted" v-model:active-comment="activeComment" :y-comments="comments" :file
           :show-comments :show-resolved :show-unanchored :editor @save="saveComments" />
       </div>
-      <div v-if="commentsPainted && comments._map.size" class="hidden md:block absolute top-4 right-4 z-10">
+      <div v-if="commentsPainted && comments._map.size" class="hidden md:block absolute top-4 right-4">
         <Dropdown :options="commentFilterOptions" placement="right">
           <Button :icon="LucideMessageSquareQuote" variant="outline" />
         </Dropdown>

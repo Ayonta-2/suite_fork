@@ -3,7 +3,7 @@
     <template #body-main>
       <div class="p-4 sm:px-6">
         <div class="flex w-full justify-between gap-x-15 mb-4">
-          <div class=" text-4xl-semibold flex text-nowrap overflow-hidden">
+          <div class="text-2xl-semibold flex text-nowrap overflow-hidden">
             <template v-if="props.entities.length > 1">
               Moving {{ props.entities.length }} items
             </template>
@@ -15,11 +15,6 @@
               "
             </template>
           </div>
-          <Button class="ml-auto" variant="ghost" @click="dialogType = ''">
-            <template #icon>
-              <LucideX class="size-4" />
-            </template>
-          </Button>
         </div>
         <Tabs v-model="tabIndex" as="div" :tabs="tabs">
           <template #tab-panel>
@@ -160,7 +155,6 @@ import LucideFolder from '~icons/lucide/folder'
 import LucideFolderPlus from '~icons/lucide/folder-plus'
 import LucideFolderClosed from '~icons/lucide/folder-closed'
 import LucideHome from '~icons/lucide/home'
-import LucideX from '~icons/lucide/x'
 import LucideArrowLeftRight from '~icons/lucide/arrow-left-right'
 import LucideEllipsis from '~icons/lucide/ellipsis'
 import TeamSelector from './TeamSelector.vue'
