@@ -1,25 +1,32 @@
 <template>
-	<Dropdown :options="orderByItems" placement="right">
-		<div class="flex items-center whitespace-nowrap">
-			<Button
-				class="text-sm h-7 border-r border-outline-gray-2 rounded-r-none"
-				:disabled
-				@click.stop="toggleAscending"
-			>
-				<template #icon>
-					<LucideArrowDownAz v-if="sortOrder.ascending" class="size-4" />
-					<LucideArrowUpZa v-else class="size-4" />
-				</template>
-			</Button>
+	<div class="flex items-center whitespace-nowrap">
+		<Button
+			class="text-base h-7 border-r border-outline-gray-2 rounded-r-none"
+			:disabled
+			@click="toggleAscending"
+		>
+			<template #icon>
+				<LucideArrowDownAz v-if="sortOrder.ascending" class="size-4" />
+				<LucideArrowUpZa v-else class="size-4" />
+			</template>
+		</Button>
 
-			<Button class="text-sm h-7 rounded-l-none flex-1" :disabled>
-				<div class="flex items-center gap-2">
-					{{ __(sortOrder.label) }}
-					<LucideSparkles v-if="sortOrder.smart" class="size-3" />
+		<Dropdown :options="orderByItems" placement="right">
+			<Button class="text-base h-7 rounded-l-none flex-1" :disabled>
+				<div class="grid">
+					<span class="col-start-1 row-start-1 flex items-center gap-2">
+						{{ __(sortOrder.label) }}
+						<LucideSparkles v-if="sortOrder.smart" class="size-3" />
+					</span>
+					<span
+						aria-hidden="true"
+						class="sort-label-sizer col-start-1 row-start-1"
+						:data-width-text="sizingText"
+					/>
 				</div>
 			</Button>
-		</div>
-	</Dropdown>
+		</Dropdown>
+	</div>
 </template>
 
 <script setup lang="ts">
@@ -47,6 +54,14 @@ const props = defineProps<{
 	disabled?: boolean
 }>()
 
+const sizingText = computed(() =>
+	props.options
+		.map((option) => option.label)
+		.filter((label): label is string => !!label)
+		.map((label) => __(label))
+		.join('\n'),
+)
+
 const toggleAscending = () => {
 	sortOrder.value.ascending = !sortOrder.value.ascending
 }
@@ -65,3 +80,15 @@ const orderByItems = computed(() =>
 	),
 )
 </script>
+
+<style scoped>
+/* Width-reservation sizer, same pattern as frappe-ui Select's .select-trigger-sizer */
+.sort-label-sizer::after {
+	content: attr(data-width-text);
+	display: block;
+	height: 0;
+	overflow: hidden;
+	white-space: pre;
+	visibility: hidden;
+}
+</style>
