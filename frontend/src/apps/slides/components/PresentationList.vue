@@ -23,12 +23,22 @@
 				<div v-for="presentation in filteredPresentations" :key="presentation.name">
 					<div class="flex flex-col gap-3">
 						<!-- Presentation Card -->
-						<!-- added bg temporarily to support for first slides with no generated thumbnail -->
 						<div
-							class="aspect-[16/9] cursor-pointer rounded-lg bg-surface-base shadow-sm"
-							:style="getThumbnailCardStyles(presentation.thumbnail || '')"
+							class="aspect-[16/9] cursor-pointer overflow-hidden rounded-lg shadow-sm dark:border"
 							@click="$emit('navigate', presentation.name)"
-						></div>
+						>
+							<div
+								v-if="presentation.thumbnail"
+								class="size-full"
+								:style="getThumbnailCardStyles(presentation.thumbnail)"
+							></div>
+							<div
+								v-else
+								class="slide-thumbnail-placeholder flex size-full items-center justify-center"
+							>
+								<LucidePresentation class="size-6 text-ink-gray-3" />
+							</div>
+						</div>
 
 						<!-- Presentation Title -->
 						<div class="flex items-start justify-between">
@@ -195,5 +205,16 @@ const getContextMenuOptions = (presentation) => {
 
 .faded-scroll::-webkit-scrollbar {
 	display: none;
+}
+
+.slide-thumbnail-placeholder {
+	background-color: var(--surface-base);
+	background-image: repeating-linear-gradient(
+		45deg,
+		var(--surface-gray-1) 0,
+		var(--surface-gray-1) 0.5px,
+		transparent 1px,
+		transparent 14px
+	);
 }
 </style>
