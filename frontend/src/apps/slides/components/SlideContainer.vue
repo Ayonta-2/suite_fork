@@ -143,7 +143,7 @@ const slideClasses = computed(() => {
 		'absolute',
 		'h-[540px]',
 		'w-[960px]',
-		'rounded-sm',
+		'rounded',
 		'border',
 		'border-outline-gray-2',
 		'shadow-sm',

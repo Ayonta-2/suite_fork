@@ -1,8 +1,8 @@
 <template>
 	<Popover :placement="'bottom-end'">
 		<template #target="{ togglePopover }">
-			<Button @click="openSharePopover(togglePopover)" label="Share">
-				<template #prefix>
+			<Button @click="openSharePopover(togglePopover)" variant="ghost" tooltip="Share">
+				<template #icon>
 					<LucideShare2 class="size-4 stroke-[1.5]" />
 				</template>
 			</Button>

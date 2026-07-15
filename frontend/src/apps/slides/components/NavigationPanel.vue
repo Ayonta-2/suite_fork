@@ -39,7 +39,7 @@
 						/>
 						<div
 							v-if="isSlideActive(orderedSlides[virtualRow.index])"
-							class="pointer-events-none absolute -left-4 top-0 z-10 w-1.5 rounded-r-full bg-blue-400"
+							class="pointer-events-none absolute -left-4 top-0 z-10 w-1 rounded-r-lg bg-surface-gray-9"
 							:style="{ height: `${thumbnailHeight}px` }"
 						/>
 					</div>

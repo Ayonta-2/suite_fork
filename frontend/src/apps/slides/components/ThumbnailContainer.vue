@@ -65,7 +65,11 @@ const getThumbnailClasses = (slide) => {
 	} else if (isFocused) {
 		outlineClasses.push('ring-blue-400', 'ring-2', 'ring-offset-2')
 	} else if (isActive) {
-		outlineClasses.push('ring-outline-gray-3', 'ring-2', 'ring-offset-0.5')
+		outlineClasses.push(
+			'ring-[color:var(--surface-gray-8)] dark:ring-[color:var(--surface-gray-9)]',
+			'ring-2',
+			'ring-offset-2',
+		)
 	} else {
 		outlineClasses.push('ring-transparent', 'hover:border-outline-gray-2')
 	}
