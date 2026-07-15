@@ -16,7 +16,7 @@
 		</div>
 		<div
 			ref="scrollableArea"
-			class="faded-scroll [--fade-length:8px] h-svh overflow-y-auto p-4 pt-3 no-scrollbar"
+			class="faded-scroll [--fade-length:6px] h-svh overflow-y-auto p-4 pt-3 no-scrollbar"
 			:class="{ 'pb-14': !inReadonlyMode }"
 			:style="scrollbarStyles"
 		>

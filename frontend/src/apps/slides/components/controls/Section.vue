@@ -2,8 +2,7 @@
 	<div class="flex flex-col gap-3 py-3">
 		<div class="flex cursor-pointer items-center justify-between" @click="toggleContent">
 			<span :class="labelClasses">{{ label }}</span>
-			<lucide-minus v-if="showContent" class="size-4 stroke-[1.5] text-ink-gray-7" />
-			<lucide-plus v-else class="size-4 stroke-[1.5] text-ink-gray-7" />
+			<lucide-chevron-down v-if="!showContent" class="size-4 stroke-[1.5] text-ink-gray-7" />
 		</div>
 
 		<div v-if="showContent" class="flex flex-col gap-2">
