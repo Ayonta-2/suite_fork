@@ -1,6 +1,6 @@
 <template>
 	<div class="flex size-full flex-col overflow-hidden py-8">
-		<div class="mx-auto flex w-full max-w-[1088px] items-center justify-between px-8 pb-5">
+		<div class="mx-auto flex w-full max-w-[1088px] items-center justify-between px-8 pb-8">
 			<!-- Header -->
 			<div class="cursor-default text-2xl-semibold text-ink-gray-9">Presentations</div>
 
@@ -15,7 +15,7 @@
 			</div>
 		</div>
 
-		<div class="faded-scroll flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
+		<div class="faded-scroll flex min-h-0 flex-1 flex-col overflow-y-auto py-4">
 			<div
 				v-if="filteredPresentations.length"
 				class="mx-auto grid w-full max-w-[1088px] grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-8 px-8"
@@ -25,15 +25,20 @@
 						<!-- Presentation Card -->
 						<!-- added bg temporarily to support for first slides with no generated thumbnail -->
 						<div
-							class="aspect-[16/9] cursor-pointer rounded-lg bg-surface-base shadow"
+							class="aspect-[16/9] cursor-pointer rounded-lg bg-surface-base shadow-sm"
 							:style="getThumbnailCardStyles(presentation.thumbnail || '')"
 							@click="$emit('navigate', presentation.name)"
 						></div>
 
 						<!-- Presentation Title -->
-						<div class="flex items-center justify-between">
-							<div class="cursor-default truncate text-base-medium text-ink-gray-7">
-								{{ presentation.title }}
+						<div class="flex items-start justify-between">
+							<div class="flex min-w-0 flex-col gap-0.5 me-2">
+								<div class="cursor-default truncate text-base-medium text-ink-gray-7">
+									{{ presentation.title }}
+								</div>
+								<div class="cursor-default truncate text-sm text-ink-gray-5">
+									{{ getPresentationMeta(presentation) }}
+								</div>
 							</div>
 							<Dropdown
 								v-if="presentation"
@@ -79,6 +84,7 @@ import { Eye, Trash, PenLine, Copy, TvMinimalPlay } from 'lucide-vue-next'
 import SearchInput from '@/apps/slides/components/controls/SearchInput.vue'
 import SortControl from '@/components/SortControl.vue'
 import { getThumbnailCardStyles } from '@/apps/slides/utils/helpers'
+import dayjs from '@/apps/slides/utils/dayjs'
 
 const props = defineProps({
 	presentations: Object,
@@ -95,8 +101,8 @@ const search = ref('')
 const sortOrder = ref({ field: 'modified', label: 'Modified', ascending: false })
 
 const sortFields = [
-	{ label: 'Name', field: 'title' },
-	{ label: 'Modified', field: 'modified' },
+	{ label: 'Title', field: 'title' },
+	{ label: 'Edited', field: 'modified' },
 	{ label: 'Created', field: 'creation' },
 ]
 
@@ -114,6 +120,12 @@ const filteredPresentations = computed(() => {
 
 	return sortedPresentations.value.filter((p) => p.title.toLowerCase().includes(query))
 })
+
+const getPresentationMeta = (presentation) => {
+	const useCreated = sortOrder.value.field === 'creation'
+	const date = useCreated ? presentation.creation : presentation.modified
+	return `${useCreated ? 'Created' : 'Edited'} ${dayjs(date).fromNow()}`
+}
 
 const contextMenuIconClasses = 'stroke-[1.5] !size-3.5'
 
