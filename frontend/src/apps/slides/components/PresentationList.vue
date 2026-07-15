@@ -2,17 +2,25 @@
 	<div class="flex size-full flex-col overflow-hidden py-8">
 		<div class="mx-auto flex w-full max-w-[1088px] items-center justify-between px-8 pb-5">
 			<!-- Header -->
-			<div class="cursor-default text-3xl-semibold text-ink-gray-9">All Presentations</div>
+			<div class="cursor-default text-2xl-semibold text-ink-gray-9">Presentations</div>
 
-			<SortControl v-model="sortOrder" :options="sortFields" />
+			<div class="flex items-center gap-2">
+				<SearchInput
+					v-if="presentations?.length"
+					v-model="search"
+					placeholder="Search"
+					class="w-56"
+				/>
+				<SortControl v-model="sortOrder" :options="sortFields" />
+			</div>
 		</div>
 
 		<div class="faded-scroll flex min-h-0 flex-1 flex-col overflow-y-auto py-3">
 			<div
-				v-if="presentations?.length"
+				v-if="filteredPresentations.length"
 				class="mx-auto grid w-full max-w-[1088px] grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-8 px-8"
 			>
-				<div v-for="presentation in sortedPresentations" :key="presentation.name">
+				<div v-for="presentation in filteredPresentations" :key="presentation.name">
 					<div class="flex flex-col gap-3">
 						<!-- Presentation Card -->
 						<!-- added bg temporarily to support for first slides with no generated thumbnail -->
@@ -41,6 +49,10 @@
 				</div>
 			</div>
 			<LoadingIndicator v-else-if="loading" class="m-auto w-3" />
+			<div v-else-if="search" class="m-auto flex flex-col items-center gap-2">
+				<div class="text-xl-medium text-ink-gray-7">No presentations found</div>
+				<div class="text-base text-ink-gray-5">No matches for "{{ search }}"</div>
+			</div>
 			<div v-else class="m-auto flex flex-col items-center gap-6">
 				<LucidePanelsTopLeft class="size-8 text-ink-gray-4" />
 				<div class="flex flex-col items-center gap-2">
@@ -64,6 +76,7 @@ import { computed, h, ref } from 'vue'
 import { Dropdown, LoadingIndicator, Button } from 'frappe-ui'
 import { Eye, Trash, PenLine, Copy, TvMinimalPlay } from 'lucide-vue-next'
 
+import SearchInput from '@/apps/slides/components/controls/SearchInput.vue'
 import SortControl from '@/components/SortControl.vue'
 import { getThumbnailCardStyles } from '@/apps/slides/utils/helpers'
 
@@ -76,6 +89,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['navigate', 'setPreview', 'openDialog', 'duplicatePresentation'])
+
+const search = ref('')
 
 const sortOrder = ref({ field: 'modified', label: 'Modified', ascending: false })
 
@@ -91,6 +106,13 @@ const sortedPresentations = computed(() => {
 	return [...(props.presentations || [])].sort((a, b) =>
 		ascending ? a[field].localeCompare(b[field]) : b[field].localeCompare(a[field]),
 	)
+})
+
+const filteredPresentations = computed(() => {
+	const query = search.value.trim().toLowerCase()
+	if (!query) return sortedPresentations.value
+
+	return sortedPresentations.value.filter((p) => p.title.toLowerCase().includes(query))
 })
 
 const contextMenuIconClasses = 'stroke-[1.5] !size-3.5'
