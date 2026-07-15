@@ -7,13 +7,16 @@
 		@wheel="handleScrollBarWheelEvent"
 		@click.stop
 	>
-		<div v-if="slidesLength" class="flex items-center justify-between px-4 py-3 font-text text-sm">
+		<div
+			v-if="slidesLength"
+			class="flex items-center justify-between px-4 py-3 pb-1 font-text text-sm"
+		>
 			<span class="text-ink-gray-6">Slide</span>
 			<span class="text-ink-gray-6">{{ (slideIndex ?? 0) + 1 }} of {{ slidesLength }}</span>
 		</div>
 		<div
 			ref="scrollableArea"
-			class="h-svh overflow-y-auto p-4 pt-1 no-scrollbar"
+			class="faded-scroll [--fade-length:8px] h-svh overflow-y-auto p-4 pt-3 no-scrollbar"
 			:class="{ 'pb-14': !inReadonlyMode }"
 			:style="scrollbarStyles"
 		>

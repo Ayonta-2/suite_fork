@@ -181,32 +181,6 @@ const getContextMenuOptions = (presentation) => {
 </script>
 
 <style scoped>
-.faded-scroll {
-	--fade-length: 12px;
-	--fade-mask: linear-gradient(
-		to bottom,
-		rgb(0 0 0 / 0) 0,
-		rgb(0 0 0 / 0.08) calc(var(--fade-length) * 0.25),
-		rgb(0 0 0 / 0.29) calc(var(--fade-length) * 0.5),
-		rgb(0 0 0 / 0.61) calc(var(--fade-length) * 0.7),
-		rgb(0 0 0 / 0.89) calc(var(--fade-length) * 0.88),
-		rgb(0 0 0 / 1) var(--fade-length),
-		rgb(0 0 0 / 1) calc(100% - var(--fade-length)),
-		rgb(0 0 0 / 0.89) calc(100% - var(--fade-length) * 0.88),
-		rgb(0 0 0 / 0.61) calc(100% - var(--fade-length) * 0.7),
-		rgb(0 0 0 / 0.29) calc(100% - var(--fade-length) * 0.5),
-		rgb(0 0 0 / 0.08) calc(100% - var(--fade-length) * 0.25),
-		rgb(0 0 0 / 0) 100%
-	);
-	-webkit-mask-image: var(--fade-mask);
-	mask-image: var(--fade-mask);
-	scrollbar-width: none;
-}
-
-.faded-scroll::-webkit-scrollbar {
-	display: none;
-}
-
 .slide-thumbnail-placeholder {
 	background-color: var(--surface-base);
 	background-image: repeating-linear-gradient(
