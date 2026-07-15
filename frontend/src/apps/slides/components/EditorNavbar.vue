@@ -4,16 +4,37 @@
 		:showNavbarDropdown="showNavbarDropdown"
 		@performDropdownAction="(action) => emit('performDropdownAction', action)"
 	>
+		<template v-if="!inReadonlyMode" #left-actions>
+			<Button
+				variant="ghost"
+				tooltip="Template Theme"
+				@click="emit('performDropdownAction', 'updateTheme')"
+			>
+				<template #icon>
+					<LucidePalette class="size-4 stroke-[1.5] text-ink-gray-7" />
+				</template>
+			</Button>
+		</template>
 		<template #default>
 			<div class="flex w-full justify-center">
 				<PresentationHeader :title="presentationDoc?.title" />
 			</div>
 		</template>
-		<template v-if="!inReadonlyMode" #actions>
+		<template v-if="!inReadonlyMode" #right-actions>
 			<Badge v-if="!isOnline" variant="subtle" theme="orange" size="md">
 				<LucideWifiOff class="mr-1 size-3.5 stroke-[1.5]" />
 				<span>Offline</span>
 			</Badge>
+			<Button
+				v-if="presentationDoc"
+				variant="ghost"
+				tooltip="Export"
+				@click="emit('performDropdownAction', 'export')"
+			>
+				<template #icon>
+					<LucideDownload class="size-4 stroke-[1.5]" />
+				</template>
+			</Button>
 			<SharePopover v-if="presentationDoc" />
 		</template>
 	</Navbar>
@@ -23,7 +44,7 @@
 import { ref, computed, inject } from 'vue'
 import { Presentation } from 'lucide-vue-next'
 
-import { Badge } from 'frappe-ui'
+import { Badge, Button } from 'frappe-ui'
 
 import Navbar from '@/apps/slides/components/Navbar.vue'
 import PresentationHeader from '@/apps/slides/components/PresentationHeader.vue'

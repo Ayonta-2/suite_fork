@@ -4,32 +4,36 @@
 		:class="$slots.default ? 'grid-cols-3' : 'grid-cols-2'"
 		@wheel.prevent
 	>
-		<router-link
-			v-if="!showNavbarDropdown && !showHomeDropdown"
-			class="flex w-fit items-center gap-2"
-			:to="{ name: 'slides-home' }"
-		>
-			<img :src="slidesLogo" class="h-7" />
-		</router-link>
+		<div class="flex w-fit items-center gap-2">
+			<router-link
+				v-if="!showNavbarDropdown && !showHomeDropdown"
+				class="flex w-fit items-center gap-2"
+				:to="{ name: 'slides-home' }"
+			>
+				<img :src="slidesLogo" class="h-7" />
+			</router-link>
 
-		<Dropdown
-			v-else
-			:options="showHomeDropdown ? getHomeMenuOptions() : getContextMenuOptions()"
-			:offset="16"
-		>
-			<template #default="{ open }">
-				<div class="flex w-fit cursor-pointer items-center gap-2">
-					<img :src="slidesLogo" class="h-7" />
-					<LucideChevronUp v-if="open" class="w-4 stroke-[1.5] text-ink-gray-7" />
-					<LucideChevronDown v-else class="w-4 stroke-[1.5] text-ink-gray-7" />
-				</div>
-			</template>
-		</Dropdown>
+			<Dropdown
+				v-else
+				:options="showHomeDropdown ? getHomeMenuOptions() : getContextMenuOptions()"
+				:offset="16"
+			>
+				<template #default="{ open }">
+					<div class="flex w-fit cursor-pointer items-center gap-2">
+						<img :src="slidesLogo" class="h-7" />
+						<LucideChevronUp v-if="open" class="w-4 stroke-[1.5] text-ink-gray-7" />
+						<LucideChevronDown v-else class="w-4 stroke-[1.5] text-ink-gray-7" />
+					</div>
+				</template>
+			</Dropdown>
+
+			<slot name="left-actions"></slot>
+		</div>
 
 		<slot></slot>
 
 		<div class="flex items-center justify-end gap-2">
-			<slot name="actions"></slot>
+			<slot name="right-actions"></slot>
 			<Button
 				v-if="!primaryButton.hide"
 				variant="solid"
@@ -45,7 +49,7 @@
 import { h, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dropdown, Button } from 'frappe-ui'
-import { ArrowLeft, Palette, Plus, Copy, Trash, Download, SunMoon, Sun, Moon, Monitor, Check, LogOut } from 'lucide-vue-next'
+import { ArrowLeft, Plus, Copy, Trash, SunMoon, Sun, Moon, Monitor, Check, LogOut } from 'lucide-vue-next'
 import slidesLogo from '@/apps/slides/assets/slides-logo.svg'
 import { getThemeMode, switchTheme } from '@/apps/slides/utils/setupTheme'
 import { useSessionStore } from '@/boot/session'
@@ -152,25 +156,6 @@ const getContextMenuOptions = () => {
 					icon: h(Trash, { class: 'stroke-[1.5] !size-3.5' }),
 					onClick: () => {
 						emit('performDropdownAction', 'delete')
-					},
-				},
-			],
-		},
-		{
-			group: '',
-			options: [
-				{
-					label: 'Export',
-					icon: h(Download, { class: 'stroke-[1.5] !size-3.5' }),
-					onClick: () => {
-						emit('performDropdownAction', 'export')
-					},
-				},
-				{
-					label: 'Template Theme',
-					icon: h(Palette, { class: 'stroke-[1.5] !size-3.5' }),
-					onClick: () => {
-						emit('performDropdownAction', 'updateTheme')
 					},
 				},
 			],
