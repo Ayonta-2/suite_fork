@@ -54,6 +54,7 @@ from suite.mail.jmap import (
 	get_mailbox_id_by_role,
 	get_mailbox_service,
 )
+from suite.mail.search import get_email_address_index
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.user import get_account_emails, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
@@ -971,6 +972,15 @@ def get_email_suggestions(account: str, query: str, limit: int = 5) -> list[str]
 
 	service = get_email_service(account)
 	return service.get_email_suggestions(query, limit)
+
+
+@frappe.whitelist()
+def search_email_addresses(account: str, text: str, limit: int = 10) -> list[dict]:
+	"""Search the account's local address index for names/emails matching `text`."""
+
+	get_user_for_jmap_account(account, raise_exception=True)
+
+	return get_email_address_index(account).search_email_addresses(text, limit=cint(limit))
 
 
 @frappe.whitelist()
