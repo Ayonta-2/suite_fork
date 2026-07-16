@@ -1,5 +1,7 @@
 import re
 
+import frappe
+from frappe import _
 from frappe.utils import create_batch
 
 from suite.search.base_index import BaseIndex, FieldSpec
@@ -9,6 +11,9 @@ _TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
 # Cached records processed per index write while rebuilding, bounding memory and commit size.
 _REBUILD_BATCH_SIZE = 500
+
+# Accounts rebuilt per long-queue job when rebuilding every account's index.
+_ACCOUNTS_PER_REBUILD_BATCH = 25
 
 
 class EmailAddressIndex(BaseIndex):
@@ -116,3 +121,37 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
 	contact_cards = list(store.scan(Entity.CONTACT_CARD).values())
 	for batch in create_batch(contact_cards, _REBUILD_BATCH_SIZE):
 		index.index_addresses(_contact_addresses(batch))
+
+
+def rebuild_all_email_address_indexes() -> None:
+	"""Rebuild the email-address index for every account of a JMAP-configured, enabled user.
+
+	Fans the accounts out into long-queue background jobs of `_ACCOUNTS_PER_REBUILD_BATCH` each;
+	every job rebuilds its accounts inline. Safe to run from a scheduler or the console.
+	"""
+
+	accounts = frappe.db.get_all("JMAP Account", {}, pluck="name")
+	for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):
+		enqueue_job(
+			_rebuild_email_address_indexes,
+			job_id=f"rebuild-email-address-indexes::{i}",
+			deduplicate=True,
+			queue="long",
+			timeout=3600,
+			accounts=batch,
+		)
+
+
+def _rebuild_email_address_indexes(accounts: list[str]) -> None:
+	"""Rebuild each account's email-address index inline, isolating per-account failures."""
+
+	from suite.mail.utils import log_mail_error
+
+	for account in accounts:
+		try:
+			rebuild_email_address_index(account, in_background=False)
+		except Exception:
+			log_mail_error(
+				_("Failed to rebuild email address index for account {0}").format(account),
+				frappe.get_traceback(with_context=True),
+			)
