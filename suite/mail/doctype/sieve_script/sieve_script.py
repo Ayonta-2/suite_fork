@@ -21,8 +21,8 @@ from suite.mail.jmap import (
 	get_mailboxes,
 	get_sieve_script_service,
 )
-from suite.mail.utils import execute_with_logging, parse_filters
 from suite.mail.utils.user import get_account_emails
+from suite.utils import execute_with_logging, parse_filters
 
 
 class SieveScript(Document):
@@ -437,6 +437,7 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
 		lambda: _build_automation_sieve(account, activate=activate),
 		title="Failed to build automation sieve script",
 		with_context=False,
+		module="Mail",
 	)
 
 
