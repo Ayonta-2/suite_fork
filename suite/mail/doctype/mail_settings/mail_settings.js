@@ -43,6 +43,12 @@ frappe.ui.form.on('Mail Settings', {
 				() => frm.trigger('destroy_search_index'),
 				__('Actions'),
 			)
+
+			frm.add_custom_button(
+				__('Rebuild Email Address Index'),
+				() => frm.trigger('rebuild_email_address_index'),
+				__('Actions'),
+			)
 		}
 	},
 
@@ -113,6 +119,24 @@ frappe.ui.form.on('Mail Settings', {
 					freeze_message: __('Destroying Search Index…'),
 					callback: (r) => {
 						if (!r.exc) frappe.msgprint(__('Search Index destroyed successfully.'))
+					},
+				})
+			},
+		)
+	},
+
+	rebuild_email_address_index() {
+		frappe.confirm(
+			__(
+				'This will rebuild the email address search index for all accounts from cached data in the background. Do you want to continue?',
+			),
+			() => {
+				frappe.call({
+					method: 'suite.mail.search.rebuild_all_email_address_indexes',
+					freeze: true,
+					freeze_message: __('Queuing rebuild…'),
+					callback: (r) => {
+						if (!r.exc) frappe.msgprint(__('Rebuilding the email address index in the background.'))
 					},
 				})
 			},

@@ -123,12 +123,18 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
 		index.index_addresses(_contact_addresses(batch))
 
 
+@frappe.whitelist()
 def rebuild_all_email_address_indexes() -> None:
-	"""Rebuild the email-address index for every account of a JMAP-configured, enabled user.
+	"""Rebuild the email-address index for every JMAP account. System Manager only.
 
 	Fans the accounts out into long-queue background jobs of `_ACCOUNTS_PER_REBUILD_BATCH` each;
 	every job rebuilds its accounts inline. Safe to run from a scheduler or the console.
 	"""
+
+	from suite.utils.user import is_system_manager
+
+	if not is_system_manager(frappe.session.user):
+		frappe.throw(_("Only System Manager can rebuild the email address indexes."))
 
 	accounts = frappe.db.get_all("JMAP Account", {}, pluck="name")
 	for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):
