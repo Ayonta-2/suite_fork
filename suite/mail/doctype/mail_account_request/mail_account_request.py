@@ -217,6 +217,7 @@ class MailAccountRequest(Document):
 			),
 			title="Failed to create account on Stalwart",
 			user_message=_("Failed to create account on the server, check error log for details."),
+			module="Mail",
 		)
 
 		# Step - 2: Create App Password on Stalwart
@@ -224,6 +225,7 @@ class MailAccountRequest(Document):
 			func=lambda: create_app_password(self.account),
 			title="Failed to create app password on Stalwart",
 			user_message=_("Failed to create app password on the server, check error log for details."),
+			module="Mail",
 		)
 
 		# Step - 3: Create User
@@ -233,6 +235,7 @@ class MailAccountRequest(Document):
 			),
 			title="Failed to create user",
 			user_message=_("Failed to create user, check error log for details."),
+			module="Mail",
 		)
 
 		# Step - 4: Update User Settings
@@ -240,6 +243,7 @@ class MailAccountRequest(Document):
 			func=lambda: self._update_user_settings(user, app_password),
 			title="Failed to update user settings",
 			user_message=_("Failed to update user settings, check error log for details."),
+			module="Mail",
 		)
 
 		# Step - 5: Create Push Subscription
@@ -247,6 +251,7 @@ class MailAccountRequest(Document):
 			execute_with_logging(
 				func=lambda: self._create_push_subscription(user),
 				title="Failed to create push subscription",
+				module="Mail",
 			)
 
 	def _update_user_settings(self, user: str, app_password: str) -> None:

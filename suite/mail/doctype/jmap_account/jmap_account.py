@@ -359,6 +359,7 @@ def create_archive_mailbox(account: str) -> None:
 		title=_("Archive Mailbox Creation Error"),
 		user_message=_("Failed to create archive mailbox for account {0}").format(frappe.bold(account)),
 		with_context=False,
+		module="Mail",
 	)
 
 

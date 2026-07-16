@@ -59,14 +59,22 @@ def log_error(module: str, title: str | None = None, message: str | None = None,
 
 
 def execute_with_logging(
-	func: callable, title: str, user_message: str | None = None, with_context: bool = False, *args, **kwargs
+	func: callable,
+	title: str,
+	user_message: str | None = None,
+	with_context: bool = False,
+	module: str | None = None,
+	*args,
+	**kwargs,
 ) -> Any | None:
 	"""Executes a function and logs any exceptions that occur, optionally throwing a user-friendly message."""
 
 	try:
 		return func(*args, **kwargs)
 	except Exception:
-		module = func.__module__.split(".")[0].title() if hasattr(func, "__module__") else "Unknown"
+		module = module or (
+			func.__module__.split(".")[0].title() if hasattr(func, "__module__") else "Unknown"
+		)
 
 		log_error(
 			module=module,

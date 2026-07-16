@@ -437,6 +437,7 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
 		lambda: _build_automation_sieve(account, activate=activate),
 		title="Failed to build automation sieve script",
 		with_context=False,
+		module="Mail",
 	)
 
 
