@@ -183,7 +183,7 @@ const updateRoute = async (slug) => {
 }
 
 const initAutoSave = () => {
-	autosaveInterval = setInterval(handleAutoSave, 500000)
+	autosaveInterval = setInterval(handleAutoSave, 500)
 }
 
 const loadPresentation = async (id) => {

@@ -46,12 +46,13 @@
 </template>
 
 <script setup>
-import { h, ref } from 'vue'
+import { h, ref, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dropdown, Button } from 'frappe-ui'
-import { ArrowLeft, Plus, Copy, Trash, SunMoon, Sun, Moon, Monitor, Check, LogOut } from 'lucide-vue-next'
+import { ArrowLeft, Plus, Copy, Trash, LogOut, Keyboard } from 'lucide-vue-next'
 import slidesLogo from '@/apps/slides/assets/slides-logo.svg'
-import { getThemeMode, switchTheme } from '@/apps/slides/utils/setupTheme'
+import ThemeSwitcher from '@/apps/slides/components/ThemeSwitcher.vue'
+import { showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
 import { useSessionStore } from '@/boot/session'
 
 const props = defineProps({
@@ -70,34 +71,9 @@ const emit = defineEmits(['performDropdownAction'])
 
 const router = useRouter()
 
-const themeMode = ref(getThemeMode())
+const inReadonlyMode = inject('inReadonlyMode', ref(false))
 
-const selectTheme = (theme) => {
-	switchTheme(theme)
-	themeMode.value = theme.toLowerCase()
-}
-
-const getThemeMenuOption = () => ({
-	label: 'Theme',
-	icon: h(SunMoon, { class: 'stroke-[1.5] !size-3.5' }),
-	submenu: [
-		{
-			label: 'Light',
-			icon: h(themeMode.value === 'light' ? Check : Sun, { class: 'stroke-[1.5] !size-3.5' }),
-			onClick: () => selectTheme('Light'),
-		},
-		{
-			label: 'Dark',
-			icon: h(themeMode.value === 'dark' ? Check : Moon, { class: 'stroke-[1.5] !size-3.5' }),
-			onClick: () => selectTheme('Dark'),
-		},
-		{
-			label: 'Automatic',
-			icon: h(themeMode.value === 'automatic' ? Check : Monitor, { class: 'stroke-[1.5] !size-3.5' }),
-			onClick: () => selectTheme('Automatic'),
-		},
-	],
-})
+const getThemeMenuOption = () => ({ component: ThemeSwitcher })
 
 const getHomeMenuOptions = () => {
 	return [
@@ -120,43 +96,57 @@ const getHomeMenuOptions = () => {
 
 const getContextMenuOptions = () => {
 	return [
+		...(inReadonlyMode.value
+			? []
+			: [
+					{
+						group: '',
+						options: [
+							{
+								label: 'Back to Home',
+								icon: h(ArrowLeft, { class: 'stroke-[1.5] !size-3.5' }),
+								onClick: () => {
+									router.replace({
+										name: 'slides-home',
+									})
+								},
+							},
+						],
+					},
+					{
+						group: 'Presentation',
+						options: [
+							{
+								label: 'New',
+								icon: h(Plus, { class: 'stroke-[1.5] !size-3.5' }),
+								onClick: () => {
+									emit('performDropdownAction', 'create')
+								},
+							},
+							{
+								label: 'Duplicate',
+								icon: h(Copy, { class: 'stroke-[1.5] !size-3.5' }),
+								onClick: () => {
+									emit('performDropdownAction', 'duplicate')
+								},
+							},
+							{
+								label: 'Delete',
+								icon: h(Trash, { class: 'stroke-[1.5] !size-3.5' }),
+								onClick: () => {
+									emit('performDropdownAction', 'delete')
+								},
+							},
+						],
+					},
+				]),
 		{
 			group: '',
 			options: [
 				{
-					label: 'Back to Home',
-					icon: h(ArrowLeft, { class: 'stroke-[1.5] !size-3.5' }),
-					onClick: () => {
-						router.replace({
-							name: 'slides-home',
-						})
-					},
-				},
-			],
-		},
-		{
-			group: 'Presentation',
-			options: [
-				{
-					label: 'New',
-					icon: h(Plus, { class: 'stroke-[1.5] !size-3.5' }),
-					onClick: () => {
-						emit('performDropdownAction', 'create')
-					},
-				},
-				{
-					label: 'Duplicate',
-					icon: h(Copy, { class: 'stroke-[1.5] !size-3.5' }),
-					onClick: () => {
-						emit('performDropdownAction', 'duplicate')
-					},
-				},
-				{
-					label: 'Delete',
-					icon: h(Trash, { class: 'stroke-[1.5] !size-3.5' }),
-					onClick: () => {
-						emit('performDropdownAction', 'delete')
-					},
+					label: 'Shortcuts',
+					icon: h(Keyboard, { class: 'stroke-[1.5] !size-3.5' }),
+					onClick: () => (showShortcutsModal.value = true),
 				},
 			],
 		},

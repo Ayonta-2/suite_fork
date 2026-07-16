@@ -11,7 +11,7 @@
 				@click="emit('performDropdownAction', 'updateTheme')"
 			>
 				<template #icon>
-					<LucidePalette class="size-4 stroke-[1.5] text-ink-gray-7" />
+					<LucideSwatchBook class="size-4 stroke-[1.5] text-ink-gray-7" />
 				</template>
 			</Button>
 		</template>
@@ -67,8 +67,5 @@ const primaryButtonProps = computed(() => ({
 	hide: route.name === 'slides-editor-new',
 }))
 
-const showNavbarDropdown = computed(() => {
-	if (route.name === 'slides-editor-new') return false
-	return !inReadonlyMode.value
-})
+const showNavbarDropdown = computed(() => route.name !== 'slides-editor-new')
 </script>

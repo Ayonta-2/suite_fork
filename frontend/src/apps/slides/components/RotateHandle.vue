@@ -16,7 +16,7 @@ import { slideBounds } from '@/apps/slides/stores/slide'
 const { startRotate } = inject('rotator', {})
 
 const HANDLE_COLOR = '#70b6f0'
-const ICON_COLOR = '#6b7280'
+const ICON_COLOR = '#4b5563'
 const STEM_GAP = 10
 
 const rotateHandleStyles = computed(() => {

@@ -16,8 +16,7 @@
 		</div>
 		<div
 			ref="scrollableArea"
-			class="faded-scroll [--fade-length:6px] h-svh overflow-y-auto p-4 pt-3 no-scrollbar"
-			:class="{ 'pb-14': !inReadonlyMode }"
+			class="faded-scroll [--fade-length:6px] min-h-0 flex-1 overflow-y-auto p-4 pt-4 no-scrollbar"
 			:style="scrollbarStyles"
 		>
 			<ContextMenu :options="activeOptions">
@@ -142,6 +141,8 @@ const panelClasses = computed(() => {
 	const positionClass = isNavigationPanelOpen.value ? 'left-0' : '-left-56'
 	const baseClasses = [
 		'w-56',
+		'flex',
+		'flex-col',
 		'border-r',
 		'border-outline-gray-1',
 		'bg-surface-base',

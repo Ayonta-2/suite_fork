@@ -157,6 +157,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			ctrl: true,
 			description: 'Save',
 			group: 'General',
+			condition: inEditMode,
 			handler: (e) => {
 				if (inEditMode()) saveSlide(e)
 			},
@@ -167,6 +168,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Undo',
 			group: 'General',
 			allowInInput: true,
+			condition: inEditMode,
 			handler: () => {
 				if (inEditMode()) performHistory('undo')
 			},
@@ -177,6 +179,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Redo',
 			group: 'General',
 			allowInInput: true,
+			condition: inEditMode,
 			handler: () => {
 				if (inEditMode()) performHistory('redo')
 			},
@@ -188,6 +191,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Redo',
 			group: 'General',
 			allowInInput: true,
+			condition: inEditMode,
 			handler: () => {
 				if (inEditMode()) performHistory('redo')
 			},
@@ -197,6 +201,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 'Enter',
 			description: 'Add slide below',
 			group: 'Insert',
+			condition: inEditMode,
 			handler: (e) => {
 				if (inEditMode()) addEmptySlide(e)
 			},
@@ -205,6 +210,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 't',
 			description: 'Add text box',
 			group: 'Insert',
+			condition: inEditMode,
 			handler: () => {
 				if (inEditMode()) addTextElement()
 			},
@@ -213,18 +219,21 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 'r',
 			description: 'Add rectangle',
 			group: 'Insert',
+			condition: inEditMode,
 			handler: () => addShape('rectangle'),
 		},
 		{
 			key: 'o',
 			description: 'Add oval',
 			group: 'Insert',
+			condition: inEditMode,
 			handler: () => addShape('oval'),
 		},
 		{
 			key: 'l',
 			description: 'Add line',
 			group: 'Insert',
+			condition: inEditMode,
 			handler: () => addShape('line'),
 		},
 		{
@@ -232,6 +241,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			ctrl: true,
 			description: 'Select all elements',
 			group: 'Edit',
+			condition: inEditMode,
 			handler: (e) => {
 				if (inEditMode()) selectAllElements(e)
 			},
@@ -240,6 +250,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 'Escape',
 			description: 'Deselect',
 			group: 'Edit',
+			condition: inEditMode,
 			handler: () => {
 				if (inEditMode()) resetFocus()
 			},
@@ -249,6 +260,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			ctrl: true,
 			description: 'Duplicate element / slide',
 			group: 'Edit',
+			condition: inEditMode,
 			handler: (e) => {
 				if (!inEditMode()) return
 				if (hasElements()) duplicateElements(e, activeElements.value)
@@ -259,36 +271,42 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 'Delete',
 			description: 'Delete element / slide',
 			group: 'Edit',
+			condition: inEditMode,
 			handler: deleteElementOrSlide,
 		},
 		{
 			key: 'Backspace',
 			description: 'Delete element / slide',
 			group: 'Edit',
+			condition: inEditMode,
 			handler: deleteElementOrSlide,
 		},
 		{
 			key: 'ArrowUp',
 			description: 'Move element',
 			group: 'Edit',
+			condition: inEditMode,
 			handler: handleArrowUp,
 		},
 		{
 			key: 'ArrowDown',
 			description: 'Move element',
 			group: 'Edit',
+			condition: inEditMode,
 			handler: handleArrowDown,
 		},
 		{
 			key: 'ArrowLeft',
 			description: 'Move element',
 			group: 'Edit',
+			condition: inEditMode,
 			handler: handleArrowLeft,
 		},
 		{
 			key: 'ArrowRight',
 			description: 'Move element',
 			group: 'Edit',
+			condition: inEditMode,
 			handler: handleArrowRight,
 		},
 		{
@@ -309,6 +327,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			ctrl: true,
 			description: 'Bold',
 			group: 'Format Text',
+			condition: inEditMode,
 			handler: handleBold,
 		},
 		{
@@ -316,6 +335,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			ctrl: true,
 			description: 'Italic',
 			group: 'Format Text',
+			condition: inEditMode,
 			handler: () => {
 				if (inEditMode() && hasActiveTextEditor()) toggleMark('italic')
 			},
@@ -325,6 +345,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			ctrl: true,
 			description: 'Underline',
 			group: 'Format Text',
+			condition: inEditMode,
 			handler: () => {
 				if (inEditMode() && hasActiveTextEditor()) toggleMark('underline')
 			},
