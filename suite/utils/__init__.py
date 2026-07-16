@@ -64,13 +64,11 @@ def execute_with_logging(
 	user_message: str | None = None,
 	with_context: bool = False,
 	module: str | None = None,
-	*args,
-	**kwargs,
 ) -> Any | None:
 	"""Executes a function and logs any exceptions that occur, optionally throwing a user-friendly message."""
 
 	try:
-		return func(*args, **kwargs)
+		return func()
 	except Exception:
 		module = module or (
 			func.__module__.split(".")[0].title() if hasattr(func, "__module__") else "Unknown"
