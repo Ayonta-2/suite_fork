@@ -32,6 +32,7 @@ import {
 	Ellipsis,
 	ExternalLink,
 	Forward,
+	ListFilter,
 	LockOpen,
 	MailOpen,
 	Reply,
@@ -48,7 +49,7 @@ import {
 	raiseOptimisticToast,
 	raiseToast,
 } from '@/apps/mail/utils'
-import { useScreenSize, useUndo } from '@/apps/mail/utils/composables'
+import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
@@ -89,6 +90,7 @@ const router = useRouter()
 const store = userStore()
 const { mailboxes, mailboxIds, identities, screenedAddresses } = store
 const { setUndoAction, undo } = useUndo()
+const { filterBySender } = useFilterBySender()
 const user = inject('$user')
 
 // A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
@@ -206,6 +208,12 @@ const moreActions = (mail: Mail): GroupedAction[] => [
 				onClick: () => handleMarkUnreadFromHere(),
 				icon: MailOpen,
 				condition: () => !mail.draft,
+			},
+			{
+				label: __("Filter Sender's Messages"),
+				onClick: () => filterBySender(mail.from_email),
+				icon: ListFilter,
+				condition: () => !mail.draft && !!mail.from_email,
 			},
 			{
 				label: __('Block Sender'),

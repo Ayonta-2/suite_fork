@@ -148,10 +148,17 @@
 													{{ mail.from_name || mail.from_email }}
 												</span>
 												<span
-													v-if="mail.from_name && !isMobile"
+													v-if="!isMobile"
 													class="text-ink-gray-5 truncate"
 												>
-													{{ `<${mail.from_email}>` }}
+													<span>&lt;</span>
+													<Tooltip :text="__('Filter messages from this sender')">
+														<span
+															class="cursor-pointer hover:underline"
+															@click.stop="filterBySender(mail.from_email)"
+														>{{ mail.from_email }}</span>
+													</Tooltip>
+													<span>&gt;</span>
 												</span>
 												<template
 													v-if="!(isCollapsed(mail) || mail.draft)"
@@ -386,7 +393,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronDown, Download, Forward, LoaderCircle, Reply, ReplyAll } from 'lucide-vue-next'
-import { Alert, Avatar, Badge, Button, createResource } from 'frappe-ui'
+import { Alert, Avatar, Badge, Button, Tooltip, createResource } from 'frappe-ui'
 
 import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
@@ -401,7 +408,7 @@ import {
 	raiseToast,
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
-import { useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
+import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
@@ -457,6 +464,7 @@ const emit = defineEmits([
 
 const { isMobile } = useScreenSize()
 const { openSettings } = useSettings()
+const { filterBySender } = useFilterBySender()
 const dayjs = inject('$dayjs')
 const user = inject('$user')
 const store = userStore()
