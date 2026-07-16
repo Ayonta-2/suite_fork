@@ -26,10 +26,7 @@
 
 			<Toolbar v-if="!inReadonlyMode && presentationDoc" />
 
-			<PropertiesPanel
-				v-if="!inReadonlyMode"
-				class="absolute bottom-0 right-0 top-0"
-			/>
+			<PropertiesPanel v-if="!inReadonlyMode" class="absolute bottom-0 right-0 top-0" />
 		</div>
 	</div>
 
@@ -55,6 +52,8 @@
 		:slide="slides[0]"
 		:disableCapture="isSlideInteractionActive"
 	/>
+
+	<KeyboardShortcutsModal v-model:open="showShortcutsModal" />
 </template>
 
 <script setup>
@@ -70,7 +69,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 
-import { call, usePageMeta } from 'frappe-ui'
+import { call, usePageMeta, KeyboardShortcutsModal } from 'frappe-ui'
 
 import ExportView from '@/apps/slides/pages/ExportView.vue'
 import EditorNavbar from '@/apps/slides/components/EditorNavbar.vue'
@@ -117,7 +116,7 @@ import {
 	actionOrder as historyMetaActionOrder,
 } from '@/apps/slides/stores/historyMeta'
 
-import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
+import { useShortcuts, showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
 import { saveChanges, saveCurrentState, dirty } from '@/apps/slides/stores/saving'
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { Layout } from 'lucide-vue-next'
@@ -184,7 +183,7 @@ const updateRoute = async (slug) => {
 }
 
 const initAutoSave = () => {
-	autosaveInterval = setInterval(handleAutoSave, 500)
+	autosaveInterval = setInterval(handleAutoSave, 500000)
 }
 
 const loadPresentation = async (id) => {
