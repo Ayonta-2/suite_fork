@@ -5,6 +5,7 @@
 		size="2xl"
 		:title="dialogTitle"
 		:dismissible="update"
+		:showCloseButton="update"
 	>
 		<template #default>
 			<div class="mb-6 select-none text-base text-ink-gray-6">{{ dialogDescription }}</div>
