@@ -55,13 +55,13 @@ def get_contacts(account: str, filter: dict | None = None, limit: int = 50) -> l
 
 
 @frappe.whitelist()
-def get_contacts_from_cache(account: str) -> list[dict]:
+def get_contacts_from_cache(account: str, limit: int = 1000) -> list[dict]:
 	"""Returns all contact cards for the given account from the cache."""
 
 	get_user_for_jmap_account(account, raise_exception=True)
 
 	store = get_data_store(account)
-	data = store.scan(Entity.CONTACT_CARD, prefix="")
+	data = store.scan(Entity.CONTACT_CARD, prefix="", limit=limit)
 
 	contacts = []
 	for contact_card in data.values():
