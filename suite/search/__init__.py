@@ -33,7 +33,9 @@ def destroy_search_index() -> None:
 
 	from suite.utils.user import is_system_manager
 
-	if is_system_manager(frappe.session.user):
-		base_path = get_search_base_path()
-		if os.path.exists(base_path):
-			shutil.rmtree(base_path)
+	if not is_system_manager(frappe.session.user):
+		frappe.throw(frappe._("Only System Manager can destroy the search index."))
+
+	base_path = get_search_base_path()
+	if os.path.exists(base_path):
+		shutil.rmtree(base_path)
