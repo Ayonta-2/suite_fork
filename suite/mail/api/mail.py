@@ -964,16 +964,6 @@ def get_avatar(email: str, size: int = 128, strict: bool = False) -> None:
 	frappe.local.response.type = "binary"
 
 
-def get_email_suggestions(account: str, query: str, limit: int = 5) -> list[str]:
-	"""Returns email suggestions based on the given query."""
-
-	if not query:
-		return []
-
-	service = get_email_service(account)
-	return service.get_email_suggestions(query, limit)
-
-
 @frappe.whitelist()
 def search_email_addresses(account: str, text: str, limit: int = 10) -> list[dict]:
 	"""Search the account's local address index for names/emails matching `text`."""
