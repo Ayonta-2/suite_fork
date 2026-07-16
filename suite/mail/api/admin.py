@@ -63,6 +63,7 @@ def add_domain(name: str, description: str | None = None) -> str:
 		title=_("Failed to add domain {0}").format(name),
 		user_message=_("An error occurred while adding the domain, check error logs for more details."),
 		with_context=False,
+		module="Mail",
 	)
 	return domain_id
 
@@ -188,6 +189,7 @@ def delete_domain(domain_id: str) -> None:
 		title=_("Failed to delete domain with ID {0}").format(domain_id),
 		user_message=_("An error occurred while deleting the domain, check error logs for more details."),
 		with_context=False,
+		module="Mail",
 	)
 
 

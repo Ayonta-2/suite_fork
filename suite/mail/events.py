@@ -66,6 +66,7 @@ def update_password(
 			lambda: update_stalwart_password(user, new_password=new_password),
 			title="Failed to update password on Stalwart server",
 			with_context=False,
+			module="Mail",
 		)
 
 	return result
@@ -93,6 +94,7 @@ def update_account_password(doc: Document, method: str | None = None) -> None:
 		lambda: update_stalwart_password(user, new_password=new_password),
 		title="Failed to update password on Stalwart server",
 		with_context=False,
+		module="Mail",
 	)
 
 
@@ -138,6 +140,7 @@ def apply_disabled_account_role(doc: Document, method: str | None = None) -> Non
 		lambda: add_stalwart_account_role(doc.name, role),
 		title="Failed to apply disabled account role on Stalwart server",
 		with_context=False,
+		module="Mail",
 	)
 
 
@@ -165,6 +168,7 @@ def remove_disabled_account_role(doc: Document, method: str | None = None) -> No
 		lambda: remove_stalwart_account_role(doc.name, role),
 		title="Failed to remove disabled account role on Stalwart server",
 		with_context=False,
+		module="Mail",
 	)
 
 
@@ -177,4 +181,5 @@ def delete_account(doc: Document, method: str | None = None) -> None:
 		lambda: delete_stalwart_account(user),
 		title="Failed to delete account on Stalwart server",
 		with_context=False,
+		module="Mail",
 	)
