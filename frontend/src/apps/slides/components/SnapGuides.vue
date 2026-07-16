@@ -8,6 +8,7 @@ import { computed } from 'vue'
 import { slideBounds, selectionBounds, guideVisibilityMap } from '@/apps/slides/stores/slide'
 import { pairElementId } from '@/apps/slides/stores/element'
 import { getElementDiv } from '@/apps/slides/stores/elementRegistry'
+import { guideColor } from '@/apps/slides/utils/constants'
 
 const props = defineProps({
 	// { x: { source, line } | null, y: { source, line } | null } from useSnapping
@@ -21,8 +22,8 @@ const props = defineProps({
 	},
 })
 
-const GUIDE_COLOR = '#70b6f080'
-const EDGE_GUIDE_COLOR = '#70b6f0ff'
+const GUIDE_COLOR = `${guideColor}80`
+const EDGE_GUIDE_COLOR = guideColor
 const commonStyles = { position: 'absolute', zIndex: 9999 }
 
 const getScaledValue = (value, axis) => {

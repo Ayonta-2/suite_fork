@@ -89,6 +89,7 @@ import { useRotator } from '@/apps/slides/composables/useRotator'
 import { usePanAndZoom } from '@/apps/slides/composables/usePanAndZoom'
 import { useSnapping } from '@/apps/slides/composables/useSnapping'
 import { isCmdOrCtrl } from '@/apps/slides/utils/helpers'
+import { selectionColor } from '@/apps/slides/utils/constants'
 import {
 	getResizedBox,
 	getResizedLine,
@@ -149,8 +150,7 @@ const slideClasses = computed(() => {
 		'shadow-sm',
 	]
 
-	const outlineClasses =
-		props.highlight || mediaDragOver.value ? ['outline', 'outline-2', 'outline-blue-400'] : []
+	const outlineClasses = props.highlight || mediaDragOver.value ? ['outline', 'outline-2'] : []
 
 	// Offsets center the scaled slide (900x506.25), shifted for the side panels
 	// (edit: nav + properties; readonly: nav only). Recompute if widths change.
@@ -181,6 +181,7 @@ const slideStyles = computed(() => ({
 	transformOrigin: transformOrigin.value,
 	transform: transform.value,
 	backgroundColor: currentSlide.value?.background || '#ffffff',
+	outlineColor: selectionColor,
 	cursor: getSlideCursor(),
 	zIndex: 0,
 }))

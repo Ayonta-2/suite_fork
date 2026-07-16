@@ -24,6 +24,7 @@ import { slideBounds } from '@/apps/slides/stores/slide'
 import { interactionOffset } from '@/apps/slides/stores/interaction'
 
 import { rotationDelta } from '@/apps/slides/composables/useRotator'
+import { selectionColor } from '@/apps/slides/utils/constants'
 
 const props = defineProps({
 	mode: {
@@ -100,7 +101,7 @@ const elementStyle = computed(() => {
 		height: elementHeight,
 		left: `${element.value.left}px`,
 		top: `${element.value.top}px`,
-		outline: props.highlight ? `#70B6F092 solid ${2 / slideBounds.scale}px` : 'none',
+		outline: props.highlight ? `${selectionColor}92 solid ${2 / slideBounds.scale}px` : 'none',
 		boxSizing: 'border-box',
 		zIndex: element.value.zIndex,
 		transform: transform,

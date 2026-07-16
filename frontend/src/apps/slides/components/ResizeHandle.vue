@@ -5,6 +5,7 @@
 import { computed } from 'vue'
 
 import { slideBounds } from '@/apps/slides/stores/slide'
+import { selectionColor } from '@/apps/slides/utils/constants'
 
 const props = defineProps({
 	direction: {
@@ -30,7 +31,7 @@ const baseStyles = {
 const scaledPx = (value) => `${value / slideBounds.scale}px`
 
 const handleDecoration = () => ({
-	border: `${1.5 / slideBounds.scale}px solid #70b6f0`,
+	border: `${1.5 / slideBounds.scale}px solid ${selectionColor}`,
 	boxShadow: `0 ${1 / slideBounds.scale}px ${2 / slideBounds.scale}px rgba(0, 0, 0, 0.16)`,
 })
 

@@ -22,6 +22,7 @@ import {
 	activeElement,
 	cropSelectionToFitContent,
 } from '@/apps/slides/stores/element'
+import { selectionColor } from '@/apps/slides/utils/constants'
 
 const props = defineProps({
 	isDragging: {
@@ -37,8 +38,8 @@ const showResizers = computed(() => {
 const outline = computed(() => {
 	if (activeElement.value?.shapeType == 'line') return 'none'
 
-	if (activeElementIds.value.length == 1) return `#70B6F0 solid ${2 / slideBounds.scale}px`
-	return `#70B6F092 solid ${0.1 / slideBounds.scale}px`
+	if (activeElementIds.value.length == 1) return `${selectionColor} solid ${2 / slideBounds.scale}px`
+	return 'none'
 })
 
 const isRotatable = computed(() => {
@@ -63,7 +64,7 @@ const boxStyles = computed(() => {
 
 	return {
 		position: 'absolute',
-		backgroundColor: activeElementIds.value.length == 1 ? '' : '#70b6f025',
+		backgroundColor: activeElementIds.value.length == 1 ? '' : `${selectionColor}25`,
 		outline: outline.value,
 		width: `${selectionBounds.width}px`,
 		height: `${selectionBounds.height}px`,

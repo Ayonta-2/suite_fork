@@ -12,10 +12,11 @@
 import { computed, inject } from 'vue'
 
 import { slideBounds } from '@/apps/slides/stores/slide'
+import { selectionColor } from '@/apps/slides/utils/constants'
 
 const { startRotate } = inject('rotator', {})
 
-const HANDLE_COLOR = '#70b6f0'
+const HANDLE_COLOR = selectionColor
 const ICON_COLOR = '#4b5563'
 const STEM_GAP = 10
 
