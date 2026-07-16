@@ -3,6 +3,7 @@
 
 import json
 import re
+from collections.abc import Generator
 from contextlib import contextmanager
 from uuid import uuid7
 
@@ -442,7 +443,7 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
 
 
 @contextmanager
-def pause_automation_sieve_build():
+def pause_automation_sieve_build() -> Generator[None, None, None]:
 	"""Suppress the automatic `build_automation_sieve` triggered by Mailbox Settings / Screened Email
 	Address document hooks, so a caller doing several writes rebuilds the script once at the end
 	instead of after every write.

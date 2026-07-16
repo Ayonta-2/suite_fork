@@ -30,6 +30,7 @@ from suite.mail.doctype.user_account.user_account import get_user_for_jmap_accou
 from suite.mail.jmap import get_email_service, get_jmap_connection, get_thread_service
 from suite.mail.jmap.services.mail.email import EmailService
 from suite.mail.jmap.services.mail.mailbox import MailboxService
+from suite.mail.search import get_email_address_index
 from suite.mail.storage import get_blob_store, get_data_store
 from suite.mail.storage.data_store import Entity
 from suite.mail.utils import (
@@ -1266,17 +1267,41 @@ def _get_cached_messages(account: str, ids: list[str]) -> dict[str, dict | None]
 
 
 def _cache_messages(account: str, messages: dict[str, dict]) -> None:
-	"""Store messages in cache with the message ID as the subkey."""
+	"""Store messages in cache with the message ID as the subkey, and index their addresses for search."""
 
 	store = get_data_store(account)
 	store.set_many(Entity.EMAIL, items=messages)
 
+	# Feed sender/recipient addresses into the shared address index; never let indexing break caching.
+	try:
+		get_email_address_index(account).index_addresses(_message_addresses(messages.values()))
+	except Exception:
+		log_mail_error(
+			_("Failed to index message addresses for search"), frappe.get_traceback(with_context=True)
+		)
+
 
 def _remove_cached_messages(account: str, ids: list[str]) -> None:
-	"""Remove messages from cache for the provided IDs."""
+	"""Remove messages from cache for the provided IDs.
+
+	Addresses are left in the search index on purpose: it is cumulative, and an address seen in an
+	evicted message is almost always still valid elsewhere.
+	"""
 
 	store = get_data_store(account)
 	store.delete_many(Entity.EMAIL, subkeys=ids)
+
+
+def _message_addresses(messages: list[dict]) -> list[dict]:
+	"""Flatten cached messages into {name, email} address dicts (sender + recipients)."""
+
+	addresses = []
+	for message in messages:
+		addresses.append({"name": message.get("from_name"), "email": message.get("from_email")})
+		for recipient in message.get("recipients") or []:
+			addresses.append({"name": recipient.get("display_name"), "email": recipient.get("email")})
+
+	return addresses
 
 
 def _get_cached_blobs(account: str, blob_ids: list[str]) -> dict[str, bytes | None]:

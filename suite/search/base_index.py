@@ -47,7 +47,7 @@ class BaseIndex:
 	HEAP_SIZE: ClassVar[int] = 50 * 1024 * 1024
 
 	def __init__(self, key: str) -> None:
-		"""Resolve this index's on-disk path from ENTITY/key and reconcile its schema version."""
+		"""Resolve this index's on-disk path from key/ENTITY and reconcile its schema version."""
 
 		if not self.ENTITY:
 			frappe.throw("BaseIndex subclasses must define ENTITY")
@@ -55,7 +55,9 @@ class BaseIndex:
 			frappe.throw("BaseIndex subclasses must be instantiated with a key")
 
 		self.key = key
-		self.path = os.path.join(get_search_base_path(), self.ENTITY, quote(key, safe=""))
+		# Layout is <base>/<key>/<entity>, so every index for a key (e.g. an account) lives under
+		# one directory — easy to browse and to clear all of a key's indexes in one shot.
+		self.path = os.path.join(get_search_base_path(), quote(key, safe=""), self.ENTITY)
 		os.makedirs(self.path, exist_ok=True)
 
 		self._schema = self._build_schema()
@@ -124,7 +126,7 @@ class BaseIndex:
 		fields: list[str] | None = None,
 		order_by: str | None = None,
 	) -> tuple[list[dict], int]:
-		"""Run a query and return `(hits, total_count)`.
+		"""Run a free-text query (parsed by Tantivy) and return `(hits, total_count)`.
 
 		`hits` is a page (`limit`/`offset`) of stored-field dicts, each annotated with
 		`_score` and `_id`; `total_count` is the full number of matches. `fields` overrides
@@ -135,26 +137,77 @@ class BaseIndex:
 		if not query or not query.strip():
 			return ([], 0)
 
+		fields = fields or list(self.DEFAULT_SEARCH_FIELDS) or None
+		return self._run_search(lambda index: index.parse_query(query, fields), limit, offset, order_by)
+
+	def search_phrase_prefix(
+		self,
+		terms: list[str],
+		limit: int = 20,
+		offset: int = 0,
+		fields: list[str] | None = None,
+		order_by: str | None = None,
+	) -> tuple[list[dict], int]:
+		"""Search for the given terms as a consecutive, in-order phrase whose last term is a prefix.
+
+		Built for as-you-type autocomplete: the terms must appear adjacent and in order in one of
+		`fields`, with the final term matched as a prefix — so "sagar s" matches "sagar.s@…" and
+		"Sagar Sharma", but not "sagar@…" (nothing follows "sagar") nor an address that merely
+		contains both words apart. A single term is a plain prefix match. Returns `(hits, count)`.
+		"""
+
+		terms = [term for term in terms if term]
+		if not terms:
+			return ([], 0)
+
+		fields = fields or list(self.DEFAULT_SEARCH_FIELDS)
+		return self._run_search(
+			lambda _index: self._build_phrase_prefix_query(terms, fields), limit, offset, order_by
+		)
+
+	def _run_search(
+		self, build_query, limit: int, offset: int, order_by: str | None
+	) -> tuple[list[dict], int]:
+		"""Open the index, build a query via `build_query(index)`, run it, and return `(hits, count)`.
+
+		Shared plumbing for `search`/`search_phrase_prefix`; swallows query errors (logged) into an
+		empty result so a malformed query never breaks the caller.
+		"""
+
 		# Nothing has been indexed yet for this key.
 		if not tantivy.Index.exists(self.path):
 			return ([], 0)
 
 		try:
 			index = self._open()
-			
+
 			# Pick up commits made by other workers since this index was opened.
 			index.reload()
-			
+
 			searcher = index.searcher()
-			parsed = index.parse_query(query, fields or list(self.DEFAULT_SEARCH_FIELDS) or None)
-			result = searcher.search(parsed, limit=limit, offset=offset, count=True, order_by_field=order_by)
+			result = searcher.search(
+				build_query(index), limit=limit, offset=offset, count=True, order_by_field=order_by
+			)
 			hits = [self._to_hit(searcher.doc(address), score) for score, address in result.hits]
 			return (hits, result.count)
 		except Exception:
 			frappe.logger("suite.search").warning(
-				{"event": "search-failed", "entity": self.ENTITY, "key": self.key, "query": query}
+				{"event": "search-failed", "entity": self.ENTITY, "key": self.key}
 			)
 			return ([], 0)
+
+	def _build_phrase_prefix_query(self, terms: list[str], fields: list[str]) -> "tantivy.Query":
+		"""Build a phrase-prefix query over `terms`, matching in any one of `fields`."""
+
+		if len(fields) == 1:
+			return tantivy.Query.phrase_prefix_query(self._schema, fields[0], terms)
+
+		# Match the phrase in any of the fields.
+		clauses = [
+			(tantivy.Occur.Should, tantivy.Query.phrase_prefix_query(self._schema, field, terms))
+			for field in fields
+		]
+		return tantivy.Query.boolean_query(clauses)
 
 	def drop(self) -> None:
 		"""Delete this index's entire on-disk directory."""

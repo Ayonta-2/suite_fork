@@ -37,6 +37,12 @@ frappe.ui.form.on('Mail Settings', {
 				() => frm.trigger('destroy_blob_store'),
 				__('Actions'),
 			)
+
+			frm.add_custom_button(
+				__('Destroy Search Index'),
+				() => frm.trigger('destroy_search_index'),
+				__('Actions'),
+			)
 		}
 	},
 
@@ -89,6 +95,24 @@ frappe.ui.form.on('Mail Settings', {
 					freeze_message: __('Destroying Blob Store…'),
 					callback: (r) => {
 						if (!r.exc) frappe.msgprint(__('Blob Store destroyed successfully.'))
+					},
+				})
+			},
+		)
+	},
+
+	destroy_search_index() {
+		frappe.confirm(
+			__(
+				'This will permanently delete all search indexes. This action cannot be undone. Do you want to continue?',
+			),
+			() => {
+				frappe.call({
+					method: 'suite.search.destroy_search_index',
+					freeze: true,
+					freeze_message: __('Destroying Search Index…'),
+					callback: (r) => {
+						if (!r.exc) frappe.msgprint(__('Search Index destroyed successfully.'))
 					},
 				})
 			},
