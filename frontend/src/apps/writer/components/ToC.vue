@@ -142,7 +142,7 @@ onMounted(() => {
 
   const handleTabChange = (e) => {
     activeTabId.value = e.detail.tabId
-    finishRenaming(true)
+    finishRenaming(false, false)
   }
 
   props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
@@ -223,17 +223,18 @@ const startRenaming = (tabId) => {
   })
 }
 
-const finishRenaming = (esc = false) => {
+const finishRenaming = (esc = false, refocus = true) => {
   if (!esc && editingTabId.value && editingTabLabel.value.trim()) {
     props.editor.commands.renameTab(
       editingTabId.value,
       editingTabLabel.value.trim(),
+      refocus,
     )
   }
   editingTabId.value = null
   editingTabLabel.value = ''
   delayedEdit.value = false
-  props.editor.commands.focus()
+  if (refocus) props.editor.commands.focus()
 }
 
 // Drag and drop state
