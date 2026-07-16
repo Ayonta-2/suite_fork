@@ -12,25 +12,22 @@
 				]"
 			/>
 		</div>
-		<HeaderActions @reload-mails="reloadThreads(true, ['drafts', 'sent'])" />
+		<HeaderActions
+			v-model:show-search="showSearchModal"
+			v-model:show-advanced="showSearchAdvanced"
+			v-model:edit-filter="searchEditFilter"
+			@reload-mails="resetThreads(true, ['drafts', 'sent'])"
+		/>
 	</header>
 
 	<!-- Unscreened-thread nudge on the inbox, mirroring the trash/junk info bar: shown while Hey-style
 	     screening is on and threads are waiting to be screened. -->
-	<div v-if="showScreenerBanner" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
+	<div v-if="showScreenerBanner" class="space-x-1 border-b py-2.5 px-5">
 		<span class="text-ink-gray-5">{{ screenerBannerLabel }}</span>
 		<Button :label="__('Review Now')" variant="ghost" @click="goToScreener" />
 	</div>
 
-	<div
-		v-if="
-			[mailboxIds.trash, mailboxIds.junk].includes(mailbox) &&
-			!threadsResource.data?.loading &&
-			threadsResource.data?.length &&
-			(showReadingPane || !threadID)
-		"
-		class="space-x-1 border-b px-3 py-2.5 sm:px-5"
-	>
+	<div v-if="showDeleteBanner" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
 		<span class="text-ink-gray-5">
 			{{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
 		</span>
@@ -40,7 +37,7 @@
 	<div
 		class="relative flex"
 		:class="
-			[mailboxIds.trash, mailboxIds.junk].includes(mailbox) || showScreenerBanner
+			showDeleteBanner || showScreenerBanner
 				? 'h-[calc(100dvh-6.1rem)]'
 				: 'h-[calc(100dvh-3.05rem)]'
 		"
@@ -53,17 +50,71 @@
 			</div>
 		</div>
 
-		<template v-else-if="threadsResource?.data?.length || filter">
+		<template v-else-if="threadsResource?.data?.length || filter || mailbox === 'search'">
 			<div
 				ref="mailSidebar"
 				class="sticky top-16 flex flex-col border-r"
 				:class="!isMobile && showReadingPane ? 'w-1/3' : 'w-full'"
 			>
+				<!-- Search header: the query (click to edit) + removable filter pills, above the results toolbar. -->
+				<div
+					v-if="mailbox === 'search'"
+					class="flex flex-col gap-2.5 border-b border-l-transparent px-3.5 py-3 sm:border-l sm:px-5"
+				>
+					<FormControl
+						type="text"
+						size="sm"
+						class="w-full cursor-pointer [&_input]:cursor-pointer"
+						:class="{ 'max-w-2xl': isMobile || !showReadingPane }"
+						:model-value="searchQuery"
+						:placeholder="__('Search')"
+						:aria-label="__('Edit search')"
+						readonly
+						variant="outline"
+						@mousedown.prevent="openSearch()"
+					>
+						<template #prefix>
+							<Search class="text-ink-gray-5 size-4" />
+						</template>
+						<template #suffix>
+							<button
+								class="text-ink-gray-5 hover:text-ink-gray-8 -m-1 flex p-1"
+								:aria-label="__('Filters')"
+								@mousedown.stop.prevent="openSearch(true)"
+							>
+								<SlidersHorizontal class="size-4" />
+							</button>
+						</template>
+					</FormControl>
+					<div v-if="searchFilterChips.length" class="flex flex-wrap items-center gap-1.5">
+						<span
+							v-for="chip in searchFilterChips"
+							:key="chip.key"
+							class="bg-surface-gray-2 inline-flex h-7 items-center gap-1 rounded pl-2 pr-1 text-xs"
+							:class="{
+								'hover:bg-surface-gray-3 cursor-pointer': isClickableChip(chip.key),
+							}"
+							@click="isClickableChip(chip.key) && handleChipClick(chip.key)"
+						>
+							<span class="max-w-40 truncate">{{ chip.label }}</span>
+							<button
+								class="text-ink-gray-5 hover:text-ink-gray-8 rounded p-1"
+								:aria-label="__('Remove filter')"
+								@click.stop="removeSearchFilter(chip.key)"
+							>
+								<X class="size-3" />
+							</button>
+						</span>
+
+						<Button variant="ghost" class="text-xs" :label="__('Clear all')" @click="clearSearch" />
+					</div>
+				</div>
+
 				<!-- Toolbar/Actions -->
 				<div
 					class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
 				>
-					<div class="mr-5 max-sm:ml-3">
+					<div v-if="!isAllAccountsSearch" class="mr-5 max-sm:ml-3">
 						<Tooltip
 							:text="
 								isAllSelected
@@ -95,52 +146,19 @@
 						</button>
 					</Dropdown>
 					<p v-else class="pb-[2px]">{{ title }}</p>
-					<Button
-						v-if="!selections.length"
-						class="ml-1.5"
-						variant="ghost"
-						:tooltip="__('Refresh')"
-						:disabled="threadsResource?.loading"
-						@click="reloadThreads()"
-					>
-						<template #icon>
-							<RefreshCw
-								class="icon"
-								:class="{ 'animate-spin': threadsResource?.loading }"
-							/>
-						</template>
-					</Button>
 					<div class="-mr-1.5 ml-auto flex items-center space-x-1.5 sm:space-x-3">
-						<div
-							v-if="!selections.length && displayTotal"
-							class="text-ink-gray-6 flex items-center gap-1"
+						<Button
+							v-if="!selections.length"
+							variant="ghost"
+							:tooltip="__('Refresh')"
+							:disabled="threadsResource?.loading || loadingMore"
+							@click="refreshThreads()"
 						>
-							<span class="whitespace-nowrap text-sm tabular-nums">
-								{{ range }} {{ __('of') }} {{ totalLabel }}
-							</span>
-							<Button
-								:tooltip="__('Previous Page')"
-								variant="ghost"
-								:disabled="!canGoPrev"
-								@click="goToPage(false)"
-							>
-								<template #icon>
-									<ChevronLeft class="icon" />
-								</template>
-							</Button>
-							<Button
-								:tooltip="__('Next Page')"
-								variant="ghost"
-								:disabled="!canGoNext"
-								@click="goToPage(true)"
-							>
-								<template #icon>
-									<ChevronRight class="icon" />
-								</template>
-							</Button>
-						</div>
-
-						<template v-else-if="selections.length">
+							<template #icon>
+								<RefreshCw class="icon" />
+							</template>
+						</Button>
+						<template v-if="selections.length">
 							<Dropdown v-if="showReadingPane" :options="selectActions">
 								<Button variant="ghost" :tooltip="__('Actions')">
 									<template #icon>
@@ -221,6 +239,7 @@
 								@click="toggleGroupCollapse(key)"
 							>
 								<div
+									v-if="!isAllAccountsSearch"
 									class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-6 sm:pl-3"
 									@click.stop.prevent="
 										toggleSelect(getGroupThreads(key), !isGroupSelected(key))
@@ -255,46 +274,46 @@
 							<MailListItem
 								v-for="mail in group"
 								ref="mailItems"
-								:key="mail.name"
+								:key="isAllAccountsSearch ? `${mail.account}:${mail.name}` : mail.name"
 								:mailbox
 								:mail
+								:account-id="isAllAccountsSearch ? mail.account : undefined"
+								:account-label="isAllAccountsSearch ? mail.account_name : undefined"
+								:selectable="!isAllAccountsSearch"
 								:is-selected="selections.includes(mail.thread_id)"
 								class="border-l-transparent sm:border-l"
 								:class="{
 									'!bg-surface-blue-1': mail.thread_id === threadID && !isMobile,
 									'!border-l-blue-500': mail.thread_id === threadInFocus,
 								}"
-								@set-seen="
-									(seen: boolean) =>
-										handleSetSeen({ [Number(seen)]: [mail.thread_id] })
-								"
-								@archive-thread="
-									mailbox === mailboxIds.sent
-										? handleAddThreadsToMailbox(mailboxIds.archive, [
-												mail.thread_id,
-											])
-										: handleMoveThreads({
-												[mailboxIds.archive]: [mail.thread_id],
-											})
-								"
-								@trash-thread="
-									handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
-								"
+								@set-seen="(seen: boolean) => rowSetSeen(mail, seen)"
+								@archive-thread="rowArchive(mail)"
+								@trash-thread="rowTrash(mail)"
 								@delete-thread="junkOrDeleteThreads([mail.thread_id], false)"
-								@set-flagged="
-									(flagged: boolean) =>
-										setFlaggedByThreadIDs([mail.thread_id], flagged)
-								"
+								@set-flagged="(flagged: boolean) => rowSetFlagged(mail, flagged)"
 								@set-selected="
-									(selected: boolean) => toggleSelect([mail.thread_id], selected)
+									(selected: boolean) =>
+										!isAllAccountsSearch &&
+										toggleSelect([mail.thread_id], selected)
 								"
 							/>
 						</template>
 					</div>
+					<!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
+					     batch (appended, never refetching loaded rows). Sits after all groups so collapsing
+					     a group can't disable it. -->
+					<div ref="loadMoreSentinel" class="h-px" />
+					<div v-if="loadingMore" class="flex justify-center py-3">
+						<LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
+					</div>
 				</div>
 				<div v-else class="flex h-full items-center justify-center">
 					<p class="text-ink-gray-5">
-						{{ __('No mails found for the selected filter.') }}
+						{{
+							mailbox === 'search'
+								? __('No results found for the given query.')
+								: __('No mails found for the selected filter.')
+						}}
 					</p>
 				</div>
 			</div>
@@ -321,9 +340,8 @@
 					:thread-i-d
 					:threads="threadIDs"
 					:messages="currentThread?.messages"
-					:can-go-prev="canGoPrev"
 					:can-go-next="canGoNext"
-					@reload-mails="reloadThreads"
+					@reload-mails="resetThreads"
 					@set-seen="
 						(seen: boolean, ids: string[]) =>
 							handleSetSeen({ [Number(seen)]: [threadID!] }, seen, ids)
@@ -350,34 +368,19 @@
 								: handleSetSpamStatus({ 0: [threadID!] })
 					"
 					@delete-thread="junkOrDeleteThreads([threadID!], false)"
+					@move-mail="handleMailMove"
+					@mark-mail-spam="handleMailSpam"
+					@delete-mail="handleMailDelete"
 					@prev-thread="goToThreadByOffset(-1)"
 					@next-thread="goToThreadByOffset(1)"
 				/>
 			</div>
 		</template>
 
-		<!-- No mails -->
+		<!-- No mails (the search view keeps its header and shows an inline message instead) -->
 		<div v-else class="text-ink-gray-5 flex w-full flex-col items-center justify-center">
 			<NoMails class="text-ink-gray-2 mb-2 h-16 w-16" />
-			<p>
-				{{
-					mailbox === 'search'
-						? __('No results found for the given query.')
-						: __('You have no mails in this folder.')
-				}}
-			</p>
-			<Button
-				v-if="mailbox !== 'search'"
-				class="mt-3"
-				variant="ghost"
-				:label="__('Refresh')"
-				:disabled="threadsResource?.loading"
-				@click="reloadThreads()"
-			>
-				<template #prefix>
-					<RefreshCw class="icon" :class="{ 'animate-spin': threadsResource?.loading }" />
-				</template>
-			</Button>
+			<p>{{ __('You have no mails in this folder.') }}</p>
 		</div>
 	</div>
 
@@ -387,13 +390,12 @@
 	<ShortcutsModal v-model="showShortcuts" />
 </template>
 <script setup lang="ts">
-import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useDebounceFn } from '@vueuse/core'
+import { useIntersectionObserver } from '@vueuse/core'
 import {
 	Archive,
 	ChevronDown,
-	ChevronLeft,
 	ChevronRight,
 	CircleAlert,
 	CircleCheck,
@@ -407,9 +409,12 @@ import {
 	Mails,
 	Paperclip,
 	RefreshCw,
+	Search,
+	SlidersHorizontal,
 	Star,
 	StarOff,
 	Trash2,
+	X,
 } from 'lucide-vue-next'
 import {
 	Breadcrumbs,
@@ -417,12 +422,22 @@ import {
 	Checkbox,
 	Dialog,
 	Dropdown,
+	FormControl,
 	Tooltip,
+	call,
 	createResource,
 	usePageMeta,
 } from 'frappe-ui'
 
-import { getFormattedDate, isMac, raiseToast, shouldIgnoreKeypress, startResizing } from '@/apps/mail/utils'
+import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
+import {
+	getFormattedDate,
+	isMac,
+	raisePromiseToast,
+	raiseToast,
+	shouldIgnoreKeypress,
+	startResizing,
+} from '@/apps/mail/utils'
 import { useScreenSize, useSidebar, useUndo } from '@/apps/mail/utils/composables'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
@@ -641,6 +656,7 @@ const handleGMenuNavigation = (e: KeyboardEvent, key: string) => {
 		s: mailboxIds.sent,
 		d: mailboxIds.drafts,
 		j: mailboxIds.junk,
+		a: mailboxIds.archive,
 		t: mailboxIds.trash,
 	}
 
@@ -712,9 +728,9 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 
 	let newThread = undefined
 
-	// Step across the page boundary at the first/last thread, like the ThreadHeader arrows.
-	// newThread stays the in-page target (undefined at an edge), so shift-select skips a
-	// cross-page move — the new page resolves asynchronously and goToPage resets selections.
+	// At the last loaded thread, stepping further loads the next window (like the ThreadHeader arrows).
+	// newThread stays the in-list target (undefined at the edge), so shift-select skips the crossing —
+	// the appended thread resolves asynchronously and a reset would clear selections anyway.
 	if (threadID) {
 		newThread = getThreadByOffset(offset)
 		goToThreadByOffset(offset)
@@ -838,12 +854,29 @@ const selectActions = computed((): SelectAction[] => [
 
 // Search
 
-// Pagination state (shared by the threads and search resources — only one is active at a time)
+// Infinite-scroll state (shared by the threads and search resources — only one is active at a time)
 const PAGE_LENGTH = 25
-const page = ref(0) // navigation target: the page being fetched
-const displayedPage = ref(0) // the page currently shown; lags `page` until its data loads
-const total = ref(0) // exact total matching the current view (search only)
-const hasMore = ref(false) // lookahead: an extra row was returned, so a next page exists
+const hasMore = ref(false) // lookahead: the last fetched window returned an extra row, so more exist
+const loadingMore = ref(false) // an append fetch is in flight (drives the bottom spinner)
+// An optimistic removal emptied the list but more threads exist, so a refill is coming once the server
+// mutation lands. Keeps the loading state (not the empty state) during the gap before the refill fetch.
+const refillPending = ref(false)
+// Bumped on every reset-to-top; an in-flight append captures it and discards its result if it changed
+// meanwhile, so a stale window can't land on a freshly reset list.
+const epoch = ref(0)
+let loadEpoch = 0 // epoch captured when the current append was triggered
+// Refresh ("check for new mail") state: merges the newest window into the loaded list, preserving
+// scroll — set while such a reload is in flight so its onSuccess prepends instead of replacing.
+const refreshMode = ref(false)
+let refreshEpoch = 0 // epoch captured when the refresh was triggered (dropped if a reset intervenes)
+// The loaded list to merge the fresh window into. Captured at *response* time (in the resource
+// transform), not refresh-start, so it reflects any optimistic removals/undo-inserts that happened
+// while the refresh was in flight — otherwise a thread archived mid-refresh would reappear.
+let refreshSnapshot: Thread[] = []
+// Thread ids optimistically removed by an action whose request is still in flight. The server still
+// returns these for a moment, so a refresh/append landing in that window would re-insert the row; the
+// merges below skip them. Cleared on rollback (restoreThreadsToList) and after a short timeout.
+const recentlyRemoved = new Set<string>()
 // Current mailbox's record (carries total_threads/unread_threads); used by the periodic poll to
 // detect count changes and by the tab title's unread badge.
 const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
@@ -873,41 +906,82 @@ const screenerBannerLabel = computed(() =>
 )
 const goToScreener = () => router.push({ name: 'mail-screener', params: { accountId } })
 
-// Called once a page's data has loaded: reveal it (range + list update together) and scroll to top.
-// No-op for same-page reloads (e.g. the periodic refresh) so those don't yank the scroll position.
-const syncDisplayedPage = () => {
-	if (displayedPage.value === page.value) return
-	displayedPage.value = page.value
-	mailListRef.value?.scrollTo({ top: 0 })
+const scrollListToTop = () => mailListRef.value?.scrollTo({ top: 0 })
+
+// Called when a first-window fetch resolves. Two modes:
+// - refresh: keep the loaded rows, prepend only threads not already loaded (new mail), and hold the
+//   reader's scroll position (re-anchored by the height the prepended rows added).
+// - reset: reveal the fresh first window and scroll to top (mailbox switch, filter, undo, …).
+// Either way, cancel any pending edge navigation.
+const onResetSuccess = () => {
+	pendingEdgeThread = null
+
+	if (refreshMode.value) {
+		refreshMode.value = false
+		// A reset (mailbox switch, filter, undo) raced in and bumped the epoch — drop this stale merge.
+		if (refreshEpoch !== epoch.value) return
+		// Anchor to the current scroll before merging. The window replaced `data` a beat ago but the DOM
+		// hasn't re-rendered yet, so these still reflect the loaded list the reader is looking at.
+		const el = mailListRef.value
+		const prevTop = el?.scrollTop ?? 0
+		const prevHeight = el?.scrollHeight ?? 0
+		const freshWindow = threadsResource.value.data ?? []
+		const existing = new Set(refreshSnapshot.map((t) => t.thread_id))
+		const fresh = freshWindow.filter(
+			(t: Thread) => !existing.has(t.thread_id) && !recentlyRemoved.has(t.thread_id),
+		)
+		threadsResource.value.data = [...fresh, ...refreshSnapshot]
+		// Keep the reader where they were: shift scroll by the height the prepended rows added. If they
+		// were already at the top, leave them there so the new mail is visible.
+		nextTick(() => {
+			if (el && prevTop > 0) el.scrollTop = prevTop + (el.scrollHeight - prevHeight)
+		})
+		return
+	}
+
+	scrollListToTop()
 }
 
+// Cross-account search: when the search dialog's "all accounts" toggle was on, the flag rides along in
+// the query (kept out of the filter conditions on the server). The merged results carry their owning
+// account, so each row opens in — and acts within — its own account (see the row-action wrappers).
+const isAllAccountsSearch = computed(() => mailbox === 'search' && route.query.all_accounts != null)
+
+// Null while a search is pending — the count is only known once the fetch resolves (set in the
+// searchResults transform below, reset in resetThreads). Guards the title against a stale or zero count.
+const searchTotal = ref<number | null>(null)
+
+// Reset resource for search: always the first window, over-fetching one row to drive `hasMore`.
 const searchResults = createResource({
 	url: 'suite.mail.api.mail.search_mails',
 	makeParams: () => ({
 		account: store.accountId,
 		filter: route.query,
-		limit: PAGE_LENGTH,
-		start: page.value * PAGE_LENGTH,
+		limit: PAGE_LENGTH + 1,
+		start: 0,
+		all_accounts: isAllAccountsSearch.value,
 	}),
 	transform: (data: [Thread[], number]) => {
-		total.value = data[1]
-		return data[0]
+		if (refreshMode.value) refreshSnapshot = threadsResource.value.data ?? []
+		hasMore.value = data[0].length > PAGE_LENGTH
+		searchTotal.value = data[1] ?? 0
+		return data[0].slice(0, PAGE_LENGTH)
 	},
-	onSuccess: (data: [Thread[], number]) => {
-		correctPageOverflow(data[0])
-		openPendingEdgeThread()
-		syncDisplayedPage()
+	onSuccess: () => {
+		onResetSuccess()
 		if (mailbox === 'search') isMailboxLoaded.value = true
+	},
+	// On failure the count never arrives, so clear the pending state instead of leaving the title stuck
+	// on "Searching…" — the empty result list then reads as "0 results".
+	onError: () => {
+		searchTotal.value = 0
 	},
 })
 
 watch(
 	() => JSON.stringify(route.query),
 	() => {
-		if (mailbox === 'search') {
-			page.value = 0
-			searchResults.reload()
-		}
+		if (mailbox === 'search') resetThreads()
 	},
 )
 
@@ -918,128 +992,119 @@ const filter = ref<string | null>(
 )
 const isMailboxLoaded = ref(false)
 
+// Reset resource for a mailbox: always the first window. Over-fetches one row (PAGE_LENGTH + 1) to
+// detect whether more exist without relying on the (flaky) stored count.
 const threads = createResource({
 	url: 'suite.mail.api.mail.get_threads',
 	makeParams: () => ({
 		account: store.accountId,
 		mailbox,
 		limit: PAGE_LENGTH + 1,
-		start: page.value * PAGE_LENGTH,
+		start: 0,
 		filter_by: filter.value,
 	}),
 	transform: (data: [Thread[], string]) => {
+		// In refresh mode, snapshot the live loaded list now — before this window replaces it — so the
+		// merge in onResetSuccess reflects any optimistic removals/undo-inserts made during the fetch.
+		if (refreshMode.value) refreshSnapshot = threadsResource.value.data ?? []
 		const rows = data[0]
-		// This resource always fetches one extra row (PAGE_LENGTH + 1) to detect a next page without
-		// relying on the (flaky) stored count: clip the extra row from the display and record whether it
-		// was there. Drives `hasMore` for both plain and filtered mailboxes.
 		hasMore.value = rows.length > PAGE_LENGTH
 		return rows.slice(0, PAGE_LENGTH)
 	},
 	onSuccess: (data: [Thread[], string]) => {
-		correctPageOverflow(data[0])
-		openPendingEdgeThread()
-		syncDisplayedPage()
+		onResetSuccess()
 		if (mailbox === data[1]) isMailboxLoaded.value = true
 	},
 })
 
 const threadsResource = computed(() => (mailbox === 'search' ? searchResults : threads))
 
-// If a page ends up empty because threads were removed (e.g. deleted/moved), step back a page.
-// Decrementing one at a time is bounded by 0, so it can't loop even if `total` is stale.
-const correctPageOverflow = (pageData: Thread[]) => {
-	if (pageData.length || page.value === 0) return
-	page.value -= 1
-	threadsResource.value.reload()
+// The Trash/Junk "auto-deleted after 30 days" banner is about the whole mailbox, so show it whenever the
+// mailbox has threads — or a filter is applied (the filtered view may be empty while the mailbox isn't).
+// The layout below reserves height for it only when it's actually rendered, so the two stay in sync.
+const showDeleteBanner = computed(
+	() =>
+		[mailboxIds.trash, mailboxIds.junk].includes(mailbox) &&
+		!threadsResource.value.data?.loading &&
+		(!!threadsResource.value.data?.length || !!filter.value) &&
+		(showReadingPane.value || !threadID),
+)
+
+// ── Infinite scroll ─────────────────────────────────────────────────────────────────────────────
+// Two fetch paths that both write `threadsResource.value.data` — the single accumulated list every
+// consumer reads: the reset resources above replace it (start:0); the append resources below push the
+// next window onto it. Kept separate so createResource's replace-on-reload never fights the append.
+
+// Appends the next window onto the loaded list, deduped by thread_id. `start = data.length` stays
+// correct across optimistic removals (the server list shifts left by the same rows we dropped); the
+// only skew is new mail inserted at the front, which the dedupe absorbs and the next reset reconciles.
+const appendThreads = (rows: Thread[]) => {
+	loadingMore.value = false
+	// Discard a stale window that resolved after a reset began (mailbox switch, refresh, undo, …).
+	if (loadEpoch !== epoch.value) return
+	const seen = new Set(threadsResource.value.data.map((t: Thread) => t.thread_id))
+	const fresh = rows
+		.slice(0, PAGE_LENGTH)
+		.filter((t) => !seen.has(t.thread_id) && !recentlyRemoved.has(t.thread_id))
+	// Stop auto-loading if the window added nothing new (offset stuck behind heavy front-inserted mail);
+	// the next reset (poll/refresh/socket) reconciles. Guards against a tight reload loop while the
+	// sentinel stays in view.
+	hasMore.value = rows.length > PAGE_LENGTH && fresh.length > 0
+	threadsResource.value.data = [...threadsResource.value.data, ...fresh]
+	openPendingEdgeThread()
 }
 
-const threadsOnPage = computed(() => threadsResource.value.data?.length ?? 0)
-
-// How the count *label* is resolved (pagination/range never depend on the stored count — see below):
-// - 'exact'     (search): the backend returns the exact total.
-// - 'mailbox'   (a plain mailbox, no filter): show the mailbox's stored thread count for the "of N".
-//   It's occasionally wrong (server `totalThreads` drops then self-heals), but it's the only cheap
-//   exact total we have, so we use it for the label only — never to drive fetching or navigation.
-// - 'lookahead' (a filtered mailbox or the cross-mailbox "starred" view): no cheap total exists, so
-//   we show the running count with a "+" suffix and only enable Next while a next page is detected.
-const countMode = computed<'exact' | 'mailbox' | 'lookahead'>(() => {
-	if (mailbox === 'search') return 'exact'
-	if (mailbox === 'starred' || filter.value) return 'lookahead'
-	return 'mailbox'
+const loadMoreThreads = createResource({
+	url: 'suite.mail.api.mail.get_threads',
+	makeParams: () => ({
+		account: store.accountId,
+		mailbox,
+		limit: PAGE_LENGTH + 1,
+		start: threadsResource.value.data.length,
+		filter_by: filter.value,
+	}),
+	onSuccess: (data: [Thread[], string]) => appendThreads(data[0]),
+	onError: () => (loadingMore.value = false),
 })
 
-// The stored thread count, shown as the "of N" total for a plain mailbox. Used for display only.
-const mailboxTotal = computed(() => mailboxObj.value?.total_threads ?? 0)
-
-// A *reliable* fixed total used to clamp the displayed range (so it never overshoots during a page
-// change, when the previous page's rows linger). Only search has one — the mailbox's `totalThreads`
-// is too flaky to clamp against, so plain/lookahead views derive the range from the loaded rows.
-const knownTotal = computed<number | null>(() =>
-	countMode.value === 'exact' ? total.value : null,
-)
-
-const rangeEnd = computed(() => {
-	// Based on the displayed (loaded) page, not the navigation target, so the range only moves once the
-	// new page's data arrives. For a known total, derive the end from the page bounds (clamped to the
-	// total) rather than the row count; the fetch is clamped to the same bound, so it matches the loaded
-	// page while staying stable during a page change, when the previous page's rows still linger.
-	if (knownTotal.value && knownTotal.value > 0) {
-		return Math.min((displayedPage.value + 1) * PAGE_LENGTH, knownTotal.value)
-	}
-	return displayedPage.value * PAGE_LENGTH + threadsOnPage.value
-})
-const rangeStart = computed(() =>
-	rangeEnd.value === 0 ? 0 : displayedPage.value * PAGE_LENGTH + 1,
-)
-// Collapse to a single number when the page holds one thread (e.g. "1" instead of "1–1").
-const range = computed(() =>
-	rangeStart.value === rangeEnd.value
-		? `${rangeStart.value}`
-		: `${rangeStart.value}–${rangeEnd.value}`,
-)
-const displayTotal = computed(() => {
-	if (countMode.value === 'lookahead') return rangeEnd.value
-	if (countMode.value === 'mailbox') return mailboxTotal.value
-	return knownTotal.value ?? 0 // exact
-})
-// In lookahead mode the count is a lower bound — show "n+" while a next page exists, else "n".
-const totalLabel = computed(() =>
-	countMode.value === 'lookahead'
-		? `${rangeEnd.value}${hasMore.value ? '+' : ''}`
-		: `${displayTotal.value}`,
-)
-
-// Whether a next page exists. When we have a total (search, or a plain mailbox), we compare the next
-// page's range against it so presses can be *queued* several pages ahead while a page is still
-// loading. A plain mailbox also keeps the extra-row probe (`hasMore`) as a fallback, so a transiently
-// low stored count can't strand the user mid-list — it still advances one page at a time (bounded to
-// the loaded page) until the count self-heals. Lookahead has no total, so it relies on the probe alone.
-const canGoPrev = computed(() => page.value > 0)
-// A next page exists if the next page's range fits within the total.
-const rangeHasNext = (total: number) => (page.value + 1) * PAGE_LENGTH < total
-// Fallback when the total is unreliable/absent: the extra-row probe, bounded to the loaded page.
-const probeHasNext = computed(() => hasMore.value && page.value === displayedPage.value)
-const canGoNext = computed(() => {
-	if (countMode.value === 'exact') return rangeHasNext(knownTotal.value ?? 0)
-	if (countMode.value === 'mailbox')
-		return rangeHasNext(mailboxTotal.value) || probeHasNext.value
-	return probeHasNext.value // lookahead
+const loadMoreSearch = createResource({
+	url: 'suite.mail.api.mail.search_mails',
+	makeParams: () => ({
+		account: store.accountId,
+		filter: route.query,
+		limit: PAGE_LENGTH + 1,
+		start: threadsResource.value.data.length,
+		all_accounts: isAllAccountsSearch.value,
+	}),
+	onSuccess: (data: [Thread[], number]) => appendThreads(data[0]),
+	onError: () => (loadingMore.value = false),
 })
 
-// Coalesce rapid Prev/Next presses: only the final target page is fetched, and the displayed page
-// (range + list) updates once it loads — intermediate pages are never shown.
-const navigate = useDebounceFn(() => threadsResource.value.reload(), 250)
-
-const goToPage = (next: boolean) => {
-	if (next ? !canGoNext.value : !canGoPrev.value) return
-	page.value += next ? 1 : -1
-	resetSelections()
-	navigate()
+const loadMore = () => {
+	if (!hasMore.value || loadingMore.value || threadsResource.value.loading) return
+	loadingMore.value = true
+	loadEpoch = epoch.value
+	;(mailbox === 'search' ? loadMoreSearch : loadMoreThreads).reload()
 }
+
+const loadMoreSentinel = useTemplateRef('loadMoreSentinel')
+useIntersectionObserver(
+	loadMoreSentinel,
+	([entry]) => {
+		if (entry?.isIntersecting) loadMore()
+	},
+	{ root: mailListRef },
+)
+
+// The reading pane's Next arrow can always advance while more threads remain to load (crossing the
+// last loaded thread triggers an append). The Prev arrow is disabled at the first loaded thread, which
+// is the first thread overall (we always start from the top).
+const canGoNext = computed(() => hasMore.value)
 
 const isLoading = computed(() => {
 	if (!isMailboxLoaded.value) return true
 	if (emptyMailbox.loading) return true
+	if (refillPending.value) return true
 	return !threadsResource.value.data.length && threadsResource.value?.loading
 })
 
@@ -1047,38 +1112,127 @@ const threadIDs = computed(
 	() => threadsResource.value.data?.map((thread: Thread) => thread.thread_id) || [],
 )
 
-const reloadThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) => void = (
+// Reset-to-top: refetch only the first window, replacing the loaded list and scrolling to the top
+// (via onResetSuccess). Bumping `epoch` discards any append/refresh still in flight. Used for
+// mailbox/account switch, filter change, undo, and empty-mailbox.
+const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) => void = (
 	reloadMailboxes = true,
 	mailboxRoles = [],
 ) => {
 	if (mailboxRoles.length && !mailboxRoles.map((m) => mailboxIds[m]).includes(mailbox)) return
 
+	// This reload supersedes any pending refill (its own, or an interrupting mailbox switch); from here
+	// the resource's `loading` drives isLoading, so the flag has done its job.
+	refillPending.value = false
+	refreshMode.value = false
+	epoch.value++
 	resetSelections()
+	// Clear the previous search's count so the header doesn't show a stale total while the new fetch runs.
+	if (mailbox === 'search') searchTotal.value = null
 	threadsResource.value.reload()
 	if (reloadMailboxes) mailboxes.reload()
 }
 
+// Check for new mail without losing the reader's place: refetch the newest window and prepend only the
+// threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
+// the Refresh button, the periodic poll, and the new-mail socket. Selections are preserved.
+const refreshThreads = (reloadMailboxes = true) => {
+	if (threadsResource.value.loading || loadingMore.value) return
+
+	refreshMode.value = true
+	// Bump the epoch so an append still in flight is discarded (appendThreads checks it) instead of
+	// landing after the merge and clobbering it. A new append can't start mid-refresh (loadMore bails
+	// while the resource is loading), so this fully closes the refresh/append race. The merge base
+	// (refreshSnapshot) and scroll anchor are captured later, at response time, so they reflect the list
+	// as it actually is when the window arrives — not a stale start-of-refresh copy.
+	epoch.value++
+	refreshEpoch = epoch.value
+	threadsResource.value.reload()
+	if (reloadMailboxes) mailboxes.reload()
+}
+
+// After an optimistic action whose threads stay in the list (add-to-mailbox, or a move that leaves
+// copies in the current mailbox): refresh selections + sidebar counts only, never refetch the list.
+const syncAfterAction = () => {
+	resetSelections()
+	mailboxes.reload()
+}
+
+// Drops threads from the loaded list optimistically and returns the removed rows (so an undo can put
+// them back). Their server rows leave the current view too, so the append offset (data.length) stays
+// aligned.
+const removeThreadsFromList = (thread_ids: string[]): Thread[] => {
+	const data = threadsResource.value.data ?? []
+	const removed = data.filter((thread: Thread) => thread_ids.includes(thread.thread_id))
+	threadsResource.value.data = data.filter(
+		(thread: Thread) => !thread_ids.includes(thread.thread_id),
+	)
+	// Suppress re-insertion by an in-flight refresh/append until the server-side removal lands.
+	thread_ids.forEach((id) => {
+		recentlyRemoved.add(id)
+		setTimeout(() => recentlyRemoved.delete(id), 15000)
+	})
+	// If this emptied the list but more exist, a refill is coming (refillIfEmpty, once the mutation
+	// lands) — flag it so the empty state doesn't flash in the meantime.
+	if (!threadsResource.value.data.length && hasMore.value) refillPending.value = true
+	return removed
+}
+
+// When an optimistic removal empties the loaded list while more threads exist server-side (e.g. select
+// all + delete/move), refetch the first window so the view refills — the sentinel unmounts with an empty
+// list and couldn't otherwise re-trigger a load. Must run *after* the server mutation lands: a reset
+// mid-request refetches start:0 and gets the same not-yet-removed rows back (they'd reappear).
+const refillIfEmpty = () => {
+	if (!threadsResource.value.data.length && hasMore.value) resetThreads()
+	// resetThreads sets the resource loading (so isLoading holds the spinner from here); clear the flag.
+	refillPending.value = false
+}
+
+// Re-insert threads (after undoing a move/junk) at their correct position by received_at, so they
+// return to where they were instead of jumping to the top. Scroll stays put — the browser's
+// scroll-anchoring holds the viewport as rows reappear above it.
+const restoreThreadsToList = (restored: Thread[]) => {
+	if (!restored.length) return
+	// Rows are back (removal failed / undo), so no refill is coming — drop the pending-refill hold.
+	refillPending.value = false
+	// A restored thread should be visible again — lift any removal suppression.
+	restored.forEach((t: Thread) => recentlyRemoved.delete(t.thread_id))
+	const list = [...(threadsResource.value.data ?? [])]
+	const present = new Set(list.map((t: Thread) => t.thread_id))
+	for (const thread of restored) {
+		if (present.has(thread.thread_id)) continue
+		// The list is sorted newest-first; drop the thread before the first older row.
+		const idx = list.findIndex((t: Thread) => t.received_at < thread.received_at)
+		idx === -1 ? list.push(thread) : list.splice(idx, 0, thread)
+	}
+	threadsResource.value.data = list
+}
+
 watch(
 	() => [mailbox, accountId],
-	() => {
+	(_new, old) => {
+		// Opening a result in an all-accounts search switches the route's account (so the reading pane
+		// loads the thread from the right account) while the mailbox stays 'search'. The merged list spans
+		// every account, so a mere account switch mustn't reset it — keep the results and scroll position.
+		if (isAllAccountsSearch.value && mailbox === 'search' && old?.[0] === 'search') return
+
 		isMailboxLoaded.value = false
 		threadsResource.value.data = []
 		filter.value = localStorage.getItem(`user:${user.data.name}:filter:${mailbox}`) || null
-		page.value = 0
 		threadInFocus.value = undefined
 		collapsedGroups.value = []
-		reloadThreads(false)
+		resetThreads(false)
 	},
 	{ immediate: true },
 )
 
-// Periodically refresh the mailbox list (keeps sidebar counts current), then reload the open
-// mailbox's threads only when its thread count actually changed — so a quiet mailbox isn't reloaded
-// (and scroll-reset) every 30s.
+// Periodically refresh the mailbox list (keeps sidebar counts current), then merge in new threads only
+// when the mailbox's thread count actually changed — so a quiet mailbox isn't touched (and the reader
+// isn't disturbed) every 30s.
 const pollForChanges = async () => {
 	const prevTotal = mailboxObj.value?.total_threads
 	await mailboxes.reload()
-	if (mailboxObj.value?.total_threads !== prevTotal) threadsResource.value.reload()
+	if (mailboxObj.value?.total_threads !== prevTotal) refreshThreads(false)
 }
 
 onMounted(() => {
@@ -1087,7 +1241,7 @@ onMounted(() => {
 	reloadInterval.value = setInterval(pollForChanges, 30000)
 
 	socket.on('new_mail_created', (updatedMailboxes: string[]) => {
-		if (updatedMailboxes.includes(mailbox)) threadsResource.value.reload()
+		if (updatedMailboxes.includes(mailbox)) refreshThreads()
 	})
 
 	socket.on('mail_exchange_completed', (payload: { success: boolean; message: string }) =>
@@ -1118,37 +1272,34 @@ const goToThread = (threadID: string) => {
 		router.push({ name: 'mail-mail', params: { accountId, mailbox, threadID }, query: route.query })
 }
 
-// When stepping past the first/last thread of a page, move to the adjacent page (if any) and open
-// or focus its edge thread once the new page has loaded (`openPendingEdgeThread`, called from
-// onSuccess). `action` distinguishes the reading view (open) from list keyboard focus (focus).
-let pendingEdgeThread: { edge: 'first' | 'last'; action: 'open' | 'focus' } | null = null
+// Stepping past the last loaded thread loads the next window, then opens/focuses the newly appended
+// thread once it arrives (`openPendingEdgeThread`, called from the append's onSuccess). `action`
+// distinguishes the reading view (open) from list keyboard focus (focus). `anchor` is the thread we
+// stepped off (the previously-last loaded), captured so we can resolve its successor after the append.
+// There's no backward case — the first loaded thread is the first thread overall.
+let pendingEdgeThread: { action: 'open' | 'focus'; anchor: string | undefined } | null = null
 
-const crossPageByOffset = (offset: number, action: 'open' | 'focus') => {
-	// While a page transition is in flight (flag set until the new page loads), ignore further
-	// crossings — otherwise key auto-repeat at an edge keeps incrementing page.value and blows
-	// through many pages before the debounced reload fires.
-	if (pendingEdgeThread) return
-	if (offset > 0 && canGoNext.value) {
-		pendingEdgeThread = { edge: 'first', action }
-		goToPage(true)
-	} else if (offset < 0 && canGoPrev.value) {
-		pendingEdgeThread = { edge: 'last', action }
-		goToPage(false)
-	}
+const loadMoreThenOpenEdge = (offset: number, action: 'open' | 'focus') => {
+	// One crossing at a time: ignore further edge steps until the append resolves, so key auto-repeat
+	// at the bottom of the list can't fire a burst of loads.
+	if (pendingEdgeThread || offset < 0 || !hasMore.value) return
+	pendingEdgeThread = { action, anchor: action === 'open' ? threadID : threadInFocus.value }
+	loadMore()
 }
 
 const goToThreadByOffset = (offset: number) => {
 	const next = getThreadByOffset(offset)
 	if (next) return goToThread(next)
-	crossPageByOffset(offset, 'open')
+	loadMoreThenOpenEdge(offset, 'open')
 }
 
 const openPendingEdgeThread = () => {
 	if (!pendingEdgeThread) return
-	const id = pendingEdgeThread.edge === 'first' ? threadIDs.value[0] : threadIDs.value.at(-1)
-	if (!id) return // keep the flag if the page is still empty (e.g. after overflow correction)
-	const { action } = pendingEdgeThread
+	const { action, anchor } = pendingEdgeThread
+	// The successor of the anchor is now loaded (undefined only if nothing new arrived — then stop).
+	const id = getThreadByOffset(1, anchor)
 	pendingEdgeThread = null
+	if (!id) return
 	if (action === 'open') goToThread(id)
 	else focusOnThread(id)
 }
@@ -1170,7 +1321,7 @@ const focusOnThread = (threadID: string) => {
 const focusOnThreadByOffset = (offset: number) => {
 	const next = getThreadByOffset(offset, threadInFocus.value)
 	if (next) return focusOnThread(next)
-	crossPageByOffset(offset, 'focus')
+	loadMoreThenOpenEdge(offset, 'focus')
 }
 
 const scrollIntoView = (threadID: string) => {
@@ -1189,6 +1340,9 @@ const {
 	handleAddThreadsToMailbox,
 	handleRemoveThreadsFromMailbox,
 	junkOrDeleteThreads,
+	handleMailMove,
+	handleMailSpam,
+	handleMailDelete,
 	setFlagged,
 	moveToOptions,
 	addToOptions,
@@ -1203,10 +1357,102 @@ const {
 	threadID: computed(() => threadID),
 	selections,
 	mailThreadRef,
-	reloadThreads,
+	resetThreads,
+	syncAfterAction,
+	removeThreadsFromList,
+	restoreThreadsToList,
+	refillIfEmpty,
 	goToMailbox,
 	goToNextThreadOrMailbox,
 })
+
+// ── Cross-account search row actions ──────────────────────────────────────────────────────────────
+// In an all-accounts search the merged rows can belong to any account, so the shared handlers above
+// (which target the single active account) can't drive them. These act on each row's own account via
+// stateless call()s — mirroring the All Inboxes view — with the active account left untouched. Star and
+// read/unread update optimistically in place; archive/trash re-run the search on success, since a
+// result's membership is server-determined (an archived mail may still match the query). Delete is
+// account-agnostic (it targets Mail Message names), so it stays on the shared junk/delete flow below.
+const crossAccountSetSeen = (mail: Thread, seen: boolean) => {
+	if (mail.seen === (seen ? 1 : 0)) return
+	mail.seen = seen ? 1 : 0
+	call('suite.mail.api.mail.set_mails_seen', { account: mail.account, ids: [mail.id], seen })
+		.then(() => mailboxes.reload())
+		.catch((error) => {
+			mail.seen = seen ? 0 : 1 // revert the optimistic update
+			raiseToast(error?.messages?.[0] || error?.message, 'error')
+		})
+}
+
+const crossAccountSetFlagged = (mail: Thread, flagged: boolean) => {
+	if (mail.flagged === (flagged ? 1 : 0)) return
+	mail.flagged = flagged ? 1 : 0
+	call('suite.mail.api.mail.set_flagged', {
+		account: mail.account,
+		ids: [mail.id],
+		flagged,
+	}).catch((error) => {
+		mail.flagged = flagged ? 0 : 1 // revert the optimistic update
+		raiseToast(error?.messages?.[0] || error?.message, 'error')
+	})
+}
+
+const crossAccountMoveOut = (
+	mail: Thread,
+	target: string | undefined,
+	loading: string,
+	success: string,
+	missing: string,
+) => {
+	if (!target) return raiseToast(missing, 'error')
+	raisePromiseToast(
+		() =>
+			call('suite.mail.api.mail.move_mails', {
+				account: mail.account,
+				ids: [mail.id],
+				mailbox: target,
+				clear_junk: true,
+			}).then(() => resetThreads(false)),
+		loading,
+		success,
+	)
+}
+
+// Route a list row's action to the cross-account handler in an all-accounts search, else to the shared
+// active-account handler (keeping single-account search behaviour identical).
+const rowSetSeen = (mail: Thread, seen: boolean) =>
+	isAllAccountsSearch.value
+		? crossAccountSetSeen(mail, seen)
+		: handleSetSeen({ [Number(seen)]: [mail.thread_id] })
+
+const rowSetFlagged = (mail: Thread, flagged: boolean) =>
+	isAllAccountsSearch.value
+		? crossAccountSetFlagged(mail, flagged)
+		: setFlaggedByThreadIDs([mail.thread_id], flagged)
+
+const rowArchive = (mail: Thread) =>
+	isAllAccountsSearch.value
+		? crossAccountMoveOut(
+				mail,
+				mail.archive,
+				__('Archiving...'),
+				__('Thread archived.'),
+				__('No Archive folder for this account.'),
+			)
+		: mailbox === mailboxIds.sent
+			? handleAddThreadsToMailbox(mailboxIds.archive, [mail.thread_id])
+			: handleMoveThreads({ [mailboxIds.archive]: [mail.thread_id] })
+
+const rowTrash = (mail: Thread) =>
+	isAllAccountsSearch.value
+		? crossAccountMoveOut(
+				mail,
+				mail.trash,
+				__('Moving to Trash...'),
+				__('Thread moved to Trash.'),
+				__('No Trash folder for this account.'),
+			)
+		: handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
 
 const showEmptyMailbox = ref(false)
 
@@ -1216,7 +1462,7 @@ const emptyMailbox = createResource({
 	onSuccess: () => {
 		threadsResource.value.data = []
 		raiseToast(__('{0} emptied.', [mailboxName.value]))
-		reloadThreads()
+		resetThreads()
 	},
 	onError: (error) => raiseToast(error.message, 'error'),
 })
@@ -1266,9 +1512,7 @@ const FILTER_OPTIONS = [
 const setFilter = (value: string | null) => {
 	filter.value = value
 	localStorage.setItem(`user:${user.data.name}:filter:${mailbox}`, value ?? '')
-	page.value = 0
-	threads.reload()
-	resetSelections()
+	resetThreads(false)
 }
 
 // UI formatting
@@ -1302,6 +1546,14 @@ const title = computed(() => {
 			? __('1 item selected')
 			: __('{0} items selected', [String(selections.value.length)])
 
+	if (mailbox === 'search') {
+		// Null until the current search resolves — show a neutral label rather than a stale/zero count.
+		if (searchTotal.value === null) return __('Searching…')
+		return searchTotal.value === 1
+			? __('1 result')
+			: __('{0} results', [String(searchTotal.value)])
+	}
+
 	switch (filter.value) {
 		case 'unread':
 			return __('Unread Mails')
@@ -1313,6 +1565,100 @@ const title = computed(() => {
 			return __('All Mails')
 	}
 })
+
+// Search-results header. The free-text term is shown as a chip you click to reopen the search modal
+// (showSearchModal, bound to HeaderActions); the advanced filters show as removable pills below, and
+// searchTotal drives the result count. Labels mirror the search dialog.
+const showSearchModal = ref(false)
+const showSearchAdvanced = ref(false)
+// Set when a filter chip is clicked; the modal reopens that filter inline for editing (see editSearchFilter).
+const searchEditFilter = ref('')
+// Open the search modal — to the filter form when `advanced` (clicking a pill / "Add filter"), or to the
+// plain search input otherwise (clicking the query).
+const openSearch = (advanced = false) => {
+	showSearchAdvanced.value = advanced
+	showSearchModal.value = true
+}
+// Filter chips whose value can be edited inline in the modal (operator-backed: folder + contacts). The
+// rest (subject/dates) have no inline form, so their chips only remove — matching the modal, where only
+// these keys are clickable.
+const EDITABLE_FILTER_KEYS = ['inMailbox', 'from', 'to', 'cc', 'bcc']
+const isEditableChip = (key: string) => EDITABLE_FILTER_KEYS.includes(key)
+// Two-state chips (attachment/read) flip between their values on click — With ↔ Without Attachments,
+// Read ↔ Unread — instead of opening the modal.
+const TOGGLEABLE_FILTER_KEYS = ['hasAttachment', 'isRead']
+const isToggleableChip = (key: string) => TOGGLEABLE_FILTER_KEYS.includes(key)
+const isClickableChip = (key: string) => isEditableChip(key) || isToggleableChip(key)
+// Route a chip click to editing (operator chips) or toggling (attachment/read chips); non-clickable
+// chips only expose the remove button.
+const handleChipClick = (key: string) => {
+	if (isToggleableChip(key)) return toggleSearchFilter(key)
+	if (isEditableChip(key)) return editSearchFilter(key)
+}
+// Clicking an editable chip opens the modal (plain search view) with that filter dropped back into the
+// query as an editable token — the same effect as clicking the chip inside the modal.
+const editSearchFilter = (key: string) => {
+	showSearchAdvanced.value = false
+	searchEditFilter.value = key
+	showSearchModal.value = true
+}
+// Re-run the search with the chip's value flipped between its two states ('true' ⇄ 'false').
+const toggleSearchFilter = (key: string) => {
+	const query = { ...route.query } as Record<string, string>
+	query[key] = query[key] === 'true' ? 'false' : 'true'
+	searchWith(query)
+}
+
+const SEARCH_FILTER_LABELS: Record<string, string> = {
+	inMailbox: __('In'),
+	subject: __('Subject'),
+	from: __('From'),
+	to: __('To'),
+	cc: __('Cc'),
+	bcc: __('Bcc'),
+	after: __('After'),
+	before: __('Before'),
+}
+const optionLabel = (options: { label: string; value: string }[], value: string) =>
+	options.find((o) => o.value === value)?.label ?? value
+
+const searchQuery = computed(() => (route.query.text as string) || '')
+
+const searchFilterChips = computed(() => {
+	const query = route.query
+	const chips: { key: string; label: string }[] = []
+	for (const key of Object.keys(SEARCH_FILTER_LABELS)) {
+		const value = query[key]
+		if (!value) continue
+		const display =
+			key === 'inMailbox'
+				? (mailboxes.data?.find((m: MailboxData) => m.id === value)?._name ?? String(value))
+				: String(value)
+		chips.push({ key, label: `${SEARCH_FILTER_LABELS[key]}: ${display}` })
+	}
+	// Attachment/read values ("Without Attachments", "Unread") are self-descriptive — show them on their own.
+	if (query.hasAttachment)
+		chips.push({ key: 'hasAttachment', label: optionLabel(getAttachmentOptions(), String(query.hasAttachment)) })
+	if (query.isRead)
+		chips.push({ key: 'isRead', label: optionLabel(getReadStatusOptions(), String(query.isRead)) })
+	return chips
+})
+
+// Re-run the search with one filter (or all filters) dropped. When nothing is left to search, leave the
+// search view for the Inbox.
+const searchWith = (query: Record<string, string>) => {
+	if (!Object.keys(query).length) return exitSearch()
+	router.push({ name: 'mail-mailbox', params: { accountId, mailbox: 'search' }, query })
+}
+const removeSearchFilter = (key: string) => {
+	const query = { ...route.query } as Record<string, string>
+	delete query[key]
+	searchWith(query)
+}
+const clearSearch = () => searchWith(searchQuery.value ? { text: searchQuery.value } : {})
+
+const exitSearch = () =>
+	router.push({ name: 'mail-mailbox', params: { accountId, mailbox: mailboxIds.inbox } })
 </script>
 
 <style scoped>
