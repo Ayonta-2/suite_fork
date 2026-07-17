@@ -529,8 +529,10 @@ const toggleGroupCollapse = (key: string) => {
 		return (collapsedGroups.value = collapsedGroups.value.filter((d) => d !== key))
 
 	collapsedGroups.value.push(key)
+	// Collapsing keeps the group's selection: "collapse a day, tick it, archive it" is a bulk move
+	// worth having, and the header's own checkbox goes on showing that the day is selected. Only the
+	// reading pane has to move, since it would otherwise point at a row that is no longer rendered.
 	if (groupedThreads.value[key]?.some((thread) => thread.thread_id === threadID)) goToMailbox()
-	toggleSelect(getGroupThreads(key), false)
 }
 
 const getGroupThreads = (group: string) => groupedThreads.value[group]?.map((t) => t.thread_id)
@@ -629,15 +631,10 @@ const isAllSelected = computed(
 	() => threadIDs.value.length && selections.value.length === threadIDs.value.length,
 )
 
-// Selecting inside a collapsed date group opens it, so the selection is never invisible. Stacks
-// deliberately do NOT follow: ticking a stack is how you act on the whole pile at once (collapse the
-// alert flood, tick, archive), and expanding it on tick would defeat the point. The stack row's own
-// checkbox shows the selection, so nothing is hidden either way.
-watch(selections, (val) => {
-	collapsedGroups.value = collapsedGroups.value.filter(
-		(group) => !getGroupThreads(group).some((thread) => val.includes(thread)),
-	)
-})
+// Selecting no longer forces a collapsed date group or stack open. Ticking either one is how you act
+// on the whole set at once — collapse the pile, tick, archive — and expanding it on tick would undo
+// exactly the thing being asked for, at the worst moment. Nothing is concealed by staying collapsed:
+// the header or stack row shows its own checkbox ticked, and the toolbar counts individual threads.
 
 const toggleSelect = (
 	threadIDs: string[],
