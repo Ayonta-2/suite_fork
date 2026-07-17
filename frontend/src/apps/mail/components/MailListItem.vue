@@ -2,7 +2,11 @@
 	<router-link
 		:to="{
 			name: 'mail-mail',
-			params: { accountId: $route.params.accountId, mailbox, threadID: mail.thread_id },
+			params: {
+				accountId: accountId || $route.params.accountId,
+				mailbox,
+				threadID: mail.thread_id,
+			},
 			query: $route.query,
 		}"
 		class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 border-b px-3.5 py-2.5 sm:space-x-5 sm:px-5"
@@ -22,7 +26,7 @@
 			:class="isFullWidth ? 'h-8' : 'h-10 sm:-mt-1.5'"
 		>
 			<div
-				v-if="!isMobile"
+				v-if="!isMobile && selectable"
 				class="checkbox-hitbox -m-3 cursor-pointer p-3"
 				@click.stop.prevent="emit('setSelected', !isSelected)"
 			>
@@ -36,7 +40,7 @@
 				<Check class="text-ink-base m-auto h-5 w-5 stroke-[3px]" />
 			</div>
 			<Avatar
-				v-show="!isSelected && isMobile"
+				v-show="!isSelected && (isMobile || !selectable)"
 				:label="getFirstAlphabet(mail.from_name) || getFirstAlphabet(mail.from_email)"
 				:image="mail.user_image"
 				size="xl"
@@ -58,9 +62,16 @@
 					<h3
 						class="truncate text-[15px] !font-medium sm:text-base"
 						:class="{ '!font-semibold': !mail.seen }"
+						v-html="highlight(header)"
+					/>
+					<!-- All Inboxes: which account received this mail. -->
+					<div
+						v-if="accountLabel"
+						class="text-ink-gray-4 flex shrink-0 items-center gap-1 text-xs"
 					>
-						{{ header }}
-					</h3>
+						<span aria-hidden="true">·</span>
+						<span>{{ __('in {0}', [accountLabel]) }}</span>
+					</div>
 					<Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
 				</div>
 				<MailDate v-if="!isFullWidth" :datetime="mail.received_at" :in-list="true" />
@@ -73,7 +84,7 @@
 					'!font-semibold': !mail.seen,
 				}"
 			>
-				{{ mail.subject || __('[No subject]') }}
+				<span v-html="highlight(mail.subject || __('[No subject]'))" />
 			</h4>
 			<div
 				class="flex items-center justify-between truncate"
@@ -83,7 +94,7 @@
 					class="text-ink-gray-5 truncate text-sm !leading-[1.5]"
 					:class="{ italic: !mail.preview, '!text-base': isFullWidth }"
 				>
-					{{ mail.preview || __('— No message body —') }}
+					<span v-html="highlight(mail.preview || __('— No message body —'))" />
 				</h5>
 
 				<div v-if="!isFullWidth" class="ml-3.5 flex space-x-3.5">
@@ -215,6 +226,7 @@
 
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { Check, Download, Loader } from 'lucide-vue-next'
 import { Avatar, Badge, Checkbox, Popover, Tooltip } from 'frappe-ui'
 
@@ -229,10 +241,24 @@ import MailListItemActions from '@/apps/mail/components/MailListItemActions.vue'
 
 import type { Attachment, Thread } from '@/apps/mail/types'
 
-const { mailbox, mail, isSelected } = defineProps<{
+const {
+	mailbox,
+	mail,
+	isSelected,
+	accountId,
+	accountLabel,
+	selectable = true,
+} = defineProps<{
 	mailbox: string
 	mail: Thread
 	isSelected: boolean
+	// Set by the All Inboxes view: the row's owning account (overrides the route's accountId in the
+	// thread link) and a short label chip identifying which account the mail belongs to.
+	accountId?: string
+	accountLabel?: string
+	// When false, the desktop selection checkbox is replaced by the sender avatar (the All Inboxes
+	// view has no cross-account bulk selection).
+	selectable?: boolean
 }>()
 
 const emit = defineEmits([
@@ -266,6 +292,28 @@ const header = computed(() => {
 		? getFormattedRecipients(mail.recipients) || __('To:')
 		: mail.from_name || mail.from_email
 })
+
+// In search results, highlight the matched query term. Escape the text first (so any markup in the
+// content is neutralized), then wrap matches in <mark> — the only HTML we inject — for safe v-html.
+const route = useRoute()
+const searchTerm = computed(() =>
+	mailbox === 'search' ? ((route.query.text as string) || '').trim() : '',
+)
+const escapeHtml = (s: string) =>
+	s.replace(
+		/[&<>"']/g,
+		(c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
+	)
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const highlight = (text?: string) => {
+	const escaped = escapeHtml(text ?? '')
+	const term = searchTerm.value
+	if (!term) return escaped
+	return escaped.replace(
+		new RegExp(`(${escapeRegExp(escapeHtml(term))})`, 'gi'),
+		'<mark class="bg-surface-yellow-5 text-ink-gray-9">$1</mark>',
+	)
+}
 
 const isHovered = ref(false)
 

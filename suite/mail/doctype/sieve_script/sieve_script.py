@@ -3,6 +3,7 @@
 
 import json
 import re
+from collections.abc import Generator
 from contextlib import contextmanager
 from uuid import uuid7
 
@@ -21,8 +22,8 @@ from suite.mail.jmap import (
 	get_mailboxes,
 	get_sieve_script_service,
 )
-from suite.mail.utils import execute_with_logging, parse_filters
 from suite.mail.utils.user import get_account_emails
+from suite.utils import execute_with_logging, parse_filters
 
 
 class SieveScript(Document):
@@ -437,11 +438,12 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
 		lambda: _build_automation_sieve(account, activate=activate),
 		title="Failed to build automation sieve script",
 		with_context=False,
+		module="Mail",
 	)
 
 
 @contextmanager
-def pause_automation_sieve_build():
+def pause_automation_sieve_build() -> Generator[None, None, None]:
 	"""Suppress the automatic `build_automation_sieve` triggered by Mailbox Settings / Screened Email
 	Address document hooks, so a caller doing several writes rebuilds the script once at the end
 	instead of after every write.
