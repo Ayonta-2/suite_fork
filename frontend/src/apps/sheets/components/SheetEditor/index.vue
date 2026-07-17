@@ -918,6 +918,15 @@
             label="Error message (optional)"
             placeholder="This value is not allowed"
           />
+
+          <!-- On invalid: block the edit, or allow it with a warning -->
+          <FormControl v-if="validationDialog.type !== 'checkbox'"
+            type="select" label="When the value is invalid" v-model="validationDialog.severity"
+            :options="[
+              { label: 'Reject the input',        value: 'reject' },
+              { label: 'Allow, but show a warning', value: 'warn' },
+            ]"
+          />
         </div>
       </template>
       <template #actions>
@@ -945,6 +954,34 @@
         <div class="flex flex-row-reverse gap-2">
           <Button variant="solid" @click="confirmInsertMany">Insert</Button>
           <Button @click="showInsertManyDialog = false">Cancel</Button>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Custom number-format dialog -->
+    <Dialog v-model="customFormatDialog.open" :options="{ title: 'Custom number format', size: 'sm' }">
+      <template #body-content>
+        <div class="sn-form-stack">
+          <FormControl
+            v-model="customFormatDialog.pattern"
+            label="Format code"
+            placeholder="#,##0.00"
+            @keydown.enter="confirmCustomFormat"
+          />
+          <div class="text-sm text-ink-gray-6">
+            Preview: <span class="font-medium text-ink-gray-9">{{ customFormatPreview || '—' }}</span>
+          </div>
+          <div class="text-xs text-ink-gray-5 leading-relaxed">
+            <code>0</code> padded digit · <code>#</code> optional digit · <code>,</code> thousands ·
+            <code>.</code> decimal · <code>%</code> percent · <code>"text"</code> literal.
+            e.g. <code>#,##0.00</code>, <code>0.0%</code>, <code>"$"#,##0</code>
+          </div>
+        </div>
+      </template>
+      <template #actions>
+        <div class="flex flex-row-reverse gap-2">
+          <Button variant="solid" @click="confirmCustomFormat">Apply</Button>
+          <Button @click="customFormatDialog.open = false">Cancel</Button>
         </div>
       </template>
     </Dialog>
@@ -1573,6 +1610,7 @@ const validationDialog = reactive({
   val2:     '',
   listRaw:  '',
   message:  '',
+  severity: 'reject',   // 'reject' blocks the edit; 'warn' allows it but flags the cell
 })
 
 // ── Conditional format dialog state ───────────────────────────────────────────
@@ -2144,6 +2182,30 @@ const _FORMAT_LABELS = (() => {
   return m
 })()
 
+// Custom number-format dialog. `pattern` is a raw Excel-style code; it's
+// stored as `custom:<pattern>` so the display path routes it to applyCustomFmt.
+const customFormatDialog = reactive({ open: false, pattern: '' })
+
+function openCustomFormatDialog() {
+  const cur = parseNumberFmt(activeNumberFormat.value)
+  customFormatDialog.pattern = cur.type === 'custom' ? cur.pattern : '#,##0.00'
+  customFormatDialog.open = true
+}
+
+// Live preview against a representative value so the user sees the effect
+// before applying. Falls back to empty on a pattern that throws.
+const customFormatPreview = computed(() => {
+  const p = customFormatDialog.pattern.trim()
+  if (!p) return ''
+  try { return applyNumberFmt(1234.567, 'custom:' + p) } catch { return '' }
+})
+
+function confirmCustomFormat() {
+  const p = customFormatDialog.pattern.trim()
+  if (p) onNumberFormatChange('custom:' + p)
+  customFormatDialog.open = false
+}
+
 const numberFormatLabel = computed(() => {
   const cur = activeNumberFormat.value
   if (_FORMAT_LABELS.has(cur)) return _FORMAT_LABELS.get(cur)
@@ -2158,15 +2220,18 @@ const numberFormatLabel = computed(() => {
   return type[0].toUpperCase() + type.slice(1)
 })
 
-const numberFormatDropdownOptions = computed(() =>
-  NUMBER_FORMAT_GROUPS.map(g => ({
+const numberFormatDropdownOptions = computed(() => [
+  ...NUMBER_FORMAT_GROUPS.map(g => ({
     group: g.group,
     items: g.items.map(it => ({
       label: it.label,
       onClick: () => onNumberFormatChange(activeNumberFormat.value === it.value ? '' : it.value),
     })),
-  }))
-)
+  })),
+  { group: 'Custom', items: [
+    { label: 'Custom format…', onClick: () => openCustomFormatDialog() },
+  ]},
+])
 
 // Active currency code (for the $-button symbol). Defaults to $ when the cell
 // isn't a currency at all, so the button always says *something* clickable.
@@ -2966,7 +3031,9 @@ function _setupGridInstance() {
       const trimmed = String(value ?? '').trim()
       if (trimmed !== '') {
         const v = validation.validate(id, value, writeSheet)
-        if (!v.valid) {
+        // 'warn' rules let the value through but surface a transient notice;
+        // 'reject' (default) blocks the edit and repaints the pre-edit value.
+        if (!v.valid && v.severity !== 'warn') {
           const msg = v.message || 'Value rejected by data validation rule'
           saveError.value = msg
           setTimeout(() => { if (saveError.value === msg) saveError.value = '' }, 3500)
@@ -2977,6 +3044,11 @@ function _setupGridInstance() {
           editingHomeCell.value  = null
           syncFlags()
           return
+        }
+        if (!v.valid && v.severity === 'warn') {
+          const msg = v.message || 'Value flagged by data validation rule'
+          saveError.value = msg
+          setTimeout(() => { if (saveError.value === msg) saveError.value = '' }, 3500)
         }
       }
 
@@ -3990,6 +4062,7 @@ function openValidationDialog() {
   validationDialog.val2     = String(e?.max ?? '')
   validationDialog.listRaw  = (e?.options || []).join(', ')
   validationDialog.message  = e?.message  || ''
+  validationDialog.severity = e?.severity || 'reject'
   validationDialog.open     = true
 }
 
@@ -3997,19 +4070,23 @@ function confirmValidation() {
   const ids = selectionIds()
   const sn  = sheet.getCurrentSheet()
   const msg = validationDialog.message.trim() || undefined
+  // 'warn' only differs from the default when the value fails, and a checkbox
+  // is TRUE/FALSE-only where "allow anyway" makes no sense — so scope it out.
+  const severity = validationDialog.type === 'checkbox' ? undefined
+    : (validationDialog.severity === 'warn' ? 'warn' : undefined)
   let rule
   if (validationDialog.type === 'checkbox') {
     rule = { type: 'checkbox', message: msg }
   } else if (validationDialog.type === 'list') {
     const options = validationDialog.listRaw.split(',').map(s => s.trim()).filter(Boolean)
-    rule = { type: 'list', options, message: msg }
+    rule = { type: 'list', options, message: msg, severity }
   } else {
     const op  = validationDialog.operator
     const v1  = parseFloat(validationDialog.val1)
     const v2  = parseFloat(validationDialog.val2)
     const min = isNaN(v1) ? undefined : v1
     const max = ['between', 'not_between'].includes(op) && !isNaN(v2) ? v2 : undefined
-    rule = { type: validationDialog.type, operator: op, min, max, message: msg }
+    rule = { type: validationDialog.type, operator: op, min, max, message: msg, severity }
   }
   for (const id of ids) validation.set(id, rule, sn)
 
