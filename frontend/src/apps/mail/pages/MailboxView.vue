@@ -271,32 +271,60 @@
 							</div>
 						</Tooltip>
 						<template v-if="!collapsedGroups.includes(key)">
-							<MailListItem
-								v-for="mail in group"
-								ref="mailItems"
-								:key="isAllAccountsSearch ? `${mail.account}:${mail.name}` : mail.name"
-								:mailbox
-								:mail
-								:account-id="isAllAccountsSearch ? mail.account : undefined"
-								:account-label="isAllAccountsSearch ? mail.account_name : undefined"
-								:selectable="!isAllAccountsSearch"
-								:is-selected="selections.includes(mail.thread_id)"
-								class="border-l-transparent sm:border-l"
-								:class="{
-									'!bg-surface-blue-1': mail.thread_id === threadID && !isMobile,
-									'!border-l-blue-500': mail.thread_id === threadInFocus,
-								}"
-								@set-seen="(seen: boolean) => rowSetSeen(mail, seen)"
-								@archive-thread="rowArchive(mail)"
-								@trash-thread="rowTrash(mail)"
-								@delete-thread="junkOrDeleteThreads([mail.thread_id], false)"
-								@set-flagged="(flagged: boolean) => rowSetFlagged(mail, flagged)"
-								@set-selected="
-									(selected: boolean) =>
-										!isAllAccountsSearch &&
-										toggleSelect([mail.thread_id], selected)
-								"
-							/>
+							<!-- A stack row stands in for a run of look-alike threads; when expanded, its
+							     members follow it as ordinary (indented) rows. -->
+							<template v-for="row in groupedRows[key]" :key="row.key">
+								<!-- Stacks are disabled in search (see stackingEnabled), so unlike the thread
+								     rows below they never need the all-accounts cross-account handling. -->
+								<StackListItem
+									v-if="row.type === 'stack'"
+									:threads="row.threads"
+									:expanded="row.expanded"
+									:is-selected="isStackSelected(row.threads)"
+									class="border-l-transparent sm:border-l"
+									@toggle="toggleStack(row)"
+									@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
+									@archive-threads="stackArchive(row.threads)"
+									@trash-threads="stackTrash(row.threads)"
+									@delete-threads="stackDelete(row.threads)"
+									@set-selected="
+										(selected: boolean) =>
+											toggleSelect(
+												row.threads.map((t) => t.thread_id),
+												selected,
+											)
+									"
+								/>
+								<MailListItem
+									v-else
+									ref="mailItems"
+									:mailbox
+									:mail="row.thread"
+									:account-id="isAllAccountsSearch ? row.thread.account : undefined"
+									:account-label="
+										isAllAccountsSearch ? row.thread.account_name : undefined
+									"
+									:selectable="!isAllAccountsSearch"
+									:is-selected="selections.includes(row.thread.thread_id)"
+									class="border-l-transparent sm:border-l"
+									:class="{
+										'!bg-surface-blue-1':
+											row.thread.thread_id === threadID && !isMobile,
+										'!border-l-blue-500': row.thread.thread_id === threadInFocus,
+										'!pl-10 sm:!pl-12': row.inStack,
+									}"
+									@set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
+									@archive-thread="rowArchive(row.thread)"
+									@trash-thread="rowTrash(row.thread)"
+									@delete-thread="junkOrDeleteThreads([row.thread.thread_id], false)"
+									@set-flagged="(flagged: boolean) => rowSetFlagged(row.thread, flagged)"
+									@set-selected="
+										(selected: boolean) =>
+											!isAllAccountsSearch &&
+											toggleSelect([row.thread.thread_id], selected)
+									"
+								/>
+							</template>
 						</template>
 					</div>
 					<!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
@@ -439,6 +467,7 @@ import {
 	startResizing,
 } from '@/apps/mail/utils'
 import { useScreenSize, useSidebar, useUndo } from '@/apps/mail/utils/composables'
+import { buildListRows } from '@/apps/mail/utils/threadStacks'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
@@ -447,8 +476,10 @@ import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import ScreenedEmailAddressModal from '@/apps/mail/components/Modals/ScreenedEmailAddressModal.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
+import StackListItem from '@/apps/mail/components/StackListItem.vue'
 
 import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
+import type { ListRow, StackRow } from '@/apps/mail/utils/threadStacks'
 
 const { accountId, mailbox, threadID } = defineProps<{
 	accountId: string
@@ -506,12 +537,75 @@ const getGroupThreads = (group: string) => groupedThreads.value[group]?.map((t) 
 
 watch(groupMessagesBy, () => (collapsedGroups.value = []))
 
+// Thread Stacks
+//
+// A run of adjacent look-alike threads from one sender collapses into a single row, so a chatty
+// notification sender can't bury the rest of the mailbox. This is a display layer over groupedThreads:
+// runs are detected within a date group and never span one.
+
+// Stacking earns its place only where mail arrives unasked-for and one sender can drown the rest. It is
+// off wherever the sender is not the signal, or where hiding rows would defeat the list itself:
+//   Sent, Drafts — every row is from me, so a pile headed by my own name says nothing (MailListItem
+//                  shows recipients rather than the sender here for exactly the same reason).
+//   Starred      — a list curated by hand: collapsing away rows I deliberately marked is backwards.
+//   Search       — results answer a question just asked, so every match should stay visible. This also
+//                  covers all-accounts search (a subset of 'search'), whose rows must be acted on
+//                  through per-row cross-account handlers a stack could not use.
+const stackingEnabled = computed(
+	() => !['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox),
+)
+
+// The thread_ids of every member of every expanded stack. In-memory only — stacks re-collapse on a
+// mailbox switch. Keyed by member id rather than by stack key so a run keeps its expanded state as it
+// grows in either direction (appended by infinite scroll, prepended by a refresh), and so routing to a
+// thread can expand its stack without having to locate the run first.
+const expandedStacks = ref(new Set<string>())
+
+const isRunExpanded = (run: Thread[]) => run.some((t) => expandedStacks.value.has(t.thread_id))
+
+const rowKeyOf = (mail: Thread) =>
+	isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name
+
+const groupedRows = computed<Record<string, ListRow[]>>(() =>
+	Object.fromEntries(
+		Object.entries(groupedThreads.value ?? {}).map(([key, group]) => [
+			key,
+			buildListRows(group, {
+				rowKey: rowKeyOf,
+				isExpanded: isRunExpanded,
+				enabled: stackingEnabled.value,
+			}),
+		]),
+	),
+)
+
+const toggleStack = (row: StackRow) => {
+	const ids = row.threads.map((t) => t.thread_id)
+	if (!row.expanded) return ids.forEach((id) => expandedStacks.value.add(id))
+
+	ids.forEach((id) => expandedStacks.value.delete(id))
+	// Don't leave the reading pane or the focus ring pointing at a row we just hid — the same reason
+	// toggleGroupCollapse leaves the thread when its group collapses.
+	if (threadID && ids.includes(threadID)) goToMailbox()
+	if (threadInFocus.value && ids.includes(threadInFocus.value)) threadInFocus.value = undefined
+}
+
+// Derived rather than stored, mirroring isGroupSelected: it can never drift from `selections`, and
+// every existing path that mutates them (Cmd+A, Esc, resetSelections, shift+arrow, a member's own
+// checkbox) keeps the stack checkbox honest for free.
+const isStackSelected = (threads: Thread[]) =>
+	threads.every((t) => selections.value.includes(t.thread_id))
+
 const threadInFocus = ref<string>()
 
 watch(
 	() => threadID,
 	(val) => {
 		if (!val) return
+
+		// A deep link or a step to the next thread can land inside a collapsed stack — surface it, just
+		// as a collapsed date group opens below.
+		expandedStacks.value.add(val)
 
 		setTimeout(() => focusOnThread(val))
 		for (const group of collapsedGroups.value) {
@@ -535,6 +629,10 @@ const isAllSelected = computed(
 	() => threadIDs.value.length && selections.value.length === threadIDs.value.length,
 )
 
+// Selecting inside a collapsed date group opens it, so the selection is never invisible. Stacks
+// deliberately do NOT follow: ticking a stack is how you act on the whole pile at once (collapse the
+// alert flood, tick, archive), and expanding it on tick would defeat the point. The stack row's own
+// checkbox shows the selection, so nothing is hidden either way.
 watch(selections, (val) => {
 	collapsedGroups.value = collapsedGroups.value.filter(
 		(group) => !getGroupThreads(group).some((thread) => val.includes(thread)),
@@ -1088,13 +1186,29 @@ const loadMore = () => {
 }
 
 const loadMoreSentinel = useTemplateRef('loadMoreSentinel')
+
+// True while the sentinel is in view. Stacks can render a whole window of threads as a single row, so
+// the list can stay shorter than the viewport across several appends — and IntersectionObserver only
+// fires on crossings, so it would go quiet with the sentinel still visible and infinite scroll stuck
+// with no way to scroll it back to life. Keep the flag and re-drive the next window after each render.
+const sentinelVisible = ref(false)
+
 useIntersectionObserver(
 	loadMoreSentinel,
 	([entry]) => {
-		if (entry?.isIntersecting) loadMore()
+		sentinelVisible.value = !!entry?.isIntersecting
+		if (sentinelVisible.value) loadMore()
 	},
 	{ root: mailListRef },
 )
+
+watch(groupedRows, () => {
+	if (!sentinelVisible.value || !hasMore.value) return
+	// After the render the appended rows may have pushed the sentinel out of view, in which case the
+	// observer has already cleared the flag and we stop. Termination is otherwise guaranteed by
+	// hasMore going false — the server running out, or a window adding nothing new.
+	nextTick(() => sentinelVisible.value && loadMore())
+})
 
 // The reading pane's Next arrow can always advance while more threads remain to load (crossing the
 // last loaded thread triggers an append). The Prev arrow is disabled at the first loaded thread, which
@@ -1221,6 +1335,10 @@ watch(
 		filter.value = localStorage.getItem(`user:${user.data.name}:filter:${mailbox}`) || null
 		threadInFocus.value = undefined
 		collapsedGroups.value = []
+		// Stacks re-collapse on a mailbox switch. Note a *filter* change deliberately doesn't clear
+		// this: stale ids are inert (a run is expanded only if one of its current members is listed),
+		// and keeping them means toggling Unread→All doesn't re-collapse a stack you just opened.
+		expandedStacks.value = new Set()
 		resetThreads(false)
 	},
 	{ immediate: true },
@@ -1315,6 +1433,9 @@ const focusOnThread = (threadID: string) => {
 	if (!threadID) return
 
 	threadInFocus.value = threadID
+	// j/k walks every thread, stacked or not, so a stack opens as the cursor enters it rather than the
+	// focus ring landing on a row that isn't rendered.
+	expandedStacks.value.add(threadID)
 	scrollIntoView(threadID)
 }
 
@@ -1325,8 +1446,12 @@ const focusOnThreadByOffset = (offset: number) => {
 }
 
 const scrollIntoView = (threadID: string) => {
-	const el = mailItemsRef.value?.find((el) => el?.id === threadID)?.$el
-	if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+	// The row may have only just been revealed by expanding its stack, so wait for the render before
+	// looking it up. A no-op when nothing changed.
+	nextTick(() => {
+		const el = mailItemsRef.value?.find((el) => el?.id === threadID)?.$el
+		if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+	})
 }
 
 // Actions
@@ -1453,6 +1578,26 @@ const rowTrash = (mail: Thread) =>
 				__('No Trash folder for this account.'),
 			)
 		: handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
+
+// A stack's hover actions apply to its whole run in one operation — one request, one toast, one undo,
+// rather than N of each. The row's own tooltips name the count. These take the same paths as the
+// selection toolbar's bulk actions, and are safe to key off the active account because stacks are
+// disabled in all-accounts search (see stackingEnabled).
+
+const stackIDs = (threads: Thread[]) => threads.map((t) => t.thread_id)
+
+const stackSetSeen = (threads: Thread[], seen: boolean) =>
+	handleSetSeen({ [Number(seen)]: stackIDs(threads) })
+
+const stackArchive = (threads: Thread[]) =>
+	mailbox === mailboxIds.sent
+		? handleAddThreadsToMailbox(mailboxIds.archive, stackIDs(threads))
+		: handleMoveThreads({ [mailboxIds.archive]: stackIDs(threads) })
+
+const stackTrash = (threads: Thread[]) =>
+	handleMoveThreads({ [mailboxIds.trash]: stackIDs(threads) })
+
+const stackDelete = (threads: Thread[]) => junkOrDeleteThreads(stackIDs(threads), false)
 
 const showEmptyMailbox = ref(false)
 
