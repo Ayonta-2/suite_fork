@@ -1,7 +1,7 @@
 <template>
   <div v-if="editor && (hasContent || editor.isEditable)"
     class="gap-2 hidden md:block overflow-y-auto overflow-x-hidden flex-shrink-0 h-full transition-[width] duration-300 ease-in-out"
-    :class="[show ? 'w-64 p-2' : 'w-12 p-2.5']">
+    :class="[show ? 'w-56 p-2' : 'w-12 p-2.5']">
     <div v-if="!show" class="flex justify-center">
       <Button variant="ghost" :icon="LucideTableOfContents" tooltip="Table of Contents" @click="show = !show" />
     </div>

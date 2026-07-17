@@ -5,32 +5,31 @@
       :editor="editor" :items="menuButtons" />
     <div class="relative flex flex-1 overflow-hidden">
       <ToC v-if="editor" :editor :anchors />
-      <div id="editor-scroll-container" class="flex w-full min-w-0 overflow-y-auto overflow-x-hidden relative">
-        <div class="self-start flex flex-col flex-grow min-h-full md:border-l md:pl-72 border-outline-gray-2"
-          @click="onBackgroundClick" @keydown="onEditorKeydown">
-          <FTextEditor ref="textEditor" :upload-function="uploadFunction"
-            :autofocus="true" v-model="localContent" placeholder="Start thinking..." :extensions="editorExtensions"
-            :editable @change="(val) => emit('editor-change', val)">
-            <template #default="{ editor }">
-              <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
-              <EditorTableMenu :editor />
-              <EditorDropZone :editor :disabled="!editable" class="grow flex flex-col">
-                <EditorContent :editor
-                  class="grow w-full md:mx-auto bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:relative prose-th:relative prose-th:bg-surface-gray-2"
-                  :class="[
-                    settings?.wide
-                      ? 'md:max-w-[100ch]'
-                      : 'md:max-w-[48rem]',
-                    isPainting && 'cursor-crosshair',
-                  ]" :style="editorStyle" />
-              </EditorDropZone>
-            </template>
-          </FTextEditor>
+      <div id="editor-scroll-container"
+        class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2">
+        <div class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]" :style="gridStyle" @click="onBackgroundClick"
+          @keydown="onEditorKeydown">
+          <div class="hidden md:block" />
+          <div class="flex flex-col grow min-w-0">
+            <FTextEditor ref="textEditor" :upload-function="uploadFunction"
+              :autofocus="true" v-model="localContent" placeholder="Start thinking..." :extensions="editorExtensions"
+              :editable @change="(val) => emit('editor-change', val)">
+              <template #default="{ editor }">
+                <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
+                <EditorTableMenu :editor />
+                <EditorDropZone :editor :disabled="!editable" class="grow flex flex-col">
+                  <EditorContent :editor
+                    class="grow w-full bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:relative prose-th:relative prose-th:bg-surface-gray-2"
+                    :class="isPainting && 'cursor-crosshair'" :style="editorStyle" />
+                </EditorDropZone>
+              </template>
+            </FTextEditor>
+          </div>
+          <div class="relative hidden md:block min-w-0">
+            <FloatingComments v-if="commentsPainted" v-model:active-comment="activeComment" :y-comments="comments"
+              :file :show-comments :show-resolved :show-unanchored :editor @save="saveComments" />
+          </div>
         </div>
-
-        <FloatingComments v-if="commentsPainted" v-model:active-comment="activeComment" :y-comments="comments" :file
-          :show-comments :show-resolved :show-unanchored :editor @save="saveComments" />
-        <div v-else class="hidden md:block w-72 shrink-0" />
       </div>
       <div v-if="commentsPainted && comments._map.size" class="hidden md:block absolute top-4 right-4">
         <Dropdown :options="commentFilterOptions" placement="right">
@@ -269,6 +268,12 @@ const bubbleMenuButtons = [
 const bubbleMenuOpts = computed(() =>
   bubbleMenuOptions({ editor, comments: props.comments }),
 )
+
+const gridStyle = computed(() => ({
+  gridTemplateColumns: `minmax(0, 1fr) minmax(0, ${
+    props.settings?.wide ? '100ch' : '48rem'
+  }) minmax(0, 1fr)`,
+}))
 
 const editorStyle = computed(() => ({
   fontFamily:
