@@ -14,8 +14,8 @@
               ? 'opacity-100 pointer-events-auto'
               : 'opacity-0 pointer-events-none',
           ]" :style="cardStyle(comment)" @click="activeComment = comment.id">
-          <Button class="md:!hidden absolute top-1.5 right-1.5" variant="ghost"
-            :icon="h(LucideX, { class: 'size-4' })" @click.stop="activeComment = null" />
+          <Button class="md:!hidden absolute top-1 right-1" size="sm" variant="ghost" :icon="LucideX"
+            @click.stop="activeComment = null" />
         <div v-show="activeComment === comment.id &&
           currentUserId !== 'Guest' &&
           !comment.new &&
@@ -108,12 +108,12 @@
                     <Button :disabled="activeComment !== comment.id ||
                       reply.edit ||
                       reply.resolved
-                      " class="!h-5 !text-xs !px-1.5 !rounded-sm opacity-0" :class="activeComment === comment.id &&
+                      " size="xs" class="opacity-0" :class="activeComment === comment.id &&
                         !reply.edit &&
                         !reply.resolved &&
                         comment.owner == currentUserId &&
                         'opacity-100'
-                        " variant="ghost" :icon="h(LucideMoreVertical, { class: 'size-3' })" />
+                        " variant="ghost" :icon="LucideMoreVertical" />
                   </Dropdown>
                   <LucideBadgeCheck v-if="comment.resolved" class="text-ink-gray-6 size-4" />
                 </div>
@@ -188,7 +188,6 @@ import {
   watch,
   onMounted,
   ref,
-  h,
   onBeforeUnmount,
   nextTick,
 } from 'vue'
@@ -233,11 +232,7 @@ const onOutsideCardClick = (e, comment) => {
   if (activeComment.value !== comment.id || comment.new) return
   const t = e.target
   if (t.getAttribute?.('data-comment-name')) return
-  if (
-    t.closest?.('.ProseMirror') ||
-    (t.nodeName === 'DIV' && !t.classList?.contains?.('replies-count'))
-  )
-    activeComment.value = null
+  if (!t.closest?.('.comment-group')) activeComment.value = null
 }
 
 const cardStyle = (comment) =>
