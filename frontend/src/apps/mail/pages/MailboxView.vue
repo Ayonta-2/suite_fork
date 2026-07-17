@@ -232,7 +232,9 @@
 							:class="{
 								'!bg-surface-blue-1': isGroupSelected(key),
 								'sm:hover:bg-surface-gray-1': !isLastGroup(key),
+								'!border-l-blue-500': focusedRowKey === `group:${key}`,
 							}"
+							:data-row-key="`group:${key}`"
 							@click="toggleGroupCollapse(key)"
 						>
 							<div
@@ -271,6 +273,8 @@
 									:expanded="row.expanded"
 									:is-selected="isStackSelected(row.threads)"
 									class="border-l-transparent sm:border-l"
+									:class="{ '!border-l-blue-500': row.key === focusedRowKey }"
+									:data-row-key="row.key"
 									@toggle="toggleStack(row)"
 									@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
 									@archive-threads="stackArchive(row.threads)"
@@ -286,7 +290,6 @@
 								/>
 								<MailListItem
 									v-else
-									ref="mailItems"
 									:mailbox
 									:mail="row.thread"
 									:account-id="isAllAccountsSearch ? row.thread.account : undefined"
@@ -299,9 +302,10 @@
 									:class="{
 										'!bg-surface-blue-1':
 											row.thread.thread_id === threadID && !isMobile,
-										'!border-l-blue-500': row.thread.thread_id === threadInFocus,
+										'!border-l-blue-500': row.key === focusedRowKey,
 										'!pl-10 sm:!pl-12': row.inStack,
 									}"
+									:data-row-key="row.key"
 									@set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
 									@archive-thread="rowArchive(row.thread)"
 									@trash-thread="rowTrash(row.thread)"
@@ -470,6 +474,11 @@ import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
 import type { ListRow, StackRow } from '@/apps/mail/utils/threadStacks'
 
+// A date header, the one navigable row the list draws itself rather than getting from buildListRows —
+// which is deliberately date-agnostic, so this type belongs here rather than in threadStacks.
+type GroupRow = { type: 'group'; key: string; dateKey: string }
+type NavRow = ListRow | GroupRow
+
 const { accountId, mailbox, threadID } = defineProps<{
 	accountId: string
 	mailbox: string
@@ -522,6 +531,10 @@ const toggleGroupCollapse = (key: string) => {
 	// worth having, and the header's own checkbox goes on showing that the day is selected. Only the
 	// reading pane has to move, since it would otherwise point at a row that is no longer rendered.
 	if (groupedThreads.value[key]?.some((thread) => thread.thread_id === threadID)) goToMailbox()
+	// As with a folding stack, the header takes the cursor from the rows it just hid. groupedRows
+	// doesn't depend on collapsedGroups, so it still holds those rows on this line.
+	if (groupedRows.value[key]?.some((row) => row.key === focusedRowKey.value))
+		focusedRowKey.value = `group:${key}`
 }
 
 const getGroupThreads = (group: string) => groupedThreads.value[group]?.map((t) => t.thread_id)
@@ -570,15 +583,46 @@ const groupedRows = computed<Record<string, ListRow[]>>(() =>
 	),
 )
 
+// The rows the list actually renders, in visual order. The cursor walks these rather than the flat list
+// of loaded threads, so it can never land on a row that isn't on screen: a collapsed stack is a single
+// stop (its members aren't rendered), and a collapsed date group contributes only its header.
+//
+// Headers exist only when the user groups by day or month; with grouping off none are rendered, and
+// collapsedGroups is provably empty there because only a header's own click can fill it.
+const navigableRows = computed<NavRow[]>(() => {
+	const rows: NavRow[] = []
+	for (const [dateKey, groupRows] of Object.entries(groupedRows.value)) {
+		if (groupMessagesBy.value !== 'None')
+			rows.push({ type: 'group', key: `group:${dateKey}`, dateKey })
+		if (collapsedGroups.value.includes(dateKey)) continue
+		rows.push(...groupRows)
+	}
+	return rows
+})
+
+const focusedRow = computed(() => navigableRows.value.find((row) => row.key === focusedRowKey.value))
+
+// Every thread a row stands for: one for a thread row, the whole run for a stack, the whole day for a
+// header — mirroring exactly what each row's own checkbox selects.
+const rowThreadIDs = (row: NavRow): string[] =>
+	row.type === 'thread'
+		? [row.thread.thread_id]
+		: row.type === 'stack'
+			? row.threads.map((t) => t.thread_id)
+			: (getGroupThreads(row.dateKey) ?? [])
+
 const toggleStack = (row: StackRow) => {
 	const ids = row.threads.map((t) => t.thread_id)
 	if (!row.expanded) return ids.forEach((id) => expandedStacks.value.add(id))
 
 	ids.forEach((id) => expandedStacks.value.delete(id))
-	// Don't leave the reading pane or the focus ring pointing at a row we just hid — the same reason
-	// toggleGroupCollapse leaves the thread when its group collapses.
+	// Don't leave the reading pane pointing at a row we just hid — the same reason toggleGroupCollapse
+	// leaves the thread when its group collapses.
 	if (threadID && ids.includes(threadID)) goToMailbox()
-	if (threadInFocus.value && ids.includes(threadInFocus.value)) threadInFocus.value = undefined
+	// Folding hides the members, so the cursor falls back to the stack row that now stands for them:
+	// Enter-fold-Enter-unfold is a round trip rather than a way to lose your place. Compare raw keys
+	// rather than reading focusedRow, which has already lost the member rows by this line.
+	if (row.threads.some((t) => rowKeyOf(t) === focusedRowKey.value)) focusedRowKey.value = row.key
 }
 
 // Derived rather than stored, mirroring isGroupSelected: it can never drift from `selections`, and
@@ -587,7 +631,10 @@ const toggleStack = (row: StackRow) => {
 const isStackSelected = (threads: Thread[]) =>
 	threads.every((t) => selections.value.includes(t.thread_id))
 
-const threadInFocus = ref<string>()
+// The keyboard cursor, as a row key (see navigableRows). A row key rather than a thread id because the
+// cursor can sit on a stack row or a date header, neither of which is a thread — and one ref rather
+// than two so the cursor can never be in two places at once.
+const focusedRowKey = ref<string>()
 
 watch(
 	() => threadID,
@@ -595,7 +642,7 @@ watch(
 		if (!val) return
 
 		// A deep link or a step to the next thread can land inside a collapsed stack — surface it, just
-		// as a collapsed date group opens below.
+		// as a collapsed date group opens below. An opened thread is always visible in the list.
 		expandedStacks.value.add(val)
 
 		setTimeout(() => focusOnThread(val))
@@ -609,7 +656,6 @@ watch(
 
 // Selection
 
-const mailItemsRef = useTemplateRef('mailItems')
 const mailThreadRef = useTemplateRef('mailThread')
 const mailListRef = useTemplateRef('mailList')
 
@@ -714,17 +760,17 @@ const handleKeyDown = (e: KeyboardEvent) => {
 const handleGKeyPress = (e: KeyboardEvent) => {
 	clearTimeout(gPressTimeout.value)
 
+	// The reading pane walks threads, so it names one; the list walks rows, so it takes the edge row —
+	// which is the day's header when one sits above the first mail.
 	if (e.shiftKey) {
-		const lastThread = threadIDs.value.at(-1)
-		if (threadID) return goToThread(lastThread)
-		return focusOnThread(lastThread)
+		if (threadID) return goToThread(threadIDs.value.at(-1))
+		return focusRow(navigableRows.value.at(-1))
 	}
 
 	if (isGPressed.value) {
 		isGPressed.value = false
-		const firstThread = threadIDs.value[0]
-		if (threadID) return goToThread(firstThread)
-		return focusOnThread(firstThread)
+		if (threadID) return goToThread(threadIDs.value[0])
+		return focusRow(navigableRows.value[0])
 	}
 
 	isGPressed.value = true
@@ -756,17 +802,23 @@ const handleShowShortcuts = (e: KeyboardEvent) => {
 	showShortcuts.value = true
 }
 
+// Enter means "act on the row I'm on": open a mail, or fold/unfold a stack or a day.
 const handleEnter = (e: KeyboardEvent) => {
 	e.preventDefault()
-	if (threadInFocus.value) goToThread(threadInFocus.value)
-	else focusOnThread(threadIDs.value[0])
+
+	const row = focusedRow.value
+	if (!row) return focusRow(navigableRows.value[0])
+	if (row.type === 'thread') return goToThread(row.thread.thread_id)
+	if (row.type === 'stack') return toggleStack(row)
+	// Folds the day, or does nothing on the last group — exactly what clicking the header does.
+	toggleGroupCollapse(row.dateKey)
 }
 
 const handleEscape = (e: KeyboardEvent) => {
 	e.preventDefault()
 	if (threadID) goToMailbox()
 	else if (selections.value.length) resetSelections()
-	else threadInFocus.value = undefined
+	else focusedRowKey.value = undefined
 }
 
 const handleThreadActions = (e: KeyboardEvent, key: string) => {
@@ -807,31 +859,38 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 
 	e.preventDefault()
 
-	const prevThread = threadInFocus.value
 	const offset = ['arrowup', 'k'].includes(key) ? -1 : 1
+	const prevIDs = focusedRow.value ? rowThreadIDs(focusedRow.value) : []
 
-	let newThread = undefined
+	let newIDs: string[] = []
 
 	// At the last loaded thread, stepping further loads the next window (like the ThreadHeader arrows).
-	// newThread stays the in-list target (undefined at the edge), so shift-select skips the crossing —
-	// the appended thread resolves asynchronously and a reset would clear selections anyway.
+	// newIDs stays the in-list target (empty at the edge), so shift-select skips the crossing — the
+	// appended thread resolves asynchronously and a reset would clear selections anyway.
 	if (threadID) {
-		newThread = getThreadByOffset(offset)
+		// The reading pane walks threads rather than rows: opening one always reveals it, so it can
+		// never land on something hidden (see the threadID watcher).
+		const next = getThreadByOffset(offset)
 		goToThreadByOffset(offset)
-	} else if (!threadIDs.value.includes(threadInFocus.value)) {
-		focusOnThread(threadIDs.value[0])
-		newThread = threadIDs.value[0]
+		if (next) newIDs = [next]
 	} else {
-		newThread = getThreadByOffset(offset, threadInFocus.value)
-		focusOnThreadByOffset(offset)
+		const rows = navigableRows.value
+		// A cursor whose row is gone — folded away, or removed by a mutation — restarts at the top.
+		const index = rows.findIndex((row) => row.key === focusedRowKey.value)
+		const next = index === -1 ? rows[0] : rows[index + offset]
+
+		if (next) {
+			focusRow(next)
+			newIDs = rowThreadIDs(next)
+		} else if (index !== -1) loadMoreThenOpenEdge(offset, 'focus')
 	}
 
-	// Handle shift+arrow selection
-	if (!(isShiftPressed.value && newThread)) return
+	// Handle shift+arrow selection. A row carries every thread it stands for, so shifting onto a stack
+	// takes its whole run and onto a header takes the day — the same sets their checkboxes select.
+	if (!(isShiftPressed.value && newIDs.length)) return
 
-	const threadsToToggle = prevThread ? [prevThread, newThread] : [newThread]
-	const shouldSelect = !selections.value.includes(newThread)
-	toggleSelect(threadsToToggle, shouldSelect, true)
+	const shouldSelect = !newIDs.every((id) => selections.value.includes(id))
+	toggleSelect([...prevIDs, ...newIDs], shouldSelect, true)
 }
 
 const handleKeyUp = (e: KeyboardEvent) => {
@@ -1336,7 +1395,7 @@ watch(
 		isMailboxLoaded.value = false
 		threadsResource.value.data = []
 		filter.value = localStorage.getItem(`user:${user.data.name}:filter:${mailbox}`) || null
-		threadInFocus.value = undefined
+		focusedRowKey.value = undefined
 		collapsedGroups.value = []
 		// Stacks re-collapse on a mailbox switch. Note a *filter* change deliberately doesn't clear
 		// this: stale ids are inert (a run is expanded only if one of its current members is listed),
@@ -1404,7 +1463,9 @@ const loadMoreThenOpenEdge = (offset: number, action: 'open' | 'focus') => {
 	// One crossing at a time: ignore further edge steps until the append resolves, so key auto-repeat
 	// at the bottom of the list can't fire a burst of loads.
 	if (pendingEdgeThread || offset < 0 || !hasMore.value) return
-	pendingEdgeThread = { action, anchor: action === 'open' ? threadID : threadInFocus.value }
+	// A focus crossing can only happen from the last navigable row, whose last thread is the last loaded
+	// one — so the tail anchors the successor without needing to map a row back to a thread.
+	pendingEdgeThread = { action, anchor: action === 'open' ? threadID : threadIDs.value.at(-1) }
 	loadMore()
 }
 
@@ -1432,28 +1493,41 @@ const goToNextThreadOrMailbox = (excludedThreads: string[] = []) => {
 	else goToMailbox()
 }
 
-const focusOnThread = (threadID: string) => {
+const focusRow = (row?: NavRow) => {
+	if (!row) return
+
+	focusedRowKey.value = row.key
+	scrollIntoView(row.key)
+}
+
+// The row that stands for a thread on screen: its own row when rendered, the collapsed stack that hides
+// it, or — when its whole day is folded away — that day's header. Callers name a thread ("go to the
+// first mail", "open the thread that just loaded"); this is how that lands somewhere visible.
+const rowForThread = (threadID?: string): NavRow | undefined => {
 	if (!threadID) return
 
-	threadInFocus.value = threadID
-	// j/k walks every thread, stacked or not, so a stack opens as the cursor enters it rather than the
-	// focus ring landing on a row that isn't rendered.
-	expandedStacks.value.add(threadID)
-	scrollIntoView(threadID)
+	const row = navigableRows.value.find(
+		(row) =>
+			(row.type === 'thread' && row.thread.thread_id === threadID) ||
+			// Only a collapsed stack stands in for its members. An expanded one precedes its member rows,
+			// so without this guard every member would resolve to the stack row above it.
+			(row.type === 'stack' && !row.expanded && row.threads.some((t) => t.thread_id === threadID)),
+	)
+	if (row) return row
+
+	const dateKey = collapsedGroups.value.find((key) => getGroupThreads(key)?.includes(threadID))
+	return navigableRows.value.find((row) => row.key === `group:${dateKey}`)
 }
 
-const focusOnThreadByOffset = (offset: number) => {
-	const next = getThreadByOffset(offset, threadInFocus.value)
-	if (next) return focusOnThread(next)
-	loadMoreThenOpenEdge(offset, 'focus')
-}
+const focusOnThread = (threadID?: string) => focusRow(rowForThread(threadID))
 
-const scrollIntoView = (threadID: string) => {
-	// The row may have only just been revealed by expanding its stack, so wait for the render before
-	// looking it up. A no-op when nothing changed.
+const scrollIntoView = (rowKey: string) => {
+	// The row may have only just been revealed by its stack or its day opening, so wait for the render
+	// before looking it up. A no-op when nothing changed.
 	nextTick(() => {
-		const el = mailItemsRef.value?.find((el) => el?.id === threadID)?.$el
-		if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+		mailListRef.value
+			?.querySelector(`[data-row-key="${rowKey}"]`)
+			?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 	})
 }
 

@@ -242,9 +242,6 @@ const openAttachment = (idx: number) => {
 	showAttachmentViewer.value = true
 }
 
-// MailboxView finds rows by id to scroll them into view (see its mailItems refs).
-defineExpose({ id: mail.thread_id })
-
 // attachment
 
 const currentlyDownloading = ref<string[]>([])
