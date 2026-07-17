@@ -187,7 +187,7 @@
 							:class="{
 								'!bg-surface-blue-1': isGroupSelected(key),
 								'sm:hover:bg-surface-gray-1': !isLastGroup(key),
-								'!border-l-blue-500': focusedRowKey === `group:${key}`,
+								'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
 							}"
 							:data-row-key="`group:${key}`"
 							@click="toggleGroupCollapse(key)"
@@ -228,7 +228,7 @@
 									:expanded="row.expanded"
 									:is-selected="isStackSelected(row.threads)"
 									class="border-l-transparent sm:border-l"
-									:class="{ '!border-l-blue-500': row.key === focusedRowKey }"
+									:class="{ '!border-l-outline-blue-5': row.key === focusedRowKey }"
 									:data-row-key="row.key"
 									@toggle="toggleStack(row)"
 									@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
@@ -258,7 +258,7 @@
 									:class="{
 										'!bg-surface-blue-1':
 											row.thread.thread_id === threadID && !isMobile,
-										'!border-l-blue-500': row.key === focusedRowKey,
+										'!border-l-outline-blue-5': row.key === focusedRowKey,
 										'!pl-10 sm:!pl-12': row.inStack,
 									}"
 									:data-row-key="row.key"
