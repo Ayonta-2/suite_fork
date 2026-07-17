@@ -97,6 +97,11 @@ export const routes: RouteRecordRaw[] = [
 		component: () => import('@/apps/mail/pages/MailLayout.vue'),
 		children: [
 			{
+				path: 'all-inboxes',
+				name: 'mail-all-inboxes',
+				component: () => import('@/apps/mail/pages/AllInboxesView.vue'),
+			},
+			{
 				path: 'account/:accountId/mailbox/:mailbox',
 				name: 'mail-mailbox',
 				component: () => import('@/apps/mail/pages/MailboxView.vue'),
