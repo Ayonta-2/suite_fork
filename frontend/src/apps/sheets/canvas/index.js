@@ -10,7 +10,7 @@ import { checkboxRect } from './checkbox-geometry.js'
 
 export { colLabel, cellId, parseCellId } from '../utils/cells.js'
 
-export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getFormat, onFill, onBatchCommit, getMergeInfo, isSlave, getMasterId, getComment, getValidation, getCondFormat, getRightInset, onHyperlinkClick, onDropdownClick, onCheckboxToggle, onPivotDrill, onResizeEnd, getSheetNames, getCurrentSheet, getEditingHomeSheet, getDisplay, getCellIds, lazyValues = false, canEdit = () => true, isCellEditable, onBlockedEdit } = {}) {
+export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getFormat, onFill, onBatchCommit, getMergeInfo, isSlave, getMasterId, getComment, getValidation, getCondFormat, getSparkline, getRightInset, onHyperlinkClick, onDropdownClick, onCheckboxToggle, onPivotDrill, onResizeEnd, getSheetNames, getCurrentSheet, getEditingHomeSheet, getDisplay, getCellIds, lazyValues = false, canEdit = () => true, isCellEditable, onBlockedEdit } = {}) {
   const ctx = canvas.getContext('2d')
   const dpr = window.devicePixelRatio || 1
 
@@ -110,7 +110,7 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
   }
 
   function render() {
-    renderer.render({ cssW, cssH, getValue, sel, selEnd, selMode, editing, getFormat, freeze, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getRightInset, getDiffFor: _diffCells ? _getDiffFor : null, marchAnts, marchPhase, pickerRect, zoom: _zoom })
+    renderer.render({ cssW, cssH, getValue, sel, selEnd, selMode, editing, getFormat, freeze, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getSparkline, getRightInset, getDiffFor: _diffCells ? _getDiffFor : null, marchAnts, marchPhase, pickerRect, zoom: _zoom })
     for (const cb of _renderListeners) cb()
   }
 
