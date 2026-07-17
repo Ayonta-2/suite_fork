@@ -104,9 +104,8 @@
               </div>
             </div>
           </div>
-          <Button variant="solid" class="ml-auto" size="sm" :disabled="entities[0].folder !== selected &&
-            chosenTeam === entities[0].team
-            " :loading="move.loading" @click="moveFile">
+          <Button variant="solid" class="ml-auto" size="sm" :disabled="tabIndex === 1 && !chosenTeam"
+            :loading="move.loading" @click="moveFile">
             <template #prefix>
               <LucideArrowLeftRight class="size-4" />
             </template>
