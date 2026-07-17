@@ -172,6 +172,10 @@ export const getFormattedDate = (date: Date | string, omitDate = false) => {
 
 export const getFirstAlphabet = (str?: string) => str?.match(/\p{L}/u)?.[0]
 
+// The letter on a sender's avatar: their name's first, or their address's when they go by no name.
+export const getSenderInitial = (sender: { from_name?: string; from_email?: string }) =>
+	getFirstAlphabet(sender.from_name) || getFirstAlphabet(sender.from_email)
+
 export const getTheme = (
 	status: 'Draft' | 'Queued' | 'In Progress' | 'Completed' | 'Failed' | 'Cancelled',
 ) => {
