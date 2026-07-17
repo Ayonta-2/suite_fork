@@ -72,6 +72,7 @@
             @click="onRetrySave"
           />
         </template>
+        <Badge v-if="protectionNotice" theme="gray" variant="subtle" size="sm" :label="protectionNotice" :tooltip="protectionNotice" />
         <!-- View-only indicator — shown up front so a viewer knows they can't
              edit before they try. Neutral gray (not an error) because read
              access is expected, not a failure. Uses the Frappe UI Badge so it
@@ -3431,12 +3432,16 @@ function _pasteAffectedRects(destSel) {
 // — and flashes a transient notice — when the target is protected, so callers
 // bail with `if (…) return`. Programmatic paths (undo/restore/collab) never call
 // these, so they can still rewrite protected cells.
+//
+// A dedicated notice ref — NOT saveError — so a "protected" message renders as a
+// neutral badge and doesn't arm the save-error watchdog / retry affordance.
+const protectionNotice = ref('')
 function _flashProtected(sn) {
   const msg = protection.isSheetLocked(sn)
     ? 'This sheet is protected'
     : 'This range is protected and can’t be edited'
-  saveError.value = msg
-  setTimeout(() => { if (saveError.value === msg) saveError.value = '' }, 3500)
+  protectionNotice.value = msg
+  setTimeout(() => { if (protectionNotice.value === msg) protectionNotice.value = '' }, 3500)
 }
 function _rectBlocked(rect, sn = sheet.getCurrentSheet()) {
   if (!rect || !protection.isAnyProtected(rect, sn)) return false
