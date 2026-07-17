@@ -3,10 +3,10 @@
     <TextEditorFixedMenu v-if="editable"
       class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
       :editor="editor" :items="menuButtons" />
-    <div class="relative flex flex-1 min-h-0 overflow-hidden">
+    <div class="relative flex flex-1 overflow-hidden">
       <ToC v-if="editor" :editor :anchors />
       <div id="editor-scroll-container" class="flex w-full min-w-0 overflow-y-auto overflow-x-hidden relative">
-        <div class="self-start flex flex-col flex-grow min-h-full border-x border-outline-gray-2"
+        <div class="self-start flex flex-col flex-grow min-h-full md:border-l md:pl-72 border-outline-gray-2"
           @click="onBackgroundClick" @keydown="onEditorKeydown">
           <FTextEditor ref="textEditor" :upload-function="uploadFunction"
             :autofocus="true" v-model="localContent" placeholder="Start thinking..." :extensions="editorExtensions"
@@ -30,8 +30,9 @@
 
         <FloatingComments v-if="commentsPainted" v-model:active-comment="activeComment" :y-comments="comments" :file
           :show-comments :show-resolved :show-unanchored :editor @save="saveComments" />
+        <div v-else class="hidden md:block w-72 shrink-0" />
       </div>
-      <div v-if="commentsPainted && comments._map.size" class="absolute top-4 right-4 z-10">
+      <div v-if="commentsPainted && comments._map.size" class="hidden md:block absolute top-4 right-4">
         <Dropdown :options="commentFilterOptions" placement="right">
           <Button :icon="LucideMessageSquareQuote" variant="outline" />
         </Dropdown>
