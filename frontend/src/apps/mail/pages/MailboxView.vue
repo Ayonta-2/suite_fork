@@ -56,59 +56,14 @@
 				class="sticky top-16 flex flex-col border-r"
 				:class="!isMobile && showReadingPane ? 'w-1/3' : 'w-full'"
 			>
-				<!-- Search header: the query (click to edit) + removable filter pills, above the results toolbar. -->
-				<div
+				<!-- The search view's own header: the query (click to edit) + removable filter pills, above
+				     the results toolbar. It owns the query surface; the results below just read the route. -->
+				<SearchResultsHeader
 					v-if="mailbox === 'search'"
-					class="flex flex-col gap-2.5 border-b border-l-transparent px-3.5 py-3 sm:border-l sm:px-5"
-				>
-					<FormControl
-						type="text"
-						size="sm"
-						class="w-full cursor-pointer [&_input]:cursor-pointer"
-						:class="{ 'max-w-2xl': isMobile || !showReadingPane }"
-						:model-value="searchQuery"
-						:placeholder="__('Search')"
-						:aria-label="__('Edit search')"
-						readonly
-						variant="outline"
-						@mousedown.prevent="openSearch()"
-					>
-						<template #prefix>
-							<Search class="text-ink-gray-5 size-4" />
-						</template>
-						<template #suffix>
-							<button
-								class="text-ink-gray-5 hover:text-ink-gray-8 -m-1 flex p-1"
-								:aria-label="__('Filters')"
-								@mousedown.stop.prevent="openSearch(true)"
-							>
-								<SlidersHorizontal class="size-4" />
-							</button>
-						</template>
-					</FormControl>
-					<div v-if="searchFilterChips.length" class="flex flex-wrap items-center gap-1.5">
-						<span
-							v-for="chip in searchFilterChips"
-							:key="chip.key"
-							class="bg-surface-gray-2 inline-flex h-7 items-center gap-1 rounded pl-2 pr-1 text-xs"
-							:class="{
-								'hover:bg-surface-gray-3 cursor-pointer': isClickableChip(chip.key),
-							}"
-							@click="isClickableChip(chip.key) && handleChipClick(chip.key)"
-						>
-							<span class="max-w-40 truncate">{{ chip.label }}</span>
-							<button
-								class="text-ink-gray-5 hover:text-ink-gray-8 rounded p-1"
-								:aria-label="__('Remove filter')"
-								@click.stop="removeSearchFilter(chip.key)"
-							>
-								<X class="size-3" />
-							</button>
-						</span>
-
-						<Button variant="ghost" class="text-xs" :label="__('Clear all')" @click="clearSearch" />
-					</div>
-				</div>
+					v-model:show-search="showSearchModal"
+					v-model:show-advanced="showSearchAdvanced"
+					v-model:edit-filter="searchEditFilter"
+				/>
 
 				<!-- Toolbar/Actions -->
 				<div
@@ -431,12 +386,9 @@ import {
 	Mails,
 	Paperclip,
 	RefreshCw,
-	Search,
-	SlidersHorizontal,
 	Star,
 	StarOff,
 	Trash2,
-	X,
 } from 'lucide-vue-next'
 import {
 	Breadcrumbs,
@@ -444,14 +396,12 @@ import {
 	Checkbox,
 	Dialog,
 	Dropdown,
-	FormControl,
 	Tooltip,
 	call,
 	createResource,
 	usePageMeta,
 } from 'frappe-ui'
 
-import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
 import {
 	getFormattedDate,
 	isMac,
@@ -469,6 +419,7 @@ import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import ScreenedEmailAddressModal from '@/apps/mail/components/Modals/ScreenedEmailAddressModal.vue'
+import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 
@@ -522,6 +473,10 @@ const isLastGroup = (key: string) => Object.keys(groupedThreads.value).at(-1) ==
 const collapsedGroups = ref<string[]>([])
 
 const toggleGroupCollapse = (key: string) => {
+	// The cursor follows the click, as it does when you open a mail: Enter and a click are the same
+	// gesture on the same row, and Enter can only mean that if the cursor is already there. Above the
+	// last-group guard, so clicking a header that can't fold still takes the cursor.
+	focusedRowKey.value = `group:${key}`
 	if (isLastGroup(key)) return
 
 	if (collapsedGroups.value.includes(key))
@@ -532,10 +487,6 @@ const toggleGroupCollapse = (key: string) => {
 	// worth having, and the header's own checkbox goes on showing that the day is selected. Only the
 	// reading pane has to move, since it would otherwise point at a row that is no longer rendered.
 	if (groupedThreads.value[key]?.some((thread) => thread.thread_id === threadID)) goToMailbox()
-	// As with a folding stack, the header takes the cursor from the rows it just hid. groupedRows
-	// doesn't depend on collapsedGroups, so it still holds those rows on this line.
-	if (groupedRows.value[key]?.some((row) => row.key === focusedRowKey.value))
-		focusedRowKey.value = `group:${key}`
 }
 
 const getGroupThreads = (group: string) => groupedThreads.value[group]?.map((t) => t.thread_id)
@@ -614,16 +565,16 @@ const rowThreadIDs = (row: NavRow): string[] =>
 
 const toggleStack = (row: StackRow) => {
 	const ids = row.threads.map((t) => t.thread_id)
+	// The cursor follows the click, as it does when you open a mail. This also covers the fold: the
+	// members are about to be hidden, so the stack row that now stands for them is where the cursor
+	// belongs, and Enter-fold-Enter-unfold stays a round trip rather than a way to lose your place.
+	focusedRowKey.value = row.key
 	if (!row.expanded) return ids.forEach((id) => expandedStacks.value.add(id))
 
 	ids.forEach((id) => expandedStacks.value.delete(id))
 	// Don't leave the reading pane pointing at a row we just hid — the same reason toggleGroupCollapse
 	// leaves the thread when its group collapses.
 	if (threadID && ids.includes(threadID)) goToMailbox()
-	// Folding hides the members, so the cursor falls back to the stack row that now stands for them:
-	// Enter-fold-Enter-unfold is a round trip rather than a way to lose your place. Compare raw keys
-	// rather than reading focusedRow, which has already lost the member rows by this line.
-	if (row.threads.some((t) => rowKeyOf(t) === focusedRowKey.value)) focusedRowKey.value = row.key
 }
 
 // Derived rather than stored, mirroring isGroupSelected: it can never drift from `selections`, and
@@ -1789,99 +1740,12 @@ const title = computed(() => {
 	}
 })
 
-// Search-results header. The free-text term is shown as a chip you click to reopen the search modal
-// (showSearchModal, bound to HeaderActions); the advanced filters show as removable pills below, and
-// searchTotal drives the result count. Labels mirror the search dialog.
+// The search modal lives in HeaderActions but is opened from two places — its own button, and the
+// search view's header — so its state sits here, between them. Everything else about the query surface
+// belongs to SearchResultsHeader.
 const showSearchModal = ref(false)
 const showSearchAdvanced = ref(false)
-// Set when a filter chip is clicked; the modal reopens that filter inline for editing (see editSearchFilter).
 const searchEditFilter = ref('')
-// Open the search modal — to the filter form when `advanced` (clicking a pill / "Add filter"), or to the
-// plain search input otherwise (clicking the query).
-const openSearch = (advanced = false) => {
-	showSearchAdvanced.value = advanced
-	showSearchModal.value = true
-}
-// Filter chips whose value can be edited inline in the modal (operator-backed: folder + contacts). The
-// rest (subject/dates) have no inline form, so their chips only remove — matching the modal, where only
-// these keys are clickable.
-const EDITABLE_FILTER_KEYS = ['inMailbox', 'from', 'to', 'cc', 'bcc']
-const isEditableChip = (key: string) => EDITABLE_FILTER_KEYS.includes(key)
-// Two-state chips (attachment/read) flip between their values on click — With ↔ Without Attachments,
-// Read ↔ Unread — instead of opening the modal.
-const TOGGLEABLE_FILTER_KEYS = ['hasAttachment', 'isRead']
-const isToggleableChip = (key: string) => TOGGLEABLE_FILTER_KEYS.includes(key)
-const isClickableChip = (key: string) => isEditableChip(key) || isToggleableChip(key)
-// Route a chip click to editing (operator chips) or toggling (attachment/read chips); non-clickable
-// chips only expose the remove button.
-const handleChipClick = (key: string) => {
-	if (isToggleableChip(key)) return toggleSearchFilter(key)
-	if (isEditableChip(key)) return editSearchFilter(key)
-}
-// Clicking an editable chip opens the modal (plain search view) with that filter dropped back into the
-// query as an editable token — the same effect as clicking the chip inside the modal.
-const editSearchFilter = (key: string) => {
-	showSearchAdvanced.value = false
-	searchEditFilter.value = key
-	showSearchModal.value = true
-}
-// Re-run the search with the chip's value flipped between its two states ('true' ⇄ 'false').
-const toggleSearchFilter = (key: string) => {
-	const query = { ...route.query } as Record<string, string>
-	query[key] = query[key] === 'true' ? 'false' : 'true'
-	searchWith(query)
-}
-
-const SEARCH_FILTER_LABELS: Record<string, string> = {
-	inMailbox: __('In'),
-	subject: __('Subject'),
-	from: __('From'),
-	to: __('To'),
-	cc: __('Cc'),
-	bcc: __('Bcc'),
-	after: __('After'),
-	before: __('Before'),
-}
-const optionLabel = (options: { label: string; value: string }[], value: string) =>
-	options.find((o) => o.value === value)?.label ?? value
-
-const searchQuery = computed(() => (route.query.text as string) || '')
-
-const searchFilterChips = computed(() => {
-	const query = route.query
-	const chips: { key: string; label: string }[] = []
-	for (const key of Object.keys(SEARCH_FILTER_LABELS)) {
-		const value = query[key]
-		if (!value) continue
-		const display =
-			key === 'inMailbox'
-				? (mailboxes.data?.find((m: MailboxData) => m.id === value)?._name ?? String(value))
-				: String(value)
-		chips.push({ key, label: `${SEARCH_FILTER_LABELS[key]}: ${display}` })
-	}
-	// Attachment/read values ("Without Attachments", "Unread") are self-descriptive — show them on their own.
-	if (query.hasAttachment)
-		chips.push({ key: 'hasAttachment', label: optionLabel(getAttachmentOptions(), String(query.hasAttachment)) })
-	if (query.isRead)
-		chips.push({ key: 'isRead', label: optionLabel(getReadStatusOptions(), String(query.isRead)) })
-	return chips
-})
-
-// Re-run the search with one filter (or all filters) dropped. When nothing is left to search, leave the
-// search view for the Inbox.
-const searchWith = (query: Record<string, string>) => {
-	if (!Object.keys(query).length) return exitSearch()
-	router.push({ name: 'mail-mailbox', params: { accountId, mailbox: 'search' }, query })
-}
-const removeSearchFilter = (key: string) => {
-	const query = { ...route.query } as Record<string, string>
-	delete query[key]
-	searchWith(query)
-}
-const clearSearch = () => searchWith(searchQuery.value ? { text: searchQuery.value } : {})
-
-const exitSearch = () =>
-	router.push({ name: 'mail-mailbox', params: { accountId, mailbox: mailboxIds.inbox } })
 </script>
 
 <style scoped>
