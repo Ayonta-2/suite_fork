@@ -5,7 +5,7 @@ import type { Thread } from '@/apps/mail/types'
 // Chatty automated senders (uptime alerts, CI, ticket systems) post runs of threads that bury
 // everything around them. A run of this many adjacent threads from one sender collapses into a single
 // stack row. Two in a row is normal correspondence, not a flood — hence three.
-export const MIN_STACK_SIZE = 3
+const MIN_STACK_SIZE = 3
 
 /**
  * The stack identity of a thread, or null when it must never stack.
@@ -33,7 +33,7 @@ export const stackKeyOf = (thread: Thread): string | null => {
 	return `${thread.account ?? ''}|${day}|${from}`
 }
 
-export interface ThreadRow {
+interface ThreadRow {
 	type: 'thread'
 	key: string
 	thread: Thread

@@ -5,7 +5,7 @@
 		:selectable
 		:unread="!mail.seen"
 		:hide-sender
-		:avatar-label="getFirstAlphabet(mail.from_name) || getFirstAlphabet(mail.from_email)"
+		:avatar-label="getSenderInitial(mail)"
 		:avatar-image="mail.user_image"
 		:datetime="mail.received_at"
 		:subject-italic="!mail.subject"
@@ -146,7 +146,7 @@ import { Download, Loader } from 'lucide-vue-next'
 import { Badge, Popover, Tooltip } from 'frappe-ui'
 
 import { getAttachmentUrl } from '@/apps/mail/resources'
-import { downloadUrlAsFile, getFileIcon, getFirstAlphabet, getFormattedRecipients } from '@/apps/mail/utils'
+import { downloadUrlAsFile, getFileIcon, getFormattedRecipients, getSenderInitial } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'

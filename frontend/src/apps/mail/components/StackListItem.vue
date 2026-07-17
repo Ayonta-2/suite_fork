@@ -1,9 +1,8 @@
 <template>
 	<MailRow
 		:is-selected
-		:selectable
 		:unread="!!unreadCount"
-		:avatar-label="getFirstAlphabet(latest.from_name) || getFirstAlphabet(latest.from_email)"
+		:avatar-label="getSenderInitial(latest)"
 		:avatar-image="latest.user_image"
 		:datetime="latest.received_at"
 		:subject-italic="!latest.subject"
@@ -44,7 +43,7 @@ import { computed } from 'vue'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { Badge } from 'frappe-ui'
 
-import { getFirstAlphabet } from '@/apps/mail/utils'
+import { getSenderInitial } from '@/apps/mail/utils'
 import MailRow from '@/apps/mail/components/MailRow.vue'
 import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
 
@@ -55,11 +54,10 @@ import type { Thread } from '@/apps/mail/types'
 //
 // Its hover actions apply to every member at once, so each one names the count and every move it makes
 // is undoable.
-const { threads, expanded, isSelected, selectable = true } = defineProps<{
+const { threads, expanded, isSelected } = defineProps<{
 	threads: Thread[]
 	expanded: boolean
 	isSelected: boolean
-	selectable?: boolean
 }>()
 
 const emit = defineEmits<{
