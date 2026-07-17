@@ -1187,27 +1187,44 @@ const loadMore = () => {
 
 const loadMoreSentinel = useTemplateRef('loadMoreSentinel')
 
-// True while the sentinel is in view. Stacks can render a whole window of threads as a single row, so
-// the list can stay shorter than the viewport across several appends — and IntersectionObserver only
-// fires on crossings, so it would go quiet with the sentinel still visible and infinite scroll stuck
-// with no way to scroll it back to life. Keep the flag and re-drive the next window after each render.
+// True while the sentinel is in view.
 const sentinelVisible = ref(false)
+
+// The height the list had reached the last time we topped it up, so a fill that adds nothing can be
+// detected. Reset at the start of each fill episode (see below).
+let lastFillHeight = 0
 
 useIntersectionObserver(
 	loadMoreSentinel,
 	([entry]) => {
+		const entering = !!entry?.isIntersecting && !sentinelVisible.value
 		sentinelVisible.value = !!entry?.isIntersecting
+		if (entering) lastFillHeight = 0
 		if (sentinelVisible.value) loadMore()
 	},
 	{ root: mailListRef },
 )
 
+// Rescues the one case the observer cannot: the rendered list is too short to scroll, so the sentinel
+// can never leave and re-enter the viewport to fire again — infinite scroll would die with nothing left
+// to scroll. A window of 25 threads can collapse to a single stack row, so filling the viewport can take
+// several of them.
+//
+// Both guards are load-bearing. Stop once the list can scroll, because from there the user's own
+// scrolling drives the observer. And stop if a window added no height: its rows landed somewhere they
+// cannot be seen (a collapsed date group), so further windows would be just as invisible — without this,
+// collapsing a large group turns into a stampede that walks the entire mailbox 25 threads at a time.
 watch(groupedRows, () => {
 	if (!sentinelVisible.value || !hasMore.value) return
-	// After the render the appended rows may have pushed the sentinel out of view, in which case the
-	// observer has already cleared the flag and we stop. Termination is otherwise guaranteed by
-	// hasMore going false — the server running out, or a window adding nothing new.
-	nextTick(() => sentinelVisible.value && loadMore())
+
+	nextTick(() => {
+		const el = mailListRef.value
+		if (!el || !sentinelVisible.value) return
+
+		const grew = el.scrollHeight > lastFillHeight
+		lastFillHeight = el.scrollHeight
+		if (el.scrollHeight <= el.clientHeight && grew) loadMore()
+	})
 })
 
 // The reading pane's Next arrow can always advance while more threads remain to load (crossing the
