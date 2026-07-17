@@ -298,6 +298,7 @@
 									"
 									:selectable="!isAllAccountsSearch"
 									:is-selected="selections.includes(row.thread.thread_id)"
+									:hide-sender="row.inStack"
 									class="border-l-transparent sm:border-l"
 									:class="{
 										'!bg-surface-blue-1':

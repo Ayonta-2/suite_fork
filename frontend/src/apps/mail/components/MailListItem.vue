@@ -4,6 +4,7 @@
 		:is-selected
 		:selectable
 		:unread="!mail.seen"
+		:hide-sender
 		:avatar-label="getFirstAlphabet(mail.from_name) || getFirstAlphabet(mail.from_email)"
 		:avatar-image="mail.user_image"
 		:datetime="mail.received_at"
@@ -161,6 +162,7 @@ const {
 	accountId,
 	accountLabel,
 	selectable = true,
+	hideSender = false,
 } = defineProps<{
 	mailbox: string
 	mail: Thread
@@ -172,6 +174,8 @@ const {
 	// When false, the desktop selection checkbox is replaced by the sender avatar (the All Inboxes
 	// view has no cross-account bulk selection).
 	selectable?: boolean
+	// Set on the members of an expanded stack, whose stack row already names the sender.
+	hideSender?: boolean
 }>()
 
 const emit = defineEmits([

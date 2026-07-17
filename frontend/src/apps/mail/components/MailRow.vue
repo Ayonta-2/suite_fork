@@ -41,7 +41,11 @@
 		</div>
 
 		<div class="grow truncate" :class="isFullWidth ? 'flex items-center space-x-3' : 'space-y-1'">
-			<div class="flex items-center" :class="isFullWidth ? 'w-48 shrink-0' : 'justify-between'">
+			<div
+				v-if="showSender"
+				class="flex items-center"
+				:class="isFullWidth ? 'w-48 shrink-0' : 'justify-between'"
+			>
 				<div class="mr-2 mt-0.5 flex items-center space-x-1.5 truncate">
 					<span v-if="unread" class="min-h-2 min-w-2 rounded-full bg-blue-500" />
 					<h3
@@ -59,6 +63,11 @@
 				class="truncate text-sm !leading-[1.5]"
 				:class="{ italic: subjectItalic, '!text-base': isFullWidth, '!font-semibold': unread }"
 			>
+				<!-- Wherever the sender line is dropped, the dot it normally sits on comes down here. -->
+				<span
+					v-if="unread && !showSender"
+					class="bg-blue-500 mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full align-middle"
+				/>
 				<slot name="subject" />
 			</h4>
 
@@ -113,6 +122,7 @@ const {
 	isSelected,
 	selectable = true,
 	unread = false,
+	hideSender = false,
 	avatarLabel,
 	avatarImage,
 	datetime,
@@ -126,6 +136,9 @@ const {
 	selectable?: boolean
 	// Drives the blue dot and the bolding of the sender and subject.
 	unread?: boolean
+	// Set on the members of an expanded stack: the stack row above them already names the sender, so
+	// repeating it on every row is noise.
+	hideSender?: boolean
 	avatarLabel: string
 	avatarImage?: string
 	datetime: string
@@ -143,6 +156,13 @@ const isHovered = ref(false)
 // With the reading pane hidden the list has the window to itself, so a row lays out as one wide line
 // instead of a stacked block.
 const isFullWidth = computed(() => !(user.data.show_reading_pane || isMobile.value))
+
+// A stack member's sender is worth dropping only in the stacked layout, where the sender owns a whole
+// line and repeating the same name down a run costs a third of every row's height. Full-width keeps it:
+// there the sender is a column, where a repeated value is cheap to skip past, and dropping it would
+// leave each member's subject a different width — sending the preview column ragged and pulling the
+// members out of line with the stack row above them.
+const showSender = computed(() => !hideSender || isFullWidth.value)
 
 // Touch selection: a long press anywhere on the row selects it, as long as the finger stays put (a
 // drag is a scroll, not a press).
