@@ -14,8 +14,10 @@ from suite.mail.jmap import (
 	invalidate_jmap_identities_cache,
 	invalidate_jmap_mailboxes_cache,
 )
+from suite.mail.search import rebuild_email_address_index
 from suite.mail.storage import get_blob_store, get_data_store
 from suite.mail.storage.data_store import Entity
+from suite.search import destroy_search_indexes
 
 if TYPE_CHECKING:
 	from suite.mail.jmap.services.core import CoreService
@@ -159,6 +161,7 @@ class JMAPAccount(Document):
 		self.clear_cached_mail_messages()
 		self.clear_cached_contact_cards()
 		self.clear_cached_blobs()
+		self.clear_search_indexes()
 
 	@frappe.whitelist()
 	def clear_cached_jmap_identities(self) -> None:
@@ -200,6 +203,24 @@ class JMAPAccount(Document):
 			return
 
 		get_data_store(self.name).delete_all(Entity.CONTACT_CARD)
+
+	@frappe.whitelist()
+	def clear_search_indexes(self) -> None:
+		"""Delete all search indexes belonging to the current account."""
+
+		if not self.has_clear_cache_permission():
+			return
+
+		destroy_search_indexes(self.name)
+
+	@frappe.whitelist()
+	def rebuild_search_index(self) -> None:
+		"""Rebuild the account's email-address index from its cached messages and contact cards."""
+
+		if not self.has_clear_cache_permission():
+			return
+
+		rebuild_email_address_index(self.name)
 
 	def has_clear_cache_permission(self) -> bool:
 		"""Check if the session user has permission to clear cache."""
