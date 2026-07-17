@@ -390,6 +390,9 @@ def get_templates():
 
 @frappe.whitelist(allow_guest=True)
 def get_composite_presentation(name: str):
+	if not (is_public_presentation(name) and is_composite_presentation(name)):
+		frappe.throw("Presentation is not public", frappe.PermissionError)
+
 	doc = frappe.get_doc("Presentation", name)
 
 	composite_slides = []
