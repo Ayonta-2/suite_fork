@@ -16,7 +16,7 @@ def filter_file(user=None):
     escaped = frappe.db.escape(user)
     site = "COALESCE(`tabFile`.`team`, '') = ''"
     if SYSTEM_USER_ROLE in roles:
-        readable = ", ".join(repr(dt) for dt in get_doctypes_with_read(user)) or "''"
+        readable = ", ".join(frappe.db.escape(dt) for dt in get_doctypes_with_read(user)) or "''"
         site_cond = (
             f"({site} AND (`tabFile`.`is_private` = 0"
             f" OR (`tabFile`.`attached_to_doctype` IS NULL AND `tabFile`.`owner` = {escaped})"
