@@ -111,11 +111,15 @@ website_redirects = [
 	},
 ]
 
+# Framework File permission logic is fully replaced by Drive's
+ignore_file_permissions = True
+
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
 permission_query_conditions = {
 	# drive
+	"File": "suite.drive.utils.overrides.filter_file",
 	"Drive Team": "suite.drive.utils.overrides.filter_drive_team",
 	"Drive Permission": "suite.drive.utils.overrides.filter_drive_permission",
 	"Drive Favourite": "suite.drive.utils.overrides.filter_drive_favourite",
