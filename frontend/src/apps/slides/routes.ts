@@ -4,6 +4,7 @@ import { createResource } from 'frappe-ui'
 
 import { router, setEditorAccess, setPreviousRoute } from '@/apps/slides/router'
 import SlidesShell from '@/apps/slides/SlidesShell.vue'
+import { useSessionStore } from '@/boot/session'
 
 /**
  * Slides route module — mounted by the suite router under the '/slides' prefix.
@@ -51,6 +52,7 @@ export const routes: RouteRecordRaw[] = [
         name: 'slides-editor',
         component: () => import('@/apps/slides/pages/PresentationEditor.vue'),
         props: withPresentationProps,
+        meta: { isPublic: true },
       },
       {
         path: 'presentation/view/:presentationId/:slug?',
@@ -65,6 +67,7 @@ export const routes: RouteRecordRaw[] = [
         name: 'slides-slideshow',
         component: () => import('@/apps/slides/pages/Slideshow.vue'),
         props: withPresentationProps,
+        meta: { isPublic: true },
       },
       {
         path: 'not-permitted',
@@ -127,6 +130,10 @@ function installSlidesGuards(r: Router) {
       }
       if (['edit', 'view'].includes(currentEditorAccess)) {
         return next()
+      }
+      if (!useSessionStore().isLoggedIn) {
+        window.location.href = `/login?redirect-to=${encodeURIComponent(to.fullPath)}`
+        return next(false)
       }
       return next({ name: 'slides-not-permitted' })
     }
