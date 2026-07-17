@@ -291,6 +291,7 @@ def set_template_metadata(presentation, template):
 def create_presentation(template: str | None = None, duplicate_from: str | None = None):
 	presentation = frappe.new_doc("Presentation")
 	if duplicate_from:
+		frappe.get_doc("Presentation", duplicate_from).check_permission("read")
 		set_duplicate_metadata(presentation, duplicate_from)
 	else:
 		set_template_metadata(presentation, template)
