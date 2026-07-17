@@ -11,6 +11,7 @@ Entry point: `notify_participants(account, action, ...)`, enqueued from the Cale
 API after the event is written to JMAP.
 """
 
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate, make_msgid
@@ -178,7 +179,12 @@ def _context(event, organizer, participant, links) -> dict:
 
 
 def _build_mime(organizer, to_email, subject, html, ics, method) -> str:
-	"""Builds a multipart/mixed iMIP message: HTML body, inline text/calendar, .ics attachment."""
+	"""Builds a multipart/mixed iMIP message: HTML body (with inline logo), text/calendar, .ics.
+
+	The logo is embedded as an inline CID image rather than a remote URL, so it renders in
+	email clients without the recipient having to load external images (and works even when
+	the site isn't publicly reachable).
+	"""
 
 	root = MIMEMultipart("mixed")
 	root["Subject"] = subject
@@ -196,7 +202,18 @@ def _build_mime(organizer, to_email, subject, html, ics, method) -> str:
 	inline_calendar.set_param("method", method)
 	inline_calendar.set_param("component", "VEVENT")
 	alternative.attach(inline_calendar)
-	root.attach(alternative)
+
+	# Wrap the body with the inline logo (referenced as `cid:eventlogo` in the templates).
+	if logo := _logo_bytes():
+		related = MIMEMultipart("related")
+		related.attach(alternative)
+		image = MIMEImage(logo, _subtype="png")
+		image.add_header("Content-ID", "<eventlogo>")
+		image.add_header("Content-Disposition", "inline", filename="logo.png")
+		related.attach(image)
+		root.attach(related)
+	else:
+		root.attach(alternative)
 
 	# A downloadable copy so any calendar app can import the event.
 	attachment = MIMEText(ics, "calendar", "utf-8")
@@ -205,6 +222,25 @@ def _build_mime(organizer, to_email, subject, html, ics, method) -> str:
 	root.attach(attachment)
 
 	return root.as_string()
+
+
+_LOGO_CACHE: bytes | None = None
+
+
+def _logo_bytes() -> bytes | None:
+	"""Returns the Calendar logo PNG bytes for inline embedding, cached per process."""
+
+	global _LOGO_CACHE
+	if _LOGO_CACHE is None:
+		path = frappe.get_app_path("suite", "public", "calendar", "images", "logo.png")
+		try:
+			with open(path, "rb") as f:
+				_LOGO_CACHE = f.read()
+		except OSError:
+			log_error("Calendar", title=_("Event invite logo not found"))
+			_LOGO_CACHE = b""
+
+	return _LOGO_CACHE or None
 
 
 def _attendees(event: dict, organizer: str) -> dict[str, dict]:
