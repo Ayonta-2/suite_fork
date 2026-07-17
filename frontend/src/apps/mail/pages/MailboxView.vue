@@ -226,50 +226,39 @@
 					class="h-full overflow-y-auto overscroll-contain"
 				>
 					<div v-for="(group, key) in groupedThreads" :key="key">
-						<Tooltip
+						<div
 							v-if="groupMessagesBy !== 'None'"
-							:text="
-								isLastGroup(key)
-									? ''
-									: __(collapsedGroups.includes(key) ? 'Expand' : 'Collapse')
-							"
+							class="text-ink-gray-6 group flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
+							:class="{
+								'!bg-surface-blue-1': isGroupSelected(key),
+								'sm:hover:bg-surface-gray-1': !isLastGroup(key),
+							}"
+							@click="toggleGroupCollapse(key)"
 						>
 							<div
-								class="text-ink-gray-6 group flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
-								@click="toggleGroupCollapse(key)"
+								v-if="!isAllAccountsSearch"
+								class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-6 sm:pl-3"
+								@click.stop.prevent="
+									toggleSelect(getGroupThreads(key), !isGroupSelected(key))
+								"
 							>
-								<div
-									v-if="!isAllAccountsSearch"
-									class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-6 sm:pl-3"
-									@click.stop.prevent="
-										toggleSelect(getGroupThreads(key), !isGroupSelected(key))
-									"
-								>
-									<Checkbox
-										:model-value="isGroupSelected(key)"
-										size="md"
-										class="pointer-events-none"
-									/>
-								</div>
-
-								<span class="select-none pt-[2px]">
-									{{
-										getFormattedDate(
-											key,
-											groupMessagesBy === 'Month',
-										).toUpperCase()
-									}}
-								</span>
-
-								<component
-									:is="
-										collapsedGroups.includes(key) ? ChevronRight : ChevronDown
-									"
-									v-if="!isLastGroup(key)"
-									class="icon ml-auto"
+								<Checkbox
+									:model-value="isGroupSelected(key)"
+									size="md"
+									class="pointer-events-none"
 								/>
 							</div>
-						</Tooltip>
+
+							<span class="select-none pt-[2px]">
+								{{ getFormattedDate(key, groupMessagesBy === 'Month').toUpperCase() }}
+							</span>
+
+							<component
+								:is="collapsedGroups.includes(key) ? ChevronRight : ChevronDown"
+								v-if="!isLastGroup(key)"
+								class="icon ml-auto"
+							/>
+						</div>
 						<template v-if="!collapsedGroups.includes(key)">
 							<!-- A stack row stands in for a run of look-alike threads; when expanded, its
 							     members follow it as ordinary (indented) rows. -->
