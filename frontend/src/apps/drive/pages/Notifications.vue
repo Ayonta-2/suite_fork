@@ -62,7 +62,7 @@ const options = {
           name: 'drive-' + row.entity_type,
           params: { entityName: row.notif_doctype_name },
         }
-      : {},
+      : null,
   onRowClick: (row) => {
     if (row.type === 'Team') emitter.emit('showSettings', 1)
     if (onlyUnread.value) {
