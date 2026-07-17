@@ -329,7 +329,7 @@ def get_permission_query_conditions(user):
 		return ""
 
 	if frappe.has_permission("Presentation", "read", user=user):
-		return f"`tabPresentation`.owner = '{user}' OR `tabPresentation`.is_template = 1"
+		return f"`tabPresentation`.owner = {frappe.db.escape(user)} OR `tabPresentation`.is_template = 1"
 
 
 def has_permission(doc, ptype="read", user=None):
