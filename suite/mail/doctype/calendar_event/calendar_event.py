@@ -12,6 +12,10 @@ from frappe.model.document import Document
 from frappe.utils import cint
 
 from suite.mail.doctype.calendar.calendar import validate_calendar_name_format
+from suite.mail.doctype.calendar_event.invitations import (
+	acting_as_organizer,
+	custom_event_invites_enabled,
+)
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_event_service
 from suite.utils import parse_filters
@@ -380,12 +384,23 @@ def add_calendar_event(
 		"use_default_alerts": use_default_alerts,
 	}
 
+	use_custom_invites = (
+		send_scheduling_messages
+		and custom_event_invites_enabled()
+		and acting_as_organizer(account, organizer)
+	)
+
 	service = get_calendar_event_service(account)
-	response = service.create([event], send_scheduling_messages=send_scheduling_messages)
+	response = service.create(
+		[event], send_scheduling_messages=send_scheduling_messages and not use_custom_invites
+	)
 
 	title = _("Calendar Event Creation Error")
 	if response.get("created"):
-		return response["created"][creation_id]["id"]
+		event_id = response["created"][creation_id]["id"]
+		if use_custom_invites:
+			_enqueue_event_notification(account, "invite", event_id)
+		return event_id
 	elif response.get("notCreated"):
 		frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
 	else:
@@ -498,8 +513,18 @@ def update_calendar_event(
 		"use_default_alerts": use_default_alerts,
 	}
 
+	use_custom_invites = (
+		send_scheduling_messages
+		and custom_event_invites_enabled()
+		and acting_as_organizer(account, organizer)
+	)
+
+	previous_emails = _participant_emails(account, id) if use_custom_invites else None
+
 	service = get_calendar_event_service(account)
-	response = service.update([event], send_scheduling_messages=send_scheduling_messages)
+	response = service.update(
+		[event], send_scheduling_messages=send_scheduling_messages and not use_custom_invites
+	)
 
 	title = _("Calendar Event Update Error")
 	if not response.get("updated"):
@@ -507,6 +532,9 @@ def update_calendar_event(
 			frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
 		else:
 			frappe.throw(_(response["description"]), title=title)
+
+	if use_custom_invites:
+		_enqueue_event_notification(account, "update", id, previous_emails=previous_emails)
 
 
 @frappe.whitelist()
@@ -519,9 +547,18 @@ def update_calendar_event_instance(
 ) -> None:
 	"""Updates a specific instance of a recurring calendar event based on its master ID and recurrence ID."""
 
+	use_custom_invites = False
+	if send_scheduling_messages and custom_event_invites_enabled():
+		events = get_calendar_events(account, [master_id])
+		organizer = events[0]["organizer"] if events else None
+		use_custom_invites = acting_as_organizer(account, organizer)
+
 	service = get_calendar_event_service(account)
 	response = service.update_instance(
-		master_id, recurrence_id, patch, send_scheduling_messages=send_scheduling_messages
+		master_id,
+		recurrence_id,
+		patch,
+		send_scheduling_messages=send_scheduling_messages and not use_custom_invites,
 	)
 
 	title = _("Calendar Event Instance Update Error")
@@ -530,6 +567,9 @@ def update_calendar_event_instance(
 			frappe.throw(_(response["notUpdated"][master_id]["description"]), title=title)
 		else:
 			frappe.throw(_(response["description"]), title=title)
+
+	if use_custom_invites:
+		_enqueue_event_notification(account, "update", master_id)
 
 
 @frappe.whitelist()
@@ -661,6 +701,32 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
 		"modified": parse_iso_datetime(updated_utc),
 		"sequence": cint(event.get("sequence") or False),
 	}
+
+
+def _enqueue_event_notification(
+	account: str, action: str, event_id: str, previous_emails: list[str] | None = None
+) -> None:
+	"""Queues custom invitation/update/cancel emails to send after the event is committed."""
+
+	frappe.enqueue(
+		"suite.mail.doctype.calendar_event.invitations.notify_participants",
+		queue="short",
+		enqueue_after_commit=True,
+		account=account,
+		action=action,
+		event_id=event_id,
+		previous_emails=previous_emails,
+	)
+
+
+def _participant_emails(account: str, id: str) -> list[str]:
+	"""Returns the current participant emails for an event, used to diff on update."""
+
+	events = get_calendar_events(account, [id])
+	if not events:
+		return []
+
+	return [p["email"] for p in events[0]["participants"] if p.get("email")]
 
 
 def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:

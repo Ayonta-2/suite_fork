@@ -333,6 +333,39 @@ class CalendarEventService(CalendarsService):
 
 		return result
 
+	def set_participation_status(
+		self,
+		id: str,
+		participant_uid: str,
+		participation_status: str,
+		send_scheduling_messages: bool = False,
+	) -> dict:
+		"""Patches a single participant's participationStatus without rewriting the event.
+
+		Used by the RSVP link endpoint, where a guest updates only their own response on the
+		organizer's copy of the event.
+		"""
+
+		if not id or not participant_uid:
+			raise ValueError("Both 'id' and 'participant_uid' are required.")
+
+		payload = {
+			id: {
+				f"participants/{participant_uid}/participationStatus": participation_status.lower(),
+				"updated": utcnow(),
+			}
+		}
+
+		response = self._update(payload, sendSchedulingMessages=send_scheduling_messages)
+
+		result = {"updated": [], "notUpdated": {}}
+		if method_responses := response.get("methodResponses"):
+			result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
+			if not_updated := method_responses[0][1].get("notUpdated", {}):
+				result["notUpdated"].update(not_updated)
+
+		return result
+
 	def delete_instance(self, id: str, recurrence_id: str) -> dict:
 		"""Public method to delete a specific instance of a recurring calendar event based on its ID and recurrence ID by marking it as excluded in the master event's recurrence overrides."""
 

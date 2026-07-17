@@ -28,6 +28,7 @@ class MailSettings(Document):
 
 		allow_signup: DF.Check
 		ansible_play_timeout: DF.Int
+		custom_event_invites: DF.Check
 		default_disk_quota_gb: DF.Int
 		default_dns_ttl: DF.Int
 		default_gravatar: DF.Literal["404"]

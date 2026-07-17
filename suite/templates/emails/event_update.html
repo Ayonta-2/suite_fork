@@ -1,0 +1,21 @@
+<div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #111827;">
+	<h2 style="margin: 0 0 4px; font-size: 20px;">{{ title }}</h2>
+	<p style="font-size: 14px; color: #6b7280; margin: 0 0 8px;">This event has been updated.</p>
+
+	<table role="presentation" cellpadding="0" cellspacing="0" style="margin: 16px 0; font-size: 14px; color: #374151;">
+		<tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">When</td><td style="padding: 4px 0;">{{ when }}</td></tr>
+		{% if location %}<tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Where</td><td style="padding: 4px 0;">{{ location }}</td></tr>{% endif %}
+		<tr><td style="padding: 4px 12px 4px 0; color: #6b7280;">Organizer</td><td style="padding: 4px 0;">{{ organizer_name }}</td></tr>
+	</table>
+
+	{% if description %}<p style="font-size: 14px; color: #4b5563; line-height: 1.5;">{{ description }}</p>{% endif %}
+
+	{% if rsvp %}
+	<p style="font-size: 14px; color: #111827; margin: 20px 0 10px;">Will you attend?</p>
+	<p>
+		<a href="{{ rsvp.accept }}" style="display: inline-block; padding: 10px 20px; margin: 0 4px; font-size: 14px; color: #fff; background-color: #16a34a; text-decoration: none; border-radius: 6px;">Yes</a>
+		<a href="{{ rsvp.tentative }}" style="display: inline-block; padding: 10px 20px; margin: 0 4px; font-size: 14px; color: #fff; background-color: #d97706; text-decoration: none; border-radius: 6px;">Maybe</a>
+		<a href="{{ rsvp.decline }}" style="display: inline-block; padding: 10px 20px; margin: 0 4px; font-size: 14px; color: #fff; background-color: #dc2626; text-decoration: none; border-radius: 6px;">No</a>
+	</p>
+	{% endif %}
+</div>
