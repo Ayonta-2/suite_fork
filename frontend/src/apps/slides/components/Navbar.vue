@@ -49,10 +49,11 @@
 import { h, ref, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dropdown, Button } from 'frappe-ui'
-import { ArrowLeft, Plus, Copy, Trash, LogOut, Keyboard } from 'lucide-vue-next'
+import { ArrowLeft, Plus, Copy, Trash, LogOut, Command } from 'lucide-vue-next'
 import slidesLogo from '@/apps/slides/assets/slides-logo.svg'
-import ThemeSwitcher from '@/apps/slides/components/ThemeSwitcher.vue'
+import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
+import { useThemeMenuOption } from '@/apps/slides/composables/useThemeMenuOption'
 import { useSessionStore } from '@/boot/session'
 
 const props = defineProps({
@@ -73,87 +74,72 @@ const router = useRouter()
 
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
 
-const getThemeMenuOption = () => ({ component: ThemeSwitcher })
+const sessionStore = useSessionStore()
 
-const getHomeMenuOptions = () => {
-	return [
-		{
-			group: '',
-			options: [getThemeMenuOption()],
-		},
-		{
-			group: '',
-			options: [
-				{
-					label: 'Log out',
-					icon: h(LogOut, { class: 'stroke-[1.5] !size-3.5' }),
-					onClick: () => useSessionStore().logout.submit(),
-				},
-			],
-		},
-	]
-}
+const menuIcon = (icon) => h(icon, { class: 'stroke-[1.5] !size-3.5' })
+
+const appsMenuOption = useAppSwitcher('slides')
+
+const themeMenuOption = useThemeMenuOption()
+
+const getLogoutMenuOption = () => ({
+	label: 'Log out',
+	icon: menuIcon(LogOut),
+	onClick: () => sessionStore.logout.submit(),
+})
+
+const getHomeMenuOptions = () => [
+	{ group: '', options: [appsMenuOption.value] },
+	{ group: '', options: [themeMenuOption, getLogoutMenuOption()] },
+]
+
+const presentationActions = [
+	{ label: 'New', icon: Plus, action: 'create' },
+	{ label: 'Duplicate', icon: Copy, action: 'duplicate' },
+	{ label: 'Delete', icon: Trash, action: 'delete' },
+]
 
 const getContextMenuOptions = () => {
-	return [
-		...(inReadonlyMode.value
-			? []
-			: [
-					{
-						group: '',
-						options: [
-							{
-								label: 'Back to Home',
-								icon: h(ArrowLeft, { class: 'stroke-[1.5] !size-3.5' }),
-								onClick: () => {
-									router.replace({
-										name: 'slides-home',
-									})
-								},
-							},
-						],
-					},
-					{
-						group: 'Presentation',
-						options: [
-							{
-								label: 'New',
-								icon: h(Plus, { class: 'stroke-[1.5] !size-3.5' }),
-								onClick: () => {
-									emit('performDropdownAction', 'create')
-								},
-							},
-							{
-								label: 'Duplicate',
-								icon: h(Copy, { class: 'stroke-[1.5] !size-3.5' }),
-								onClick: () => {
-									emit('performDropdownAction', 'duplicate')
-								},
-							},
-							{
-								label: 'Delete',
-								icon: h(Trash, { class: 'stroke-[1.5] !size-3.5' }),
-								onClick: () => {
-									emit('performDropdownAction', 'delete')
-								},
-							},
-						],
-					},
-				]),
-		{
+	const groups = []
+
+	if (sessionStore.isLoggedIn) {
+		groups.push({
 			group: '',
 			options: [
 				{
-					label: 'Shortcuts',
-					icon: h(Keyboard, { class: 'stroke-[1.5] !size-3.5' }),
-					onClick: () => (showShortcutsModal.value = true),
+					label: 'Back to Home',
+					icon: menuIcon(ArrowLeft),
+					onClick: () => router.replace({ name: 'slides-home' }),
 				},
+				appsMenuOption.value,
 			],
-		},
-		{
-			group: '',
-			options: [getThemeMenuOption()],
-		},
-	]
+		})
+	}
+
+	if (!inReadonlyMode.value) {
+		groups.push({
+			group: 'Presentation',
+			options: presentationActions.map(({ label, icon, action }) => ({
+				label,
+				icon: menuIcon(icon),
+				onClick: () => emit('performDropdownAction', action),
+			})),
+		})
+	}
+
+	groups.push({
+		group: '',
+		options: [
+			{
+				label: 'Shortcuts',
+				icon: menuIcon(Command),
+				onClick: () => (showShortcutsModal.value = true),
+			},
+			themeMenuOption,
+			...(sessionStore.isLoggedIn ? [getLogoutMenuOption()] : []),
+		],
+	})
+
+	return groups
 }
 </script>

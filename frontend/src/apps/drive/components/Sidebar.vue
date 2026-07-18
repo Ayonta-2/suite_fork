@@ -52,7 +52,7 @@ import SettingsDialog from '@/apps/drive/components/Settings/SettingsDialog.vue'
 import ShortcutsDialog from '@/apps/drive/components/ShortcutsDialog.vue'
 import emitter from '@/apps/drive/emitter'
 import { ref, computed, watch, h } from 'vue'
-import AppsIcon from '@/apps/drive/components/AppsIcon.vue'
+import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useRouter, useRoute } from 'vue-router'
 import { move } from '@/apps/drive/resources/files'
 
@@ -92,6 +92,8 @@ emitter.on('toggleShortcuts', () => {
   showShortcuts.value = !showShortcuts.value
 })
 
+const appsMenuOption = useAppSwitcher('drive')
+
 const themeMode = ref(getThemeMode())
 
 function selectTheme(theme) {
@@ -104,30 +106,7 @@ const settingsItems = computed(() => [
     group: __('Manage'),
     hideLabel: true,
     items: [
-      {
-        icon: AppsIcon,
-        label: __('Apps'),
-        submenu: apps.data?.map?.((app) => ({
-          label: app.title,
-          icon: app.logo,
-          component: h(
-            'a',
-            {
-              class:
-                'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2',
-              href: app.route,
-            },
-            [
-              h('img', { src: app.logo, class: 'size-6' }),
-              h(
-                'span',
-                { class: 'max-w-18 text-sm w-full truncate text-ink-gray-9' },
-                app.title
-              ),
-            ]
-          ),
-        })),
-      },
+      appsMenuOption.value,
       {
         icon: LucideBook,
         label: __('Documentation'),

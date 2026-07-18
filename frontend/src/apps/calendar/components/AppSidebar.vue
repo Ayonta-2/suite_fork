@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, h, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Check, Eye, EyeOff, LayoutGrid, LogOut, Settings, User } from 'lucide-vue-next'
-import { Avatar, Sidebar, createResource } from 'frappe-ui'
+import { Check, Eye, EyeOff, LogOut, Settings, User } from 'lucide-vue-next'
+import { Avatar, Sidebar } from 'frappe-ui'
 
 import { useSessionStore } from '@/boot/session'
+import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { toTitleCase } from '@/apps/calendar/utils/format'
 import { brandingStore } from '@/apps/calendar/stores/branding'
 import { userStore } from '@/apps/calendar/stores/user'
@@ -38,37 +39,14 @@ const subtitle = computed(() => {
 	return currentAccount._name
 })
 
-const apps = createResource({
-	url: 'suite.mail.api.get_permitted_apps',
-	cache: 'otherApps',
-	auto: true,
-	transform: (data) => data.filter((app) => app.name !== 'calendar_app'),
-})
+const appsMenuOption = useAppSwitcher('calendar')
 
 const showSettings = ref(false)
 
 const menuItems = computed(() => [
 	{
 		group: '',
-		items: [
-			{
-				icon: LayoutGrid,
-				label: __('Apps'),
-				submenu: apps.data?.map?.((app) => ({
-					component: h(
-						'a',
-						{
-							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2',
-							href: app.route,
-						},
-						[
-							h('img', { src: app.logo, class: 'size-6' }),
-							h('span', { class: 'max-w-18 text-sm w-full truncate' }, app.title),
-						],
-					),
-				})),
-			},
-		],
+		items: [appsMenuOption.value],
 	},
 	{
 		group: '',

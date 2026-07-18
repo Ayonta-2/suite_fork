@@ -75,8 +75,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import { Icon } from 'frappe-ui/icons'
 import { Check, Keyboard, User } from 'lucide-vue-next'
-import { Avatar, Button, Dropdown, Sidebar, SidebarItem, createResource } from 'frappe-ui'
+import { Avatar, Button, Dropdown, Sidebar, SidebarItem } from 'frappe-ui'
 
+import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
 import { useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
@@ -97,7 +98,6 @@ import ContactRound from '~icons/lucide/contact-round'
 import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
 import Globe from '~icons/lucide/globe'
-import LayoutGrid from '~icons/lucide/layout-grid'
 import LogOut from '~icons/lucide/log-out'
 import Mailbox from '~icons/lucide/mailbox'
 import Plus from '~icons/lucide/plus'
@@ -117,12 +117,7 @@ const { mailboxes } = store
 
 const user = inject('$user')
 
-const apps = createResource({
-	url: 'suite.mail.api.get_permitted_apps',
-	cache: 'otherApps',
-	auto: true,
-	transform: (data) => data.filter((app) => app.name !== 'mail'),
-})
+const appsMenuOption = useAppSwitcher('mail')
 
 const { showSettings } = useSettings()
 const showFolderModal = ref(false)
@@ -147,21 +142,7 @@ const menuItems = computed(() => [
 		group: '',
 		items: [
 			{
-				icon: LayoutGrid,
-				label: __('Apps'),
-				submenu: apps.data?.map?.((app) => ({
-					component: h(
-						'a',
-						{
-							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2',
-							href: app.route,
-						},
-						[
-							h('img', { src: app.logo, class: 'size-6' }),
-							h('span', { class: 'max-w-18 text-sm w-full truncate' }, app.title),
-						],
-					),
-				})),
+				...appsMenuOption.value,
 				condition: () => !isMobile.value,
 			},
 			{
