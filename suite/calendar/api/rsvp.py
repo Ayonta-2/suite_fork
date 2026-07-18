@@ -145,7 +145,12 @@ def _verify(token: str) -> dict | None:
 
 
 def _secret() -> bytes:
-	return (frappe.local.conf.get("encryption_key") or frappe.local.site or "").encode()
+	# The site's encryption key is the only acceptable signing secret. Never fall back to a
+	# predictable value (site name) or an empty string — that would let anyone forge RSVP tokens.
+	key = frappe.local.conf.get("encryption_key")
+	if not key:
+		frappe.throw(_("Site encryption key is not configured; cannot sign RSVP links."))
+	return key.encode()
 
 
 def _b64encode(data: bytes) -> str:

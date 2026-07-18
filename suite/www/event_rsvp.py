@@ -16,7 +16,7 @@ from suite.calendar.api.rsvp import resolve_rsvp
 no_cache = 1
 
 # Confirmation page: Calendar logo + auto-close countdown on success (seconds; 0 disables).
-LOGO_URL = "/assets/suite/calendar/images/logo.svg"
+LOGO_URL = "/assets/suite/calendar/images/logo.png"
 AUTO_CLOSE_SECONDS = 10
 
 
