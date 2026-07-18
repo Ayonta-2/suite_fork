@@ -5,7 +5,7 @@ from typing import Literal
 import frappe
 from frappe.utils import get_url
 
-from suite.mail.doctype.calendar_event.calendar_event import add_calendar_event
+from suite.calendar.doctype.calendar_event.calendar_event import add_calendar_event
 from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
 from suite.meet.api.meeting import create as create_meeting
 

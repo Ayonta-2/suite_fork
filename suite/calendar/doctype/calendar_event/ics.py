@@ -10,7 +10,7 @@ VCALENDAR with the right iTIP METHOD (REQUEST for invites/updates, CANCEL for re
 
 from icalendar import Calendar
 
-from suite.mail.doctype.calendar_exchange.calendar_exchange import (
+from suite.calendar.doctype.calendar_exchange.calendar_exchange import (
 	_build_components,
 	_parse_local_datetime,
 	jscalendar_to_vevent,

@@ -24,7 +24,7 @@ class Calendar(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		from suite.mail.doctype.calendar_rights.calendar_rights import CalendarRights
+		from suite.calendar.doctype.calendar_rights.calendar_rights import CalendarRights
 
 		_name: DF.Data
 		account: DF.Link

@@ -11,8 +11,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
 
-from suite.mail.doctype.calendar.calendar import validate_calendar_name_format
-from suite.mail.doctype.calendar_event.invitations import (
+from suite.calendar.doctype.calendar.calendar import validate_calendar_name_format
+from suite.calendar.doctype.calendar_event.invitations import (
 	acting_as_organizer,
 	custom_event_invites_enabled,
 )
@@ -31,11 +31,11 @@ class CalendarEvent(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		from suite.mail.doctype.event_alert.event_alert import EventAlert
-		from suite.mail.doctype.event_calendar.event_calendar import EventCalendar
-		from suite.mail.doctype.event_link.event_link import EventLink
-		from suite.mail.doctype.event_location.event_location import EventLocation
-		from suite.mail.doctype.event_participant.event_participant import EventParticipant
+		from suite.calendar.doctype.event_alert.event_alert import EventAlert
+		from suite.calendar.doctype.event_calendar.event_calendar import EventCalendar
+		from suite.calendar.doctype.event_link.event_link import EventLink
+		from suite.calendar.doctype.event_location.event_location import EventLocation
+		from suite.calendar.doctype.event_participant.event_participant import EventParticipant
 
 		account: DF.Link
 		after: DF.Datetime | None
@@ -729,7 +729,7 @@ def _enqueue_event_notification(account: str, action: str, **kwargs) -> None:
 	"""
 
 	frappe.enqueue(
-		"suite.mail.doctype.calendar_event.invitations.notify_participants",
+		"suite.calendar.doctype.calendar_event.invitations.notify_participants",
 		queue="short",
 		enqueue_after_commit=True,
 		account=account,

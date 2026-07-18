@@ -209,7 +209,7 @@ const handleSetResponse = (response: string, updateAllInstances: boolean) => {
 }
 
 const editEventInstance = createResource({
-	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event_instance',
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
 	makeParams: ({ patch }) => ({
 		account: store.accountId,
 		master_id: calendarEvent.master_id,
@@ -280,7 +280,7 @@ const handleDeleteEvent = () =>
 	confirmDelete((sendEmail) => deleteEvent.submit({ sendEmail }), !!calendarEvent.recurrence_id)
 
 const deleteEventInstance = createResource({
-	url: 'suite.mail.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		master_id: calendarEvent.master_id,
@@ -294,7 +294,7 @@ const deleteEventInstance = createResource({
 })
 
 const deleteEvent = createResource({
-	url: 'suite.mail.doctype.calendar_event.calendar_event.delete_calendar_events',
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		ids: [calendarEvent.master_id || calendarEvent.id],

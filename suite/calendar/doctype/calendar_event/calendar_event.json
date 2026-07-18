@@ -420,7 +420,7 @@
  "links": [],
  "modified": "2026-06-30 10:17:57.813611",
  "modified_by": "Administrator",
- "module": "Mail",
+ "module": "Calendar",
  "name": "Calendar Event",
  "owner": "Administrator",
  "permissions": [

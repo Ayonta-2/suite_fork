@@ -20,13 +20,13 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, get_datetime, strip_html_tags
 
-from suite.mail.doctype.calendar_event.ics import build_event_ics
-from suite.mail.doctype.calendar_event.invite_templates import (
+from suite.calendar.doctype.calendar_event.ics import build_event_ics
+from suite.calendar.doctype.calendar_event.invite_templates import (
 	DEFAULT_SUBJECTS,
 	DEFAULT_TEMPLATES,
 	template_path,
 )
-from suite.mail.doctype.calendar_exchange.calendar_exchange import _parse_local_datetime
+from suite.calendar.doctype.calendar_exchange.calendar_exchange import _parse_local_datetime
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_event_service, get_identities

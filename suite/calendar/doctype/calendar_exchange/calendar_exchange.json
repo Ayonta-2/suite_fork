@@ -278,7 +278,7 @@
  "max_attachments": 1,
  "modified": "2026-06-29 21:35:27.160099",
  "modified_by": "Administrator",
- "module": "Mail",
+ "module": "Calendar",
  "name": "Calendar Exchange",
  "owner": "Administrator",
  "permissions": [

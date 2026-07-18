@@ -188,7 +188,7 @@
  "links": [],
  "modified": "2026-06-30 10:15:12.073220",
  "modified_by": "Administrator",
- "module": "Mail",
+ "module": "Calendar",
  "name": "Event Notification",
  "owner": "Administrator",
  "permissions": [

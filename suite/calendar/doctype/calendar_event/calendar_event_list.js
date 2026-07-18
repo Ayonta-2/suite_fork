@@ -1,10 +1,19 @@
-// Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
+// Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and contributors
 // For license information, please see license.txt
 
-frappe.listview_settings['Calendar'] = {
+frappe.listview_settings['Calendar Event'] = {
 	refresh: (listview) => {
 		add_bulk_delete_button_to_actions(listview)
 		set_account_options(listview)
+	},
+
+	get_indicator: (doc) => {
+		const status_colors = {
+			Tentative: 'blue',
+			Confirmed: 'green',
+			Cancelled: 'red',
+		}
+		return [__(doc.status), status_colors[doc.status] || 'darkgrey', 'status,=,' + doc.status]
 	},
 }
 
@@ -16,7 +25,7 @@ function add_bulk_delete_button_to_actions(listview) {
 			__('Delete {0} {1} permanently?', [count, count === 1 ? 'item' : 'items']),
 			() => {
 				frappe.call({
-					method: 'suite.mail.doctype.calendar.calendar.bulk_delete',
+					method: 'suite.calendar.doctype.calendar_event.calendar_event.bulk_delete',
 					args: {
 						names: listview.get_checked_items(true),
 					},
