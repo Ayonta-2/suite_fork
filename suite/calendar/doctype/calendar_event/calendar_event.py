@@ -578,10 +578,16 @@ def delete_calendar_events(account: str, ids: list[str], send_scheduling_message
 
 	service = get_calendar_event_service(account)
 
-	# Snapshot organizer-owned events before deletion so cancellations can still be built.
-	snapshots = _cancellable_snapshots(account, service, ids) if send_scheduling_messages else []
+	# When custom invites are on, we send cancellations ourselves and must suppress the JMAP
+	# server's own cancel to avoid duplicate notifications (symmetric with create/update).
+	use_custom_invites = send_scheduling_messages and custom_event_invites_enabled()
 
-	response = service.delete(ids)
+	# Snapshot organizer-owned events before deletion so cancellations can still be built.
+	snapshots = _cancellable_snapshots(account, service, ids) if use_custom_invites else []
+
+	response = service.delete(
+		ids, send_scheduling_messages=send_scheduling_messages and not use_custom_invites
+	)
 
 	if response.get("notDestroyed"):
 		error_messages = []
@@ -604,12 +610,16 @@ def delete_calendar_event_instance(
 
 	service = get_calendar_event_service(account)
 
+	use_custom_invites = send_scheduling_messages and custom_event_invites_enabled()
+
 	snapshot = None
-	if send_scheduling_messages:
+	if use_custom_invites:
 		if snapshots := _cancellable_snapshots(account, service, [master_id]):
 			snapshot = snapshots[0]
 
-	response = service.delete_instance(master_id, recurrence_id)
+	response = service.delete_instance(
+		master_id, recurrence_id, send_scheduling_messages=send_scheduling_messages and not use_custom_invites
+	)
 
 	title = _("Calendar Event Instance Deletion Error")
 	if not response.get("updated"):
