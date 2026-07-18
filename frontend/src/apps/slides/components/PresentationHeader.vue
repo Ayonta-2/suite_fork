@@ -16,7 +16,7 @@
 import { ref, computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { unsyncedPresentationRecord, updatePresentationTitle } from '@/apps/slides/stores/presentation'
+import { updatePresentationTitle } from '@/apps/slides/stores/presentation'
 import { setCursorPositionAtEnd } from '@/apps/slides/utils/helpers'
 
 const props = defineProps({
@@ -66,7 +66,6 @@ const saveTitle = async (e) => {
 
 	if (newTitle != props.title) {
 		const slug = await updatePresentationTitle(route.params.presentationId, newTitle)
-		unsyncedPresentationRecord.value.title = newTitle
 		router.replace({
 			name: 'slides-editor',
 			params: { presentationId: route.params.presentationId, slug: slug },

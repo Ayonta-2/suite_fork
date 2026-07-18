@@ -301,8 +301,6 @@ const initPresentationDoc = async (id, readonly = false) => {
 	}
 }
 
-const unsyncedPresentationRecord = ref({})
-
 const isPublicPresentation = ref(false)
 
 const templateList = ref([])
@@ -360,7 +358,6 @@ export {
 	createPresentationResource,
 	presentationDoc,
 	transformElements,
-	unsyncedPresentationRecord,
 	isPublicPresentation,
 	slidesLength,
 	templateList,

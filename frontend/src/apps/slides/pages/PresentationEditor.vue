@@ -86,7 +86,6 @@ import {
 	presentationId,
 	initPresentationDoc,
 	presentationDoc,
-	unsyncedPresentationRecord,
 	templateList,
 	templateListResource,
 	inReadonlyMode,
@@ -190,15 +189,6 @@ const loadPresentation = async (id) => {
 	presentationDoc.value = await initPresentationDoc(id, inReadonlyMode.value)
 }
 
-const updateUnsyncedRecord = () => {
-	unsyncedPresentationRecord.value = {
-		...unsyncedPresentationRecord.value,
-		modified: presentationDoc.value.modified,
-		thumbnail: presentationDoc.value.thumbnail,
-		slide_count: slides.value.length,
-	}
-}
-
 const handleBeforeUnload = (e) => {
 	if (dirty.value) {
 		e.preventDefault()
@@ -253,7 +243,6 @@ const hideOpenDialogs = () => {
 
 const handleBeforeUnmount = () => {
 	thumbnailCaptureRef.value?.reset()
-	updateUnsyncedRecord()
 	clearInterval(autosaveInterval)
 
 	if (router.currentRoute.value.name !== 'slides-slideshow') {
@@ -382,7 +371,7 @@ const performNavbarDropdownAction = async (action) => {
 		navigateToPresentation(newPresentation)
 	} else if (action == 'delete') {
 		await deletePresentation(presentationId.value)
-		unsyncedPresentationRecord.value = { name: presentationId.value, deleted: true }
+		thumbnailCaptureRef.value?.reset()
 		router.push({ name: 'slides-home' })
 	} else if (action == 'updateTheme') {
 		themeDialogAction.value = 'update'
