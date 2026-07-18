@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, useTemplateRef } from 'vue'
 import { CalendarDays, Edit2, Globe, MapPin, Repeat, Text, Trash2, Users, Video } from 'lucide-vue-next'
-import { Button, Dropdown, createResource, toast } from 'frappe-ui'
+import { Button, Dialog, Dropdown, createResource, toast } from 'frappe-ui'
 import DOMPurify from 'dompurify'
 
 import { getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
@@ -24,6 +24,18 @@ const userParticipant = computed(() =>
 	calendarEvent.participants.find((p) => identities.data.some((id) => id.email === p.email)),
 )
 const userResponse = computed(() => userParticipant.value?.participation_status)
+
+const isOrganizer = computed(
+	() =>
+		identities.data?.some(
+			(id) => id.email === (calendarEvent.organizer || '').replace('mailto:', ''),
+		) ?? false,
+)
+const hasParticipantsOtherThanUser = computed(
+	() =>
+		calendarEvent.participants?.some((p) => identities.data.every((i) => i.email !== p.email)) ??
+		false,
+)
 
 const descriptionExpanded = ref(false)
 const descriptionRef = useTemplateRef('descriptionRef')
@@ -226,12 +238,31 @@ const editEvent = createResource({
 	},
 })
 
+// When the organizer deletes an event with other participants, offer to email a cancellation
+// (mirrors the "Notify Participants" prompt shown when creating/editing an event).
+const showNotifyModal = ref(false)
+const pendingDelete = ref<((sendEmail: boolean) => void) | null>(null)
+
+const confirmDelete = (submit: (sendEmail: boolean) => Promise<any>, recurring: boolean) => {
+	const run = (sendEmail: boolean) => {
+		showNotifyModal.value = false
+		toast.promise(submit(sendEmail), {
+			loading: recurring ? __('Deleting events...') : __('Deleting event...'),
+			success: recurring ? __('Events deleted.') : __('Event deleted.'),
+			error: __('Action failed. Please try again in some time.'),
+		})
+	}
+
+	if (isOrganizer.value && hasParticipantsOtherThanUser.value) {
+		pendingDelete.value = run
+		showNotifyModal.value = true
+	} else {
+		run(false)
+	}
+}
+
 const handleDeleteEventInstance = () =>
-	toast.promise(deleteEventInstance.submit(), {
-		loading: __('Deleting event...'),
-		success: __('Event deleted.'),
-		error: __('Action failed. Please try again in some time.'),
-	})
+	confirmDelete((sendEmail) => deleteEventInstance.submit({ sendEmail }), true)
 
 const handleDeleteFollowingEventInstances = () => {
 	const recurrenceRule = calendarEvent.recurrence_rule
@@ -246,18 +277,15 @@ const handleDeleteFollowingEventInstances = () => {
 }
 
 const handleDeleteEvent = () =>
-	toast.promise(deleteEvent.submit(), {
-		loading: calendarEvent.recurrence_id ? __('Deleting events...') : __('Deleting event...'),
-		success: calendarEvent.recurrence_id ? __('Events deleted.') : __('Event deleted.'),
-		error: __('Action failed. Please try again in some time.'),
-	})
+	confirmDelete((sendEmail) => deleteEvent.submit({ sendEmail }), !!calendarEvent.recurrence_id)
 
 const deleteEventInstance = createResource({
 	url: 'suite.mail.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
-	makeParams: () => ({
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		master_id: calendarEvent.master_id,
 		recurrence_id: calendarEvent.recurrence_id,
+		send_scheduling_messages: sendEmail,
 	}),
 	onSuccess: () => {
 		emit('reloadEvents')
@@ -267,7 +295,11 @@ const deleteEventInstance = createResource({
 
 const deleteEvent = createResource({
 	url: 'suite.mail.doctype.calendar_event.calendar_event.delete_calendar_events',
-	makeParams: () => ({ account: store.accountId, ids: [calendarEvent.master_id || calendarEvent.id] }),
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+		account: store.accountId,
+		ids: [calendarEvent.master_id || calendarEvent.id],
+		send_scheduling_messages: sendEmail,
+	}),
 	onSuccess: () => {
 		emit('reloadEvents')
 		close()
@@ -284,6 +316,12 @@ const joinMeet = () => {
 }
 
 const RESPONSE_STATUS_MAPPING = { ACCEPTED: __('Yes'), TENTATIVE: __('Maybe'), DECLINED: __('No') }
+
+const NOTIFY_DELETE_OPTIONS = {
+	title: __('Notify Participants'),
+	icon: { name: 'bell' },
+	message: __('Send a cancellation email to let attendees know this event was deleted?'),
+}
 </script>
 
 <template>
@@ -433,6 +471,17 @@ const RESPONSE_STATUS_MAPPING = { ACCEPTED: __('Yes'), TENTATIVE: __('Maybe'), D
 				</template>
 			</div>
 		</div>
+
+		<Dialog v-model="showNotifyModal" :options="NOTIFY_DELETE_OPTIONS">
+			<template #actions>
+				<div class="flex justify-end space-x-2">
+					<Button variant="outline" @click="pendingDelete?.(false)"> {{ __('Skip') }} </Button>
+					<Button variant="solid" @click="pendingDelete?.(true)">
+						{{ __('Send Email') }}
+					</Button>
+				</div>
+			</template>
+		</Dialog>
 	</div>
 </template>
 

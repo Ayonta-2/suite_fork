@@ -63,17 +63,23 @@ def notify_participants(
 	account: str,
 	action: str,
 	event_id: str | None = None,
-	event: dict | None = None,
+	event_snapshot: dict | None = None,
 	previous_emails: list[str] | None = None,
+	recurrence_id: str | None = None,
 ) -> None:
 	"""Sends invite/update/cancel emails for an event's participants.
 
 	`action` is one of "invite", "update", "cancel". Pass `event_id` to fetch the current
-	event, or a pre-fetched `event` snapshot (needed for cancellations after deletion).
+	event, or a pre-fetched `event_snapshot` (needed for cancellations after deletion).
 	For updates, `previous_emails` enables new -> invite / kept -> update / gone -> cancel;
-	omit it to send a plain update to everyone.
+	omit it to send a plain update to everyone. `recurrence_id` scopes a cancellation to a
+	single occurrence of a recurring event.
+
+	Note: the snapshot arg is named `event_snapshot`, not `event` — `event` is a reserved
+	kwarg of `frappe.enqueue` and would be swallowed before reaching this function.
 	"""
 
+	event = event_snapshot
 	if event is None:
 		events = get_calendar_event_service(account).get([event_id])
 		if not events:
@@ -91,7 +97,9 @@ def notify_participants(
 
 	for email, kind in plan.items():
 		try:
-			_send(account, user, event, organizer, email, attendees.get(email), kind, expires_at)
+			_send(
+				account, user, event, organizer, email, attendees.get(email), kind, expires_at, recurrence_id
+			)
 		except Exception:
 			log_error("Calendar", title=_("Failed to send event {0} email to {1}").format(kind, email))
 
@@ -124,13 +132,14 @@ def _send(
 	participant: dict | None,
 	kind: str,
 	expires_at: int | None,
+	recurrence_id: str | None = None,
 ) -> None:
 	"""Renders and enqueues a single invitation/update/cancellation email."""
 
 	from suite.calendar.api.rsvp import build_rsvp_links
 
 	method = "CANCEL" if kind == "cancel" else "REQUEST"
-	ics = build_event_ics(event, method=method)
+	ics = build_event_ics(event, method=method, recurrence_id=recurrence_id)
 
 	links = None
 	if kind in ("invite", "update") and participant and participant.get("uid"):

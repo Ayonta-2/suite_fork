@@ -399,7 +399,7 @@ def add_calendar_event(
 	if response.get("created"):
 		event_id = response["created"][creation_id]["id"]
 		if use_custom_invites:
-			_enqueue_event_notification(account, "invite", event_id)
+			_enqueue_event_notification(account, "invite", event_id=event_id)
 		return event_id
 	elif response.get("notCreated"):
 		frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
@@ -534,7 +534,7 @@ def update_calendar_event(
 			frappe.throw(_(response["description"]), title=title)
 
 	if use_custom_invites:
-		_enqueue_event_notification(account, "update", id, previous_emails=previous_emails)
+		_enqueue_event_notification(account, "update", event_id=id, previous_emails=previous_emails)
 
 
 @frappe.whitelist()
@@ -569,14 +569,18 @@ def update_calendar_event_instance(
 			frappe.throw(_(response["description"]), title=title)
 
 	if use_custom_invites:
-		_enqueue_event_notification(account, "update", master_id)
+		_enqueue_event_notification(account, "update", event_id=master_id)
 
 
 @frappe.whitelist()
-def delete_calendar_events(account: str, ids: list[str]) -> None:
+def delete_calendar_events(account: str, ids: list[str], send_scheduling_messages: bool = False) -> None:
 	"""Deletes a calendar event for the given account by its ID."""
 
 	service = get_calendar_event_service(account)
+
+	# Snapshot organizer-owned events before deletion so cancellations can still be built.
+	snapshots = _cancellable_snapshots(account, service, ids) if send_scheduling_messages else []
+
 	response = service.delete(ids)
 
 	if response.get("notDestroyed"):
@@ -588,12 +592,23 @@ def delete_calendar_events(account: str, ids: list[str]) -> None:
 			title=_("Calendar Event Deletion Error"),
 		)
 
+	for snapshot in snapshots:
+		_enqueue_event_notification(account, "cancel", event_snapshot=snapshot)
+
 
 @frappe.whitelist()
-def delete_calendar_event_instance(account: str, master_id: str, recurrence_id: str) -> None:
+def delete_calendar_event_instance(
+	account: str, master_id: str, recurrence_id: str, send_scheduling_messages: bool = False
+) -> None:
 	"""Deletes a specific instance of a recurring calendar event based on its master ID and recurrence ID."""
 
 	service = get_calendar_event_service(account)
+
+	snapshot = None
+	if send_scheduling_messages:
+		if snapshots := _cancellable_snapshots(account, service, [master_id]):
+			snapshot = snapshots[0]
+
 	response = service.delete_instance(master_id, recurrence_id)
 
 	title = _("Calendar Event Instance Deletion Error")
@@ -602,6 +617,9 @@ def delete_calendar_event_instance(account: str, master_id: str, recurrence_id: 
 			frappe.throw(_(response["notUpdated"][master_id]["description"]), title=title)
 		else:
 			frappe.throw(_(response["description"]), title=title)
+
+	if snapshot:
+		_enqueue_event_notification(account, "cancel", event_snapshot=snapshot, recurrence_id=recurrence_id)
 
 
 def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict:
@@ -703,10 +721,12 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
 	}
 
 
-def _enqueue_event_notification(
-	account: str, action: str, event_id: str, previous_emails: list[str] | None = None
-) -> None:
-	"""Queues custom invitation/update/cancel emails to send after the event is committed."""
+def _enqueue_event_notification(account: str, action: str, **kwargs) -> None:
+	"""Queues custom invitation/update/cancel emails to send after the event is committed.
+
+	Extra kwargs are forwarded to notify_participants (event_id, event, previous_emails,
+	recurrence_id).
+	"""
 
 	frappe.enqueue(
 		"suite.mail.doctype.calendar_event.invitations.notify_participants",
@@ -714,8 +734,7 @@ def _enqueue_event_notification(
 		enqueue_after_commit=True,
 		account=account,
 		action=action,
-		event_id=event_id,
-		previous_emails=previous_emails,
+		**kwargs,
 	)
 
 
@@ -727,6 +746,32 @@ def _participant_emails(account: str, id: str) -> list[str]:
 		return []
 
 	return [p["email"] for p in events[0]["participants"] if p.get("email")]
+
+
+def _cancellable_snapshots(account: str, service, ids: list[str]) -> list[dict]:
+	"""Returns raw event snapshots the acting organizer should send cancellations for.
+
+	Skips events the acting account doesn't organize, and events with no participants other
+	than the organizer. Captured before deletion so the cancel .ics can still be built.
+	"""
+
+	if not custom_event_invites_enabled():
+		return []
+
+	snapshots = []
+	for event in service.get(ids):
+		organizer = (event.get("organizerCalendarAddress") or "").lower().replace("mailto:", "")
+		if not acting_as_organizer(account, organizer):
+			continue
+
+		has_others = any(
+			((p.get("calendarAddress") or p.get("email") or "").lower().replace("mailto:", "")) != organizer
+			for p in (event.get("participants") or {}).values()
+		)
+		if has_others:
+			snapshots.append(event)
+
+	return snapshots
 
 
 def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:

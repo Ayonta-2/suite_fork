@@ -10,25 +10,52 @@ VCALENDAR with the right iTIP METHOD (REQUEST for invites/updates, CANCEL for re
 
 from icalendar import Calendar
 
-from suite.mail.doctype.calendar_exchange.calendar_exchange import _build_components
+from suite.mail.doctype.calendar_exchange.calendar_exchange import (
+	_build_components,
+	_parse_local_datetime,
+	jscalendar_to_vevent,
+)
 
 PRODID = "-//Frappe Mail//Calendar Invite//EN"
 
 
-def build_event_ics(event: dict, method: str = "REQUEST") -> str:
-	"""Returns the iCalendar text for a JSCalendar event using the given iTIP method."""
+def build_event_ics(event: dict, method: str = "REQUEST", recurrence_id: str | None = None) -> str:
+	"""Returns the iCalendar text for a JSCalendar event using the given iTIP method.
+
+	When `recurrence_id` is set, a single occurrence (tagged with RECURRENCE-ID) is emitted
+	instead of the whole series — used to cancel one instance of a recurring event.
+	"""
 
 	cal = Calendar()
 	cal.add("prodid", PRODID)
 	cal.add("version", "2.0")
 	cal.add("method", method)
 
-	for component in _build_components(event):
-		if method == "CANCEL":
-			_mark_cancelled(component)
-		cal.add_component(component)
+	if recurrence_id:
+		cal.add_component(_instance_component(event, recurrence_id, method))
+	else:
+		for component in _build_components(event):
+			if method == "CANCEL":
+				_mark_cancelled(component)
+			cal.add_component(component)
 
 	return cal.to_ical().decode("utf-8")
+
+
+def _instance_component(event: dict, recurrence_id: str, method: str):
+	"""Builds a single-occurrence VEVENT carrying RECURRENCE-ID (no RRULE/overrides)."""
+
+	base = {k: v for k, v in event.items() if k not in ("recurrenceRule", "recurrenceOverrides")}
+	component = jscalendar_to_vevent(base)
+
+	instance_dt = _parse_local_datetime(recurrence_id, event.get("timeZone"))
+	if instance_dt:
+		component.add("recurrence-id", instance_dt.date() if event.get("showWithoutTime") else instance_dt)
+
+	if method == "CANCEL":
+		_mark_cancelled(component)
+
+	return component
 
 
 def _mark_cancelled(component) -> None:
