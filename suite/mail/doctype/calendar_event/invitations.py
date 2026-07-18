@@ -14,7 +14,7 @@ API after the event is written to JMAP.
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import formatdate, make_msgid
+from email.utils import formataddr, formatdate, make_msgid
 
 import frappe
 from frappe import _
@@ -145,13 +145,14 @@ def _send(
 	if kind in ("invite", "update") and participant and participant.get("uid"):
 		links = build_rsvp_links(account, event["id"], participant["uid"], email, expires_at)
 
-	subject, html = _render(kind, event, organizer, participant, links)
-	message = _build_mime(organizer, email, subject, html, ics, method)
+	from_name = _organizer_name(account, event, organizer)
+	subject, html = _render(kind, event, organizer, from_name, participant, links)
+	message = _build_mime(from_name, organizer, email, subject, html, ics, method)
 
 	MailQueue._create(
 		user=user,
 		account=account,
-		from_name=_display_name(event, organizer) or None,
+		from_name=from_name,
 		from_email=organizer,
 		recipients=[{"name": (participant or {}).get("name"), "email": email, "type": "To"}],
 		raw_message=message,
@@ -160,17 +161,17 @@ def _send(
 	)
 
 
-def _render(kind, event, organizer, participant, links) -> tuple[str, str]:
+def _render(kind, event, organizer, organizer_name, participant, links) -> tuple[str, str]:
 	"""Returns (subject, html) from the on-disk template for the given action."""
 
-	context = _context(event, organizer, participant, links)
+	context = _context(event, organizer, organizer_name, participant, links)
 
 	subject = frappe.render_template(DEFAULT_SUBJECTS[kind], context, is_path=False)
 	html = frappe.render_template(template_path(DEFAULT_TEMPLATES[kind]), context, is_path=True)
 	return subject, html
 
 
-def _context(event, organizer, participant, links) -> dict:
+def _context(event, organizer, organizer_name, participant, links) -> dict:
 	"""Builds the Jinja render context shared by subject and body templates."""
 
 	locations = [l.get("name") for l in (event.get("locations") or {}).values() if l.get("name")]
@@ -180,14 +181,15 @@ def _context(event, organizer, participant, links) -> dict:
 		"when": _format_when(event),
 		"location": "; ".join(locations),
 		"description": event.get("description") or "",
-		"organizer_name": _display_name(event, organizer) or organizer,
+		"organizer_name": organizer_name or organizer,
+		"organizer_display": f"{organizer_name} ({organizer})" if organizer_name else organizer,
 		"organizer_email": organizer,
 		"attendee_name": (participant or {}).get("name") or "",
 		"rsvp": links,
 	}
 
 
-def _build_mime(organizer, to_email, subject, html, ics, method) -> str:
+def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> str:
 	"""Builds a multipart/mixed iMIP message: HTML body (with inline logo), text/calendar, .ics.
 
 	The logo is embedded as an inline CID image rather than a remote URL, so it renders in
@@ -197,7 +199,7 @@ def _build_mime(organizer, to_email, subject, html, ics, method) -> str:
 
 	root = MIMEMultipart("mixed")
 	root["Subject"] = subject
-	root["From"] = organizer
+	root["From"] = formataddr((from_name, organizer)) if from_name else organizer
 	root["To"] = to_email
 	root["Date"] = formatdate(localtime=True)
 	root["Message-ID"] = make_msgid()
@@ -288,6 +290,25 @@ def _display_name(event: dict, email: str) -> str:
 			return participant["name"]
 
 	return ""
+
+
+def _organizer_name(account: str, event: dict, organizer: str) -> str | None:
+	"""Returns the organizer's display name, preferring the sending identity's name.
+
+	Falls back to a participant name, then None — never the bare email, so the From header
+	doesn't render as "alice@x.com <alice@x.com>".
+	"""
+
+	try:
+		for identity in get_identities(account):
+			if identity["email"] == organizer:
+				name = (identity.get("_name") or "").strip()
+				return name if name and name.lower() != organizer else None
+	except Exception:
+		pass
+
+	name = _display_name(event, organizer).strip()
+	return name if name and name.lower() != organizer else None
 
 
 def _rsvp_expiry(event: dict) -> int | None:
