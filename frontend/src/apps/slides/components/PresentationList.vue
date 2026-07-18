@@ -1,6 +1,8 @@
 <template>
 	<div class="flex size-full flex-col overflow-hidden py-8">
-		<div class="mx-auto flex w-full max-w-[1088px] items-center justify-between px-8 pb-8">
+		<div
+			class="mx-auto flex w-full max-w-[1088px] flex-col gap-4 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between"
+		>
 			<!-- Header -->
 			<div class="cursor-default text-2xl-semibold text-ink-gray-9">Presentations</div>
 
@@ -9,9 +11,9 @@
 					v-if="presentations?.length"
 					v-model="search"
 					placeholder="Search"
-					class="w-56"
+					class="w-full sm:w-56"
 				/>
-				<SortControl v-model="sortOrder" :options="sortFields" />
+				<SortControl v-model="sortOrder" :options="sortFields" class="ms-auto shrink-0" />
 			</div>
 		</div>
 
