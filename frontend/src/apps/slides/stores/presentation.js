@@ -130,8 +130,8 @@ const migrateShadow = (el) => {
 	const offsetX = Number(el.shadowOffsetX || 0)
 	const offsetY = Number(el.shadowOffsetY || 0)
 
-	el.shadowBlur = Math.round((Number(el.shadowSpread || 0) / refSize) * 100)
-	el.shadowOffset = Math.round((Math.hypot(offsetX, offsetY) / refSize) * 100)
+	el.shadowBlur = Math.round((Number(el.shadowSpread || 0) / refSize) * 1000) / 10
+	el.shadowOffset = Math.round((Math.hypot(offsetX, offsetY) / refSize) * 1000) / 10
 	el.shadowAngle = Math.round(((Math.atan2(offsetY, offsetX) * 180) / Math.PI + 360) % 360)
 	el.shadowOpacity = Math.round(tinycolor(el.shadowColor || '#000000ff').getAlpha() * 100)
 
