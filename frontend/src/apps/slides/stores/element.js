@@ -585,6 +585,8 @@ const replaceMediaElement = async (element, fileDoc) => {
 const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 	e?.preventDefault()
 
+	if (!elements?.length) return
+
 	if (srcSlide == null) srcSlide = slideIndex.value
 
 	const displaceByPx = srcSlide == slideIndex.value && toDisplace ? 40 : 0

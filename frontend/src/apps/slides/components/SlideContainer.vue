@@ -6,6 +6,7 @@
 			ref="slideRef"
 			:style="slideStyles"
 			:class="slideClasses"
+			@contextmenu.capture="allowNativeMenuInText"
 			@contextmenu="(e) => elementContextMenuRef?.handleSlideContextMenu(e)"
 		>
 			<ElementContextMenu ref="elementContextMenu">
@@ -294,6 +295,10 @@ const duplicateAndDrag = (e, id) => {
 	})
 }
 
+const allowNativeMenuInText = (e) => {
+	if (e.target?.isContentEditable) e.stopPropagation()
+}
+
 const handleMouseDown = (e, element) => {
 	if (inReadonlyMode.value || e.button == 2) return
 	const id = element?.id
@@ -303,7 +308,7 @@ const handleMouseDown = (e, element) => {
 
 	dragOccurred.value = false
 
-	if (e.altKey || e.ctrlKey) return duplicateAndDrag(e, id)
+	if (e.altKey) return duplicateAndDrag(e, id)
 
 	// start dragging once the pointer moves past a small threshold
 	watchForDragIntent(e, id)

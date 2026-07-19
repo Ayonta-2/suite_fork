@@ -16,12 +16,14 @@
 		<ButtonGroup
 			label="Align Horizontal"
 			:options="alignHorizontalOptions"
+			:active="alignedDirections"
 			@select="alignElement"
 			@hover="onAlignHover"
 		/>
 		<ButtonGroup
 			label="Align Vertical"
 			:options="alignVerticalOptions"
+			:active="alignedDirections"
 			@select="alignElement"
 			@hover="onAlignHover"
 		/>
@@ -45,7 +47,9 @@ import AlignTop from '@/apps/slides/icons/AlignTop.vue'
 import AlignCenterVertical from '@/apps/slides/icons/AlignCenterVertical.vue'
 import AlignBottom from '@/apps/slides/icons/AlignBottom.vue'
 
-import { selectionBounds, guideVisibilityMap } from '@/apps/slides/stores/slide'
+import { computed } from 'vue'
+
+import { slideBounds, selectionBounds, guideVisibilityMap } from '@/apps/slides/stores/slide'
 import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
 import { activeElementIds } from '@/apps/slides/stores/element'
 import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
@@ -92,6 +96,27 @@ const alignVerticalOptions = [
 	{ value: 'verticalCenter', label: 'Align middle', icon: AlignCenterVertical },
 	{ value: 'bottom', label: 'Align bottom', icon: AlignBottom },
 ]
+
+const alignedDirections = computed(() => {
+	const slideWidth = slideBounds.width / slideBounds.scale
+	const slideHeight = slideBounds.height / slideBounds.scale
+
+	const positions = {
+		left: 0,
+		horizontalCenter: (slideWidth - selectionBounds.width) / 2,
+		right: slideWidth - selectionBounds.width,
+		top: 0,
+		verticalCenter: (slideHeight - selectionBounds.height) / 2,
+		bottom: slideHeight - selectionBounds.height,
+	}
+
+	return Object.keys(positions).filter((direction) => {
+		const current = ['left', 'horizontalCenter', 'right'].includes(direction)
+			? selectionBounds.left
+			: selectionBounds.top
+		return Math.round(positions[direction]) == Math.round(current)
+	})
+})
 
 const alignGuideMap = {
 	left: 'leftEdge',

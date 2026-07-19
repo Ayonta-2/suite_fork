@@ -72,6 +72,15 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 
 	const isEditorFocused = () => activeEditor.value?.isEditable
 
+	const isPlainInput = (e) => {
+		const target = e?.target
+		return (
+			target &&
+			!target.isContentEditable &&
+			(target.tagName == 'INPUT' || target.tagName == 'TEXTAREA')
+		)
+	}
+
 	const performHistory = (operation) => {
 		if (isEditorFocused()) {
 			if (operation == 'undo' && !activeEditor.value?.can().undo()) {
@@ -169,7 +178,8 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'General',
 			allowInInput: true,
 			condition: inEditMode,
-			handler: () => {
+			handler: (e) => {
+				if (isPlainInput(e)) return
 				if (inEditMode()) performHistory('undo')
 			},
 		},
@@ -180,7 +190,8 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'General',
 			allowInInput: true,
 			condition: inEditMode,
-			handler: () => {
+			handler: (e) => {
+				if (isPlainInput(e)) return
 				if (inEditMode()) performHistory('redo')
 			},
 		},
@@ -192,7 +203,8 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'General',
 			allowInInput: true,
 			condition: inEditMode,
-			handler: () => {
+			handler: (e) => {
+				if (isPlainInput(e)) return
 				if (inEditMode()) performHistory('redo')
 			},
 		},
@@ -364,9 +376,9 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 'F5',
 			description: 'Restart',
 			group: 'Slideshow',
+			condition: inSlideShow,
 			handler: () => {
 				if (inSlideShow()) changeSlideInSlideshow(0)
-				else startSlideShow()
 			},
 		},
 		{
