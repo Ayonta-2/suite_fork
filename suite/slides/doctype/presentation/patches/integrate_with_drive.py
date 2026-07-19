@@ -25,6 +25,15 @@ def execute():
 			if not file:
 				team = frappe.db.get_value("Drive Team", {"owner": presentation.owner, "personal": 1}, "name")
 				if not team:
+					frappe.log_error(
+						title="Presentation left unbacked by Drive File",
+						message=(
+							f"Presentation {presentation.name} (owner {presentation.owner}) has no personal "
+							f"Drive Team, so no Drive File was created. "
+							f"is_public was {'1' if presentation.name in public else '0'}; "
+							f"public presentations here lose public access and need manual remediation."
+						),
+					)
 					continue
 				file = create_drive_file(
 					team,
