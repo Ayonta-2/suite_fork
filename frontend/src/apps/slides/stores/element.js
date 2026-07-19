@@ -1019,7 +1019,7 @@ const flipElements = (direction) => {
 const getElementCenter = (axis) => {
 	let elementStart, elementSize, slideStart
 
-	if (axis == 'Y') {
+	if (axis == 'X') {
 		elementStart = selectionBounds.left
 		elementSize = selectionBounds.width
 		slideStart = slideBounds.left

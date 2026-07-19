@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, onScopeDispose } from 'vue'
 
 const THRESHOLD = 3
 const PX_PER_STEP = 4
@@ -67,6 +67,8 @@ export function useDragScrub({ disabled, onStart, onStep, onEnd }) {
 		document.body.style.userSelect = ''
 		onEnd()
 	}
+
+	onScopeDispose(end)
 
 	return { isScrubbing, cursorStyle, start }
 }

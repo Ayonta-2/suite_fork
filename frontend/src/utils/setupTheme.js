@@ -50,11 +50,15 @@ async function getSavedTheme() {
 	const session = useSessionStore()
 	if (!session.isLoggedIn) return 'light'
 
-	const value = await frappeRequest({
-		url: 'frappe.client.get_value',
-		params: { doctype: 'User', fieldname: 'desk_theme', filters: session.user },
-	})
-	return value?.desk_theme || 'light'
+	try {
+		const value = await frappeRequest({
+			url: 'frappe.client.get_value',
+			params: { doctype: 'User', fieldname: 'desk_theme', filters: session.user },
+		})
+		return value?.desk_theme || 'light'
+	} catch {
+		return getThemeMode()
+	}
 }
 
 function saveTheme(theme) {

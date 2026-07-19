@@ -13,7 +13,7 @@ export function useAppSwitcher(currentAppId: string) {
 		icon: LayoutGrid,
 		submenu: getAppSwitcherItems(currentAppId).map((app) => ({
 			label: app.title,
-			icon: h('img', { src: app.logo, class: 'size-6' }),
+			icon: h('img', { src: app.logo, class: '!size-6' }),
 			onClick: () => (app.spa ? router.push(app.route) : (window.location.href = app.route)),
 		})),
 	}))

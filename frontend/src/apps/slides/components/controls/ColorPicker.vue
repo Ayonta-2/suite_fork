@@ -53,6 +53,7 @@
 					</div>
 					<div class="flex items-center gap-2">
 						<Input
+							:key="revertKey"
 							type="text"
 							placeholder="Set Color"
 							:aria-label="'Hex color input'"
@@ -128,6 +129,8 @@ const emit = defineEmits(['colordown', 'colorup', 'update:modelValue'])
 
 const currentHue = ref()
 const currentOpacity = ref()
+
+const revertKey = ref(0)
 
 const colorHue = ref(0)
 const colorSaturation = ref()
@@ -210,6 +213,7 @@ const updateHue = (e) => {
 const endUpdateHue = (e) => {
 	emit('colorup')
 	window.removeEventListener('mousemove', updateHue)
+	window.removeEventListener('mouseup', endUpdateHue)
 }
 
 const handleUpdateShade = (e) => {
@@ -242,6 +246,7 @@ const updateShade = (e) => {
 const endUpdateShade = (e) => {
 	emit('colorup')
 	window.removeEventListener('mousemove', updateShade)
+	window.removeEventListener('mouseup', endUpdateShade)
 }
 
 const handleUpdateOpacity = (e) => {
@@ -265,6 +270,7 @@ const updateOpacity = (e) => {
 const endUpdateOpacity = (e) => {
 	emit('colorup')
 	window.removeEventListener('mousemove', updateOpacity)
+	window.removeEventListener('mouseup', endUpdateOpacity)
 }
 
 const syncCurrentColor = () => {
@@ -294,6 +300,10 @@ watch(sRGBHex, (newColor) => {
 })
 
 const setColor = (newColor) => {
+	if (!tinycolor(newColor).isValid()) {
+		revertKey.value++
+		return
+	}
 	emit('colordown')
 	currentColor.value = newColor
 	const initialHsv = tinycolor(newColor).toHsv()

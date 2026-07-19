@@ -1,5 +1,5 @@
 <template>
-	<div :class="rowClasses" @mousedown="startScrub">
+	<div :class="rowClasses" @mousedown="onRowMouseDown">
 		<span v-if="label" :class="labelClasses">{{ label }}</span>
 		<label :class="fieldClasses">
 			<input
@@ -108,8 +108,16 @@ function onArrowStep(event) {
 	}
 	if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
 	event.preventDefault()
+	const typed = live.value !== null ? parseFloat(live.value) : Number(model.value)
+	live.value = null
+	const base = Number.isNaN(typed) ? 0 : typed
 	const direction = event.key === 'ArrowUp' ? 1 : -1
-	applyDelta(Number(model.value) || 0, direction, incrementFor(event))
+	applyDelta(base, direction, incrementFor(event))
+}
+
+function onRowMouseDown(event) {
+	if (event.target === inputRef.value) return
+	startScrub(event)
 }
 
 let scrubStartValue = 0

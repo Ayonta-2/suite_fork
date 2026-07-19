@@ -116,7 +116,7 @@ const emit = defineEmits([
 
 const search = ref('')
 
-const sortOrder = ref({ field: 'modified', label: 'Modified', ascending: false })
+const sortOrder = ref({ field: 'modified', label: 'Edited', ascending: false })
 
 const sortFields = [
 	{ label: 'Title', field: 'title' },
