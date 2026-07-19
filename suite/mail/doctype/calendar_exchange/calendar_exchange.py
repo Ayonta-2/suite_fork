@@ -393,6 +393,12 @@ class CalendarExchange(Document):
 			# staging calendar and every event in it are deleted on rollback.
 			staging_calendar_id = self._create_staging_calendar(service, logger)
 			targets, skipped, failed = self._create_events(service, events, staging_calendar_id, logger)
+
+			# The server rejecting every event is a failure, not a successful zero-import, and must
+			# trigger a rollback.
+			if not targets and failed > 0:
+				frappe.throw(_("Import failed: the server rejected all {0} event(s).").format(failed))
+
 			self._move_to_target_calendars(service, targets, logger)
 			self._discard_staging_calendar(service, staging_calendar_id, logger)
 			staging_calendar_id = None
