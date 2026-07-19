@@ -1,4 +1,6 @@
 import time
+from collections.abc import Generator
+from contextlib import contextmanager
 from uuid import uuid7
 
 import frappe
@@ -66,3 +68,19 @@ def release_lock(lockname: str, identifier: str) -> bool:
 			continue
 
 	return False
+
+
+@contextmanager
+def write_lock(
+	lockname: str, acquire_timeout: int = DEFAULT_ACQUIRE_TIMEOUT, lock_timeout: int = DEFAULT_LOCK_TIMEOUT
+) -> Generator[None, None, None]:
+	"""Context manager to acquire a distributed lock for writing."""
+
+	identifier = acquire_lock(lockname, acquire_timeout=acquire_timeout, lock_timeout=lock_timeout)
+	if not identifier:
+		frappe.throw(_("Could not acquire lock: {0}").format(lockname))
+
+	try:
+		yield
+	finally:
+		release_lock(lockname, identifier)

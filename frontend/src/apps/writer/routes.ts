@@ -5,8 +5,9 @@ import { createResource } from 'frappe-ui'
 // Boot side-effects the suite's shared main.ts does not run, so trigger them
 // on writer module load.
 import { allUsers } from '@/apps/drive/sdk'
+import { getSessionUser } from '@/boot/session'
 
-allUsers.fetch()
+if (getSessionUser()) allUsers.fetch()
 
 /**
  * Writer route module — mounted by the suite router under the '/writer' prefix.

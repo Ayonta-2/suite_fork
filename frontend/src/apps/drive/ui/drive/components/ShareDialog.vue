@@ -21,7 +21,7 @@
               " />
               <TeamSelector v-if="generalAccessLevel == 'team'" v-model="chosenTeam" />
             </div>
-            <AccessSelect v-if="generalAccessLevel !== 'restricted'" v-model="generalPerms" :options="accessOptions"
+            <AccessSelect v-if="generalAccessLevel !== 'restricted'" v-model="generalPerms" variant="ghost" :options="accessOptions"
               @update:model-value="
                 (val) => updateGeneralAccess(generalAccessLevel, val)
               " />

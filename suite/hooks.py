@@ -206,6 +206,8 @@ override_whitelisted_methods = {
 	# SpamD
 	"mail.api.spamd.scan": "suite.mail.api.spamd.scan",
 	"mail.api.spamd.get_spam_score": "suite.mail.api.spamd.get_spam_score",
+	# writer — embed URLs baked into documents created by the standalone app
+	"writer.api.embed.get": "suite.writer.api.embed.get",
 }
 
 # ============================================================================
@@ -376,6 +378,9 @@ ALLOWED_WILDCARD_PATHS = [
 	"/api/method/suite.meet.api.",
 	"/api/method/suite.drive.api.",
 	"/api/method/suite.writer.api.",
+	# writer — backward-compatible prefix for embed URLs stored in old documents
+	# (see override_whitelisted_methods).
+	"/api/method/writer.api.",
 	"/api/method/suite.slides.api.",
 	"/api/method/suite.sheets.api.",
 ]

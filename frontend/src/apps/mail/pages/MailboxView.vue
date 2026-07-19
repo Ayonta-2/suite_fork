@@ -56,59 +56,14 @@
 				class="sticky top-16 flex flex-col border-r"
 				:class="!isMobile && showReadingPane ? 'w-1/3' : 'w-full'"
 			>
-				<!-- Search header: the query (click to edit) + removable filter pills, above the results toolbar. -->
-				<div
+				<!-- The search view's own header: the query (click to edit) + removable filter pills, above
+				     the results toolbar. It owns the query surface; the results below just read the route. -->
+				<SearchResultsHeader
 					v-if="mailbox === 'search'"
-					class="flex flex-col gap-2.5 border-b border-l-transparent px-3.5 py-3 sm:border-l sm:px-5"
-				>
-					<FormControl
-						type="text"
-						size="sm"
-						class="w-full cursor-pointer [&_input]:cursor-pointer"
-						:class="{ 'max-w-2xl': isMobile || !showReadingPane }"
-						:model-value="searchQuery"
-						:placeholder="__('Search')"
-						:aria-label="__('Edit search')"
-						readonly
-						variant="outline"
-						@mousedown.prevent="openSearch()"
-					>
-						<template #prefix>
-							<Search class="text-ink-gray-5 size-4" />
-						</template>
-						<template #suffix>
-							<button
-								class="text-ink-gray-5 hover:text-ink-gray-8 -m-1 flex p-1"
-								:aria-label="__('Filters')"
-								@mousedown.stop.prevent="openSearch(true)"
-							>
-								<SlidersHorizontal class="size-4" />
-							</button>
-						</template>
-					</FormControl>
-					<div v-if="searchFilterChips.length" class="flex flex-wrap items-center gap-1.5">
-						<span
-							v-for="chip in searchFilterChips"
-							:key="chip.key"
-							class="bg-surface-gray-2 inline-flex h-7 items-center gap-1 rounded pl-2 pr-1 text-xs"
-							:class="{
-								'hover:bg-surface-gray-3 cursor-pointer': isClickableChip(chip.key),
-							}"
-							@click="isClickableChip(chip.key) && handleChipClick(chip.key)"
-						>
-							<span class="max-w-40 truncate">{{ chip.label }}</span>
-							<button
-								class="text-ink-gray-5 hover:text-ink-gray-8 rounded p-1"
-								:aria-label="__('Remove filter')"
-								@click.stop="removeSearchFilter(chip.key)"
-							>
-								<X class="size-3" />
-							</button>
-						</span>
-
-						<Button variant="ghost" class="text-xs" :label="__('Clear all')" @click="clearSearch" />
-					</div>
-				</div>
+					v-model:show-search="showSearchModal"
+					v-model:show-advanced="showSearchAdvanced"
+					v-model:edit-filter="searchEditFilter"
+				/>
 
 				<!-- Toolbar/Actions -->
 				<div
@@ -226,77 +181,99 @@
 					class="h-full overflow-y-auto overscroll-contain"
 				>
 					<div v-for="(group, key) in groupedThreads" :key="key">
-						<Tooltip
+						<div
 							v-if="groupMessagesBy !== 'None'"
-							:text="
-								isLastGroup(key)
-									? ''
-									: __(collapsedGroups.includes(key) ? 'Expand' : 'Collapse')
-							"
+							class="text-ink-gray-6 group flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
+							:class="{
+								'!bg-surface-blue-1': isGroupSelected(key),
+								'sm:hover:bg-surface-gray-1': !isLastGroup(key),
+								'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
+							}"
+							:data-row-key="`group:${key}`"
+							@click="toggleGroupCollapse(key)"
 						>
 							<div
-								class="text-ink-gray-6 group flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
-								@click="toggleGroupCollapse(key)"
+								v-if="!isAllAccountsSearch"
+								class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-6 sm:pl-3"
+								@click.stop.prevent="
+									toggleSelect(getGroupThreads(key), !isGroupSelected(key))
+								"
 							>
-								<div
-									v-if="!isAllAccountsSearch"
-									class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-6 sm:pl-3"
-									@click.stop.prevent="
-										toggleSelect(getGroupThreads(key), !isGroupSelected(key))
-									"
-								>
-									<Checkbox
-										:model-value="isGroupSelected(key)"
-										size="md"
-										class="pointer-events-none"
-									/>
-								</div>
-
-								<span class="select-none pt-[2px]">
-									{{
-										getFormattedDate(
-											key,
-											groupMessagesBy === 'Month',
-										).toUpperCase()
-									}}
-								</span>
-
-								<component
-									:is="
-										collapsedGroups.includes(key) ? ChevronRight : ChevronDown
-									"
-									v-if="!isLastGroup(key)"
-									class="icon ml-auto"
+								<Checkbox
+									:model-value="isGroupSelected(key)"
+									size="md"
+									class="pointer-events-none"
 								/>
 							</div>
-						</Tooltip>
-						<template v-if="!collapsedGroups.includes(key)">
-							<MailListItem
-								v-for="mail in group"
-								ref="mailItems"
-								:key="isAllAccountsSearch ? `${mail.account}:${mail.name}` : mail.name"
-								:mailbox
-								:mail
-								:account-id="isAllAccountsSearch ? mail.account : undefined"
-								:account-label="isAllAccountsSearch ? mail.account_name : undefined"
-								:selectable="!isAllAccountsSearch"
-								:is-selected="selections.includes(mail.thread_id)"
-								class="border-l-transparent sm:border-l"
-								:class="{
-									'!bg-surface-blue-1': mail.thread_id === threadID && !isMobile,
-									'!border-l-blue-500': mail.thread_id === threadInFocus,
-								}"
-								@set-seen="(seen: boolean) => rowSetSeen(mail, seen)"
-								@archive-thread="rowArchive(mail)"
-								@trash-thread="rowTrash(mail)"
-								@delete-thread="junkOrDeleteThreads([mail.thread_id], false)"
-								@set-flagged="(flagged: boolean) => rowSetFlagged(mail, flagged)"
-								@set-selected="
-									(selected: boolean) =>
-										!isAllAccountsSearch &&
-										toggleSelect([mail.thread_id], selected)
-								"
+
+							<span class="select-none pt-[2px]">
+								{{ getFormattedDate(key, groupMessagesBy === 'Month').toUpperCase() }}
+							</span>
+
+							<component
+								:is="collapsedGroups.includes(key) ? ChevronRight : ChevronDown"
+								v-if="!isLastGroup(key)"
+								class="icon ml-auto"
 							/>
+						</div>
+						<template v-if="!collapsedGroups.includes(key)">
+							<!-- A stack row stands in for a run of look-alike threads; when expanded, its
+							     members follow it as ordinary (indented) rows. -->
+							<template v-for="row in groupedRows[key]" :key="row.key">
+								<!-- Stacks are disabled in search (see stackingEnabled), so unlike the thread
+								     rows below they never need the all-accounts cross-account handling. -->
+								<StackListItem
+									v-if="row.type === 'stack'"
+									:threads="row.threads"
+									:expanded="row.expanded"
+									:is-selected="isStackSelected(row.threads)"
+									class="border-l-transparent sm:border-l"
+									:class="{ '!border-l-outline-blue-5': row.key === focusedRowKey }"
+									:data-row-key="row.key"
+									@toggle="toggleStack(row)"
+									@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
+									@archive-threads="stackArchive(row.threads)"
+									@trash-threads="stackTrash(row.threads)"
+									@delete-threads="stackDelete(row.threads)"
+									@set-selected="
+										(selected: boolean) =>
+											toggleSelect(
+												row.threads.map((t) => t.thread_id),
+												selected,
+											)
+									"
+								/>
+								<MailListItem
+									v-else
+									:mailbox
+									:mail="row.thread"
+									:account-id="isAllAccountsSearch ? row.thread.account : undefined"
+									:account-label="
+										isAllAccountsSearch ? row.thread.account_name : undefined
+									"
+									:selectable="!isAllAccountsSearch"
+									:is-selected="selections.includes(row.thread.thread_id)"
+									:hide-sender="row.inStack"
+									class="border-l-transparent sm:border-l"
+									:class="{
+										'!bg-surface-blue-1':
+											row.thread.thread_id === threadID && !isMobile,
+										'!border-l-outline-blue-5': row.key === focusedRowKey,
+										'!pl-10 sm:!pl-12': row.inStack,
+									}"
+									:data-row-key="row.key"
+									@set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
+									@archive-thread="rowArchive(row.thread)"
+									@trash-thread="rowTrash(row.thread)"
+									@delete-thread="junkOrDeleteThreads([row.thread.thread_id], false)"
+									@set-flagged="(flagged: boolean) => rowSetFlagged(row.thread, flagged)"
+									@set-selected="
+										(selected: boolean) =>
+											!isAllAccountsSearch &&
+											toggleSelect([row.thread.thread_id], selected)
+									"
+								/>
+							</template>
 						</template>
 					</div>
 					<!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
@@ -409,12 +386,9 @@ import {
 	Mails,
 	Paperclip,
 	RefreshCw,
-	Search,
-	SlidersHorizontal,
 	Star,
 	StarOff,
 	Trash2,
-	X,
 } from 'lucide-vue-next'
 import {
 	Breadcrumbs,
@@ -422,14 +396,12 @@ import {
 	Checkbox,
 	Dialog,
 	Dropdown,
-	FormControl,
 	Tooltip,
 	call,
 	createResource,
 	usePageMeta,
 } from 'frappe-ui'
 
-import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
 import {
 	getFormattedDate,
 	isMac,
@@ -439,6 +411,7 @@ import {
 	startResizing,
 } from '@/apps/mail/utils'
 import { useScreenSize, useSidebar, useUndo } from '@/apps/mail/utils/composables'
+import { buildListRows } from '@/apps/mail/utils/threadStacks'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
@@ -446,9 +419,17 @@ import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import ScreenedEmailAddressModal from '@/apps/mail/components/Modals/ScreenedEmailAddressModal.vue'
+import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
+import StackListItem from '@/apps/mail/components/StackListItem.vue'
 
 import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
+import type { ListRow, StackRow } from '@/apps/mail/utils/threadStacks'
+
+// A date header, the one navigable row the list draws itself rather than getting from buildListRows —
+// which is deliberately date-agnostic, so this type belongs here rather than in threadStacks.
+type GroupRow = { type: 'group'; key: string; dateKey: string }
+type NavRow = ListRow | GroupRow
 
 const { accountId, mailbox, threadID } = defineProps<{
 	accountId: string
@@ -492,26 +473,129 @@ const isLastGroup = (key: string) => Object.keys(groupedThreads.value).at(-1) ==
 const collapsedGroups = ref<string[]>([])
 
 const toggleGroupCollapse = (key: string) => {
+	// The cursor follows the click, as it does when you open a mail: Enter and a click are the same
+	// gesture on the same row, and Enter can only mean that if the cursor is already there. Above the
+	// last-group guard, so clicking a header that can't fold still takes the cursor.
+	focusedRowKey.value = `group:${key}`
 	if (isLastGroup(key)) return
 
 	if (collapsedGroups.value.includes(key))
 		return (collapsedGroups.value = collapsedGroups.value.filter((d) => d !== key))
 
 	collapsedGroups.value.push(key)
+	// Collapsing keeps the group's selection: "collapse a day, tick it, archive it" is a bulk move
+	// worth having, and the header's own checkbox goes on showing that the day is selected. Only the
+	// reading pane has to move, since it would otherwise point at a row that is no longer rendered.
 	if (groupedThreads.value[key]?.some((thread) => thread.thread_id === threadID)) goToMailbox()
-	toggleSelect(getGroupThreads(key), false)
 }
 
 const getGroupThreads = (group: string) => groupedThreads.value[group]?.map((t) => t.thread_id)
 
 watch(groupMessagesBy, () => (collapsedGroups.value = []))
 
-const threadInFocus = ref<string>()
+// Thread Stacks
+//
+// A run of adjacent look-alike threads from one sender collapses into a single row, so a chatty
+// notification sender can't bury the rest of the mailbox. This is a display layer over groupedThreads:
+// runs are detected within a date group and never span one.
+
+// Stacking earns its place only where mail arrives unasked-for and one sender can drown the rest. It is
+// off wherever the sender is not the signal, or where hiding rows would defeat the list itself:
+//   Sent, Drafts — every row is from me, so a pile headed by my own name says nothing (MailListItem
+//                  shows recipients rather than the sender here for exactly the same reason).
+//   Starred      — a list curated by hand: collapsing away rows I deliberately marked is backwards.
+//   Search       — results answer a question just asked, so every match should stay visible. This also
+//                  covers all-accounts search (a subset of 'search'), whose rows must be acted on
+//                  through per-row cross-account handlers a stack could not use.
+const stackingEnabled = computed(
+	() => !['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox),
+)
+
+// The thread_ids of every member of every expanded stack. In-memory only — stacks re-collapse on a
+// mailbox switch. Keyed by member id rather than by stack key so a run keeps its expanded state as it
+// grows in either direction (appended by infinite scroll, prepended by a refresh), and so routing to a
+// thread can expand its stack without having to locate the run first.
+const expandedStacks = ref(new Set<string>())
+
+const isRunExpanded = (run: Thread[]) => run.some((t) => expandedStacks.value.has(t.thread_id))
+
+const rowKeyOf = (mail: Thread) =>
+	isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name
+
+const groupedRows = computed<Record<string, ListRow[]>>(() =>
+	Object.fromEntries(
+		Object.entries(groupedThreads.value ?? {}).map(([key, group]) => [
+			key,
+			buildListRows(group, {
+				rowKey: rowKeyOf,
+				isExpanded: isRunExpanded,
+				enabled: stackingEnabled.value,
+			}),
+		]),
+	),
+)
+
+// The rows the list actually renders, in visual order. The cursor walks these rather than the flat list
+// of loaded threads, so it can never land on a row that isn't on screen: a collapsed stack is a single
+// stop (its members aren't rendered), and a collapsed date group contributes only its header.
+//
+// Headers exist only when the user groups by day or month; with grouping off none are rendered, and
+// collapsedGroups is provably empty there because only a header's own click can fill it.
+const navigableRows = computed<NavRow[]>(() => {
+	const rows: NavRow[] = []
+	for (const [dateKey, groupRows] of Object.entries(groupedRows.value)) {
+		if (groupMessagesBy.value !== 'None')
+			rows.push({ type: 'group', key: `group:${dateKey}`, dateKey })
+		if (collapsedGroups.value.includes(dateKey)) continue
+		rows.push(...groupRows)
+	}
+	return rows
+})
+
+const focusedRow = computed(() => navigableRows.value.find((row) => row.key === focusedRowKey.value))
+
+// Every thread a row stands for: one for a thread row, the whole run for a stack, the whole day for a
+// header — mirroring exactly what each row's own checkbox selects.
+const rowThreadIDs = (row: NavRow): string[] =>
+	row.type === 'thread'
+		? [row.thread.thread_id]
+		: row.type === 'stack'
+			? row.threads.map((t) => t.thread_id)
+			: (getGroupThreads(row.dateKey) ?? [])
+
+const toggleStack = (row: StackRow) => {
+	const ids = row.threads.map((t) => t.thread_id)
+	// The cursor follows the click, as it does when you open a mail. This also covers the fold: the
+	// members are about to be hidden, so the stack row that now stands for them is where the cursor
+	// belongs, and Enter-fold-Enter-unfold stays a round trip rather than a way to lose your place.
+	focusedRowKey.value = row.key
+	if (!row.expanded) return ids.forEach((id) => expandedStacks.value.add(id))
+
+	ids.forEach((id) => expandedStacks.value.delete(id))
+	// Don't leave the reading pane pointing at a row we just hid — the same reason toggleGroupCollapse
+	// leaves the thread when its group collapses.
+	if (threadID && ids.includes(threadID)) goToMailbox()
+}
+
+// Derived rather than stored, mirroring isGroupSelected: it can never drift from `selections`, and
+// every existing path that mutates them (Cmd+A, Esc, resetSelections, shift+arrow, a member's own
+// checkbox) keeps the stack checkbox honest for free.
+const isStackSelected = (threads: Thread[]) =>
+	threads.every((t) => selections.value.includes(t.thread_id))
+
+// The keyboard cursor, as a row key (see navigableRows). A row key rather than a thread id because the
+// cursor can sit on a stack row or a date header, neither of which is a thread — and one ref rather
+// than two so the cursor can never be in two places at once.
+const focusedRowKey = ref<string>()
 
 watch(
 	() => threadID,
 	(val) => {
 		if (!val) return
+
+		// A deep link or a step to the next thread can land inside a collapsed stack — surface it, just
+		// as a collapsed date group opens below. An opened thread is always visible in the list.
+		expandedStacks.value.add(val)
 
 		setTimeout(() => focusOnThread(val))
 		for (const group of collapsedGroups.value) {
@@ -524,7 +608,6 @@ watch(
 
 // Selection
 
-const mailItemsRef = useTemplateRef('mailItems')
 const mailThreadRef = useTemplateRef('mailThread')
 const mailListRef = useTemplateRef('mailList')
 
@@ -535,11 +618,10 @@ const isAllSelected = computed(
 	() => threadIDs.value.length && selections.value.length === threadIDs.value.length,
 )
 
-watch(selections, (val) => {
-	collapsedGroups.value = collapsedGroups.value.filter(
-		(group) => !getGroupThreads(group).some((thread) => val.includes(thread)),
-	)
-})
+// Selecting no longer forces a collapsed date group or stack open. Ticking either one is how you act
+// on the whole set at once — collapse the pile, tick, archive — and expanding it on tick would undo
+// exactly the thing being asked for, at the worst moment. Nothing is concealed by staying collapsed:
+// the header or stack row shows its own checkbox ticked, and the toolbar counts individual threads.
 
 const toggleSelect = (
 	threadIDs: string[],
@@ -630,17 +712,17 @@ const handleKeyDown = (e: KeyboardEvent) => {
 const handleGKeyPress = (e: KeyboardEvent) => {
 	clearTimeout(gPressTimeout.value)
 
+	// The reading pane walks threads, so it names one; the list walks rows, so it takes the edge row —
+	// which is the day's header when one sits above the first mail.
 	if (e.shiftKey) {
-		const lastThread = threadIDs.value.at(-1)
-		if (threadID) return goToThread(lastThread)
-		return focusOnThread(lastThread)
+		if (threadID) return goToThread(threadIDs.value.at(-1))
+		return focusRow(navigableRows.value.at(-1))
 	}
 
 	if (isGPressed.value) {
 		isGPressed.value = false
-		const firstThread = threadIDs.value[0]
-		if (threadID) return goToThread(firstThread)
-		return focusOnThread(firstThread)
+		if (threadID) return goToThread(threadIDs.value[0])
+		return focusRow(navigableRows.value[0])
 	}
 
 	isGPressed.value = true
@@ -672,17 +754,23 @@ const handleShowShortcuts = (e: KeyboardEvent) => {
 	showShortcuts.value = true
 }
 
+// Enter means "act on the row I'm on": open a mail, or fold/unfold a stack or a day.
 const handleEnter = (e: KeyboardEvent) => {
 	e.preventDefault()
-	if (threadInFocus.value) goToThread(threadInFocus.value)
-	else focusOnThread(threadIDs.value[0])
+
+	const row = focusedRow.value
+	if (!row) return focusRow(navigableRows.value[0])
+	if (row.type === 'thread') return goToThread(row.thread.thread_id)
+	if (row.type === 'stack') return toggleStack(row)
+	// Folds the day, or does nothing on the last group — exactly what clicking the header does.
+	toggleGroupCollapse(row.dateKey)
 }
 
 const handleEscape = (e: KeyboardEvent) => {
 	e.preventDefault()
 	if (threadID) goToMailbox()
 	else if (selections.value.length) resetSelections()
-	else threadInFocus.value = undefined
+	else focusedRowKey.value = undefined
 }
 
 const handleThreadActions = (e: KeyboardEvent, key: string) => {
@@ -723,31 +811,38 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 
 	e.preventDefault()
 
-	const prevThread = threadInFocus.value
 	const offset = ['arrowup', 'k'].includes(key) ? -1 : 1
+	const prevIDs = focusedRow.value ? rowThreadIDs(focusedRow.value) : []
 
-	let newThread = undefined
+	let newIDs: string[] = []
 
 	// At the last loaded thread, stepping further loads the next window (like the ThreadHeader arrows).
-	// newThread stays the in-list target (undefined at the edge), so shift-select skips the crossing —
-	// the appended thread resolves asynchronously and a reset would clear selections anyway.
+	// newIDs stays the in-list target (empty at the edge), so shift-select skips the crossing — the
+	// appended thread resolves asynchronously and a reset would clear selections anyway.
 	if (threadID) {
-		newThread = getThreadByOffset(offset)
+		// The reading pane walks threads rather than rows: opening one always reveals it, so it can
+		// never land on something hidden (see the threadID watcher).
+		const next = getThreadByOffset(offset)
 		goToThreadByOffset(offset)
-	} else if (!threadIDs.value.includes(threadInFocus.value)) {
-		focusOnThread(threadIDs.value[0])
-		newThread = threadIDs.value[0]
+		if (next) newIDs = [next]
 	} else {
-		newThread = getThreadByOffset(offset, threadInFocus.value)
-		focusOnThreadByOffset(offset)
+		const rows = navigableRows.value
+		// A cursor whose row is gone — folded away, or removed by a mutation — restarts at the top.
+		const index = rows.findIndex((row) => row.key === focusedRowKey.value)
+		const next = index === -1 ? rows[0] : rows[index + offset]
+
+		if (next) {
+			focusRow(next)
+			newIDs = rowThreadIDs(next)
+		} else if (index !== -1) loadMoreThenOpenEdge(offset, 'focus')
 	}
 
-	// Handle shift+arrow selection
-	if (!(isShiftPressed.value && newThread)) return
+	// Handle shift+arrow selection. A row carries every thread it stands for, so shifting onto a stack
+	// takes its whole run and onto a header takes the day — the same sets their checkboxes select.
+	if (!(isShiftPressed.value && newIDs.length)) return
 
-	const threadsToToggle = prevThread ? [prevThread, newThread] : [newThread]
-	const shouldSelect = !selections.value.includes(newThread)
-	toggleSelect(threadsToToggle, shouldSelect, true)
+	const shouldSelect = !newIDs.every((id) => selections.value.includes(id))
+	toggleSelect([...prevIDs, ...newIDs], shouldSelect, true)
 }
 
 const handleKeyUp = (e: KeyboardEvent) => {
@@ -1088,13 +1183,46 @@ const loadMore = () => {
 }
 
 const loadMoreSentinel = useTemplateRef('loadMoreSentinel')
+
+// True while the sentinel is in view.
+const sentinelVisible = ref(false)
+
+// The height the list had reached the last time we topped it up, so a fill that adds nothing can be
+// detected. Reset at the start of each fill episode (see below).
+let lastFillHeight = 0
+
 useIntersectionObserver(
 	loadMoreSentinel,
 	([entry]) => {
-		if (entry?.isIntersecting) loadMore()
+		const entering = !!entry?.isIntersecting && !sentinelVisible.value
+		sentinelVisible.value = !!entry?.isIntersecting
+		if (entering) lastFillHeight = 0
+		if (sentinelVisible.value) loadMore()
 	},
 	{ root: mailListRef },
 )
+
+// Rescues the one case the observer cannot: the rendered list is too short to scroll, so the sentinel
+// can never leave and re-enter the viewport to fire again — infinite scroll would die with nothing left
+// to scroll. A window of 25 threads can collapse to a single stack row, so filling the viewport can take
+// several of them.
+//
+// Both guards are load-bearing. Stop once the list can scroll, because from there the user's own
+// scrolling drives the observer. And stop if a window added no height: its rows landed somewhere they
+// cannot be seen (a collapsed date group), so further windows would be just as invisible — without this,
+// collapsing a large group turns into a stampede that walks the entire mailbox 25 threads at a time.
+watch(groupedRows, () => {
+	if (!sentinelVisible.value || !hasMore.value) return
+
+	nextTick(() => {
+		const el = mailListRef.value
+		if (!el || !sentinelVisible.value) return
+
+		const grew = el.scrollHeight > lastFillHeight
+		lastFillHeight = el.scrollHeight
+		if (el.scrollHeight <= el.clientHeight && grew) loadMore()
+	})
+})
 
 // The reading pane's Next arrow can always advance while more threads remain to load (crossing the
 // last loaded thread triggers an append). The Prev arrow is disabled at the first loaded thread, which
@@ -1219,8 +1347,12 @@ watch(
 		isMailboxLoaded.value = false
 		threadsResource.value.data = []
 		filter.value = localStorage.getItem(`user:${user.data.name}:filter:${mailbox}`) || null
-		threadInFocus.value = undefined
+		focusedRowKey.value = undefined
 		collapsedGroups.value = []
+		// Stacks re-collapse on a mailbox switch. Note a *filter* change deliberately doesn't clear
+		// this: stale ids are inert (a run is expanded only if one of its current members is listed),
+		// and keeping them means toggling Unread→All doesn't re-collapse a stack you just opened.
+		expandedStacks.value = new Set()
 		resetThreads(false)
 	},
 	{ immediate: true },
@@ -1283,7 +1415,9 @@ const loadMoreThenOpenEdge = (offset: number, action: 'open' | 'focus') => {
 	// One crossing at a time: ignore further edge steps until the append resolves, so key auto-repeat
 	// at the bottom of the list can't fire a burst of loads.
 	if (pendingEdgeThread || offset < 0 || !hasMore.value) return
-	pendingEdgeThread = { action, anchor: action === 'open' ? threadID : threadInFocus.value }
+	// A focus crossing can only happen from the last navigable row, whose last thread is the last loaded
+	// one — so the tail anchors the successor without needing to map a row back to a thread.
+	pendingEdgeThread = { action, anchor: action === 'open' ? threadID : threadIDs.value.at(-1) }
 	loadMore()
 }
 
@@ -1311,22 +1445,42 @@ const goToNextThreadOrMailbox = (excludedThreads: string[] = []) => {
 	else goToMailbox()
 }
 
-const focusOnThread = (threadID: string) => {
+const focusRow = (row?: NavRow) => {
+	if (!row) return
+
+	focusedRowKey.value = row.key
+	scrollIntoView(row.key)
+}
+
+// The row that stands for a thread on screen: its own row when rendered, the collapsed stack that hides
+// it, or — when its whole day is folded away — that day's header. Callers name a thread ("go to the
+// first mail", "open the thread that just loaded"); this is how that lands somewhere visible.
+const rowForThread = (threadID?: string): NavRow | undefined => {
 	if (!threadID) return
 
-	threadInFocus.value = threadID
-	scrollIntoView(threadID)
+	const row = navigableRows.value.find(
+		(row) =>
+			(row.type === 'thread' && row.thread.thread_id === threadID) ||
+			// Only a collapsed stack stands in for its members. An expanded one precedes its member rows,
+			// so without this guard every member would resolve to the stack row above it.
+			(row.type === 'stack' && !row.expanded && row.threads.some((t) => t.thread_id === threadID)),
+	)
+	if (row) return row
+
+	const dateKey = collapsedGroups.value.find((key) => getGroupThreads(key)?.includes(threadID))
+	return navigableRows.value.find((row) => row.key === `group:${dateKey}`)
 }
 
-const focusOnThreadByOffset = (offset: number) => {
-	const next = getThreadByOffset(offset, threadInFocus.value)
-	if (next) return focusOnThread(next)
-	loadMoreThenOpenEdge(offset, 'focus')
-}
+const focusOnThread = (threadID?: string) => focusRow(rowForThread(threadID))
 
-const scrollIntoView = (threadID: string) => {
-	const el = mailItemsRef.value?.find((el) => el?.id === threadID)?.$el
-	if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+const scrollIntoView = (rowKey: string) => {
+	// The row may have only just been revealed by its stack or its day opening, so wait for the render
+	// before looking it up. A no-op when nothing changed.
+	nextTick(() => {
+		mailListRef.value
+			?.querySelector(`[data-row-key="${rowKey}"]`)
+			?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+	})
 }
 
 // Actions
@@ -1454,6 +1608,26 @@ const rowTrash = (mail: Thread) =>
 			)
 		: handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
 
+// A stack's hover actions apply to its whole run in one operation — one request, one toast, one undo,
+// rather than N of each. The row's own tooltips name the count. These take the same paths as the
+// selection toolbar's bulk actions, and are safe to key off the active account because stacks are
+// disabled in all-accounts search (see stackingEnabled).
+
+const stackIDs = (threads: Thread[]) => threads.map((t) => t.thread_id)
+
+const stackSetSeen = (threads: Thread[], seen: boolean) =>
+	handleSetSeen({ [Number(seen)]: stackIDs(threads) })
+
+const stackArchive = (threads: Thread[]) =>
+	mailbox === mailboxIds.sent
+		? handleAddThreadsToMailbox(mailboxIds.archive, stackIDs(threads))
+		: handleMoveThreads({ [mailboxIds.archive]: stackIDs(threads) })
+
+const stackTrash = (threads: Thread[]) =>
+	handleMoveThreads({ [mailboxIds.trash]: stackIDs(threads) })
+
+const stackDelete = (threads: Thread[]) => junkOrDeleteThreads(stackIDs(threads), false)
+
 const showEmptyMailbox = ref(false)
 
 const emptyMailbox = createResource({
@@ -1566,99 +1740,12 @@ const title = computed(() => {
 	}
 })
 
-// Search-results header. The free-text term is shown as a chip you click to reopen the search modal
-// (showSearchModal, bound to HeaderActions); the advanced filters show as removable pills below, and
-// searchTotal drives the result count. Labels mirror the search dialog.
+// The search modal lives in HeaderActions but is opened from two places — its own button, and the
+// search view's header — so its state sits here, between them. Everything else about the query surface
+// belongs to SearchResultsHeader.
 const showSearchModal = ref(false)
 const showSearchAdvanced = ref(false)
-// Set when a filter chip is clicked; the modal reopens that filter inline for editing (see editSearchFilter).
 const searchEditFilter = ref('')
-// Open the search modal — to the filter form when `advanced` (clicking a pill / "Add filter"), or to the
-// plain search input otherwise (clicking the query).
-const openSearch = (advanced = false) => {
-	showSearchAdvanced.value = advanced
-	showSearchModal.value = true
-}
-// Filter chips whose value can be edited inline in the modal (operator-backed: folder + contacts). The
-// rest (subject/dates) have no inline form, so their chips only remove — matching the modal, where only
-// these keys are clickable.
-const EDITABLE_FILTER_KEYS = ['inMailbox', 'from', 'to', 'cc', 'bcc']
-const isEditableChip = (key: string) => EDITABLE_FILTER_KEYS.includes(key)
-// Two-state chips (attachment/read) flip between their values on click — With ↔ Without Attachments,
-// Read ↔ Unread — instead of opening the modal.
-const TOGGLEABLE_FILTER_KEYS = ['hasAttachment', 'isRead']
-const isToggleableChip = (key: string) => TOGGLEABLE_FILTER_KEYS.includes(key)
-const isClickableChip = (key: string) => isEditableChip(key) || isToggleableChip(key)
-// Route a chip click to editing (operator chips) or toggling (attachment/read chips); non-clickable
-// chips only expose the remove button.
-const handleChipClick = (key: string) => {
-	if (isToggleableChip(key)) return toggleSearchFilter(key)
-	if (isEditableChip(key)) return editSearchFilter(key)
-}
-// Clicking an editable chip opens the modal (plain search view) with that filter dropped back into the
-// query as an editable token — the same effect as clicking the chip inside the modal.
-const editSearchFilter = (key: string) => {
-	showSearchAdvanced.value = false
-	searchEditFilter.value = key
-	showSearchModal.value = true
-}
-// Re-run the search with the chip's value flipped between its two states ('true' ⇄ 'false').
-const toggleSearchFilter = (key: string) => {
-	const query = { ...route.query } as Record<string, string>
-	query[key] = query[key] === 'true' ? 'false' : 'true'
-	searchWith(query)
-}
-
-const SEARCH_FILTER_LABELS: Record<string, string> = {
-	inMailbox: __('In'),
-	subject: __('Subject'),
-	from: __('From'),
-	to: __('To'),
-	cc: __('Cc'),
-	bcc: __('Bcc'),
-	after: __('After'),
-	before: __('Before'),
-}
-const optionLabel = (options: { label: string; value: string }[], value: string) =>
-	options.find((o) => o.value === value)?.label ?? value
-
-const searchQuery = computed(() => (route.query.text as string) || '')
-
-const searchFilterChips = computed(() => {
-	const query = route.query
-	const chips: { key: string; label: string }[] = []
-	for (const key of Object.keys(SEARCH_FILTER_LABELS)) {
-		const value = query[key]
-		if (!value) continue
-		const display =
-			key === 'inMailbox'
-				? (mailboxes.data?.find((m: MailboxData) => m.id === value)?._name ?? String(value))
-				: String(value)
-		chips.push({ key, label: `${SEARCH_FILTER_LABELS[key]}: ${display}` })
-	}
-	// Attachment/read values ("Without Attachments", "Unread") are self-descriptive — show them on their own.
-	if (query.hasAttachment)
-		chips.push({ key: 'hasAttachment', label: optionLabel(getAttachmentOptions(), String(query.hasAttachment)) })
-	if (query.isRead)
-		chips.push({ key: 'isRead', label: optionLabel(getReadStatusOptions(), String(query.isRead)) })
-	return chips
-})
-
-// Re-run the search with one filter (or all filters) dropped. When nothing is left to search, leave the
-// search view for the Inbox.
-const searchWith = (query: Record<string, string>) => {
-	if (!Object.keys(query).length) return exitSearch()
-	router.push({ name: 'mail-mailbox', params: { accountId, mailbox: 'search' }, query })
-}
-const removeSearchFilter = (key: string) => {
-	const query = { ...route.query } as Record<string, string>
-	delete query[key]
-	searchWith(query)
-}
-const clearSearch = () => searchWith(searchQuery.value ? { text: searchQuery.value } : {})
-
-const exitSearch = () =>
-	router.push({ name: 'mail-mailbox', params: { accountId, mailbox: mailboxIds.inbox } })
 </script>
 
 <style scoped>
