@@ -9,8 +9,8 @@
 			:max-digits="4"
 			:step="1"
 			@update:modelValue="(value) => previewPosition(field.axis, value)"
-			@change-start="beginPositionChange"
-			@change-end="commitPositionChange"
+			@change-start="positionScrub.begin"
+			@change-end="positionScrub.commit"
 		/>
 		<ButtonGroup label="Arrange" :options="arrangeOptions" @select="arrangeElements" />
 		<ButtonGroup
@@ -50,28 +50,14 @@ import AlignBottom from '@/apps/slides/icons/AlignBottom.vue'
 import { computed } from 'vue'
 
 import { slideBounds, selectionBounds, guideVisibilityMap } from '@/apps/slides/stores/slide'
-import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
 import { activeElementIds } from '@/apps/slides/stores/element'
 import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
+import { useInteractionScrub } from '@/apps/slides/composables/useInteractionScrub'
 
-let scrubStartBounds = null
+const positionScrub = useInteractionScrub(['left', 'top'])
 
-const beginPositionChange = () => {
-	if (scrubStartBounds) return
-	scrubStartBounds = { left: selectionBounds.left, top: selectionBounds.top }
-}
-
-const previewPosition = (axis, value) => {
-	const property = axis == 'X' ? 'left' : 'top'
-	selectionBounds[property] = value
-	if (scrubStartBounds) interactionOffset[property] = value - scrubStartBounds[property]
-}
-
-const commitPositionChange = () => {
-	if (!scrubStartBounds) return
-	scrubStartBounds = null
-	commitInteraction()
-}
+const previewPosition = (axis, value) =>
+	positionScrub.preview(axis == 'X' ? 'left' : 'top', value)
 
 const positionFields = [
 	{ axis: 'X', property: 'left', label: 'Left' },

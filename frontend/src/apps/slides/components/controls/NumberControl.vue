@@ -33,6 +33,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useDragScrub } from '@/apps/slides/composables/useDragScrub'
+import { labelClasses } from '@/apps/slides/utils/constants'
 
 const model = defineModel({ type: Number })
 const emit = defineEmits(['changeStart', 'changeEnd'])
@@ -121,7 +122,11 @@ function onRowMouseDown(event) {
 }
 
 let scrubStartValue = 0
-const { isScrubbing, cursorStyle, start: startScrub } = useDragScrub({
+const {
+	isScrubbing,
+	cursorStyle,
+	start: startScrub,
+} = useDragScrub({
 	disabled: computed(() => props.disabled),
 	onStart: () => {
 		// Blur flushes any pending typed edit into model before we snapshot the base, and
@@ -150,8 +155,6 @@ const rowClasses = computed(() => [
 	'flex h-7 w-full items-center justify-between',
 	props.disabled ? 'cursor-not-allowed' : 'cursor-ew-resize',
 ])
-
-const labelClasses = ['select-none', typography, 'text-ink-gray-5']
 
 const fieldClasses = computed(() => [
 	'inline-flex items-center gap-0.5 rounded-sm p-1',

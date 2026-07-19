@@ -61,10 +61,10 @@ const getNewSlide = (toDuplicate = false, layoutObject, source = currentSlide.va
 	let layout = null
 
 	if (toDuplicate) {
-		layout = source
-		layout.elements = layout.elements.map((e) => ({
+		layout = { ...source }
+		layout.elements = source.elements.map((e) => ({
 			...e,
-			refId: e.refId || generateUniqueId(),
+			id: generateUniqueId(),
 		}))
 	} else {
 		layout = layoutObject || null

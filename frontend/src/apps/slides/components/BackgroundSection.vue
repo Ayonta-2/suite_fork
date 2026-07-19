@@ -17,6 +17,7 @@ import { inject } from 'vue'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
+import { labelClasses } from '@/apps/slides/utils/constants'
 
 import { currentSlide } from '@/apps/slides/stores/slide'
 
@@ -26,6 +27,4 @@ const { onStart: onBackgroundStart, onEnd: onBackgroundEnd } = setPropertyDeferr
 	'slide',
 	'background',
 )
-
-const labelClasses = 'select-none font-text text-base text-ink-gray-5'
 </script>

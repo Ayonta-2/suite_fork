@@ -311,7 +311,7 @@ const handleMouseDown = (e, element) => {
 
 	// if mouseup happens before the threshold is crossed
 	// then consider it a selection instead of dragging
-	e.target.addEventListener('mouseup', () => handleMouseUp(e, id), { once: true })
+	window.addEventListener('mouseup', () => handleMouseUp(e, id), { once: true })
 }
 
 const scale = computed(() => {

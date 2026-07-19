@@ -17,6 +17,8 @@
 </template>
 
 <script setup>
+import { labelClasses } from '@/apps/slides/utils/constants'
+
 const model = defineModel({ default: () => [] })
 
 defineProps({
@@ -31,7 +33,10 @@ const isActive = (value) => model.value.includes(value)
 
 const getButtonClass = (value) => [buttonClasses, isActive(value) ? activeClasses : inactiveClasses]
 
-const getIconClass = (value) => [iconClasses, isActive(value) ? 'text-ink-gray-9' : 'text-ink-gray-7']
+const getIconClass = (value) => [
+	iconClasses,
+	isActive(value) ? 'text-ink-gray-9' : 'text-ink-gray-7',
+]
 
 const toggle = (value) => {
 	if (model.value.includes(value)) {
@@ -42,7 +47,6 @@ const toggle = (value) => {
 }
 
 const rowClasses = 'flex h-7 w-full items-center justify-between'
-const labelClasses = 'select-none align-middle font-text text-base text-ink-gray-5'
 const buttonClasses =
 	'flex size-6.5 items-center justify-center rounded-[7px] p-[5px] transition-colors'
 const activeClasses = 'bg-surface-elevation-3 shadow-sm'

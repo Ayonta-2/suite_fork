@@ -84,6 +84,7 @@ import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import ToggleGroup from '@/apps/slides/components/controls/ToggleGroup.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
+import { labelClasses } from '@/apps/slides/utils/constants'
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
@@ -148,6 +149,4 @@ const onDecorToggle = (values) => {
 	)
 	if (changed) toggleMark(changed.value)
 }
-
-const labelClasses = 'select-none font-text text-base text-ink-gray-5'
 </script>

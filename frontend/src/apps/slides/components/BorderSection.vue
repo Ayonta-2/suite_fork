@@ -35,23 +35,11 @@
 		/>
 		<div class="flex h-7 w-full items-center justify-between">
 			<span :class="labelClasses">Style</span>
-			<Select
+			<LineStyleSelect
 				:modelValue="displayStyle"
-				variant="ghost"
 				:options="borderStyleOptions"
-				class="-me-1"
 				@update:modelValue="setBorderStyle"
-			>
-				<template #trigger="{ selectedOption }">
-					<span v-if="selectedOption?.value === 'none'" :class="noneLabelClasses">None</span>
-					<span v-else :class="linePreviewClasses(selectedOption?.value)" />
-					<span :class="chevronClasses" />
-				</template>
-				<template #item-label="{ option }">
-					<span v-if="option.value === 'none'" :class="noneLabelClasses">None</span>
-					<span v-else :class="linePreviewClasses(option.value)" />
-				</template>
-			</Select>
+			/>
 		</div>
 	</Section>
 </template>
@@ -59,14 +47,13 @@
 <script setup>
 import { computed, inject } from 'vue'
 
-import { Select } from 'frappe-ui'
-
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
+import LineStyleSelect from '@/apps/slides/components/controls/LineStyleSelect.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
-import { defaultBorderColor } from '@/apps/slides/utils/constants'
+import { defaultBorderColor, labelClasses } from '@/apps/slides/utils/constants'
 
 const setProperties = inject('setProperties')
 const setPropertyDeferred = inject('setPropertyDeferred')
@@ -79,21 +66,6 @@ const borderStyleOptions = [
 	{ label: 'Dashed', value: 'dashed' },
 	{ label: 'Dotted', value: 'dotted' },
 ]
-
-const borderStyleClasses = {
-	solid: 'border-solid',
-	dashed: 'border-dashed',
-	dotted: 'border-dotted',
-}
-
-const linePreviewClasses = (style) => [
-	'block w-10 border-t-[1.5px] border-outline-gray-7',
-	borderStyleClasses[style],
-]
-
-const noneLabelClasses = 'select-none font-text text-base text-ink-gray-7'
-const chevronClasses = 'lucide-chevron-down ml-auto size-4 shrink-0 text-ink-gray-4'
-const labelClasses = 'select-none font-text text-base text-ink-gray-5'
 
 const hasBorder = computed(() =>
 	Boolean(Number(activeElement.value.borderWidth) || Number(activeElement.value.borderRadius)),

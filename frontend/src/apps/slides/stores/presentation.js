@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { createResource, call, createDocumentResource } from 'frappe-ui'
+import { createResource, call, createDocumentResource, toast } from 'frappe-ui'
 
 import tinycolor from 'tinycolor2'
 
@@ -142,7 +142,7 @@ const migrateShadow = (el) => {
 	delete el.shadowOffsetY
 }
 
-const parseElements = (value) => {
+const parseElements = (value, slide) => {
 	if (!value) return []
 
 	let parsed = []
@@ -151,7 +151,12 @@ const parseElements = (value) => {
 	} else if (typeof value === 'string') {
 		try {
 			parsed = JSON.parse(value)
-		} catch {
+		} catch (err) {
+			console.error('Failed to parse slide elements', err)
+			toast.error(
+				'A slide could not be read. Its content is preserved but hidden; avoid saving over it.',
+			)
+			if (slide) slide.corruptElements = value
 			return []
 		}
 	}
@@ -197,7 +202,7 @@ const getPresentationResource = (name) => {
 		auto: false,
 		transform(doc) {
 			for (const slide of doc.slides || []) {
-				slide.elements = parseElements(slide.elements)
+				slide.elements = parseElements(slide.elements, slide)
 				slide.clientId = slide.client_id || uuid4()
 				slide.transitionDuration = slide.transition_duration
 				slide.fadeUnmatchedElements = slide.fade_unmatched_elements
@@ -222,7 +227,7 @@ const getPresentationResource = (name) => {
 				const restored = JSON.parse(JSON.stringify(local.content))
 				// local content skips the load pipeline; migrate + dedup it here too
 				for (const slide of restored) {
-					slide.elements = parseElements(slide.elements)
+					slide.elements = parseElements(slide.elements, slide)
 				}
 				ensureUniqueClientIds(restored)
 				slides.value = restored
@@ -249,7 +254,7 @@ const getPublicPresentationResource = (name) => {
 		},
 		transform(doc) {
 			for (const slide of doc.slides || []) {
-				slide.elements = parseElements(slide.elements)
+				slide.elements = parseElements(slide.elements, slide)
 				slide.clientId = slide.client_id || uuid4()
 				slide.transitionDuration = slide.transition_duration
 				slide.fadeUnmatchedElements = slide.fade_unmatched_elements
@@ -280,7 +285,7 @@ const getCompositePresentationResource = (name) => {
 		},
 		transform(doc) {
 			for (const slide of doc.slides || []) {
-				slide.elements = parseElements(slide.elements)
+				slide.elements = parseElements(slide.elements, slide)
 				slide.clientId = slide.client_id || uuid4()
 				slide.transitionDuration = slide.transition_duration
 				slide.fadeUnmatchedElements = slide.fade_unmatched_elements
@@ -303,11 +308,11 @@ const getCompositePresentationResource = (name) => {
 
 const savePresentationDoc = async (updatedSlides) => {
 	const newSlides = updatedSlides.map((slide) => {
-		const { thumbnail, ...slideData } = slide
+		const { thumbnail, corruptElements, ...slideData } = slide
 		return {
 			...slideData,
 			client_id: slide.clientId,
-			elements: JSON.stringify(slide.elements, null, 2),
+			elements: corruptElements ?? JSON.stringify(slide.elements, null, 2),
 			transition_duration: slide.transitionDuration,
 			fade_unmatched_elements: slide.fadeUnmatchedElements,
 		}

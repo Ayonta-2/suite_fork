@@ -73,6 +73,7 @@ import { Button, Select, Checkbox, toast } from 'frappe-ui'
 
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
+import { labelClasses, chevronClasses } from '@/apps/slides/utils/constants'
 
 import { slides, slideIndex, currentSlide } from '@/apps/slides/stores/slide'
 import {
@@ -219,7 +220,5 @@ const { onStart: onDurationStart, onEnd: onDurationEnd } = setPropertyDeferred(
 	'transitionDuration',
 )
 
-const labelClasses = 'select-none font-text text-base text-ink-gray-5'
 const valueClasses = 'block text-right font-text text-base text-ink-gray-8'
-const chevronClasses = 'lucide-chevron-down ml-auto size-4 shrink-0 text-ink-gray-4'
 </script>

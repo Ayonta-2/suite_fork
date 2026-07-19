@@ -11,9 +11,9 @@
 				:max-digits="4"
 				:step="1"
 				:disabled="field.property == 'height' && !canEditHeight"
-				@update:modelValue="(value) => previewSize(field.property, value)"
-				@change-start="beginSizeChange"
-				@change-end="commitSizeChange"
+				@update:modelValue="(value) => sizeScrub.preview(field.property, value)"
+				@change-start="sizeScrub.begin"
+				@change-end="sizeScrub.commit"
 			/>
 		</template>
 		<NumberControl
@@ -48,9 +48,10 @@ import {
 	flipElements,
 } from '@/apps/slides/stores/element'
 import { selectionBounds } from '@/apps/slides/stores/slide'
-import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
+import { commitInteraction } from '@/apps/slides/stores/interaction'
 import { rotationDelta } from '@/apps/slides/composables/useRotator'
 import { normalizeRotation } from '@/apps/slides/utils/helpers'
+import { useInteractionScrub } from '@/apps/slides/composables/useInteractionScrub'
 
 const isMultiSelect = computed(() => activeElementIds.value?.length > 1)
 
@@ -70,24 +71,9 @@ const rotationValue = computed(() => {
 	return Math.round(normalizeRotation(deg))
 })
 
-let scrubStartBounds = null
-
-const beginSizeChange = () => {
-	if (scrubStartBounds) return
+const sizeScrub = useInteractionScrub(['width', 'height'], () => {
 	if (!activeElement.value.width) addFixedWidthToElement()
-	scrubStartBounds = { width: selectionBounds.width, height: selectionBounds.height }
-}
-
-const previewSize = (property, value) => {
-	selectionBounds[property] = value
-	if (scrubStartBounds) interactionOffset[property] = value - scrubStartBounds[property]
-}
-
-const commitSizeChange = () => {
-	if (!scrubStartBounds) return
-	scrubStartBounds = null
-	commitInteraction()
-}
+})
 
 let rotateStartAngle = null
 
@@ -116,5 +102,4 @@ const flipOptions = [
 	{ value: 'horizontal', label: 'Flip horizontal', icon: FlipHorizontal },
 	{ value: 'vertical', label: 'Flip vertical', icon: FlipVertical },
 ]
-
 </script>

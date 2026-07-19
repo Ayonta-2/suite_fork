@@ -30,6 +30,7 @@ import { Switch } from 'frappe-ui'
 
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
+import { labelClasses } from '@/apps/slides/utils/constants'
 
 import { activeElement } from '@/apps/slides/stores/element'
 
@@ -40,6 +41,4 @@ const setAutoplay = (value) => setProperty('autoplay', value)
 const setLoop = (value) => setProperty('loop', value)
 
 const { onStart: onSpeedStart, onEnd: onSpeedEnd } = setPropertyDeferred('element', 'playbackRate')
-
-const labelClasses = 'select-none font-text text-base text-ink-gray-5'
 </script>

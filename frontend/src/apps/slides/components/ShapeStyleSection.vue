@@ -2,21 +2,11 @@
 	<Section label="Style">
 		<div class="flex h-7 w-full items-center justify-between">
 			<span :class="labelClasses">Stroke Style</span>
-			<Select
+			<LineStyleSelect
 				:modelValue="displayStrokeStyle"
-				variant="ghost"
 				:options="strokeStyleOptions"
-				class="-me-1"
 				@update:modelValue="setStrokeStyle"
-			>
-				<template #trigger="{ selectedOption }">
-					<span :class="linePreviewClasses(selectedOption?.value)" />
-					<span :class="chevronClasses" />
-				</template>
-				<template #item-label="{ option }">
-					<span :class="linePreviewClasses(option.value)" />
-				</template>
-			</Select>
+			/>
 		</div>
 		<NumberControl
 			:modelValue="activeElement.strokeWidth ?? 0"
@@ -93,6 +83,8 @@ import { Select } from 'frappe-ui'
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
+import LineStyleSelect from '@/apps/slides/components/controls/LineStyleSelect.vue'
+import { labelClasses, chevronClasses } from '@/apps/slides/utils/constants'
 
 import { activeElement } from '@/apps/slides/stores/element'
 
@@ -125,17 +117,6 @@ const strokeStyleOptions = [
 	{ label: 'Dotted', value: 'dotted' },
 ]
 
-const strokeStyleClasses = {
-	solid: 'border-solid',
-	dashed: 'border-dashed',
-	dotted: 'border-dotted',
-}
-
-const linePreviewClasses = (style) => [
-	'block w-16 border-t-[1.5px] border-outline-gray-7',
-	strokeStyleClasses[style],
-]
-
 const displayStrokeStyle = computed(() => activeElement.value.strokeStyle || 'solid')
 
 const setStrokeStyle = (value) => setProperty('strokeStyle', value)
@@ -159,7 +140,5 @@ const { onStart: onStrokeColorStart, onEnd: onStrokeColorEnd } = setPropertyDefe
 	'strokeColor',
 )
 
-const labelClasses = 'select-none font-text text-base text-ink-gray-5'
 const valueClasses = 'block w-16 font-text text-base text-ink-gray-8'
-const chevronClasses = 'lucide-chevron-down ml-auto size-4 shrink-0 text-ink-gray-4'
 </script>

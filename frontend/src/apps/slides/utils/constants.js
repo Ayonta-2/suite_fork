@@ -8,6 +8,9 @@ const guideColor = '#C026D3'
 const defaultBorderColor = '#d2d2d2ff'
 const defaultShadowColor = '#7C7C7CFF'
 
+const labelClasses = 'select-none font-text text-base text-ink-gray-5'
+const chevronClasses = 'lucide-chevron-down ml-auto size-4 shrink-0 text-ink-gray-4'
+
 const allowedImageFileTypes = [
 	'image/jpeg',
 	'image/jpg',
@@ -26,4 +29,6 @@ export {
 	guideColor,
 	defaultBorderColor,
 	defaultShadowColor,
+	labelClasses,
+	chevronClasses,
 }
