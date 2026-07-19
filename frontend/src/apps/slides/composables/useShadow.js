@@ -1,6 +1,8 @@
 import { computed } from 'vue'
 import tinycolor from 'tinycolor2'
 
+import { defaultShadowColor } from '@/apps/slides/utils/constants'
+
 const resolveOffset = (el, refSize) => {
 	const distance = (Number(el.shadowOffset ?? 0) / 100) * refSize
 	const radians = (Number(el.shadowAngle ?? 45) * Math.PI) / 180
@@ -11,7 +13,7 @@ const resolveShadow = (el) => {
 	const refSize = Number(el.width) || 0
 
 	return {
-		color: tinycolor(el.shadowColor || '#000000ff'),
+		color: tinycolor(el.shadowColor || defaultShadowColor),
 		alpha: Number(el.shadowOpacity ?? 100) / 100,
 		blur: (Number(el.shadowBlur ?? 0) / 100) * refSize,
 		offset: resolveOffset(el, refSize),

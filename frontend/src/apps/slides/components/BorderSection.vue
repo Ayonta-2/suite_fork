@@ -3,7 +3,7 @@
 		<div class="flex h-7 w-full items-center justify-between">
 			<span :class="labelClasses">Color</span>
 			<ColorPicker
-				:modelValue="activeElement.borderColor || '#d2d2d2ff'"
+				:modelValue="activeElement.borderColor || defaultBorderColor"
 				@update:modelValue="(value) => (activeElement.borderColor = value)"
 				@colordown="onBorderColorStart"
 				@colorup="onBorderColorEnd"
@@ -43,11 +43,13 @@
 				@update:modelValue="setBorderStyle"
 			>
 				<template #trigger="{ selectedOption }">
-					<span :class="linePreviewClasses(selectedOption?.value)" />
+					<span v-if="selectedOption?.value === 'none'" :class="noneLabelClasses">None</span>
+					<span v-else :class="linePreviewClasses(selectedOption?.value)" />
 					<span :class="chevronClasses" />
 				</template>
 				<template #item-label="{ option }">
-					<span :class="linePreviewClasses(option.value)" />
+					<span v-if="option.value === 'none'" :class="noneLabelClasses">None</span>
+					<span v-else :class="linePreviewClasses(option.value)" />
 				</template>
 			</Select>
 		</div>
@@ -64,11 +66,15 @@ import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
+import { defaultBorderColor } from '@/apps/slides/utils/constants'
 
-const setProperty = inject('setProperty')
+const setProperties = inject('setProperties')
 const setPropertyDeferred = inject('setPropertyDeferred')
 
+const defaultBorderWidth = 1
+
 const borderStyleOptions = [
+	{ label: 'None', value: 'none' },
 	{ label: 'Solid', value: 'solid' },
 	{ label: 'Dashed', value: 'dashed' },
 	{ label: 'Dotted', value: 'dotted' },
@@ -85,25 +91,34 @@ const linePreviewClasses = (style) => [
 	borderStyleClasses[style],
 ]
 
+const noneLabelClasses = 'select-none font-text text-base text-ink-gray-7'
 const chevronClasses = 'lucide-chevron-down ml-auto size-4 shrink-0 text-ink-gray-4'
+const labelClasses = 'select-none font-text text-base text-ink-gray-5'
 
 const hasBorder = computed(() =>
 	Boolean(Number(activeElement.value.borderWidth) || Number(activeElement.value.borderRadius)),
 )
 
-const displayStyle = computed(() => {
-	const style = activeElement.value.borderStyle
-	return style && style !== 'none' ? style : 'solid'
-})
+const displayStyle = computed(() => activeElement.value.borderStyle || 'none')
 
-const setBorderStyle = (value) => setProperty('borderStyle', value)
+const setBorderStyle = (style) => {
+	const width = Number(activeElement.value.borderWidth) || 0
+	setProperties([
+		{ property: 'borderStyle', oldValue: activeElement.value.borderStyle, newValue: style },
+		{
+			property: 'borderWidth',
+			oldValue: activeElement.value.borderWidth,
+			newValue: style === 'none' ? 0 : width || defaultBorderWidth,
+		},
+	])
+}
 
 const { onStart: onBorderColorStart, onEnd: onBorderColorEnd } = setPropertyDeferred(
 	'element',
 	'borderColor',
 )
 
-const { onStart: onWidthStart, onEnd: onBorderWidthEnd } = setPropertyDeferred(
+const { onStart: onBorderWidthStart, onEnd: onBorderWidthEnd } = setPropertyDeferred(
 	'element',
 	'borderWidth',
 )
@@ -112,12 +127,4 @@ const { onStart: onRadiusStart, onEnd: onRadiusEnd } = setPropertyDeferred(
 	'element',
 	'borderRadius',
 )
-
-const onBorderWidthStart = () => {
-	const style = activeElement.value.borderStyle
-	if (!style || style === 'none') activeElement.value.borderStyle = displayStyle.value
-	onWidthStart()
-}
-
-const labelClasses = 'select-none font-text text-base text-ink-gray-5'
 </script>

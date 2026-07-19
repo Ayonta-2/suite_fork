@@ -45,7 +45,7 @@ import { useDeferredCommit } from '@/apps/slides/composables/useDeferredCommit'
 import { activeElement, activeElementIds, focusElementId } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
-import { editElementCommand, editSlideCommand } from '@/apps/slides/stores/commands'
+import { batchCommand, editElementCommand, editSlideCommand } from '@/apps/slides/stores/commands'
 
 import { Divider } from 'frappe-ui'
 
@@ -69,6 +69,32 @@ const setProperty = (property, value) => {
 			property,
 			oldValue,
 			newValue: value,
+		}),
+	)
+}
+
+const setProperties = (changes) => {
+	const commands = changes
+		.filter((c) => c.oldValue !== c.newValue)
+		.map((c) =>
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: activeElementIds.value,
+				property: c.property,
+				oldValue: c.oldValue,
+				newValue: c.newValue,
+			}),
+		)
+	if (!commands.length) return
+	if (commands.length === 1) {
+		commandHistory.execute(commands[0])
+		return
+	}
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: activeElementIds.value,
+			commands,
 		}),
 	)
 }
@@ -105,5 +131,6 @@ const isEditingShapeText = computed(
 )
 
 provide('setProperty', setProperty)
+provide('setProperties', setProperties)
 provide('setPropertyDeferred', setPropertyDeferred)
 </script>

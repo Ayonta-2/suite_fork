@@ -5,6 +5,9 @@ const fieldLabelClasses = 'text-sm text-gray-600'
 const selectionColor = '#3B82F6'
 const guideColor = '#EA580C'
 
+const defaultBorderColor = '#d2d2d2ff'
+const defaultShadowColor = '#7C7C7CFF'
+
 const allowedImageFileTypes = [
 	'image/jpeg',
 	'image/jpg',
@@ -21,4 +24,6 @@ export {
 	allowedImageFileTypes,
 	selectionColor,
 	guideColor,
+	defaultBorderColor,
+	defaultShadowColor,
 }

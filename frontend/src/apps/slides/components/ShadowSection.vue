@@ -3,7 +3,7 @@
 		<div class="flex h-7 w-full items-center justify-between">
 			<span class="select-none font-text text-base text-ink-gray-5">Color</span>
 			<ColorPicker
-				:modelValue="activeElement.shadowColor ?? '#7C7C7CFF'"
+				:modelValue="activeElement.shadowColor ?? defaultShadowColor"
 				@update:modelValue="(value) => (activeElement.shadowColor = value)"
 				@colordown="onShadowColorStart"
 				@colorup="onShadowColorEnd"
@@ -68,6 +68,7 @@ import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
+import { defaultShadowColor } from '@/apps/slides/utils/constants'
 
 const setPropertyDeferred = inject('setPropertyDeferred')
 
