@@ -954,9 +954,11 @@ class MailExchange(Document):
 			logger.debug("import-batch-processed", batch=len(batch), imported=len(imported), total=total)
 			self._log_output(_("Staged {0} of {1} email(s).").format(len(imported), total))
 
-		# The server rejecting every email (e.g. an invalid destination) is a failure, not a
-		# successful zero-import, and must trigger a rollback.
-		if not imported:
+		# `metadata` is non-empty here (an empty import is rejected upstream), so an empty `imported`
+		# means the server rejected every email — a failure that must roll back. Guarding on `total`
+		# keeps this from ever misreporting an empty input as "rejected all 0". Unlike calendar/contacts
+		# there is no idempotency-skip, so `not imported` already means "all rejected".
+		if total and not imported:
 			frappe.throw(_("Import failed: the server rejected all {0} email(s).").format(total))
 
 		return imported
