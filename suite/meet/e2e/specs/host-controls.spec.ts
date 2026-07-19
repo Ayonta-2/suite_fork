@@ -1,47 +1,79 @@
-import { test, expect, joinFromPreview } from "../fixtures/test";
+import { test, expect, joinHostAndGuest } from "../fixtures/test";
 
 test.describe("Host controls", () => {
-	test("host can mute a guest participant", async ({ hostPage, meetingId, createParticipant }) => {
+	test("host can mute a guest participant", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
 		const guest = await createParticipant();
 		const guestName = `Guest Mute ${test.info().parallelIndex}`;
 
-		await hostPage.goto(`/meet/${meetingId}`);
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, guestName);
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
+		const guestSelfTile = guest.page
+			.locator("[data-testid^='participant-tile-guest_']")
+			.first();
+		if ((await guestSelfTile.getAttribute("data-audio-enabled")) === "false") {
+			await guest.page.getByTestId("toolbar-microphone").click();
+			await expect(guestSelfTile).toHaveAttribute("data-audio-enabled", "true");
+		}
 
+		await hostPage.getByTestId("toolbar-people").click();
+		await expect(hostPage.getByTestId("people-panel")).toBeVisible();
+
+		const guestRow = hostPage
+			.getByTestId("people-panel")
+			.locator("[data-testid^='people-participant-']")
+			.filter({ hasText: guestName })
+			.first();
 		const guestTileOnHost = hostPage
 			.locator("[data-testid^='participant-tile-']")
 			.filter({ hasText: guestName })
 			.first();
 
+		await expect(guestRow).toBeVisible();
+		await expect(guestRow).toHaveAttribute("data-audio-enabled", "true");
 		await expect(guestTileOnHost).toBeVisible();
-		await guestTileOnHost.hover();
-		await guestTileOnHost.getByRole("button", { name: "Mute participant" }).click();
+		await guestRow.getByRole("button", { name: /Actions for/ }).click();
+		await hostPage.getByRole("menuitem", { name: "Mute" }).click();
 
 		await expect(guestTileOnHost).toHaveAttribute("data-audio-enabled", "false");
 		await expect(
-			guest.page.locator("[data-testid^='participant-tile-guest_'][data-audio-enabled='false']"),
+			guest.page.locator(
+				"[data-testid^='participant-tile-guest_'][data-audio-enabled='false']",
+			),
 		).toHaveCount(1);
 	});
 
-	test("host can remove a guest participant", async ({ hostPage, meetingId, createParticipant }) => {
+	test("host can remove a guest participant", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
 		const guest = await createParticipant();
 		const guestName = `Guest Remove ${test.info().parallelIndex}`;
 
-		await hostPage.goto(`/meet/${meetingId}`);
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, guestName);
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
+		await hostPage.getByTestId("toolbar-people").click();
+		await expect(hostPage.getByTestId("people-panel")).toBeVisible();
+
+		const guestRow = hostPage
+			.getByTestId("people-panel")
+			.locator("[data-testid^='people-participant-']")
+			.filter({ hasText: guestName })
+			.first();
 		const guestTileOnHost = hostPage
 			.locator("[data-testid^='participant-tile-']")
 			.filter({ hasText: guestName })
 			.first();
 
+		await expect(guestRow).toBeVisible();
 		await expect(guestTileOnHost).toBeVisible();
-		await guestTileOnHost.hover();
-		await guestTileOnHost
-			.getByRole("button", { name: "Remove participant" })
-			.click();
+		await guestRow.getByRole("button", { name: /Actions for/ }).click();
+		await hostPage.getByRole("menuitem", { name: "Remove" }).click();
 
 		await expect(hostPage.getByText("Remove Participant")).toBeVisible();
 		await hostPage.getByRole("button", { name: "Remove", exact: true }).click();

@@ -20,7 +20,7 @@ def _get_blob_base_path() -> str:
 	return os.path.join(get_bench_path(), "sites", frappe.local.site, "private", "files", "blob-store")
 
 
-def get_data_store(account_id: str) -> DataStore:
+def get_data_store(account: str) -> DataStore:
 	"""Factory function to create a DataStore instance for the given JMAP account ID.
 
 	The store is keyed solely by the account ID, so every user with access to a shared
@@ -31,22 +31,24 @@ def get_data_store(account_id: str) -> DataStore:
 
 	base_path = _get_data_base_path()
 
-	return DataStore(base_path=base_path, key=account_id)
+	return DataStore(base_path=base_path, key=account)
 
 
 @frappe.whitelist()
 def destroy_data_store() -> None:
 	"""Utility function to destroy the data store."""
 
-	from suite.mail.utils.user import is_system_manager
+	from suite.utils.user import is_system_manager
 
-	if is_system_manager(frappe.session.user):
-		base_path = _get_data_base_path()
-		if os.path.exists(base_path):
-			shutil.rmtree(base_path)
+	if not is_system_manager(frappe.session.user):
+		frappe.throw(frappe._("Only System Manager can destroy the data store."))
+
+	base_path = _get_data_base_path()
+	if os.path.exists(base_path):
+		shutil.rmtree(base_path)
 
 
-def get_blob_store(account_id: str) -> "BlobStore":
+def get_blob_store(account: str) -> "BlobStore":
 	"""Factory function to create a BlobStore instance for the given JMAP account ID.
 
 	Each account's blobs live in their own directory named by the account ID, so the blob
@@ -57,7 +59,7 @@ def get_blob_store(account_id: str) -> "BlobStore":
 
 	base_path = _get_blob_base_path()
 
-	return BlobStore(base_path=base_path, key=account_id)
+	return BlobStore(base_path=base_path, key=account)
 
 
 @frappe.whitelist()
@@ -66,7 +68,9 @@ def destroy_blob_store() -> None:
 
 	from suite.mail.utils.user import is_system_manager
 
-	if is_system_manager(frappe.session.user):
-		base_path = _get_blob_base_path()
-		if os.path.exists(base_path):
-			shutil.rmtree(base_path)
+	if not is_system_manager(frappe.session.user):
+		frappe.throw(frappe._("Only System Manager can destroy the blob store."))
+
+	base_path = _get_blob_base_path()
+	if os.path.exists(base_path):
+		shutil.rmtree(base_path)

@@ -16,12 +16,15 @@ class JMAPConnectionInfo:
 	- username: The username for authentication.
 	- password: The password for authentication.
 	- timeout: A tuple specifying the connection and read timeouts for requests (default: (30.0, 60.0)).
+	- verify_ssl: Whether to verify the server's SSL certificate (default: True). Disable only for local
+	  development against a server with a self-signed certificate.
 	"""
 
 	url: str
 	username: str
 	password: str
 	timeout: tuple[float, float] = (30.0, 60.0)
+	verify_ssl: bool = True
 
 
 class JMAPSessionManager:
@@ -56,13 +59,24 @@ class JMAPSessionManager:
 class JMAPConnection:
 	"""Manages the connection to a JMAP server, including discovery of server capabilities and sending requests."""
 
-	def __init__(self, info: JMAPConnectionInfo, session_manager: JMAPSessionManager | None = None) -> None:
-		"""Initializes the JMAPConnection with the provided connection information."""
+	def __init__(
+		self,
+		info: JMAPConnectionInfo,
+		session_manager: JMAPSessionManager | None = None,
+		user: str | None = None,
+	) -> None:
+		"""Initializes the JMAPConnection with the provided connection information.
+
+		``user`` is the Frappe user the connection is authenticated as, retained so callers can
+		resync per-user state (e.g. JMAP Accounts) when the server session state changes.
+		"""
 
 		self.__info = info
 		self.__session = requests.Session()
 		self.__session.auth = (self.__info.username, self.__info.password)
+		self.__session.verify = self.__info.verify_ssl
 		self.__session_manager = session_manager
+		self.user = user
 
 		self._initialize_session()
 

@@ -4,7 +4,6 @@
 			v-if="!readonly"
 			:threads
 			:thread
-			:can-go-prev="canGoPrev"
 			:can-go-next="canGoNext"
 			@set-flagged="(ids: string[], flagged: boolean) => emit('setFlagged', ids, flagged)"
 			@set-seen="setThreadSeen"
@@ -119,6 +118,9 @@
 												emit('setFlagged', [id], flagged)
 										"
 										@sync-unseen="handleSyncUnseen"
+										@move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
+										@mark-mail-spam="(m: Mail, spam: boolean) => emit('markMailSpam', m, spam)"
+										@delete-mail="(m: Mail) => emit('deleteMail', m)"
 									/>
 								</div>
 								<div
@@ -130,10 +132,7 @@
 									@click.stop="mail.collapsed = !mail.collapsed"
 								>
 									<Avatar
-										:label="
-											getFirstAlphabet(mail.from_name) ||
-											getFirstAlphabet(mail.from_email)
-										"
+										:label="getSenderInitial(mail)"
 										:image="mail.user_image"
 										size="xl"
 									/>
@@ -146,10 +145,17 @@
 													{{ mail.from_name || mail.from_email }}
 												</span>
 												<span
-													v-if="mail.from_name && !isMobile"
+													v-if="!isMobile"
 													class="text-ink-gray-5 truncate"
 												>
-													{{ `<${mail.from_email}>` }}
+													<span>&lt;</span>
+													<Tooltip :text="__('Filter messages from this sender')">
+														<span
+															class="cursor-pointer hover:underline"
+															@click.stop="filterBySender(mail.from_email)"
+														>{{ mail.from_email }}</span>
+													</Tooltip>
+													<span>&gt;</span>
 												</span>
 												<template
 													v-if="!(isCollapsed(mail) || mail.draft)"
@@ -197,6 +203,9 @@
 														emit('setFlagged', [id], flagged)
 												"
 												@sync-unseen="handleSyncUnseen"
+												@move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
+												@mark-mail-spam="(m: Mail, spam: boolean) => emit('markMailSpam', m, spam)"
+												@delete-mail="(m: Mail) => emit('deleteMail', m)"
 											/>
 										</div>
 									</div>
@@ -262,30 +271,36 @@
 									<LinkifiedText
 										v-else
 										:text="mail.html_body || mail.text_body"
+										class="pt-4 font-sans text-base !leading-5 sm:text-sm"
 									/>
 
 									<div v-if="filteredAttachments(mail).length" class="mt-8">
 										<div
 											v-if="zippableAttachments(mail).length > 1"
-											class="mb-3 flex items-center justify-between"
+											class="text-ink-gray-5 mb-3 flex items-center gap-1.5 text-sm"
 										>
-											<span class="text-ink-gray-5 text-sm">
+											<span>
 												{{
 													__('{0} attachments', [
 														String(filteredAttachments(mail).length),
 													])
 												}}
 											</span>
-											<Button
-												variant="ghost"
-												:icon="Download"
-												:label="__('Download all')"
-												:tooltip="__('Download all')"
-												:loading="downloadingZipMail === mail.name"
+											<span aria-hidden="true">·</span>
+											<button
+												class="hover:text-ink-gray-8 disabled:opacity-70"
+												:disabled="downloadingZipMail === mail.name"
+												:title="__('Download all')"
 												@click.stop.prevent="
 													downloadAttachmentsAsZip(mail)
 												"
-											/>
+											>
+												<LoaderCircle
+													v-if="downloadingZipMail === mail.name"
+													class="h-3.5 w-3.5 animate-spin"
+												/>
+												<Download v-else class="h-3.5 w-3.5" />
+											</button>
 										</div>
 										<div class="flex flex-wrap">
 											<AttachmentCapsule
@@ -348,9 +363,9 @@
 		/>
 	</div>
 
-	<div v-else class="h-full overflow-hidden">
+	<div v-else class="h-full overflow-hidden p-5">
 		<div
-			class="bg-surface-gray-1 m-5 flex h-[calc(100%-2.9em)] items-center justify-center rounded-md"
+			class="bg-surface-gray-1 flex h-full items-center justify-center rounded-md"
 		>
 			<div class="flex flex-col items-center space-y-3">
 				<NoMails class="text-ink-gray-2 h-16 w-16" />
@@ -375,29 +390,30 @@ import {
 	watch,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronDown, Download, Forward, Reply, ReplyAll } from 'lucide-vue-next'
-import { Alert, Avatar, Badge, Button, createResource } from 'frappe-ui'
+import { ChevronDown, Download, Forward, LoaderCircle, Reply, ReplyAll } from 'lucide-vue-next'
+import { Alert, Avatar, Badge, Button, Tooltip, createResource } from 'frappe-ui'
 
 import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
 	downloadUrlAsFile,
 	extractQuotedContent,
-	getFirstAlphabet,
 	getFormattedDate,
 	getFormattedRecipients,
 	getGroupedRecipients,
+	getSenderInitial,
 	hasHtmlContent,
+	matchesScreenedValue,
 	raiseToast,
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
-import { useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
+import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
-import LinkifiedText from '@/apps/mail/components/LinkifiedText.vue'
+import LinkifiedText from '@/components/LinkifiedText.vue'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
@@ -415,12 +431,11 @@ import type {
 	ScreenedAddress,
 } from '@/apps/mail/types'
 
-const { mailbox, threadID, threads, messages, canGoPrev, canGoNext, readonly } = defineProps<{
+const { mailbox, threadID, threads, messages, canGoNext, readonly } = defineProps<{
 	mailbox: string
 	threadID?: string
 	threads: string[]
 	messages?: Mail[]
-	canGoPrev?: boolean
 	canGoNext?: boolean
 	// Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
 	// toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.
@@ -440,19 +455,24 @@ const emit = defineEmits([
 	'prevThread',
 	'nextThread',
 	'syncUnseen',
+	'moveMail',
+	'markMailSpam',
+	'deleteMail',
 ])
 
 const { isMobile } = useScreenSize()
 const { openSettings } = useSettings()
+const { filterBySender } = useFilterBySender()
 const dayjs = inject('$dayjs')
 const user = inject('$user')
 const store = userStore()
 const { mailboxes, mailboxIds, identities, screenedAddresses } = store
 
-// A sender is "blocked" when screened with the Reject action (their mail is discarded).
+// A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
+// exact address or by an accepted/blocked '@domain' entry covering them.
 const isSenderBlocked = (email: string) =>
 	!!screenedAddresses.data?.some(
-		(a: ScreenedAddress) => a.email === email && a.action === 'Reject',
+		(a: ScreenedAddress) => a.action === 'Reject' && matchesScreenedValue(email, a.email),
 	)
 
 // Trusted senders — you, or anyone you've accepted — load images normally. For everyone else, the
@@ -465,7 +485,7 @@ const blockRemoteImagesEnabled = computed(
 const isScreenedIn = (email: string) =>
 	!!identities.data?.some((i: Identity) => i.email === email) ||
 	!!screenedAddresses.data?.some(
-		(a: ScreenedAddress) => a.email === email && a.action === 'Accepted',
+		(a: ScreenedAddress) => a.action === 'Accepted' && matchesScreenedValue(email, a.email),
 	)
 const shouldBlockImages = (mail: { from_email: string }) =>
 	blockRemoteImagesEnabled.value && !isScreenedIn(mail.from_email)
@@ -535,7 +555,7 @@ const thread = ref<Mail[]>([])
 
 const threadFallback = createResource({
 	url: 'suite.mail.api.mail.get_thread',
-	makeParams: () => ({ account_id: store.accountId, thread_id: threadID }),
+	makeParams: () => ({ account: store.accountId, thread_id: threadID }),
 	onSuccess: (mails: Mail[]) => {
 		// Thread no longer exists (e.g. deleted) — bail to the mailbox instead of a blank page.
 		if (!mails?.length) {
@@ -548,10 +568,15 @@ const threadFallback = createResource({
 	onError: () => goToMailbox(),
 })
 
+// Mails optimistically removed from the pane (per-message trash/junk/delete) whose request is still in
+// flight. The server still returns them for a moment, so any re-derive — our own reload, the 30s poll,
+// or the new-mail socket — would otherwise re-add them here. Cleared when the open thread changes.
+const removedMailIds = new Set<string>()
+
 const transformThreadMails = (mails: Mail[]) =>
 	mails
 		// Read-only views (the Screener) pass an explicit message list that isn't scoped to a mailbox.
-		.filter((mail) => readonly || filterRelevantMails(mail))
+		.filter((mail) => readonly || (!removedMailIds.has(mail.id) && filterRelevantMails(mail)))
 		.map((mail) => ({
 			...mail,
 			groupedRecipients: getGroupedRecipients(mail.recipients, false),
@@ -702,6 +727,7 @@ watch(
 	() => threadID,
 	() => {
 		resetCollapsedGroup()
+		removedMailIds.clear()
 		thread.value = []
 		loadThread()
 	},
@@ -724,7 +750,7 @@ onMounted(() => loadThread())
 
 const unblockEmailAddress = createResource({
 	url: 'suite.mail.api.mail.unscreen_email_addresses',
-	makeParams: (email) => ({ account_id: store.accountId, emails: [email] }),
+	makeParams: (email) => ({ account: store.accountId, emails: [email] }),
 	onSuccess: () => {
 		raiseToast(__('Sender unblocked.'))
 		screenedAddresses.reload()
@@ -735,7 +761,7 @@ const unblockEmailAddress = createResource({
 const trustSender = createResource({
 	url: 'suite.mail.api.mail.screen_email_addresses',
 	makeParams: (email: string) => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		emails: [email],
 		action: 'Accepted',
 	}),
@@ -933,7 +959,28 @@ const syncMailboxMembership = (mailboxId: string, add: boolean) => {
 		)
 }
 
-defineExpose({ syncFlagged, syncMailboxMembership })
+// Optimistically drop a message from the pane (per-message trash/junk/delete) before its request
+// fires. Returns whether that emptied the visible thread (so the caller can close the pane + drop the
+// row from the list) and a rollback that restores the message in place. Action-agnostic.
+const removeMailFromView = (mailId: string): { emptied: boolean; rollback: () => void } => {
+	const idx = thread.value.findIndex((m: Mail) => m.id === mailId)
+	if (idx === -1) return { emptied: false, rollback: () => {} }
+	const [removed] = thread.value.splice(idx, 1)
+	removedMailIds.add(mailId)
+	return {
+		emptied: thread.value.length === 0,
+		rollback: () => {
+			removedMailIds.delete(mailId)
+			// Only re-insert into the pane if it's STILL showing this mail's thread. If the removal
+			// emptied the thread, the pane navigated to a different thread by now — splicing the mail in
+			// there would append it to an unrelated conversation. The undo restores the thread to the
+			// list instead; re-opening it reloads its messages fresh.
+			if (removed.thread_id === threadID) thread.value.splice(idx, 0, removed)
+		},
+	}
+}
+
+defineExpose({ syncFlagged, syncMailboxMembership, removeMailFromView })
 
 const focusedDraft = ref<string>()
 const showSendModal = ref(false)

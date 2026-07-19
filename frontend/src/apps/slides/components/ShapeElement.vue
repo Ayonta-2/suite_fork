@@ -129,7 +129,7 @@ import { computed, inject, ref } from 'vue'
 
 import TextElement from '@/apps/slides/components/TextElement.vue'
 import { useSvgShadow } from '@/apps/slides/composables/useShadow'
-import { focusElementId, activeElementIds } from '@/apps/slides/stores/element'
+import { focusElementId, activeElementIds, dragOccurred } from '@/apps/slides/stores/element'
 import { interactionOffset } from '@/apps/slides/stores/interaction'
 
 const props = defineProps({
@@ -215,6 +215,8 @@ const textOverlayStyles = computed(() => ({
 
 const handleDoubleClick = (e) => {
 	e.stopPropagation()
+	// don't enter edit mode when the gesture was a drag
+	if (dragOccurred.value) return
 	if (inSlideShowMode.value || inReadonlyMode.value || !canHaveText.value || isEditable.value)
 		return
 	activeElementIds.value = [element.value.id]

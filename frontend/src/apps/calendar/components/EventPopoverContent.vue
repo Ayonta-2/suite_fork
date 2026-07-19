@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, useTemplateRef } from 'vue'
-import { CalendarDays, Edit2, Globe, MapPin, Repeat, Text, Trash2, Users } from 'lucide-vue-next'
+import { CalendarDays, Edit2, Globe, MapPin, Repeat, Text, Trash2, Users, Video } from 'lucide-vue-next'
 import { Button, Dropdown, createResource, toast } from 'frappe-ui'
+import DOMPurify from 'dompurify'
 
 import { getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
+import LinkifiedText from '@/components/LinkifiedText.vue'
 
 const { calendarEvent, close } = defineProps<{ calendarEvent: any; close: () => void }>()
 
@@ -28,8 +30,11 @@ const descriptionRef = useTemplateRef('descriptionRef')
 const isDescriptionClamped = ref(false)
 
 onMounted(() => {
-	const el = descriptionRef.value
-	if (el) isDescriptionClamped.value = el.scrollHeight > el.clientHeight
+	// The description is a bare element when it's HTML and a component when it's plain text — measure the
+	// underlying element either way.
+	const ref = descriptionRef.value as any
+	const el = (ref?.$el ?? ref) as HTMLElement | undefined
+	if (el instanceof HTMLElement) isDescriptionClamped.value = el.scrollHeight > el.clientHeight
 
 	setTimeout(() => {
 		if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
@@ -88,6 +93,63 @@ const participants = computed(() => {
 	])
 })
 
+// Tags a description can reasonably carry. No <img> (remote assets in an invite from an external
+// organizer are a tracking vector) and no <style>/<script>: unlike mail's <EmailContent>, this renders
+// inline in our page rather than in an iframe, so it must not be able to restyle the app.
+const ALLOWED_TAGS = [
+	'a', 'p', 'br', 'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's',
+	'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+	'table', 'caption', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+]
+
+// Descriptions arrive either as plain text or as HTML, depending on what the organizer's client put in
+// the invite. Plain text goes through <LinkifiedText>; HTML is sanitized and rendered below.
+// Derived from ALLOWED_TAGS so the two can't drift: a tag we detect but don't allow would render as
+// text stripped of its markup, and one we allow but don't detect would render as escaped raw tags.
+const HTML_TAG_RE = new RegExp(`<(${ALLOWED_TAGS.join('|')})\\b[^>]*>`, 'i')
+
+const isHtmlDescription = computed(() => HTML_TAG_RE.test(calendarEvent.description ?? ''))
+
+const sanitizedDescription = computed(() => {
+	const clean = DOMPurify.sanitize(calendarEvent.description ?? '', {
+		ALLOWED_TAGS,
+		ALLOWED_ATTR: ['href', 'title'],
+	})
+	// Force links to open safely. Done after sanitizing rather than with DOMPurify.addHook, which is
+	// global and would leak into every other caller (notably mail's <EmailContent>).
+	const doc = new DOMParser().parseFromString(clean, 'text/html')
+	doc.querySelectorAll('a').forEach((anchor) => {
+		anchor.setAttribute('target', '_blank')
+		anchor.setAttribute('rel', 'noopener noreferrer')
+	})
+	return doc.body.innerHTML
+})
+
+const meetUrl = computed(() => {
+	const link = calendarEvent.links?.find((item: any) => getMeetUrl(item?.href))
+	if (link?.href) return getMeetUrl(link.href)
+
+	const match = calendarEvent.description?.match(
+		/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/,
+	)
+	return getMeetUrl(match?.[0])
+})
+
+const getMeetUrl = (url?: string) => {
+	if (!url) return ''
+	const value = url.replace(/\W+$/, '')
+
+	try {
+		const parsed = new URL(value, window.location.origin)
+		if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/meet/'))
+			return parsed.pathname + parsed.search + parsed.hash
+	} catch {
+		return ''
+	}
+
+	return ''
+}
+
 const options = computed(() => {
 	const opts = [{ label: __('Edit'), icon: Edit2, onClick: () => openEditModal() }]
 
@@ -137,7 +199,7 @@ const handleSetResponse = (response: string, updateAllInstances: boolean) => {
 const editEventInstance = createResource({
 	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event_instance',
 	makeParams: ({ patch }) => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		master_id: calendarEvent.master_id,
 		recurrence_id: calendarEvent.recurrence_id,
 		patch,
@@ -152,8 +214,9 @@ const editEventInstance = createResource({
 const editEvent = createResource({
 	url: 'suite.calendar.api.edit_calendar_event',
 	makeParams: ({ patch }) => ({
-		account_id: store.accountId,
-		id: calendarEvent.master_id,
+		account: store.accountId,
+		// master_id is only set on recurring events; fall back to the event's own id
+		id: calendarEvent.master_id || calendarEvent.id,
 		...patch,
 		send_scheduling_messages: true,
 	}),
@@ -192,7 +255,7 @@ const handleDeleteEvent = () =>
 const deleteEventInstance = createResource({
 	url: 'suite.mail.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
 	makeParams: () => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		master_id: calendarEvent.master_id,
 		recurrence_id: calendarEvent.recurrence_id,
 	}),
@@ -204,7 +267,7 @@ const deleteEventInstance = createResource({
 
 const deleteEvent = createResource({
 	url: 'suite.mail.doctype.calendar_event.calendar_event.delete_calendar_events',
-	makeParams: () => ({ account_id: store.accountId, ids: [calendarEvent.master_id] }),
+	makeParams: () => ({ account: store.accountId, ids: [calendarEvent.master_id || calendarEvent.id] }),
 	onSuccess: () => {
 		emit('reloadEvents')
 		close()
@@ -215,11 +278,16 @@ const openUrl = (location: string) => {
 	if (isUrl(location)) window.open(location, '_blank')
 }
 
+const joinMeet = () => {
+	if (!meetUrl.value) return
+	window.location.href = meetUrl.value
+}
+
 const RESPONSE_STATUS_MAPPING = { ACCEPTED: __('Yes'), TENTATIVE: __('Maybe'), DECLINED: __('No') }
 </script>
 
 <template>
-	<div class="bg-surface-elevation-2 text-ink-gray-8 w-[32rem] rounded-lg" @click.stop>
+	<div class="calendar-event-popover-content bg-surface-elevation-2 text-ink-gray-8 w-[32rem] rounded-lg" @click.stop>
 		<!-- Header: title, date, and actions -->
 		<div class="flex justify-between border-b p-5">
 			<div class="space-y-2">
@@ -290,13 +358,19 @@ const RESPONSE_STATUS_MAPPING = { ACCEPTED: __('Yes'), TENTATIVE: __('Maybe'), D
 			<div v-if="calendarEvent.description" class="flex gap-3">
 				<Text class="stroke-1.5 text-ink-gray-5 h-4 w-4 shrink-0" />
 				<div class="mt-px min-w-0 text-left text-sm">
-					<span
+					<div
+						v-if="isHtmlDescription"
 						ref="descriptionRef"
-						class="break-words"
+						class="break-words [&_a]:text-ink-blue-6 [&_a]:hover:underline [&_p]:m-0"
 						:class="{ 'line-clamp-3': !descriptionExpanded }"
-					>
-						{{ calendarEvent.description }}
-					</span>
+						v-html="sanitizedDescription"
+					/>
+					<LinkifiedText
+						v-else
+						ref="descriptionRef"
+						:text="calendarEvent.description"
+						:class="{ 'line-clamp-3': !descriptionExpanded }"
+					/>
 					<button
 						v-if="isDescriptionClamped && !descriptionExpanded"
 						class="text-ink-blue-6 mt-0.5 block"
@@ -313,6 +387,15 @@ const RESPONSE_STATUS_MAPPING = { ACCEPTED: __('Yes'), TENTATIVE: __('Maybe'), D
 				<span class="mt-px min-w-0 break-words text-left text-sm">
 					{{ calendarEvent.organizer }}
 				</span>
+			</div>
+
+			<div v-if="meetUrl" class="flex justify-end">
+				<Button variant="outline" @click="joinMeet">
+					<template #prefix>
+						<Video class="h-4 w-4" />
+					</template>
+					{{ __('Join Meet') }}
+				</Button>
 			</div>
 		</div>
 
@@ -352,3 +435,11 @@ const RESPONSE_STATUS_MAPPING = { ACCEPTED: __('Yes'), TENTATIVE: __('Maybe'), D
 		</div>
 	</div>
 </template>
+
+<style scoped>
+/* override z-index for calendar event popover content
+to ensure the dropdown menu is not hidden */
+:global([data-slot='content']:has(.calendar-event-popover-content)) {
+	z-index: auto !important;
+}
+</style>

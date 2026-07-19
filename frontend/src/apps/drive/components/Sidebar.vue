@@ -70,7 +70,6 @@ const router = useRouter()
 const route = useRoute()
 notifCount.fetch()
 getTeams.fetch()
-apps.fetch()
 
 const teamExists = createResource({
   url: 'suite.drive.utils.get_default_team',
@@ -80,8 +79,8 @@ const teamExists = createResource({
 
 const showSettings = ref(false)
 const showShortcuts = ref(false)
-const suggestedTab = ref(0)
-emitter.on('showSettings', (val = 0) => {
+const suggestedTab = ref('profile')
+emitter.on('showSettings', (val = 'profile') => {
   if (val === -1) showSettings.value = false
   else {
     showSettings.value = true
@@ -173,7 +172,7 @@ const sidebarItems = computed(() => {
           to: { name: 'drive-Inbox' },
           isActive: active('drive-Inbox'),
           accessKey: 'i',
-          suffix: notifCount.data,
+          suffix: notifCount.data ? String(notifCount.data) : undefined,
         },
       ],
     },

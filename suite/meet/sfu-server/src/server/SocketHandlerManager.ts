@@ -4,6 +4,9 @@ import type { ClientToServerEvents, ServerToClientEvents } from '../types';
 import { loggers } from '../utils/logger';
 import { RateLimiter } from '../utils/rateLimiter';
 import type { AuthManager } from './AuthManager';
+import { E2EEEpochRelay } from './E2EEEpochRelay';
+import type { E2eeCoordinatorPersistence } from './E2eeCoordinatorPersistence';
+import type { E2eeRosterStore } from './E2eeRosterStore';
 import { registerAuthHandlers } from './handlers/AuthHandlers';
 import { registerChatHandlers } from './handlers/ChatHandlers';
 import { registerConsumerHandlers } from './handlers/ConsumerHandlers';
@@ -12,6 +15,7 @@ import { registerErrorHandlers } from './handlers/ErrorHandlers';
 import type { HandlerDeps } from './handlers/Handler';
 import { registerHostControlHandlers } from './handlers/HostControlHandlers';
 import { registerMediaControlHandlers } from './handlers/MediaControlHandlers';
+import { registerPollHandlers } from './handlers/PollHandlers';
 import { registerProducerHandlers } from './handlers/ProducerHandlers';
 import { registerRaiseHandHandlers } from './handlers/RaiseHandHandlers';
 import { registerReactionHandlers } from './handlers/ReactionHandlers';
@@ -27,6 +31,7 @@ export class SocketHandlerManager {
 	private authManager: AuthManager;
 	private registry: RoomRegistry;
 	private rateLimiter: RateLimiter;
+	private e2eeEpochRelay: E2EEEpochRelay;
 	private registerHandlers: ((socket: import('socket.io').Socket) => void)[];
 	private idleExpirySweep: NodeJS.Timeout | null = null;
 
@@ -34,12 +39,22 @@ export class SocketHandlerManager {
 		io: Server<ClientToServerEvents, ServerToClientEvents>,
 		mediasoup: MediasoupManager,
 		authManager: AuthManager,
+		roster: E2eeRosterStore,
+		coordinatorPersistence?: E2eeCoordinatorPersistence,
 	) {
 		this.io = io;
 		this.mediasoup = mediasoup;
 		this.authManager = authManager;
 		this.rateLimiter = new RateLimiter();
 		this.registry = new RoomRegistry(io);
+		this.e2eeEpochRelay = new E2EEEpochRelay(
+			io,
+			this.registry.getFullAccessSockets(),
+			this.registry.getParticipantToSender(),
+			coordinatorPersistence,
+			this.rateLimiter,
+		);
+		this.e2eeEpochRelay.setRoster(roster);
 
 		const deps: HandlerDeps = {
 			io,
@@ -47,6 +62,8 @@ export class SocketHandlerManager {
 			mediasoup,
 			authManager,
 			rateLimiter: this.rateLimiter,
+			e2eeEpochRelay: this.e2eeEpochRelay,
+			e2eeRoster: roster,
 		};
 
 		this.registerHandlers = [
@@ -59,6 +76,7 @@ export class SocketHandlerManager {
 			registerMediaControlHandlers(deps),
 			registerHostControlHandlers(deps),
 			registerScreenShareHandlers(deps),
+			registerPollHandlers(deps),
 			registerChatHandlers(deps),
 			registerReactionHandlers(deps),
 			registerRaiseHandHandlers(deps),
@@ -98,6 +116,7 @@ export class SocketHandlerManager {
 			for (const register of this.registerHandlers) {
 				register(socket);
 			}
+			this.e2eeEpochRelay.setup(socket);
 		});
 
 		this.idleExpirySweep = setInterval(

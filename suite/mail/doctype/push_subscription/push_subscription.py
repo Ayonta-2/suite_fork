@@ -3,6 +3,7 @@
 
 import base64
 import json
+from datetime import timedelta
 from uuid import uuid7
 
 import frappe
@@ -11,10 +12,14 @@ from frappe.model.document import Document
 from frappe.utils import cint, today
 
 from suite.mail.jmap import get_push_subscription_service
-from suite.mail.utils import generate_uuid_style_hash, parse_filters
-from suite.mail.utils.dt import parse_iso_datetime
+from suite.mail.utils import generate_uuid_style_hash, log_mail_error
 from suite.mail.utils.user import is_jmap_configured
-from suite.mail.utils.validation import has_permission_for_user
+from suite.utils import parse_filters
+from suite.utils.dt import get_utc_now, parse_iso_datetime
+from suite.utils.user import is_system_manager
+
+# Renew push subscriptions that expire within this many days of the scheduled run.
+RENEW_THRESHOLD_DAYS = 3
 
 
 class PushSubscription(Document):
@@ -137,7 +142,7 @@ def add_push_subscription(
 	"""Adds a push subscription subscription for the given user and returns the subscription ID."""
 
 	if not ignore_permissions:
-		has_permission_for_user(user)
+		has_permission_for_user(user, raise_exception=True)
 
 	device_client_id = device_client_id or generate_uuid_style_hash(
 		f"frappe-{frappe.local.site.replace('.', '-')}-{user}"
@@ -170,7 +175,7 @@ def add_push_subscription(
 def get_push_subscription(user: str, id: str, raise_exception: bool = True) -> dict | None:
 	"""Returns push subscription details for the given name in the format 'user|id'."""
 
-	has_permission_for_user(user)
+	has_permission_for_user(user, raise_exception=raise_exception)
 
 	service = get_push_subscription_service(user)
 	if subscriptions := service.get([id]):
@@ -210,7 +215,7 @@ def verify_push_subscription(user: str, id: str, verification_code: str) -> None
 def renew_push_subscription(user: str, id: str) -> None:
 	"""Renews a push subscription subscription for the given user and subscription ID."""
 
-	has_permission_for_user(user)
+	has_permission_for_user(user, raise_exception=True)
 
 	service = get_push_subscription_service(user)
 	response = service.update([{"id": id}])
@@ -223,11 +228,51 @@ def renew_push_subscription(user: str, id: str) -> None:
 			frappe.throw(_(response["description"]), title=title)
 
 
+def renew_expiring_push_subscriptions() -> None:
+	"""Renews soon-to-expire push subscriptions for all JMAP configured users.
+
+	Scheduled to run daily. A subscription is renewed when its expiry is within
+	``RENEW_THRESHOLD_DAYS`` of the run; subscriptions without an expiry or expiring
+	later are left untouched.
+	"""
+
+	if not frappe.utils.get_url().startswith("https://"):
+		return
+
+	cutoff = get_utc_now() + timedelta(days=RENEW_THRESHOLD_DAYS)
+
+	for user in frappe.db.get_all("User Settings", {"enabled": 1, "username": ["!=", ""]}, pluck="user"):
+		try:
+			service = get_push_subscription_service(user, ignore_permissions=True)
+
+			expiring_ids = []
+			for subscription in service.get():
+				expires = subscription.get("expires")
+				if expires and parse_iso_datetime(expires, as_str=False) <= cutoff:
+					expiring_ids.append(subscription["id"])
+
+			if not expiring_ids:
+				continue
+
+			response = service.update([{"id": id} for id in expiring_ids])
+			if not_updated := response.get("notUpdated"):
+				errors = "<br>".join(f"{id}: {error['description']}" for id, error in not_updated.items())
+				log_mail_error(
+					_("Push Subscription Renewal Failed"),
+					_("Failed to renew push subscriptions for user {0}:<br>{1}").format(user, errors),
+				)
+		except Exception as e:
+			log_mail_error(
+				_("Push Subscription Renewal Failed"),
+				_("Failed to renew push subscriptions for user {0}: {1}").format(user, str(e)),
+			)
+
+
 @frappe.whitelist()
 def delete_push_subscriptions(user: str, ids: list[str]) -> None:
 	"""Deletes push subscriptions for the given user and list of subscription IDs."""
 
-	has_permission_for_user(user)
+	has_permission_for_user(user, raise_exception=True)
 
 	service = get_push_subscription_service(user)
 	response = service.delete(ids)
@@ -246,7 +291,7 @@ def delete_push_subscriptions(user: str, ids: list[str]) -> None:
 def fetch_push_subscriptions(user: str, page: int = 1, limit: int = 10) -> list:
 	"""Fetches push subscriptions for the given user with pagination."""
 
-	has_permission_for_user(user)
+	has_permission_for_user(user, raise_exception=True)
 
 	service = get_push_subscription_service(user)
 	subscriptions = service.get()
@@ -277,14 +322,32 @@ def format_push_subscription(user: str, push_subscription: dict) -> dict:
 
 
 def get_push_subscription_keys() -> dict | None:
-	"""Returns the JMAP push subscription encryption keys from Mail Settings, or None if not configured."""
+	"""Returns the JMAP push subscription encryption keys from Mail Settings, or None if encryption is disabled or the keys are not configured."""
 
 	settings = frappe.get_cached_doc("Mail Settings")
+	if not settings.get("enable_jmap_push_encryption"):
+		return None
+
 	p256dh = (settings.get("jmap_push_p256dh") or "").strip()
 	auth = (settings.get_password("jmap_push_auth") if settings.get("jmap_push_auth") else "").strip()
 
 	if p256dh and auth:
 		return {"p256dh": p256dh, "auth": auth}
+
+
+def _decode_encrypted_push_body(raw_body: bytes) -> bytes:
+	"""Returns the raw aes128gcm ciphertext from a push request body."""
+
+	_B64URL_BYTES = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=")
+
+	stripped = raw_body.strip()
+	if not stripped or any(byte not in _B64URL_BYTES for byte in stripped):
+		return raw_body
+
+	try:
+		return base64.urlsafe_b64decode(stripped + b"=" * (-len(stripped) % 4))
+	except Exception:
+		return raw_body
 
 
 def decrypt_jmap_push_payload(raw_body: bytes) -> dict:
@@ -327,6 +390,8 @@ def decrypt_jmap_push_payload(raw_body: bytes) -> dict:
 		private_key = ec.derive_private_key(int.from_bytes(priv_bytes, "big"), ec.SECP256R1())
 	except Exception:
 		frappe.throw(_("Failed to construct EC private key."))
+
+	raw_body = _decode_encrypted_push_body(raw_body)
 
 	if len(raw_body) < 21:
 		frappe.throw(_("Encrypted push payload is too short."))
@@ -459,3 +524,16 @@ def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool
 		return False
 
 	return has_permission_for_user(doc.user, raise_exception=False)
+
+
+def has_permission_for_user(user: str, raise_exception: bool = True) -> bool:
+	"""Checks if the current session user has permission to manage push subscriptions for the given user."""
+
+	if user != frappe.session.user and not is_system_manager(frappe.session.user):
+		if raise_exception:
+			frappe.throw(
+				_("You do not have permission to add a push subscription for user {0}.").format(
+					frappe.bold(user)
+				),
+				frappe.PermissionError,
+			)

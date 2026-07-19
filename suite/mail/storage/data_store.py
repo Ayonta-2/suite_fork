@@ -87,12 +87,7 @@ class DataStore(BaseStore):
 		map_size: int | None = None,
 		**_legacy: Any,
 	) -> None:
-		"""Initialize the store for the given base path and ``account`` key.
-
-		``**_legacy`` absorbs parameters from the previous RocksDB implementation
-		(acquire_timeout, lock_timeout, max_retries, retry_delay, shard_count) so existing
-		callers keep working; they no longer have any effect.
-		"""
+		"""Initialize the store for the given base path and ``account`` key."""
 
 		super().__init__(base_path=base_path, key=key)
 
@@ -346,7 +341,7 @@ class DataStore(BaseStore):
 
 		self._write(_delete_all)
 
-	def scan(self, entity: Entity, prefix: str = "") -> dict[str, Any]:
+	def scan(self, entity: Entity, prefix: str = "", limit: int | None = None) -> dict[str, Any]:
 		"""Scan for all key-value pairs that start with a given prefix, returning a dictionary of results."""
 
 		full_prefix = self._make_key(entity, prefix)
@@ -361,6 +356,9 @@ class DataStore(BaseStore):
 
 					subkey = self._normalize_scan_key(key.decode())
 					result[subkey] = self._deserialize(value)
+
+					if limit is not None and len(result) >= limit:
+						break
 
 		return result
 

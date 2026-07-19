@@ -4,7 +4,7 @@ from uuid import uuid7
 from suite.mail.jmap.services.calendars.calendar import CalendarService
 from suite.mail.jmap.services.calendars.calendars import CalendarsService
 from suite.mail.jmap.services.calendars.participant_identity import ParticipantIdentityService
-from suite.mail.utils.dt import utcnow
+from suite.utils.dt import utcnow
 
 
 class CalendarEventService(CalendarsService):
@@ -27,12 +27,12 @@ class CalendarEventService(CalendarsService):
 				calendar_ids = event.get("calendar_ids")
 				if not calendar_ids:
 					calendar_ids = [
-						CalendarService(self.account_id, self.connection).get_default(raise_exception=True)
+						CalendarService(self.account, self.connection).get_default(raise_exception=True)
 					]
 
 				organizer = event.get("organizer")
 				if not organizer:
-					organizer = ParticipantIdentityService(self.account_id, self.connection).get_default(
+					organizer = ParticipantIdentityService(self.account, self.connection).get_default(
 						raise_exception=True
 					)
 
@@ -104,7 +104,7 @@ class CalendarEventService(CalendarsService):
 				calendar_ids = event.get("calendar_ids")
 				if not calendar_ids:
 					calendar_ids = [
-						CalendarService(self.account_id, self.connection).get_default(raise_exception=True)
+						CalendarService(self.account, self.connection).get_default(raise_exception=True)
 					]
 
 				payload[event["id"]] = {
@@ -235,7 +235,7 @@ class CalendarEventService(CalendarsService):
 					[
 						f"{self.type}/parse",
 						{
-							"accountId": self.account_id,
+							"accountId": self.account,
 							"blobIds": batch,
 						},
 						"0",

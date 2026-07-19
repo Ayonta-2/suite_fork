@@ -9,14 +9,9 @@ import pydenticon
 import requests
 from frappe import _
 from frappe.model.document import bulk_insert
-from frappe.utils import format_datetime, random_string
+from frappe.utils import cint, format_datetime, random_string
 
 from suite.mail.api.contacts import create_contacts_if_not_exists
-from suite.mail.api.sieve import (
-	SCREENER_MAILBOX_NAME,
-	build_automation_sieve,
-	pause_automation_sieve_build,
-)
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.mail_message.mail_message import (
 	add_messages_to_mailbox,
@@ -44,25 +39,40 @@ from suite.mail.doctype.mailbox_settings.mailbox_settings import (
 from suite.mail.doctype.screened_email_address.screened_email_address import (
 	get_screened_email_addresses,
 )
+from suite.mail.doctype.sieve_script.sieve_script import (
+	SCREENER_MAILBOX_NAME,
+	build_automation_sieve,
+	pause_automation_sieve_build,
+)
+from suite.mail.doctype.user_account.user_account import (
+	get_user_for_jmap_account,
+	is_jmap_account_belongs_to_user,
+)
 from suite.mail.jmap import (
 	get_email_service,
 	get_mailbox_id_by_name,
 	get_mailbox_id_by_role,
-	parse_account,
+	get_mailbox_service,
 )
-from suite.mail.utils import convert_html_to_text, get_config, log_error
-from suite.mail.utils.user import get_account_emails, get_session_account, is_jmap_configured
-from suite.mail.utils.validation import has_permission_for_user
+from suite.mail.search import get_email_address_index
+from suite.mail.utils import get_config, log_mail_error
+from suite.mail.utils.user import get_account_emails, is_jmap_configured
+from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
+from suite.utils import convert_html_to_text
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
 SCREENING_FETCH_LIMIT = 500
 
+# All Inboxes bounds. limit/start are user-supplied, and per_account_limit (= start + limit) is fetched
+# from *every* account and merged in memory, so both are clamped. MAX_FETCH caps the deepest reachable
+# position (page length ~25 → ~20 pages), which is far beyond any real unified-inbox scroll.
+ALL_INBOX_MAX_LIMIT = 100
+ALL_INBOX_MAX_FETCH = 500
+
 
 @frappe.whitelist()
-def get_mailboxes(account_id: str) -> list[dict]:
+def get_mailboxes(account: str) -> list[dict]:
 	"""Serializes and returns the user's mailboxes."""
-
-	account = get_session_account(account_id)
 
 	user = frappe.session.user
 	if not is_jmap_configured(user):
@@ -77,7 +87,7 @@ def get_mailboxes(account_id: str) -> list[dict]:
 	mailbox_settings = frappe.db.get_all(
 		"Mailbox Settings",
 		filters={
-			"account_id": parse_account(account)[1],
+			"account": account,
 			"mailbox_id": ["in", [m["id"] for m in mailboxes]],
 		},
 		fields=[
@@ -184,23 +194,15 @@ def add_user_images_to_emails(account: str, mails: list[dict], is_thread: bool =
 
 
 @frappe.whitelist()
-def get_threads(
-	account_id: str, mailbox: str, limit: int, start: int = 0, filter_by: str | None = None
-) -> list:
+def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_by: str | None = None) -> list:
 	"""Returns a page of threads from the selected mailbox for the account."""
-
-	account = get_session_account(account_id)
 
 	if mailbox == "starred":
 		conditions = [
 			{
 				"inMailboxOtherThan": [
-					get_mailbox_id_by_role(
-						*parse_account(account), "junk", create_if_not_exists=True, raise_exception=True
-					),
-					get_mailbox_id_by_role(
-						*parse_account(account), "trash", create_if_not_exists=True, raise_exception=True
-					),
+					get_mailbox_id_by_role(account, "junk", create_if_not_exists=True, raise_exception=True),
+					get_mailbox_id_by_role(account, "trash", create_if_not_exists=True, raise_exception=True),
 				]
 			},
 			{"someInThreadHaveKeyword": "$flagged"},
@@ -223,7 +225,7 @@ def get_threads(
 
 	conversations = fetch_threads(account, filter, start, limit)
 
-	sent_mailbox = get_mailbox_id_by_role(*parse_account(account), "sent")
+	sent_mailbox = get_mailbox_id_by_role(account, "sent")
 
 	threads = []
 	for conversation in conversations.values():
@@ -248,22 +250,106 @@ def get_threads(
 	return threads, mailbox
 
 
+def get_user_jmap_accounts() -> list[dict]:
+	"""Return the current user's JMAP accounts (id + display name), personal first.
+
+	Ordered personal-first, then by name, so the merged All Inboxes list has a stable tie-break when
+	two accounts have threads at the same timestamp.
+	"""
+
+	account_names = frappe.db.get_all("User Account", {"user": frappe.session.user}, pluck="account")
+	if not account_names:
+		return []
+
+	accounts = frappe.db.get_all(
+		"JMAP Account",
+		filters={"name": ["in", account_names]},
+		fields=["name", "_name", "is_personal"],
+	)
+	accounts.sort(key=lambda a: (not a["is_personal"], a["_name"] or ""))
+	return accounts
+
+
 @frappe.whitelist()
-def get_thread(account_id: str, thread_id: str) -> list[dict]:
+def get_all_inbox_threads(limit: int, start: int = 0, filter_by: str | None = None) -> list:
+	"""Returns a merged, newest-first page of Inbox threads across all of the user's accounts.
+
+	Each thread is tagged with its owning account (`account`, `account_name`) and that account's
+	Inbox/Archive/Trash mailbox ids, so the client can open it in — and act on it within — the correct
+	JMAP account. Every account is over-fetched to `start + limit` (the deepest global position this
+	page can reach), the results are merged, sorted newest-first, then sliced to the requested window.
+	"""
+
+	accounts = get_user_jmap_accounts()
+	if not accounts:
+		return []
+
+	# Clamp user input before it fans out across accounts: limit to a sane page size, and start so the
+	# per-account fetch (start + limit) can never exceed ALL_INBOX_MAX_FETCH — bounding both the JMAP
+	# fetch per account and the in-memory merge, regardless of what the client sends.
+	limit = min(max(cint(limit), 1), ALL_INBOX_MAX_LIMIT)
+	start = min(max(cint(start), 0), ALL_INBOX_MAX_FETCH - limit)
+	per_account_limit = start + limit
+
+	merged: list[dict] = []
+	for account in accounts:
+		account_id = account["name"]
+		inbox_id = get_mailbox_id_by_role(account_id, "inbox")
+		if not inbox_id:
+			continue
+
+		threads, _mailbox = get_threads(account_id, inbox_id, per_account_limit, 0, filter_by)
+		if not threads:
+			continue
+
+		# Attach once per account (role lookups are cached) so per-item actions can target the right
+		# mailbox without another round trip.
+		archive_id = get_mailbox_id_by_role(account_id, "archive")
+		trash_id = get_mailbox_id_by_role(account_id, "trash")
+		for thread in threads:
+			thread["account"] = account_id
+			thread["account_name"] = account["_name"]
+			thread["inbox"] = inbox_id
+			thread["archive"] = archive_id
+			thread["trash"] = trash_id
+		merged.extend(threads)
+
+	merged.sort(key=lambda thread: thread["received_at"], reverse=True)
+	return merged[start : start + limit]
+
+
+@frappe.whitelist()
+def get_all_inbox_unread_count() -> int:
+	"""Returns the total unread Inbox thread count across all of the user's accounts (sidebar badge).
+
+	Mailbox is a JMAP-backed virtual DocType, so it can't be queried across accounts with a table
+	filter. Each account's Inbox unread count is fetched live via the mailbox service (a fresh
+	Mailbox/get, bypassing the 1-hour `.mailboxes` cache) — the same source the per-account inbox
+	badge uses — and summed.
+	"""
+
+	total = 0
+	for account in get_user_jmap_accounts():
+		for mailbox in get_mailbox_service(account["name"]).get():
+			if (mailbox.get("role") or "").lower() == "inbox":
+				total += cint(mailbox.get("unreadThreads"))
+				break
+
+	return total
+
+
+@frappe.whitelist()
+def get_thread(account: str, thread_id: str) -> list[dict]:
 	"""Returns the full list of messages in a thread, for threads not present in the mailbox list
 	(e.g. search results or a thread on another page)."""
-
-	account = get_session_account(account_id)
 
 	mails = [serialize_mail(m) for m in fetch_thread(account, thread_id)]
 	return add_user_images_to_emails(account, mails, is_thread=True)
 
 
 @frappe.whitelist()
-def get_attachment(account_id: str, blob_id: str, filename: str | None = None) -> None:
+def get_attachment(account: str, blob_id: str, filename: str | None = None) -> None:
 	"""Fetches and returns the attachment."""
-
-	account = get_session_account(account_id)
 
 	if not blob_id:
 		frappe.throw(_("Blob ID is required."))
@@ -287,24 +373,28 @@ def serialize_thread(messages: list[dict], thread_messages: list[dict], latest: 
 
 	first = thread_messages[0]
 	latest = latest or messages[-1]
+	# The row's identity + state come from the thread's representative message in the CURRENT mailbox
+	# (`messages` is scoped to it), so its folder tags and junk/flag/seen reflect THIS view — not a
+	# sibling message that was moved to Junk/Trash/Sent. The activity fields (preview/date/sender) still
+	# come from `latest` (most recent activity across the whole conversation). For single-mailbox threads
+	# `current` and `latest` are the same message, so nothing changes.
+	current = messages[-1]
 
-	thread_fields = [
-		"name",
-		"id",
+	# From the current-mailbox message: identity + state (so star/junk actions target the right mail).
+	current_fields = ["name", "id", "mailboxes", "seen", "junk", "flagged"]
+	# From the most recent activity: what the row displays.
+	activity_fields = [
 		"thread_id",
-		"mailboxes",
 		"from_name",
 		"from_email",
 		"received_at",
 		"recipients",
-		"seen",
 		"draft",
-		"junk",
-		"flagged",
 		"preview",
 	]
 	return {
-		**{field: latest[field] for field in thread_fields},
+		**{field: current[field] for field in current_fields},
+		**{field: latest[field] for field in activity_fields},
 		"subject": first["subject"],
 		"attachments": serialize_attachments(latest.get("attachments", [])),
 		"messages": [serialize_mail(message) for message in thread_messages],
@@ -357,19 +447,15 @@ def serialize_attachments(attachments: list[dict]) -> list[dict]:
 
 
 @frappe.whitelist()
-def fetch_attachment(account_id: str, blob_id: str) -> bytes:
+def fetch_attachment(account: str, blob_id: str) -> bytes:
 	"""Returns the content of an attachment."""
-
-	account = get_session_account(account_id)
 
 	return fetch_blob(account, blob_id)
 
 
 @frappe.whitelist()
-def fetch_attachments_as_zip(account_id: str, attachments: list[dict] | str) -> bytes:
+def fetch_attachments_as_zip(account: str, attachments: list[dict] | str) -> bytes:
 	"""Returns the provided attachments bundled into a ZIP archive."""
-
-	account = get_session_account(account_id)
 
 	if isinstance(attachments, str):
 		attachments = frappe.parse_json(attachments)
@@ -422,7 +508,7 @@ def fetch_mail_as_eml(name: str) -> bytes:
 
 @frappe.whitelist()
 def create_mail(
-	account_id: str,
+	account: str,
 	from_email: str,
 	to: list[dict],
 	cc: list[dict],
@@ -437,8 +523,6 @@ def create_mail(
 	save_as_draft: bool = False,
 ) -> dict:
 	"""Creates new mail queue."""
-
-	account = get_session_account(account_id)
 
 	doc_attachments = []
 	for d in attachments:
@@ -463,6 +547,7 @@ def create_mail(
 		]
 
 	doc = MailQueue._create(
+		user=get_user_for_jmap_account(account, raise_exception=True),
 		account=account,
 		from_email=from_email,
 		from_name=from_name,
@@ -485,7 +570,7 @@ def create_mail(
 
 @frappe.whitelist()
 def update_draft_mail(
-	account_id: str,
+	account: str,
 	id: str,
 	from_email: str,
 	to: list[dict],
@@ -499,21 +584,19 @@ def update_draft_mail(
 ) -> dict:
 	"""Creates new mail queue from existing draft message."""
 
-	account = get_session_account(account_id)
+	message = frappe.get_doc("Mail Message", f"{account}|{id}")
+	message.check_permission(permtype="write")
 
-	doc = frappe.get_doc("Mail Message", f"{account}|{id}")
-	doc.check_permission(permtype="write")
+	message.from_email = from_email
+	message.from_name = from_name
+	message.subject = subject
 
-	doc.from_email = from_email
-	doc.from_name = from_name
-	doc.subject = subject
-
-	_attachments = {a.cid: a for a in doc.attachments if a.cid}
-	doc.attachments = []
+	_attachments = {a.cid: a for a in message.attachments if a.cid}
+	message.attachments = []
 
 	for d in attachments or []:
 		if file_url := d.get("file_url"):
-			doc.append(
+			message.append(
 				"attachments",
 				{
 					"file_url": file_url,
@@ -527,7 +610,7 @@ def update_draft_mail(
 			if not existing_attachment:
 				frappe.throw(_("Attachment with cid {0} not found in the current draft.").format(d["cid"]))
 
-			doc.append(
+			message.append(
 				"attachments",
 				{
 					"blob_id": existing_attachment.blob_id,
@@ -539,36 +622,34 @@ def update_draft_mail(
 				},
 			)
 
-	doc.html_body = html_body
-	doc.text_body = convert_html_to_text(doc.html_body)
+	message.html_body = html_body
+	message.text_body = convert_html_to_text(message.html_body)
 
-	doc.recipients = []
+	message.recipients = []
 	for type, emails in [("To", to), ("Cc", cc), ("Bcc", bcc)]:
 		for email in emails:
-			doc.append(
+			message.append(
 				"recipients",
 				{"type": type, "email": email.get("email"), "display_name": email.get("display_name")},
 			)
 
-	new_doc = doc.submit() if submit else doc.save_draft()
+	queue = message.submit() if submit else message.save_draft()
 
-	if submit and new_doc.status == "Submitted":
-		create_contacts_if_not_exists(account, doc.recipients)
-		auto_accept_recipients(account, doc.recipients)
+	if submit and queue.status == "Submitted":
+		create_contacts_if_not_exists(account, message.recipients)
+		auto_accept_recipients(account, message.recipients)
 
 	return {
-		"id": new_doc.id,
-		"status": new_doc.status,
-		"error": new_doc.error_message,
-		"thread_id": new_doc.thread_id,
+		"id": queue.id,
+		"status": queue.status,
+		"error": queue.error_message,
+		"thread_id": queue.thread_id,
 	}
 
 
 @frappe.whitelist()
-def delete_mail(account_id: str, id: str) -> None:
+def delete_mail(account: str, id: str) -> None:
 	"""Deletes the given mail."""
-
-	account = get_session_account(account_id)
 
 	delete_messages(account, [id])
 
@@ -616,10 +697,8 @@ def get_mime_message(name: str) -> dict:
 
 
 @frappe.whitelist()
-def set_flagged(account_id: str, ids: list[str], flagged: bool) -> dict:
+def set_flagged(account: str, ids: list[str], flagged: bool) -> dict:
 	"""Sets flagged for mails."""
-
-	account = get_session_account(account_id)
 
 	set_flagged_status(account, ids, flagged)
 
@@ -627,10 +706,8 @@ def set_flagged(account_id: str, ids: list[str], flagged: bool) -> dict:
 
 
 @frappe.whitelist()
-def set_mails_seen(account_id: str, ids: list[str], seen: bool) -> list[str]:
+def set_mails_seen(account: str, ids: list[str], seen: bool) -> list[str]:
 	"""Sets seen status for the given mails."""
-
-	account = get_session_account(account_id)
 
 	set_seen_status(account, ids, seen)
 
@@ -638,10 +715,8 @@ def set_mails_seen(account_id: str, ids: list[str], seen: bool) -> list[str]:
 
 
 @frappe.whitelist()
-def move_mails(account_id: str, ids: list[str], mailbox: str, clear_junk: bool = False) -> None:
+def move_mails(account: str, ids: list[str], mailbox: str, clear_junk: bool = False) -> None:
 	"""Sets mailbox for mails."""
-
-	account = get_session_account(account_id)
 
 	if clear_junk:
 		set_spam_status(account, ids, spam=False)
@@ -649,19 +724,15 @@ def move_mails(account_id: str, ids: list[str], mailbox: str, clear_junk: bool =
 
 
 @frappe.whitelist()
-def add_mails_to_mailbox(account_id: str, ids: list[str], mailbox_id: str) -> None:
+def add_mails_to_mailbox(account: str, ids: list[str], mailbox_id: str) -> None:
 	"""Adds mails to a mailbox without removing them from their existing mailboxes."""
-
-	account = get_session_account(account_id)
 
 	add_messages_to_mailbox(account, ids, mailbox_id)
 
 
 @frappe.whitelist()
-def remove_mails_from_mailbox(account_id: str, ids: list[str], mailbox_id: str) -> None:
+def remove_mails_from_mailbox(account: str, ids: list[str], mailbox_id: str) -> None:
 	"""Removes mails from a mailbox without deleting them."""
-
-	account = get_session_account(account_id)
 
 	remove_messages_from_mailbox(account, ids, mailbox_id)
 
@@ -679,11 +750,9 @@ def _screen_senders(account: str, ids: list[str], action: str | None) -> None:
 
 
 @frappe.whitelist()
-def set_mails_mailboxes(account_id: str, mails: list[dict], screen_action: str | None = None) -> None:
+def set_mails_mailboxes(account: str, mails: list[dict], screen_action: str | None = None) -> None:
 	"""Restores each mail's exact mailbox membership and junk status (used to undo a move), optionally
 	re-screening the senders with `screen_action` to reverse a junk/not-junk's screening on undo."""
-
-	account = get_session_account(account_id)
 
 	set_messages_mailboxes(account, mails)
 	_screen_senders(account, [m["id"] for m in mails], screen_action)
@@ -691,12 +760,10 @@ def set_mails_mailboxes(account_id: str, mails: list[dict], screen_action: str |
 
 @frappe.whitelist()
 def set_mails_spam_status(
-	account_id: str, ids: list[str], spam: bool, screen_action: str | None = None
+	account: str, ids: list[str], spam: bool, screen_action: str | None = None
 ) -> list[str]:
 	"""Sets spam status of the given mails, optionally screening their senders with `screen_action`
 	(Spam on Junk, Accepted on Not Junk) in the same call."""
-
-	account = get_session_account(account_id)
 
 	set_spam_status(account, ids, spam)
 	_screen_senders(account, ids, screen_action)
@@ -705,29 +772,113 @@ def set_mails_spam_status(
 
 
 @frappe.whitelist()
-def empty_user_mailbox(account_id: str, mailbox: str) -> None:
+def empty_user_mailbox(account: str, mailbox: str) -> None:
 	"""Empties the given mailbox."""
-
-	account = get_session_account(account_id)
 
 	empty_mailbox(account, mailbox)
 
 
 @frappe.whitelist()
 def search_mails(
-	account_id: str, filter: dict | None = None, limit: int = 5, start: int = 0
+	account: str,
+	filter: dict | None = None,
+	limit: int = 5,
+	start: int = 0,
+	all_accounts: bool = False,
 ) -> tuple[list[dict], int]:
-	"""Returns search results for the given query."""
+	"""Returns search results for the given query.
 
-	account = get_session_account(account_id)
+	By default the search is scoped to `account`. When `all_accounts` is truthy the query fans out
+	across every JMAP account the user owns and the results are merged newest-first, so a mail can be
+	found without remembering which account it landed in. Either way each result is tagged with its
+	owning account (and that account's Inbox/Archive/Trash mailbox ids) so the client can open — and
+	act on — it in the correct account.
+	"""
 
 	if not filter:
 		return ([], 0)
 
+	# `filter` may arrive carrying the search-page query blob (see MailboxView), which includes the
+	# out-of-band `all_accounts` flag — drop it so it never becomes a bogus JMAP search condition.
+	filter = {k: v for k, v in filter.items() if k != "all_accounts"}
+
+	# The flag crosses the wire as a bool, an int, or a "true"/"1" string depending on the caller, so
+	# normalize all truthy forms (cint("true") would be 0).
+	if str(all_accounts).lower() in ("1", "true"):
+		return _search_all_accounts(filter, limit=limit, start=start)
+
 	normalized_filter = normalize_filter(filter)
 	mails, total = search_messages(account, normalized_filter, position=start, limit=limit)
+	add_user_images_to_emails(account, mails)
+	_tag_search_results(account, mails)
 
-	return add_user_images_to_emails(account, mails), total
+	return mails, total
+
+
+def _search_all_accounts(filter: dict, limit: int, start: int) -> tuple[list[dict], int]:
+	"""Search across every JMAP account the user owns, returning a merged newest-first page.
+
+	Mirrors the All Inboxes fan-out (`get_all_inbox_threads`): each account is over-fetched to the
+	deepest global position this page can reach (`start + limit`, clamped), the results are tagged,
+	merged, sorted newest-first, then sliced to the requested window. `total` is the summed match
+	count across accounts.
+	"""
+
+	accounts = get_user_jmap_accounts()
+	if not accounts:
+		return ([], 0)
+
+	# Clamp user input before it fans out across accounts (see the All Inboxes bounds): limit to a sane
+	# page size, and start so the per-account fetch (start + limit) can never exceed ALL_INBOX_MAX_FETCH.
+	limit = min(max(cint(limit), 1), ALL_INBOX_MAX_LIMIT)
+	start = min(max(cint(start), 0), ALL_INBOX_MAX_FETCH - limit)
+	per_account_limit = start + limit
+
+	# Mailbox ids are account-specific, so a "Look In" folder filter can't carry across accounts.
+	filter = {k: v for k, v in filter.items() if k != "inMailbox"}
+	normalized_filter = normalize_filter(filter)
+
+	merged: list[dict] = []
+	total = 0
+	for account in accounts:
+		account_id = account["name"]
+		mails, account_total = search_messages(
+			account_id, normalized_filter, position=0, limit=per_account_limit
+		)
+		total += account_total
+		if not mails:
+			continue
+
+		add_user_images_to_emails(account_id, mails)
+		_tag_search_results(account_id, mails, account_name=account["_name"])
+		merged.extend(mails)
+
+	merged.sort(key=lambda mail: mail["received_at"], reverse=True)
+	return merged[start : start + limit], total
+
+
+def _tag_search_results(account: str, mails: list[dict], account_name: str | None = None) -> None:
+	"""Tag each result with its owning account and that account's Inbox/Archive/Trash mailbox ids.
+
+	Lets the client open a result in — and run per-row actions against — the correct JMAP account,
+	which matters when results are merged across accounts (the `all_accounts` search path)."""
+
+	if not mails:
+		return
+
+	if account_name is None:
+		account_name = frappe.db.get_value("JMAP Account", account, "_name")
+
+	inbox_id = get_mailbox_id_by_role(account, "inbox")
+	archive_id = get_mailbox_id_by_role(account, "archive")
+	trash_id = get_mailbox_id_by_role(account, "trash")
+
+	for mail in mails:
+		mail["account"] = account
+		mail["account_name"] = account_name
+		mail["inbox"] = inbox_id
+		mail["archive"] = archive_id
+		mail["trash"] = trash_id
 
 
 def normalize_filter(filter: dict) -> dict:
@@ -813,20 +964,18 @@ def get_avatar(email: str, size: int = 128, strict: bool = False) -> None:
 	frappe.local.response.type = "binary"
 
 
-def get_email_suggestions(account: str, query: str, limit: int = 5) -> list[str]:
-	"""Returns email suggestions based on the given query."""
+@frappe.whitelist()
+def search_email_addresses(account: str, text: str, limit: int = 10) -> list[dict]:
+	"""Search the account's local address index for names/emails matching `text`."""
 
-	if not query:
-		return []
+	get_user_for_jmap_account(account, raise_exception=True)
 
-	has_permission_for_user(frappe.session.user)
-	service = get_email_service(*parse_account(account))
-	return service.get_email_suggestions(query, limit)
+	return get_email_address_index(account).search_email_addresses(text, limit=cint(limit))
 
 
 @frappe.whitelist()
 def create_mailbox(
-	account_id: str,
+	account: str,
 	name: str,
 	parent: str | None = None,
 	icon: str | None = None,
@@ -836,10 +985,6 @@ def create_mailbox(
 ) -> str:
 	"""Creates a new mailbox and initializes its settings for the given account."""
 
-	account = get_session_account(account_id)
-
-	# Create the mailbox and persist its automation rules to Mailbox Settings (the backup the sieve is
-	# generated from) without firing a per-write rebuild, then build the script once from the backups.
 	with pause_automation_sieve_build():
 		mailbox_id = add_mailbox(account, name, None, parent)
 		set_mailbox_settings(
@@ -851,12 +996,12 @@ def create_mailbox(
 			**automation_rules_to_settings(automation_rules),
 		)
 
-	build_automation_sieve(account)
+	build_automation_sieve(account, activate=True)
 
 
 @frappe.whitelist()
 def update_mailbox(
-	account_id: str,
+	account: str,
 	id: str,
 	name: str,
 	old_name: str,
@@ -869,11 +1014,8 @@ def update_mailbox(
 ) -> None:
 	"""Updates Mailbox Settings for the given mailbox ID."""
 
-	account = get_session_account(account_id)
+	is_jmap_account_belongs_to_user(account, raise_exception=True)
 
-	# Persist the automation rules and any rename/move to Mailbox Settings (the backup the sieve is
-	# generated from) without firing a per-write rebuild, then build the script once — after the rename
-	# lands — so the regenerated folder paths are correct.
 	with pause_automation_sieve_build():
 		set_mailbox_settings(
 			account,
@@ -887,44 +1029,43 @@ def update_mailbox(
 			**automation_rules_to_settings(automation_rules),
 		)
 
-	build_automation_sieve(account)
+	build_automation_sieve(account, activate=True)
 
 
 @frappe.whitelist()
-def delete_mailbox(account_id: str, id: str, name: str) -> None:
+def delete_mailbox(account: str, id: str, name: str) -> None:
 	"""Deletes the mailbox with the given mailbox ID, followed by its settings."""
 
-	account = get_session_account(account_id)
-
 	delete_mailboxes(account, [id])
-	frappe.db.delete("Mailbox Settings", {"account_id": parse_account(account)[1], "mailbox_id": id})
-	build_automation_sieve(account)
+	frappe.db.delete("Mailbox Settings", {"account": account, "mailbox_id": id})
+	build_automation_sieve(account, activate=True)
 
 
 @frappe.whitelist()
-def get_screened_addresses(account_id: str) -> list[dict]:
+def get_screened_addresses(account: str) -> list[dict]:
 	"""Returns the screened email addresses (each with its `action`) for the given account."""
 
-	account = get_session_account(account_id)
+	is_jmap_account_belongs_to_user(account, raise_exception=True)
 
-	has_permission_for_user(parse_account(account)[0])
 	return get_screened_email_addresses(account)
 
 
 @frappe.whitelist()
-def screen_email_address(account_id: str, email: str, action: str = "Reject") -> None:
+def screen_email_address(account: str, email: str, action: str = "Reject") -> None:
 	"""Screens a single email address for the given account with the given action.
 
 	`action` is Reject, Spam, or Accepted. Used by explicit user actions, so it overrides any
 	existing rule for the sender.
 	"""
 
-	_screen_email_addresses(get_session_account(account_id), [email], action)
+	is_jmap_account_belongs_to_user(account, raise_exception=True)
+
+	_screen_email_addresses(account, [email], action)
 
 
 @frappe.whitelist()
 def screen_email_addresses(
-	account_id: str, emails: list[str], action: str = "Reject", override: bool = True
+	account: str, emails: list[str], action: str = "Reject", override: bool = True
 ) -> None:
 	"""Screens multiple email addresses for the given account in a single request.
 
@@ -937,7 +1078,9 @@ def screen_email_addresses(
 	automated flows like auto-junk pass `override=False` so they never clobber a manual decision.
 	"""
 
-	_screen_email_addresses(get_session_account(account_id), emails, action, override)
+	is_jmap_account_belongs_to_user(account, raise_exception=True)
+
+	_screen_email_addresses(account, emails, action, override)
 
 
 def _screen_email_addresses(
@@ -949,18 +1092,21 @@ def _screen_email_addresses(
 	if action not in ("Spam", "Reject", "Accepted"):
 		frappe.throw(_("Invalid screening action: {0}").format(action))
 
-	user, account_id = parse_account(account)
-	has_permission_for_user(user)
-
+	# Normalise + validate here too: bulk_insert below bypasses the doctype's validate hook, and this
+	# is the choke point every screening flow (settings UI, mark-as-junk, auto-accept) funnels through.
+	emails = [normalize_screened_value(email) for email in emails]
 	emails = [email for email in dict.fromkeys(emails) if email]  # de-duplicate, drop empties
 	if not emails:
 		return
+
+	for email in emails:
+		validate_screened_value(email, raise_exception=True)
 
 	existing = {
 		row.email: row
 		for row in frappe.db.get_all(
 			"Screened Email Address",
-			filters={"account_id": account_id, "email": ["in", emails]},
+			filters={"account": account, "email": ["in", emails]},
 			fields=["name", "email", "action"],
 		)
 	}
@@ -972,15 +1118,15 @@ def _screen_email_addresses(
 		if row:
 			if override and row.action != action:
 				frappe.db.set_value(
-					"Screened Email Address", row.name, "action", action, update_modified=False
+					"Screened Email Address", row.name, "action", action, update_modified=True
 				)
 				changed = True
 			continue
-		# bulk_insert bypasses before_insert, so set the shared account_id (the key) explicitly.
+		# bulk_insert bypasses before_insert, so set the shared account (the key) explicitly.
 		doc = frappe.get_doc(
 			{
 				"doctype": "Screened Email Address",
-				"account_id": account_id,
+				"account": account,
 				"email": email,
 				"action": action,
 			}
@@ -993,7 +1139,7 @@ def _screen_email_addresses(
 		changed = True
 
 	if changed:
-		build_automation_sieve(account)
+		build_automation_sieve(account, activate=True)
 
 
 def auto_accept_recipients(account: str, recipients: list) -> None:
@@ -1003,7 +1149,7 @@ def auto_accept_recipients(account: str, recipients: list) -> None:
 	swallowed — auto-accept must never block sending.
 	"""
 
-	from suite.mail.api.sieve import is_screening_enabled
+	from suite.mail.doctype.sieve_script.sieve_script import is_screening_enabled
 
 	try:
 		if not is_screening_enabled(account):
@@ -1013,39 +1159,36 @@ def auto_accept_recipients(account: str, recipients: list) -> None:
 		if emails:
 			_screen_email_addresses(account, emails, action="Accepted", override=False)
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Screening Auto-Accept Error"),
 			_("Failed to auto-accept recipients for account {0}").format(account),
 		)
 
 
 @frappe.whitelist()
-def unscreen_email_addresses(account_id: str, emails: list[str]) -> None:
+def unscreen_email_addresses(account: str, emails: list[str]) -> None:
 	"""Removes screening rules by deleting Screened Email Address records and regenerating the sieve.
 
-	Scoped to the shared account_id (not the per-user handle), so a rule added by any user on a
+	Scoped to the shared account (not the per-user handle), so a rule added by any user on a
 	shared account can be removed. `frappe.db.delete` bypasses the doctype's `after_delete` hook, so
 	the screening sieve blocks are rebuilt explicitly here.
 	"""
 
-	account = get_session_account(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
+	is_jmap_account_belongs_to_user(account, raise_exception=True)
 
 	if not emails:
 		return
 
-	account_id = parse_account(account)[1]
 	deleted = frappe.db.get_all(
 		"Screened Email Address",
-		filters={"account_id": account_id, "email": ["in", emails]},
+		filters={"account": account, "email": ["in", emails]},
 		pluck="name",
 	)
 	if not deleted:
 		return
 
 	frappe.db.delete("Screened Email Address", {"name": ["in", deleted]})
-	build_automation_sieve(account)
+	build_automation_sieve(account, activate=True)
 
 
 # --- Screener (the screening folder view) ---------------------------------------------------------
@@ -1054,7 +1197,7 @@ def unscreen_email_addresses(account_id: str, emails: list[str]) -> None:
 def _screening_message_ids(account: str, from_email: str | None = None) -> list[str]:
 	"""Return ids of Screening-folder messages, optionally only those from a given sender."""
 
-	screening_id = get_mailbox_id_by_name(*parse_account(account), SCREENER_MAILBOX_NAME)
+	screening_id = get_mailbox_id_by_name(account, SCREENER_MAILBOX_NAME)
 	if not screening_id:
 		add_mailbox(account, SCREENER_MAILBOX_NAME)
 		return []
@@ -1064,24 +1207,20 @@ def _screening_message_ids(account: str, from_email: str | None = None) -> list[
 		conditions.append({"from": from_email})
 	filter = conditions[0] if len(conditions) == 1 else {"operator": "AND", "conditions": conditions}
 
-	service = get_email_service(*parse_account(account))
+	service = get_email_service(account)
 
 	return service.query(filter, limit=service.max_objects_in_get).get("ids", [])
 
 
 @frappe.whitelist()
-def get_screening_senders(account_id: str) -> list[dict]:
+def get_screening_senders(account: str) -> list[dict]:
 	"""Return one row per unique sender in the Screening folder, newest sender first.
 
 	The Screener groups by sender rather than by conversation: each row is the latest mail from that
 	sender, with a count of how many of their messages are waiting and how many are unread.
 	"""
 
-	account = get_session_account(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
-
-	screening_id = get_mailbox_id_by_name(*parse_account(account), SCREENER_MAILBOX_NAME)
+	screening_id = get_mailbox_id_by_name(account, SCREENER_MAILBOX_NAME)
 	if not screening_id:
 		add_mailbox(account, SCREENER_MAILBOX_NAME)
 		return []
@@ -1121,12 +1260,8 @@ def get_screening_senders(account_id: str) -> list[dict]:
 
 
 @frappe.whitelist()
-def get_screening_sender_mails(account_id: str, from_email: str) -> list[dict]:
+def get_screening_sender_mails(account: str, from_email: str) -> list[dict]:
 	"""Return all Screening-folder messages from a single sender, oldest to newest (with bodies)."""
-
-	account = get_session_account(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
 
 	ids = _screening_message_ids(account, from_email)
 	if not ids:
@@ -1142,47 +1277,37 @@ def get_screening_sender_mails(account_id: str, from_email: str) -> list[dict]:
 
 
 @frappe.whitelist()
-def allow_screening_senders(account_id: str, from_emails: list[str]) -> None:
+def allow_screening_senders(account: str, from_emails: list[str]) -> None:
 	"""Allow senders in: accept them (future mail reaches the inbox) and move their screened mail there."""
 
-	account = get_session_account(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
 	if not from_emails:
 		return
 
 	_screen_email_addresses(account, from_emails, action="Accepted")
 
-	inbox_id = get_mailbox_id_by_role(*parse_account(account), "inbox", raise_exception=True)
+	inbox_id = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
 	for from_email in from_emails:
 		ids = _screening_message_ids(account, from_email)
 		if ids:
-			move_mails(account_id, ids, inbox_id, clear_junk=True)
+			move_mails(account, ids, inbox_id, clear_junk=True)
 
 
 @frappe.whitelist()
-def move_screening_mails_to_inbox(account_id: str) -> None:
+def move_screening_mails_to_inbox(account: str) -> None:
 	"""Move every Screening-folder message to the Inbox (offered when screening is turned off)."""
-
-	account = get_session_account(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
 
 	ids = _screening_message_ids(account)
 	if not ids:
 		return
 
-	inbox_id = get_mailbox_id_by_role(*parse_account(account), "inbox", raise_exception=True)
-	move_mails(account_id, ids, inbox_id, clear_junk=True)
+	inbox_id = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
+	move_mails(account, ids, inbox_id, clear_junk=True)
 
 
 @frappe.whitelist()
-def screen_out_senders(account_id: str, from_emails: list[str]) -> None:
+def screen_out_senders(account: str, from_emails: list[str]) -> None:
 	"""Screen senders out: mark them Spam (future mail to Junk) and move their screened mail to Junk."""
 
-	account = get_session_account(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
 	if not from_emails:
 		return
 
@@ -1191,7 +1316,7 @@ def screen_out_senders(account_id: str, from_emails: list[str]) -> None:
 	for from_email in from_emails:
 		ids = _screening_message_ids(account, from_email)
 		if ids:
-			set_mails_spam_status(account_id, ids, spam=True)
+			set_mails_spam_status(account, ids, spam=True)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

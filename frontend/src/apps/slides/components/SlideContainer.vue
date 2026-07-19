@@ -80,6 +80,7 @@ import {
 	activeElement,
 	focusElementId,
 	pairElementId,
+	dragOccurred,
 	addFixedWidthToElement,
 	setEditableState,
 	duplicateElements,
@@ -239,6 +240,7 @@ const triggerDrag = (e, id) => {
 	if (isMultiSelect && isNotInSelection) return
 
 	if (notEditable || isMultiSelect) {
+		dragOccurred.value = true
 		startDragging(e)
 
 		if (id && !isMultiSelect && activeElementIds.value[0] !== id) {
@@ -298,6 +300,8 @@ const handleMouseDown = (e, element) => {
 
 	e.stopPropagation()
 	e.preventDefault()
+
+	dragOccurred.value = false
 
 	if (e.altKey || e.ctrlKey) return duplicateAndDrag(e, id)
 

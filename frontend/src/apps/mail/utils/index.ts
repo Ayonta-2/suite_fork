@@ -92,6 +92,25 @@ export const raisePromiseToast = (
 	toast.promise(action(), { loading, success, error })
 }
 
+// Toast for an OPTIMISTIC action: the UI has already updated, so show the success message (with an
+// optional Undo) immediately — no "…ing" loading phase. If the (already in-flight) request fails, the
+// caller rolls the UI back; this only swaps the confirmation for an error toast.
+export const raiseOptimisticToast = (
+	forward: Promise<unknown>,
+	success: string,
+	undoAction?: () => void,
+) => {
+	toast.removeAll()
+	const id = toast.success(
+		success,
+		undoAction ? { action: { label: __('Undo'), onClick: () => undoAction() } } : undefined,
+	)
+	forward.catch(() => {
+		toast.dismiss(id)
+		raiseToast(__('Action failed. Please try again later.'), 'error')
+	})
+}
+
 export const copyToClipBoard = async (text: string) => {
 	try {
 		await navigator.clipboard.writeText(text)
@@ -152,6 +171,10 @@ export const getFormattedDate = (date: Date | string, omitDate = false) => {
 }
 
 export const getFirstAlphabet = (str?: string) => str?.match(/\p{L}/u)?.[0]
+
+// The letter on a sender's avatar: their name's first, or their address's when they go by no name.
+export const getSenderInitial = (sender: { from_name?: string; from_email?: string }) =>
+	getFirstAlphabet(sender.from_name) || getFirstAlphabet(sender.from_email)
 
 export const getTheme = (
 	status: 'Draft' | 'Queued' | 'In Progress' | 'Completed' | 'Failed' | 'Cancelled',
@@ -242,6 +265,31 @@ export const convertHtmlToText = (html: string) => {
 }
 
 export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
+
+// A domain entry, prefixed with @ (e.g. @example.com). Used by screening to trust/block a whole domain.
+// Mirrors the backend's DOMAIN_NAME_PATTERN: 1-63 char labels of letters/digits/hyphens (no leading or
+// trailing hyphen), joined by dots, at most 253 chars overall — so the Add button never enables a value
+// the API would reject.
+export const isDomain = (s: string) =>
+	/^@(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$/.test(s)
+
+// A screened value: either a full email address or a whole domain (@example.com).
+export const isEmailOrDomain = (s: string) => isEmail(s) || isDomain(s)
+
+// Whether `email` is covered by the screened value `value` — either an exact address match, or a
+// '@domain' entry (@example.com) that matches every sender from that domain. Case-insensitive, mirroring
+// the backend's sieve matching so a sender from an accepted/blocked domain is treated consistently.
+export const matchesScreenedValue = (email: string, value: string) => {
+	const normalizedEmail = (email ?? '').trim().toLowerCase()
+	const normalizedValue = (value ?? '').trim().toLowerCase()
+	if (!normalizedEmail || !normalizedValue) return false
+
+	if (normalizedValue.startsWith('@')) {
+		return normalizedEmail.split('@').pop() === normalizedValue.slice(1)
+	}
+
+	return normalizedEmail === normalizedValue
+}
 
 // An externally-hosted reference (http/https or protocol-relative //). cid: (inline attachments) and
 // data: URIs are part of the message, so they're never remote.

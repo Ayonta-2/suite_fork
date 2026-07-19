@@ -17,6 +17,7 @@ import sheetsLogo from '@/assets/app-logos/sheets.svg'
 import slidesLogo from '@/assets/app-logos/slides.svg'
 import suiteLogo from '@/assets/app-logos/suite.svg'
 import writerLogo from '@/assets/app-logos/writer.png'
+import { jmapUser, systemUser } from '@/boot/session'
 
 export interface SuiteApp {
   id: string
@@ -26,6 +27,14 @@ export interface SuiteApp {
   prefix: string
   /** Imported, build-fingerprinted brand-logo URL. */
   logo: string
+}
+
+export interface SuiteAppSwitcherItem {
+  name: string
+  title: string
+  route: string
+  logo: string
+  spa: boolean
 }
 
 export const SUITE_LOGO = suiteLogo
@@ -39,3 +48,30 @@ export const SUITE_APPS: SuiteApp[] = [
   { id: 'mail', name: 'Mail', prefix: '/mail', logo: mailLogo },
   { id: 'calendar', name: 'Calendar', prefix: '/calendar', logo: calendarLogo },
 ]
+
+export const SUITE_APP_SWITCHER_ITEMS: SuiteAppSwitcherItem[] = SUITE_APPS.map((app) => ({
+  name: app.id,
+  title: app.name,
+  route: app.prefix,
+  logo: app.logo,
+  spa: true,
+}))
+
+export const DESK_APP_SWITCHER_ITEM: SuiteAppSwitcherItem = {
+  name: 'frappe',
+  title: 'Desk',
+  route: '/app',
+  logo: '/assets/frappe/images/framework.png',
+  spa: false,
+}
+
+export function getAppSwitcherItems(currentApp: string): SuiteAppSwitcherItem[] {
+  const items = [
+    ...(systemUser.value ? [DESK_APP_SWITCHER_ITEM] : []),
+    ...SUITE_APP_SWITCHER_ITEMS.filter((app) => app.name !== currentApp),
+  ]
+  if (!jmapUser.value) {
+    return items.filter((app) => app.name !== 'mail' && app.name !== 'calendar')
+  }
+  return items
+}

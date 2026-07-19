@@ -1,7 +1,7 @@
 import {
 	createNoiseSuppressionAudioWorklet,
 	type NoiseSuppressionAudioWorkletHandle,
-} from "@workadventure/noise-suppression/audio-worklet";
+} from "@/shims/noise-suppression-audio-worklet";
 import { onUnmounted, type Ref, ref } from "vue";
 
 const DTLN_SAMPLE_RATE = 16000;
@@ -32,8 +32,8 @@ interface PreloadedWorklet {
  * Composable for noise cancellation using DTLN (via @workadventure/noise-suppression).
  *
  * DTLN is hard-coded to 16 kHz mono, 512-sample frames. The worklet is
- * preloaded at composable init so toggling never waits on wasm/model load.
- * On toggle, the raw and denoised branches are crossfaded over 50 ms to
+ * loaded on first use (lazy) so it does not consume resources until noise
+ * cancellation is actually enabled. On toggle, the raw and denoised branches are crossfaded over 50 ms to
  * avoid an audible click. If preload or apply fails, the caller falls
  * back to the raw stream and `error` is set.
  */
@@ -226,9 +226,6 @@ export function useNoiseCancellation(): UseNoiseCancellationReturn {
 		}
 		preloaded = null;
 	});
-
-	// Kick off preload eagerly so toggling is instant.
-	void preloadWorklet();
 
 	return {
 		isProcessing,

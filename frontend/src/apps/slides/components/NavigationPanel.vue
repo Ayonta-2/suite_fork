@@ -63,7 +63,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, useTemplateRef, useAttrs, inject } from 'vue'
+import { ref, computed, watch, useTemplateRef, useAttrs, inject, onActivated, nextTick } from 'vue'
 
 import { ContextMenu } from 'frappe-ui'
 
@@ -222,10 +222,10 @@ const handleHoverChange = (e) => {
 	}
 }
 
-const scrollToVirtualItem = (index) => {
+const scrollToVirtualItem = (index, behavior = 'smooth') => {
 	rowVirtualizer.value.scrollToIndex(index, {
 		align: 'center',
-		behavior: 'smooth',
+		behavior,
 	})
 }
 
@@ -245,8 +245,8 @@ const scrollToSlide = (index) => {
 
 	const virtualItem = rowVirtualizer.value.getVirtualItems().find((v) => v.index === index)
 	if (!virtualItem) {
-		// item is not rendered by virtual list so scroll directly without checking visibility
-		return scrollToVirtualItem(index)
+		// jump instantly; a smooth scroll here can stall on re-measurement during a reload
+		return scrollToVirtualItem(index, 'auto')
 	}
 
 	const fullyVisible = isItemFullyVisible(scrollElement, virtualItem)
@@ -273,4 +273,15 @@ watch(
 		scrollToSlide(index)
 	},
 )
+
+// keep-alive detaches the panel and resets scrollTop, but the virtualizer keeps its cached
+// offset (no scroll event fires); dispatch one so it re-reads before repositioning
+onActivated(() => {
+	nextTick(() => {
+		const scrollElement = scrollableArea.value
+		if (!scrollElement || !isNavigationPanelOpen.value) return
+		scrollElement.dispatchEvent(new Event('scroll'))
+		rowVirtualizer.value.scrollToIndex(slideIndex.value, { align: 'start', behavior: 'auto' })
+	})
+})
 </script>

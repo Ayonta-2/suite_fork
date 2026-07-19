@@ -3,12 +3,12 @@ from typing import ClassVar, Literal
 import frappe
 
 from suite import __version__
-from suite.mail.jmap.models import EmailCreateModel, EmailRecipient
+from suite.mail.jmap.models import EmailAttachment, EmailCreateModel, EmailRecipient
 from suite.mail.jmap.services.core import CallIdGenerator
 from suite.mail.jmap.services.mail.mail import MailService
 from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
-from suite.mail.utils.dt import convert_to_utc
+from suite.utils.dt import convert_to_utc
 
 
 class EmailService(MailService):
@@ -29,7 +29,7 @@ class EmailService(MailService):
 		draft_calls, draft_refs = self._create(emails, call_id_gen)
 		method_calls.extend(draft_calls)
 
-		submission_service = EmailSubmissionService(self.account_id, self.connection)
+		submission_service = EmailSubmissionService(self.account, self.connection)
 		submission_calls = submission_service._create(emails, draft_refs, call_id_gen)
 		method_calls.extend(submission_calls)
 
@@ -65,7 +65,6 @@ class EmailService(MailService):
 			"htmlBody",
 			"textBody",
 			"bodyValues",
-			"preview",
 			"attachments",
 		]
 
@@ -203,7 +202,7 @@ class EmailService(MailService):
 			[
 				f"{self._type}/query",
 				{
-					"accountId": self.account_id,
+					"accountId": self.account,
 					"filter": f,
 					"position": 0,
 					"limit": limit,
@@ -232,7 +231,7 @@ class EmailService(MailService):
 			[
 				"Email/query",
 				{
-					"accountId": self.account_id,
+					"accountId": self.account,
 					"filter": filter or {},
 					"sort": [{"property": "receivedAt", "isAscending": False}],
 					"collapseThreads": True,
@@ -249,7 +248,7 @@ class EmailService(MailService):
 					[
 						"Email/get",
 						{
-							"accountId": self.account_id,
+							"accountId": self.account,
 							"#ids": {
 								"resultOf": "0",
 								"name": "Email/query",
@@ -262,7 +261,7 @@ class EmailService(MailService):
 					[
 						"Thread/get",
 						{
-							"accountId": self.account_id,
+							"accountId": self.account,
 							"#ids": {
 								"resultOf": "1",
 								"name": "Email/get",
@@ -324,7 +323,7 @@ class EmailService(MailService):
 			[
 				f"{self._type}/query",
 				{
-					"accountId": self.account_id,
+					"accountId": self.account,
 					"filter": f,
 					"position": 0,
 					"limit": limit,
@@ -362,7 +361,7 @@ class EmailService(MailService):
 		method_calls = []
 		draft_refs = {}
 
-		mailbox_service = MailboxService(self.account_id, self.connection)
+		mailbox_service = MailboxService(self.account, self.connection)
 		draft_mailbox_id = mailbox_service.get_mailbox_id_by_role(
 			"drafts", create_if_not_exists=True, raise_exception=True
 		)
@@ -382,7 +381,7 @@ class EmailService(MailService):
 					[
 						f"{self.type}/import",
 						{
-							"accountId": self.account_id,
+							"accountId": self.account,
 							"emails": {
 								draft_ref: {
 									"blobId": blob["blobId"],
@@ -401,7 +400,7 @@ class EmailService(MailService):
 						[
 							f"{self.type}/set",
 							{
-								"accountId": self.account_id,
+								"accountId": self.account,
 								"destroy": [email.existing_id],
 							},
 							call_id_gen.next(),
@@ -414,7 +413,7 @@ class EmailService(MailService):
 
 			else:
 				payload = {
-					"accountId": self.account_id,
+					"accountId": self.account,
 					"create": {draft_ref: self._get_draft(email, draft_mailbox_id)},
 				}
 
@@ -479,8 +478,10 @@ class EmailService(MailService):
 		# Body parts
 		draft["bodyValues"] = {}
 
+		text_part = html_part = None
+
 		if email.text_body:
-			draft["textBody"] = [{"partId": "text", "type": "text/plain"}]
+			text_part = {"partId": "text", "type": "text/plain"}
 			draft["bodyValues"]["text"] = {
 				"value": email.text_body,
 				"charset": "utf-8",
@@ -488,7 +489,7 @@ class EmailService(MailService):
 			}
 
 		if email.html_body:
-			draft["htmlBody"] = [{"partId": "html", "type": "text/html"}]
+			html_part = {"partId": "html", "type": "text/html"}
 			draft["bodyValues"]["html"] = {
 				"value": email.html_body,
 				"charset": "utf-8",
@@ -496,16 +497,59 @@ class EmailService(MailService):
 			}
 
 		# Attachments
-		if email.attachments:
-			draft["attachments"] = [
-				{
-					"name": a.name,
-					"type": a.type,
-					"cid": a.cid,
-					"blobId": a.blob_id,
-					"disposition": a.disposition,
+		attachments = email.attachments or []
+		inline_attachments = [a for a in attachments if a.disposition == "inline"]
+		regular_attachments = [a for a in attachments if a.disposition != "inline"]
+		body_parts = [p for p in (text_part, html_part) if p]
+
+		if inline_attachments and body_parts:
+			# Inline images are referenced from the HTML body via `cid:` URLs. Build an
+			# explicit MIME structure that nests them inside a `multipart/related` container
+			# (next to the body) instead of letting them become plain siblings of the body in
+			# `multipart/mixed`. Some providers (e.g. AWS) treat every `multipart/mixed` part
+			# as a regular attachment and reject inline images by extension, whereas clients
+			# like Gmail wrap them in `multipart/related` so they are recognized as inline.
+			body_root = (
+				{"type": "multipart/alternative", "subParts": body_parts}
+				if len(body_parts) > 1
+				else body_parts[0]
+			)
+
+			body_structure = {
+				"type": "multipart/related",
+				"subParts": [body_root, *(EmailService._get_body_part(a) for a in inline_attachments)],
+			}
+
+			if regular_attachments:
+				body_structure = {
+					"type": "multipart/mixed",
+					"subParts": [
+						body_structure,
+						*(EmailService._get_body_part(a) for a in regular_attachments),
+					],
 				}
-				for a in email.attachments
-			]
+
+			draft["bodyStructure"] = body_structure
+		else:
+			# No inline images: let the server assemble the structure from the convenience
+			# properties (`multipart/alternative` for the body, `multipart/mixed` for attachments).
+			if text_part:
+				draft["textBody"] = [text_part]
+			if html_part:
+				draft["htmlBody"] = [html_part]
+			if attachments:
+				draft["attachments"] = [EmailService._get_body_part(a) for a in attachments]
 
 		return draft
+
+	@staticmethod
+	def _get_body_part(attachment: EmailAttachment) -> dict[str, str]:
+		"""Helper function to build an EmailBodyPart payload for an attachment."""
+
+		return {
+			"name": attachment.name,
+			"type": attachment.type,
+			"cid": attachment.cid,
+			"blobId": attachment.blob_id,
+			"disposition": attachment.disposition,
+		}

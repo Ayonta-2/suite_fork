@@ -9,15 +9,33 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from suite.mail.doctype.account_settings.account_settings import sync_account_settings
+from suite.mail.doctype.jmap_account.jmap_account import sync_jmap_accounts
 from suite.mail.jmap import get_jmap_session_manager
 from suite.mail.jmap.connection import JMAPConnection, JMAPConnectionInfo
 from suite.mail.utils import get_config
-from suite.mail.utils.dt import timestamp_to_datetime
-from suite.mail.utils.user import is_system_manager
+from suite.utils.dt import timestamp_to_datetime
+from suite.utils.user import is_system_manager
 
 
 class UserSettings(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		app_password: DF.Password | None
+		backup_email: DF.Data | None
+		color_scheme: DF.Literal["System Default", "Light Mode", "Dark Mode"]
+		group_messages_by: DF.Literal["None", "Day", "Month"]
+		show_reading_pane: DF.Check
+		skip_schedule_fetch_changes: DF.Check
+		user: DF.Link
+		username: DF.Data | None
+	# end: auto-generated types
+
 	@property
 	def server_url(self) -> str | None:
 		"""Returns the server URL from the configuration."""
@@ -56,11 +74,16 @@ class UserSettings(Document):
 		"""Returns a JMAP connection for the user if the username and app password are set, otherwise returns None."""
 
 		if self.username and self.get_password("app_password"):
-			server_url = get_config("server_url")
+			server_url, verify_ssl = get_config(("server_url", "verify_ssl"))
 
 			try:
 				return JMAPConnection(
-					JMAPConnectionInfo(server_url, self.username, self.get_password("app_password"))
+					JMAPConnectionInfo(
+						server_url,
+						self.username,
+						self.get_password("app_password"),
+						verify_ssl=bool(verify_ssl),
+					)
 				)
 			except Exception:
 				pass
@@ -76,7 +99,7 @@ class UserSettings(Document):
 
 	def on_update(self) -> None:
 		if connection := self.connection:
-			sync_account_settings(self.user, connection.accounts)
+			sync_jmap_accounts(self.user, connection.accounts)
 
 	def validate_jmap_settings(self) -> None:
 		"""Validate the JMAP settings by connecting to the JMAP server."""

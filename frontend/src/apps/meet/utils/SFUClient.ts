@@ -2,10 +2,12 @@
 // For license information, please see license.txt
 
 import { frappeRequest } from "frappe-ui";
-import { io, type Socket } from "socket.io-client";
 import { normalizeCodecStrategy } from "./media/codecStrategy";
+import type { E2eeEpochEnvelope } from "./media/E2EEEpochSignaling";
+import { getE2EETransformCapability } from "./media/e2ee";
+import type { SignalChannel } from "./media/SignalChannel";
 
-interface ConnectionDetails {
+export interface ConnectionDetails {
 	authToken: string | null;
 	meetingId: string | null;
 	userId: string | null;
@@ -13,7 +15,104 @@ interface ConnectionDetails {
 	sfuPort: string | null;
 	tokenExpiresAt: number | null;
 	codecStrategy: string;
+	e2eeRequired: boolean;
+	isHost: boolean;
+	isCohost: boolean;
 	userData?: Record<string, unknown>;
+}
+
+/**
+ * Map a join/API payload that already includes SFU fields into ConnectionDetails.
+ * Prefer this over a second Frappe round-trip when join_meeting already returned
+ * auth_token + sfu_url. Lobby-only payloads (lobby_token / waiting) return null.
+ */
+export function connectionDetailsFromJoinPayload(
+	payload: Record<string, unknown>,
+	options: {
+		guestAuthToken?: string | null;
+		guestId?: string | null;
+		guestName?: string | null;
+		expectedMeetingId?: string | null;
+	} = {},
+): ConnectionDetails | null {
+	if (payload.lobby_token && !payload.auth_token && !options.guestAuthToken) {
+		return null;
+	}
+	if (payload.status === "waiting_for_approval") {
+		return null;
+	}
+
+	const authToken =
+		(typeof payload.auth_token === "string" && payload.auth_token) ||
+		(typeof options.guestAuthToken === "string" && options.guestAuthToken) ||
+		null;
+	const sfuUrl =
+		typeof payload.sfu_url === "string" && payload.sfu_url
+			? payload.sfu_url
+			: null;
+	if (!authToken || !sfuUrl) {
+		return null;
+	}
+
+	const meetingId =
+		typeof payload.meeting_id === "string" ? payload.meeting_id : null;
+	if (
+		options.expectedMeetingId &&
+		meetingId &&
+		meetingId !== options.expectedMeetingId
+	) {
+		return null;
+	}
+
+	const expiresInSeconds =
+		typeof payload.expires_in === "number" && payload.expires_in > 0
+			? payload.expires_in
+			: 3600;
+
+	const isGuest = Boolean(
+		options.guestId ||
+			options.guestAuthToken ||
+			payload.guest_id ||
+			(payload.user_data as Record<string, unknown> | undefined)?.is_guest,
+	);
+
+	if (options.guestId) {
+		const payloadGuestId =
+			typeof payload.guest_id === "string" ? payload.guest_id : null;
+		if (payloadGuestId && payloadGuestId !== options.guestId) {
+			return null;
+		}
+	}
+
+	const userId = options.guestId
+		? options.guestId
+		: (typeof payload.user_id === "string" && payload.user_id) || null;
+
+	return {
+		authToken,
+		meetingId: meetingId || options.expectedMeetingId || null,
+		userId,
+		sfuUrl,
+		sfuPort:
+			payload.sfu_port != null && payload.sfu_port !== ""
+				? String(payload.sfu_port)
+				: null,
+		userData:
+			(payload.user_data as Record<string, unknown> | undefined) ||
+			(isGuest
+				? {
+						name: options.guestName || payload.guest_name || "Guest",
+						is_guest: true,
+					}
+				: undefined),
+		tokenExpiresAt: Date.now() + expiresInSeconds * 1000,
+		codecStrategy: normalizeCodecStrategy(
+			(payload.codec_strategy as string) || "svc",
+		),
+		e2eeRequired: Boolean(payload.e2ee_required),
+		isHost: Boolean(payload.is_host),
+		isCohost: Boolean(payload.is_cohost),
+	};
 }
 
 interface ConnectionStatus {
@@ -38,18 +137,25 @@ interface SFUConnectionDetailsResponse {
 	user_data: Record<string, unknown>;
 	expires_in: number;
 	codec_strategy: string;
+	e2ee_required?: boolean;
+	is_host?: boolean;
+	is_cohost?: boolean;
 }
 
 interface SFUGuestConnectionDetailsResponse {
 	sfu_url: string;
 	sfu_port: string;
 	codec_strategy: string;
+	e2ee_required?: boolean;
+	is_host?: boolean;
+	is_cohost?: boolean;
 }
 
 interface SFUTokenRefreshResponse {
 	auth_token: string;
 	expires_in: number;
 	codec_strategy: string;
+	e2ee_required?: boolean;
 }
 
 interface SFURouterCapabilitiesResponse {
@@ -79,6 +185,7 @@ interface SFUConsumerResponse {
 	appData?: {
 		type?: string;
 	};
+	senderId?: number;
 	[key: string]: unknown;
 }
 
@@ -89,16 +196,33 @@ interface SFUParticipantsResponse {
 
 type SFUEventHandler = (...args: unknown[]) => void;
 
+export type SFURequestErrorCode = "DISCONNECTED" | "TIMEOUT";
+
+export class SFURequestError extends Error {
+	readonly code: SFURequestErrorCode;
+
+	constructor(code: SFURequestErrorCode, message: string) {
+		super(message);
+		this.name = "SFURequestError";
+		this.code = code;
+	}
+}
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+
 export class SFUClient {
-	socket: Socket | null;
+	signalChannel: SignalChannel;
 	connected: boolean;
 	connectionDetails: ConnectionDetails;
 	eventHandlers: Map<string, SFUEventHandler>;
+	private eventListeners: Map<string, Set<SFUEventHandler>>;
 	isRefreshingToken: boolean;
 	tokenRefreshTimer: ReturnType<typeof setTimeout> | null;
+	ownSenderId: number | null;
+	private pendingRequestRejectors: Set<(error: SFURequestError) => void>;
 
-	constructor() {
-		this.socket = null;
+	constructor(signalChannel: SignalChannel) {
+		this.signalChannel = signalChannel;
 		this.connected = false;
 		this.connectionDetails = {
 			authToken: null,
@@ -108,11 +232,25 @@ export class SFUClient {
 			sfuPort: null,
 			tokenExpiresAt: null,
 			codecStrategy: "svc",
+			e2eeRequired: false,
+			isHost: false,
+			isCohost: false,
 		};
 		this.eventHandlers = new Map();
+		this.eventListeners = new Map();
 		this.isRefreshingToken = false;
 		this.tokenRefreshTimer = null;
+		this.ownSenderId = null;
+		this.pendingRequestRejectors = new Set();
 		this.setupDefaultHandlers();
+	}
+
+	getOwnSenderId(): number | null {
+		return this.ownSenderId;
+	}
+
+	setOwnSenderId(senderId: number | null): void {
+		this.ownSenderId = senderId;
 	}
 
 	// ==================== CONNECTION MANAGEMENT ====================
@@ -120,8 +258,17 @@ export class SFUClient {
 	async connect(
 		meetingId: string,
 		guestAuthToken: string | null = null,
+		prefetchedDetails: ConnectionDetails | null = null,
 	): Promise<boolean> {
 		if (this.connected) {
+			const connectionDetails = await this.getConnectionDetails(
+				meetingId,
+				guestAuthToken,
+				prefetchedDetails,
+			);
+			this.connectionDetails = connectionDetails;
+			this.signalChannel.updateAuth(connectionDetails.authToken ?? "");
+			this.scheduleTokenRefresh();
 			return true;
 		}
 
@@ -129,25 +276,17 @@ export class SFUClient {
 			const connectionDetails = await this.getConnectionDetails(
 				meetingId,
 				guestAuthToken,
+				prefetchedDetails,
 			);
 			this.connectionDetails = connectionDetails;
 			this.scheduleTokenRefresh();
 
 			const { origin, socketPath } = this.getSFUEndpoint();
-			this.socket = io(origin, {
+			await this.signalChannel.connect({
+				origin,
 				path: socketPath,
 				auth: { token: connectionDetails.authToken ?? "" },
-				reconnection: true,
-				reconnectionAttempts: 5,
-				reconnectionDelay: 1000,
-				reconnectionDelayMax: 5000,
-				upgrade: true,
-				transports: ["websocket", "polling"],
-				timeout: 20000,
-				forceNew: true,
-				withCredentials: false,
 			});
-			await this.waitForSocketConnect();
 
 			this.connected = true;
 			this.registerEventHandlers();
@@ -162,7 +301,20 @@ export class SFUClient {
 	async getConnectionDetails(
 		meetingId: string,
 		guestAuthToken: string | null = null,
+		prefetchedDetails: ConnectionDetails | null = null,
 	): Promise<ConnectionDetails> {
+		if (
+			prefetchedDetails?.authToken &&
+			prefetchedDetails?.sfuUrl &&
+			(!prefetchedDetails.meetingId ||
+				prefetchedDetails.meetingId === meetingId)
+		) {
+			return {
+				...prefetchedDetails,
+				meetingId,
+			};
+		}
+
 		if (guestAuthToken) {
 			const guestId = sessionStorage.getItem("guest_id");
 			const guestName = sessionStorage.getItem("guest_name");
@@ -193,6 +345,9 @@ export class SFUClient {
 					},
 					tokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000,
 					codecStrategy: response.codec_strategy || "svc",
+					e2eeRequired: Boolean(response.e2ee_required),
+					isHost: Boolean(response.is_host),
+					isCohost: Boolean(response.is_cohost),
 				};
 			} catch (error) {
 				console.error("Failed to get guest SFU connection details:", error);
@@ -218,6 +373,9 @@ export class SFUClient {
 			userData: response.user_data,
 			tokenExpiresAt,
 			codecStrategy: normalizeCodecStrategy(response.codec_strategy),
+			e2eeRequired: Boolean(response.e2ee_required),
+			isHost: Boolean(response.is_host),
+			isCohost: Boolean(response.is_cohost),
 		};
 	}
 
@@ -244,8 +402,10 @@ export class SFUClient {
 	}
 
 	disconnect(): void {
-		this.socket?.disconnect();
-		this.socket = null;
+		this.rejectPendingRequests(
+			new SFURequestError("DISCONNECTED", "Disconnected from SFU"),
+		);
+		this.signalChannel.disconnect();
 		this.clearTokenRefreshTimer();
 		this.connected = false;
 		this.connectionDetails = {
@@ -256,6 +416,9 @@ export class SFUClient {
 			sfuPort: null,
 			tokenExpiresAt: null,
 			codecStrategy: "svc",
+			e2eeRequired: false,
+			isHost: false,
+			isCohost: false,
 		};
 		this.isRefreshingToken = false;
 	}
@@ -322,8 +485,10 @@ export class SFUClient {
 			this.connectionDetails.codecStrategy = normalizeCodecStrategy(
 				response.codec_strategy || this.connectionDetails.codecStrategy,
 			);
+			this.connectionDetails.e2eeRequired =
+				this.connectionDetails.e2eeRequired || Boolean(response.e2ee_required);
 
-			this.updateSocketAuth(response.auth_token);
+			this.signalChannel.updateAuth(response.auth_token);
 
 			if (!skipServerUpdate && this.connected) {
 				await this.sendRequest("auth:update_token", {
@@ -339,7 +504,7 @@ export class SFUClient {
 
 			return response.auth_token;
 		} catch (error) {
-			console.error("Token refresh failed:", error);
+			console.warn("Token refresh failed:", error);
 			throw error;
 		} finally {
 			this.isRefreshingToken = false;
@@ -399,7 +564,7 @@ export class SFUClient {
 							skipServerUpdate: true,
 						});
 						if (newToken) {
-							this.updateSocketAuth(newToken);
+							this.signalChannel.updateAuth(newToken);
 						}
 						console.log("Updated socket auth token for reconnection");
 					} catch (error: unknown) {
@@ -430,27 +595,53 @@ export class SFUClient {
 		};
 
 		for (const [event, handler] of Object.entries(defaultHandlers)) {
-			this.eventHandlers.set(event, handler);
+			this.addEventListener(event, handler);
 		}
 	}
 
 	registerEventHandlers(): void {
 		for (const [event, handler] of this.eventHandlers.entries()) {
-			this.socket?.on(event, handler);
+			this.signalChannel.on(event, handler);
 		}
 	}
 
 	on(event: string, handler: SFUEventHandler): void {
-		this.eventHandlers.set(event, handler);
-		this.socket?.on(event, handler);
+		const hadDispatcher = this.eventHandlers.has(event);
+		this.addEventListener(event, handler);
+		if (this.connected && !hadDispatcher) {
+			this.signalChannel.on(event, this.eventHandlers.get(event) as SFUEventHandler);
+		}
 	}
 
-	off(event: string): void {
-		const handler = this.eventHandlers.get(event);
+	off(event: string, handler?: SFUEventHandler): void {
 		if (handler) {
-			this.socket?.off(event, handler);
+			const listeners = this.eventListeners.get(event);
+			listeners?.delete(handler);
+			if (listeners?.size) return;
+		}
+
+		const dispatcher = this.eventHandlers.get(event);
+		if (dispatcher) {
+			this.signalChannel.off(event, dispatcher);
 		}
 		this.eventHandlers.delete(event);
+		this.eventListeners.delete(event);
+	}
+
+	private addEventListener(event: string, handler: SFUEventHandler): void {
+		let listeners = this.eventListeners.get(event);
+		if (!listeners) {
+			listeners = new Set();
+			this.eventListeners.set(event, listeners);
+		}
+		listeners.add(handler);
+
+		if (this.eventHandlers.has(event)) return;
+		this.eventHandlers.set(event, (...args: unknown[]) => {
+			for (const listener of this.eventListeners.get(event) || []) {
+				listener(...args);
+			}
+		});
 	}
 
 	// ==================== WEBRTC OPERATIONS ====================
@@ -462,7 +653,7 @@ export class SFUClient {
 		)) as SFURouterCapabilitiesResponse;
 		try {
 			const payload = resp?.rtpCapabilities || resp;
-			return structuredClone(payload);
+			return JSON.parse(JSON.stringify(payload));
 		} catch (err: unknown) {
 			console.warn("Failed to deep-clone router RTP capabilities:", err);
 			return resp?.rtpCapabilities || resp;
@@ -477,9 +668,10 @@ export class SFUClient {
 	}> {
 		const response = (await this.sendRequest("create_webrtc_transport", {
 			direction,
+			encryptionEnabled: this.connectionDetails.e2eeRequired,
 		})) as SFUWebRtcTransportResponse;
 		try {
-			const clean = structuredClone(response);
+			const clean = JSON.parse(JSON.stringify(response));
 			const { id, iceParameters, iceCandidates, dtlsParameters } = clean;
 			return { id, iceParameters, iceCandidates, dtlsParameters };
 		} catch (err: unknown) {
@@ -541,8 +733,11 @@ export class SFUClient {
 		})) as SFUConsumerResponse;
 	}
 
-	async closeProducer(producerId: string): Promise<unknown> {
-		return this.sendRequest("close_producer", { producerId });
+	async closeProducer(
+		producerId: string,
+		metadata: Record<string, unknown> = {},
+	): Promise<unknown> {
+		return this.sendRequest("close_producer", { producerId, ...metadata });
 	}
 
 	async pauseProducer(producerId: string): Promise<unknown> {
@@ -555,6 +750,10 @@ export class SFUClient {
 
 	async closeConsumer(consumerId: string): Promise<unknown> {
 		return this.sendRequest("close_consumer", { consumerId });
+	}
+
+	async requestConsumerKeyFrame(consumerId: string): Promise<unknown> {
+		return this.sendRequest("request_consumer_keyframe", { consumerId });
 	}
 
 	async updateConsumerPreferences({
@@ -602,11 +801,42 @@ export class SFUClient {
 		userData: unknown,
 		mediaState: unknown,
 	): Promise<unknown> {
-		return this.sendRequest("join_room", {
+		const e2eeMode = this.getE2EEMode();
+		const e2eeShouldBeActive = this.isE2EERequired();
+		const result = (await this.sendRequest("join_room", {
 			roomId,
 			userData,
 			mediaState,
-		});
+			e2ee: {
+				enabled: e2eeShouldBeActive,
+				capability: {
+					supported: e2eeMode !== "none",
+					mode: e2eeMode,
+				},
+			},
+		})) as { success?: boolean; senderId?: number };
+		if (result && typeof result.senderId === "number") {
+			this.setOwnSenderId(result.senderId);
+		}
+		return result;
+	}
+
+	setE2EERequired(required: boolean): void {
+		this.connectionDetails.e2eeRequired = required;
+	}
+
+	isE2EERequired(): boolean {
+		return this.connectionDetails.e2eeRequired;
+	}
+
+	getE2EEMode(): "insertable-streams" | "rtp-script-transform" | "none" {
+		const capability = getE2EETransformCapability();
+		if (capability === "legacy-insertable-streams") return "insertable-streams";
+		return capability;
+	}
+
+	isInsertableStreamsSupported(): boolean {
+		return getE2EETransformCapability() !== "none";
 	}
 
 	// ==================== SIGNALING OPERATIONS ====================
@@ -621,6 +851,10 @@ export class SFUClient {
 
 	sendIceCandidate(targetUser: unknown, signalData: unknown): void {
 		this.sendEvent("ice_candidate", { targetUser, signalData });
+	}
+
+	sendE2EEEpochEnvelope(envelope: E2eeEpochEnvelope): void {
+		this.sendEvent("e2ee:epoch", envelope);
 	}
 
 	// ==================== MEDIA CONTROL ====================
@@ -660,52 +894,78 @@ export class SFUClient {
 
 	sendRaiseHand(raised: boolean): Promise<unknown> {
 		if (!this.connected) {
-			throw new Error("Not connected to SFU");
+			throw new SFURequestError("DISCONNECTED", "Not connected to SFU");
 		}
-
-		return new Promise((resolve, reject) => {
-			this.socket?.emit(
-				"raise_hand",
-				{ raised },
-				(response: Record<string, unknown>) => {
-					if (response?.success) {
-						resolve(response);
-					} else {
-						reject(
-							new Error((response?.error as string) || "Failed to raise hand"),
-						);
-					}
-				},
-			);
-		});
+		return this.sendRequest("raise_hand", { raised });
 	}
 
 	// ==================== UTILITY METHODS ====================
 
-	async sendRequest(event: string, data: unknown): Promise<unknown> {
+	async sendRequest(
+		event: string,
+		data: unknown,
+		timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+	): Promise<unknown> {
 		return new Promise((resolve, reject) => {
 			if (!this.connected) {
-				reject(new Error("Not connected to SFU"));
+				reject(new SFURequestError("DISCONNECTED", "Not connected to SFU"));
 				return;
 			}
 
-			this.socket?.emit(event, data, (response: SFUResponse) => {
-				if (response.success) {
-					resolve(response);
-				} else {
-					const error = new Error(response.error || `Request failed: ${event}`);
-					console.error(`SFU request failed (${event}):`, response.error);
-					reject(error);
-				}
-			});
+			let settled = false;
+			const finish = (callback: () => void) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
+				this.pendingRequestRejectors.delete(rejectPending);
+				callback();
+			};
+			const rejectPending = (error: SFURequestError) => {
+				finish(() => reject(error));
+			};
+			const timeout = setTimeout(() => {
+				rejectPending(
+					new SFURequestError(
+						"TIMEOUT",
+						`SFU request timed out: ${event}`,
+					),
+				);
+			}, timeoutMs);
+			this.pendingRequestRejectors.add(rejectPending);
+
+			try {
+				this.signalChannel.emit(event, data, (response: SFUResponse) => {
+					finish(() => {
+						if (response.success) {
+							resolve(response);
+						} else {
+							const error = new Error(
+								response.error || `Request failed: ${event}`,
+							);
+							console.error(`SFU request failed (${event}):`, response.error);
+							reject(error);
+						}
+					});
+				});
+			} catch (error) {
+				finish(() => reject(error));
+			}
 		});
+	}
+
+	private rejectPendingRequests(error: SFURequestError): void {
+		const pending = Array.from(this.pendingRequestRejectors);
+		this.pendingRequestRejectors.clear();
+		for (const reject of pending) {
+			reject(error);
+		}
 	}
 
 	sendEvent(event: string, data: unknown): void {
 		if (!this.connected) {
 			throw new Error("Not connected to SFU");
 		}
-		this.socket?.emit(event, data);
+		this.signalChannel.emit(event, data);
 	}
 
 	isConnected(): boolean {
@@ -729,40 +989,7 @@ export class SFUClient {
 			connected: this.connected,
 			meetingId: this.connectionDetails.meetingId,
 			userId: this.connectionDetails.userId,
-			socketId: this.socket?.id ?? null,
+			socketId: this.signalChannel.id(),
 		};
-	}
-
-	private waitForSocketConnect(): Promise<void> {
-		return new Promise((resolve, reject) => {
-			const onConnect = () => resolve();
-			const onConnectError = (error: Error) => {
-				this.socket?.off("connect", onConnect);
-				reject(error);
-			};
-
-			this.socket?.once("connect", onConnect);
-			this.socket?.once("connect_error", onConnectError);
-
-			setTimeout(() => {
-				if (!this.socket?.connected) {
-					this.socket?.off("connect", onConnect);
-					this.socket?.off("connect_error", onConnectError);
-					reject(new Error("SFU socket connection timeout"));
-				}
-			}, 10000);
-		});
-	}
-
-	private updateSocketAuth(token: string): void {
-		if (!this.socket) return;
-		(this.socket.auth as Record<string, unknown>).token = token;
-		const ioOpts = this.socket.io?.opts as Record<string, unknown> | undefined;
-		if (ioOpts && "auth" in ioOpts) {
-			ioOpts.auth = {
-				...((ioOpts.auth as Record<string, unknown> | undefined) || {}),
-				token,
-			};
-		}
 	}
 }

@@ -4,7 +4,7 @@ export * from './doctypes'
 
 export type COLOR_SCHEME = 'System Default' | 'Light Mode' | 'Dark Mode'
 
-// What happens to a sender when one of their messages is marked as Junk (Account Settings).
+// What happens to a sender when one of their messages is marked as Junk (JMAP Account).
 export type OnMarkAsJunk = "Junk Sender's Mail" | 'Ask to Block Sender'
 
 // A screened sender: how their future mail is handled. 'Reject' discards it silently; 'Spam' files
@@ -14,6 +14,22 @@ export type ScreeningAction = 'Reject' | 'Spam' | 'Accepted'
 export interface ScreenedAddress {
 	email: string
 	action: ScreeningAction
+	creation: string
+	modified: string
+}
+
+// A JMAP push subscription (virtual doctype: Push Subscription). Each one registers a device/client
+// with the JMAP server so it receives StateChange notifications. `name` is `user|id` and is the row
+// key used by bulk_delete. `types` is a JSON string of the data types the client subscribes to.
+export interface PushSubscription {
+	user: string
+	id: string
+	name: string
+	device_client_id: string
+	expires: string | null
+	types: string
+	creation: string
+	modified: string
 }
 
 // A row in the Screener: one unique sender in the Screening folder, summarised by their latest mail.
@@ -48,10 +64,10 @@ export interface User {
 
 	mailboxes: { id: string; name: string; role: string }[]
 	// `get_user_info` enriches each account with its per-account outgoing default and
-	// Account Settings doc name (the fields moved off User Settings).
+	// JMAP Account doc name (the fields moved off User Settings).
 	accounts: (UserAccount & {
 		default_outgoing_email?: string
-		account_settings?: string
+		jmap_account?: string
 		on_mark_as_junk?: OnMarkAsJunk
 		enable_screening?: boolean
 		block_remote_images?: boolean
@@ -140,6 +156,13 @@ export interface ComposeMailData {
 export interface Thread {
 	name: string
 	account: string
+	// Populated by the cross-account views (All Inboxes' get_all_inbox_threads and search's
+	// search_mails): the owning account's display name and its Inbox/Archive/Trash mailbox ids, so a
+	// merged row can be opened in / acted on within the correct JMAP account.
+	account_name?: string
+	inbox?: string
+	archive?: string
+	trash?: string
 	id: string
 	thread_id: string
 	from_name: string

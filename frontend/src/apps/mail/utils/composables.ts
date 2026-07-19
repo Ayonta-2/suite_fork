@@ -1,7 +1,8 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { createResource } from 'frappe-ui'
+import { useRouter } from 'vue-router'
+import { createResource, toast } from 'frappe-ui'
 
-import { raisePromiseToast, raiseToast } from '@/apps/mail/utils'
+import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { COLOR_SCHEME, Identity, ScreenedAddress } from '@/apps/mail/types'
@@ -83,7 +84,14 @@ export const useVisualViewport = (calc: (viewport: VisualViewport) => string) =>
 const undoAction = ref<() => void>()
 
 export const useUndo = () => {
-	const setUndoAction = (action?: () => void) => (undoAction.value = action)
+	const setUndoAction = (action?: () => void) => {
+		undoAction.value = action
+		// Clearing the undo with no replacement toast (e.g. leaving the mailbox) leaves a lingering toast
+		// whose "Undo" button is now dead — dismiss toasts. When a new action is set instead, the toast it
+		// raises right after (via raiseOptimisticToast/raisePromiseToast) does the removeAll, and doing it
+		// here too would dismiss the reconcile paths' in-flight loading toast — so only clear on undefined.
+		if (!action) toast.removeAll()
+	}
 
 	const undo = () => {
 		if (!undoAction.value) return
@@ -105,7 +113,7 @@ export const useUndo = () => {
 }
 
 // Shared state for the "Block sender?" prompt shown after marking/moving mail to Junk. A single
-// <BlockSenderModal> (rendered in MailboxView) reacts to this, so any view can open it.
+// <ScreenedEmailAddressModal> (rendered in MailboxView) reacts to this, so any view can open it.
 export interface BlockableSender {
 	name?: string
 	email: string
@@ -129,16 +137,16 @@ export const useBlockSender = () => {
 	// and de-duplicate by email (keeping the first occurrence's display name).
 	const blockableSenders = (senders: { name?: string; email?: string }[]) => {
 		const own = new Set((identities.data ?? []).map((i: Identity) => i.email))
-		// "Already blocked" = screened with the Reject action (their mail is discarded).
-		const blocked = new Set<string>(
-			(screenedAddresses.data ?? [])
-				.filter((a: ScreenedAddress) => a.action === 'Reject')
-				.map((a: ScreenedAddress) => a.email),
-		)
+		// "Already blocked" = screened with the Reject action (their mail is discarded), whether by their
+		// exact address or by a '@domain' entry covering them.
+		const blockedValues = (screenedAddresses.data ?? [])
+			.filter((a: ScreenedAddress) => a.action === 'Reject')
+			.map((a: ScreenedAddress) => a.email)
+		const isBlocked = (email: string) => blockedValues.some((v) => matchesScreenedValue(email, v))
 		const seen = new Set<string>()
 		const result: BlockableSender[] = []
 		for (const { name, email } of senders) {
-			if (!email || own.has(email) || blocked.has(email) || seen.has(email)) continue
+			if (!email || own.has(email) || isBlocked(email) || seen.has(email)) continue
 			seen.add(email)
 			result.push({ name, email })
 		}
@@ -148,7 +156,7 @@ export const useBlockSender = () => {
 	const blockResource = createResource({
 		url: 'suite.mail.api.mail.screen_email_addresses',
 		makeParams: ({ emails }: { emails: string[] }) => ({
-			account_id: store.accountId,
+			account: store.accountId,
 			emails,
 			action: 'Reject',
 		}),
@@ -158,7 +166,7 @@ export const useBlockSender = () => {
 	const junkResource = createResource({
 		url: 'suite.mail.api.mail.screen_email_addresses',
 		makeParams: ({ emails }: { emails: string[] }) => ({
-			account_id: store.accountId,
+			account: store.accountId,
 			emails,
 			action: 'Spam',
 		}),
@@ -168,7 +176,7 @@ export const useBlockSender = () => {
 	const unjunkResource = createResource({
 		url: 'suite.mail.api.mail.unscreen_email_addresses',
 		makeParams: ({ emails }: { emails: string[] }) => ({
-			account_id: store.accountId,
+			account: store.accountId,
 			emails,
 		}),
 		onSuccess: () => screenedAddresses.reload(),
@@ -177,11 +185,31 @@ export const useBlockSender = () => {
 	const unblockResource = createResource({
 		url: 'suite.mail.api.mail.unscreen_email_addresses',
 		makeParams: ({ emails }: { emails: string[] }) => ({
-			account_id: store.accountId,
+			account: store.accountId,
 			emails,
 		}),
 		onSuccess: () => screenedAddresses.reload(),
 	})
+
+	// Optimistically reflect the senders' blocked state so the immediate toast isn't lying, mirroring the
+	// backend exactly: blocking adds an exact-address 'Reject' entry per sender (overriding any existing
+	// rule); unblocking removes the exact-address entries — '@domain' rules that also cover a sender are
+	// left in place, just as the unscreen API leaves them. Returns a revert to restore the list on failure.
+	const applyScreenOptimistic = (emails: string[], block: boolean) => {
+		const prev = screenedAddresses.data
+		if (!prev) return () => {}
+		const isExact = (a: ScreenedAddress) =>
+			!a.email.startsWith('@') && emails.some((email) => matchesScreenedValue(email, a.email))
+		const kept = prev.filter((a: ScreenedAddress) => !isExact(a))
+		const blocked: ScreenedAddress[] = emails.map((email) => ({
+			email,
+			action: 'Reject',
+			creation: '',
+			modified: '',
+		}))
+		screenedAddresses.data = block ? [...kept, ...blocked] : kept
+		return () => (screenedAddresses.data = prev)
+	}
 
 	// Block the senders chosen in the prompt ('Ask to Block Sender' confirm). Blocking becomes the new
 	// undo action: Cmd+Z unblocks (it does not also reverse the junk move, which stays).
@@ -190,15 +218,31 @@ export const useBlockSender = () => {
 		if (!emails.length) return
 
 		setUndoAction(() => {
-			const undoAction = () => unblockResource.submit({ emails })
+			const revert = applyScreenOptimistic(emails, false) // optimistic: unblock reflected at once
+			const forward = (async () => {
+				try {
+					await unblockResource.submit({ emails })
+				} catch (error) {
+					revert()
+					throw error
+				}
+			})()
 			const restored =
 				emails.length === 1 ? __('Sender unblocked.') : __('Senders unblocked.')
-			raisePromiseToast(undoAction, __('Undoing...'), restored)
+			raiseOptimisticToast(forward, restored)
 		})
 
-		const action = () => blockResource.submit({ emails })
+		const revert = applyScreenOptimistic(emails, true) // optimistic: senders shown blocked at once
+		const forward = (async () => {
+			try {
+				await blockResource.submit({ emails })
+			} catch (error) {
+				revert()
+				throw error
+			}
+		})()
 		const success = emails.length === 1 ? __('Sender blocked.') : __('Senders blocked.')
-		raisePromiseToast(action, __('Blocking...'), success, undo)
+		raiseOptimisticToast(forward, success, undo)
 	}
 
 	// File the senders' future mail into Junk (the default 'Junk Sender's Mail'). Side effect only — the
@@ -233,6 +277,26 @@ export const useBlockSender = () => {
 	}
 
 	return { showBlockSender, sendersToBlock, willJunkSenders, promptBlockSenders, blockSenders }
+}
+
+// Navigate to the search results scoped to a sender — Gmail's "Filter messages like this". Lands on the
+// filtered view (mailbox 'search') with a "From" chip the user can refine further. Shared by the message
+// more-actions menu and the clickable sender address in a thread.
+export const useFilterBySender = () => {
+	const router = useRouter()
+	// Read store.accountId live rather than destructuring, so it reflects account switches.
+	const store = userStore()
+
+	const filterBySender = (email: string) => {
+		if (!email) return
+		router.push({
+			name: 'mail-mailbox',
+			params: { accountId: store.accountId, mailbox: 'search' },
+			query: { from: email },
+		})
+	}
+
+	return { filterBySender }
 }
 
 // Shared state for the Settings dialog, so any view can open it (optionally on a specific tab).
@@ -272,8 +336,8 @@ export const useTheme = () => {
 			name: userResource.data?.user_settings,
 			fieldname: { color_scheme },
 		}),
-		onSuccess: (data: { color_scheme: COLOR_SCHEME }) => {
-			raiseToast(__('Color scheme updated to {0}.', [data.color_scheme]))
+		onSuccess: () => {
+			// Reconcile the optimistic value against server truth (sets the same value; harmless).
 			userResource.reload()
 		},
 	})
@@ -283,7 +347,18 @@ export const useTheme = () => {
 		const current = userResource.data?.color_scheme
 		const idx = COLOR_SCHEME_CYCLE.indexOf(current as COLOR_SCHEME)
 		const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
-		updateColorScheme.submit(next)
+
+		// Optimistic: flip the theme and confirm at once, before the server round-trip resolves.
+		const prev = current
+		if (userResource.data) userResource.data.color_scheme = next
+		raiseToast(__('Color scheme updated to {0}.', [next]))
+
+		updateColorScheme.submit(next, {
+			onError: () => {
+				if (userResource.data) userResource.data.color_scheme = prev
+				raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
+			},
+		})
 	}
 
 	return { dataTheme, cycleTheme }

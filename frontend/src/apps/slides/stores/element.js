@@ -33,6 +33,9 @@ const focusElementId = ref(null)
 const pairElementId = ref(null)
 const pendingShapeType = ref(null)
 
+// true once a gesture crosses the drag threshold
+const dragOccurred = ref(false)
+
 const activeElements = computed(() => {
 	let elements = []
 	currentSlide.value?.elements.forEach((element) => {
@@ -1035,6 +1038,7 @@ export {
 	focusElementId,
 	pairElementId,
 	pendingShapeType,
+	dragOccurred,
 	activeElements,
 	activeElement,
 	setActiveElements,

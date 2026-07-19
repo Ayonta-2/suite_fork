@@ -1,227 +1,132 @@
 <template>
-  <div
-    ref="scrollContainer"
-    class="sticky hidden md:flex flex-col gap-8 justify-start self-stretch px-5 bg-surface-base w-72"
-  >
-    <slot />
-    <template
-      v-if="showComments"
-      v-for="comment in filteredComments"
-      :key="comment.id"
-    >
-      <div
-        :id="'comment-' + comment.id"
-        :ref="
-          (el) => {
-            if (el) commentRefs[comment.id] = el
-            else delete commentRefs[comment.id]
-          }
-        "
-        v-on-outside-click="
-          (e) => {
-            if (
-              activeComment === comment.id &&
-              !e.target.getAttribute('data-comment-name') &&
-              e.target.nodeName === 'DIV' &&
-              !comment.new &&
-              !e.target.classList?.contains?.('replies-count')
-            )
-              activeComment = null
-          }
-        "
-        class="absolute rounded shadow w-64 comment-group scroll-m-24 bg-surface-base dark:border"
-        :class="[
-          activeComment === comment.id && 'shadow-xl ',
-          comment.top
-            ? 'opacity-100 pointer-events-auto'
-            : 'opacity-0 pointer-events-none',
-        ]"
-        :style="`top: ${comment.top}px;`"
-        @click="activeComment = comment.id"
-      >
-        <div
-          v-show="
-            activeComment === comment.id &&
-            currentUserId !== 'Guest' &&
-            !comment.new &&
+  <div ref="scrollContainer" class="absolute inset-0">
+    <template v-if="showComments" v-for="comment in filteredComments" :key="comment.id">
+      <Teleport v-if="!collapsed || activeComment === comment.id" :disabled="!isMobile" to="body">
+        <div :id="'comment-' + comment.id" :ref="(el) => {
+        if (el) commentRefs[comment.id] = el
+        else delete commentRefs[comment.id]
+      }
+        " v-on-outside-click="(e) => onOutsideCardClick(e, comment)"
+          class="absolute rounded shadow w-56 comment-group scroll-m-24 bg-surface-base dark:border max-md:fixed max-md:z-20 max-md:inset-x-3 max-md:bottom-3 max-md:top-auto max-md:w-auto max-md:max-h-[65vh] max-md:overflow-y-auto max-md:shadow-xl"
+          :class="[
+            activeComment === comment.id && 'shadow-xl ',
+            isMobile || comment.top
+              ? 'opacity-100 pointer-events-auto'
+              : 'opacity-0 pointer-events-none',
+          ]" :style="cardStyle(comment)" @click="activeComment = comment.id">
+          <Button class="md:!hidden absolute top-1 right-1" size="sm" variant="ghost" :icon="LucideX"
+            @click.stop="activeComment = null" />
+        <div v-show="activeComment === comment.id &&
+          currentUserId !== 'Guest' &&
+          !comment.new &&
+          (comment.owner == currentUserId || file.doc.write)
+          " class="p-1.5 text-sm flex gap-1 border-b text-ink-gray-9"
+          :class="comment.loading && !comment.edit && 'opacity-70'">
+          <Button v-if="
+            !comment.resolved &&
             (comment.owner == currentUserId || file.doc.write)
-          "
-          class="p-1.5 text-sm flex gap-1 border-b text-ink-gray-9"
-          :class="comment.loading && !comment.edit && 'opacity-70'"
-        >
-          <Button
-            v-if="
-              !comment.resolved &&
-              (comment.owner == currentUserId || file.doc.write)
-            "
-            :disabled="comment.loading"
-            variant="ghost"
-            class="!h-5 !text-xs !px-1.5 !rounded-sm"
-            @click="resolve(comment)"
-          >
+          " :disabled="comment.loading" variant="ghost" class="!h-5 !text-xs !px-1.5 !rounded-sm"
+            @click="resolve(comment)">
             <template #prefix>
               <LucideCheck class="size-3.5" />
             </template>
             Resolve
           </Button>
-          <Button
-            v-if="
-              comment.resolved &&
-              (comment.owner == currentUserId || file.doc.write)
-            "
-            :disabled="comment.loading"
-            variant="ghost"
-            class="!h-5 !text-xs !px-1.5 !rounded-sm"
-            @click="resolve(comment, false)"
-          >
+          <Button v-if="
+            comment.resolved &&
+            (comment.owner == currentUserId || file.doc.write)
+          " :disabled="comment.loading" variant="ghost" class="!h-5 !text-xs !px-1.5 !rounded-sm"
+            @click="resolve(comment, false)">
             <template #prefix>
               <LucideMessageCircleCode class="size-3.5" />
             </template>
             Unresolve
           </Button>
-          <Button
-            v-if="
-              comment.owner == currentUserId ||
-              (comment.owner === 'Guest' && file.doc.write)
-            "
-            :disabled="comment.loading"
-            variant="ghost"
-            class="!h-5 !text-xs !px-1.5 !rounded-sm"
-            @click="removeComment(comment.id, true)"
-          >
+          <Button v-if="
+            comment.owner == currentUserId ||
+            (comment.owner === 'Guest' && file.doc.write)
+          " :disabled="comment.loading" variant="ghost" class="!h-5 !text-xs !px-1.5 !rounded-sm"
+            @click="removeComment(comment.id, true)">
             <template #prefix>
               <LucideX class="size-3.5" />
             </template>
             Delete
           </Button>
         </div>
-        <div
-          class="p-3"
-          :class="
-            activeComment !== comment.id &&
-            comment.replies.length > 0 &&
-            'pb-1.5'
-          "
-        >
-          <blockquote
-            v-if="comment.detached"
-            class="text-xs text-ink-gray-8 mb-4"
-          >
+        <div class="p-3" :class="activeComment !== comment.id &&
+          comment.replies.length > 0 &&
+          'pb-1.5'
+          ">
+          <blockquote v-if="comment.detached" class="text-xs text-ink-gray-8 mb-4">
             Replying to:
             <span class="text-ink-gray-5 italic">{{ comment.anchorText }}</span>
           </blockquote>
           <div class="flex flex-col gap-5">
-            <div
-              v-for="(reply, index) in activeComment === comment.id
-                ? [
-                    comment,
-                    ...comment.replies.toSorted((a, b) =>
-                      new Date(a.creation) > new Date(b.creation) ? 1 : -1,
-                    ),
-                  ]
-                : [comment]"
-              :key="reply.name || reply.id"
-              class="group flex-grow flex gap-3"
-              :class="reply.loading && !reply.edit && 'opacity-70'"
-            >
+            <div v-for="(reply, index) in activeComment === comment.id
+              ? [
+                comment,
+                ...comment.replies.toSorted((a, b) =>
+                  new Date(a.creation) > new Date(b.creation) ? 1 : -1,
+                ),
+              ]
+              : [comment]" :key="reply.name || reply.id" class="group flex-grow flex gap-3"
+              :class="reply.loading && !reply.edit && 'opacity-70'">
               <div class="w-8 flex justify-center">
-                <Avatar
-                  size="xl"
-                  class="bg-surface-base"
-                  :label="$user(reply.owner)?.full_name || reply.owner"
-                  :image="$user(reply.owner)?.user_image"
-                />
+                <Avatar size="xl" class="bg-surface-base" :label="$user(reply.owner)?.full_name || reply.owner"
+                  :image="$user(reply.owner)?.user_image" />
               </div>
-              <div
-                class="grow flex flex-col min-w-0"
-                :class="reply.edit && 'gap-1'"
-              >
-                <div
-                  class="w-full flex justify-between items-start label-group gap-1 text-sm"
-                >
-                  <div class="flex gap-1">
-                    <label
-                      class="font-medium text-ink-gray-8 max-w-[70%] truncate"
-                      >{{ $user(reply.owner)?.full_name || reply.owner }}</label
-                    >
+              <div class="grow flex flex-col min-w-0" :class="reply.edit && 'gap-1'">
+                <div class="w-full flex justify-between items-start label-group gap-1 text-sm">
+                  <div class="flex gap-1 min-w-0">
+                    <label class="font-medium text-ink-gray-8 truncate">{{ $user(reply.owner)?.full_name ||
+                      reply.owner }}</label>
 
-                    <label
-                      class="text-ink-gray-6 truncate"
-                      :title="new Date(reply.creation)"
-                    >
+                    <label class="text-ink-gray-6 shrink-0 whitespace-nowrap" :title="new Date(reply.creation)">
                       &#183;
-                      {{ formatDateOrTime(reply.creation) }}</label
-                    >
+                      {{ formatDateOrTime(reply.creation) }}</label>
                   </div>
-                  <Dropdown
-                    class="ml-auto opacity-0"
-                    :class="
-                      activeComment === comment.id &&
-                      !reply.edit &&
-                      !reply.resolved &&
-                      comment.owner == currentUserId &&
-                      'opacity-100'
-                    "
-                    :options="
-                      dynamicList([
-                        {
-                          label: 'Edit',
-                          onClick: () => (reply.edit = true),
-                          cond: comment.owner == currentUserId,
-                        },
-                        {
-                          label: 'Delete',
-                          onClick: () => removeReply(comment.id, reply.id),
-                          cond:
-                            comment.owner == currentUserId &&
-                            index !== 0,
-                        },
-                      ])
-                    "
-                  >
-                    <Button
-                      :disabled="
-                        activeComment !== comment.id ||
-                        reply.edit ||
-                        reply.resolved
-                      "
-                      class="!h-5 !text-xs !px-1.5 !rounded-sm opacity-0"
-                      :class="
-                        activeComment === comment.id &&
+                  <Dropdown class="ml-auto shrink-0 opacity-0" :class="activeComment === comment.id &&
+                    !reply.edit &&
+                    !reply.resolved &&
+                    comment.owner == currentUserId &&
+                    'opacity-100'
+                    " :options="dynamicList([
+                      {
+                        label: 'Edit',
+                        onClick: () => (reply.edit = true),
+                        cond: comment.owner == currentUserId,
+                      },
+                      {
+                        label: 'Delete',
+                        onClick: () => removeReply(comment.id, reply.id),
+                        cond:
+                          comment.owner == currentUserId &&
+                          index !== 0,
+                      },
+                    ])
+                      ">
+                    <Button :disabled="activeComment !== comment.id ||
+                      reply.edit ||
+                      reply.resolved
+                      " size="xs" class="opacity-0" :class="activeComment === comment.id &&
                         !reply.edit &&
                         !reply.resolved &&
                         comment.owner == currentUserId &&
                         'opacity-100'
-                      "
-                      variant="ghost"
-                      :icon="h(LucideMoreVertical, { class: 'size-3' })"
-                    />
+                        " variant="ghost" :icon="LucideMoreVertical" />
                   </Dropdown>
-                  <LucideBadgeCheck
-                    v-if="comment.resolved"
-                    class="text-ink-gray-6 size-4"
-                  />
+                  <LucideBadgeCheck v-if="comment.resolved" class="text-ink-gray-6 size-4" />
                 </div>
                 <div class="comment-content text-sm">
-                  <CommentEditor
-                    v-model="commentContents[reply.id]"
-                    placeholder="Edit"
-                    :disabled="
-                      isEmpty(commentContents[reply.id]) ||
-                      commentContents[reply.id] == reply.text
-                    "
-                    :editable="
-                      !!(reply.edit || reply.new) &&
+                  <CommentEditor v-model="commentContents[reply.id]" placeholder="Edit" :disabled="isEmpty(commentContents[reply.id]) ||
+                    commentContents[reply.id] == reply.text
+                    " :editable="!!(reply.edit || reply.new) &&
                       reply.owner === currentUserId
-                    "
-                    :content="reply.text"
-                    @change="setCommentHeights"
-                    @submit="
-                      (editor) => {
-                        updateComment(reply, comment, editor)
-                      }
-                    "
-                    @cancel="
+                      " :content="reply.text" @change="setCommentHeights" @submit="
+                        (editor) => {
+                          updateComment(reply, comment, editor)
+                        }
+                      " @cancel="
                       (editor) => {
                         if (reply.new) {
                           removeComment(reply.id)
@@ -230,54 +135,49 @@
                           reply.edit = false
                         }
                       }
-                    "
-                  />
+                    " />
                 </div>
               </div>
             </div>
 
-            <div
-              v-show="
-                activeComment === comment.id &&
-                !(comment.edit || comment.new) &&
-                !comment.resolved
-              "
-              class="flex gap-3"
-            >
-              <Avatar
-                size="xl"
-                class="self-center"
-                :label="
-                  $user(currentUserId)?.full_name || currentUserId
-                "
-                :image="$user(currentUserId)?.user_image"
-              />
+            <div v-show="activeComment === comment.id &&
+              !(comment.edit || comment.new) &&
+              !comment.resolved
+              " class="flex gap-3">
+              <Avatar size="xl" class="self-center" :label="$user(currentUserId)?.full_name || currentUserId
+                " :image="$user(currentUserId)?.user_image" />
 
-              <CommentEditor
-                v-model="newReplies[comment.id]"
-                placeholder="Reply"
-                :is-empty="isEmpty(newReplies[comment.id])"
-                @change="setCommentHeights"
-                @submit="(editor) => newReply(comment, editor)"
-                @cancel="
+              <CommentEditor v-model="newReplies[comment.id]" placeholder="Reply"
+                :is-empty="isEmpty(newReplies[comment.id])" @change="setCommentHeights"
+                @submit="(editor) => newReply(comment, editor)" @cancel="
                   (editor) => {
                     newReplies[comment.id] = ''
                     editor.commands.setContent('')
                     editor.commands.blur()
                   }
-                "
-              />
+                " />
             </div>
           </div>
         </div>
-        <div
-          v-if="activeComment !== comment.id && comment.replies.length > 0"
-          class="replies-count text-ink-gray-6 font-base text-xs p-3 pt-0"
-        >
+        <div v-if="activeComment !== comment.id && comment.replies.length > 0"
+          class="replies-count text-ink-gray-6 font-base text-xs p-3 pt-0">
           {{ comment.replies.length }}
           {{ comment.replies.length === 1 ? 'reply' : 'replies' }}
         </div>
-      </div>
+        </div>
+      </Teleport>
+      <button v-else :id="'comment-' + comment.id" :ref="(el) => {
+        if (el) commentRefs[comment.id] = el
+        else delete commentRefs[comment.id]
+      }
+        " class="absolute flex items-center rounded-full border border-outline-gray-2 bg-surface-base p-0.5 transition-colors hover:bg-surface-gray-2"
+        :class="comment.top ? 'opacity-100' : 'opacity-0 pointer-events-none'"
+        :style="{ top: `${comment.top}px`, right: '1rem' }" @click.stop="activeComment = comment.id">
+        <Avatar size="sm" :label="$user(comment.owner)?.full_name || comment.owner"
+          :image="$user(comment.owner)?.user_image" />
+        <span v-if="comment.replies.length" class="px-1 text-[10px] leading-none text-ink-gray-6">
+          {{ comment.replies.length + 1 }}</span>
+      </button>
     </template>
   </div>
 </template>
@@ -288,7 +188,6 @@ import {
   watch,
   onMounted,
   ref,
-  h,
   onBeforeUnmount,
   nextTick,
 } from 'vue'
@@ -296,7 +195,7 @@ import { Avatar, Button, Dropdown, onOutsideClickDirective as vOnOutsideClick } 
 import { formatDate } from '@/apps/writer/utils/format'
 import { dynamicList } from '@/apps/writer/utils/'
 import { v4 } from 'uuid'
-import { useDebounceFn, useEventListener } from '@vueuse/core'
+import { useDebounceFn, useEventListener, useMediaQuery } from '@vueuse/core'
 import LucideX from '~icons/lucide/x'
 import LucideCheck from '~icons/lucide/check'
 import LucideMessageCircleCode from '~icons/lucide/message-circle-code'
@@ -325,6 +224,20 @@ const emit = defineEmits(['save'])
 const activeComment = defineModel('activeComment')
 const scrollContainer = ref('scrollContainer')
 
+const isMobile = useMediaQuery('(max-width: 767px)')
+const compact = ref(false)
+const collapsed = computed(() => compact.value || isMobile.value)
+
+const onOutsideCardClick = (e, comment) => {
+  if (activeComment.value !== comment.id || comment.new) return
+  const t = e.target
+  if (t.getAttribute?.('data-comment-name')) return
+  if (!t.closest?.('.comment-group')) activeComment.value = null
+}
+
+const cardStyle = (comment) =>
+  isMobile.value ? {} : { top: `${comment.top}px`, right: '1rem' }
+
 const newReplies = reactive({})
 const commentRefs = reactive({})
 const commentContents = reactive({})
@@ -349,20 +262,26 @@ function useYMapReactive(yMap) {
   const local = ref([])
 
   const update = () => {
+    const prev = new Map(local.value.map((c) => [c.id, c]))
     const arr = []
     yMap.forEach((v) => {
       let pos
       if (!v.anchor?.from) pos = commentPositions.value.get(v.id) ?? 0
       else pos = getEditorPos(v.anchor.from, props.editor)
-      arr.push({ ...v, pos })
+      const old = prev.get(v.id)
+      arr.push({ top: old?.top, detached: old?.detached, ...v, pos })
     })
     local.value = arr.sort((a, b) => a.pos - b.pos)
   }
 
   update()
-  yMap.observe(update)
+  const onChange = () => {
+    update()
+    setCommentHeights()
+  }
+  yMap.observe(onChange)
 
-  onBeforeUnmount(() => yMap.unobserve(update))
+  onBeforeUnmount(() => yMap.unobserve(onChange))
 
   return local
 }
@@ -374,12 +293,13 @@ const filteredComments = computed(() => {
     : comments.value.filter((k) => !k.resolved)
   return filtered
 })
+
 watch(
   () => props.showResolved,
   () => rebuild(props.editor),
 )
 
-watch([activeComment, () => props.showUnanchored], () => {
+watch([activeComment, collapsed, () => props.showUnanchored], () => {
   setCommentHeights()
 })
 
@@ -517,11 +437,19 @@ onMounted(() => {
     setCommentHeights()
   }
   props.editor.view.dom.addEventListener('tab-changed', onTabChange)
+  const resizeObserver = new ResizeObserver(setCommentHeights)
+  resizeObserver.observe(props.editor.view.dom)
+  const railObserver = new ResizeObserver(([entry]) => {
+    compact.value = entry.contentRect.width < 220
+  })
+  railObserver.observe(scrollContainer.value)
   onBeforeUnmount(() => {
+    resizeObserver.disconnect()
+    railObserver.disconnect()
     try {
       const dom = props.editor?.view?.dom
       dom.removeEventListener('tab-changed', onTabChange)
-    } catch {}
+    } catch { }
   })
 })
 

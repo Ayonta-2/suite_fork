@@ -2,8 +2,9 @@ import { EventEmitter } from 'node:events';
 import type {
 	AudioLevelObserver,
 	Router,
+	WebRtcServer,
 	Worker,
-} from 'mediasoup/node/lib/types';
+} from 'mediasoup/types';
 import { describe, expect, it, vi } from 'vitest';
 import type { Room, RtpCodecCapability } from '../../types';
 import { RoomManager } from '../RoomManager';
@@ -20,6 +21,10 @@ function makeWorker(opts: { router: Router }): Worker {
 	return {
 		createRouter: vi.fn(async () => opts.router),
 	} as unknown as Worker;
+}
+
+function makeWebRtcServer(): WebRtcServer {
+	return { close: vi.fn() } as unknown as WebRtcServer;
 }
 
 function makeRouter(): Router {
@@ -52,22 +57,29 @@ function addPeersTo(room: Room, ...peerIds: string[]): void {
 
 describe('RoomManager', () => {
 	const codecs: RtpCodecCapability[] = [
-		{ kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 },
+		{
+			kind: 'audio',
+			mimeType: 'audio/opus',
+			clockRate: 48000,
+			channels: 2,
+			preferredPayloadType: 111,
+		},
 	];
 
 	it('createRoom creates a router and an audio level observer; second call returns the same room', async () => {
 		const mgr = new RoomManager();
 		const router = makeRouter();
 		const worker = makeWorker({ router });
+		const webRtcServer = makeWebRtcServer();
 
-		const roomA = await mgr.createRoom('r1', worker, codecs);
+		const roomA = await mgr.createRoom('r1', worker, webRtcServer, codecs);
 		const routerSpy = worker.createRouter as ReturnType<typeof vi.fn>;
 		expect(routerSpy).toHaveBeenCalledTimes(1);
 		expect(mgr.getRoom('r1')).toBe(roomA);
 		expect(mgr.getRouter('r1')).toBe(router);
 		expect(mgr.getRoomCount()).toBe(1);
 
-		const roomB = await mgr.createRoom('r1', worker, codecs);
+		const roomB = await mgr.createRoom('r1', worker, webRtcServer, codecs);
 		expect(roomB).toBe(roomA);
 		expect(routerSpy).toHaveBeenCalledTimes(1);
 	});
@@ -76,9 +88,16 @@ describe('RoomManager', () => {
 		const mgr = new RoomManager();
 		const router = makeRouter();
 		const worker = makeWorker({ router });
+		const webRtcServer = makeWebRtcServer();
 		const onActiveSpeaker = vi.fn();
 
-		const room = await mgr.createRoom('r1', worker, codecs, onActiveSpeaker);
+		const room = await mgr.createRoom(
+			'r1',
+			worker,
+			webRtcServer,
+			codecs,
+			onActiveSpeaker,
+		);
 		addPeersTo(room, 'p1');
 		const p1 = room.peers.get('p1')!;
 		const fakeProducer = { id: 'prod-1' } as { id: string };
@@ -95,9 +114,16 @@ describe('RoomManager', () => {
 		const mgr = new RoomManager();
 		const router = makeRouter();
 		const worker = makeWorker({ router });
+		const webRtcServer = makeWebRtcServer();
 		const onActiveSpeaker = vi.fn();
 
-		const room = await mgr.createRoom('r1', worker, codecs, onActiveSpeaker);
+		const room = await mgr.createRoom(
+			'r1',
+			worker,
+			webRtcServer,
+			codecs,
+			onActiveSpeaker,
+		);
 		addPeersTo(room, 'p1');
 		const p1 = room.peers.get('p1')!;
 		const fakeProducer = { id: 'prod-1' } as { id: string };
@@ -114,7 +140,8 @@ describe('RoomManager', () => {
 		const mgr = new RoomManager();
 		const router = makeRouter();
 		const worker = makeWorker({ router });
-		await mgr.createRoom('r1', worker, codecs);
+		const webRtcServer = makeWebRtcServer();
+		await mgr.createRoom('r1', worker, webRtcServer, codecs);
 
 		await mgr.closeRoom('r1');
 
@@ -133,7 +160,8 @@ describe('RoomManager', () => {
 		const mgr = new RoomManager();
 		const router = makeRouter();
 		const worker = makeWorker({ router });
-		const room = await mgr.createRoom('r1', worker, codecs);
+		const webRtcServer = makeWebRtcServer();
+		const room = await mgr.createRoom('r1', worker, webRtcServer, codecs);
 		addPeersTo(room, 'p1', 'p2');
 
 		room.peers.get('p1')!.producers.set('a', {} as never);
@@ -160,9 +188,11 @@ describe('RoomManager', () => {
 		const router2 = makeRouter();
 		const worker1 = makeWorker({ router: router1 });
 		const worker2 = makeWorker({ router: router2 });
+		const webRtcServer1 = makeWebRtcServer();
+		const webRtcServer2 = makeWebRtcServer();
 
-		await mgr.createRoom('r1', worker1, codecs);
-		await mgr.createRoom('r2', worker2, codecs);
+		await mgr.createRoom('r1', worker1, webRtcServer1, codecs);
+		await mgr.createRoom('r2', worker2, webRtcServer2, codecs);
 
 		await mgr.cleanup();
 

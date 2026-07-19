@@ -1,6 +1,8 @@
 # Copyright (c) 2025, Frappe and contributors
 # For license information, please see license.txt
 
+import base64
+import binascii
 import secrets
 import time
 from typing import TYPE_CHECKING
@@ -52,6 +54,17 @@ def _get_codec_strategy() -> str:
 	return frappe.get_cached_doc("Sae Settings").codec_strategy or "svc"
 
 
+def _is_e2ee_enabled(meeting_id: str) -> bool:
+	return bool(frappe.db.get_value("Sae Meeting", meeting_id, "e2ee_enabled"))
+
+
+def _is_valid_e2ee_device_id(device_id: str | None) -> bool:
+	"""A device id is a short opaque client-chosen string (max 64 chars)."""
+	if not device_id or not isinstance(device_id, str):
+		return False
+	return 1 <= len(device_id) <= 64 and all(c.isalnum() or c in "-_." for c in device_id)
+
+
 def _user_payload(meeting, user) -> tuple[str, str | None, bool, bool]:
 	"""Return (fullname, avatar, is_host, is_cohost) for a signed-in user."""
 	fullname, avatar = frappe.db.get_value("User", user, ["full_name", "user_image"]) or (
@@ -63,9 +76,53 @@ def _user_payload(meeting, user) -> tuple[str, str | None, bool, bool]:
 	return fullname, avatar, is_host, is_cohost
 
 
+def _build_sfu_connection_details(meeting: "SaeMeeting", user: str) -> dict:
+	"""SFU JWT + endpoint payload for a signed-in user.
+
+	Callers must enforce membership / join ACL first. Mints a full-scope media
+	token from server-side identity only (never client-supplied claims).
+	"""
+	if not user or user == "Guest":
+		frappe.throw(_("Authentication required"), frappe.AuthenticationError)
+
+	sfu_config = get_sfu_config()
+	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, user)
+	e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
+
+	auth_token = _generate_sfu_token(
+		user_id=user,
+		meeting_id=meeting.name,
+		scope="full",
+		user_name=user_fullname,
+		user_avatar=user_avatar,
+		is_host=is_host,
+		is_cohost=is_cohost,
+		e2ee_required=e2ee_required,
+	)
+
+	return {
+		"sfu_url": sfu_config["sfu_server_url"],
+		"sfu_port": sfu_config["sfu_server_port"],
+		"auth_token": auth_token,
+		"user_id": user,
+		"meeting_id": meeting.name,
+		"is_host": is_host,
+		"is_cohost": is_cohost,
+		"codec_strategy": _get_codec_strategy(),
+		"e2ee_required": e2ee_required,
+		"user_data": {
+			"name": user_fullname,
+			"email": user,
+			"avatar": user_avatar,
+		},
+		"expires_in": 3600,
+		"host_only_chat": bool(meeting.host_only_chat),
+	}
+
+
 @frappe.whitelist()
 @rate_limit(limit=10, seconds=60 * 60)
-def create(meeting_type: str = "open", allow_guest: bool = True) -> str:
+def create(meeting_type: str = "open", allow_guest: bool = True, title: str | None = None) -> str:
 	"""Create a new meeting with specified type"""
 	global_settings = frappe.get_cached_doc("Sae Settings")
 	if not global_settings.allow_guest:
@@ -74,6 +131,7 @@ def create(meeting_type: str = "open", allow_guest: bool = True) -> str:
 	meeting: SaeMeeting = frappe.get_doc(
 		{
 			"doctype": "Sae Meeting",
+			"title": title,
 			"meeting_type": meeting_type,
 			"allow_guest": allow_guest,
 		}
@@ -99,34 +157,7 @@ def get_sfu_connection_details(meeting_id: str) -> dict:
 	if not meeting.can_join(user):
 		frappe.throw(_("Access denied"), frappe.PermissionError)
 
-	sfu_config = get_sfu_config()
-
-	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, user)
-
-	auth_token = _generate_sfu_token(
-		user_id=user,
-		meeting_id=meeting_id,
-		user_name=user_fullname,
-		user_avatar=user_avatar,
-		is_host=is_host,
-		is_cohost=is_cohost,
-	)
-
-	return {
-		"sfu_url": sfu_config["sfu_server_url"],
-		"sfu_port": sfu_config["sfu_server_port"],
-		"auth_token": auth_token,
-		"user_id": user,
-		"meeting_id": meeting_id,
-		"codec_strategy": _get_codec_strategy(),
-		"user_data": {
-			"name": user_fullname,
-			"email": user,
-			"avatar": user_avatar,
-		},
-		"expires_in": 3600,
-		"host_only_chat": bool(meeting.host_only_chat),
-	}
+	return _build_sfu_connection_details(meeting, user)
 
 
 @frappe.whitelist()
@@ -170,15 +201,17 @@ def join_meeting(meeting_id: str) -> dict:
 					},
 				}
 			elif result.get("status") == "joined":
-				is_host = meeting.owner == frappe.session.user
-				is_cohost = meeting.is_host_or_cohost(frappe.session.user) and not is_host
+				user = frappe.session.user
+				# Full media token only after membership is real (not lobby).
+				if user not in meeting.get_members():
+					frappe.throw(_("Not a meeting member"), frappe.PermissionError)
+				# Bundle SFU JWT so the client can skip a second
+				# get_sfu_connection_details round-trip on the critical path.
+				details = _build_sfu_connection_details(meeting, user)
 				return {
 					"status": "joined",
-					"meeting_id": meeting_id,
 					"message": result.get("message", "Successfully joined meeting"),
-					"is_host": is_host,
-					"is_cohost": is_cohost,
-					"host_only_chat": bool(meeting.host_only_chat),
+					**details,
 				}
 	else:
 		frappe.throw(_("Access denied"))
@@ -259,6 +292,7 @@ def refresh_sfu_token(meeting_id: str) -> dict:
 		frappe.throw(_("Not a meeting member"))
 
 	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, frappe.session.user)
+	e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
 
 	auth_token = _generate_sfu_token(
 		user_id=frappe.session.user,
@@ -267,9 +301,15 @@ def refresh_sfu_token(meeting_id: str) -> dict:
 		user_avatar=user_avatar,
 		is_host=is_host,
 		is_cohost=is_cohost,
+		e2ee_required=e2ee_required,
 	)
 
-	return {"auth_token": auth_token, "expires_in": 3600, "codec_strategy": _get_codec_strategy()}
+	return {
+		"auth_token": auth_token,
+		"expires_in": 3600,
+		"codec_strategy": _get_codec_strategy(),
+		"e2ee_required": e2ee_required,
+	}
 
 
 @frappe.whitelist()
@@ -358,6 +398,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 		frappe.throw(_("You are banned from this meeting"))
 
 	sfu_config = get_sfu_config()
+	e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
 
 	if meeting.meeting_type == "restricted":
 		if meeting.is_user_approved(guest_id):
@@ -368,6 +409,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 				user_name=guest_name_clean,
 				is_host=False,
 				is_guest=True,
+				e2ee_required=e2ee_required,
 			)
 			return {
 				"status": "joined",
@@ -377,7 +419,9 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 				"auth_token": auth_token,
 				"sfu_url": sfu_config["sfu_server_url"],
 				"sfu_port": sfu_config["sfu_server_port"],
+				"codec_strategy": _get_codec_strategy(),
 				"host_only_chat": bool(meeting.host_only_chat),
+				"e2ee_required": e2ee_required,
 				"message": "Successfully joined meeting",
 			}
 		elif guest_id not in meeting.get_waiting_room():
@@ -400,6 +444,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 		user_name=guest_name_clean,
 		is_host=False,
 		is_guest=True,
+		e2ee_required=e2ee_required,
 	)
 
 	meeting.add_guest_to_members(guest_id)
@@ -412,7 +457,9 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 		"auth_token": auth_token,
 		"sfu_url": sfu_config["sfu_server_url"],
 		"sfu_port": sfu_config["sfu_server_port"],
+		"codec_strategy": _get_codec_strategy(),
 		"host_only_chat": bool(meeting.host_only_chat),
+		"e2ee_required": e2ee_required,
 		"message": "Successfully joined meeting",
 	}
 
@@ -442,6 +489,7 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
 	sfu_config = get_sfu_config()
 
 	guest_name = session_data.get("guest_name", f"Guest-{guest_id[:8]}")
+	e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
 
 	auth_token = _generate_sfu_token(
 		user_id=guest_id,
@@ -450,6 +498,7 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
 		user_name=guest_name,
 		is_host=False,
 		is_guest=True,
+		e2ee_required=e2ee_required,
 	)
 
 	return {
@@ -460,7 +509,9 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
 		"auth_token": auth_token,
 		"sfu_url": sfu_config["sfu_server_url"],
 		"sfu_port": sfu_config["sfu_server_port"],
+		"codec_strategy": _get_codec_strategy(),
 		"host_only_chat": bool(meeting.host_only_chat),
+		"e2ee_required": e2ee_required,
 		"message": "Successfully joined meeting",
 	}
 
@@ -496,6 +547,7 @@ def get_guest_sfu_connection_details(meeting_id: str, guest_token: str) -> dict:
 		"sfu_url": sfu_config["sfu_server_url"],
 		"sfu_port": sfu_config["sfu_server_port"],
 		"codec_strategy": _get_codec_strategy(),
+		"e2ee_required": _is_e2ee_enabled(meeting_id),
 	}
 
 
@@ -552,3 +604,74 @@ def check_meeting_access(meeting_id: str) -> dict:
 		return {"allow_guest": allow_guest, "host_only_chat": bool(meeting.host_only_chat)}
 	except frappe.DoesNotExistError:
 		frappe.throw(_("Meeting not found"))
+
+
+@frappe.whitelist()
+def get_meeting_e2ee_details(meeting_id: str) -> dict:
+	"""Return E2EE status for hosts/co-hosts.
+
+	Hosts see the full key proof + host X25519 pubkey so they can recover
+	their own identity on a different device only if they still have the
+	signing device (per-device ed25519 keys; see ADR 0003).
+	"""
+	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id)
+
+	if not meeting.is_host_or_cohost(frappe.session.user):
+		frappe.throw(_("Only hosts and co-hosts can view E2EE details"), frappe.PermissionError)
+
+	return {
+		"e2ee_enabled": bool(getattr(meeting, "e2ee_enabled", False)),
+	}
+
+
+@frappe.whitelist()
+def register_e2ee_device(
+	device_id: str,
+	ed25519_public_key: str,
+) -> dict:
+	"""Register a per-device ed25519 public key for the current user.
+
+	Used to bind an epoch member key package to a device identity. The client
+	generates the keypair locally and uploads only the public key.
+	"""
+	if not _is_valid_e2ee_device_id(device_id):
+		frappe.throw(_("device_id must be 1-64 chars of [a-zA-Z0-9._-]"), frappe.ValidationError)
+
+	try:
+		raw = base64.b64decode(ed25519_public_key, validate=True)
+	except (binascii.Error, TypeError):
+		frappe.throw(_("ed25519_public_key must be base64"), frappe.ValidationError)
+	if len(raw) != 32:
+		frappe.throw(_("ed25519_public_key must decode to 32 bytes"), frappe.ValidationError)
+
+	user = frappe.session.user
+	# Upsert the (user, device_id) pair into the E2EE Device Key DocType.
+	if not _update_e2ee_device_key(user, device_id, ed25519_public_key):
+		doc = frappe.new_doc("E2EE Device Key")
+		doc.user = user
+		doc.device_id = device_id
+		doc.ed25519_public_key = ed25519_public_key
+		# Users may register only their own public E2EE device key through this validated API.
+		try:
+			doc.insert(ignore_permissions=True)
+		except frappe.DuplicateEntryError:
+			# Lost a concurrent insert race after the initial lookup. The DB unique
+			# constraint guarantees there is now exactly one row to update.
+			if not _update_e2ee_device_key(user, device_id, ed25519_public_key):
+				raise
+
+	return {"device_id": device_id, "ed25519_public_key": ed25519_public_key}
+
+
+def _update_e2ee_device_key(user: str, device_id: str, ed25519_public_key: str) -> bool:
+	existing_name = frappe.db.get_value("E2EE Device Key", {"user": user, "device_id": device_id}, "name")
+	if not existing_name:
+		return False
+	frappe.db.set_value(
+		"E2EE Device Key",
+		existing_name,
+		"ed25519_public_key",
+		ed25519_public_key,
+		update_modified=False,
+	)
+	return True

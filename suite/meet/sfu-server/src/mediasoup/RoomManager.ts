@@ -2,6 +2,8 @@ import type * as mediasoup from 'mediasoup';
 import type { Room, RoomStats, RtpCodecCapability } from '../types';
 import { loggers } from '../utils/logger';
 
+const MAX_AUDIO_LEVEL_ENTRIES = 20;
+
 export class RoomManager {
 	private rooms = new Map<string, Room>();
 	private routers = new Map<string, mediasoup.types.Router>();
@@ -9,6 +11,7 @@ export class RoomManager {
 	async createRoom(
 		roomId: string,
 		worker: mediasoup.types.Worker,
+		webRtcServer: mediasoup.types.WebRtcServer,
 		mediaCodecs: RtpCodecCapability[],
 		onActiveSpeaker?: (roomId: string, participantIds: string[]) => void,
 	): Promise<Room> {
@@ -23,7 +26,7 @@ export class RoomManager {
 		});
 
 		const audioLevelObserver = await router.createAudioLevelObserver({
-			maxEntries: 5,
+			maxEntries: MAX_AUDIO_LEVEL_ENTRIES,
 			threshold: -70,
 			interval: 800,
 		});
@@ -52,6 +55,7 @@ export class RoomManager {
 		const room: Room = {
 			id: roomId,
 			router,
+			webRtcServer,
 			audioLevelObserver,
 			peers: new Map(),
 			created: new Date(),
