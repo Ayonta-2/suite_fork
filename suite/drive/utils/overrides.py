@@ -28,7 +28,9 @@ def filter_file(user=None):
 			f" OR {docshare_cond}))"
 		)
 	else:
-		site_cond = f"({site} AND (`tabFile`.`owner` = {escaped} OR {docshare_cond}))"
+		site_cond = (
+			f"({site} AND (`tabFile`.`is_private` = 0 OR `tabFile`.`owner` = {escaped} OR {docshare_cond}))"
+		)
 
 	teams = get_teams(user, exclude_personal=False)
 	team_cond = f"`tabFile`.`team` IN ({', '.join(frappe.db.escape(t) for t in teams)})" if teams else "1=0"
