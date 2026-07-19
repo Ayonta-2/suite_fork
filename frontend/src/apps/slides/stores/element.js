@@ -589,10 +589,13 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 	let commands = []
 	let newSelection = []
 
-	elements.forEach((element) => {
+	const baseZIndex = currentSlide.value.elements.length
+	const sortedElements = [...elements].sort((a, b) => (a.zIndex || 1) - (b.zIndex || 1))
+
+	sortedElements.forEach((element, index) => {
 		let newElement = JSON.parse(JSON.stringify(element))
 		newElement.id = generateUniqueId()
-		newElement.zIndex = currentSlide.value.elements.length + 1
+		newElement.zIndex = baseZIndex + index + 1
 		newElement.top += displaceByPx
 		newElement.left += displaceByPx
 

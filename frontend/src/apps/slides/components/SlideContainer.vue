@@ -2,30 +2,39 @@
 	<div ref="slideContainer" class="flex size-full" @dragenter="showOverlay">
 		<!-- when mounting place slide directly in the center of the visible container -->
 		<!-- 1/2 width of viewport + 1/2 width of offset caused due to thinner navigation panel -->
-		<div ref="slideRef" :style="slideStyles" :class="slideClasses" @contextmenu.prevent>
-			<SelectionBox
-				ref="selectionBox"
-				v-if="!inReadonlyMode"
-				:isDragging
-				@mousedown="(e) => handleMouseDown(e)"
-			/>
+		<div
+			ref="slideRef"
+			:style="slideStyles"
+			:class="slideClasses"
+			@contextmenu="(e) => elementContextMenuRef?.handleSlideContextMenu(e)"
+		>
+			<ElementContextMenu ref="elementContextMenu">
+				<SelectionBox
+					ref="selectionBox"
+					v-if="!inReadonlyMode"
+					:isDragging
+					@mousedown="(e) => handleMouseDown(e)"
+					@contextmenu="elementContextMenuRef?.openElementContextMenu()"
+				/>
 
-			<MarqueeOverlay v-if="!inReadonlyMode" @setIsSelecting="(val) => (isSelecting = val)" />
+				<MarqueeOverlay v-if="!inReadonlyMode" @setIsSelecting="(val) => (isSelecting = val)" />
 
-			<ShapeDrawOverlay v-if="!inReadonlyMode" />
+				<ShapeDrawOverlay v-if="!inReadonlyMode" />
 
-			<SnapGuides :ongoingInteraction="hasOngoingInteraction" :activeGuides="activeGuides" />
+				<SnapGuides :ongoingInteraction="hasOngoingInteraction" :activeGuides="activeGuides" />
 
-			<SlideElement
-				v-for="element in currentSlide?.elements"
-				:key="`editor-${element.id}`"
-				:ref="(comp) => registerElementDiv(element.id, comp?.$el)"
-				mode="editor"
-				:element
-				:data-index="element.id"
-				:highlight="highlightElement(element)"
-				@mousedown="(e) => handleMouseDown(e, element)"
-			/>
+				<SlideElement
+					v-for="element in currentSlide?.elements"
+					:key="`editor-${element.id}`"
+					:ref="(comp) => registerElementDiv(element.id, comp?.$el)"
+					mode="editor"
+					:element
+					:data-index="element.id"
+					:highlight="highlightElement(element)"
+					@mousedown="(e) => handleMouseDown(e, element)"
+					@contextmenu="(e) => elementContextMenuRef?.handleElementContextMenu(e, element)"
+				/>
+			</ElementContextMenu>
 
 			<OverflowContentOverlay />
 		</div>
@@ -56,6 +65,7 @@ import ShapeDrawOverlay from '@/apps/slides/components/ShapeDrawOverlay.vue'
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import DropTargetOverlay from '@/apps/slides/components/DropTargetOverlay.vue'
 import OverflowContentOverlay from '@/apps/slides/components/OverflowContentOverlay.vue'
+import ElementContextMenu from '@/apps/slides/components/ElementContextMenu.vue'
 
 import {
 	currentSlide,
@@ -110,6 +120,7 @@ const inReadonlyMode = inject('inReadonlyMode', ref(false))
 const slideContainerRef = useTemplateRef('slideContainer')
 const slideRef = useTemplateRef('slideRef')
 const selectionBoxRef = useTemplateRef('selectionBox')
+const elementContextMenuRef = useTemplateRef('elementContextMenu')
 
 const { isDragging, positionDelta, startDragging } = useDragAndDrop()
 
@@ -282,7 +293,7 @@ const duplicateAndDrag = (e, id) => {
 }
 
 const handleMouseDown = (e, element) => {
-	if (inReadonlyMode.value) return
+	if (inReadonlyMode.value || e.button == 2) return
 	const id = element?.id
 
 	e.stopPropagation()
