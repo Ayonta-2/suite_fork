@@ -31,6 +31,7 @@ suite.slides.doctype.presentation.patches.sanitize_attachment_urls
 suite.slides.doctype.presentation.patches.move_attachments_to_private_folder
 suite.slides.doctype.presentation.patches.move_slide_thumbnail_to_presentation
 suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files
+suite.slides.doctype.presentation.patches.integrate_with_drive
 # --- writer ---
 suite.writer.patches.change_versioning_schema
 suite.writer.patches.autopopulate_html

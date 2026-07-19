@@ -10,8 +10,7 @@ import { userStore } from '@/apps/calendar/stores/user'
 /**
  * Calendar route-group layout.
  *
- * Maps the standalone app's root App.vue. The suite shell already provides the
- * top-level chrome, so this layout only:
+ * The suite shell already provides the top-level chrome, so this layout only:
  *   - provides the calendar-local `$user` (mail/calendar userResource) and
  *     `$dayjs` injections that calendar components depend on,
  *   - applies the user's color scheme to <html data-theme>,
