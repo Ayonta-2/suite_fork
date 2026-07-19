@@ -333,9 +333,11 @@ class ContactCardService(ContactsService):
 		address book(s) once every card has been created; only addressBookIds is touched, so the rest of
 		the card is left untouched."""
 
+		# Mirror set_calendar_ids: patch addressBookIds only and let the server manage the `updated`
+		# timestamp, so we never depend on `updated` being client-writable for ContactCard.
 		result = {"updated": [], "notUpdated": {}}
 		for batch in self.create_batches(list(mapping.items()), self.max_objects_in_set):
-			payload = {id: {"addressBookIds": book_ids, "updated": utcnow()} for id, book_ids in batch}
+			payload = {id: {"addressBookIds": book_ids} for id, book_ids in batch}
 
 			response = self._update(payload)
 
