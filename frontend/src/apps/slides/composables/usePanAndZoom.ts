@@ -73,7 +73,6 @@ export const usePanAndZoom = (containerElement: any, targetElement: any, initial
 		let scale = Math.hypot(initialMatrix.a, initialMatrix.b)
 		let currentScale = transformObj.scale * scale
 
-		// limit scale between 0.5 - 2
 		if (currentScale > 5 || currentScale < 0.5) {
 			transformObj.scale = Math.max(0.5, Math.min(5, currentScale)) / scale
 		}
@@ -183,6 +182,7 @@ export const usePanAndZoom = (containerElement: any, targetElement: any, initial
 
 	const removePanAndZoom = () => {
 		if (!containerElement.value) return
+		if (wheelTimeout) window.clearTimeout(wheelTimeout)
 		transform.value = `matrix(${initialScale}, 0, 0, ${initialScale}, 0, 0)`
 		transformOrigin.value = '0 0'
 		containerElement.value.removeEventListener('wheel', handlePanAndZoom)

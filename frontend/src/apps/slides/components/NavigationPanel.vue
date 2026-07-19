@@ -2,8 +2,6 @@
 	<!-- Slide Navigation Panel -->
 	<div
 		:class="[panelClasses, attrs.class]"
-		@mouseenter="handleHoverChange"
-		@mouseleave="handleHoverChange"
 		@wheel="handleScrollBarWheelEvent"
 		@click.stop
 	>
@@ -17,7 +15,6 @@
 		<div
 			ref="scrollableArea"
 			class="faded-scroll [--fade-length:6px] min-h-0 flex-1 overflow-y-auto p-4 pt-4 no-scrollbar"
-			:style="scrollbarStyles"
 		>
 			<component :is="menuWrapper" v-bind="menuWrapperProps">
 				<div :style="virtualContainerStyles">
@@ -141,8 +138,6 @@ const handleSortEnd = (sortChange) => {
 
 const slideSort = useDragSort(scrollableArea, slidesLength, rowSize, handleSortEnd)
 
-const showCollapseShortcut = ref(false)
-
 const insertButtonClasses =
 	'mb-10 flex aspect-video w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-surface-gray-2 text-ink-gray-5 hover:bg-surface-gray-3'
 
@@ -170,10 +165,6 @@ const toggleButtonClasses = computed(() => {
 	}
 	return `${baseClasses} absolute top-1/2 transform -transform-y-1/2 h-12 w-4 justify-center rounded-r-lg shadow-xl`
 })
-
-const scrollbarStyles = computed(() => ({
-	'--scrollbar-thumb-color': showCollapseShortcut.value ? '#cfcfcf' : 'transparent',
-}))
 
 const orderedSlides = computed(() => {
 	const startIndex = slideSort.itemStartIndex.value
@@ -222,14 +213,6 @@ const handleSlideClick = async (slide) => {
 		return
 	}
 	emit('changeSlide', index)
-}
-
-const handleHoverChange = (e) => {
-	if (e.type === 'mouseenter') {
-		showCollapseShortcut.value = true
-	} else if (e.type === 'mouseleave') {
-		showCollapseShortcut.value = false
-	}
 }
 
 const scrollToVirtualItem = (index, behavior = 'smooth') => {

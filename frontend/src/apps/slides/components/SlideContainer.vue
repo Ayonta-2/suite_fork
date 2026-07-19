@@ -111,10 +111,6 @@ import {
 	isAspectLocked,
 } from '@/apps/slides/utils/resize'
 
-const props = defineProps({
-	highlight: Boolean,
-})
-
 const emit = defineEmits(['update:hasOngoingInteraction'])
 
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
@@ -163,7 +159,7 @@ const slideClasses = computed(() => {
 		'shadow-sm',
 	]
 
-	const outlineClasses = props.highlight || mediaDragOver.value ? ['outline', 'outline-2'] : []
+	const outlineClasses = mediaDragOver.value ? ['outline', 'outline-2'] : []
 
 	// Offsets center the scaled slide (900x506.25), shifted for the side panels
 	// (edit: nav + properties; readonly: nav only). Recompute if widths change.

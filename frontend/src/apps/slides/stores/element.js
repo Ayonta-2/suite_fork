@@ -1,5 +1,5 @@
 import { ref, computed, nextTick, watch } from 'vue'
-import { call, createResource } from 'frappe-ui'
+import { createResource } from 'frappe-ui'
 
 import {
 	selectionBounds,
@@ -54,7 +54,7 @@ const activeElement = computed(() => {
 	}
 })
 
-const setActiveElements = (ids, focus = false) => {
+const setActiveElements = (ids) => {
 	if (ids.length == 1 && activeElementIds.value.includes(ids[0])) return
 	activeElementIds.value = ids
 	focusElementId.value = null
@@ -625,27 +625,6 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 	)
 }
 
-const isFileDocUsed = (element) => {
-	return slides.value.some((slide) => {
-		if (!slide.elements) return false
-
-		return slide.elements.some((el) => el.id !== element.id && el.src === element.src)
-	})
-}
-
-const deleteAttachments = async (elements) => {
-	elements.forEach((element) => {
-		if (['image', 'video'].includes(element.type)) {
-			if (isFileDocUsed(element)) return
-
-			call('frappe.client.delete', {
-				doctype: 'File',
-				name: element.attachmentName,
-			})
-		}
-	})
-}
-
 const deleteElements = async (e, ids) => {
 	const idsToDelete = ids || activeElementIds.value
 	await resetFocus()
@@ -960,39 +939,6 @@ const updatePosition = (axis, value) => {
 	selectionBounds[property] = value
 }
 
-const updateDimension = (axis, value) => {
-	const property = axis == 'W' ? 'width' : 'height'
-	const numericValue = Number(value)
-
-	if (!Number.isFinite(numericValue) || numericValue < 1) return
-	if (property == 'height' && activeElements.value.some((element) => element.type != 'shape'))
-		return
-
-	const delta = numericValue - selectionBounds[property]
-
-	const commands = activeElements.value.map((element) => {
-		const oldValue = element[property] ?? selectionBounds[property]
-
-		return editElementCommand({
-			slideId: currentSlide.value.clientId,
-			elementIds: [element.id],
-			property,
-			oldValue: element[property],
-			newValue: oldValue + delta,
-		})
-	})
-
-	commandHistory.execute(
-		batchCommand({
-			slideId: currentSlide.value.clientId,
-			elementIds: activeElementIds.value,
-			commands,
-		}),
-	)
-
-	selectionBounds[property] = numericValue
-}
-
 const flipElements = (direction) => {
 	const property = direction == 'horizontal' ? 'invertX' : 'invertY'
 
@@ -1053,13 +999,11 @@ export {
 	selectAllElements,
 	getElementPosition,
 	addFixedWidthToElement,
-	deleteAttachments,
 	setEditableState,
 	replaceMediaElement,
 	normalizeZIndices,
 	isWithinOverlappingBounds,
 	updatePosition,
-	updateDimension,
 	flipElements,
 	findElement,
 	cropSelectionToFitContent,

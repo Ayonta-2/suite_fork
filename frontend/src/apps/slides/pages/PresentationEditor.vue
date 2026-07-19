@@ -12,14 +12,13 @@
 			<SlideContainer
 				ref="slideContainer"
 				v-if="presentationDoc"
-				:highlight="slideHighlight"
 				v-model:hasOngoingInteraction="isSlideInteractionActive"
 			/>
 
 			<NavigationPanel
 				class="absolute bottom-0 top-0"
 				@changeSlide="changeEditorSlide"
-				@openLayoutDialog="(index) => openLayoutDialog('insert', index)"
+				@openLayoutDialog="openLayoutDialog"
 				@duplicate="duplicateSlide"
 				@delete="(index) => deleteSlide(false, index)"
 			/>
@@ -170,11 +169,9 @@ const props = defineProps({
 
 const showThemeDialog = ref(false)
 const themeDialogAction = ref('update')
-const slideHighlight = ref(false)
 const isSlideInteractionActive = ref(false)
 
 const showLayoutDialog = ref(false)
-const layoutAction = ref('')
 const insertIndex = ref(null)
 const showExportView = ref(false)
 const showDeleteDialog = ref(false)
@@ -413,9 +410,8 @@ const confirmDelete = async () => {
 	router.push({ name: 'slides-home' })
 }
 
-const openLayoutDialog = (action, index) => {
+const openLayoutDialog = (index) => {
 	showLayoutDialog.value = true
-	layoutAction.value = action
 	insertIndex.value = index
 }
 

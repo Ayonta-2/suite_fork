@@ -104,17 +104,6 @@ export const useTextEditor = () => {
 		underline: 'toggleUnderline',
 	}
 
-	const toggleCapitalize = (chain) => {
-		const val = activeEditor.value.getAttributes('textStyle').textTransform
-		const newVal = val == 'uppercase' ? null : 'uppercase'
-
-		chain
-			.setMark('textStyle', {
-				textTransform: newVal,
-			})
-			.run()
-	}
-
 	const toggleMark = (property) => {
 		const currentEditor = activeEditor.value
 
@@ -122,8 +111,6 @@ export const useTextEditor = () => {
 
 		const { empty } = currentEditor.state.selection
 		if (empty) chain.selectAll()
-
-		if (property == 'uppercase') return toggleCapitalize(chain)
 
 		chain[markCommands[property]](property).run()
 	}

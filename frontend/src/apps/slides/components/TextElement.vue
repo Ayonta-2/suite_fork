@@ -39,7 +39,7 @@ import { isAffectedByMagicMove } from '@/apps/slides/stores/transition'
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
 import { slideIndex } from '@/apps/slides/stores/slide'
 
-const { activeEditor, baseFontSize } = useTextEditor()
+const { activeEditor } = useTextEditor()
 
 const props = defineProps({
 	mode: {
