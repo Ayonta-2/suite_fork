@@ -16,6 +16,7 @@
 			@navigate="navigateToPresentation"
 			@openDialog="openDialog"
 			@duplicatePresentation="(name) => duplicateAndNavigate(name)"
+			@newPresentation="navigateToEditor"
 		/>
 
 		<PresentationPreview

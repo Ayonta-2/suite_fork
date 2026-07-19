@@ -80,7 +80,7 @@
 					variant="subtle"
 					label="New Presentation"
 					iconLeft="lucide-plus"
-					@click="$emit('openDialog', 'New')"
+					@click="$emit('newPresentation')"
 				/>
 			</div>
 		</div>
@@ -106,7 +106,13 @@ const props = defineProps({
 	},
 })
 
-const emit = defineEmits(['navigate', 'setPreview', 'openDialog', 'duplicatePresentation'])
+const emit = defineEmits([
+	'navigate',
+	'setPreview',
+	'openDialog',
+	'duplicatePresentation',
+	'newPresentation',
+])
 
 const search = ref('')
 
