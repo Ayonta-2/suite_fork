@@ -161,9 +161,11 @@ class CalendarEventService(CalendarsService):
 		calendar(s) once every event has been created; only calendarIds is touched, so the rest of the
 		event is left untouched."""
 
+		# `updated` is server-managed for CalendarEvent (it is stripped on create; see the exchange's
+		# SERVER_MANAGED_KEYS), so patch calendarIds only and let the server set the timestamp itself.
 		result = {"updated": [], "notUpdated": {}}
 		for batch in self.create_batches(list(mapping.items()), self.max_objects_in_set):
-			payload = {id: {"calendarIds": calendar_ids, "updated": utcnow()} for id, calendar_ids in batch}
+			payload = {id: {"calendarIds": calendar_ids} for id, calendar_ids in batch}
 
 			response = self._update(payload)
 
