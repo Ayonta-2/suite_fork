@@ -63,7 +63,7 @@ import LucideSun from '~icons/lucide/sun'
 import LucideMoon from '~icons/lucide/moon'
 import LucideMonitor from '~icons/lucide/monitor'
 import LucideCheck from '~icons/lucide/check'
-import { getThemeMode, switchTheme } from '@/apps/drive/utils/setupTheme'
+import { themeMode, switchTheme } from '@/utils/setupTheme'
 
 defineEmits(['toggleMobileSidebar', 'showSearchPopUp'])
 const router = useRouter()
@@ -94,13 +94,6 @@ emitter.on('toggleShortcuts', () => {
 
 const appsMenuOption = useAppSwitcher('drive')
 
-const themeMode = ref(getThemeMode())
-
-function selectTheme(theme) {
-  switchTheme(theme)
-  themeMode.value = theme.toLowerCase()
-}
-
 const settingsItems = computed(() => [
   {
     group: __('Manage'),
@@ -124,17 +117,17 @@ const settingsItems = computed(() => [
           {
             label: __('Light'),
             icon: themeMode.value === 'light' ? LucideCheck : LucideSun,
-            onClick: () => selectTheme('Light'),
+            onClick: () => switchTheme('Light'),
           },
           {
             label: __('Dark'),
             icon: themeMode.value === 'dark' ? LucideCheck : LucideMoon,
-            onClick: () => selectTheme('Dark'),
+            onClick: () => switchTheme('Dark'),
           },
           {
             label: __('Automatic'),
             icon: themeMode.value === 'automatic' ? LucideCheck : LucideMonitor,
-            onClick: () => selectTheme('Automatic'),
+            onClick: () => switchTheme('Automatic'),
           },
         ],
       },

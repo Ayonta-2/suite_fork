@@ -11,7 +11,7 @@ import { h, onMounted, onUnmounted, provide, ref } from 'vue'
 import { toast } from 'frappe-ui'
 import { Wifi, WifiOff } from 'lucide-vue-next'
 import { saveCurrentState } from '@/apps/slides/stores/saving'
-import { setupTheme } from '@/apps/slides/utils/setupTheme'
+import { setupTheme } from '@/utils/setupTheme'
 
 const isOnline = ref(navigator?.onLine ?? true)
 

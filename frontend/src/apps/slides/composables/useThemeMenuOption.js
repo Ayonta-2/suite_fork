@@ -1,14 +1,12 @@
-import { computed, h, ref } from 'vue'
+import { computed, h } from 'vue'
 import { SunMoon, Sun, Moon, Monitor } from 'lucide-vue-next'
-import { getThemeMode, switchTheme } from '@/apps/slides/utils/setupTheme'
+import { themeMode, switchTheme } from '@/utils/setupTheme'
 
 const themeModes = [
 	{ mode: 'light', icon: Sun, label: 'Light' },
 	{ mode: 'dark', icon: Moon, label: 'Dark' },
 	{ mode: 'automatic', icon: Monitor, label: 'Auto' },
 ]
-
-const themeMode = ref(getThemeMode())
 
 const activeTheme = computed(
 	() => themeModes.find(({ mode }) => mode === themeMode.value) || themeModes[0],
@@ -18,7 +16,6 @@ function cycleTheme(event) {
 	event.preventDefault()
 	const next = themeModes[(themeModes.indexOf(activeTheme.value) + 1) % themeModes.length]
 	switchTheme(next.mode)
-	themeMode.value = next.mode
 }
 
 export function useThemeMenuOption() {

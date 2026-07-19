@@ -7,7 +7,7 @@ import {
   setPageBreadcrumbs,
 } from '@/apps/drive/data/breadcrumbs'
 import { translate } from '@/apps/drive/resources/files'
-import { setupTheme } from '@/apps/drive/utils/setupTheme'
+import { setupTheme } from '@/utils/setupTheme'
 
 /**
  * Drive route module — mounted by the suite router under the '/drive' prefix.
