@@ -94,14 +94,15 @@
                       {
                         label: 'Edit',
                         onClick: () => (reply.edit = true),
-                        cond: comment.owner == currentUserId,
+                        cond: comment.owner == currentUserId && !reply.new,
                       },
                       {
                         label: 'Delete',
                         onClick: () => removeReply(comment.id, reply.id),
                         cond:
                           comment.owner == currentUserId &&
-                          index !== 0,
+                          index !== 0 &&
+                          !reply.new,
                       },
                     ])
                       ">
