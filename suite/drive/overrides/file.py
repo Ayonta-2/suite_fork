@@ -38,10 +38,10 @@ class File(FrappeFile):
 	def validate(self):
 		if is_site_file(self):
 			return super().validate()
-		# Drive files are served only through Drive's permission layer, never the
-		# public /files/ path — block any save that would expose them.
-		return
-		if not self.is_private:
+		# Blob-backed Drive files must be private: they're served only through
+		# Drive's permission layer, never the public /files/ path. Folders, links
+		# and content-doctype files have no on-disk blob, so they're exempt.
+		if not self.is_folder and not self._not_in_disk() and not self.is_private:
 			frappe.throw("Drive files must be private.", frappe.ValidationError)
 		# file_name is coupled to the blob path; only rename()/move() may change it.
 		if not self.is_new() and self.has_value_changed("file_name") and not self.flags.drive_disk_rename:
@@ -138,6 +138,17 @@ class File(FrappeFile):
 	):
 		if not user_has_permission(self, "share"):
 			frappe.throw("Not permitted to share", frappe.PermissionError)
+
+		# You can only hand out access you hold yourself, so a user with (say)
+		# read+share can't grant write/upload they don't have.
+		granter = get_user_access(self, frappe.session.user)
+		requested = {"read": read, "comment": comment, "share": share, "upload": upload, "write": write}
+		for level, value in requested.items():
+			if value and not granter.get(level):
+				frappe.throw(
+					f"You cannot grant '{level}' access that you don't have yourself.",
+					frappe.PermissionError,
+				)
 
 		# Clean out existing general records
 		if not user or team:

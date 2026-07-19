@@ -68,7 +68,9 @@ def leave_team(team: str):
 	if user not in drive_team:
 		frappe.throw("User doesn't belong to team")
 
-	frappe.delete_doc("Drive Team Member", drive_team[user].name)
+	# Authorized above (a user may only remove themselves); the Drive Team perm
+	# can't express "delete my own membership row", so bypass it here.
+	frappe.delete_doc("Drive Team Member", drive_team[user].name, ignore_permissions=True)
 
 
 @frappe.whitelist()
@@ -298,7 +300,8 @@ def remove_user(team: str, user_id: str):
 	drive_team = {k.user: k for k in frappe.get_doc("Drive Team", team).users}
 	if frappe.session.user not in drive_team:
 		frappe.throw("User doesn't belong to team")
-	frappe.delete_doc("Drive Team Member", drive_team[user_id].name)
+	# Authorized above (is_admin); bypass the parent Drive Team delete perm.
+	frappe.delete_doc("Drive Team Member", drive_team[user_id].name, ignore_permissions=True)
 
 
 @frappe.whitelist()

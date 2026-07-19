@@ -129,6 +129,8 @@ permission_query_conditions = {
 	"Presentation": "suite.slides.doctype.presentation.presentation.get_permission_query_conditions",
 	# writer
 	"Writer Template": "suite.writer.overrides.filter_templates",
+	"Writer Document": "suite.writer.overrides.document_query_conditions",
+	"Writer Version": "suite.writer.overrides.version_query_conditions",
 	# sheets
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
@@ -152,10 +154,14 @@ permission_query_conditions = {
 has_permission = {
 	# drive
 	"File": "suite.drive.api.permissions.user_has_permission",
+	"Drive Permission": "suite.drive.api.permissions.drive_permission_has_permission",
+	"Drive Team": "suite.drive.api.permissions.drive_team_has_permission",
 	# slides
 	"Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
 	# writer
 	"Writer Document": "suite.drive.overrides.file.content_has_permission",
+	"Writer Version": "suite.writer.overrides.version_has_permission",
+	"Writer Template": "suite.writer.overrides.template_has_permission",
 	# sheets
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_has_permission",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
