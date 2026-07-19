@@ -41,7 +41,12 @@ import Section from '@/apps/slides/components/controls/Section.vue'
 import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
 import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
 
-import { activeElement, activeElementIds, flipElements } from '@/apps/slides/stores/element'
+import {
+	activeElement,
+	activeElementIds,
+	addFixedWidthToElement,
+	flipElements,
+} from '@/apps/slides/stores/element'
 import { selectionBounds } from '@/apps/slides/stores/slide'
 import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
 import { rotationDelta } from '@/apps/slides/composables/useRotator'
@@ -69,6 +74,7 @@ let scrubStartBounds = null
 
 const beginSizeChange = () => {
 	if (scrubStartBounds) return
+	if (!activeElement.value.width) addFixedWidthToElement()
 	scrubStartBounds = { width: selectionBounds.width, height: selectionBounds.height }
 }
 
