@@ -45,7 +45,7 @@
 					size="sm"
 					class="cursor-pointer"
 					:modelValue="currentSlide.fadeUnmatchedElements"
-					@update:modelValue="(value) => setTransitionAttribute('fadeUnmatchedElements', value)"
+					@update:modelValue="setFadeUnmatched"
 				/>
 			</div>
 
@@ -148,6 +148,18 @@ const setSlideTransition = (option) => {
 
 const setTransitionAttribute = (property, value) => {
 	currentSlide.value[property] = value
+}
+
+const setFadeUnmatched = (value) => {
+	if (Boolean(value) === Boolean(currentSlide.value.fadeUnmatchedElements)) return
+	commandHistory.execute(
+		editSlideCommand({
+			slideId: currentSlide.value.clientId,
+			property: 'fadeUnmatchedElements',
+			oldValue: currentSlide.value.fadeUnmatchedElements,
+			newValue: value,
+		}),
+	)
 }
 
 const applyTransitionToAllSlides = () => {

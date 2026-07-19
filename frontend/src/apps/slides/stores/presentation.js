@@ -220,7 +220,10 @@ const getPresentationResource = (name) => {
 			const local = await getPresentationFromLocalDB(name)
 			if (local?.dirty && local.baseModified === doc.modified) {
 				const restored = JSON.parse(JSON.stringify(local.content))
-				// local content skips the transform's repair, so dedup it here too
+				// local content skips the load pipeline; migrate + dedup it here too
+				for (const slide of restored) {
+					slide.elements = parseElements(slide.elements)
+				}
 				ensureUniqueClientIds(restored)
 				slides.value = restored
 				slidesLength.value = slides.value.length
