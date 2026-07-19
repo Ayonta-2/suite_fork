@@ -324,6 +324,8 @@ class ContactsExchange(Document):
 		os.makedirs(base_dir, exist_ok=True)
 
 		kwargs = {}
+		service = None
+		staging_address_book_id = None
 		try:
 			if self.import_format == "vcf" and self.import_file.endswith(".vcf"):
 				shutil.copy(import_file, os.path.join(base_dir, os.path.basename(import_file)))
@@ -348,24 +350,34 @@ class ContactsExchange(Document):
 			if len(cards) > self.max_import:
 				frappe.throw(_("Import limit exceeded."))
 
-			created, skipped, failed = self._create_cards(service, cards, logger)
+			# Stage everything into one throwaway address book first, then move it to the destination
+			# address book(s). A failure before the move leaves nothing scattered across the account: the
+			# staging address book and every card in it are deleted on rollback.
+			staging_address_book_id = self._create_staging_address_book(service, logger)
+			targets, skipped, failed = self._create_cards(service, cards, staging_address_book_id, logger)
 
+			# The server rejecting every card (e.g. an invalid target address book) is a failure,
+			# not a successful zero-import.
+			if not targets and failed > 0:
+				frappe.throw(_("Import failed: the server rejected all {0} contact(s).").format(failed))
+
+			self._move_to_target_address_books(service, targets, logger)
+			self._discard_staging_address_book(service, staging_address_book_id, logger)
+			staging_address_book_id = None
+
+			created = len(targets)
 			logger.info("import-completed", created=created, skipped=skipped, failed=failed)
 			self._log_output(
 				_("Import completed. {0} created, {1} skipped (already present), {2} failed.").format(
 					created, skipped, failed
 				)
 			)
-
-			# The server rejecting every card (e.g. an invalid target address book) is a failure,
-			# not a successful zero-import.
-			if created == 0 and failed > 0:
-				frappe.throw(_("Import failed: the server rejected all {0} contact(s).").format(failed))
-
 			kwargs.update({"status": "Completed"})
 		except Exception:
 			logger.exception("import-failed")
 			self._log_output(_("Import failed. See the error details below."))
+			if staging_address_book_id and service:
+				self._rollback_staging_address_book(service, staging_address_book_id, logger)
 			kwargs.update(
 				{"status": "Failed", "output": f"{self.output}\n\n{frappe.get_traceback(with_context=False)}"}
 			)
@@ -554,13 +566,36 @@ class ContactsExchange(Document):
 
 		return cards
 
-	def _create_cards(
-		self, service: ContactCardService, cards: list[dict], logger: ExchangeLogger
-	) -> tuple[int, int, int]:
-		"""Creates the given JSContact cards, skipping any whose UID already exists (idempotency).
+	def _create_staging_address_book(self, service: ContactCardService, logger: ExchangeLogger) -> str:
+		"""Creates a temporary address book (named after this exchange) to stage the import into."""
 
-		Returns a ``(created, skipped, failed)`` tuple. Failures within a batch are recorded and the
-		remaining batches continue, so a few malformed cards do not abort the whole import."""
+		self._log_output(_("Creating a temporary address book to stage the import."))
+		response = AddressBookService(service.account, service.connection).create(
+			[{"creation_id": str(uuid7()), "name": self.name, "is_subscribed": False}]
+		)
+		created = response.get("created") or {}
+		if not created:
+			frappe.throw(
+				_("Failed to create the staging address book: {0}").format(response.get("notCreated"))
+			)
+
+		staging_address_book_id = next(iter(created.values()))["id"]
+		logger.info("import-staging-address-book-created", address_book=staging_address_book_id)
+		return staging_address_book_id
+
+	def _create_cards(
+		self,
+		service: ContactCardService,
+		cards: list[dict],
+		staging_address_book_id: str,
+		logger: ExchangeLogger,
+	) -> tuple[dict[str, dict[str, bool]], int, int]:
+		"""Creates the given JSContact cards in the staging address book, skipping any whose UID already
+		exists (idempotency).
+
+		Returns a ``(targets, skipped, failed)`` tuple, where ``targets`` maps each created card's ID to
+		the destination addressBookIds it should ultimately land in. Failures within a batch are recorded
+		and the remaining batches continue, so a few malformed cards do not abort the whole import."""
 
 		# Idempotency: skip cards whose UID is already present in the account.
 		uids = [c["uid"] for c in cards if c.get("uid")]
@@ -592,41 +627,96 @@ class ContactsExchange(Document):
 				continue
 			pending.append(card)
 
-		created = 0
+		targets: dict[str, dict[str, bool]] = {}
 		failed = 0
 		total = len(pending)
 		for batch in create_batch(pending, service.max_objects_in_set):
 			payload: dict[str, dict] = {}
-			creation_to_uid: dict[str, str] = {}
+			creation_meta: dict[str, tuple[str, dict]] = {}
 			for card in batch:
+				# Resolve the destination before overwriting addressBookIds with the staging book.
+				destination = resolve_address_book_ids(card)
 				card = {k: v for k, v in card.items() if k not in SERVER_MANAGED_KEYS}
 				card["@type"] = "Card"
 				card.setdefault("version", "1.0")
-				card["addressBookIds"] = resolve_address_book_ids(card)
+				card["addressBookIds"] = {staging_address_book_id: True}
 
 				creation_id = str(uuid7())
 				payload[creation_id] = card
-				creation_to_uid[creation_id] = card.get("uid", creation_id)
+				creation_meta[creation_id] = (card.get("uid", creation_id), destination)
 
 			response = service._create(payload)
 			method_responses = response.get("methodResponses") or []
 			result = method_responses[0][1] if method_responses else {}
 
-			batch_created = result.get("created") or {}
 			batch_failed = result.get("notCreated") or {}
-			created += len(batch_created)
 			failed += len(batch_failed)
+
+			for creation_id, info in (result.get("created") or {}).items():
+				targets[info["id"]] = creation_meta[creation_id][1]
 
 			for creation_id, error in batch_failed.items():
 				logger.warning(
 					"import-card-not-created",
-					uid=creation_to_uid.get(creation_id),
+					uid=creation_meta.get(creation_id, (None,))[0],
 					reason=str(error),
 				)
 
-			self._log_output(_("Imported {0} of {1} contact(s).").format(created, total))
+			self._log_output(_("Staged {0} of {1} contact(s).").format(len(targets), total))
 
-		return created, skipped, failed
+		return targets, skipped, failed
+
+	def _move_to_target_address_books(
+		self, service: ContactCardService, targets: dict[str, dict[str, bool]], logger: ExchangeLogger
+	) -> None:
+		"""Moves the staged cards into their destination address books, replacing the staging book.
+
+		This is the commit step: until it runs, every card lives only in the staging address book, so a
+		failure up to this point rolls back cleanly."""
+
+		if not targets:
+			return
+
+		self._log_output(
+			_("Moving {0} contact(s) into the destination address book(s).").format(len(targets))
+		)
+		result = service.set_address_book_ids(targets)
+
+		if not_updated := result.get("notUpdated"):
+			logger.warning("import-card-not-moved", count=len(not_updated))
+			frappe.throw(
+				_("Failed to move {0} contact(s) into the destination address book(s).").format(
+					len(not_updated)
+				)
+			)
+
+		logger.info("import-cards-moved", cards=len(result.get("updated", [])))
+
+	def _discard_staging_address_book(
+		self, service: ContactCardService, staging_address_book_id: str, logger: ExchangeLogger
+	) -> None:
+		"""Deletes the now-empty staging address book after a successful import. A failure here is logged
+		but not fatal: the cards are already safely in their destination address books."""
+
+		try:
+			AddressBookService(service.account, service.connection).delete([staging_address_book_id])
+			logger.info("import-staging-address-book-removed", address_book=staging_address_book_id)
+		except Exception:
+			logger.warning("import-staging-address-book-remove-failed", address_book=staging_address_book_id)
+
+	def _rollback_staging_address_book(
+		self, service: ContactCardService, staging_address_book_id: str, logger: ExchangeLogger
+	) -> None:
+		"""Deletes the staging address book and every card still staged in it, undoing a failed import."""
+
+		self._log_output(_("Rolling back: removing the staging address book and any staged contacts."))
+		try:
+			AddressBookService(service.account, service.connection).delete(
+				[staging_address_book_id], remove_contents=True
+			)
+			logger.info("import-rolled-back", address_book=staging_address_book_id)
+		except Exception:
+			logger.exception("import-rollback-failed", address_book=staging_address_book_id)
 
 	def _mark_started(self) -> None:
 		"""Marks the contacts exchange as started and updates the started_at and started_after fields."""
