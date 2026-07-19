@@ -101,7 +101,13 @@ def get_document_list(
 
     default = 0
 
+    accessible = []
     for r in res:
+        access = get_user_access(r["name"])
+        # A stale "recently opened" entry can outlive the caller's access.
+        if not access.get("read"):
+            continue
+        accessible.append(r)
         r["children"] = children_count.get(r["name"], 0)
         r["html"] = frappe.get_cached_value("Writer Document", r["content_docname"], "html")
         if r["name"] in public_files:
@@ -112,10 +118,10 @@ def get_document_list(
             r["share_count"] = share_count.get(r["name"], default)
         else:
             r["share_count"] = default
-        r |= get_user_access(r["name"])
+        r |= access
 
     # Return in the format useList expects
-    frappe.response["data"] = res
+    frappe.response["data"] = accessible
     frappe.response["has_next_page"] = has_next_page
 
 
@@ -143,9 +149,11 @@ def search(query: str, filters: str | None = None):
     metadata = get_drive_file_meta([k["name"] for k in search["results"]])
     cleaned_results = []
     for k in search["results"]:
-        if k["name"] not in metadata:
+        meta = metadata.get(k["name"])
+        # The index is unscoped; only surface documents the caller can read.
+        if not meta or not get_user_access(meta["name"]).get("read"):
             continue
-        k.update(metadata[k["name"]])
+        k.update(meta)
         cleaned_results.append(k)
     search["results"] = cleaned_results
     return search

@@ -280,6 +280,55 @@ def site_file_has_permission(doc, ptype=None, user=None):
     return False
 
 
+def drive_permission_has_permission(doc, ptype="read", user=None):
+    """Gate direct Drive Permission access via the generic client API.
+
+    Reads are additionally scoped by `filter_drive_permission`; creating or
+    modifying an ACL row requires `share` rights on the target entity, so a user
+    can't grant themselves access by inserting permission rows directly. The
+    share()/unshare() flows are unaffected as they save with ignore_permissions.
+    """
+    user = user or frappe.session.user
+    if user == "Administrator" or "Drive Admin" in frappe.get_roles(user):
+        return True
+    if isinstance(doc, str):
+        doc = frappe.get_doc("Drive Permission", doc)
+    if ptype in ("read", "select"):
+        return doc.owner == user or doc.user == user
+    return bool(user_has_permission(doc.entity, "share", user))
+
+
+def drive_team_has_permission(doc, ptype="read", user=None):
+    """Gate direct Drive Team access via the generic client API.
+
+    Reads are scoped by `filter_drive_team`, and creating a brand-new team is
+    open; but modifying an existing team — whether by saving it, deleting it, or
+    inserting a member into its child table — requires being an admin of that
+    team, so a user can't add or elevate themselves.
+    """
+    user = user or frappe.session.user
+    if user == "Administrator" or "Drive Admin" in frappe.get_roles(user):
+        return True
+    if ptype in ("read", "select"):
+        return True
+    if isinstance(doc, str):
+        doc = frappe.get_doc("Drive Team", doc)
+    if ptype == "create" and doc.is_new():
+        return True
+    if doc.owner == user:
+        return True
+    # Check persisted admin membership, not the in-memory child rows — the caller
+    # may have just appended themselves as an admin in the doc being saved.
+    return (
+        frappe.db.get_value(
+            "Drive Team Member",
+            {"parent": doc.name, "parenttype": "Drive Team", "user": user},
+            "access_level",
+        )
+        == 2
+    )
+
+
 def user_has_permission(doc, ptype, user=None, team=0):
     if isinstance(doc, str):
         doc = frappe.get_doc("File", doc)
