@@ -4,7 +4,7 @@ import { createResource } from 'frappe-ui'
 
 import { router, setEditorAccess, setPreviousRoute } from '@/apps/slides/router'
 import SlidesShell from '@/apps/slides/SlidesShell.vue'
-import { getSessionUser } from '@/boot/session'
+import { useSessionStore } from '@/boot/session'
 
 /**
  * Slides route module — mounted by the suite router under the '/slides' prefix.
@@ -12,10 +12,6 @@ import { getSessionUser } from '@/boot/session'
  * Paths are RELATIVE to '/slides' (no leading slash; '' is the app index).
  * Route names are namespaced `slides-*` to avoid collisions in the single
  * suite router. Views are lazy so slides' heavy editor deps stay code-split.
- *
- * Names map from the standalone app: Home -> slides-home,
- * EditorNew -> slides-editor-new, PresentationEditor -> slides-editor,
- * Slideshow -> slides-slideshow, NotPermitted -> slides-not-permitted.
  */
 
 let currentEditorAccess = 'none'
@@ -52,7 +48,7 @@ export const routes: RouteRecordRaw[] = [
         name: 'slides-editor',
         component: () => import('@/apps/slides/pages/PresentationEditor.vue'),
         props: withPresentationProps,
-        meta: { isPublic: true },
+        meta: { allowGuest: true },
       },
       {
         path: 'presentation/view/:presentationId/:slug?',
@@ -67,12 +63,13 @@ export const routes: RouteRecordRaw[] = [
         name: 'slides-slideshow',
         component: () => import('@/apps/slides/pages/Slideshow.vue'),
         props: withPresentationProps,
-        meta: { isPublic: true },
+        meta: { allowGuest: true },
       },
       {
         path: 'not-permitted',
         name: 'slides-not-permitted',
         component: () => import('@/apps/slides/pages/errorPages/NotPermitted.vue'),
+        meta: { allowGuest: true },
       },
     ],
   },
@@ -81,11 +78,9 @@ export const routes: RouteRecordRaw[] = [
 export default routes
 
 /* -------------------------------------------------------------------------- */
-/* Slides navigation guards                                                    */
-/*                                                                             */
-/* Ported from the standalone app's router.beforeEach: maintain `previousRoute`*/
-/* and gate the editor route on the per-presentation access level. Installed   */
-/* once, the first time this module is loaded (see bottom of file).            */
+/* Slides navigation guards: maintain `previousRoute` and gate the editor      */
+/* route on the per-presentation access level. Installed once, the first time  */
+/* this module is loaded (see bottom of file).                                 */
 /* -------------------------------------------------------------------------- */
 
 const getEditorAccess = async (presentationId: string) => {
@@ -131,7 +126,7 @@ function installSlidesGuards(r: Router) {
       if (['edit', 'view'].includes(currentEditorAccess)) {
         return next()
       }
-      if (!getSessionUser()) {
+      if (!useSessionStore().isLoggedIn) {
         window.location.href = `/login?redirect-to=${encodeURIComponent(to.fullPath)}`
         return next(false)
       }

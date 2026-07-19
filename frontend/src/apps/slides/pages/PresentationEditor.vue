@@ -88,7 +88,6 @@ import {
 	onMounted,
 	onBeforeUnmount,
 	provide,
-	inject,
 	nextTick,
 	useTemplateRef,
 } from 'vue'
@@ -146,7 +145,6 @@ import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { Layout, Trash } from 'lucide-vue-next'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 
-const isDriveInstalled = inject('isDriveInstalled', false)
 
 const route = useRoute()
 const router = useRouter()
@@ -353,20 +351,13 @@ const createPresentation = async (theme) => {
 	showThemeDialog.value = false
 	const newPresentation = await createPresentationResource.submit({
 		template: theme,
+		parent: route.query.parent || '',
 	})
 	const name = newPresentation?.name
 
 	if (!name) {
 		console.error('Failed to create new presentation')
 		return
-	}
-
-	if (isDriveInstalled) {
-		const parent = route.query.parent || ''
-		call('suite.slides.api.file.create_drive_file', {
-			name: name,
-			parent: parent,
-		})
 	}
 
 	navigateToPresentation(name)
