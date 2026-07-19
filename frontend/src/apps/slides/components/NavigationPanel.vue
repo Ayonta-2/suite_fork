@@ -19,7 +19,7 @@
 			class="faded-scroll [--fade-length:6px] min-h-0 flex-1 overflow-y-auto p-4 pt-4 no-scrollbar"
 			:style="scrollbarStyles"
 		>
-			<ContextMenu :options="activeOptions">
+			<component :is="menuWrapper" v-bind="menuWrapperProps">
 				<div :style="virtualContainerStyles">
 					<div
 						v-for="virtualRow in virtualRows"
@@ -28,7 +28,7 @@
 						:style="getRowStyles(virtualRow)"
 						@click="handleSlideClick(orderedSlides[virtualRow.index])"
 						@mousedown="slideSort.handleSortStart($event, virtualRow.index)"
-						@contextmenu="activeOptions = buildSlideOptions(virtualRow.index)"
+						@contextmenu="handleSlideContextMenu(virtualRow.index)"
 					>
 						<ThumbnailContainer
 							:slide="orderedSlides[virtualRow.index]"
@@ -43,7 +43,7 @@
 						/>
 					</div>
 				</div>
-			</ContextMenu>
+			</component>
 
 			<div
 				v-if="!inReadonlyMode && presentationDoc"
@@ -87,6 +87,16 @@ const inReadonlyMode = inject('inReadonlyMode', ref(false))
 const emit = defineEmits(['changeSlide', 'openLayoutDialog', 'duplicate', 'delete'])
 
 const activeOptions = ref([])
+
+const menuWrapper = computed(() => (inReadonlyMode.value ? 'div' : ContextMenu))
+const menuWrapperProps = computed(() =>
+	inReadonlyMode.value ? {} : { options: activeOptions.value },
+)
+
+const handleSlideContextMenu = (index) => {
+	if (inReadonlyMode.value) return
+	activeOptions.value = buildSlideOptions(index)
+}
 
 const buildSlideOptions = (index) => [
 	{
