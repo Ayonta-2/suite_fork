@@ -4,9 +4,9 @@
 			<span :class="labelClasses">Color</span>
 			<ColorPicker
 				:modelValue="activeElement.borderColor || defaultBorderColor"
-				@update:modelValue="(value) => (activeElement.borderColor = value)"
-				@colordown="onBorderColorStart"
-				@colorup="onBorderColorEnd"
+				@update:modelValue="borderColor.set"
+				@colordown="borderColor.begin"
+				@colorup="borderColor.commit"
 			/>
 		</div>
 		<NumberControl
@@ -17,9 +17,9 @@
 			:max="50"
 			:max-digits="3"
 			:step="0.5"
-			@update:modelValue="(value) => (activeElement.borderWidth = value)"
-			@change-start="onBorderWidthStart"
-			@change-end="onBorderWidthEnd"
+			@update:modelValue="borderWidth.set"
+			@change-start="borderWidth.begin"
+			@change-end="borderWidth.commit"
 		/>
 		<NumberControl
 			:modelValue="activeElement.borderRadius ?? 0"
@@ -29,9 +29,9 @@
 			:max="50"
 			:max-digits="3"
 			:step="0.5"
-			@update:modelValue="(value) => (activeElement.borderRadius = value)"
-			@change-start="onRadiusStart"
-			@change-end="onRadiusEnd"
+			@update:modelValue="borderRadius.set"
+			@change-start="borderRadius.begin"
+			@change-end="borderRadius.commit"
 		/>
 		<div class="flex h-7 w-full items-center justify-between">
 			<span :class="labelClasses">Style</span>
@@ -45,7 +45,7 @@
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
+import { computed } from 'vue'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
@@ -53,10 +53,11 @@ import Section from '@/apps/slides/components/controls/Section.vue'
 import LineStyleSelect from '@/apps/slides/components/controls/LineStyleSelect.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
+import {
+	setElementProperties,
+	useElementProperty,
+} from '@/apps/slides/composables/editProperty'
 import { defaultBorderColor, labelClasses } from '@/apps/slides/utils/constants'
-
-const setProperties = inject('setProperties')
-const setPropertyDeferred = inject('setPropertyDeferred')
 
 const defaultBorderWidth = 1
 
@@ -75,7 +76,7 @@ const displayStyle = computed(() => activeElement.value.borderStyle || 'none')
 
 const setBorderStyle = (style) => {
 	const width = Number(activeElement.value.borderWidth) || 0
-	setProperties([
+	setElementProperties([
 		{ property: 'borderStyle', oldValue: activeElement.value.borderStyle, newValue: style },
 		{
 			property: 'borderWidth',
@@ -85,18 +86,7 @@ const setBorderStyle = (style) => {
 	])
 }
 
-const { onStart: onBorderColorStart, onEnd: onBorderColorEnd } = setPropertyDeferred(
-	'element',
-	'borderColor',
-)
-
-const { onStart: onBorderWidthStart, onEnd: onBorderWidthEnd } = setPropertyDeferred(
-	'element',
-	'borderWidth',
-)
-
-const { onStart: onRadiusStart, onEnd: onRadiusEnd } = setPropertyDeferred(
-	'element',
-	'borderRadius',
-)
+const borderColor = useElementProperty('borderColor')
+const borderWidth = useElementProperty('borderWidth')
+const borderRadius = useElementProperty('borderRadius')
 </script>

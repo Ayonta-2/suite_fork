@@ -38,14 +38,10 @@
 </template>
 
 <script setup>
-import { computed, provide } from 'vue'
-
-import { useDeferredCommit } from '@/apps/slides/composables/useDeferredCommit'
+import { computed } from 'vue'
 
 import { activeElement, activeElementIds, focusElementId } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
-import { commandHistory } from '@/apps/slides/stores/historyMeta'
-import { batchCommand, editElementCommand, editSlideCommand } from '@/apps/slides/stores/commands'
 
 import { Divider } from 'frappe-ui'
 
@@ -60,77 +56,7 @@ import ShadowSection from './ShadowSection.vue'
 import BackgroundSection from './BackgroundSection.vue'
 import TransitionSection from './TransitionSection.vue'
 
-const setProperty = (property, value) => {
-	const oldValue = activeElement.value[property]
-	commandHistory.execute(
-		editElementCommand({
-			slideId: currentSlide.value.clientId,
-			elementIds: activeElementIds.value,
-			property,
-			oldValue,
-			newValue: value,
-		}),
-	)
-}
-
-const setProperties = (changes) => {
-	const commands = changes
-		.filter((c) => c.oldValue !== c.newValue)
-		.map((c) =>
-			editElementCommand({
-				slideId: currentSlide.value.clientId,
-				elementIds: activeElementIds.value,
-				property: c.property,
-				oldValue: c.oldValue,
-				newValue: c.newValue,
-			}),
-		)
-	if (!commands.length) return
-	if (commands.length === 1) {
-		commandHistory.execute(commands[0])
-		return
-	}
-	commandHistory.execute(
-		batchCommand({
-			slideId: currentSlide.value.clientId,
-			elementIds: activeElementIds.value,
-			commands,
-		}),
-	)
-}
-
-const setPropertyDeferred = (level, property) => {
-	if (level === 'element') {
-		return useDeferredCommit(
-			() => activeElement.value?.[property],
-			(oldValue, newValue) =>
-				editElementCommand({
-					slideId: currentSlide.value?.clientId,
-					elementIds: activeElementIds.value,
-					property,
-					oldValue,
-					newValue,
-				}),
-		)
-	} else if (level === 'slide') {
-		return useDeferredCommit(
-			() => currentSlide.value?.[property],
-			(oldValue, newValue) =>
-				editSlideCommand({
-					slideId: currentSlide.value?.clientId,
-					property,
-					oldValue,
-					newValue,
-				}),
-		)
-	}
-}
-
 const isEditingShapeText = computed(
 	() => activeElement.value?.type === 'shape' && focusElementId.value === activeElement.value?.id,
 )
-
-provide('setProperty', setProperty)
-provide('setProperties', setProperties)
-provide('setPropertyDeferred', setPropertyDeferred)
 </script>

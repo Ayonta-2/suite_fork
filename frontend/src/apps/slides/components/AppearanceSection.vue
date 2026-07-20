@@ -20,28 +20,27 @@
 			:max="100"
 			:max-digits="3"
 			:step="1"
-			@update:modelValue="(value) => (activeElement.opacity = value)"
-			@change-start="onOpacityStart"
-			@change-end="onOpacityEnd"
+			@update:modelValue="opacity.set"
+			@change-start="opacity.begin"
+			@change-end="opacity.commit"
 		/>
 	</Section>
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
+import { computed } from 'vue'
 
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
+import { useElementProperty } from '@/apps/slides/composables/editProperty'
 
 import { activeElement } from '@/apps/slides/stores/element'
 
-const setPropertyDeferred = inject('setPropertyDeferred')
-
 const { editorStyles, updateProperty } = useTextEditor()
 
-const { onStart: onOpacityStart, onEnd: onOpacityEnd } = setPropertyDeferred('element', 'opacity')
+const opacity = useElementProperty('opacity')
 
 const textOpacity = computed(() => {
 	const value = parseFloat(editorStyles.opacity)

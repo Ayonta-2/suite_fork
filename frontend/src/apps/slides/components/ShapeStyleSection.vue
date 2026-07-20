@@ -16,17 +16,17 @@
 			:max="50"
 			:max-digits="3"
 			:step="0.5"
-			@update:modelValue="(value) => (activeElement.strokeWidth = value)"
-			@change-start="onStrokeWidthStart"
-			@change-end="onStrokeWidthEnd"
+			@update:modelValue="strokeWidth.set"
+			@change-start="strokeWidth.begin"
+			@change-end="strokeWidth.commit"
 		/>
 		<div class="flex h-7 w-full items-center justify-between">
 			<span :class="labelClasses">Stroke Color</span>
 			<ColorPicker
 				:modelValue="activeElement.strokeColor"
-				@update:modelValue="(value) => (activeElement.strokeColor = value)"
-				@colordown="onStrokeColorStart"
-				@colorup="onStrokeColorEnd"
+				@update:modelValue="strokeColor.set"
+				@colordown="strokeColor.begin"
+				@colorup="strokeColor.commit"
 			/>
 		</div>
 		<div
@@ -36,9 +36,9 @@
 			<span :class="labelClasses">Fill Color</span>
 			<ColorPicker
 				:modelValue="activeElement.fillColor"
-				@update:modelValue="(value) => (activeElement.fillColor = value)"
-				@colordown="onFillColorStart"
-				@colorup="onFillColorEnd"
+				@update:modelValue="fillColor.set"
+				@colordown="fillColor.begin"
+				@colorup="fillColor.commit"
 			/>
 		</div>
 		<NumberControl
@@ -50,9 +50,9 @@
 			:max="50"
 			:max-digits="3"
 			:step="0.5"
-			@update:modelValue="(value) => (activeElement.borderRadius = value)"
-			@change-start="onRadiusStart"
-			@change-end="onRadiusEnd"
+			@update:modelValue="borderRadius.set"
+			@change-start="borderRadius.begin"
+			@change-end="borderRadius.commit"
 		/>
 		<div
 			v-if="activeElement.shapeType == 'line'"
@@ -76,7 +76,7 @@
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
+import { computed } from 'vue'
 
 import { Select } from 'frappe-ui'
 
@@ -87,9 +87,10 @@ import LineStyleSelect from '@/apps/slides/components/controls/LineStyleSelect.v
 import { labelClasses, chevronClasses } from '@/apps/slides/utils/constants'
 
 import { activeElement } from '@/apps/slides/stores/element'
-
-const setProperty = inject('setProperty')
-const setPropertyDeferred = inject('setPropertyDeferred')
+import {
+	setElementProperty,
+	useElementProperty,
+} from '@/apps/slides/composables/editProperty'
 
 const arrowOptions = [
 	{ label: 'None', value: 'none' },
@@ -107,8 +108,8 @@ const arrowDirection = computed(() => {
 })
 
 const setArrowDirection = (value) => {
-	setProperty('markerStart', value === 'left' || value === 'both')
-	setProperty('markerEnd', value === 'right' || value === 'both')
+	setElementProperty('markerStart', value === 'left' || value === 'both')
+	setElementProperty('markerEnd', value === 'right' || value === 'both')
 }
 
 const strokeStyleOptions = [
@@ -119,26 +120,14 @@ const strokeStyleOptions = [
 
 const displayStrokeStyle = computed(() => activeElement.value.strokeStyle || 'solid')
 
-const setStrokeStyle = (value) => setProperty('strokeStyle', value)
+const setStrokeStyle = (value) => setElementProperty('strokeStyle', value)
 
 const strokeMin = computed(() => (activeElement.value.shapeType === 'line' ? 0.5 : 0))
 
-const { onStart: onRadiusStart, onEnd: onRadiusEnd } = setPropertyDeferred(
-	'element',
-	'borderRadius',
-)
-const { onStart: onStrokeWidthStart, onEnd: onStrokeWidthEnd } = setPropertyDeferred(
-	'element',
-	'strokeWidth',
-)
-const { onStart: onFillColorStart, onEnd: onFillColorEnd } = setPropertyDeferred(
-	'element',
-	'fillColor',
-)
-const { onStart: onStrokeColorStart, onEnd: onStrokeColorEnd } = setPropertyDeferred(
-	'element',
-	'strokeColor',
-)
+const borderRadius = useElementProperty('borderRadius')
+const strokeWidth = useElementProperty('strokeWidth')
+const fillColor = useElementProperty('fillColor')
+const strokeColor = useElementProperty('strokeColor')
 
 const valueClasses = 'block w-16 font-text text-base text-ink-gray-8'
 </script>

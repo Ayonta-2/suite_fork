@@ -16,16 +16,14 @@
 			:max="2"
 			:max-digits="3"
 			:step="0.1"
-			@update:modelValue="(value) => (activeElement.playbackRate = value)"
-			@change-start="onSpeedStart"
-			@change-end="onSpeedEnd"
+			@update:modelValue="playbackRate.set"
+			@change-start="playbackRate.begin"
+			@change-end="playbackRate.commit"
 		/>
 	</Section>
 </template>
 
 <script setup>
-import { inject } from 'vue'
-
 import { Switch } from 'frappe-ui'
 
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
@@ -33,12 +31,13 @@ import Section from '@/apps/slides/components/controls/Section.vue'
 import { labelClasses } from '@/apps/slides/utils/constants'
 
 import { activeElement } from '@/apps/slides/stores/element'
+import {
+	setElementProperty,
+	useElementProperty,
+} from '@/apps/slides/composables/editProperty'
 
-const setProperty = inject('setProperty')
-const setPropertyDeferred = inject('setPropertyDeferred')
+const setAutoplay = (value) => setElementProperty('autoplay', value)
+const setLoop = (value) => setElementProperty('loop', value)
 
-const setAutoplay = (value) => setProperty('autoplay', value)
-const setLoop = (value) => setProperty('loop', value)
-
-const { onStart: onSpeedStart, onEnd: onSpeedEnd } = setPropertyDeferred('element', 'playbackRate')
+const playbackRate = useElementProperty('playbackRate')
 </script>

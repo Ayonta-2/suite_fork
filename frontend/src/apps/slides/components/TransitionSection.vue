@@ -31,9 +31,9 @@
 				:max="4"
 				:max-digits="1"
 				:step="0.1"
-				@update:modelValue="(value) => setTransitionAttribute('transitionDuration', value)"
-				@change-start="onDurationStart"
-				@change-end="onDurationEnd"
+				@update:modelValue="duration.set"
+				@change-start="duration.begin"
+				@change-end="duration.commit"
 			/>
 
 			<div
@@ -67,7 +67,7 @@
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
+import { computed } from 'vue'
 
 import { Button, Select, Checkbox, toast } from 'frappe-ui'
 
@@ -82,8 +82,9 @@ import {
 } from '@/apps/slides/stores/transition'
 import { editSlideCommand, batchCommand } from '@/apps/slides/stores/commands'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
+import { useSlideProperty } from '@/apps/slides/composables/editProperty'
 
-const setPropertyDeferred = inject('setPropertyDeferred')
+const duration = useSlideProperty('transitionDuration')
 
 const transitionOptions = [
 	{ label: 'Magic Move', value: 'Magic Move' },
@@ -145,10 +146,6 @@ const setSlideTransition = (option) => {
 			commands,
 		}),
 	)
-}
-
-const setTransitionAttribute = (property, value) => {
-	currentSlide.value[property] = value
 }
 
 const setFadeUnmatched = (value) => {
@@ -214,11 +211,6 @@ const applyTransitionToAllSlides = () => {
 
 	toast.success('Applied transition to all slides')
 }
-
-const { onStart: onDurationStart, onEnd: onDurationEnd } = setPropertyDeferred(
-	'slide',
-	'transitionDuration',
-)
 
 const valueClasses = 'block text-right font-text text-base text-ink-gray-8'
 </script>

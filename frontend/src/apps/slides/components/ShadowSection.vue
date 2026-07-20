@@ -4,9 +4,9 @@
 			<span :class="labelClasses">Color</span>
 			<ColorPicker
 				:modelValue="activeElement.shadowColor ?? defaultShadowColor"
-				@update:modelValue="(value) => (activeElement.shadowColor = value)"
-				@colordown="onShadowColorStart"
-				@colorup="onShadowColorEnd"
+				@update:modelValue="shadowColor.set"
+				@colordown="shadowColor.begin"
+				@colorup="shadowColor.commit"
 			/>
 		</div>
 		<NumberControl
@@ -17,9 +17,9 @@
 			:max="100"
 			:max-digits="3"
 			:step="1"
-			@update:modelValue="(value) => (activeElement.shadowBlur = value)"
-			@change-start="onShadowBlurStart"
-			@change-end="onShadowBlurEnd"
+			@update:modelValue="shadowBlur.set"
+			@change-start="shadowBlur.begin"
+			@change-end="shadowBlur.commit"
 		/>
 		<NumberControl
 			:modelValue="activeElement.shadowOpacity ?? 100"
@@ -29,9 +29,9 @@
 			:max="100"
 			:max-digits="3"
 			:step="1"
-			@update:modelValue="(value) => (activeElement.shadowOpacity = value)"
-			@change-start="onShadowOpacityStart"
-			@change-end="onShadowOpacityEnd"
+			@update:modelValue="shadowOpacity.set"
+			@change-start="shadowOpacity.begin"
+			@change-end="shadowOpacity.commit"
 		/>
 		<NumberControl
 			:modelValue="activeElement.shadowOffset ?? 0"
@@ -41,9 +41,9 @@
 			:max="100"
 			:max-digits="3"
 			:step="1"
-			@update:modelValue="(value) => (activeElement.shadowOffset = value)"
-			@change-start="onShadowOffsetStart"
-			@change-end="onShadowOffsetEnd"
+			@update:modelValue="shadowOffset.set"
+			@change-start="shadowOffset.begin"
+			@change-end="shadowOffset.commit"
 		/>
 		<NumberControl
 			:modelValue="activeElement.shadowAngle ?? 45"
@@ -53,51 +53,31 @@
 			:max="360"
 			:max-digits="3"
 			:step="1"
-			@update:modelValue="(value) => (activeElement.shadowAngle = value)"
-			@change-start="onShadowAngleStart"
-			@change-end="onShadowAngleEnd"
+			@update:modelValue="shadowAngle.set"
+			@change-start="shadowAngle.begin"
+			@change-end="shadowAngle.commit"
 		/>
 	</Section>
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
+import { computed } from 'vue'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
+import { useElementProperty } from '@/apps/slides/composables/editProperty'
 import { defaultShadowColor, labelClasses } from '@/apps/slides/utils/constants'
-
-const setPropertyDeferred = inject('setPropertyDeferred')
 
 const hasShadow = computed(() =>
 	Boolean(activeElement.value.shadowBlur || activeElement.value.shadowOffset),
 )
 
-const { onStart: onShadowColorStart, onEnd: onShadowColorEnd } = setPropertyDeferred(
-	'element',
-	'shadowColor',
-)
-
-const { onStart: onShadowOpacityStart, onEnd: onShadowOpacityEnd } = setPropertyDeferred(
-	'element',
-	'shadowOpacity',
-)
-
-const { onStart: onShadowBlurStart, onEnd: onShadowBlurEnd } = setPropertyDeferred(
-	'element',
-	'shadowBlur',
-)
-
-const { onStart: onShadowOffsetStart, onEnd: onShadowOffsetEnd } = setPropertyDeferred(
-	'element',
-	'shadowOffset',
-)
-
-const { onStart: onShadowAngleStart, onEnd: onShadowAngleEnd } = setPropertyDeferred(
-	'element',
-	'shadowAngle',
-)
+const shadowColor = useElementProperty('shadowColor')
+const shadowOpacity = useElementProperty('shadowOpacity')
+const shadowBlur = useElementProperty('shadowBlur')
+const shadowOffset = useElementProperty('shadowOffset')
+const shadowAngle = useElementProperty('shadowAngle')
 </script>

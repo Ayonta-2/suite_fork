@@ -4,27 +4,21 @@
 			<span :class="labelClasses">Fill</span>
 			<ColorPicker
 				:modelValue="currentSlide.background"
-				@update:modelValue="(value) => (currentSlide.background = value)"
-				@colordown="onBackgroundStart"
-				@colorup="onBackgroundEnd"
+				@update:modelValue="background.set"
+				@colordown="background.begin"
+				@colorup="background.commit"
 			/>
 		</div>
 	</Section>
 </template>
 
 <script setup>
-import { inject } from 'vue'
-
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 import { labelClasses } from '@/apps/slides/utils/constants'
 
 import { currentSlide } from '@/apps/slides/stores/slide'
+import { useSlideProperty } from '@/apps/slides/composables/editProperty'
 
-const setPropertyDeferred = inject('setPropertyDeferred')
-
-const { onStart: onBackgroundStart, onEnd: onBackgroundEnd } = setPropertyDeferred(
-	'slide',
-	'background',
-)
+const background = useSlideProperty('background')
 </script>

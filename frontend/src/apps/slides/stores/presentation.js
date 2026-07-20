@@ -191,6 +191,21 @@ const ensureUniqueClientIds = (slides) => {
 	return repaired
 }
 
+const normalizeSlideDoc = (doc) => {
+	for (const slide of doc.slides || []) {
+		slide.elements = parseElements(slide.elements, slide)
+		slide.clientId = slide.client_id || uuid4()
+		slide.transitionDuration = slide.transition_duration
+		slide.fadeUnmatchedElements = slide.fade_unmatched_elements
+		delete slide.thumbnail
+		// remove the transition_duration field to avoid confusion
+		delete slide.transition_duration
+		delete slide.fade_unmatched_elements
+		delete slide.client_id
+	}
+	return ensureUniqueClientIds(doc.slides || [])
+}
+
 const slidesLength = ref(0)
 
 const getPresentationResource = (name) => {
@@ -200,18 +215,7 @@ const getPresentationResource = (name) => {
 		name: name,
 		auto: false,
 		transform(doc) {
-			for (const slide of doc.slides || []) {
-				slide.elements = parseElements(slide.elements, slide)
-				slide.clientId = slide.client_id || uuid4()
-				slide.transitionDuration = slide.transition_duration
-				slide.fadeUnmatchedElements = slide.fade_unmatched_elements
-				delete slide.thumbnail
-				// remove the transition_duration field to avoid confusion
-				delete slide.transition_duration
-				delete slide.fade_unmatched_elements
-				delete slide.client_id
-			}
-			clientIdsRepaired = ensureUniqueClientIds(doc.slides || [])
+			clientIdsRepaired = normalizeSlideDoc(doc)
 		},
 		async onSuccess(doc) {
 			slidesLength.value = doc.slides?.length || 0
@@ -242,57 +246,16 @@ const getPresentationResource = (name) => {
 	})
 }
 
-const getPublicPresentationResource = (name) => {
+const getReadonlyPresentationResource = (name, url) => {
 	return createResource({
-		url: 'suite.slides.doctype.presentation.presentation.get_public_presentation',
+		url,
 		method: 'GET',
 		auto: false,
 		makeParams: () => {
 			return { name: name }
 		},
 		transform(doc) {
-			for (const slide of doc.slides || []) {
-				slide.elements = parseElements(slide.elements, slide)
-				slide.clientId = slide.client_id || uuid4()
-				slide.transitionDuration = slide.transition_duration
-				slide.fadeUnmatchedElements = slide.fade_unmatched_elements
-				delete slide.thumbnail
-				// remove the transition_duration field to avoid confusion
-				delete slide.transition_duration
-				delete slide.fade_unmatched_elements
-				delete slide.client_id
-			}
-			ensureUniqueClientIds(doc.slides || [])
-		},
-		onSuccess(doc) {
-			slidesLength.value = doc.slides?.length || 0
-			slides.value = JSON.parse(JSON.stringify(doc.slides || []))
-			markClean()
-		},
-	})
-}
-
-const getCompositePresentationResource = (name) => {
-	return createResource({
-		url: 'suite.slides.doctype.presentation.presentation.get_composite_presentation',
-		method: 'GET',
-		auto: false,
-		makeParams: () => {
-			return { name: name }
-		},
-		transform(doc) {
-			for (const slide of doc.slides || []) {
-				slide.elements = parseElements(slide.elements, slide)
-				slide.clientId = slide.client_id || uuid4()
-				slide.transitionDuration = slide.transition_duration
-				slide.fadeUnmatchedElements = slide.fade_unmatched_elements
-				delete slide.thumbnail
-				// remove the transition_duration field to avoid confusion
-				delete slide.transition_duration
-				delete slide.fade_unmatched_elements
-				delete slide.client_id
-			}
-			ensureUniqueClientIds(doc.slides || [])
+			normalizeSlideDoc(doc)
 		},
 		onSuccess(doc) {
 			slidesLength.value = doc.slides?.length || 0
@@ -326,10 +289,16 @@ const presentationResource = ref(null)
 const initPresentationDoc = async (id, readonly = false) => {
 	presentationId.value = id
 	if (readonly) {
-		presentationResource.value = getPublicPresentationResource(id)
+		presentationResource.value = getReadonlyPresentationResource(
+			id,
+			'suite.slides.doctype.presentation.presentation.get_public_presentation',
+		)
 		await presentationResource.value.fetch()
 		if (presentationResource.value.data.is_composite) {
-			presentationResource.value = getCompositePresentationResource(id)
+			presentationResource.value = getReadonlyPresentationResource(
+				id,
+				'suite.slides.doctype.presentation.presentation.get_composite_presentation',
+			)
 			await presentationResource.value.fetch()
 		}
 		return presentationResource.value.data
