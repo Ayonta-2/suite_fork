@@ -14,12 +14,15 @@ import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
 import { cloneObj } from '../utils/helpers'
 
-const getAlignmentPosition = (direction) => {
+const isHorizontalDirection = (direction) =>
+	['left', 'horizontalCenter', 'right'].includes(direction)
+
+const getAlignmentPositions = () => {
 	const slideWidth = slideBounds.width / slideBounds.scale
 	const slideHeight = slideBounds.height / slideBounds.scale
 	const { width: selectionWidth, height: selectionHeight } = selectionBounds
 
-	const positions = {
+	return {
 		left: 0,
 		horizontalCenter: (slideWidth - selectionWidth) / 2,
 		right: slideWidth - selectionWidth,
@@ -27,12 +30,10 @@ const getAlignmentPosition = (direction) => {
 		verticalCenter: (slideHeight - selectionHeight) / 2,
 		bottom: slideHeight - selectionHeight,
 	}
-
-	return positions[direction]
 }
 
 const alignElementsToEachOther = (direction) => {
-	const isHorizontal = ['left', 'horizontalCenter', 'right'].includes(direction)
+	const isHorizontal = isHorizontalDirection(direction)
 	const property = isHorizontal ? 'left' : 'top'
 	const start = isHorizontal ? selectionBounds.left : selectionBounds.top
 	const extent = isHorizontal ? selectionBounds.width : selectionBounds.height
@@ -70,8 +71,8 @@ const alignElementsToEachOther = (direction) => {
 const alignElement = (direction) => {
 	if (activeElementIds.value.length > 1) return alignElementsToEachOther(direction)
 
-	const axis = ['left', 'horizontalCenter', 'right'].includes(direction) ? 'X' : 'Y'
-	updatePosition(axis, Math.round(getAlignmentPosition(direction)))
+	const axis = isHorizontalDirection(direction) ? 'X' : 'Y'
+	updatePosition(axis, Math.round(getAlignmentPositions()[direction]))
 }
 
 const moveElement = (elements, elementId, moveToIndex, action) => {
@@ -200,4 +201,4 @@ const arrangeElements = (action) => {
 	)
 }
 
-export { alignElement, arrangeElements }
+export { alignElement, arrangeElements, getAlignmentPositions, isHorizontalDirection }

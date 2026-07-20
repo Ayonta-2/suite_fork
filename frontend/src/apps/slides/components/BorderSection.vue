@@ -1,14 +1,13 @@
 <template>
 	<Section label="Border" :initialState="hasBorder">
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">Color</span>
+		<PropertyRow label="Color">
 			<ColorPicker
 				:modelValue="activeElement.borderColor || defaultBorderColor"
 				@update:modelValue="borderColor.set"
 				@colordown="borderColor.begin"
 				@colorup="borderColor.commit"
 			/>
-		</div>
+		</PropertyRow>
 		<NumberControl
 			:modelValue="activeElement.borderWidth ?? 0"
 			label="Weight"
@@ -33,14 +32,13 @@
 			@change-start="borderRadius.begin"
 			@change-end="borderRadius.commit"
 		/>
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">Style</span>
+		<PropertyRow label="Style">
 			<LineStyleSelect
 				:modelValue="displayStyle"
 				:options="borderStyleOptions"
 				@update:modelValue="setBorderStyle"
 			/>
-		</div>
+		</PropertyRow>
 	</Section>
 </template>
 
@@ -48,6 +46,7 @@
 import { computed } from 'vue'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
+import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 import LineStyleSelect from '@/apps/slides/components/controls/LineStyleSelect.vue'
@@ -57,7 +56,7 @@ import {
 	setElementProperties,
 	useElementProperty,
 } from '@/apps/slides/composables/editProperty'
-import { defaultBorderColor, labelClasses } from '@/apps/slides/utils/constants'
+import { defaultBorderColor } from '@/apps/slides/utils/constants'
 
 const defaultBorderWidth = 1
 

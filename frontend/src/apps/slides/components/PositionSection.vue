@@ -49,9 +49,14 @@ import AlignBottom from '@/apps/slides/icons/AlignBottom.vue'
 
 import { computed } from 'vue'
 
-import { slideBounds, selectionBounds, guideVisibilityMap } from '@/apps/slides/stores/slide'
+import { selectionBounds, guideVisibilityMap } from '@/apps/slides/stores/slide'
 import { activeElementIds } from '@/apps/slides/stores/element'
-import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
+import {
+	alignElement,
+	arrangeElements,
+	getAlignmentPositions,
+	isHorizontalDirection,
+} from '@/apps/slides/stores/placement'
 import { useInteractionScrub } from '@/apps/slides/composables/useInteractionScrub'
 
 const positionScrub = useInteractionScrub(['left', 'top'])
@@ -84,22 +89,10 @@ const alignVerticalOptions = [
 ]
 
 const alignedDirections = computed(() => {
-	const slideWidth = slideBounds.width / slideBounds.scale
-	const slideHeight = slideBounds.height / slideBounds.scale
-
-	const positions = {
-		left: 0,
-		horizontalCenter: (slideWidth - selectionBounds.width) / 2,
-		right: slideWidth - selectionBounds.width,
-		top: 0,
-		verticalCenter: (slideHeight - selectionBounds.height) / 2,
-		bottom: slideHeight - selectionBounds.height,
-	}
+	const positions = getAlignmentPositions()
 
 	return Object.keys(positions).filter((direction) => {
-		const current = ['left', 'horizontalCenter', 'right'].includes(direction)
-			? selectionBounds.left
-			: selectionBounds.top
+		const current = isHorizontalDirection(direction) ? selectionBounds.left : selectionBounds.top
 		return Math.round(positions[direction]) == Math.round(current)
 	})
 })

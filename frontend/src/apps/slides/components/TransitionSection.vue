@@ -7,8 +7,7 @@
 		</Button>
 
 		<template v-else>
-			<div class="flex h-7 w-full items-center justify-between">
-				<span :class="labelClasses">Type</span>
+			<PropertyRow label="Type">
 				<Select
 					:modelValue="currentSlide.transition"
 					variant="ghost"
@@ -21,7 +20,7 @@
 						<span :class="chevronClasses" />
 					</template>
 				</Select>
-			</div>
+			</PropertyRow>
 
 			<NumberControl
 				:modelValue="parseFloat(currentSlide.transitionDuration) || 0"
@@ -36,18 +35,14 @@
 				@change-end="duration.commit"
 			/>
 
-			<div
-				v-if="currentSlide.transition == 'Magic Move'"
-				class="flex h-7 w-full items-center justify-between"
-			>
-				<span :class="labelClasses">Fade unmatched</span>
+			<PropertyRow v-if="currentSlide.transition == 'Magic Move'" label="Fade unmatched">
 				<Checkbox
 					size="sm"
 					class="cursor-pointer"
 					:modelValue="currentSlide.fadeUnmatchedElements"
 					@update:modelValue="setFadeUnmatched"
 				/>
-			</div>
+			</PropertyRow>
 
 			<div class="flex w-full items-center gap-2">
 				<Button title="Remove transition" @click="removeTransition">
@@ -71,9 +66,10 @@ import { computed } from 'vue'
 
 import { Button, Select, Checkbox, toast } from 'frappe-ui'
 
+import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
-import { labelClasses, chevronClasses } from '@/apps/slides/utils/constants'
+import { chevronClasses } from '@/apps/slides/utils/constants'
 
 import { slides, slideIndex, currentSlide } from '@/apps/slides/stores/slide'
 import {

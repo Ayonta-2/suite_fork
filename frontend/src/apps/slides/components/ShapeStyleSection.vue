@@ -1,13 +1,12 @@
 <template>
 	<Section label="Style">
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">Stroke Style</span>
+		<PropertyRow label="Stroke Style">
 			<LineStyleSelect
 				:modelValue="displayStrokeStyle"
 				:options="strokeStyleOptions"
 				@update:modelValue="setStrokeStyle"
 			/>
-		</div>
+		</PropertyRow>
 		<NumberControl
 			:modelValue="activeElement.strokeWidth ?? 0"
 			label="Stroke Width"
@@ -20,27 +19,22 @@
 			@change-start="strokeWidth.begin"
 			@change-end="strokeWidth.commit"
 		/>
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">Stroke Color</span>
+		<PropertyRow label="Stroke Color">
 			<ColorPicker
 				:modelValue="activeElement.strokeColor"
 				@update:modelValue="strokeColor.set"
 				@colordown="strokeColor.begin"
 				@colorup="strokeColor.commit"
 			/>
-		</div>
-		<div
-			v-if="activeElement.shapeType != 'line'"
-			class="flex h-7 w-full items-center justify-between"
-		>
-			<span :class="labelClasses">Fill Color</span>
+		</PropertyRow>
+		<PropertyRow v-if="activeElement.shapeType != 'line'" label="Fill Color">
 			<ColorPicker
 				:modelValue="activeElement.fillColor"
 				@update:modelValue="fillColor.set"
 				@colordown="fillColor.begin"
 				@colorup="fillColor.commit"
 			/>
-		</div>
+		</PropertyRow>
 		<NumberControl
 			v-if="activeElement.shapeType == 'rectangle'"
 			:modelValue="activeElement.borderRadius ?? 0"
@@ -54,11 +48,7 @@
 			@change-start="borderRadius.begin"
 			@change-end="borderRadius.commit"
 		/>
-		<div
-			v-if="activeElement.shapeType == 'line'"
-			class="flex h-7 w-full items-center justify-between"
-		>
-			<span :class="labelClasses">Arrows</span>
+		<PropertyRow v-if="activeElement.shapeType == 'line'" label="Arrows">
 			<Select
 				:modelValue="arrowDirection"
 				variant="ghost"
@@ -71,7 +61,7 @@
 					<span :class="chevronClasses" />
 				</template>
 			</Select>
-		</div>
+		</PropertyRow>
 	</Section>
 </template>
 
@@ -81,10 +71,11 @@ import { computed } from 'vue'
 import { Select } from 'frappe-ui'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
+import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 import LineStyleSelect from '@/apps/slides/components/controls/LineStyleSelect.vue'
-import { labelClasses, chevronClasses } from '@/apps/slides/utils/constants'
+import { chevronClasses } from '@/apps/slides/utils/constants'
 
 import { activeElement } from '@/apps/slides/stores/element'
 import {

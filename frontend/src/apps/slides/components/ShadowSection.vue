@@ -1,14 +1,13 @@
 <template>
 	<Section label="Shadow" :initialState="hasShadow">
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">Color</span>
+		<PropertyRow label="Color">
 			<ColorPicker
 				:modelValue="activeElement.shadowColor ?? defaultShadowColor"
 				@update:modelValue="shadowColor.set"
 				@colordown="shadowColor.begin"
 				@colorup="shadowColor.commit"
 			/>
-		</div>
+		</PropertyRow>
 		<NumberControl
 			:modelValue="activeElement.shadowBlur ?? 0"
 			label="Blur"
@@ -64,12 +63,13 @@
 import { computed } from 'vue'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
+import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
 import { useElementProperty } from '@/apps/slides/composables/editProperty'
-import { defaultShadowColor, labelClasses } from '@/apps/slides/utils/constants'
+import { defaultShadowColor } from '@/apps/slides/utils/constants'
 
 const hasShadow = computed(() =>
 	Boolean(activeElement.value.shadowBlur || activeElement.value.shadowOffset),

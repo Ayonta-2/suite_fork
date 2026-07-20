@@ -1,13 +1,11 @@
 <template>
 	<Section label="Playback">
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">Autoplay</span>
+		<PropertyRow label="Autoplay">
 			<Switch :modelValue="activeElement.autoplay" @update:modelValue="setAutoplay" />
-		</div>
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">Loop</span>
+		</PropertyRow>
+		<PropertyRow label="Loop">
 			<Switch :modelValue="activeElement.loop" @update:modelValue="setLoop" />
-		</div>
+		</PropertyRow>
 		<NumberControl
 			:modelValue="activeElement.playbackRate ?? 1"
 			label="Speed"
@@ -26,9 +24,9 @@
 <script setup>
 import { Switch } from 'frappe-ui'
 
+import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
-import { labelClasses } from '@/apps/slides/utils/constants'
 
 import { activeElement } from '@/apps/slides/stores/element'
 import {

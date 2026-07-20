@@ -1,7 +1,6 @@
 <template>
 	<Section label="Typography">
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">Font</span>
+		<PropertyRow label="Font">
 			<Combobox
 				trigger="button"
 				variant="ghost"
@@ -12,7 +11,7 @@
 				class="-me-1"
 				@update:modelValue="(value) => onUpdate('fontFamily', value)"
 			/>
-		</div>
+		</PropertyRow>
 		<NumberControl
 			:modelValue="editorStyles.fontSize"
 			label="Size"
@@ -23,13 +22,12 @@
 			:step="1"
 			@update:modelValue="(value) => onUpdate('fontSize', value)"
 		/>
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">Color</span>
+		<PropertyRow label="Color">
 			<ColorPicker
 				:modelValue="editorStyles.color"
 				@update:modelValue="(value) => onUpdate('color', value)"
 			/>
-		</div>
+		</PropertyRow>
 		<NumberControl
 			:modelValue="parseFloat(editorStyles.lineHeight) || 1.5"
 			label="Line Height"
@@ -55,22 +53,20 @@
 			:options="decorOptions"
 			@update:modelValue="onDecorToggle"
 		/>
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">Align</span>
+		<PropertyRow label="Align">
 			<TabButtons
 				:modelValue="editorStyles.textAlign"
 				:options="alignOptions"
 				@update:modelValue="(value) => onUpdate('textAlign', value)"
 			/>
-		</div>
-		<div class="flex h-7 w-full items-center justify-between">
-			<span :class="labelClasses">List Style</span>
+		</PropertyRow>
+		<PropertyRow label="List Style">
 			<TabButtons
 				:modelValue="listStyle"
 				:options="listStyleOptions"
 				@update:modelValue="(value) => onUpdate('list', value)"
 			/>
-		</div>
+		</PropertyRow>
 	</Section>
 </template>
 
@@ -81,10 +77,10 @@ import { Combobox, TabButtons } from 'frappe-ui'
 import { Bold, Italic, Underline, Strikethrough } from 'lucide-vue-next'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
+import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import ToggleGroup from '@/apps/slides/components/controls/ToggleGroup.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
-import { labelClasses } from '@/apps/slides/utils/constants'
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
