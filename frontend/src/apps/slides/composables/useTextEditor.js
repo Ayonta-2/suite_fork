@@ -104,17 +104,6 @@ export const useTextEditor = () => {
 		underline: 'toggleUnderline',
 	}
 
-	const toggleCapitalize = (chain) => {
-		const val = activeEditor.value.getAttributes('textStyle').textTransform
-		const newVal = val == 'uppercase' ? null : 'uppercase'
-
-		chain
-			.setMark('textStyle', {
-				textTransform: newVal,
-			})
-			.run()
-	}
-
 	const toggleMark = (property) => {
 		const currentEditor = activeEditor.value
 
@@ -122,8 +111,6 @@ export const useTextEditor = () => {
 
 		const { empty } = currentEditor.state.selection
 		if (empty) chain.selectAll()
-
-		if (property == 'uppercase') return toggleCapitalize(chain)
 
 		chain[markCommands[property]](property).run()
 	}
@@ -160,17 +147,32 @@ export const useTextEditor = () => {
 		return currentStyle ? `${currentStyle}; ${newStyle}` : newStyle
 	}
 
-	const setListProperty = () => {
+	const getActiveListType = () => {
+		if (activeEditor.value.isActive('orderedList')) return 'ordered'
+		if (activeEditor.value.isActive('bulletList')) return 'bullet'
+		return 'none'
+	}
+
+	const setListProperty = (value) => {
 		if (!activeEditor.value.isEditable) selectListBlock()
+
+		const current = getActiveListType()
+
+		if (value == current) return
 
 		const chain = activeEditor.value.chain().focus()
 
-		if (activeEditor.value.isActive('orderedList')) {
+		if (value == 'none') {
 			chain.liftListItem('listItem').run()
-		} else if (activeEditor.value.isActive('bulletList')) {
-			chain.liftListItem('listItem').wrapInList('orderedList').run()
+			return
+		}
+
+		const listType = value == 'ordered' ? 'orderedList' : 'bulletList'
+
+		if (current == 'none') {
+			chain.wrapInList(listType).run()
 		} else {
-			chain.wrapInList('bulletList').run()
+			chain.liftListItem('listItem').wrapInList(listType).run()
 		}
 	}
 
@@ -179,7 +181,7 @@ export const useTextEditor = () => {
 
 		const chain = currentEditor.chain().focus()
 
-		if (property == 'list') return setListProperty()
+		if (property == 'list') return setListProperty(value)
 
 		const { empty } = currentEditor.state.selection
 		if (empty) chain.selectAll()

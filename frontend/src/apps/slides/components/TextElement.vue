@@ -39,7 +39,7 @@ import { isAffectedByMagicMove } from '@/apps/slides/stores/transition'
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
 import { slideIndex } from '@/apps/slides/stores/slide'
 
-const { activeEditor, baseFontSize } = useTextEditor()
+const { activeEditor } = useTextEditor()
 
 const props = defineProps({
 	mode: {
@@ -70,15 +70,21 @@ const element = defineModel('element', {
 
 const isEditable = computed(() => focusElementId.value == element.value.id)
 
+const flipTransform = computed(
+	() => `scale(${element.value?.invertX || 1}, ${element.value?.invertY || 1})`,
+)
+
 const editorStyles = computed(() => ({
 	cursor: isEditable.value ? 'text' : '',
 	userSelect: isEditable.value ? 'text' : 'none',
+	transform: flipTransform.value,
 }))
 
 const elementLineHeightStyle = computed(() => {
+	const styles = { transform: flipTransform.value }
 	const lh = element.value?.lineHeight
-	if (!lh) return {}
-	return { '--el-line-height': lh }
+	if (lh) styles['--el-line-height'] = lh
+	return styles
 })
 
 const handleMouseDown = (e) => {

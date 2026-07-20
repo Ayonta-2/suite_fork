@@ -27,8 +27,8 @@ export const useRotator = () => {
 		isRotating.value = true
 		rotationDelta.value = 0
 
-		centerX = getElementCenter('Y')
-		centerY = getElementCenter('X')
+		centerX = getElementCenter('X')
+		centerY = getElementCenter('Y')
 
 		startAngle = getAngle(e.clientX, e.clientY)
 
@@ -60,9 +60,5 @@ export const useRotator = () => {
 		window.removeEventListener('mousemove', rotate)
 	}
 
-	const resetRotation = () => {
-		rotationDelta.value = 0
-	}
-
-	return { isRotating, rotationDelta, startRotate, resetRotation }
+	return { isRotating, rotationDelta, startRotate }
 }

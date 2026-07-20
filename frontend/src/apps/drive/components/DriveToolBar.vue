@@ -51,26 +51,7 @@
             icon: LucideFilter,
             tooltip: 'Filter',
           }" :disabled placement="right" />
-        <Dropdown v-if="$route.name !== 'Recents'" :options="orderByItems" placement="right">
-          <div class="flex items-center whitespace-nowrap">
-            <Button class="text-sm h-7 border-r border-outline-gray-2 rounded-r-none" :disabled
-              @click.stop="toggleAscending">
-              <template #icon>
-                <LucideArrowDownAz v-if="sortOrder.ascending" class="size-4" />
-                <LucideArrowUpZa v-else class="size-4" />
-              </template>
-            </Button>
-
-            <Button class="text-sm h-7 rounded-l-none flex-1" :disabled>
-              <div class="flex items-center gap-2">
-                {{ __(sortOrder.label) }}
-                <template v-if="sortOrder.smart">
-                  <LucideSparkles class="size-3" />
-                </template>
-              </div>
-            </Button>
-          </div>
-        </Dropdown>
+        <SortControl v-if="$route.name !== 'Recents'" v-model="sortOrder" :options="columnHeaders" :menu-items="sortMenuItems" :disabled />
 
         <TabButtons v-model="view" :buttons="[
           {
@@ -119,6 +100,7 @@ import { getIconUrl } from '@/apps/drive/utils/files'
 import { view, shareView } from '@/apps/drive/data/prefs'
 import { onKeyDown } from '@vueuse/core'
 import LucideFilter from '~icons/lucide/filter'
+import SortControl from '@/components/SortControl.vue'
 import TeamSelector from '@/apps/drive/components/TeamSelector.vue'
 
 import LucideX from '~icons/lucide/x'
@@ -168,11 +150,7 @@ onKeyDown('Escape', () => {
   search.value = ''
 })
 
-const toggleAscending = () => {
-  sortOrder.value.ascending = !sortOrder.value.ascending
-}
-
-const columnHeaders = computed(() => [
+const columnHeaders = [
   {
     label: __('Name'),
     field: 'file_name',
@@ -193,6 +171,9 @@ const columnHeaders = computed(() => [
     label: __('Type'),
     field: 'file_type',
   },
+]
+
+const sortMenuItems = computed(() => [
   {
     group: true,
     hideLabel: true,
@@ -207,14 +188,4 @@ const columnHeaders = computed(() => [
     ],
   },
 ])
-
-const orderByItems = computed(() => {
-  return columnHeaders.value.map((header) => ({
-    ...header,
-    onClick: () => {
-      sortOrder.value.field = header.field
-      sortOrder.value.label = header.label
-    },
-  }))
-})
 </script>
