@@ -51,7 +51,7 @@
             icon: LucideFilter,
             tooltip: 'Filter',
           }" :disabled placement="right" />
-        <SortControl v-if="$route.name !== 'Recents'" v-model="sortOrder" :options="columnHeaders" :disabled />
+        <SortControl v-if="$route.name !== 'Recents'" v-model="sortOrder" :options="columnHeaders" :menu-items="sortMenuItems" :disabled />
 
         <TabButtons v-model="view" :buttons="[
           {
@@ -150,7 +150,7 @@ onKeyDown('Escape', () => {
   search.value = ''
 })
 
-const columnHeaders = computed(() => [
+const columnHeaders = [
   {
     label: __('Name'),
     field: 'file_name',
@@ -171,6 +171,9 @@ const columnHeaders = computed(() => [
     label: __('Type'),
     field: 'file_type',
   },
+]
+
+const sortMenuItems = computed(() => [
   {
     group: true,
     hideLabel: true,

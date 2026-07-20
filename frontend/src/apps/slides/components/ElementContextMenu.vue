@@ -20,6 +20,7 @@ import {
 } from '@/apps/slides/stores/element'
 
 import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
+import { currentSlide } from '@/apps/slides/stores/slide'
 
 import BringToFront from '@/apps/slides/icons/BringToFront.vue'
 import SendToBack from '@/apps/slides/icons/SendToBack.vue'
@@ -38,24 +39,25 @@ const inReadonlyMode = inject('inReadonlyMode', ref(false))
 
 const contextMenuOptions = ref([])
 
-// the trigger only opens the menu when the right-click came from an element or
-// the selection box; the fallback handler on the slide suppresses the rest
-let elementContextMenuRequested = false
+// the underlying trigger opens the menu unless the event is defaultPrevented, so
+// we open it only for right-clicks that land on an element or the selection box
+const handleContextMenu = (e) => {
+	if (e.target?.isContentEditable) return e.stopPropagation()
 
-const openElementContextMenu = () => {
+	if (inReadonlyMode.value) return e.preventDefault()
+
+	const elementNode = e.target?.closest?.('[data-index]')
+	if (elementNode) {
+		const element = currentSlide.value?.elements.find(
+			(el) => String(el.id) === elementNode.dataset.index,
+		)
+		if (!element || focusElementId.value == element.id) return e.preventDefault()
+		setActiveElements([element.id])
+	} else if (!e.target?.closest?.('[data-selection-box]')) {
+		return e.preventDefault()
+	}
+
 	contextMenuOptions.value = buildElementContextOptions()
-	elementContextMenuRequested = true
-}
-
-const handleElementContextMenu = (e, element) => {
-	if (inReadonlyMode.value || focusElementId.value == element.id) return
-	setActiveElements([element.id])
-	openElementContextMenu()
-}
-
-const handleSlideContextMenu = (e) => {
-	if (!elementContextMenuRequested) e.preventDefault()
-	elementContextMenuRequested = false
 }
 
 const buildElementContextOptions = () => {
@@ -109,9 +111,5 @@ const buildElementContextOptions = () => {
 	]
 }
 
-defineExpose({
-	openElementContextMenu,
-	handleElementContextMenu,
-	handleSlideContextMenu,
-})
+defineExpose({ handleContextMenu })
 </script>

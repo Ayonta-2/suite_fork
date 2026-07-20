@@ -6,8 +6,7 @@
 			ref="slideRef"
 			:style="slideStyles"
 			:class="slideClasses"
-			@contextmenu.capture="allowNativeMenuInText"
-			@contextmenu="(e) => elementContextMenuRef?.handleSlideContextMenu(e)"
+			@contextmenu.capture="(e) => elementContextMenuRef?.handleContextMenu(e)"
 		>
 			<ElementContextMenu ref="elementContextMenu">
 				<SelectionBox
@@ -15,7 +14,6 @@
 					v-if="!inReadonlyMode"
 					:isDragging
 					@mousedown="(e) => handleMouseDown(e)"
-					@contextmenu="elementContextMenuRef?.openElementContextMenu()"
 				/>
 
 				<MarqueeOverlay v-if="!inReadonlyMode" @setIsSelecting="(val) => (isSelecting = val)" />
@@ -33,7 +31,6 @@
 					:data-index="element.id"
 					:highlight="highlightElement(element)"
 					@mousedown="(e) => handleMouseDown(e, element)"
-					@contextmenu="(e) => elementContextMenuRef?.handleElementContextMenu(e, element)"
 				/>
 			</ElementContextMenu>
 
@@ -289,10 +286,6 @@ const duplicateAndDrag = (e, id) => {
 	duplicateElements(e, activeElements.value, slideIndex.value, false).then(() => {
 		watchForDragIntent(e, id)
 	})
-}
-
-const allowNativeMenuInText = (e) => {
-	if (e.target?.isContentEditable) e.stopPropagation()
 }
 
 const handleMouseDown = (e, element) => {

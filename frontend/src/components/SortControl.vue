@@ -33,6 +33,7 @@
 import { computed } from 'vue'
 
 import { Button, Dropdown } from 'frappe-ui'
+import type { DropdownOption } from 'frappe-ui'
 
 type SortOrder = {
 	label: string
@@ -41,44 +42,35 @@ type SortOrder = {
 	smart?: boolean
 }
 
-type SortOption = {
-	label?: string
-	field?: string
-	[key: string]: unknown
+type SortField = {
+	label: string
+	field: string
 }
 
 const sortOrder = defineModel<SortOrder>({ required: true })
 
 const props = defineProps<{
-	options: SortOption[]
+	options: SortField[]
+	menuItems?: DropdownOption[]
 	disabled?: boolean
 }>()
 
-const sizingText = computed(() =>
-	props.options
-		.map((option) => option.label)
-		.filter((label): label is string => !!label)
-		.map((label) => __(label))
-		.join('\n'),
-)
+const sizingText = computed(() => props.options.map((option) => __(option.label)).join('\n'))
 
 const toggleAscending = () => {
 	sortOrder.value.ascending = !sortOrder.value.ascending
 }
 
-const orderByItems = computed(() =>
-	props.options.map((option) =>
-		option.field
-			? {
-					...option,
-					onClick: () => {
-						sortOrder.value.field = option.field!
-						sortOrder.value.label = option.label!
-					},
-				}
-			: option,
-	),
-)
+const orderByItems = computed<DropdownOption[]>(() => [
+	...props.options.map((option) => ({
+		label: option.label,
+		onClick: () => {
+			sortOrder.value.field = option.field
+			sortOrder.value.label = option.label
+		},
+	})),
+	...(props.menuItems ?? []),
+])
 </script>
 
 <style scoped>

@@ -1,5 +1,5 @@
 <template>
-	<div v-if="activeElementIds.length" :style="boxStyles">
+	<div v-if="activeElementIds.length" data-selection-box :style="boxStyles">
 		<Resizer
 			v-if="showResizers"
 			:elementType="activeElement?.shapeType || activeElement?.type"
