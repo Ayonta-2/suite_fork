@@ -42,12 +42,10 @@ def create_scheduled_meeting(
 
 	meeting_id = create_meeting(meeting_type=meeting_type, title=title)
 	meet_url = get_url(f"/meet/{meeting_id}")
-	meet_description = f"Join Frappe Meet: {meet_url}"
-	if description:
-		description = f"{description}\n\n{meet_description}"
-	else:
-		description = meet_description
 
+	# The meet link is attached as a structured event link (see `links=` below), which is what
+	# the UI's "Join Frappe Meet" button, the invite email's Meet card, and the exported .ics URL
+	# all read from. So it is deliberately NOT injected into the description.
 	event_id = add_calendar_event(
 		account=account,
 		organizer=organizer,

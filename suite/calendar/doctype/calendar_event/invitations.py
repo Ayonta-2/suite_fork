@@ -11,6 +11,7 @@ Entry point: `notify_participants(account, action, ...)`, enqueued from the Cale
 API after the event is written to JMAP.
 """
 
+import re
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -179,14 +180,32 @@ def _context(event, organizer, organizer_name, participant, links) -> dict:
 	return {
 		"title": event.get("title") or "(No title)",
 		"when": _format_when(event),
+		# Timezone shown on its own line under the date; omitted for all-day events.
+		"timezone": "" if event.get("showWithoutTime") else (event.get("timeZone") or ""),
 		"location": "; ".join(locations),
 		"description": event.get("description") or "",
 		"organizer_name": organizer_name or organizer,
 		"organizer_display": f"{organizer_name} ({organizer})" if organizer_name else organizer,
 		"organizer_email": organizer,
 		"attendee_name": (participant or {}).get("name") or "",
+		"meet": _meet_link(event),
 		"rsvp": links,
 	}
+
+
+def _meet_link(event: dict) -> dict | None:
+	"""Returns {url, label} for the event's first Frappe Meet link, or None.
+
+	Powers the "Frappe Meet video call" card in the invite/update emails. Only links whose
+	URL carries a `/meet/` path are treated as a meeting; other links are left out.
+	"""
+
+	for link in (event.get("links") or {}).values():
+		href = link.get("href") or ""
+		if "/meet/" in href:
+			return {"url": href, "label": re.sub(r"^https?://", "", href).rstrip("/")}
+
+	return None
 
 
 def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> str:
@@ -214,14 +233,23 @@ def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> s
 	inline_calendar.set_param("component", "VEVENT")
 	alternative.attach(inline_calendar)
 
-	# Wrap the body with the inline logo (referenced as `cid:eventlogo` in the templates).
-	if logo := _logo_bytes():
+	# Wrap the body with any inline images the templates reference by CID. The Calendar logo
+	# (`cid:eventlogo`) leads every email; the Frappe Meet logo (`cid:meetlogo`) is attached only
+	# when the body actually shows the Meet card, so no orphan image rides along otherwise.
+	inline_images = []
+	if logo := _image_bytes("public", "calendar", "images", "logo.png"):
+		inline_images.append(("eventlogo", logo))
+	if "cid:meetlogo" in html and (meet_logo := _image_bytes("public", "meet", "images", "meet.png")):
+		inline_images.append(("meetlogo", meet_logo))
+
+	if inline_images:
 		related = MIMEMultipart("related")
 		related.attach(alternative)
-		image = MIMEImage(logo, _subtype="png")
-		image.add_header("Content-ID", "<eventlogo>")
-		image.add_header("Content-Disposition", "inline", filename="logo.png")
-		related.attach(image)
+		for cid, data in inline_images:
+			image = MIMEImage(data, _subtype="png")
+			image.add_header("Content-ID", f"<{cid}>")
+			image.add_header("Content-Disposition", "inline", filename=f"{cid}.png")
+			related.attach(image)
 		root.attach(related)
 	else:
 		root.attach(alternative)
@@ -235,23 +263,22 @@ def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> s
 	return root.as_string()
 
 
-_LOGO_CACHE: bytes | None = None
+_IMAGE_CACHE: dict[str, bytes] = {}
 
 
-def _logo_bytes() -> bytes | None:
-	"""Returns the Calendar logo PNG bytes for inline embedding, cached per process."""
+def _image_bytes(*path_parts: str) -> bytes | None:
+	"""Returns an app public image's bytes for inline embedding, cached per process."""
 
-	global _LOGO_CACHE
-	if _LOGO_CACHE is None:
-		path = frappe.get_app_path("suite", "public", "calendar", "images", "logo.png")
+	key = "/".join(path_parts)
+	if key not in _IMAGE_CACHE:
 		try:
-			with open(path, "rb") as f:
-				_LOGO_CACHE = f.read()
+			with open(frappe.get_app_path("suite", *path_parts), "rb") as f:
+				_IMAGE_CACHE[key] = f.read()
 		except OSError:
-			log_error("Calendar", title=_("Event invite logo not found"))
-			_LOGO_CACHE = b""
+			log_error("Calendar", title=_("Event invite image not found: {0}").format(key))
+			_IMAGE_CACHE[key] = b""
 
-	return _LOGO_CACHE or None
+	return _IMAGE_CACHE[key] or None
 
 
 def _attendees(event: dict, organizer: str) -> dict[str, dict]:
@@ -268,7 +295,7 @@ def _attendees(event: dict, organizer: str) -> dict[str, dict]:
 
 
 def _format_when(event: dict) -> str:
-	"""Formats the event start for display, e.g. 'Monday, 21 Jul 2025, 10:00 AM (UTC)'."""
+	"""Formats the event start for display, e.g. 'Monday, 21 Jul 2025, 10:00 AM'."""
 
 	start = _parse_local_datetime(event.get("start"), event.get("timeZone"))
 	if not start:
@@ -277,8 +304,9 @@ def _format_when(event: dict) -> str:
 	if event.get("showWithoutTime"):
 		return start.strftime("%A, %d %b %Y")
 
-	formatted = start.strftime("%A, %d %b %Y, %I:%M %p")
-	return f"{formatted} ({event['timeZone']})" if event.get("timeZone") else formatted
+	# The timezone is surfaced separately (context["timezone"]) so the template can put it on
+	# its own line under the date, matching the design.
+	return start.strftime("%A, %d %b %Y, %I:%M %p")
 
 
 def _display_name(event: dict, email: str) -> str:
