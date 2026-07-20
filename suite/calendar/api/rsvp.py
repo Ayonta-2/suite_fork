@@ -59,7 +59,7 @@ def resolve_rsvp(token: str) -> dict:
 	if not response:
 		return _result(False, _("Invalid Response"), _("This response link is not valid."))
 
-	status, label = response
+	status = response[0]
 
 	try:
 		service = _guest_calendar_service(payload["a"])
@@ -80,11 +80,66 @@ def resolve_rsvp(token: str) -> dict:
 			_("We couldn't record your response. The event may no longer exist."),
 		)
 
-	return _result(
-		True,
-		_("Response Recorded"),
-		_("Your response ({0}) has been sent to the organizer.").format(label),
-	)
+	state, heading, sub = _confirmation_copy(payload["r"])
+	event = _fetch_event(service, payload["e"])
+	return {
+		"success": True,
+		"state": state,
+		"title": heading,
+		"message": sub,
+		"event_title": (event or {}).get("title") or "",
+		"event_when": _format_event_when(event) if event else "",
+	}
+
+
+def _confirmation_copy(response_key: str) -> tuple[str, str, str]:
+	"""Returns (state, heading, sub) for a confirmed response, keyed by the RSVP response."""
+
+	return {
+		"accept": (
+			"yes",
+			_("You're going"),
+			_("Your response has been sent to the organizer. This event is now on your calendar."),
+		),
+		"tentative": (
+			"maybe",
+			_("Marked as maybe"),
+			_("Your response has been sent to the organizer. We'll hold a tentative spot on your calendar."),
+		),
+		"decline": (
+			"no",
+			_("You declined"),
+			_("Your response has been sent to the organizer. This event won't be added to your calendar."),
+		),
+	}[response_key]
+
+
+def _fetch_event(service: CalendarEventService, event_id: str) -> dict | None:
+	"""Best-effort fetch of the event for the confirmation card; None if unavailable."""
+
+	try:
+		events = service.get([event_id])
+		return events[0] if events else None
+	except Exception:
+		return None
+
+
+def _format_event_when(event: dict) -> str:
+	"""Compact event start for the confirmation card, e.g. 'Tue, 14 Jul · 10:00 AM'."""
+
+	from suite.calendar.doctype.calendar_exchange.calendar_exchange import _parse_local_datetime
+
+	start = _parse_local_datetime(event.get("start"), event.get("timeZone"))
+	if not start:
+		return ""
+
+	day = f"{start.strftime('%a')}, {start.day} {start.strftime('%b')}"
+	if event.get("showWithoutTime"):
+		return day
+
+	hour = start.hour % 12 or 12
+	meridiem = "AM" if start.hour < 12 else "PM"
+	return f"{day} · {hour}:{start.minute:02d} {meridiem}"
 
 
 def _guest_calendar_service(account: str) -> CalendarEventService:
