@@ -57,9 +57,9 @@
  							<span class="text-ink-gray-8"> Ready to join? </span>
  						</h2>
  
- 						<div v-if="meetingTitle" class="rounded-lg px-4 py-3 mb-4">
- 							<p class="text-xl-medium text-ink-gray-7 truncate">
- 								{{ meetingTitle }}
+						<div v-if="props.meetingTitle" class="rounded-lg px-4 py-3 mb-4">
+							<p class="text-xl-medium text-ink-gray-7 truncate">
+								{{ props.meetingTitle }}
  							</p>
  						</div>
  
@@ -111,7 +111,7 @@
 
 <script setup lang="ts">
 import { Button, createResource, FormControl, toast } from "frappe-ui";
-import { computed, inject, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import AvatarGroup from "../components/AvatarGroup.vue";
 import ParticipantTile from "../components/ParticipantTile.vue";
 import PreviewToolbar from "../components/PreviewToolbar.vue";
@@ -128,6 +128,7 @@ interface VideoElement {
 
 const props = defineProps<{
 	meetingId: string;
+	meetingTitle?: string;
 	isCameraOn?: boolean;
 	isMicOn?: boolean;
 	cameraPermissionGranted?: boolean;
@@ -168,8 +169,6 @@ const joinGuestAPI = createResource({
 		};
 	},
 });
-
-const meetingTitle = inject("meetingTitle");
 
 const isGuest = computed(() => !session.isLoggedIn && !props.guestAuthToken);
 
