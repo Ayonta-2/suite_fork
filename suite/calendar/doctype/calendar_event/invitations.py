@@ -36,6 +36,9 @@ from suite.utils import log_error
 # RSVP links stay valid until this long after the event starts.
 RSVP_GRACE_DAYS = 1
 
+# Shared font stack for the event email templates (passed into the render context).
+EMAIL_FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+
 
 def custom_event_invites_enabled() -> bool:
 	"""Returns True when Mail Settings is configured to send invites from the client."""
@@ -178,6 +181,7 @@ def _context(event, organizer, organizer_name, participant, links) -> dict:
 	locations = [l.get("name") for l in (event.get("locations") or {}).values() if l.get("name")]
 
 	return {
+		"font": EMAIL_FONT,
 		"title": event.get("title") or "(No title)",
 		"when": _format_when(event),
 		# Timezone shown on its own line under the date; omitted for all-day events.
