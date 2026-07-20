@@ -1,5 +1,7 @@
 // FormulaEngine — full expression parser + evaluator for Frappe Sheets
-// Converted from v1 IIFE to ES module. Zero dependencies.
+// Converted from v1 IIFE to ES module. One local dep: the sparkline spec builder.
+
+import { sparkSpec, isSparkSpec } from './sparkline.js'
 
 const T = {
 	NUM:'NUM', STR:'STR', BOOL:'BOOL', ERR:'ERR',
@@ -175,6 +177,10 @@ function toNumStrict(v) {
 }
 
 function isErr(v) { return typeof v === 'string' && v.startsWith('#') }
+
+// A sparkline spec is a render-only object — coerce it to '' anywhere it would
+// otherwise stringify to "[object Object]" (concat, string comparison).
+function _str(v) { return v == null || isSparkSpec(v) ? '' : String(v) }
 
 // Loose equality for lookups: case-insensitive string match, or numeric match
 // when BOTH sides are genuinely numeric. Guards against toNum('a')===toNum('b')
@@ -772,6 +778,11 @@ const FUNCTIONS = {
 	ROWS:    ([v]) => Array.isArray(v)?v.length:1,
 	COLUMNS: ([v]) => Array.isArray(v)&&Array.isArray(v[0])?v[0].length:(Array.isArray(v)?v.length:1),
 
+	// SPARKLINE(data_range, [type], [color]) — returns a spec the cell renders as
+	// an in-cell mini chart instead of text (type: line | column | bar). It's a
+	// normal formula, so it recomputes and shifts with its range like any other.
+	SPARKLINE: ([range, type, color]) => sparkSpec(flatten([range]), type, color),
+
 	// ── Array functions ─────────────────────────────────────────────────────
 	//
 	// These return arrays. They work as input to other functions (e.g.
@@ -935,8 +946,8 @@ function createParser(tokens, getCellValue, getRangeValues, getSheetCellValue, g
 		while (peek()?.t===T.OP && ['=','<>','>','<','>=','<='].includes(peek().v)) {
 			const op=next().v, r=concat()
 			switch(op) {
-				case '=':  l = String(l).toLowerCase()===String(r).toLowerCase() || toNum(l)===toNum(r); break
-				case '<>': l = String(l).toLowerCase()!==String(r).toLowerCase(); break
+				case '=':  l = _str(l).toLowerCase()===_str(r).toLowerCase() || toNum(l)===toNum(r); break
+				case '<>': l = _str(l).toLowerCase()!==_str(r).toLowerCase(); break
 				case '>':  l = toNum(l)>toNum(r);  break
 				case '<':  l = toNum(l)<toNum(r);  break
 				case '>=': l = toNum(l)>=toNum(r); break
@@ -951,7 +962,7 @@ function createParser(tokens, getCellValue, getRangeValues, getSheetCellValue, g
 		while (peek()?.t===T.OP && peek().v==='&') {
 			next()
 			const r = add()
-			l = (l==null?'':String(l)) + (r==null?'':String(r))
+			l = _str(l) + _str(r)
 		}
 		return l
 	}
@@ -1162,6 +1173,7 @@ const FN_HINTS = {
 	CHOOSE:'(index_num, value1, [value2, ...])',
 	ROW:'([reference])', COLUMN:'([reference])', ROWS:'(array)', COLUMNS:'(array)',
 	LARGE:'(array, k)', SMALL:'(array, k)',
+	SPARKLINE:'(data_range, [type], [color])',
 }
 
 export function getFunctionNames() { return _fnNames }

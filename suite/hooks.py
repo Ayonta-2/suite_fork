@@ -111,11 +111,15 @@ website_redirects = [
 	},
 ]
 
+# Framework File permission logic is fully replaced by Drive's
+ignore_file_permissions = True
+
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
 permission_query_conditions = {
 	# drive
+	"File": "suite.drive.utils.overrides.filter_file",
 	"Drive Team": "suite.drive.utils.overrides.filter_drive_team",
 	"Drive Permission": "suite.drive.utils.overrides.filter_drive_permission",
 	"Drive Favourite": "suite.drive.utils.overrides.filter_drive_favourite",
@@ -125,9 +129,13 @@ permission_query_conditions = {
 	"Presentation": "suite.slides.doctype.presentation.presentation.get_permission_query_conditions",
 	# writer
 	"Writer Template": "suite.writer.overrides.filter_templates",
+	"Writer Document": "suite.writer.overrides.document_query_conditions",
+	"Writer Version": "suite.writer.overrides.version_query_conditions",
 	# sheets
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
+	# meet
+	"Meet Room": "suite.meet.doctype.meet_room.meet_room.get_permission_query_conditions",
 	# mail
 	"JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.get_permission_query_condition",
 	"Blocked Email Address": "suite.mail.doctype.blocked_email_address.blocked_email_address.get_permission_query_condition",
@@ -148,13 +156,19 @@ permission_query_conditions = {
 has_permission = {
 	# drive
 	"File": "suite.drive.api.permissions.user_has_permission",
+	"Drive Permission": "suite.drive.api.permissions.drive_permission_has_permission",
+	"Drive Team": "suite.drive.api.permissions.drive_team_has_permission",
 	# slides
 	"Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
 	# writer
-	"Writer Document": "suite.writer.perms.has_permission",
+	"Writer Document": "suite.drive.overrides.file.content_has_permission",
+	"Writer Version": "suite.writer.overrides.version_has_permission",
+	"Writer Template": "suite.writer.overrides.template_has_permission",
 	# sheets
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_has_permission",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
+	# meet
+	"Meet Room": "suite.meet.doctype.meet_room.meet_room.has_permission",
 	# mail
 	"JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.has_permission",
 	"Address Book": "suite.mail.doctype.address_book.address_book.has_permission",
@@ -215,8 +229,8 @@ override_whitelisted_methods = {
 # ============================================================================
 doc_events = {
 	"Presentation": {
-		"on_update": ["suite.drive.api.integration.presentation"],
-		"on_trash": ["suite.drive.api.integration.presentation"],
+		"on_update": ["suite.drive.overrides.file.sync_content_file"],
+		"on_trash": ["suite.drive.overrides.file.sync_content_file"],
 	},
 	"User": {
 		"after_insert": [

@@ -32,4 +32,5 @@ stalwart-cli
 .DS_Store
 *.swp
 *.swo
+.claude/
 .vscode

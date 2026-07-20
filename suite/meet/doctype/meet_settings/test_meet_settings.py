@@ -11,9 +11,9 @@ EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
-class IntegrationTestSaeMeeting(IntegrationTestCase):
+class IntegrationTestMeetSettings(IntegrationTestCase):
 	"""
-	Integration tests for SaeMeeting.
+	Integration tests for MeetSettings.
 	Use this class for testing interactions between multiple components.
 	"""
 

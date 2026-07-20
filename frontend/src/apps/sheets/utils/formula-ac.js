@@ -37,6 +37,7 @@ export const AC_FUNS = {
   VLOOKUP:'(value, table, col_index, [range_lookup])',
   XLOOKUP:'(lookup, lookup_array, return_array, [if_not_found], [match_mode])',
   WEEKDAY:'(date, [return_type])', YEAR:'(date)',
+  SPARKLINE:'(data_range, [type], [color])',
 }
 
 // Pre-sorted for O(1) reuse in autocomplete filtering.
