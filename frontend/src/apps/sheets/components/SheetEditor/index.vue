@@ -5944,4 +5944,14 @@ function toggleShowFormulas() {
   max-height: min(60vh, 480px);
   overflow-y: auto;
 }
+
+/* A Frappe UI Dialog draws a translucent (~12% black) scrim over the grid.
+   The filter-range outline and pivot-output highlight are full-height dark
+   1.5px borders spanning the whole data region, so their vertical borders stay
+   visible THROUGH that scrim and flank the open dialog — reading as a line
+   cutting across it (e.g. the Share dialog while a filter is active). Hide
+   those decorations whenever a dialog is up. `.dialog-overlay` portals to
+   <body>, so `:has` from body catches every one. */
+body:has(.dialog-overlay) .sn-filter-range,
+body:has(.dialog-overlay) .sn-pivot-highlight { display: none; }
 </style>
