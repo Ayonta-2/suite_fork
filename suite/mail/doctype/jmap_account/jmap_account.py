@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 from suite.mail.doctype.sieve_script.sieve_script import build_automation_sieve, maybe_build_automation_sieve
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
-from suite.mail.utils.user import get_account_emails
+from suite.mail.utils.user import get_account_emails, is_mail_admin
 from suite.utils import execute_with_logging
 from suite.utils.lock import acquire_lock, release_lock
 from suite.utils.user import is_system_manager
@@ -386,7 +386,7 @@ def create_archive_mailbox(account: str) -> None:
 
 def get_permission_query_condition(user: str | None = None) -> str | None:
 	user = user or frappe.session.user
-	if is_system_manager(user):
+	if is_system_manager(user) or is_mail_admin(user):
 		return ""
 
 	accounts = get_user_jmap_accounts(user)
@@ -402,7 +402,7 @@ def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool
 
 	user = user or frappe.session.user
 
-	if is_system_manager(user):
+	if is_system_manager(user) or is_mail_admin(user):
 		return True
 
 	accounts = get_user_jmap_accounts(user)

@@ -7,6 +7,7 @@ import frappe
 from frappe.model.document import Document
 
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
+from suite.mail.utils.user import is_mail_admin
 from suite.utils.user import is_system_manager
 
 # Screening actions: what happens to future mail from a screened sender.
@@ -93,7 +94,7 @@ def get_screened_email_addresses(account: str, action: str | None = None) -> lis
 
 def get_permission_query_condition(user: str | None = None) -> str | None:
 	user = user or frappe.session.user
-	if is_system_manager(user):
+	if is_system_manager(user) or is_mail_admin(user):
 		return ""
 
 	accounts = get_user_jmap_accounts(user)
@@ -109,7 +110,7 @@ def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool
 
 	user = user or frappe.session.user
 
-	if is_system_manager(user):
+	if is_system_manager(user) or is_mail_admin(user):
 		return True
 
 	accounts = get_user_jmap_accounts(user)

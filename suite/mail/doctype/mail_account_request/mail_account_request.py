@@ -231,7 +231,11 @@ class MailAccountRequest(Document):
 		# Step - 3: Create User
 		user = execute_with_logging(
 			func=lambda: create_user(
-				self.account, first_name, last_name, password, ["Mail Admin"] if self.is_admin else []
+				self.account,
+				first_name,
+				last_name,
+				password,
+				["Suite User", "Mail Admin"] if self.is_admin else ["Suite User"],
 			),
 			title="Failed to create user",
 			user_message=_("Failed to create user, check error log for details."),

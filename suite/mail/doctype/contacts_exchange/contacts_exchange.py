@@ -41,11 +41,11 @@ from suite.mail.utils.logger import ExchangeLogger, get_exchange_logger
 from suite.mail.utils.user import (
 	get_user_email_address,
 	is_jmap_configured,
-	is_mail_admin,
 )
 from suite.utils import reconnect_on_failure
 from suite.utils.file import compress_directory, extract_compressed_file
-from suite.utils.user import is_administrator, is_system_manager
+from suite.utils.permissions import OwnerFromUser
+from suite.utils.user import is_administrator
 
 # JSContact (RFC 9553) Name component kind -> its position in the vCard 4.0 "N" property
 # (Family;Given;Additional;Prefixes;Suffixes), plus the two surname/given halves JSContact splits out.
@@ -61,7 +61,7 @@ SERVER_MANAGED_KEYS = (
 )
 
 
-class ContactsExchange(Document):
+class ContactsExchange(OwnerFromUser, Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -1326,23 +1326,6 @@ def _finalize_card(card: dict) -> None:
 		)
 		if full:
 			card.setdefault("name", {})["full"] = full
-
-
-def get_permission_query_condition(user: str | None = None) -> str:
-	user = user or frappe.session.user
-
-	if is_mail_admin(user) or is_system_manager(user):
-		return ""
-
-	return f"(`tabContacts Exchange`.user = '{user}')"
-
-
-def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
-	if doc.doctype != "Contacts Exchange":
-		return False
-
-	user = user or frappe.session.user
-	return doc.user == user or is_mail_admin(user) or is_system_manager(user)
 
 
 def retry_stuck_contacts_exchanges() -> None:
