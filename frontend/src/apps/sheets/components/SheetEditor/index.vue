@@ -6158,12 +6158,13 @@ function toggleShowFormulas() {
   max-height: min(60vh, 480px);
   overflow-y: auto;
 }
-/* reka-ui copies the popover's computed z-index onto its teleported wrapper, and
-   frappe-ui ships `.dropdown-content { z-index:50 }` — below the floating slicer
-   (8400) / context menu (9000), so the column menu rendered behind the panel.
-   The doubled class outranks that single-class default; a menu is transient and
-   must sit above every floating panel. */
-.dropdown-content.dropdown-content { z-index: 9500; }
+/* reka-ui teleports the popover to <body> as `.dropdown-content` (frappe-ui
+   default z-index:50) with no marker we can target, so the slicer's column menu
+   rendered behind the floating slicer (8400) / context menu (9000). Gate the
+   bump on `body:has(.sn-slicer)` — only while a Sheets slicer is floating — so
+   dropdowns everywhere else in the app (and other Suite products) keep their
+   normal stacking. The doubled class still outranks the single-class default. */
+body:has(.sn-slicer) .dropdown-content.dropdown-content { z-index: 9500; }
 
 /* A Frappe UI Dialog draws a translucent (~12% black) scrim over the grid.
    The filter-range outline and pivot-output highlight are full-height dark
