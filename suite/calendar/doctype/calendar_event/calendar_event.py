@@ -585,25 +585,24 @@ def delete_calendar_events(account: str, ids: list[str], send_scheduling_message
 
 	service = get_calendar_event_service(account)
 
-	# When custom invites are on, we send cancellations ourselves and must suppress the JMAP
-	# server's own cancel to avoid duplicate notifications (symmetric with create/update).
 	use_custom_invites = send_scheduling_messages and custom_event_invites_enabled()
 
-	# Snapshot organizer-owned events before deletion so cancellations can still be built.
+	# Snapshot organizer-owned events (with other participants) before deletion so we can send our
+	# own cancellations for them.
 	snapshots = _cancellable_snapshots(account, service, ids) if use_custom_invites else []
+	custom_ids = {snapshot["id"] for snapshot in snapshots}
 
-	response = service.delete(
-		ids, send_scheduling_messages=send_scheduling_messages and not use_custom_invites
-	)
-
-	if response.get("notDestroyed"):
-		error_messages = []
-		for id, error in response["notDestroyed"].items():
-			error_messages.append(f"{id}: {error['description']}")
-		frappe.throw(
-			_("Calendar Event Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-			title=_("Calendar Event Deletion Error"),
-		)
+	# Suppress the JMAP server's own scheduling ONLY for the events we cancel ourselves. Anything
+	# the acting account does not organize keeps server scheduling on, so a non-organizer's delete
+	# still notifies the organizer instead of being silently dropped.
+	if custom_ids:
+		_raise_if_not_destroyed(service.delete(list(custom_ids), send_scheduling_messages=False))
+		if remaining := [id for id in ids if id not in custom_ids]:
+			_raise_if_not_destroyed(
+				service.delete(remaining, send_scheduling_messages=send_scheduling_messages)
+			)
+	else:
+		_raise_if_not_destroyed(service.delete(ids, send_scheduling_messages=send_scheduling_messages))
 
 	for snapshot in snapshots:
 		_enqueue_event_notification(account, "cancel", event_snapshot=snapshot)
@@ -617,15 +616,15 @@ def delete_calendar_event_instance(
 
 	service = get_calendar_event_service(account)
 
-	use_custom_invites = send_scheduling_messages and custom_event_invites_enabled()
-
 	snapshot = None
-	if use_custom_invites:
+	if send_scheduling_messages and custom_event_invites_enabled():
 		if snapshots := _cancellable_snapshots(account, service, [master_id]):
 			snapshot = snapshots[0]
 
+	# Suppress the server's own scheduling only when we send a custom cancel for this
+	# (organizer-owned) instance; otherwise let the server notify so nothing is dropped.
 	response = service.delete_instance(
-		master_id, recurrence_id, send_scheduling_messages=send_scheduling_messages and not use_custom_invites
+		master_id, recurrence_id, send_scheduling_messages=send_scheduling_messages and snapshot is None
 	)
 
 	title = _("Calendar Event Instance Deletion Error")
@@ -797,6 +796,19 @@ def _cancellable_snapshots(account: str, service, ids: list[str]) -> list[dict]:
 			snapshots.append(event)
 
 	return snapshots
+
+
+def _raise_if_not_destroyed(response: dict) -> None:
+	"""Raises a user-facing error listing any events the JMAP server refused to destroy."""
+
+	if not response.get("notDestroyed"):
+		return
+
+	messages = [f"{id}: {error['description']}" for id, error in response["notDestroyed"].items()]
+	frappe.throw(
+		_("Calendar Event Deletion Error(s):<br>{0}").format("<br>".join(messages)),
+		title=_("Calendar Event Deletion Error"),
+	)
 
 
 def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
