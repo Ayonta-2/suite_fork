@@ -519,7 +519,9 @@ def update_calendar_event(
 		and acting_as_organizer(account, organizer)
 	)
 
-	previous_emails = _participant_emails(account, id) if use_custom_invites else None
+	previous_emails = None
+	if use_custom_invites:
+		previous_emails, event["sequence"] = _previous_invite_state(account, id)
 
 	service = get_calendar_event_service(account)
 	response = service.update(
@@ -548,10 +550,14 @@ def update_calendar_event_instance(
 	"""Updates a specific instance of a recurring calendar event based on its master ID and recurrence ID."""
 
 	use_custom_invites = False
+	next_sequence = None
 	if send_scheduling_messages and custom_event_invites_enabled():
 		events = get_calendar_events(account, [master_id])
-		organizer = events[0]["organizer"] if events else None
+		event = events[0] if events else None
+		organizer = event["organizer"] if event else None
 		use_custom_invites = acting_as_organizer(account, organizer)
+		if use_custom_invites:
+			next_sequence = cint(event.get("sequence") if event else 0) + 1
 
 	service = get_calendar_event_service(account)
 	response = service.update_instance(
@@ -559,6 +565,7 @@ def update_calendar_event_instance(
 		recurrence_id,
 		patch,
 		send_scheduling_messages=send_scheduling_messages and not use_custom_invites,
+		sequence=next_sequence,
 	)
 
 	title = _("Calendar Event Instance Update Error")
@@ -748,14 +755,22 @@ def _enqueue_event_notification(account: str, action: str, **kwargs) -> None:
 	)
 
 
-def _participant_emails(account: str, id: str) -> list[str]:
-	"""Returns the current participant emails for an event, used to diff on update."""
+def _previous_invite_state(account: str, id: str) -> tuple[list[str], int]:
+	"""Returns (current participant emails, next SEQUENCE) for an event about to be updated.
+
+	The next sequence is the stored sequence + 1, so every organizer update strictly increases
+	SEQUENCE. Attendee clients (Outlook especially) ignore a re-sent REQUEST whose SEQUENCE has
+	not advanced, so we bump it ourselves rather than trusting the server to. Fetched in one
+	round-trip since the update path already needs the participant diff.
+	"""
 
 	events = get_calendar_events(account, [id])
 	if not events:
-		return []
+		return [], 1
 
-	return [p["email"] for p in events[0]["participants"] if p.get("email")]
+	event = events[0]
+	emails = [p["email"] for p in event["participants"] if p.get("email")]
+	return emails, cint(event.get("sequence")) + 1
 
 
 def _cancellable_snapshots(account: str, service, ids: list[str]) -> list[dict]:

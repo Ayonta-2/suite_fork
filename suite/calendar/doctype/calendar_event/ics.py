@@ -8,6 +8,9 @@ export feature stay in sync. The only extra work here is wrapping the components
 VCALENDAR with the right iTIP METHOD (REQUEST for invites/updates, CANCEL for removals).
 """
 
+from datetime import UTC, datetime
+
+from frappe.utils import cint
 from icalendar import Calendar
 
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import (
@@ -32,14 +35,37 @@ def build_event_ics(event: dict, method: str = "REQUEST", recurrence_id: str | N
 	cal.add("method", method)
 
 	if recurrence_id:
-		cal.add_component(_instance_component(event, recurrence_id, method))
+		component = _instance_component(event, recurrence_id, method)
+		_stamp_outgoing(component, method)
+		cal.add_component(component)
 	else:
 		for component in _build_components(event):
 			if method == "CANCEL":
 				_mark_cancelled(component)
+			_stamp_outgoing(component, method)
 			cal.add_component(component)
 
 	return cal.to_ical().decode("utf-8")
+
+
+def _stamp_outgoing(component, method: str) -> None:
+	"""Stamps an outgoing iTIP component with a send-time DTSTAMP and the right SEQUENCE.
+
+	DTSTAMP on a scheduling message marks when the message itself was produced (now), not the
+	event's last-modified time — clients use it to order re-sends. For a CANCEL we force
+	SEQUENCE one past the stored value so it strictly supersedes the REQUEST it cancels; plain
+	REQUESTs keep the sequence the organizer already bumped on the stored event.
+	"""
+
+	if "dtstamp" in component:
+		del component["dtstamp"]
+	component.add("dtstamp", datetime.now(UTC))
+
+	if method == "CANCEL":
+		bumped = cint(component.get("sequence")) + 1
+		if "sequence" in component:
+			del component["sequence"]
+		component.add("sequence", bumped)
 
 
 def _instance_component(event: dict, recurrence_id: str, method: str):

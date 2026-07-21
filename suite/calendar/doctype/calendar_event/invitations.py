@@ -27,7 +27,10 @@ from suite.calendar.doctype.calendar_event.invite_templates import (
 	DEFAULT_TEMPLATES,
 	template_path,
 )
-from suite.calendar.doctype.calendar_exchange.calendar_exchange import _parse_local_datetime
+from suite.calendar.doctype.calendar_exchange.calendar_exchange import (
+	_parse_local_datetime,
+	is_conference_link,
+)
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_event_service, get_identities
@@ -35,6 +38,18 @@ from suite.utils import log_error
 
 # RSVP links stay valid until this long after the event starts.
 RSVP_GRACE_DAYS = 1
+
+# JSCalendar participationStatus -> (button label, pill state) for the organizer notification email.
+RESPONSE_DISPLAY: dict[str, tuple[str, str]] = {
+	"accepted": ("Yes", "yes"),
+	"tentative": ("Maybe", "maybe"),
+	"declined": ("No", "no"),
+}
+
+# The invite/update/cancel mails embed the logo as a CID part (built by hand in `_build_mime`).
+# The organizer response goes through `frappe.sendmail`, which inlines images referenced by an
+# `embed="<name>"` attribute instead — this is that name.
+RESPONSE_LOGO_EMBED = "event-logo.png"
 
 # Shared font stack for the event email templates (passed into the render context).
 EMAIL_FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
@@ -108,6 +123,64 @@ def notify_participants(
 			log_error("Calendar", title=_("Failed to send event {0} email to {1}").format(kind, email))
 
 
+def notify_organizer_of_response(
+	account: str, event_id: str, participant_email: str, status: str
+) -> None:
+	"""Emails the organizer that a guest responded to their invitation.
+
+	Guests RSVP through signed links, so their answer is written straight to the organizer's
+	copy over JMAP and no iTIP REPLY ever reaches the organizer — they'd only find out by opening
+	the event. This sends that heads-up from the site's default outgoing account (the organizer is
+	the recipient, not the sender), with Reply-To pointing at the responding guest.
+
+	Runs as a background job off the unauthenticated RSVP request, so it acts as the account owner
+	to read the event over JMAP.
+	"""
+
+	display = RESPONSE_DISPLAY.get((status or "").lower())
+	if not display:
+		return
+
+	user = get_user_for_jmap_account(account, raise_exception=True)
+	original_user = frappe.session.user
+	frappe.set_user(user)
+	try:
+		events = get_calendar_event_service(account).get([event_id])
+		if not events:
+			return
+		event = events[0]
+
+		organizer = (event.get("organizerCalendarAddress") or "").lower().replace("mailto:", "")
+		if not organizer:
+			return
+
+		organizer_name = _organizer_name(account, event, organizer)
+		responder = _display_name(event, participant_email) or participant_email
+		subject, html = _render_response(
+			event, organizer, organizer_name, participant_email, responder, display
+		)
+
+		frappe.sendmail(
+			recipients=[organizer],
+			subject=subject,
+			message=html,
+			reply_to=participant_email,
+			inline_images=_response_inline_images(),
+			now=True,
+		)
+	except Exception:
+		log_error("Calendar", title=_("Failed to notify organizer of RSVP for event {0}").format(event_id))
+	finally:
+		frappe.set_user(original_user)
+
+
+def _response_inline_images() -> list[dict]:
+	"""Returns the Calendar logo for the response email in frappe.sendmail's `embed=` format."""
+
+	logo = _image_bytes("public", "calendar", "images", "logo.png")
+	return [{"filename": RESPONSE_LOGO_EMBED, "filecontent": logo}] if logo else []
+
+
 def _plan(action: str, current: set[str], previous_emails: list[str] | None) -> dict[str, str]:
 	"""Maps each recipient email to the email kind (invite/update/cancel) to send."""
 
@@ -175,6 +248,29 @@ def _render(kind, event, organizer, organizer_name, participant, links) -> tuple
 	return subject, html
 
 
+def _render_response(
+	event, organizer, organizer_name, responder_email, responder_name, display
+) -> tuple[str, str]:
+	"""Returns (subject, html) for the organizer's RSVP notification email."""
+
+	label, state = display
+	context = _context(event, organizer, organizer_name, None, None)
+	context.update(
+		{
+			"responder_name": responder_name,
+			"responder_email": responder_email,
+			"response_label": label,
+			"response_state": state,
+			# Sent via frappe.sendmail, which inlines the logo from an `embed=` attribute.
+			"logo_src_attr": f'embed="{RESPONSE_LOGO_EMBED}"',
+		}
+	)
+
+	subject = frappe.render_template(DEFAULT_SUBJECTS["response"], context, is_path=False)
+	html = frappe.render_template(template_path(DEFAULT_TEMPLATES["response"]), context, is_path=True)
+	return subject, html
+
+
 def _context(event, organizer, organizer_name, participant, links) -> dict:
 	"""Builds the Jinja render context shared by subject and body templates."""
 
@@ -194,19 +290,22 @@ def _context(event, organizer, organizer_name, participant, links) -> dict:
 		"attendee_name": (participant or {}).get("name") or "",
 		"meet": _meet_link(event),
 		"rsvp": links,
+		# Invite/update/cancel go out as hand-built MIME with a CID logo part; the response email
+		# (frappe.sendmail) overrides this with an `embed=` reference. See `_render_response`.
+		"logo_src_attr": 'src="cid:eventlogo"',
 	}
 
 
 def _meet_link(event: dict) -> dict | None:
 	"""Returns {url, label} for the event's first Frappe Meet link, or None.
 
-	Powers the "Frappe Meet video call" card in the invite/update emails. Only links whose
-	URL carries a `/meet/` path are treated as a meeting; other links are left out.
+	Powers the "Frappe Meet video call" card in the invite/update emails. Uses the same link
+	detection as the .ics CONFERENCE property so the card and the calendar entry never disagree.
 	"""
 
 	for link in (event.get("links") or {}).values():
 		href = link.get("href") or ""
-		if "/meet/" in href:
+		if is_conference_link(href):
 			return {"url": href, "label": re.sub(r"^https?://", "", href).rstrip("/")}
 
 	return None

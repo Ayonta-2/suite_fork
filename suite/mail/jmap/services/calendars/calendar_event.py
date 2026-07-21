@@ -144,6 +144,12 @@ class CalendarEventService(CalendarsService):
 					}
 				)
 
+				# The caller may force a SEQUENCE bump (iTIP) so attendee clients apply the update
+				# instead of ignoring it as a duplicate. Only set it when provided; otherwise leave
+				# the server-managed value alone.
+				if (sequence := event.get("sequence")) is not None:
+					payload[event["id"]]["sequence"] = int(sequence)
+
 			response = self._update(payload, sendSchedulingMessages=send_scheduling_messages)
 
 			if method_responses := response.get("methodResponses"):
@@ -267,7 +273,12 @@ class CalendarEventService(CalendarsService):
 		).get("ids", [])
 
 	def update_instance(
-		self, id: str, recurrence_id: str, patch: dict, send_scheduling_messages: bool = False
+		self,
+		id: str,
+		recurrence_id: str,
+		patch: dict,
+		send_scheduling_messages: bool = False,
+		sequence: int | None = None,
 	) -> dict:
 		"""Public method to update a specific instance of a recurring calendar event based on its ID and recurrence ID by applying the provided patch to the master event's recurrence overrides."""
 
@@ -323,6 +334,10 @@ class CalendarEventService(CalendarsService):
 			payload = {id: {"recurrenceOverrides": recurrence_overrides}}
 
 		payload[id]["updated"] = utcnow()
+
+		# Bump the master SEQUENCE (iTIP) so attendees' clients accept the re-sent series.
+		if sequence is not None:
+			payload[id]["sequence"] = int(sequence)
 
 		response = self._update(payload, sendSchedulingMessages=send_scheduling_messages)
 

@@ -94,6 +94,18 @@ WEEKDAY_MAP: dict[str, str] = {
 	"su": "SU",
 }
 
+# A link URL carrying this path marks a Frappe Meet room. Used both for the RFC 7986 CONFERENCE
+# property (below) and the invite email's "Frappe Meet" card, so the two never drift apart.
+MEET_LINK_MARKER = "/meet/"
+CONFERENCE_LABEL = "Frappe Meet"
+
+
+def is_conference_link(href: str | None) -> bool:
+	"""True when a link URL points at a Frappe Meet room (a joinable video call)."""
+
+	return MEET_LINK_MARKER in (href or "")
+
+
 # Server-managed / computed properties that must be dropped before re-creating an event,
 # otherwise the JMAP server rejects the "set" call with invalidProperties.
 SERVER_MANAGED_KEYS = (
@@ -938,7 +950,7 @@ def jscalendar_to_vevent(event: dict, categories: list[str] | None = None):
 	Recurrence overrides are NOT applied here; :func:`_build_components` handles those by
 	emitting the master event plus per-instance override components."""
 
-	from icalendar import Event, vText
+	from icalendar import Event, vText, vUri
 
 	component = Event()
 
@@ -981,10 +993,22 @@ def jscalendar_to_vevent(event: dict, categories: list[str] | None = None):
 	if locations:
 		component.add("location", "; ".join(locations))
 
+	url_added = False
 	for link in (event.get("links") or {}).values():
-		if href := link.get("href"):
+		href = link.get("href")
+		if not href:
+			continue
+		if not url_added:
 			component.add("url", href)
-			break
+			url_added = True
+		# RFC 7986 CONFERENCE lets Google/Apple/Outlook render a native "Join" button for the
+		# video call; a plain URL property gets buried. Emitted alongside URL, not instead of it.
+		if is_conference_link(href):
+			component.add(
+				"conference",
+				vUri(href),
+				parameters={"VALUE": "URI", "FEATURE": "VIDEO", "LABEL": CONFERENCE_LABEL},
+			)
 
 	if categories:
 		component.add("categories", categories)

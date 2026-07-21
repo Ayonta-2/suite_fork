@@ -64,6 +64,8 @@ def resolve_rsvp(token: str) -> dict:
 	try:
 		service = _guest_calendar_service(payload["a"])
 		result = service.set_participation_status(payload["e"], payload["u"], status)
+		if not result.get("notUpdated"):
+			_notify_organizer(payload, status)
 		frappe.db.commit()
 	except Exception:
 		log_error("Calendar", title=_("Calendar RSVP failed"))
@@ -90,6 +92,24 @@ def resolve_rsvp(token: str) -> dict:
 		"event_title": (event or {}).get("title") or "",
 		"event_when": _format_event_when(event) if event else "",
 	}
+
+
+def _notify_organizer(payload: dict, status: str) -> None:
+	"""Enqueues the organizer heads-up email for a just-recorded RSVP (best-effort).
+
+	Runs after the response commits so the email reflects the stored state, and off the request
+	so a mail hiccup never breaks the guest's confirmation page.
+	"""
+
+	frappe.enqueue(
+		"suite.calendar.doctype.calendar_event.invitations.notify_organizer_of_response",
+		queue="short",
+		enqueue_after_commit=True,
+		account=payload["a"],
+		event_id=payload["e"],
+		participant_email=payload["m"],
+		status=status,
+	)
 
 
 def _confirmation_copy(response_key: str) -> tuple[str, str, str]:
