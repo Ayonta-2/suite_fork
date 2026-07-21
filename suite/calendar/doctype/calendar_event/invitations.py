@@ -141,9 +141,14 @@ def notify_organizer_of_response(
 	if not display:
 		return
 
-	user = get_user_for_jmap_account(account, raise_exception=True)
+	# The RSVP request is unauthenticated (Guest), so resolve the account owner straight from the
+	# DB — get_user_for_jmap_account would reject Guest — then act as them to read the event.
+	owner = frappe.db.get_value("User Account", {"account": account}, "user")
+	if not owner:
+		return
+
 	original_user = frappe.session.user
-	frappe.set_user(user)
+	frappe.set_user(owner)
 	try:
 		events = get_calendar_event_service(account).get([event_id])
 		if not events:
