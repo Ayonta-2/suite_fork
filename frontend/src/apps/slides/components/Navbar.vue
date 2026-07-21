@@ -6,7 +6,7 @@
 	>
 		<div class="flex w-fit items-center gap-2">
 			<router-link
-				v-if="!showNavbarDropdown && !showHomeDropdown"
+				v-if="!dropdown"
 				class="flex w-fit items-center gap-2"
 				:to="{ name: 'slides-home' }"
 			>
@@ -15,7 +15,7 @@
 
 			<Dropdown
 				v-else
-				:options="showHomeDropdown ? getHomeMenuOptions() : getContextMenuOptions()"
+				:options="dropdown === 'home' ? getHomeMenuOptions() : getContextMenuOptions()"
 				:offset="16"
 			>
 				<template #default="{ open }">
@@ -57,13 +57,9 @@ import { useThemeMenuOption } from '@/apps/slides/composables/useThemeMenuOption
 import { useSessionStore } from '@/boot/session'
 
 const props = defineProps({
-	showNavbarDropdown: {
-		type: Boolean,
-		default: false,
-	},
-	showHomeDropdown: {
-		type: Boolean,
-		default: false,
+	dropdown: {
+		type: String,
+		default: null,
 	},
 	primaryButton: Object,
 })

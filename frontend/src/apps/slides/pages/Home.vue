@@ -1,7 +1,7 @@
 <template>
 	<div class="flex h-screen w-screen flex-col bg-surface-base">
 		<Navbar
-			:showHomeDropdown="true"
+			dropdown="home"
 			:primaryButton="{
 				label: 'New',
 				icon: Plus,

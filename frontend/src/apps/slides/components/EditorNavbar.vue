@@ -1,7 +1,7 @@
 <template>
 	<Navbar
 		:primaryButton="primaryButtonProps"
-		:showNavbarDropdown="showNavbarDropdown"
+		:dropdown="showNavbarDropdown ? 'context' : null"
 		@performDropdownAction="(action) => emit('performDropdownAction', action)"
 	>
 		<template v-if="!inReadonlyMode" #left-actions>

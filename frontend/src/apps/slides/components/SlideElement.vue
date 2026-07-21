@@ -23,7 +23,7 @@ import { activeElementIds } from '@/apps/slides/stores/element'
 import { slideBounds } from '@/apps/slides/stores/slide'
 import { interactionOffset } from '@/apps/slides/stores/interaction'
 
-import { rotationDelta } from '@/apps/slides/composables/useRotator'
+import { rotationDelta } from '@/apps/slides/stores/interaction'
 import { selectionColor } from '@/apps/slides/utils/constants'
 
 const props = defineProps({

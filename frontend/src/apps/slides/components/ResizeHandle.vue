@@ -5,7 +5,7 @@
 import { computed } from 'vue'
 
 import { slideBounds } from '@/apps/slides/stores/slide'
-import { selectionColor } from '@/apps/slides/utils/constants'
+import { getHandleBaseStyles } from '@/apps/slides/utils/constants'
 
 const props = defineProps({
 	direction: {
@@ -20,20 +20,7 @@ const props = defineProps({
 
 const emit = defineEmits(['startResize'])
 
-const baseStyles = {
-	position: 'absolute',
-	zIndex: 9999,
-	backgroundColor: '#ffffff',
-	borderRadius: '9999px',
-	boxSizing: 'border-box',
-}
-
 const scaledPx = (value) => `${value / slideBounds.scale}px`
-
-const handleDecoration = () => ({
-	border: `${1.5 / slideBounds.scale}px solid ${selectionColor}`,
-	boxShadow: `0 ${1 / slideBounds.scale}px ${2 / slideBounds.scale}px rgba(0, 0, 0, 0.16)`,
-})
 
 const EDGE_THICKNESS = 7
 const EDGE_LENGTH = 18
@@ -44,8 +31,8 @@ const getWidthResizerStyles = () => {
 
 	const offset = `-${scaledPx(EDGE_THICKNESS / 2 + OUTLINE_WIDTH / 2)}`
 	return {
-		...baseStyles,
-		...handleDecoration(),
+		...getHandleBaseStyles(slideBounds.scale),
+		borderRadius: '9999px',
 		cursor: 'ew-resize',
 		left: resizer.includes('left') ? offset : 'auto',
 		right: resizer.includes('right') ? offset : 'auto',
@@ -60,8 +47,8 @@ const getHeightResizerStyles = () => {
 
 	const offset = `-${scaledPx(EDGE_THICKNESS / 2 + OUTLINE_WIDTH / 2)}`
 	return {
-		...baseStyles,
-		...handleDecoration(),
+		...getHandleBaseStyles(slideBounds.scale),
+		borderRadius: '9999px',
 		cursor: 'ns-resize',
 		left: `calc(50% - ${scaledPx(EDGE_LENGTH / 2)})`,
 		top: resizer.includes('top') ? offset : 'auto',
@@ -82,8 +69,8 @@ const getDimensionResizerStyles = () => {
 	const size = props.currentResizer ? 11 : 9
 	const offset = `-${scaledPx(size / 2 + OUTLINE_WIDTH / 2)}`
 	return {
-		...baseStyles,
-		...handleDecoration(),
+		...getHandleBaseStyles(slideBounds.scale),
+		borderRadius: '9999px',
 		top: resizer.includes('top') ? offset : 'auto',
 		bottom: resizer.includes('bottom') ? offset : 'auto',
 		left: resizer.includes('left') ? offset : 'auto',
@@ -100,8 +87,8 @@ const getLineResizerStyles = () => {
 	const size = props.currentResizer ? 11 : 9
 	const offset = `-${scaledPx(size / 2)}`
 	return {
-		...baseStyles,
-		...handleDecoration(),
+		...getHandleBaseStyles(slideBounds.scale),
+		borderRadius: '9999px',
 		cursor: 'ew-resize',
 		left: resizer === 'line-left' ? offset : 'auto',
 		right: resizer === 'line-right' ? offset : 'auto',

@@ -11,6 +11,15 @@ const defaultShadowColor = '#7C7C7CFF'
 const labelClasses = 'select-none font-text text-base text-ink-gray-5'
 const chevronClasses = 'lucide-chevron-down ml-auto size-4 shrink-0 text-ink-gray-4'
 
+const getHandleBaseStyles = (scale) => ({
+	position: 'absolute',
+	zIndex: 9999,
+	backgroundColor: '#ffffff',
+	border: `${1.5 / scale}px solid ${selectionColor}`,
+	boxShadow: `0 ${1 / scale}px ${2 / scale}px rgba(0, 0, 0, 0.16)`,
+	boxSizing: 'border-box',
+})
+
 const allowedImageFileTypes = [
 	'image/jpeg',
 	'image/jpg',
@@ -31,4 +40,5 @@ export {
 	defaultShadowColor,
 	labelClasses,
 	chevronClasses,
+	getHandleBaseStyles,
 }

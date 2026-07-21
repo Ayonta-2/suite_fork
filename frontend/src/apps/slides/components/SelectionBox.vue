@@ -15,7 +15,7 @@ import Resizer from '@/apps/slides/components/Resizer.vue'
 
 import { slideBounds, selectionBounds } from '@/apps/slides/stores/slide'
 import { interactionOffset } from '@/apps/slides/stores/interaction'
-import { rotationDelta } from '@/apps/slides/composables/useRotator'
+import { rotationDelta } from '@/apps/slides/stores/interaction'
 import {
 	activeElementIds,
 	focusElementId,

@@ -1,5 +1,5 @@
 <template>
-	<div :class="getThumbnailClasses(slide)" :style="getThumbnailStyles(slide)">
+	<div :class="getThumbnailClasses()" :style="getThumbnailStyles(slide)">
 		<SlidePreview :slide="slide" :scale="scale" />
 		<div
 			class="absolute inset-0 flex w-full justify-between rounded-sm p-2"
@@ -12,6 +12,8 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+
 import { focusedSlide, slides } from '@/apps/slides/stores/slide'
 import { recentlyRestored } from '@/apps/slides/stores/historyMeta'
 
@@ -41,7 +43,10 @@ const getGradientOverlayStyles = (slide) => {
 	}
 }
 
-const getThumbnailClasses = (slide) => {
+const isFocused = computed(() => focusedSlide.value == slides.value.indexOf(props.slide))
+const usesSelectionRing = computed(() => (props.isActive && recentlyRestored.value) || isFocused.value)
+
+const getThumbnailClasses = () => {
 	const baseClasses = [
 		'relative',
 		'first:mt-0',
@@ -58,12 +63,11 @@ const getThumbnailClasses = (slide) => {
 	]
 
 	const isActive = props.isActive
-	const isFocused = focusedSlide.value == slides.value.indexOf(slide)
 
 	let outlineClasses = []
 	if (isActive && recentlyRestored.value) {
 		outlineClasses.push('ring-2', 'ring-offset-2', 'scale-[1.02]')
-	} else if (isFocused) {
+	} else if (isFocused.value) {
 		outlineClasses.push('ring-2', 'ring-offset-2')
 	} else if (isActive) {
 		outlineClasses.push(
@@ -79,14 +83,11 @@ const getThumbnailClasses = (slide) => {
 }
 
 const getThumbnailStyles = (s) => {
-	const isFocused = focusedSlide.value == slides.value.indexOf(s)
-	const usesSelectionRing = (props.isActive && recentlyRestored.value) || isFocused
-
 	return {
 		backgroundColor: s.background || '#ffffff',
 		height: `${props.height}px`,
 		'--tw-ring-offset-color': 'var(--surface-base)',
-		...(usesSelectionRing ? { '--tw-ring-color': selectionColor } : {}),
+		...(usesSelectionRing.value ? { '--tw-ring-color': selectionColor } : {}),
 	}
 }
 </script>
