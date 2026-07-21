@@ -1,7 +1,7 @@
 import frappe
 
+from suite.calendar.doctype.calendar.calendar import fetch_calendars
 from suite.mail.doctype.address_book.address_book import fetch_address_books
-from suite.mail.doctype.calendar.calendar import fetch_calendars
 from suite.mail.doctype.mailbox.mailbox import fetch_mailboxes
 from suite.mail.doctype.user_account.user_account import fetch_user_accounts
 

@@ -3,13 +3,13 @@ import json
 import frappe
 from frappe import _
 
-from suite.mail.doctype.calendar.calendar import fetch_calendars
-from suite.mail.doctype.calendar_event.calendar_event import (
+from suite.calendar.doctype.calendar.calendar import fetch_calendars
+from suite.calendar.doctype.calendar_event.calendar_event import (
 	fetch_calendar_events,
 	get_master_events_by_uids,
 	update_calendar_event,
 )
-from suite.mail.doctype.calendar_event.calendar_event import (
+from suite.calendar.doctype.calendar_event.calendar_event import (
 	get_calendar_events as get_calendar_events_by_ids,
 )
 

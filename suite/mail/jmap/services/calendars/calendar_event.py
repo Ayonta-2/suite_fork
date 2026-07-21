@@ -144,6 +144,12 @@ class CalendarEventService(CalendarsService):
 					}
 				)
 
+				# The caller may force a SEQUENCE bump (iTIP) so attendee clients apply the update
+				# instead of ignoring it as a duplicate. Only set it when provided; otherwise leave
+				# the server-managed value alone.
+				if (sequence := event.get("sequence")) is not None:
+					payload[event["id"]]["sequence"] = int(sequence)
+
 			response = self._update(payload, sendSchedulingMessages=send_scheduling_messages)
 
 			if method_responses := response.get("methodResponses"):
@@ -176,12 +182,13 @@ class CalendarEventService(CalendarsService):
 
 		return result
 
-	def delete(self, ids: list[str]) -> dict:
-		"""Public method to delete calendar events, handling batching if the number of events exceeds the server's maximum allowed in a single 'set' call."""
+	def delete(self, ids: list[str], send_scheduling_messages: bool = False) -> dict:
+		"""Public method to delete calendar events, handling batching if the number of events exceeds the server's maximum allowed in a single 'set' call.
+		If send_scheduling_messages is True, the JMAP server sends cancellation scheduling messages for the destroyed events; pass False to suppress them (e.g. when the client sends its own cancellations)."""
 
 		result = {"destroyed": [], "notDestroyed": {}}
 		for batch in self.create_batches(ids, self.max_objects_in_set):
-			response = self._delete(batch)
+			response = self._delete(batch, sendSchedulingMessages=send_scheduling_messages)
 
 			if method_responses := response.get("methodResponses"):
 				result["destroyed"].extend(method_responses[0][1].get("destroyed", []))
@@ -289,7 +296,12 @@ class CalendarEventService(CalendarsService):
 		).get("ids", [])
 
 	def update_instance(
-		self, id: str, recurrence_id: str, patch: dict, send_scheduling_messages: bool = False
+		self,
+		id: str,
+		recurrence_id: str,
+		patch: dict,
+		send_scheduling_messages: bool = False,
+		sequence: int | None = None,
 	) -> dict:
 		"""Public method to update a specific instance of a recurring calendar event based on its ID and recurrence ID by applying the provided patch to the master event's recurrence overrides."""
 
@@ -346,6 +358,10 @@ class CalendarEventService(CalendarsService):
 
 		payload[id]["updated"] = utcnow()
 
+		# Bump the master SEQUENCE (iTIP) so attendees' clients accept the re-sent series.
+		if sequence is not None:
+			payload[id]["sequence"] = int(sequence)
+
 		response = self._update(payload, sendSchedulingMessages=send_scheduling_messages)
 
 		result = {"updated": [], "notUpdated": {}}
@@ -356,8 +372,42 @@ class CalendarEventService(CalendarsService):
 
 		return result
 
-	def delete_instance(self, id: str, recurrence_id: str) -> dict:
-		"""Public method to delete a specific instance of a recurring calendar event based on its ID and recurrence ID by marking it as excluded in the master event's recurrence overrides."""
+	def set_participation_status(
+		self,
+		id: str,
+		participant_uid: str,
+		participation_status: str,
+		send_scheduling_messages: bool = False,
+	) -> dict:
+		"""Patches a single participant's participationStatus without rewriting the event.
+
+		Used by the RSVP link endpoint, where a guest updates only their own response on the
+		organizer's copy of the event.
+		"""
+
+		if not id or not participant_uid:
+			raise ValueError("Both 'id' and 'participant_uid' are required.")
+
+		payload = {
+			id: {
+				f"participants/{participant_uid}/participationStatus": participation_status.lower(),
+				"updated": utcnow(),
+			}
+		}
+
+		response = self._update(payload, sendSchedulingMessages=send_scheduling_messages)
+
+		result = {"updated": [], "notUpdated": {}}
+		if method_responses := response.get("methodResponses"):
+			result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
+			if not_updated := method_responses[0][1].get("notUpdated", {}):
+				result["notUpdated"].update(not_updated)
+
+		return result
+
+	def delete_instance(self, id: str, recurrence_id: str, send_scheduling_messages: bool = False) -> dict:
+		"""Public method to delete a specific instance of a recurring calendar event based on its ID and recurrence ID by marking it as excluded in the master event's recurrence overrides.
+		If send_scheduling_messages is True, the JMAP server sends a cancellation for the excluded instance; pass False to suppress it (e.g. when the client sends its own)."""
 
 		if not id or not recurrence_id:
 			raise ValueError("Both 'id' and 'recurrence_id' are required.")
@@ -370,7 +420,10 @@ class CalendarEventService(CalendarsService):
 		recurrence_overrides = event.get("recurrenceOverrides", {}) or {}
 		recurrence_overrides.setdefault(recurrence_id, {}).update({"excluded": True})
 
-		response = self._update({id: {"recurrenceOverrides": recurrence_overrides, "updated": utcnow()}})
+		response = self._update(
+			{id: {"recurrenceOverrides": recurrence_overrides, "updated": utcnow()}},
+			sendSchedulingMessages=send_scheduling_messages,
+		)
 
 		result = {"updated": [], "notUpdated": {}}
 		if method_responses := response.get("methodResponses"):

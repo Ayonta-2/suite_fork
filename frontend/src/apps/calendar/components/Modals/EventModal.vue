@@ -237,7 +237,7 @@ const handleSuccess = () => {
 }
 
 const createEvent = createResource({
-	url: 'suite.mail.doctype.calendar_event.calendar_event.add_calendar_event',
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.add_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		...eventParams.value,
@@ -257,7 +257,7 @@ const createMeetEvent = createResource({
 })
 
 const editEventInstance = createResource({
-	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event_instance',
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		master_id: selectedEvent.calendarEvent.master_id,
@@ -269,7 +269,7 @@ const editEventInstance = createResource({
 })
 
 const editEvent = createResource({
-	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event',
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		// master_id is only set on recurring events; fall back to the event's own id
