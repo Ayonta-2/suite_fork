@@ -87,7 +87,7 @@ def assign_drive_role(user, method: str | None = None) -> None:
 	"Newly created user X has no roles enabled", and `set_system_user` would
 	demote the user to a Website User for having no desk-access role.
 	"""
-	from suite.suite_core.roles import assign_role
+	from suite.utils.user import assign_role
 
 	assign_role(user, "Drive User")
 

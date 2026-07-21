@@ -5,7 +5,6 @@
 import re
 
 import frappe
-from frappe.core.doctype.user.user import User
 from frappe.utils.caching import redis_cache
 
 
@@ -31,17 +30,6 @@ def unique_users(user_list: list) -> list[dict]:
 		unique_list.append(user_row)
 
 	return unique_list
-
-
-def assign_meet_role(user: User, method: str | None = None) -> None:
-	"""Assign the "Meet User" role to a new User.
-
-	Runs on `before_insert` so the role is in place before Frappe validates the
-	User — see `suite.suite_core.roles.assign_role`.
-	"""
-	from suite.suite_core.roles import assign_role
-
-	assign_role(user, "Meet User")
 
 
 def is_guest_user(user_id: str) -> bool:
