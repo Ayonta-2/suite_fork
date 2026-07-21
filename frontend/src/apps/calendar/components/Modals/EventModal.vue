@@ -227,6 +227,24 @@ watch(showRepeatSettings, (val) => {
 	if (!val && !event.recurrence_rule?.frequency) event.repeat = false
 })
 
+// With a rule applied the row is an entry point to the settings — unchecking
+// only happens through Remove Repeat in the modal.
+const toggleRepeat = () => {
+	if (event.recurrence_rule?.frequency) {
+		showRepeatSettings.value = true
+		return
+	}
+	event.repeat = !event.repeat
+	if (event.repeat) showRepeatSettings.value = true
+	else event.recurrence_rule = {}
+}
+
+const repeatLabel = computed(() => {
+	if (!event.recurrence_rule?.frequency) return __('Repeat')
+	const message = getRepeatMessage(event.recurrence_rule)
+	return __('Repeats {0}', [message.charAt(0).toLowerCase() + message.slice(1)])
+})
+
 // --- Save logic ---
 
 const handleSuccess = () => {
@@ -439,6 +457,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 									v-model="event.isAllDay"
 									:label="__('All Day')"
 									type="checkbox"
+									class="dark:[&_input:not(:checked)]:bg-surface-gray-2"
 								/>
 							</div>
 							<div class="flex gap-3 p-3.5">
@@ -471,33 +490,27 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 									</div>
 								</div>
 							</div>
-							<div class="flex items-center gap-3 px-3.5 pb-3.5">
-								<FormControl
-									v-model="event.repeat"
-									:label="
-										event.recurrence_rule?.frequency
-											? __('Repeat: {0}', [getRepeatMessage(event.recurrence_rule)])
-											: __('Repeat')
-									"
-									type="checkbox"
-									@update:model-value="
-										$event ? (showRepeatSettings = true) : (event.recurrence_rule = {})
-									"
-								/>
-								<span
-									v-if="event.recurrence_rule?.frequency"
-									class="cursor-pointer text-base text-ink-gray-4 hover:underline"
-									@click="showRepeatSettings = true"
+							<div class="px-3.5 pb-3.5">
+								<div
+									class="group -mx-1.5 flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-surface-gray-2"
+									@click="toggleRepeat"
 								>
-									{{ __('Edit') }}
-								</span>
+									<FormControl
+										v-model="event.repeat"
+										type="checkbox"
+										class="pointer-events-none dark:[&_input:not(:checked)]:bg-surface-gray-2"
+									/>
+									<span class="min-w-0 flex-1 truncate text-base text-ink-gray-8">
+										{{ repeatLabel }}
+									</span>
+								</div>
 							</div>
 						</div>
 
 						<!-- meet link -->
 						<div
 							v-if="isNew || hasMeetLink(selectedEvent?.calendarEvent)"
-							class="mt-4 flex items-center gap-3 rounded-xl border border-outline-gray-2 px-3.5 py-3"
+							class="mt-4 flex items-center gap-3 rounded-lg border border-outline-gray-2 px-3.5 py-3"
 						>
 							<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-[18px] shrink-0" />
 							<span class="flex-1 text-base">
@@ -519,7 +532,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 											v-model="event.locations[i]"
 											:label="
 												i === 0
-													? event.locations.length > 1
+													? event.locations?.length > 1
 														? __('Locations')
 														: __('Location')
 													: ''
@@ -528,7 +541,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 											class="w-full"
 										/>
 										<Button
-											v-if="event.locations.length === 1"
+											v-if="event.locations?.length === 1"
 											icon="plus"
 											class="mt-auto"
 											@click="event.locations.push('')"
@@ -536,7 +549,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 										<Button v-else icon="x" class="mt-auto" @click="event.locations.splice(i, 1)" />
 									</div>
 									<Button
-										v-if="event.locations.length > 1 && event.locations.length < 3"
+										v-if="event.locations?.length > 1 && event.locations?.length < 3"
 										:label="__('Add Location')"
 										@click="event.locations.push('')"
 									/>
@@ -548,12 +561,12 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 								<Bell
 									:size="18"
 									class="icon shrink-0 text-ink-gray-5"
-									:class="event.alerts.length ? 'mt-7' : 'mt-2'"
+									:class="event.alerts?.length ? 'mt-7' : 'mt-2'"
 								/>
 								<div class="min-w-0 flex-1 space-y-2">
 									<EventAlertList v-model:alerts="event.alerts" />
 									<Dropdown
-										v-if="event.alerts.length < 3"
+										v-if="event.alerts?.length < 3"
 										:button="{ label: __('Add Alert') }"
 										:options="addAlertOptions"
 									/>
