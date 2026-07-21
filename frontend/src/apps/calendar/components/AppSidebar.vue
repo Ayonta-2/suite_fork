@@ -3,6 +3,7 @@ import { computed, h, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, Eye, EyeOff, LogOut, Settings, User } from 'lucide-vue-next'
 import { Avatar, Sidebar } from 'frappe-ui'
+import { useStorage } from '@vueuse/core'
 
 import { useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
@@ -42,6 +43,7 @@ const subtitle = computed(() => {
 const appsMenuOption = useAppSwitcher('calendar')
 
 const showSettings = ref(false)
+const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 
 const menuItems = computed(() => [
 	{
@@ -109,6 +111,7 @@ const sidebarItems = computed(() => [
 
 <template>
 	<Sidebar
+		v-model:collapsed="isSidebarCollapsed"
 		:header="{
 			title,
 			subtitle,
@@ -116,7 +119,6 @@ const sidebarItems = computed(() => [
 			logo: branding.data?.brand_html || CalendarLogo,
 		}"
 		:sections="sidebarItems"
-		:disable-collapse="true"
 	/>
 	<SettingsModal v-model="showSettings" />
 </template>
