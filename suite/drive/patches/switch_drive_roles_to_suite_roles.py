@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import frappe
 from frappe.utils import now
 
@@ -26,7 +28,8 @@ def execute() -> None:
 				ignore_permissions=True
 			)
 
-	for drive_role, suite_role in ROLE_MAP.items():
+	users_by_drive_role = {}
+	for drive_role in ROLE_MAP:
 		users = set(
 			frappe.get_all(
 				"Has Role",
@@ -35,52 +38,67 @@ def execute() -> None:
 			)
 		)
 		users.discard("Administrator")
-		_grant_role(users, suite_role)
+		users_by_drive_role[drive_role] = users
+
+	_grant_suite_roles(users_by_drive_role)
 
 	frappe.db.delete("Has Role", {"parenttype": "User", "role": ("in", list(ROLE_MAP.keys()))})
 
 
-def _grant_role(users: set[str], role: str) -> None:
-	"""Grant ``role`` to ``users`` with one bulk insert into ``Has Role``.
+def _grant_suite_roles(users_by_drive_role: dict[str, set[str]]) -> None:
+	"""Bulk-insert the matching Suite role for each Drive-role holder.
 
 	The Suite roles carry desk access, but every user being migrated already holds
 	a desk-access Drive role and is therefore already a System User, so inserting
 	the child rows directly (rather than via ``User.add_roles``, an N+1 on migrate)
-	does not leave ``user_type`` stale. Users who already hold the role are skipped,
-	and the next ``idx`` per user is derived from their existing rows.
+	does not leave ``user_type`` stale.
+
+	Each user's existing roles and max ``idx`` are read once, up front, and the
+	per-user ``idx`` is then bumped locally as rows are appended. Doing it in a
+	single pass — rather than re-querying per role — means a user who holds both
+	Drive roles gets consecutive ``idx`` values across the two grants instead of a
+	collision, without depending on the just-inserted rows being visible mid-loop.
 	"""
 
-	if not users:
+	all_users = set().union(*users_by_drive_role.values())
+	if not all_users:
 		return
 
 	existing = frappe.get_all(
 		"Has Role",
-		filters={"parenttype": "User", "parent": ("in", list(users))},
+		filters={"parenttype": "User", "parent": ("in", list(all_users))},
 		fields=["parent", "role", "idx"],
 	)
-	already_has = {row.parent for row in existing if row.role == role}
-	next_idx = {}
+	roles_by_user = defaultdict(set)
+	next_idx = defaultdict(int)
 	for row in existing:
-		next_idx[row.parent] = max(next_idx.get(row.parent, 0), row.idx)
+		roles_by_user[row.parent].add(row.role)
+		next_idx[row.parent] = max(next_idx[row.parent], row.idx)
 
 	timestamp = now()
-	rows = [
-		(
-			frappe.generate_hash(length=10),
-			user,
-			"User",
-			"roles",
-			role,
-			"Administrator",
-			timestamp,
-			timestamp,
-			"Administrator",
-			next_idx.get(user, 0) + 1,
-			0,
-		)
-		for user in users
-		if user not in already_has
-	]
+	rows = []
+	for drive_role, suite_role in ROLE_MAP.items():
+		for user in users_by_drive_role[drive_role]:
+			if suite_role in roles_by_user[user]:
+				continue
+			roles_by_user[user].add(suite_role)
+			next_idx[user] += 1
+			rows.append(
+				(
+					frappe.generate_hash(length=10),
+					user,
+					"User",
+					"roles",
+					suite_role,
+					"Administrator",
+					timestamp,
+					timestamp,
+					"Administrator",
+					next_idx[user],
+					0,
+				)
+			)
+
 	if not rows:
 		return
 
