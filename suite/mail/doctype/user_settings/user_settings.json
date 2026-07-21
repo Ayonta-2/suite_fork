@@ -222,7 +222,7 @@
   {
    "delete": 1,
    "read": 1,
-   "role": "Mail Admin",
+   "role": "Suite Admin",
    "write": 1
   },
   {

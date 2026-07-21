@@ -311,7 +311,7 @@ fixtures = [
 	# meet
 	{"dt": "Role", "filters": [["role_name", "like", "Meet %"]]},
 	# mail / calendar
-	{"dt": "Role", "filters": [["role_name", "=", "Suite User"]]},
+	{"dt": "Role", "filters": [["role_name", "like", "Suite %"]]},
 ]
 
 # ============================================================================

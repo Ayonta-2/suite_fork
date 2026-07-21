@@ -81,7 +81,7 @@
   },
   {
    "read": 1,
-   "role": "Mail Admin"
+   "role": "Suite Admin"
   },
   {
    "if_owner": 1,
