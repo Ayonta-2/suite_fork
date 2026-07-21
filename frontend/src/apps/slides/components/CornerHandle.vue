@@ -45,6 +45,7 @@ const handleStyles = computed(() => {
 	return {
 		...getHandleBaseStyles(slideBounds.scale),
 		borderRadius: '50%',
+		opacity: 0.75,
 		cursor: 'grab',
 		width: `${size}px`,
 		height: `${size}px`,
