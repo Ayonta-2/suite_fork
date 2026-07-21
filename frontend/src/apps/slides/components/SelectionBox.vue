@@ -1,7 +1,7 @@
 <template>
 	<div v-if="activeElementIds.length" data-selection-box :style="boxStyles">
-		<Resizer
-			v-if="showResizers"
+		<SelectionControls
+			v-if="showControls"
 			:elementType="activeElement?.shapeType || activeElement?.type"
 			:dimensions="selectionBounds"
 			:style="{ pointerEvents: 'auto' }"
@@ -11,7 +11,7 @@
 <script setup>
 import { computed } from 'vue'
 
-import Resizer from '@/apps/slides/components/Resizer.vue'
+import SelectionControls from '@/apps/slides/components/SelectionControls.vue'
 
 import { slideBounds, selectionBounds } from '@/apps/slides/stores/slide'
 import { interactionOffset } from '@/apps/slides/stores/interaction'
@@ -31,7 +31,7 @@ const props = defineProps({
 	},
 })
 
-const showResizers = computed(() => {
+const showControls = computed(() => {
 	return activeElementIds.value.length == 1 && !focusElementId.value && !props.isDragging
 })
 
