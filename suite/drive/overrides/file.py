@@ -142,7 +142,7 @@ class File(FrappeFile):
 		# You can only hand out access you hold yourself, so a user with (say)
 		# read+share can't grant write/upload they don't have. Admins hold
 		# everything implicitly — get_user_access doesn't know that.
-		if frappe.session.user != "Administrator" and "Drive Admin" not in frappe.get_roles():
+		if frappe.session.user != "Administrator" and "Suite Admin" not in frappe.get_roles():
 			granter = get_user_access(self, frappe.session.user)
 			requested = {"read": read, "comment": comment, "share": share, "upload": upload, "write": write}
 			for level, value in requested.items():

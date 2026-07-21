@@ -10,7 +10,7 @@ def filter_file(user=None):
 	files, Drive access (membership, ownership, explicit permission) for team files."""
 	user = user or frappe.session.user
 	roles = frappe.get_roles(user)
-	if user == "Administrator" or "Drive Admin" in roles:
+	if user == "Administrator" or "Suite Admin" in roles:
 		return ""
 
 	escaped = frappe.db.escape(user)
@@ -46,7 +46,7 @@ def filter_file(user=None):
 def common_filters(func):
 	def decorator(user):
 		user = user or frappe.session.user
-		if user == "Administrator" or "Drive Admin" in frappe.get_roles(user):
+		if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
 			return ""
 		return func(user)
 

@@ -20,7 +20,7 @@ def clear_data():
 
     frappe.set_user("Administrator")
     admin = frappe.get_doc("User", "Administrator")
-    admin.add_roles("Drive Admin")
+    admin.add_roles("Suite Admin")
 
     if not frappe.db.exists("User", "four@test.io"):
         user = frappe.get_doc(

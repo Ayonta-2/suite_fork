@@ -134,7 +134,7 @@
    "email": 1,
    "print": 1,
    "read": 1,
-   "role": "Drive Admin",
+   "role": "Suite Admin",
    "share": 1,
    "write": 1
   },
