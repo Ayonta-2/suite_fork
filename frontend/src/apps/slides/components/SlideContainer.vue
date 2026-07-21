@@ -31,6 +31,8 @@
 					:data-index="element.id"
 					:highlight="highlightElement(element)"
 					@mousedown="(e) => handleMouseDown(e, element)"
+					@mouseenter="hoveredElementId = element.id"
+					@mouseleave="hoveredElementId = null"
 				/>
 			</ElementContextMenu>
 
@@ -95,6 +97,7 @@ import { registerElementDiv, getElementDiv } from '@/apps/slides/stores/elementR
 import { useDragAndDrop } from '@/apps/slides/composables/useDragAndDrop'
 import { useResizer } from '@/apps/slides/composables/useResizer'
 import { useRotator } from '@/apps/slides/composables/useRotator'
+import { useCornerRadius } from '@/apps/slides/composables/useCornerRadius'
 import { usePanAndZoom } from '@/apps/slides/composables/usePanAndZoom'
 import { useSnapping } from '@/apps/slides/composables/useSnapping'
 import { isCmdOrCtrl } from '@/apps/slides/utils/helpers'
@@ -122,6 +125,12 @@ const { isDragging, positionDelta, startDragging } = useDragAndDrop()
 const { isResizing, pointerDelta, currentResizer, resizeCursor, startResize } = useResizer()
 
 const { isRotating, rotationDelta, startRotate } = useRotator()
+
+const { isRounding, maxRadius, startRound } = useCornerRadius()
+
+const hoveredElementId = ref(null)
+const isHovered = computed(() => hoveredElementId.value === activeElement.value?.id)
+const setHovered = (id) => (hoveredElementId.value = id)
 
 const hasOngoingInteraction = computed(
 	() => isDragging.value || isResizing.value || isRotating.value,
@@ -523,6 +532,13 @@ provide('resizer', {
 })
 provide('rotator', {
 	startRotate,
+})
+provide('cornerRadius', {
+	startRound,
+	maxRadius,
+	isRounding,
+	isHovered,
+	setHovered,
 })
 
 defineExpose({

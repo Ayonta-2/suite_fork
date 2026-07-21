@@ -11,6 +11,8 @@
 			@startResize="(e) => startResize(e, resizeHandle.direction)"
 		/>
 
+		<CornerHandle v-for="corner in cornerHandles" :key="corner" :corner="corner" />
+
 		<ResizeIndicator
 			v-show="currentResizer"
 			:type="elementType"
@@ -26,6 +28,7 @@ import { computed, inject } from 'vue'
 import ResizeHandle from '@/apps/slides/components/ResizeHandle.vue'
 import RotateHandle from '@/apps/slides/components/RotateHandle.vue'
 import ResizeIndicator from '@/apps/slides/components/ResizeIndicator.vue'
+import CornerHandle from '@/apps/slides/components/CornerHandle.vue'
 
 import { selectionBounds, slideBounds } from '@/apps/slides/stores/slide'
 
@@ -41,6 +44,7 @@ const props = defineProps({
 })
 
 const { currentResizer, startResize } = inject('resizer', {})
+const { isHovered, isRounding } = inject('cornerRadius', {})
 
 const showRotateHandle = computed(() => {
 	return !['line', 'text', 'video'].includes(props.elementType)
@@ -71,13 +75,35 @@ const resizeHandles = computed(() => {
 	} else if (props.elementType === 'text') {
 		directions = ['text-left', 'text-right']
 	} else {
-		directions = ['left', 'right', 'top', 'bottom', 'top-left', 'top-right', 'bottom-left', 'bottom-right']
+		directions = [
+			'left',
+			'right',
+			'top',
+			'bottom',
+			'top-left',
+			'top-right',
+			'bottom-left',
+			'bottom-right',
+		]
 	}
 
 	return directions.map((direction) => ({
 		direction,
 		isVisible: isResizeHandleVisible(direction),
 	}))
+})
+
+const CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+
+const ROUNDABLE = ['rectangle', 'image', 'video']
+
+const cornerHandles = computed(() => {
+	if (!ROUNDABLE.includes(props.elementType) || currentResizer.value) return []
+
+	if (!isHovered.value && !isRounding.value) return []
+
+	const shortestSidePx = Math.min(selectionBounds.width, selectionBounds.height) * slideBounds.scale
+	return shortestSidePx >= 44 ? CORNERS : []
 })
 
 const getScaledValue = (value) => `${value / slideBounds.scale}px`
