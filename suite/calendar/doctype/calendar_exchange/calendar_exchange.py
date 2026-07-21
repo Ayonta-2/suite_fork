@@ -43,11 +43,11 @@ from suite.mail.utils.logger import ExchangeLogger, get_exchange_logger
 from suite.mail.utils.user import (
 	get_user_email_address,
 	is_jmap_configured,
-	is_mail_admin,
 )
 from suite.utils import reconnect_on_failure
 from suite.utils.file import compress_directory, extract_compressed_file
-from suite.utils.user import is_administrator, is_system_manager
+from suite.utils.permissions import OwnerFromUser
+from suite.utils.user import is_administrator
 
 # JSCalendar (RFC 8984) -> iCalendar (RFC 5545) value maps.
 STATUS_MAP: dict[str, str] = {
@@ -122,7 +122,7 @@ SERVER_MANAGED_KEYS = (
 )
 
 
-class CalendarExchange(Document):
+class CalendarExchange(OwnerFromUser, Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -1164,23 +1164,6 @@ def _build_components(event: dict, categories: list[str] | None = None) -> list:
 		master.add("exdate", excluded)
 
 	return components
-
-
-def get_permission_query_condition(user: str | None = None) -> str:
-	user = user or frappe.session.user
-
-	if is_mail_admin(user) or is_system_manager(user):
-		return ""
-
-	return f"(`tabCalendar Exchange`.user = '{user}')"
-
-
-def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
-	if doc.doctype != "Calendar Exchange":
-		return False
-
-	user = user or frappe.session.user
-	return doc.user == user or is_mail_admin(user) or is_system_manager(user)
 
 
 def retry_stuck_calendar_exchanges() -> None:

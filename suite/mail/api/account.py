@@ -18,10 +18,9 @@ from suite.mail.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import (
 	has_user_settings,
 	is_jmap_configured,
-	is_mail_admin,
 )
 from suite.utils import convert_html_to_text, user_context
-from suite.utils.user import is_system_manager
+from suite.utils.user import is_suite_admin, is_system_manager
 
 # SRV service label -> (protocol, connection security). See RFC 6186.
 _SRV_SERVICE_MAP = {
@@ -166,7 +165,7 @@ def get_user_info() -> dict | None:
 
 	data = result[0]
 
-	data.is_mail_admin = is_mail_admin(user)
+	data.is_suite_admin = is_suite_admin(user)
 	data.is_system_manager = is_system_manager(user)
 	data.is_jmap_configured = is_jmap_configured(user)
 	data.accounts = frappe.db.get_all("User Account", {"user": user}, ["account"])

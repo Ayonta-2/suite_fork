@@ -20,10 +20,9 @@ from frappe.utils import (
 
 from suite.mail.stalwart import create_account, create_app_password, get_roles
 from suite.mail.utils import get_config, is_stalwart_configured
-from suite.mail.utils.user import is_mail_admin
 from suite.mail.utils.validation import is_subaddressed_email, is_valid_email_for_domain
 from suite.utils import execute_with_logging
-from suite.utils.user import is_system_manager
+from suite.utils.user import is_suite_admin, is_system_manager
 
 STALWART_DEFAULT_USER_ROLES = ["User"]
 STALWART_DEFAULT_ADMIN_ROLES = ["User", "Tenant Administrator"]
@@ -178,7 +177,7 @@ class MailAccountRequest(Document):
 		"""Force verify and create account for invited user."""
 
 		user = frappe.session.user
-		if not is_system_manager(user) and not is_mail_admin(user):
+		if not is_system_manager(user) and not is_suite_admin(user):
 			frappe.throw(_("You are not authorized to perform this action."))
 
 		if self.is_verified:
@@ -231,7 +230,11 @@ class MailAccountRequest(Document):
 		# Step - 3: Create User
 		user = execute_with_logging(
 			func=lambda: create_user(
-				self.account, first_name, last_name, password, ["Mail Admin"] if self.is_admin else []
+				self.account,
+				first_name,
+				last_name,
+				password,
+				["Suite User", "Suite Admin"] if self.is_admin else ["Suite User"],
 			),
 			title="Failed to create user",
 			user_message=_("Failed to create user, check error log for details."),

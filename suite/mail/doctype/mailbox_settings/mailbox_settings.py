@@ -8,7 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
-from suite.utils.user import is_system_manager
+from suite.utils.user import is_suite_admin, is_system_manager
 
 # Fields that feed the Mailbox section of the frappe_mail_automation sieve script; a change to any of
 # them regenerates the script.
@@ -157,7 +157,7 @@ def on_doctype_update() -> None:
 
 def get_permission_query_condition(user: str | None = None) -> str | None:
 	user = user or frappe.session.user
-	if is_system_manager(user):
+	if is_system_manager(user) or is_suite_admin(user):
 		return ""
 
 	accounts = get_user_jmap_accounts(user)
@@ -173,7 +173,7 @@ def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool
 
 	user = user or frappe.session.user
 
-	if is_system_manager(user):
+	if is_system_manager(user) or is_suite_admin(user):
 		return True
 
 	accounts = get_user_jmap_accounts(user)

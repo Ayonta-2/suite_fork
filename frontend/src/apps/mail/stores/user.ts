@@ -49,7 +49,7 @@ export const userStore = defineStore('mail-user', () => {
 	const userResource: UserResource = createResource({
 		url: 'suite.mail.api.account.get_user_info',
 		onSuccess: (data) => {
-			if (data?.is_mail_admin) domains.fetch()
+			if (data?.is_suite_admin) domains.fetch()
 			// The unified All Inboxes badge only applies when there's more than one account to merge.
 			if ((data?.accounts?.length ?? 0) > 1) allInboxesUnread.fetch()
 			resolveAccount(data?.accounts)

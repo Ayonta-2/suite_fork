@@ -34,6 +34,13 @@ def is_system_manager(user: str) -> bool:
 	return is_administrator(user) or has_role(user, "System Manager")
 
 
+@request_cache
+def is_suite_admin(user: str) -> bool:
+	"""Returns True if the user is a Suite Admin else False."""
+
+	return has_role(user, "Suite Admin")
+
+
 def is_user_enabled(user: str) -> bool:
 	"""Returns True if the user account is enabled else False."""
 

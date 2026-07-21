@@ -76,7 +76,7 @@ function installMailGuard(r: Router) {
 
 		// Admin / dashboard access control.
 		if (!user?.is_jmap_configured) {
-			if (!user?.is_mail_admin) window.location.replace('/desk')
+			if (!user?.is_suite_admin) window.location.replace('/desk')
 			if (to.meta.isDashboard) return
 			return { name: 'mail-domains' }
 		}

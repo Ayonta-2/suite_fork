@@ -59,6 +59,8 @@ suite.mail.patches.destroy_data_store
 suite.mail.patches.backfill_screened_email_address_account
 suite.mail.patches.rebuild_email_address_indexes
 suite.mail.patches.enable_screening_for_personal_accounts
+suite.mail.patches.create_suite_user_role
+suite.mail.patches.rename_mail_admin_to_suite_admin
 execute:frappe.db.set_single_value("Mail Settings", "verify_ssl", 1)
 execute:frappe.db.set_single_value("Mail Settings", "show_mail_client_config", 1)
 execute:frappe.db.set_single_value("Mail Settings", "custom_event_invites", 1)

@@ -7,14 +7,7 @@ from frappe.utils.caching import request_cache
 from suite.mail.storage import get_data_store
 from suite.mail.storage.data_store import Entity
 from suite.utils import reconnect_on_failure
-from suite.utils.user import has_role, is_system_manager
-
-
-@request_cache
-def is_mail_admin(user: str) -> bool:
-	"""Returns True if the user is a Mail Admin else False."""
-
-	return has_role(user, "Mail Admin")
+from suite.utils.user import is_system_manager
 
 
 def has_user_settings(user: str, raise_exception: bool = False) -> bool:

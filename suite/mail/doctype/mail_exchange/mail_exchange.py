@@ -46,7 +46,7 @@ from suite.mail.utils import (
 	get_mbox_files,
 )
 from suite.mail.utils.logger import ExchangeLogger, get_exchange_logger
-from suite.mail.utils.user import clear_sync_state, get_user_email_address, is_jmap_configured, is_mail_admin
+from suite.mail.utils.user import clear_sync_state, get_user_email_address, is_jmap_configured
 from suite.mail.utils.validation import (
 	validate_jmap_structure,
 	validate_maildir_or_maildirpp,
@@ -55,7 +55,8 @@ from suite.mail.utils.validation import (
 from suite.utils import reconnect_on_failure
 from suite.utils.dt import parse_iso_datetime
 from suite.utils.file import compress_directory, extract_compressed_file
-from suite.utils.user import is_administrator, is_system_manager
+from suite.utils.permissions import OwnerFromUser
+from suite.utils.user import is_administrator
 
 MAILDIR_FLAG_MAP: dict[str, str] = {
 	"$seen": "S",
@@ -473,7 +474,7 @@ class ExportWriter:
 					f.write(e.raw)
 
 
-class MailExchange(Document):
+class MailExchange(OwnerFromUser, Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -1143,23 +1144,6 @@ class MailExchange(Document):
 		"""Updates the document with the given key-value pairs."""
 
 		self.db_set(kwargs, notify=True, commit=True)
-
-
-def get_permission_query_condition(user: str | None = None) -> str:
-	user = user or frappe.session.user
-
-	if is_mail_admin(user) or is_system_manager(user):
-		return ""
-
-	return f"(`tabMail Exchange`.user = '{user}')"
-
-
-def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
-	if doc.doctype != "Mail Exchange":
-		return False
-
-	user = user or frappe.session.user
-	return doc.user == user or is_mail_admin(user) or is_system_manager(user)
 
 
 def get_email_service(

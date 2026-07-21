@@ -58,7 +58,7 @@ export interface User {
 	show_reading_pane?: 0 | 1
 
 	enabled: boolean
-	is_mail_admin: boolean
+	is_suite_admin: boolean
 	is_system_manager: boolean
 	is_jmap_configured: boolean
 

@@ -163,7 +163,7 @@ const menuItems = computed(() => [
 						})
 				},
 				condition: () =>
-					user.data.is_mail_admin &&
+					user.data.is_suite_admin &&
 					user.data.is_jmap_configured &&
 					route.meta.isDashboard,
 			},
@@ -173,7 +173,7 @@ const menuItems = computed(() => [
 				onClick: () => router.push('/mail/dashboard'),
 				condition: () =>
 					user.data.is_jmap_configured &&
-					user.data.is_mail_admin &&
+					user.data.is_suite_admin &&
 					!route.meta.isDashboard &&
 					!isMobile.value,
 			},

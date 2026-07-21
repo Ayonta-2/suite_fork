@@ -14,10 +14,10 @@ from suite.mail.jmap import get_jmap_session_manager
 from suite.mail.jmap.connection import JMAPConnection, JMAPConnectionInfo
 from suite.mail.utils import get_config
 from suite.utils.dt import timestamp_to_datetime
-from suite.utils.user import is_system_manager
+from suite.utils.permissions import OwnerFromUser
 
 
-class UserSettings(Document):
+class UserSettings(OwnerFromUser, Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -140,24 +140,3 @@ class UserSettings(Document):
 		"""Updates the document with the given key-value pairs."""
 
 		self.db_set(kwargs, update_modified=update_modified, notify=notify, commit=commit)
-
-
-def get_permission_query_condition(user: str | None = None) -> str:
-	user = user or frappe.session.user
-
-	if is_system_manager(user):
-		return ""
-
-	return f"(`tabUser Settings`.user = '{user}')"
-
-
-def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
-	if doc.doctype != "User Settings":
-		return False
-
-	user = user or frappe.session.user
-
-	if is_system_manager(user):
-		return True
-
-	return doc.user == user

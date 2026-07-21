@@ -9,10 +9,11 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils.caching import request_cache
 
+from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator, is_system_manager
 
 
-class UserAccount(Document):
+class UserAccount(OwnerFromUser, Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -118,22 +119,6 @@ def get_user_personal_jmap_account(user: str | None = None, raise_exception: boo
 		frappe.throw(
 			_("User {0} does not have a personal JMAP account configured.").format(frappe.bold(user))
 		)
-
-
-def get_permission_query_condition(user: str | None = None) -> str | None:
-	user = user or frappe.session.user
-	if is_system_manager(user):
-		return ""
-
-	return f"""`tabUser Account`.user = '{user}'"""
-
-
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
-	if doc.doctype != "User Account":
-		return False
-
-	user = user or frappe.session.user
-	return doc.user == user or is_system_manager(user)
 
 
 def on_doctype_update() -> None:
