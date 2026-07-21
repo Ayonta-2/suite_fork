@@ -233,9 +233,15 @@ doc_events = {
 		"on_trash": ["suite.drive.overrides.file.sync_content_file"],
 	},
 	"User": {
-		"after_insert": [
-			"suite.drive.utils.users.assign_drive_role_and_create_settings",
+		# Roles are assigned before insert so they are present when Frappe's
+		# User.validate runs — assigning them after insert triggers a spurious
+		# "No Roles Specified" warning and leaves user_type mis-resolved.
+		"before_insert": [
+			"suite.drive.utils.users.assign_drive_role",
 			"suite.meet.utils.user.assign_meet_role",
+		],
+		"after_insert": [
+			"suite.drive.utils.users.create_drive_settings_and_team",
 			"suite.mail.events.create_user_settings",
 		],
 		"on_update": [

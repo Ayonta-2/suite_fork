@@ -159,6 +159,29 @@ class CalendarEventService(CalendarsService):
 
 		return result
 
+	def set_calendar_ids(self, mapping: dict[str, dict[str, bool]]) -> dict:
+		"""Replaces the calendarIds of each given event with the provided map, batching to stay within
+		the server's per-'set' limit.
+
+		Used by the import rollback flow to move events out of the staging calendar into their final
+		calendar(s) once every event has been created; only calendarIds is touched, so the rest of the
+		event is left untouched."""
+
+		# `updated` is server-managed for CalendarEvent (it is stripped on create; see the exchange's
+		# SERVER_MANAGED_KEYS), so patch calendarIds only and let the server set the timestamp itself.
+		result = {"updated": [], "notUpdated": {}}
+		for batch in self.create_batches(list(mapping.items()), self.max_objects_in_set):
+			payload = {id: {"calendarIds": calendar_ids} for id, calendar_ids in batch}
+
+			response = self._update(payload)
+
+			if method_responses := response.get("methodResponses"):
+				result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
+				if not_updated := method_responses[0][1].get("notUpdated", {}):
+					result["notUpdated"].update(not_updated)
+
+		return result
+
 	def delete(self, ids: list[str], send_scheduling_messages: bool = False) -> dict:
 		"""Public method to delete calendar events, handling batching if the number of events exceeds the server's maximum allowed in a single 'set' call.
 		If send_scheduling_messages is True, the JMAP server sends cancellation scheduling messages for the destroyed events; pass False to suppress them (e.g. when the client sends its own cancellations)."""

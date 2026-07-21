@@ -375,6 +375,8 @@ class CalendarExchange(Document):
 		os.makedirs(base_dir, exist_ok=True)
 
 		kwargs = {}
+		service = None
+		staging_calendar_id = None
 		try:
 			if self.import_format == "ics" and self.import_file.endswith(".ics"):
 				shutil.copy(import_file, os.path.join(base_dir, os.path.basename(import_file)))
@@ -398,8 +400,22 @@ class CalendarExchange(Document):
 			if len(events) > self.max_import:
 				frappe.throw(_("Import limit exceeded."))
 
-			created, skipped, failed = self._create_events(service, events, logger)
+			# Stage everything into one throwaway calendar first, then move it to the destination
+			# calendar(s). A failure before the move leaves nothing scattered across the account: the
+			# staging calendar and every event in it are deleted on rollback.
+			staging_calendar_id = self._create_staging_calendar(service, logger)
+			targets, skipped, failed = self._create_events(service, events, staging_calendar_id, logger)
 
+			# The server rejecting every event is a failure, not a successful zero-import, and must
+			# trigger a rollback.
+			if not targets and failed > 0:
+				frappe.throw(_("Import failed: the server rejected all {0} event(s).").format(failed))
+
+			self._move_to_target_calendars(service, targets, logger)
+			self._discard_staging_calendar(service, staging_calendar_id, logger)
+			staging_calendar_id = None
+
+			created = len(targets)
 			logger.info("import-completed", created=created, skipped=skipped, failed=failed)
 			self._log_output(
 				_("Import completed. {0} created, {1} skipped (already present), {2} failed.").format(
@@ -410,6 +426,8 @@ class CalendarExchange(Document):
 		except Exception:
 			logger.exception("import-failed")
 			self._log_output(_("Import failed. See the error details below."))
+			if staging_calendar_id and service:
+				self._rollback_staging_calendar(service, staging_calendar_id, logger)
 			kwargs.update(
 				{"status": "Failed", "output": f"{self.output}\n\n{frappe.get_traceback(with_context=False)}"}
 			)
@@ -544,13 +562,35 @@ class CalendarExchange(Document):
 
 		return events
 
-	def _create_events(
-		self, service: CalendarEventService, events: list[dict], logger: ExchangeLogger
-	) -> tuple[int, int, int]:
-		"""Creates the given JSCalendar events, skipping any whose UID already exists (idempotency).
+	def _create_staging_calendar(self, service: CalendarEventService, logger: ExchangeLogger) -> str:
+		"""Creates a temporary calendar (named after this exchange) to stage the import into."""
 
-		Returns a ``(created, skipped, failed)`` tuple. Failures within a batch are recorded and the
-		remaining batches continue, so a few malformed events do not abort the whole import."""
+		self._log_output(_("Creating a temporary calendar to stage the import."))
+		response = CalendarService(service.account, service.connection).create(
+			[{"creation_id": str(uuid7()), "name": self.name, "is_subscribed": False, "is_visible": False}]
+		)
+		created = response.get("created") or {}
+		if not created:
+			frappe.throw(_("Failed to create the staging calendar: {0}").format(response.get("notCreated")))
+
+		staging_calendar_id = next(iter(created.values()))["id"]
+		logger.info("import-staging-calendar-created", calendar=staging_calendar_id)
+		return staging_calendar_id
+
+	def _create_events(
+		self,
+		service: CalendarEventService,
+		events: list[dict],
+		staging_calendar_id: str,
+		logger: ExchangeLogger,
+	) -> tuple[dict[str, dict[str, bool]], int, int]:
+		"""Creates the given JSCalendar events in the staging calendar, skipping any whose UID already
+		exists (idempotency).
+
+		Returns a ``(targets, skipped, failed)`` tuple, where ``targets`` maps each created event's ID
+		to the destination calendarIds it should ultimately land in. Failures within a batch are
+		recorded and the remaining batches continue, so a few malformed events do not abort the whole
+		import."""
 
 		# Idempotency: skip events whose UID is already present in the account.
 		uids = [e["uid"] for e in events if e.get("uid")]
@@ -582,40 +622,91 @@ class CalendarExchange(Document):
 				continue
 			pending.append(event)
 
-		created = 0
+		targets: dict[str, dict[str, bool]] = {}
 		failed = 0
 		total = len(pending)
 		for batch in create_batch(pending, service.max_objects_in_set):
 			payload: dict[str, dict] = {}
-			creation_to_uid: dict[str, str] = {}
+			creation_meta: dict[str, tuple[str, dict]] = {}
 			for event in batch:
+				# Resolve the destination before overwriting calendarIds with the staging calendar.
+				destination = resolve_calendar_ids(event)
 				event = {k: v for k, v in event.items() if k not in SERVER_MANAGED_KEYS}
 				event["@type"] = "Event"
-				event["calendarIds"] = resolve_calendar_ids(event)
+				event["calendarIds"] = {staging_calendar_id: True}
 
 				creation_id = str(uuid7())
 				payload[creation_id] = event
-				creation_to_uid[creation_id] = event.get("uid", creation_id)
+				creation_meta[creation_id] = (event.get("uid", creation_id), destination)
 
 			response = service._create(payload, sendSchedulingMessages=False)
 			method_responses = response.get("methodResponses") or []
 			result = method_responses[0][1] if method_responses else {}
 
-			batch_created = result.get("created") or {}
 			batch_failed = result.get("notCreated") or {}
-			created += len(batch_created)
 			failed += len(batch_failed)
+
+			for creation_id, info in (result.get("created") or {}).items():
+				targets[info["id"]] = creation_meta[creation_id][1]
 
 			for creation_id, error in batch_failed.items():
 				logger.warning(
 					"import-event-not-created",
-					uid=creation_to_uid.get(creation_id),
+					uid=creation_meta.get(creation_id, (None,))[0],
 					reason=str(error),
 				)
 
-			self._log_output(_("Imported {0} of {1} event(s).").format(created, total))
+			self._log_output(_("Staged {0} of {1} event(s).").format(len(targets), total))
 
-		return created, skipped, failed
+		return targets, skipped, failed
+
+	def _move_to_target_calendars(
+		self, service: CalendarEventService, targets: dict[str, dict[str, bool]], logger: ExchangeLogger
+	) -> None:
+		"""Moves the staged events into their destination calendars, replacing the staging calendar.
+
+		This is the commit step: until it runs, every event lives only in the staging calendar, so a
+		failure up to this point rolls back cleanly."""
+
+		if not targets:
+			return
+
+		self._log_output(_("Moving {0} event(s) into the destination calendar(s).").format(len(targets)))
+		result = service.set_calendar_ids(targets)
+
+		if not_updated := result.get("notUpdated"):
+			logger.warning("import-event-not-moved", count=len(not_updated))
+			frappe.throw(
+				_("Failed to move {0} event(s) into the destination calendar(s).").format(len(not_updated))
+			)
+
+		logger.info("import-events-moved", events=len(result.get("updated", [])))
+
+	def _discard_staging_calendar(
+		self, service: CalendarEventService, staging_calendar_id: str, logger: ExchangeLogger
+	) -> None:
+		"""Deletes the now-empty staging calendar after a successful import. A failure here is logged
+		but not fatal: the events are already safely in their destination calendars."""
+
+		try:
+			CalendarService(service.account, service.connection).delete([staging_calendar_id])
+			logger.info("import-staging-calendar-removed", calendar=staging_calendar_id)
+		except Exception:
+			logger.warning("import-staging-calendar-remove-failed", calendar=staging_calendar_id)
+
+	def _rollback_staging_calendar(
+		self, service: CalendarEventService, staging_calendar_id: str, logger: ExchangeLogger
+	) -> None:
+		"""Deletes the staging calendar and every event still staged in it, undoing a failed import."""
+
+		self._log_output(_("Rolling back: removing the staging calendar and any staged events."))
+		try:
+			CalendarService(service.account, service.connection).delete(
+				[staging_calendar_id], remove_events=True
+			)
+			logger.info("import-rolled-back", calendar=staging_calendar_id)
+		except Exception:
+			logger.exception("import-rollback-failed", calendar=staging_calendar_id)
 
 	def _mark_started(self) -> None:
 		"""Marks the calendar exchange as started and updates the started_at and started_after fields."""

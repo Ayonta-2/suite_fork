@@ -1,8 +1,8 @@
 <template>
 	<div :class="getThumbnailClasses(slide)" :style="getThumbnailStyles(slide)">
-		<SlidePreview :slide="slide" :scale="THUMBNAIL_SCALE" />
+		<SlidePreview :slide="slide" :scale="scale" />
 		<div
-			class="absolute inset-0 flex w-full justify-between rounded p-2"
+			class="absolute inset-0 flex w-full justify-between rounded-sm p-2"
 			:style="getGradientOverlayStyles(slide)"
 		>
 			<div class="text-[10px] font-medium">{{ slide.idx }}</div>
@@ -19,12 +19,13 @@ import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 import TransitionIcon from '@/apps/slides/icons/TransitionIcon.vue'
 
 import { isBackgroundColorDark } from '@/apps/slides/utils/color'
-
-const THUMBNAIL_SCALE = 160 / 960
+import { selectionColor } from '@/apps/slides/utils/constants'
 
 const props = defineProps({
 	slide: { type: Object, required: true },
 	isActive: { type: Boolean, default: false },
+	scale: { type: Number, default: 160 / 960 },
+	height: { type: Number, default: 90 },
 })
 
 const getGradientOverlayStyles = (slide) => {
@@ -47,8 +48,9 @@ const getThumbnailClasses = (slide) => {
 		'my-8',
 		'cursor-pointer',
 		'border',
+		'border-outline-gray-1',
 		'rounded',
-		'transition-all',
+		'transition-transform',
 		'duration-400',
 		'ease-in-out',
 		'overflow-hidden',
@@ -59,21 +61,32 @@ const getThumbnailClasses = (slide) => {
 	const isFocused = focusedSlide.value == slides.value.indexOf(slide)
 
 	let outlineClasses = []
-	if (isFocused) {
-		outlineClasses.push('ring-blue-500', 'ring-[2px]', 'ring-offset-2')
-	} else if (isActive && recentlyRestored.value) {
-		outlineClasses.push('ring-blue-500', 'ring-[2px]', 'ring-offset-2', 'scale-[1.02]')
+	if (isActive && recentlyRestored.value) {
+		outlineClasses.push('ring-2', 'ring-offset-2', 'scale-[1.02]')
+	} else if (isFocused) {
+		outlineClasses.push('ring-2', 'ring-offset-2')
 	} else if (isActive) {
-		outlineClasses.push('ring-gray-400', 'ring-[1.5px]', 'ring-offset-0.5')
+		outlineClasses.push(
+			'ring-[color:var(--surface-gray-8)] dark:ring-[color:var(--surface-gray-9)]',
+			'ring-2',
+			'ring-offset-2',
+		)
 	} else {
-		outlineClasses.push('ring-white', 'hover:border-gray-300')
+		outlineClasses.push('ring-transparent', 'hover:border-outline-gray-2')
 	}
 
 	return [...baseClasses, ...outlineClasses].join(' ')
 }
 
-const getThumbnailStyles = (s) => ({
-	backgroundColor: s.background || '#ffffff',
-	height: `${540 * THUMBNAIL_SCALE}px`,
-})
+const getThumbnailStyles = (s) => {
+	const isFocused = focusedSlide.value == slides.value.indexOf(s)
+	const usesSelectionRing = (props.isActive && recentlyRestored.value) || isFocused
+
+	return {
+		backgroundColor: s.background || '#ffffff',
+		height: `${props.height}px`,
+		'--tw-ring-offset-color': 'var(--surface-base)',
+		...(usesSelectionRing ? { '--tw-ring-color': selectionColor } : {}),
+	}
+}
 </script>

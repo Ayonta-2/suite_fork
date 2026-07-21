@@ -59,6 +59,7 @@ Set the required values in `.env`:
 | `MEDIASOUP_NUM_WORKERS` | Number of mediasoup workers; media uses one UDP port per worker | `4` |
 | `DOMAIN` | Domain pointing to this server | `sfu.example.com` |
 | `SSL_EMAIL` | Email for Let's Encrypt notifications | `admin@example.com` |
+| `METRICS_TOKEN` | Optional bearer token enabling the Prometheus `/metrics` endpoint | `openssl rand -hex 32` |
 
 Then run setup:
 
@@ -107,3 +108,13 @@ cd /opt/meet-sfu
 | 80 | TCP | HTTP / ACME challenges |
 | 443 | TCP | HTTPS |
 | 40000 to 40000 + workers - 1 | UDP | WebRTC media, one fixed UDP port per mediasoup worker |
+
+### Observability
+
+Set `METRICS_TOKEN` to enable Prometheus metrics. The endpoint returns `404` when the variable is unset and requires a bearer token when enabled:
+
+```bash
+curl -H "Authorization: Bearer $METRICS_TOKEN" https://sfu.example.com/metrics
+```
+
+Metrics include process health, authenticated socket connections, bounded disconnect reasons, room join/rejoin outcomes and latency, WebRTC transport operations, current SFU resource counts, and sampled browser outcomes for first remote media, receive stalls, and recovery success. Browser sampling is fixed at 5%. Lifecycle logs are emitted as JSON without meeting, participant, socket, or transport identifiers.

@@ -1,8 +1,6 @@
 # Copyright (c) 2025, Frappe and contributors
 # For license information, please see license.txt
 
-from __future__ import annotations
-
 import base64
 import binascii
 import secrets
@@ -140,6 +138,14 @@ def create(meeting_type: str = "open", allow_guest: bool = True, title: str | No
 	).insert()
 
 	return meeting.name
+
+
+@frappe.whitelist(allow_guest=True)
+@rate_limit(limit=10, seconds=60)
+def get_public_meeting_preview(meeting_id: str) -> dict:
+	"""Return title-only data for the meeting preview."""
+	title = frappe.db.get_value("Meet Room", meeting_id, "title")
+	return {"title": title or meeting_id}
 
 
 @frappe.whitelist()
@@ -330,11 +336,7 @@ def get_sfu_presence_preview_token(meeting_id: str) -> dict:
 	if meeting.is_user_banned(frappe.session.user):
 		frappe.throw(_("You are banned from this meeting"), frappe.PermissionError)
 
-	user = frappe.session.user
-	can_preview = (
-		meeting.is_host_or_cohost(user) or user in meeting.get_members() or user in meeting.get_waiting_room()
-	)
-	if not can_preview:
+	if not meeting.can_join(frappe.session.user):
 		frappe.throw(_("Access denied"), frappe.PermissionError)
 
 	sfu_config = get_sfu_config()
