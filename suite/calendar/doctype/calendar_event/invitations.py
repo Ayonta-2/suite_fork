@@ -19,7 +19,7 @@ from email.utils import formataddr, formatdate, make_msgid
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, get_datetime, strip_html_tags
+from frappe.utils import add_to_date, get_datetime, now_datetime, strip_html_tags
 
 from suite.calendar.doctype.calendar_event.ics import build_event_ics
 from suite.calendar.doctype.calendar_event.invite_templates import (
@@ -38,6 +38,10 @@ from suite.utils import log_error
 
 # RSVP links stay valid until this long after the event starts.
 RSVP_GRACE_DAYS = 1
+
+# Fallback lifetime (from send time) for events with no usable start, so a link can never live
+# forever and replay participation changes on the organizer's calendar.
+RSVP_FALLBACK_DAYS = 30
 
 # JSCalendar participationStatus -> (button label, pill state) for the organizer notification email.
 RESPONSE_DISPLAY: dict[str, tuple[str, str]] = {
@@ -213,7 +217,7 @@ def _send(
 	email: str,
 	participant: dict | None,
 	kind: str,
-	expires_at: int | None,
+	expires_at: int,
 	recurrence_id: str | None = None,
 ) -> None:
 	"""Renders and enqueues a single invitation/update/cancellation email."""
@@ -447,11 +451,19 @@ def _organizer_name(account: str, event: dict, organizer: str) -> str | None:
 	return name if name and name.lower() != organizer else None
 
 
-def _rsvp_expiry(event: dict) -> int | None:
-	"""Returns the RSVP link expiry (event start + grace) as a unix timestamp."""
+def _rsvp_expiry(event: dict) -> int:
+	"""Returns the RSVP link expiry as a unix timestamp.
+
+	Normally the event start plus a grace period. Events with no usable start (e.g. malformed or
+	drafts) fall back to a fixed window from now, so every link expires — a token that never
+	expires is a standing replay of participation-status changes on the organizer's calendar.
+	"""
 
 	start = _parse_local_datetime(event.get("start"), event.get("timeZone"))
-	if not start:
-		return None
+	expiry = (
+		add_to_date(start, days=RSVP_GRACE_DAYS)
+		if start
+		else add_to_date(now_datetime(), days=RSVP_FALLBACK_DAYS)
+	)
 
-	return int(get_datetime(add_to_date(start, days=RSVP_GRACE_DAYS)).timestamp())
+	return int(get_datetime(expiry).timestamp())

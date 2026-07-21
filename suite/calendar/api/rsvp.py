@@ -213,7 +213,10 @@ def _verify(token: str) -> dict | None:
 	except Exception:
 		return None
 
-	if (expires_at := payload.get("x")) and now_datetime().timestamp() > expires_at:
+	# Every token must carry an expiry. Reject a missing one outright so a link can never replay
+	# indefinitely (older links minted without an expiry are invalidated by this too).
+	expires_at = payload.get("x")
+	if not expires_at or now_datetime().timestamp() > expires_at:
 		return None
 
 	return payload
