@@ -101,7 +101,7 @@ const removeParticipant = (email: string) => {
 <template>
 	<div class="space-y-4">
 		<div>
-			<h3 class="text-base-medium mb-2 text-ink-gray-8">{{ label }}</h3>
+			<h3 v-if="label" class="text-base-medium mb-2 text-ink-gray-8">{{ label }}</h3>
 			<Combobox
 				ref="combobox"
 				class="w-full"
