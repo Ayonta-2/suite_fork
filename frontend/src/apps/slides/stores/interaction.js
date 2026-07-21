@@ -1,13 +1,14 @@
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 
 import { currentSlide } from './slide'
 import { activeElements, activeElementIds } from './element'
 import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
-import { rotationDelta } from '@/apps/slides/composables/useRotator'
 import { normalizeRotation } from '@/apps/slides/utils/helpers'
 
 const interactionOffset = reactive({ left: 0, top: 0, width: 0, height: 0 })
+
+const rotationDelta = ref(0)
 
 const commitInteraction = () => {
 	const commands = []
@@ -54,4 +55,4 @@ const commitInteraction = () => {
 	rotationDelta.value = 0
 }
 
-export { interactionOffset, commitInteraction }
+export { interactionOffset, rotationDelta, commitInteraction }

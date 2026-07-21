@@ -1,9 +1,6 @@
 import { ref } from 'vue'
 import { getElementCenter } from '@/apps/slides/stores/element'
-
-// module-scoped so the active element and selection box read it directly —
-// passing it as a per-frame prop re-rendered every element during rotation
-export const rotationDelta = ref(0)
+import { rotationDelta } from '@/apps/slides/stores/interaction'
 
 export const useRotator = () => {
 	const isRotating = ref(false)

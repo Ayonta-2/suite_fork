@@ -49,7 +49,7 @@ import {
 } from '@/apps/slides/stores/element'
 import { selectionBounds } from '@/apps/slides/stores/slide'
 import { commitInteraction } from '@/apps/slides/stores/interaction'
-import { rotationDelta } from '@/apps/slides/composables/useRotator'
+import { rotationDelta } from '@/apps/slides/stores/interaction'
 import { normalizeRotation } from '@/apps/slides/utils/helpers'
 import { useInteractionScrub } from '@/apps/slides/composables/useInteractionScrub'
 

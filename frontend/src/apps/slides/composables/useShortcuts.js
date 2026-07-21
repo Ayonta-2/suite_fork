@@ -137,13 +137,12 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	}
 
 	const deleteElementOrSlide = (e) => {
-		if (!inEditMode()) return
 		if (hasElements()) deleteElements(e)
 		else deleteSlide()
 	}
 
 	const addShape = (shapeType) => {
-		if (inEditMode()) pendingShapeType.value = shapeType
+		pendingShapeType.value = shapeType
 	}
 
 	useShortcut([
@@ -167,9 +166,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Save',
 			group: 'General',
 			condition: inEditMode,
-			handler: (e) => {
-				if (inEditMode()) saveSlide(e)
-			},
+			handler: (e) => saveSlide(e),
 		},
 		{
 			key: 'z',
@@ -180,7 +177,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			condition: inEditMode,
 			handler: (e) => {
 				if (isPlainInput(e)) return
-				if (inEditMode()) performHistory('undo')
+				performHistory('undo')
 			},
 		},
 		{
@@ -192,7 +189,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			condition: inEditMode,
 			handler: (e) => {
 				if (isPlainInput(e)) return
-				if (inEditMode()) performHistory('redo')
+				performHistory('redo')
 			},
 		},
 		{
@@ -205,7 +202,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			condition: inEditMode,
 			handler: (e) => {
 				if (isPlainInput(e)) return
-				if (inEditMode()) performHistory('redo')
+				performHistory('redo')
 			},
 		},
 
@@ -214,18 +211,14 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Add slide below',
 			group: 'Insert',
 			condition: inEditMode,
-			handler: (e) => {
-				if (inEditMode()) addEmptySlide(e)
-			},
+			handler: (e) => addEmptySlide(e),
 		},
 		{
 			key: 't',
 			description: 'Add text box',
 			group: 'Insert',
 			condition: inEditMode,
-			handler: () => {
-				if (inEditMode()) addTextElement()
-			},
+			handler: () => addTextElement(),
 		},
 		{
 			key: 'r',
@@ -254,18 +247,14 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Select all elements',
 			group: 'Edit',
 			condition: inEditMode,
-			handler: (e) => {
-				if (inEditMode()) selectAllElements(e)
-			},
+			handler: (e) => selectAllElements(e),
 		},
 		{
 			key: 'Escape',
 			description: 'Deselect',
 			group: 'Edit',
 			condition: inEditMode,
-			handler: () => {
-				if (inEditMode()) resetFocus()
-			},
+			handler: () => resetFocus(),
 		},
 		{
 			key: 'd',
@@ -274,7 +263,6 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Edit',
 			condition: inEditMode,
 			handler: (e) => {
-				if (!inEditMode()) return
 				if (hasElements()) duplicateElements(e, activeElements.value)
 				else duplicateSlide()
 			},
@@ -349,7 +337,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Format Text',
 			condition: inEditMode,
 			handler: () => {
-				if (inEditMode() && hasActiveTextEditor()) toggleMark('italic')
+				if (hasActiveTextEditor()) toggleMark('italic')
 			},
 		},
 		{
@@ -359,7 +347,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Format Text',
 			condition: inEditMode,
 			handler: () => {
-				if (inEditMode() && hasActiveTextEditor()) toggleMark('underline')
+				if (hasActiveTextEditor()) toggleMark('underline')
 			},
 		},
 
@@ -377,9 +365,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Restart',
 			group: 'Slideshow',
 			condition: inSlideShow,
-			handler: () => {
-				if (inSlideShow()) changeSlideInSlideshow(0)
-			},
+			handler: () => changeSlideInSlideshow(0),
 		},
 		{
 			key: 'ArrowLeft',

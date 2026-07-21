@@ -12,7 +12,7 @@
 import { computed, inject } from 'vue'
 
 import { slideBounds } from '@/apps/slides/stores/slide'
-import { selectionColor } from '@/apps/slides/utils/constants'
+import { selectionColor, getHandleBaseStyles } from '@/apps/slides/utils/constants'
 
 const { startRotate } = inject('rotator', {})
 
@@ -24,13 +24,8 @@ const rotateHandleStyles = computed(() => {
 	const size = 20 / slideBounds.scale
 	const gap = STEM_GAP / slideBounds.scale
 	return {
-		position: 'absolute',
-		zIndex: 9999,
-		backgroundColor: '#ffffff',
-		border: `${1.5 / slideBounds.scale}px solid ${HANDLE_COLOR}`,
-		boxSizing: 'border-box',
+		...getHandleBaseStyles(slideBounds.scale),
 		borderRadius: '50%',
-		boxShadow: `0 ${1 / slideBounds.scale}px ${2 / slideBounds.scale}px rgba(0, 0, 0, 0.16)`,
 		cursor: 'grab',
 		left: `calc(50% - ${size / 2}px)`,
 		top: `${-(size + gap)}px`,

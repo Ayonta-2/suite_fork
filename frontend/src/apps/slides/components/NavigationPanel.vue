@@ -118,9 +118,10 @@ const SLIDE_WIDTH = 960
 const SLIDE_ASPECT = 540 / 960
 const ROW_GAP = 8
 
-// Available thumbnail width = panel width (w-56 = 224px) minus the scroll area's
-// horizontal padding (p-4 = 16px each side). Keep in sync if the panel width changes.
-const THUMBNAIL_WIDTH = 224 - 32
+// keep in sync with the panel's w-56 width and its p-4 horizontal padding
+const PANEL_WIDTH = 224
+const PANEL_PADDING_X = 16
+const THUMBNAIL_WIDTH = PANEL_WIDTH - PANEL_PADDING_X * 2
 const thumbnailScale = THUMBNAIL_WIDTH / SLIDE_WIDTH
 const thumbnailHeight = THUMBNAIL_WIDTH * SLIDE_ASPECT
 const rowSize = thumbnailHeight + ROW_GAP * 2
