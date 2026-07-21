@@ -41,7 +41,7 @@
 			label="Corner Radius"
 			suffix="px"
 			:min="0"
-			:max="50"
+			:max="MAX_BORDER_RADIUS"
 			:max-digits="3"
 			:step="0.5"
 			@update:modelValue="borderRadius.set"
@@ -75,7 +75,7 @@ import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 import LineStyleSelect from '@/apps/slides/components/controls/LineStyleSelect.vue'
-import { chevronClasses } from '@/apps/slides/utils/constants'
+import { chevronClasses, MAX_BORDER_RADIUS } from '@/apps/slides/utils/constants'
 
 import { activeElement } from '@/apps/slides/stores/element'
 import {

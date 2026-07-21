@@ -5,6 +5,8 @@ const fieldLabelClasses = 'text-sm text-gray-600'
 const selectionColor = '#3B82F6'
 const guideColor = '#C026D3'
 
+const MAX_BORDER_RADIUS = 50
+
 const defaultBorderColor = '#d2d2d2ff'
 const defaultShadowColor = '#7C7C7CFF'
 
@@ -36,6 +38,7 @@ export {
 	allowedImageFileTypes,
 	selectionColor,
 	guideColor,
+	MAX_BORDER_RADIUS,
 	defaultBorderColor,
 	defaultShadowColor,
 	labelClasses,

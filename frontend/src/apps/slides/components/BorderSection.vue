@@ -25,7 +25,7 @@
 			label="Radius"
 			suffix="px"
 			:min="0"
-			:max="50"
+			:max="MAX_BORDER_RADIUS"
 			:max-digits="3"
 			:step="0.5"
 			@update:modelValue="borderRadius.set"
@@ -56,7 +56,7 @@ import {
 	setElementProperties,
 	useElementProperty,
 } from '@/apps/slides/composables/editProperty'
-import { defaultBorderColor } from '@/apps/slides/utils/constants'
+import { defaultBorderColor, MAX_BORDER_RADIUS } from '@/apps/slides/utils/constants'
 
 const defaultBorderWidth = 1
 
