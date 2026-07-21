@@ -85,9 +85,9 @@ const shortcutGroups = computed(() => [
 			shortcuts: [
 				[['↓', __('or'), 'J'], __('Go to Next Mail')],
 				[['↑', __('or'), 'K'], __('Go to Previous Mail')],
-				[['G', __('then'), 'G'], __('Go to First Mail')],
-				[['Shift', 'G'], __('Go to Last Mail')],
-				[['Enter'], __('Open Mail')],
+				[['G', __('then'), 'G'], __('Go to Top of List')],
+				[['Shift', 'G'], __('Go to Bottom of List')],
+				[['Enter'], __('Open Mail, or Fold Stack')],
 				[[modifier.value, 'K'], __('Search Mail')],
 				[['G', __('then'), 'I'], __('Go to {0}', [mailboxName('inbox')])],
 				[['G', __('then'), 'F'], __('Go to Starred')],

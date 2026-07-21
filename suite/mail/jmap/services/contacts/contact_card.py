@@ -325,6 +325,29 @@ class ContactCardService(ContactsService):
 
 		return result
 
+	def set_address_book_ids(self, mapping: dict[str, dict[str, bool]]) -> dict:
+		"""Replaces the addressBookIds of each given card with the provided map, batching to stay within
+		the server's per-'set' limit.
+
+		Used by the import rollback flow to move cards out of the staging address book into their final
+		address book(s) once every card has been created; only addressBookIds is touched, so the rest of
+		the card is left untouched."""
+
+		# Mirror set_calendar_ids: patch addressBookIds only and let the server manage the `updated`
+		# timestamp, so we never depend on `updated` being client-writable for ContactCard.
+		result = {"updated": [], "notUpdated": {}}
+		for batch in self.create_batches(list(mapping.items()), self.max_objects_in_set):
+			payload = {id: {"addressBookIds": book_ids} for id, book_ids in batch}
+
+			response = self._update(payload)
+
+			if method_responses := response.get("methodResponses"):
+				result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
+				if not_updated := method_responses[0][1].get("notUpdated", {}):
+					result["notUpdated"].update(not_updated)
+
+		return result
+
 	@staticmethod
 	def _get_name_map(full_name: str | None = None) -> dict:
 		"""Helper method to construct the 'name' property map for a contact card based on the provided full name."""

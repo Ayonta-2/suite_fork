@@ -17,13 +17,12 @@ from suite.mail.stalwart import get_domains as get_stalwart_domains
 from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.mail.utils.rate_limiter import dynamic_rate_limit
-from suite.mail.utils.user import is_mail_admin
 from suite.utils import execute_with_logging
-from suite.utils.user import is_system_manager, is_user_enabled
+from suite.utils.user import is_suite_admin, is_system_manager, is_user_enabled
 
 
 def check_admin_permission(action: str) -> str:
-	"""Ensure the session user is an enabled Mail Admin or System Manager, returning the user.
+	"""Ensure the session user is an enabled Suite Admin or System Manager, returning the user.
 
 	The enabled check is defense-in-depth: a disabled admin holding a still-valid session (or an
 	API key) must not be able to perform admin actions, e.g. re-enable their own account via
@@ -31,7 +30,7 @@ def check_admin_permission(action: str) -> str:
 	"""
 
 	user = frappe.session.user
-	if (not is_mail_admin(user) and not is_system_manager(user)) or not is_user_enabled(user):
+	if (not is_suite_admin(user) and not is_system_manager(user)) or not is_user_enabled(user):
 		frappe.throw(_("User {0} does not have permission to {1}.").format(frappe.bold(user), action))
 
 	return user
@@ -278,7 +277,7 @@ def get_members(
 	HAS_ROLE = frappe.qb.DocType("Has Role")
 	USER_SETTINGS = frappe.qb.DocType("User Settings")
 
-	admin_case = Case().when(HAS_ROLE.role == "Mail Admin", 1).else_(0)
+	admin_case = Case().when(HAS_ROLE.role == "Suite Admin", 1).else_(0)
 	is_admin_expr = Max(admin_case)
 
 	query = (

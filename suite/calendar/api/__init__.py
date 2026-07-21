@@ -3,15 +3,15 @@ import json
 import frappe
 from frappe import _
 
-from suite.mail.doctype.calendar.calendar import fetch_calendars
-from suite.mail.doctype.calendar_event.calendar_event import (
+from suite.calendar.doctype.calendar.calendar import fetch_calendars
+from suite.calendar.doctype.calendar_event.calendar_event import (
 	fetch_calendar_events,
-	get_master_events_by_uids,
 	update_calendar_event,
 )
-from suite.mail.doctype.calendar_event.calendar_event import (
+from suite.calendar.doctype.calendar_event.calendar_event import (
 	get_calendar_events as get_calendar_events_by_ids,
 )
+from suite.mail.jmap import get_calendar_event_service
 
 
 @frappe.whitelist()
@@ -42,22 +42,41 @@ def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: s
 
 
 def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
-	"""Attaches recurrence/master info to each event in-place."""
+	"""Attaches recurrence/master info to each event in-place.
 
-	uids = {event["uid"] for event in events}
-	masters = get_master_events_by_uids(account, list(uids))
-	master_map = {
-		uid: {
-			"recurrence_rule": json.loads(master["recurrence_rule"]),
-			"master_id": master["id"],
-			"master_start": master["start"],
-			"master_duration": master["duration"],
-		}
-		for uid, master in masters.items()
+	Masters are resolved through baseEventId rather than a uid query: the uid filter runs on
+	the server's search index, which is updated asynchronously, so a query-based lookup misses
+	events created moments ago — leaving them without a master_id (so the frontend falls back
+	to the synthetic id, which cannot be updated or deleted) and with an unparsed
+	recurrence_rule string until the index catches up."""
+
+	if not events:
+		return
+
+	base_ids = get_calendar_event_service(account).get_base_event_ids(
+		[event["id"] for event in events]
+	)
+	if not base_ids:
+		return
+
+	masters = {
+		master["id"]: master
+		for master in get_calendar_events_by_ids(account, sorted(set(base_ids.values())))
 	}
 
 	for event in events:
-		event.update(master_map.get(event["uid"], {}))
+		master = masters.get(base_ids.get(event["id"]))
+		if not master:
+			continue
+
+		event.update(
+			{
+				"recurrence_rule": json.loads(master["recurrence_rule"]),
+				"master_id": master["id"],
+				"master_start": master["start"],
+				"master_duration": master["duration"],
+			}
+		)
 
 
 def enrich_participants_with_avatars(events: list[dict]) -> None:
@@ -76,20 +95,15 @@ def enrich_participants_with_avatars(events: list[dict]) -> None:
 	user_data = frappe.db.get_all(
 		"User", filters={"name": ["in", list(unique_emails)]}, fields=["name", "user_image"]
 	)
+	# Only actual profile pictures — no Gravatar fallback, so participants
+	# without one render as initials in the frontend.
 	user_images = {u.name: u.user_image for u in user_data if u.user_image}
-	avatar_map = {email: user_images.get(email) or get_avatar_url(email) for email in unique_emails}
 
 	for event in events:
 		for participant in event["participants"]:
 			email = participant.get("email")
-			if email in avatar_map:
-				participant["user_image"] = avatar_map[email]
-
-
-def get_avatar_url(email: str) -> str:
-	"""Returns the avatar URL for the given email."""
-
-	return f"/api/method/suite.mail.api.mail.get_avatar?email={email}"
+			if user_images.get(email):
+				participant["user_image"] = user_images[email]
 
 
 @frappe.whitelist()

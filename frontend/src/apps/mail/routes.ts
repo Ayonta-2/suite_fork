@@ -13,32 +13,7 @@ import '@/apps/mail/router'
  * app index). Route names are namespaced `mail-*` to avoid collisions in the
  * single suite router.
  *
- * Name mapping from the standalone app:
- *   SignUp              -> mail-signup
- *   InviteSetup         -> mail-invite-setup
- *   Login               -> mail-login
- *   ForgotPassword      -> mail-forgot-password
- *   ResetPassword       -> mail-reset-password
- *   Mailbox             -> mail-mailbox
- *   Mail                -> mail-mail
- *   AddressBooks        -> mail-address-books
- *   AddressBook         -> mail-address-book
- *   Contacts            -> mail-contacts
- *   Contact             -> mail-contact
- *   MailExchanges       -> mail-exchanges
- *   MailExchange        -> mail-exchange
- *   MimeMessage         -> mail-mime-message
- *   Domains             -> mail-domains
- *   Domain              -> mail-domain
- *   Members             -> mail-members
- *   Invites             -> mail-invites
- *   RootShortcut        -> mail-root-shortcut
- *   AccountShortcut     -> mail-account-shortcut
- *   MailboxShortcut     -> mail-mailbox-shortcut
- *   AddressBooksShortcut-> mail-address-books-shortcut
- *   ContactsShortcut    -> mail-contacts-shortcut
- *
- * Public (pre-auth) routes carry `meta.isPublic: true` so the suite router's
+ * Public (pre-auth) routes carry `meta.allowGuest: true` so the suite router's
  * global auth guard does not redirect guests to /login. They sit OUTSIDE the
  * MailLayout (which provides $user/$dayjs/$socket) because they don't need
  * those injects. All authed routes nest under MailLayout.
@@ -50,37 +25,52 @@ const ShortcutRedirect = { render: () => null }
 
 export const routes: RouteRecordRaw[] = [
 	// --- Public (pre-auth) routes -------------------------------------------
+	// Nested under LoginLayout, which supplies the Frappe Mail logo, the centered
+	// card and the per-route title. Without it these views render as bare,
+	// full-bleed forms.
 	{
-		path: 'signup',
-		name: 'mail-signup',
-		component: () => import('@/apps/mail/pages/SignupView.vue'),
-		meta: { isLogin: true, isPublic: true },
-	},
-	{
-		path: 'signup/:requestKey',
-		name: 'mail-invite-setup',
-		component: () => import('@/apps/mail/pages/InviteSetupView.vue'),
-		props: true,
-		meta: { isLogin: true, isPublic: true },
-	},
-	{
-		path: 'login',
-		name: 'mail-login',
-		component: () => import('@/apps/mail/pages/LoginView.vue'),
-		meta: { isLogin: true, isPublic: true },
-	},
-	{
-		path: 'reset-password',
-		name: 'mail-forgot-password',
-		component: () => import('@/apps/mail/pages/ForgotPasswordView.vue'),
-		meta: { isLogin: true, isPublic: true },
-	},
-	{
-		path: 'reset-password/:requestKey',
-		name: 'mail-reset-password',
-		component: () => import('@/apps/mail/pages/ResetPasswordView.vue'),
-		props: true,
-		meta: { isLogin: true, isPublic: true },
+		path: '',
+		component: () => import('@/apps/mail/components/LoginLayout.vue'),
+		// This wrapper's own full path is bare '/mail' — the same as the root
+		// shortcut below — and, being registered first, it wins the matcher tie:
+		// without the redirect, '/mail' renders an empty login card instead of
+		// the inbox. Redirect exact matches to the shortcut; children
+		// ('/mail/login' etc.) are unaffected.
+		redirect: { name: 'mail-root-shortcut' },
+		children: [
+			{
+				path: 'signup',
+				name: 'mail-signup',
+				component: () => import('@/apps/mail/pages/SignupView.vue'),
+				meta: { isLogin: true, allowGuest: true },
+			},
+			{
+				path: 'signup/:requestKey',
+				name: 'mail-invite-setup',
+				component: () => import('@/apps/mail/pages/InviteSetupView.vue'),
+				props: true,
+				meta: { isLogin: true, allowGuest: true },
+			},
+			{
+				path: 'login',
+				name: 'mail-login',
+				component: () => import('@/apps/mail/pages/LoginView.vue'),
+				meta: { isLogin: true, allowGuest: true },
+			},
+			{
+				path: 'reset-password',
+				name: 'mail-forgot-password',
+				component: () => import('@/apps/mail/pages/ForgotPasswordView.vue'),
+				meta: { isLogin: true, allowGuest: true },
+			},
+			{
+				path: 'reset-password/:requestKey',
+				name: 'mail-reset-password',
+				component: () => import('@/apps/mail/pages/ResetPasswordView.vue'),
+				props: true,
+				meta: { isLogin: true, allowGuest: true },
+			},
+		],
 	},
 	// A guest must be able to reach a public MIME message view.
 	{
@@ -88,7 +78,7 @@ export const routes: RouteRecordRaw[] = [
 		name: 'mail-mime-message',
 		component: () => import('@/apps/mail/pages/MimeMessageView.vue'),
 		props: true,
-		meta: { noLayout: true, isPublic: true },
+		meta: { noLayout: true, allowGuest: true },
 	},
 
 	// --- Authed routes (nested under MailLayout) ----------------------------

@@ -11,7 +11,7 @@
 		>
 			<MeetingHeader
 				:meetingId="meetingId"
-				:meetingTitle="meetingTitle"
+				:meetingTitle="previewTitle"
 			>
 				<template #right>
 					<Button
@@ -42,6 +42,7 @@
 			<MeetingPreview
 				v-if="showPreview"
 				:meetingId="meetingId"
+				:meetingTitle="previewTitle"
 				:isCameraOn="mediaState.isCameraOn"
 				:isMicOn="mediaState.isMicOn"
 				:cameraPermissionGranted="mediaState.cameraPermissionGranted"
@@ -69,15 +70,6 @@
 			<!-- Main meeting interface -->
 			<template v-else>
 			<div class="relative grid flex-1 min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
-				<div
-					v-if="recoveryMessage"
-					class="absolute top-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100%-2rem)] rounded-full border border-blue-300/30 bg-blue-950/80 px-4 py-2 text-sm text-blue-50 shadow-lg backdrop-blur-md flex items-center gap-2"
-					role="status"
-					data-testid="meet-recovery-banner"
-				>
-					<Spinner class="h-4" />
-					<span>{{ recoveryMessage }}</span>
-				</div>
 				<div
 					v-if="e2eeJoinPendingMessage"
 					class="absolute top-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100%-2rem)] rounded-full border border-amber-300/30 bg-amber-950/80 px-4 py-2 text-sm text-amber-50 shadow-lg backdrop-blur-md flex items-center gap-2"
@@ -225,7 +217,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, frappeRequest, toast } from "frappe-ui";
+import { Button, createResource, frappeRequest, toast } from "frappe-ui";
 import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
@@ -318,6 +310,23 @@ const {
 	meetingCoHosts,
 } = useMeetingDoc();
 const meetingDoc = getMeetingDoc(meetingId.value);
+const previewDetails = createResource({
+	url: "suite.meet.api.meeting.get_public_meeting_preview",
+	params: { meeting_id: meetingId.value },
+	auto: !session.isLoggedIn,
+});
+const previewTitle = computed(
+	() => meetingDoc.doc?.title || previewDetails.data?.title || meetingId.value,
+);
+
+watch(
+	() => meetingDoc.get.error,
+	(error) => {
+		if (error && !previewDetails.data && !previewDetails.loading) {
+			previewDetails.fetch();
+		}
+	},
+);
 
 // --- Background effects & noise cancellation ---
 const backgroundEffects = useBackgroundEffects();
@@ -558,22 +567,6 @@ provide("poll", poll);
 // --- Computed properties ---
 const isConnecting = computed(() => connectionState.isConnecting);
 const hasConnectionError = computed(() => !!connectionState.connectionError);
-const recoveryMessage = computed(() => {
-	switch (connectionState.recoveryState) {
-		case "reconnecting":
-			return "Reconnecting to the meeting...";
-		case "rejoining":
-			return "Restoring your meeting session...";
-		case "recovering_send":
-			return "Restoring your microphone and camera...";
-		case "recovering_receive":
-			return "Restoring incoming media...";
-		case "failed":
-			return "Connection recovery failed. Try leaving and joining again.";
-		default:
-			return "";
-	}
-});
 const isInLobby = computed(() => lobbyStore.isInLobby || false);
 const isWaitingForApproval = computed(
 	() => lobbyStore.isWaitingForApproval || false,

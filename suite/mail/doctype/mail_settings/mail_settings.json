@@ -96,7 +96,10 @@
   "column_break_wpvf",
   "jmap_push_auth",
   "jmap_push_private_key",
-  "jmap_push_p256dh"
+  "jmap_push_p256dh",
+  "event_invites_tab",
+  "event_invites_section",
+  "custom_event_invites"
  ],
  "fields": [
   {
@@ -692,6 +695,23 @@
    "fieldtype": "Int",
    "label": "Exchange Log File Count",
    "reqd": 1
+  },
+  {
+   "fieldname": "event_invites_tab",
+   "fieldtype": "Tab Break",
+   "label": "Event Invites"
+  },
+  {
+   "fieldname": "event_invites_section",
+   "fieldtype": "Section Break",
+   "label": "Event Invitations"
+  },
+  {
+   "default": "1",
+   "description": "Send calendar invitation, update, and cancellation emails from Frappe Mail using the templates below, with .ics attachments and HTTP RSVP links. When disabled, the JMAP server handles scheduling messages instead.",
+   "fieldname": "custom_event_invites",
+   "fieldtype": "Check",
+   "label": "Send Custom Event Invitations"
   },
   {
    "default": "INFO",

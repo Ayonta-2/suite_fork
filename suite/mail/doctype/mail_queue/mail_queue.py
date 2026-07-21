@@ -43,10 +43,11 @@ from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import parsedate_to_datetime
 from suite.mail.utils.user import is_jmap_configured
+from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
 
 
-class MailQueue(Document):
+class MailQueue(OwnerFromUser, Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -927,19 +928,3 @@ def enqueue_process_pending_emails(batch_size: int | None = None, max_batch_size
 
 	except Exception:
 		log_mail_error(_("Failed - Enqueue Process Pending Emails"), frappe.get_traceback(with_context=True))
-
-
-def get_permission_query_condition(user: str | None = None) -> str | None:
-	user = user or frappe.session.user
-	if is_administrator(user):
-		return ""
-
-	return f"""`tabMail Queue`.user = '{user}'"""
-
-
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
-	if doc.doctype != "Mail Queue":
-		return False
-
-	user = user or frappe.session.user
-	return doc.user == user or is_administrator(user)

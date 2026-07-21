@@ -20,13 +20,16 @@
 				:options="COLOR_SCHEMES"
 			/>
 			<template v-if="user.data.is_jmap_configured">
-				<Switch
-					:model-value="showReadingPane"
-					:label="__('Show Reading Pane')"
+				<SettingsRow
+					class="!py-0"
+					:title="__('Show Reading Pane')"
 					:description="__('Preview emails alongside the message list.')"
-					class="!p-0"
-					@update:model-value="(v) => (showReadingPane = v)"
-				/>
+				>
+					<Switch
+						:model-value="showReadingPane"
+						@update:model-value="(v) => (showReadingPane = v)"
+					/>
+				</SettingsRow>
 				<FormControl
 					:model-value="groupMessagesBy"
 					:label="__('Group Messages By')"
@@ -45,6 +48,7 @@ import { computed, inject, ref } from 'vue'
 import {
 	Button,
 	FormControl,
+	SettingsRow,
 	Switch,
 	createResource,
 } from 'frappe-ui'

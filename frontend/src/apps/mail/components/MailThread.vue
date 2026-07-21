@@ -132,10 +132,7 @@
 									@click.stop="mail.collapsed = !mail.collapsed"
 								>
 									<Avatar
-										:label="
-											getFirstAlphabet(mail.from_name) ||
-											getFirstAlphabet(mail.from_email)
-										"
+										:label="getSenderInitial(mail)"
 										:image="mail.user_image"
 										size="xl"
 									/>
@@ -400,10 +397,10 @@ import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
 	downloadUrlAsFile,
 	extractQuotedContent,
-	getFirstAlphabet,
 	getFormattedDate,
 	getFormattedRecipients,
 	getGroupedRecipients,
+	getSenderInitial,
 	hasHtmlContent,
 	matchesScreenedValue,
 	raiseToast,

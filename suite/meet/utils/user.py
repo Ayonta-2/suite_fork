@@ -33,20 +33,15 @@ def unique_users(user_list: list) -> list[dict]:
 	return unique_list
 
 
-def assign_meet_role(user: User, method: str) -> None:
-	"""Assign the "Meet User" role to a newly created User."""
-	role_name = "Meet User"
-	user_name = user.name
+def assign_meet_role(user: User, method: str | None = None) -> None:
+	"""Assign the "Meet User" role to a new User.
 
-	if not user_name or user_name in ("Guest", "Administrator"):
-		return
+	Runs on `before_insert` so the role is in place before Frappe validates the
+	User — see `suite.suite_core.roles.assign_role`.
+	"""
+	from suite.suite_core.roles import assign_role
 
-	if not frappe.db.exists("Role", role_name):
-		frappe.get_doc({"doctype": "Role", "role_name": role_name}).insert(ignore_permissions=True)
-
-	user_doc = frappe.get_doc("User", user_name)
-	user_doc.append("roles", {"role": role_name})
-	user_doc.save(ignore_permissions=True)
+	assign_role(user, "Meet User")
 
 
 def is_guest_user(user_id: str) -> bool:

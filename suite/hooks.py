@@ -111,11 +111,15 @@ website_redirects = [
 	},
 ]
 
+# Framework File permission logic is fully replaced by Drive's
+ignore_file_permissions = True
+
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
 permission_query_conditions = {
 	# drive
+	"File": "suite.drive.utils.overrides.filter_file",
 	"Drive Team": "suite.drive.utils.overrides.filter_drive_team",
 	"Drive Permission": "suite.drive.utils.overrides.filter_drive_permission",
 	"Drive Favourite": "suite.drive.utils.overrides.filter_drive_favourite",
@@ -125,21 +129,18 @@ permission_query_conditions = {
 	"Presentation": "suite.slides.doctype.presentation.presentation.get_permission_query_conditions",
 	# writer
 	"Writer Template": "suite.writer.overrides.filter_templates",
+	"Writer Document": "suite.writer.overrides.document_query_conditions",
+	"Writer Version": "suite.writer.overrides.version_query_conditions",
 	# sheets
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
+	# meet
+	"Meet Room": "suite.meet.doctype.meet_room.meet_room.get_permission_query_conditions",
 	# mail
 	"JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.get_permission_query_condition",
-	"Blocked Email Address": "suite.mail.doctype.blocked_email_address.blocked_email_address.get_permission_query_condition",
-	"Calendar Exchange": "suite.mail.doctype.calendar_exchange.calendar_exchange.get_permission_query_condition",
-	"Contacts Exchange": "suite.mail.doctype.contacts_exchange.contacts_exchange.get_permission_query_condition",
-	"Junk Email Address": "suite.mail.doctype.junk_email_address.junk_email_address.get_permission_query_condition",
-	"Mail Exchange": "suite.mail.doctype.mail_exchange.mail_exchange.get_permission_query_condition",
-	"Mail Queue": "suite.mail.doctype.mail_queue.mail_queue.get_permission_query_condition",
 	"Mail Sync History": "suite.mail.doctype.mail_sync_history.mail_sync_history.get_permission_query_condition",
 	"Mailbox Settings": "suite.mail.doctype.mailbox_settings.mailbox_settings.get_permission_query_condition",
-	"User Account": "suite.mail.doctype.user_account.user_account.get_permission_query_condition",
-	"User Settings": "suite.mail.doctype.user_settings.user_settings.get_permission_query_condition",
+	"Screened Email Address": "suite.mail.doctype.screened_email_address.screened_email_address.get_permission_query_condition",
 }
 
 # ============================================================================
@@ -148,36 +149,35 @@ permission_query_conditions = {
 has_permission = {
 	# drive
 	"File": "suite.drive.api.permissions.user_has_permission",
+	"Drive Permission": "suite.drive.api.permissions.drive_permission_has_permission",
+	"Drive Team": "suite.drive.api.permissions.drive_team_has_permission",
 	# slides
 	"Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
 	# writer
-	"Writer Document": "suite.writer.perms.has_permission",
+	"Writer Document": "suite.drive.overrides.file.content_has_permission",
+	"Writer Version": "suite.writer.overrides.version_has_permission",
+	"Writer Template": "suite.writer.overrides.template_has_permission",
 	# sheets
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_has_permission",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
+	# meet
+	"Meet Room": "suite.meet.doctype.meet_room.meet_room.has_permission",
 	# mail
 	"JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.has_permission",
 	"Address Book": "suite.mail.doctype.address_book.address_book.has_permission",
-	"Blocked Email Address": "suite.mail.doctype.blocked_email_address.blocked_email_address.has_permission",
-	"Calendar": "suite.mail.doctype.calendar.calendar.has_permission",
-	"Calendar Event": "suite.mail.doctype.calendar_event.calendar_event.has_permission",
-	"Calendar Exchange": "suite.mail.doctype.calendar_exchange.calendar_exchange.has_permission",
+	"Calendar": "suite.calendar.doctype.calendar.calendar.has_permission",
+	"Calendar Event": "suite.calendar.doctype.calendar_event.calendar_event.has_permission",
 	"Contact Card": "suite.mail.doctype.contact_card.contact_card.has_permission",
-	"Contacts Exchange": "suite.mail.doctype.contacts_exchange.contacts_exchange.has_permission",
-	"Event Notification": "suite.mail.doctype.event_notification.event_notification.has_permission",
+	"Event Notification": "suite.calendar.doctype.event_notification.event_notification.has_permission",
 	"Identity": "suite.mail.doctype.identity.identity.has_permission",
-	"Junk Email Address": "suite.mail.doctype.junk_email_address.junk_email_address.has_permission",
-	"Mail Exchange": "suite.mail.doctype.mail_exchange.mail_exchange.has_permission",
-	"Mail Queue": "suite.mail.doctype.mail_queue.mail_queue.has_permission",
 	"Mail Sync History": "suite.mail.doctype.mail_sync_history.mail_sync_history.has_permission",
 	"Mailbox": "suite.mail.doctype.mailbox.mailbox.has_permission",
 	"Mailbox Settings": "suite.mail.doctype.mailbox_settings.mailbox_settings.has_permission",
 	"Participant Identity": "suite.mail.doctype.participant_identity.participant_identity.has_permission",
 	"Push Subscription": "suite.mail.doctype.push_subscription.push_subscription.has_permission",
 	"Quota": "suite.mail.doctype.quota.quota.has_permission",
+	"Screened Email Address": "suite.mail.doctype.screened_email_address.screened_email_address.has_permission",
 	"Sieve Script": "suite.mail.doctype.sieve_script.sieve_script.has_permission",
-	"User Account": "suite.mail.doctype.user_account.user_account.has_permission",
-	"User Settings": "suite.mail.doctype.user_settings.user_settings.has_permission",
 	"Vacation Response": "suite.mail.doctype.vacation_response.vacation_response.has_permission",
 }
 
@@ -215,13 +215,19 @@ override_whitelisted_methods = {
 # ============================================================================
 doc_events = {
 	"Presentation": {
-		"on_update": ["suite.drive.api.integration.presentation"],
-		"on_trash": ["suite.drive.api.integration.presentation"],
+		"on_update": ["suite.drive.overrides.file.sync_content_file"],
+		"on_trash": ["suite.drive.overrides.file.sync_content_file"],
 	},
 	"User": {
-		"after_insert": [
-			"suite.drive.utils.users.assign_drive_role_and_create_settings",
+		# Roles are assigned before insert so they are present when Frappe's
+		# User.validate runs — assigning them after insert triggers a spurious
+		# "No Roles Specified" warning and leaves user_type mis-resolved.
+		"before_insert": [
+			"suite.drive.utils.users.assign_drive_role",
 			"suite.meet.utils.user.assign_meet_role",
+		],
+		"after_insert": [
+			"suite.drive.utils.users.create_drive_settings_and_team",
 			"suite.mail.events.create_user_settings",
 		],
 		"on_update": [
@@ -253,13 +259,13 @@ scheduler_events = {
 		"suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
 		"suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
 		"suite.mail.doctype.push_subscription.push_subscription.renew_expiring_push_subscriptions",
-		"suite.mail.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
+		"suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
 		"suite.mail.doctype.contacts_exchange.contacts_exchange.clean_contacts_import_export_directories",
 	],
 	"hourly": [
 		# mail
 		"suite.mail.doctype.mail_exchange.mail_exchange.retry_stuck_mail_exchanges",
-		"suite.mail.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
+		"suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
 		"suite.mail.doctype.contacts_exchange.contacts_exchange.retry_stuck_contacts_exchanges",
 	],
 	"hourly_long": [
@@ -304,6 +310,8 @@ fixtures = [
 	{"dt": "Presentation", "filters": [["is_template", "=", "1"]]},
 	# meet
 	{"dt": "Role", "filters": [["role_name", "like", "Meet %"]]},
+	# mail / calendar
+	{"dt": "Role", "filters": [["role_name", "like", "Suite %"]]},
 ]
 
 # ============================================================================

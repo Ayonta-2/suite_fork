@@ -446,33 +446,46 @@ def get_attachments(doctype: str | None = None, docname: str | None = None):
     If either doctype or docname isn't specified, returns a list of folder-like objects
     that represents the tree Doctype > Doc > Attachments.
     """
+    # filter_file scopes attachments by doctype-level read (coarse), so gate on
+    # the authoritative per-file check used when files are actually served — this
+    # lets a file's owner through while blocking users who only have generic read
+    # on the doctype but not the specific document.
     if doctype and docname:
         files = frappe.get_list(
             "File", filters={"attached_to_doctype": doctype, "attached_to_name": docname}, pluck="name"
         )
-        query = frappe.qb.from_(DriveFile).where(DriveFile.name.isin(files))
+        files = [f for f in files if user_has_permission(f, "read")]
+        query = frappe.qb.from_(DriveFile).where(DriveFile.name.isin(files or [""]))
         return get_query_data(query)
 
     titles = {}
     if doctype:
-        names = frappe.get_list("File", filters={"attached_to_doctype": doctype}, fields=["attached_to_name"])
-        doctypes_set = Counter(k["attached_to_name"] for k in names)
+        names = frappe.get_list(
+            "File", filters={"attached_to_doctype": doctype}, fields=["name", "attached_to_name"]
+        )
+        doctypes_set = Counter(
+            k["attached_to_name"] for k in names if user_has_permission(k["name"], "read")
+        )
         # Show each document by its title field rather than its raw name (ID).
         title_field = frappe.get_meta(doctype).get_title_field()
         if title_field != "name":
             titles = dict(
                 frappe.get_all(
                     doctype,
-                    filters={"name": ["in", list(doctypes_set)]},
+                    filters={"name": ["in", list(doctypes_set) or [""]]},
                     fields=["name", title_field],
                     as_list=True,
                 )
             )
     else:
-        doctypes = frappe.get_list(
-            "File", filters={"attached_to_doctype": ["is", "set"]}, fields=["attached_to_doctype"]
+        names = frappe.get_list(
+            "File",
+            filters={"attached_to_doctype": ["is", "set"]},
+            fields=["name", "attached_to_doctype"],
         )
-        doctypes_set = Counter(k["attached_to_doctype"] for k in doctypes)
+        doctypes_set = Counter(
+            k["attached_to_doctype"] for k in names if user_has_permission(k["name"], "read")
+        )
 
     return [
         {

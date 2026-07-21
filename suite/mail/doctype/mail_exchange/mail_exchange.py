@@ -38,6 +38,7 @@ from suite.mail.doctype.push_subscription.push_subscription import (
 from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
 from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.mail.email import EmailService
+from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.utils import (
 	get_config,
 	get_mail_export_directory,
@@ -45,7 +46,7 @@ from suite.mail.utils import (
 	get_mbox_files,
 )
 from suite.mail.utils.logger import ExchangeLogger, get_exchange_logger
-from suite.mail.utils.user import clear_sync_state, get_user_email_address, is_jmap_configured, is_mail_admin
+from suite.mail.utils.user import clear_sync_state, get_user_email_address, is_jmap_configured
 from suite.mail.utils.validation import (
 	validate_jmap_structure,
 	validate_maildir_or_maildirpp,
@@ -54,7 +55,8 @@ from suite.mail.utils.validation import (
 from suite.utils import reconnect_on_failure
 from suite.utils.dt import parse_iso_datetime
 from suite.utils.file import compress_directory, extract_compressed_file
-from suite.utils.user import is_administrator, is_system_manager
+from suite.utils.permissions import OwnerFromUser
+from suite.utils.user import is_administrator
 
 MAILDIR_FLAG_MAP: dict[str, str] = {
 	"$seen": "S",
@@ -472,7 +474,7 @@ class ExportWriter:
 					f.write(e.raw)
 
 
-class MailExchange(Document):
+class MailExchange(OwnerFromUser, Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -728,6 +730,8 @@ class MailExchange(Document):
 		os.makedirs(base_dir, exist_ok=True)
 
 		kwargs = {}
+		service = None
+		staging_mailbox_id = None
 		try:
 			if self.import_format == "eml" and self.import_file.endswith(".eml"):
 				shutil.copy(import_file, os.path.join(base_dir, os.path.basename(import_file)))
@@ -753,15 +757,25 @@ class MailExchange(Document):
 			if len(meta) > self.max_import:
 				frappe.throw(_("Import limit exceeded."))
 
-			self._import_batches(service, base_dir, meta, logger)
+			# Stage everything into one throwaway mailbox first, then move it to the destination
+			# mailbox(es). A failure before the move leaves nothing scattered across the account: the
+			# staging mailbox and every email in it are deleted on rollback.
+			staging_mailbox_id = self._create_staging_mailbox(service, logger)
+			imported = self._import_batches(service, base_dir, meta, staging_mailbox_id, logger)
+			self._move_to_target_mailboxes(service, imported, logger)
+			self._discard_staging_mailbox(service, staging_mailbox_id, logger)
+			staging_mailbox_id = None
+
 			clear_sync_state(self.account, type="email")
 
-			logger.info("import-completed", emails=len(meta))
-			self._log_output(_("Import completed successfully. {0} email(s) imported.").format(len(meta)))
+			logger.info("import-completed", emails=len(imported))
+			self._log_output(_("Import completed successfully. {0} email(s) imported.").format(len(imported)))
 			kwargs.update({"status": "Completed"})
 		except Exception:
 			logger.exception("import-failed")
 			self._log_output(_("Import failed. See the error details below."))
+			if staging_mailbox_id and service:
+				self._rollback_staging_mailbox(service, staging_mailbox_id, logger)
 			kwargs.update(
 				{"status": "Failed", "output": f"{self.output}\n\n{frappe.get_traceback(with_context=False)}"}
 			)
@@ -872,17 +886,34 @@ class MailExchange(Document):
 
 		self._db_set(**kwargs)
 
+	def _create_staging_mailbox(self, service: EmailService, logger: ExchangeLogger) -> str:
+		"""Creates a temporary mailbox (named after this exchange) to stage the import into."""
+
+		self._log_output(_("Creating a temporary folder to stage the import."))
+		response = MailboxService(service.account, service.connection).create(
+			[{"creation_id": str(uuid7()), "name": self.name, "is_subscribed": False}]
+		)
+		created = response.get("created") or {}
+		if not created:
+			frappe.throw(_("Failed to create the staging folder: {0}").format(response.get("notCreated")))
+
+		staging_mailbox_id = next(iter(created.values()))["id"]
+		logger.info("import-staging-mailbox-created", mailbox=staging_mailbox_id)
+		return staging_mailbox_id
+
 	def _import_batches(
 		self,
 		service: EmailService,
 		base_dir: str,
 		metadata: list[ImportEmailMeta],
+		staging_mailbox_id: str,
 		logger: ExchangeLogger,
-	) -> None:
-		"""Imports emails in batches using the EmailService."""
+	) -> dict[str, dict[str, bool]]:
+		"""Imports emails into the staging mailbox in batches, returning a map of each created email's
+		ID to the destination mailboxIds it should ultimately land in."""
 
 		total = len(metadata)
-		imported = 0
+		imported: dict[str, dict[str, bool]] = {}
 		batch_size = service.max_objects_in_set
 		for batch in create_batch(metadata, batch_size):
 			blobs: list[tuple[bytes, str]] = []
@@ -892,16 +923,18 @@ class MailExchange(Document):
 
 			responses = service.upload_blobs_concurrently(blobs)
 			emails = {}
+			targets: dict[str, dict[str, bool]] = {}
 			for i, resp in enumerate(responses):
 				meta = batch[i]
 				emails[f"e{i}"] = {
 					"blobId": resp["blobId"],
-					"mailboxIds": {mid: True for mid in meta.mailbox_ids},
+					"mailboxIds": {staging_mailbox_id: True},
 					"keywords": {k: True for k in meta.keywords or []},
 					"receivedAt": meta.received_at.isoformat(),
 				}
+				targets[f"e{i}"] = {mid: True for mid in meta.mailbox_ids}
 
-			service._call(
+			response = service._call(
 				capabilities=service.capabilities,
 				method_calls=[
 					[
@@ -911,10 +944,71 @@ class MailExchange(Document):
 					]
 				],
 			)
+			method_responses = response.get("methodResponses") or []
+			result = method_responses[0][1] if method_responses else {}
 
-			imported += len(batch)
-			logger.debug("import-batch-processed", batch=len(batch), imported=imported, total=total)
-			self._log_output(_("Imported {0} of {1} email(s).").format(imported, total))
+			for creation_id, info in (result.get("created") or {}).items():
+				imported[info["id"]] = targets.get(creation_id, {})
+			for creation_id, error in (result.get("notCreated") or {}).items():
+				logger.warning("import-email-not-created", creation_id=creation_id, reason=str(error))
+
+			logger.debug("import-batch-processed", batch=len(batch), imported=len(imported), total=total)
+			self._log_output(_("Staged {0} of {1} email(s).").format(len(imported), total))
+
+		# `metadata` is non-empty here (an empty import is rejected upstream), so an empty `imported`
+		# means the server rejected every email — a failure that must roll back. Guarding on `total`
+		# keeps this from ever misreporting an empty input as "rejected all 0". Unlike calendar/contacts
+		# there is no idempotency-skip, so `not imported` already means "all rejected".
+		if total and not imported:
+			frappe.throw(_("Import failed: the server rejected all {0} email(s).").format(total))
+
+		return imported
+
+	def _move_to_target_mailboxes(
+		self, service: EmailService, imported: dict[str, dict[str, bool]], logger: ExchangeLogger
+	) -> None:
+		"""Moves the staged emails into their destination mailboxes, replacing the staging mailbox.
+
+		This is the commit step: until it runs, every email lives only in the staging mailbox, so a
+		failure up to this point rolls back cleanly."""
+
+		self._log_output(_("Moving {0} email(s) into the destination folder(s).").format(len(imported)))
+		emails = [{"id": email_id, "mailbox_ids": mailbox_ids} for email_id, mailbox_ids in imported.items()]
+		result = service.update(emails, replace_mailboxes=True)
+
+		if not_updated := result.get("notUpdated"):
+			logger.warning("import-email-not-moved", count=len(not_updated))
+			frappe.throw(
+				_("Failed to move {0} email(s) into the destination folder(s).").format(len(not_updated))
+			)
+
+		logger.info("import-emails-moved", emails=len(result.get("updated", [])))
+
+	def _discard_staging_mailbox(
+		self, service: EmailService, staging_mailbox_id: str, logger: ExchangeLogger
+	) -> None:
+		"""Deletes the now-empty staging mailbox after a successful import. A failure here is logged
+		but not fatal: the emails are already safely in their destination folders."""
+
+		try:
+			MailboxService(service.account, service.connection).delete([staging_mailbox_id])
+			logger.info("import-staging-mailbox-removed", mailbox=staging_mailbox_id)
+		except Exception:
+			logger.warning("import-staging-mailbox-remove-failed", mailbox=staging_mailbox_id)
+
+	def _rollback_staging_mailbox(
+		self, service: EmailService, staging_mailbox_id: str, logger: ExchangeLogger
+	) -> None:
+		"""Deletes the staging mailbox and every email still staged in it, undoing a failed import."""
+
+		self._log_output(_("Rolling back: removing the staging folder and any staged emails."))
+		try:
+			MailboxService(service.account, service.connection).delete(
+				[staging_mailbox_id], remove_emails=True
+			)
+			logger.info("import-rolled-back", mailbox=staging_mailbox_id)
+		except Exception:
+			logger.exception("import-rollback-failed", mailbox=staging_mailbox_id)
 
 	def _export_batches(
 		self,
@@ -1050,23 +1144,6 @@ class MailExchange(Document):
 		"""Updates the document with the given key-value pairs."""
 
 		self.db_set(kwargs, notify=True, commit=True)
-
-
-def get_permission_query_condition(user: str | None = None) -> str:
-	user = user or frappe.session.user
-
-	if is_mail_admin(user) or is_system_manager(user):
-		return ""
-
-	return f"(`tabMail Exchange`.user = '{user}')"
-
-
-def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
-	if doc.doctype != "Mail Exchange":
-		return False
-
-	user = user or frappe.session.user
-	return doc.user == user or is_mail_admin(user) or is_system_manager(user)
 
 
 def get_email_service(
