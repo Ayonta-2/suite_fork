@@ -114,7 +114,7 @@ frappe.ui.form.on('Mail Settings', {
 			),
 			() => {
 				frappe.call({
-					method: 'suite.search.destroy_search_index',
+					method: 'suite.mail.search.destroy_search_index',
 					freeze: true,
 					freeze_message: __('Destroying Search Index…'),
 					callback: (r) => {

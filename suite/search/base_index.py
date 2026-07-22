@@ -10,6 +10,7 @@ import tantivy
 from frappe import _
 
 from suite.search import get_search_base_path
+from suite.storage.base_store import Namespace, normalize_namespace, resolve_namespace_path
 from suite.utils.lock import write_lock
 
 SCHEMA_VERSION_FILE = "schema.version"
@@ -27,11 +28,12 @@ class FieldSpec:
 
 
 class BaseIndex:
-	"""A Tantivy full-text index for one entity type, partitioned by `key`.
+	"""A Tantivy full-text index for one entity type, scoped to a `namespace`.
 
 	Subclasses declare their schema via ENTITY and FIELDS, and may override `to_document`
-	to shape a raw source dict into the flat field/value dict this index stores. Each `key`
-	(e.g. a JMAP account) gets its own on-disk index under `get_search_base_path()`.
+	to shape a raw source dict into the flat field/value dict this index stores. Each
+	`namespace` (a relative path, e.g. ``("mail", account)``) gets its own on-disk directory
+	under `get_search_base_path()`, so its indexes stay isolated from other namespaces.
 	"""
 
 	# Entity name; forms part of the on-disk path and lock name. Required in subclasses.
@@ -46,18 +48,17 @@ class BaseIndex:
 	# Per-writer memory budget for indexing, in bytes.
 	HEAP_SIZE: ClassVar[int] = 50 * 1024 * 1024
 
-	def __init__(self, key: str) -> None:
-		"""Resolve this index's on-disk path from key/ENTITY and reconcile its schema version."""
+	def __init__(self, namespace: Namespace) -> None:
+		"""Resolve this index's on-disk path from namespace/ENTITY and reconcile its schema version."""
 
 		if not self.ENTITY:
 			frappe.throw("BaseIndex subclasses must define ENTITY")
-		if not key:
-			frappe.throw("BaseIndex subclasses must be instantiated with a key")
 
-		self.key = key
-		# Layout is <base>/<key>/<entity>, so every index for a key (e.g. an account) lives under
-		# one directory — easy to browse and to clear all of a key's indexes in one shot.
-		self.path = os.path.join(get_search_base_path(), quote(key, safe=""), self.ENTITY)
+		self.namespace = normalize_namespace(namespace)
+		# Layout is <base>/<namespace>/<entity>, so every index for a namespace (e.g. an account)
+		# lives under one directory — easy to browse and to clear all of a namespace's indexes at once.
+		namespace_path = resolve_namespace_path(get_search_base_path(), self.namespace)
+		self.path = os.path.join(namespace_path, self.ENTITY)
 		os.makedirs(self.path, exist_ok=True)
 
 		self._schema = self._build_schema()
@@ -192,7 +193,7 @@ class BaseIndex:
 			return (hits, result.count)
 		except Exception:
 			frappe.logger("suite.search").warning(
-				{"event": "search-failed", "entity": self.ENTITY, "key": self.key}
+				{"event": "search-failed", "entity": self.ENTITY, "namespace": "/".join(self.namespace)}
 			)
 			return ([], 0)
 
@@ -223,9 +224,10 @@ class BaseIndex:
 
 	@property
 	def _lockname(self) -> str:
-		"""Lock name scoping writes to this entity/key, so concurrent workers serialize."""
+		"""Lock name scoping writes to this entity/namespace, so concurrent workers serialize."""
 
-		return f"search-index:{self.ENTITY}:{quote(self.key, safe='')}"
+		namespace = "/".join(quote(segment, safe="") for segment in self.namespace)
+		return f"search-index:{self.ENTITY}:{namespace}"
 
 	@property
 	def _stored_fields(self) -> list[str]:

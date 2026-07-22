@@ -3,6 +3,9 @@ from frappe import _
 from frappe.utils import create_batch
 
 from suite.mail.search.indexes import EmailAddressIndex
+from suite.mail.storage import MAIL_NAMESPACE, get_account_namespace
+from suite.search import get_search_base_path
+from suite.storage import destroy_namespace
 from suite.utils import enqueue_job
 
 # Cached records processed per index write while rebuilding, bounding memory and commit size.
@@ -15,7 +18,22 @@ _ACCOUNTS_PER_REBUILD_BATCH = 25
 def get_email_address_index(account: str) -> EmailAddressIndex:
 	"""Get the EmailAddressIndex for the given JMAP account ID."""
 
-	return EmailAddressIndex(account)
+	return EmailAddressIndex(get_account_namespace(account))
+
+
+@frappe.whitelist()
+def destroy_search_index() -> None:
+	"""Delete every mail search index for the current site. System Manager only.
+
+	Removes only the ``mail`` namespace, leaving any other apps' search indexes intact.
+	"""
+
+	from suite.utils.user import is_system_manager
+
+	if not is_system_manager(frappe.session.user):
+		frappe.throw(_("Only System Manager can destroy the search index."))
+
+	destroy_namespace(get_search_base_path(), MAIL_NAMESPACE)
 
 
 def rebuild_email_address_index(account: str, in_background: bool = True) -> None:

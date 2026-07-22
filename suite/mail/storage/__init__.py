@@ -29,10 +29,10 @@ class Entity(Enum):
 
 
 def get_account_namespace(account: str) -> tuple[str, str]:
-	"""Return the storage namespace for a JMAP account: ``("mail", <account>)``.
+	"""Return the namespace for a JMAP account: ``("mail", <account>)``.
 
-	Each account's data and blob stores live at ``mail/<account>`` under their base path, so
-	accounts are isolated from one another and from other apps' stores.
+	Each account's data store, blob store and search indexes live at ``mail/<account>`` under
+	their respective base paths, so accounts are isolated from one another and from other apps.
 	"""
 
 	return (MAIL_NAMESPACE, account)
