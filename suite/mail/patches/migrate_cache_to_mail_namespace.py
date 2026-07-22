@@ -1,7 +1,7 @@
 import os
 import shutil
 
-from suite.mail.storage import MAIL_NAMESPACE
+from suite.mail.store import MAIL_NAMESPACE
 from suite.store import get_blob_base_path, get_data_base_path
 
 
