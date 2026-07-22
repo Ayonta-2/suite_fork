@@ -1,5 +1,4 @@
 from collections import OrderedDict
-from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from enum import Enum
 from threading import RLock
@@ -61,12 +60,11 @@ class DataStore(BaseStore):
 		base_path: str,
 		namespace: Namespace,
 		map_size: int | None = None,
-		logger_factory: Callable[[dict], Any] | None = None,
 		**_legacy: Any,
 	) -> None:
 		"""Initialize the store for the given base path and ``namespace``."""
 
-		super().__init__(base_path=base_path, namespace=namespace, logger_factory=logger_factory)
+		super().__init__(base_path=base_path, namespace=namespace)
 
 		self.logger_context["store"] = "data"
 		self.map_size = map_size or self.DEFAULT_MAP_SIZE

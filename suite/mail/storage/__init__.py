@@ -2,7 +2,6 @@ from enum import Enum
 
 import frappe
 
-from suite.mail.utils.logger import get_storage_logger
 from suite.storage import destroy_namespace, get_blob_base_path, get_data_base_path
 from suite.storage.blob_store import BlobStore
 from suite.storage.data_store import DataStore
@@ -48,11 +47,7 @@ def get_data_store(account: str) -> DataStore:
 	processes) can hit the same account's store safely.
 	"""
 
-	return DataStore(
-		base_path=get_data_base_path(),
-		namespace=get_account_namespace(account),
-		logger_factory=get_storage_logger,
-	)
+	return DataStore(base_path=get_data_base_path(), namespace=get_account_namespace(account))
 
 
 def get_blob_store(account: str) -> BlobStore:
@@ -63,11 +58,7 @@ def get_blob_store(account: str) -> BlobStore:
 	independently, so concurrent access from multiple users/processes is safe.
 	"""
 
-	return BlobStore(
-		base_path=get_blob_base_path(),
-		namespace=get_account_namespace(account),
-		logger_factory=get_storage_logger,
-	)
+	return BlobStore(base_path=get_blob_base_path(), namespace=get_account_namespace(account))
 
 
 @frappe.whitelist()

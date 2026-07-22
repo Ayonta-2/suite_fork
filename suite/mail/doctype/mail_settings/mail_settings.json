@@ -42,19 +42,16 @@
   "process_pending_emails_max_batch_size",
   "logs_section",
   "push_log_file_count",
-  "storage_log_file_count",
   "inbound_log_file_count",
   "outbound_log_file_count",
   "exchange_log_file_count",
   "column_break_ztzv",
   "push_log_level",
-  "storage_log_level",
   "inbound_log_level",
   "outbound_log_level",
   "exchange_log_level",
   "column_break_pvju",
   "push_log_max_file_size",
-  "storage_log_max_file_size",
   "inbound_log_max_file_size",
   "outbound_log_max_file_size",
   "exchange_log_max_file_size",
@@ -463,28 +460,6 @@
    "fieldname": "push_log_max_file_size",
    "fieldtype": "Int",
    "label": "Push Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "10",
-   "fieldname": "storage_log_file_count",
-   "fieldtype": "Int",
-   "label": "Storage Log File Count",
-   "reqd": 1
-  },
-  {
-   "default": "INFO",
-   "fieldname": "storage_log_level",
-   "fieldtype": "Select",
-   "label": "Storage Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "storage_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Storage Log Max File Size",
    "reqd": 1
   },
   {

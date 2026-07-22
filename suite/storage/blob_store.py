@@ -1,10 +1,8 @@
 import os
 import stat
 import tempfile
-from collections.abc import Callable
 from contextlib import suppress
 from threading import RLock
-from typing import Any
 from urllib.parse import quote, unquote
 
 import frappe
@@ -23,11 +21,10 @@ class BlobStore(BaseStore):
 		self,
 		base_path: str,
 		namespace: Namespace,
-		logger_factory: Callable[[dict], Any] | None = None,
 	) -> None:
 		"""Initialize per-namespace blob storage rooted at ``<base_path>/<namespace>``."""
 
-		super().__init__(base_path=base_path, namespace=namespace, logger_factory=logger_factory)
+		super().__init__(base_path=base_path, namespace=namespace)
 
 		self.logger_context["store"] = "blob"
 

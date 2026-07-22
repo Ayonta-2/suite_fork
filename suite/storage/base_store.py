@@ -1,5 +1,5 @@
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from threading import RLock
 from typing import Any, ClassVar
 from urllib.parse import quote
@@ -43,13 +43,11 @@ def resolve_namespace_path(base_path: str, namespace: Namespace) -> str:
 	return os.path.join(base_path, *(quote(segment, safe="") for segment in segments))
 
 
-class _DefaultLogger:
-	"""Minimal structured logger used when no `logger_factory` is injected.
+class _StorageLogger:
+	"""Structured logger for the stores.
 
-	Matches the interface the stores call (each level takes an event name plus optional
-	fields, and tolerates a pre-built dict as the event) and emits one record per event to
-	the ``suite.storage`` frappe logger. Callers that want configurable levels/rotation
-	(e.g. mail) inject their own logger via `logger_factory` instead.
+	Each level takes an event name plus optional fields (and tolerates a pre-built dict as the
+	event) and emits one record per event to the ``suite.storage`` frappe logger.
 	"""
 
 	def __init__(self, ctx: dict) -> None:
@@ -93,22 +91,18 @@ class BaseStore:
 		self,
 		base_path: str,
 		namespace: Namespace,
-		logger_factory: Callable[[dict], Any] | None = None,
 	) -> None:
 		"""Initialize a store rooted at ``<base_path>/<namespace>``.
 
 		`namespace` is a relative path (``"a/b"`` string or sequence of segments) scoping this
-		store to its own directory. `logger_factory` is called with this store's context dict
-		(bound by reference, so subclasses can keep adding fields to `self.logger_context`) and
-		must return a logger exposing debug/info/warning/error/exception. When omitted, a
-		minimal logger writing to the ``suite.storage`` frappe channel is used.
+		store to its own directory.
 		"""
 
 		self.base_path = base_path
 		self.namespace = normalize_namespace(namespace)
 
 		self.logger_context = {"req_id": random_string(10), "namespace": "/".join(self.namespace)}
-		self.logger = (logger_factory or _DefaultLogger)(self.logger_context)
+		self.logger = _StorageLogger(self.logger_context)
 
 		self.path = resolve_namespace_path(self.base_path, self.namespace)
 		os.makedirs(self.path, exist_ok=True)
