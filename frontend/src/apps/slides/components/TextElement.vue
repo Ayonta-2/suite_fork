@@ -132,6 +132,10 @@ onBeforeMount(() => normalizeContent())
 	outline: none;
 }
 
+.persisted-selection {
+	background-color: Highlight;
+}
+
 .tiptap ul,
 .textElement > ul {
 	list-style: none;
