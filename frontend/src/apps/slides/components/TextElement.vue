@@ -132,6 +132,14 @@ onBeforeMount(() => normalizeContent())
 	outline: none;
 }
 
+/* match prosemirror's own .ProseMirror rule, else Inter's contextual alternates
+   raise punctuation (+ : - =) on the static render but not in the editor */
+.textElement,
+.textElement .ProseMirror {
+	font-variant-ligatures: none;
+	font-feature-settings: 'liga' 0;
+}
+
 .persisted-selection {
 	background-color: Highlight;
 }
