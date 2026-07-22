@@ -7,7 +7,7 @@ from urllib.parse import quote, unquote
 
 import frappe
 
-from suite.storage.base_store import BaseStore, Namespace
+from suite.store.base_store import BaseStore, Namespace
 
 
 class BlobStore(BaseStore):

@@ -5,7 +5,7 @@ from urllib.parse import unquote
 import frappe
 from frappe.utils import get_bench_path
 
-from suite.storage.base_store import Namespace, resolve_namespace_path
+from suite.store.base_store import Namespace, resolve_namespace_path
 
 
 def get_data_base_path() -> str:
@@ -24,6 +24,15 @@ def get_blob_base_path() -> str:
 	"""
 
 	return os.path.join(get_bench_path(), "sites", frappe.local.site, "private", "files", "blob-store")
+
+
+def get_search_base_path() -> str:
+	"""Base directory holding every Tantivy search index for the current site.
+
+	Sits alongside the site's private files, so it is per-site (multi-tenant safe) and never web-served.
+	"""
+
+	return os.path.join(get_bench_path(), "sites", frappe.local.site, "private", "files", "search-index")
 
 
 def list_namespaces(base_path: str) -> list[tuple[str, ...]]:

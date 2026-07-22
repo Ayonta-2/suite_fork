@@ -8,7 +8,7 @@ import frappe
 import lmdb
 import msgpack
 
-from suite.storage.base_store import BaseStore, Namespace
+from suite.store.base_store import BaseStore, Namespace
 
 
 class _EnvEntry:

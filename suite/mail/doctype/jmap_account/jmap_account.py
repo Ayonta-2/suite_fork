@@ -14,9 +14,14 @@ from suite.mail.jmap import (
 	invalidate_jmap_identities_cache,
 	invalidate_jmap_mailboxes_cache,
 )
-from suite.mail.search import rebuild_email_address_index
-from suite.mail.storage import Entity, get_blob_store, get_data_store
-from suite.search import destroy_search_indexes
+from suite.mail.store import (
+	Entity,
+	get_account_namespace,
+	get_blob_store,
+	get_data_store,
+	rebuild_email_address_index,
+)
+from suite.store import destroy_namespace, get_search_base_path
 
 if TYPE_CHECKING:
 	from suite.mail.jmap.services.core import CoreService
@@ -205,12 +210,15 @@ class JMAPAccount(Document):
 
 	@frappe.whitelist()
 	def clear_search_indexes(self) -> None:
-		"""Delete all search indexes belonging to the current account."""
+		"""Delete all search indexes belonging to the current account.
+
+		Removes only the account's namespace, leaving other accounts' indexes intact.
+		"""
 
 		if not self.has_clear_cache_permission():
 			return
 
-		destroy_search_indexes(self.name)
+		destroy_namespace(get_search_base_path(), get_account_namespace(self.name))
 
 	@frappe.whitelist()
 	def rebuild_search_index(self) -> None:

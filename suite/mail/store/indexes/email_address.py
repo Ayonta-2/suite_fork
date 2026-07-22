@@ -1,11 +1,11 @@
 import re
 
-from suite.search.base_index import BaseIndex, FieldSpec
+from suite.store.search_store import FieldSpec, SearchStore
 
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
 
-class EmailAddressIndex(BaseIndex):
+class EmailAddressIndex(SearchStore):
 	"""Shared, per-account index of email addresses for recipient suggestions.
 
 	Sources (cached messages, contact cards, ...) feed in plain {name, email} dicts, so the index

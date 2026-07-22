@@ -54,7 +54,7 @@ from suite.mail.jmap import (
 	get_mailbox_id_by_role,
 	get_mailbox_service,
 )
-from suite.mail.search import get_email_address_index
+from suite.mail.store import get_email_address_index
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.user import get_account_emails, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value

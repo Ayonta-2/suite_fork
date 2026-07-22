@@ -26,7 +26,7 @@ from suite.mail.jmap.services.quota.quota import QuotaService
 from suite.mail.jmap.services.sieve.sieve_script import SieveScriptService
 from suite.mail.jmap.services.vacationresponse.vacation_response import VacationResponseService
 from suite.mail.jmap.services.websocket.websocket import WebSocketService
-from suite.mail.storage import Entity, get_data_store
+from suite.mail.store import Entity, get_data_store
 from suite.mail.utils import get_config
 from suite.utils.user import is_system_manager
 

@@ -8,7 +8,7 @@ from suite.mail.doctype.address_book.address_book import fetch_address_books
 from suite.mail.doctype.contact_card.contact_card import bulk_add_contact_cards, fetch_contact_cards
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_default_address_book_id
-from suite.mail.storage import Entity, get_data_store
+from suite.mail.store import Entity, get_data_store
 
 
 @frappe.whitelist()

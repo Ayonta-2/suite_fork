@@ -1,4 +1,4 @@
-from suite.mail.search import rebuild_all_email_address_indexes
+from suite.mail.store import rebuild_all_email_address_indexes
 
 
 def execute() -> None:
