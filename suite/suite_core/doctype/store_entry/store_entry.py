@@ -214,9 +214,17 @@ def _make_name(store: str, namespace: str, key_part: str) -> str:
 
 
 def _parse_name(name: str) -> tuple[str, str, str]:
-	"""Split a record name back into (store, namespace, key_part)."""
+	"""Split a record name back into (store, namespace, key_part).
 
-	code, namespace, key_part = name.split("|", 2)
+	A well-formed name is ``<data|blob>|<namespace>|<key_part>``. A malformed one (e.g. a
+	hand-crafted URL) is treated as a missing record rather than allowed to raise ValueError.
+	"""
+
+	parts = name.split("|", 2)
+	if len(parts) != 3:
+		_not_found(name)
+
+	code, namespace, key_part = parts
 	return (DATA_STORE if code == "data" else BLOB_STORE), namespace, key_part
 
 
