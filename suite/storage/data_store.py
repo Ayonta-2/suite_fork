@@ -410,3 +410,22 @@ class DataStore(BaseStore):
 			return None
 
 		return {"value": self._deserialize(raw), "size": len(raw)}
+
+	def count_entries(self, entity: str | None = None) -> int:
+		"""Count entries, optionally within one entity, without materializing keys/values.
+
+		`entity` is a plain string (or None for every entity), so callers (e.g. the Store Entry
+		browser) don't need the entity enum. Counts over a cursor in O(1) memory.
+		"""
+
+		prefix = f"{entity}{self.SEPARATOR}".encode() if entity is not None else b""
+		total = 0
+		with self._txn(write=False) as txn:
+			cursor = txn.cursor()
+			if cursor.set_range(prefix):
+				for db_key in cursor.iternext(keys=True, values=False):
+					if not db_key.startswith(prefix):
+						break
+					total += 1
+
+		return total

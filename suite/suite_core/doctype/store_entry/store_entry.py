@@ -42,17 +42,22 @@ class StoreEntry(Document):
 	def load_from_db(self) -> None:
 		store, namespace, key_part = _parse_name(self.name)
 
+		# Guard before opening a store: instantiating one creates its namespace directory, so an
+		# unknown namespace must be rejected here rather than lazily conjured into existence.
+		if not _namespace_exists(store, namespace):
+			_not_found(self.name)
+
 		if store == DATA_STORE:
 			entity, _sep, key = key_part.partition(":")
 			entry = _data_store(namespace).read(entity, key)
 			if entry is None:
-				frappe.throw(_("Store entry {0} not found.").format(frappe.bold(self.name)))
+				_not_found(self.name)
 
 			record = _row(store, namespace, entity, key, entry["size"], value=_pretty(entry["value"]))
 		else:
 			blob = _blob_store(namespace).get(key_part)
 			if blob is None:
-				frappe.throw(_("Store entry {0} not found.").format(frappe.bold(self.name)))
+				_not_found(self.name)
 
 			record = _row(store, namespace, None, key_part, len(blob), value=_blob_preview(blob))
 
@@ -97,7 +102,10 @@ class StoreEntry(Document):
 		if not namespace or not _namespace_exists(store, namespace):
 			return 0
 
-		return len(_entries(store, namespace, entity=_filter_value(filters, "entity")))
+		if store == DATA_STORE:
+			return _data_store(namespace).count_entries(_filter_value(filters, "entity"))
+
+		return _blob_store(namespace).count()
 
 	@staticmethod
 	def get_stats(**kwargs) -> dict:
@@ -126,6 +134,12 @@ def _filter_value(filters, fieldname: str):
 		return value
 
 	return None
+
+
+def _not_found(name: str) -> None:
+	"""Raise the not-found error `load_from_db` is expected to raise for a missing record."""
+
+	frappe.throw(_("Store entry {0} not found.").format(frappe.bold(name)), frappe.DoesNotExistError)
 
 
 def _base_path(store: str) -> str:
