@@ -16,8 +16,7 @@ from suite.mail.jmap import (
 )
 from suite.mail.search import rebuild_email_address_index
 from suite.mail.storage import Entity, get_account_namespace, get_blob_store, get_data_store
-from suite.search import get_search_base_path
-from suite.storage import destroy_namespace
+from suite.store import destroy_namespace, get_search_base_path
 
 if TYPE_CHECKING:
 	from suite.mail.jmap.services.core import CoreService

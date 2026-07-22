@@ -2,9 +2,9 @@ from enum import Enum
 
 import frappe
 
-from suite.storage import destroy_namespace, get_blob_base_path, get_data_base_path
-from suite.storage.blob_store import BlobStore
-from suite.storage.data_store import DataStore
+from suite.store import destroy_namespace, get_blob_base_path, get_data_base_path
+from suite.store.blob_store import BlobStore
+from suite.store.data_store import DataStore
 
 # Root namespace segment under which all of mail's stores live, e.g. ``mail/<account>``.
 # Destroying this segment clears every mail store while leaving other apps' stores intact.

@@ -9,8 +9,8 @@ import frappe
 import tantivy
 from frappe import _
 
-from suite.search import get_search_base_path
-from suite.storage.base_store import Namespace, normalize_namespace, resolve_namespace_path
+from suite.store import get_search_base_path
+from suite.store.base_store import Namespace, normalize_namespace, resolve_namespace_path
 from suite.utils.lock import write_lock
 
 SCHEMA_VERSION_FILE = "schema.version"
@@ -27,7 +27,7 @@ class FieldSpec:
 	tokenizer: str = "default"
 
 
-class BaseIndex:
+class SearchStore:
 	"""A Tantivy full-text index for one entity type, scoped to a `namespace`.
 
 	Subclasses declare their schema via ENTITY and FIELDS, and may override `to_document`
@@ -52,7 +52,7 @@ class BaseIndex:
 		"""Resolve this index's on-disk path from namespace/ENTITY and reconcile its schema version."""
 
 		if not self.ENTITY:
-			frappe.throw("BaseIndex subclasses must define ENTITY")
+			frappe.throw("SearchStore subclasses must define ENTITY")
 
 		self.namespace = normalize_namespace(namespace)
 		# Layout is <base>/<namespace>/<entity>, so every index for a namespace (e.g. an account)
@@ -192,7 +192,7 @@ class BaseIndex:
 			hits = [self._to_hit(searcher.doc(address), score) for score, address in result.hits]
 			return (hits, result.count)
 		except Exception:
-			frappe.logger("suite.search").warning(
+			frappe.logger("suite.store").warning(
 				{"event": "search-failed", "entity": self.ENTITY, "namespace": "/".join(self.namespace)}
 			)
 			return ([], 0)

@@ -10,10 +10,10 @@ from frappe.model.document import Document
 from frappe.types.filter import FilterTuple
 from frappe.utils import cint, now
 
-from suite.storage import get_blob_base_path, get_data_base_path, list_namespaces
-from suite.storage.base_store import resolve_namespace_path
-from suite.storage.blob_store import BlobStore
-from suite.storage.data_store import DataStore
+from suite.store import get_blob_base_path, get_data_base_path, list_namespaces
+from suite.store.base_store import resolve_namespace_path
+from suite.store.blob_store import BlobStore
+from suite.store.data_store import DataStore
 
 DATA_STORE = "Data Store"
 BLOB_STORE = "Blob Store"

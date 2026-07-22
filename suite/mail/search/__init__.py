@@ -4,8 +4,7 @@ from frappe.utils import create_batch
 
 from suite.mail.search.indexes import EmailAddressIndex
 from suite.mail.storage import MAIL_NAMESPACE, get_account_namespace
-from suite.search import get_search_base_path
-from suite.storage import destroy_namespace
+from suite.store import destroy_namespace, get_search_base_path
 from suite.utils import enqueue_job
 
 # Cached records processed per index write while rebuilding, bounding memory and commit size.

@@ -47,12 +47,12 @@ class _StorageLogger:
 	"""Structured logger for the stores.
 
 	Each level takes an event name plus optional fields (and tolerates a pre-built dict as the
-	event) and emits one record per event to the ``suite.storage`` frappe logger.
+	event) and emits one record per event to the ``suite.store`` frappe logger.
 	"""
 
 	def __init__(self, ctx: dict) -> None:
 		self.ctx = ctx
-		self.logger = frappe.logger("suite.storage", allow_site=True)
+		self.logger = frappe.logger("suite.store", allow_site=True)
 
 	def _record(self, event: Any, fields: dict) -> dict:
 		if isinstance(event, dict):
