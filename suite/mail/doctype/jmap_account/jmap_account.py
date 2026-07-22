@@ -15,8 +15,7 @@ from suite.mail.jmap import (
 	invalidate_jmap_mailboxes_cache,
 )
 from suite.mail.search import rebuild_email_address_index
-from suite.mail.storage import get_blob_store, get_data_store
-from suite.mail.storage.data_store import Entity
+from suite.mail.storage import Entity, get_blob_store, get_data_store
 from suite.search import destroy_search_indexes
 
 if TYPE_CHECKING:

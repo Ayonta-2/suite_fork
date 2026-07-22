@@ -1,5 +1,6 @@
 import os
 from collections import OrderedDict
+from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from enum import Enum
 from threading import RLock
@@ -10,24 +11,7 @@ import frappe
 import lmdb
 import msgpack
 
-from suite.mail.storage.base_store import BaseStore
-
-
-class Entity(Enum):
-	"""Defines the different types of entities that can be stored in the DataStore."""
-
-	STATE = "state"
-
-	IDENTITY = "identity"
-	MAILBOX = "mailbox"
-	EMAIL = "email"
-
-	PARTICIPANT_IDENTITY = "participant_identity"
-	CALENDAR = "calendar"
-	EVENT = "event"
-
-	ADDRESS_BOOK = "address_book"
-	CONTACT_CARD = "contact_card"
+from suite.storage.base_store import BaseStore
 
 
 def env_dirname(key: str) -> str:
@@ -47,9 +31,9 @@ class _EnvEntry:
 
 
 class DataStore(BaseStore):
-	"""A key-value store backed by LMDB, with one environment per ``account`` key.
+	"""A key-value store backed by LMDB, with one environment per ``key``.
 
-	The store is shared by every user with access to the account. LMDB natively supports
+	The store is shared by every user with access to the key. LMDB natively supports
 	concurrent multi-process access: many readers run lock-free via MVCC snapshots while a
 	single writer briefly serializes on a robust mutex (and waits
 	rather than failing). Environments are kept open and shared per process, so there is no
@@ -71,7 +55,7 @@ class DataStore(BaseStore):
 
 	# Size of each environment's reader lock table. A reader slot is held per live process/thread
 	# that has the environment open, and is shared across every process via lock.mdb, so the
-	# default (126) is easily exhausted by many web + background workers on a hot account
+	# default (126) is easily exhausted by many web + background workers on a hot key
 	# (MDB_READERS_FULL). The table is a sparse file (~one page on disk until slots are used), so
 	# a generous value is effectively free. Stale slots left by crashed/recycled workers are
 	# reclaimed via reader_check().
@@ -85,17 +69,18 @@ class DataStore(BaseStore):
 		base_path: str,
 		key: str,
 		map_size: int | None = None,
+		logger_factory: Callable[[dict], Any] | None = None,
 		**_legacy: Any,
 	) -> None:
-		"""Initialize the store for the given base path and ``account`` key."""
+		"""Initialize the store for the given base path and ``key``."""
 
-		super().__init__(base_path=base_path, key=key)
+		super().__init__(base_path=base_path, key=key, logger_factory=logger_factory)
 
 		self.logger_context["store"] = "data"
 		self.map_size = map_size or self.DEFAULT_MAP_SIZE
 
 	def _get_storage_path(self) -> str:
-		"""Return the per-account LMDB environment directory for this key (no sharding)."""
+		"""Return the per-key LMDB environment directory for this key (no sharding)."""
 
 		return os.path.join(self.base_path, env_dirname(self.key))
 
@@ -263,13 +248,13 @@ class DataStore(BaseStore):
 			max_map_len=self.MAX_MSGPACK_COLLECTION_LEN,
 		)
 
-	def _make_key(self, entity: Entity, subkey: str) -> bytes:
+	def _make_key(self, entity: Enum, subkey: str) -> bytes:
 		"""Construct a full key (with entity and storage prefix) as UTF-8 bytes."""
 
 		subkey = f"{entity.value}{self.SEPARATOR}{subkey}"
 		return super()._make_key(subkey).encode()
 
-	def get(self, entity: Entity, subkey: str, default: Any | None = None) -> Any | None:
+	def get(self, entity: Enum, subkey: str, default: Any | None = None) -> Any | None:
 		"""Retrieve a value by key, returning a default if the key does not exist."""
 
 		key = self._make_key(entity, subkey)
@@ -278,27 +263,27 @@ class DataStore(BaseStore):
 
 		return self._deserialize(value) if value is not None else default
 
-	def set(self, entity: Entity, subkey: str, value: Any) -> None:
+	def set(self, entity: Enum, subkey: str, value: Any) -> None:
 		"""Store a value by key, serializing it before saving."""
 
 		key = self._make_key(entity, subkey)
 		data = self._serialize(value)
 		self._write(lambda txn: txn.put(key, data))
 
-	def delete(self, entity: Entity, subkey: str) -> None:
+	def delete(self, entity: Enum, subkey: str) -> None:
 		"""Delete a value by key."""
 
 		key = self._make_key(entity, subkey)
 		self._write(lambda txn: txn.delete(key))
 
-	def exists(self, entity: Entity, subkey: str) -> bool:
+	def exists(self, entity: Enum, subkey: str) -> bool:
 		"""Check if a key exists in the storage."""
 
 		key = self._make_key(entity, subkey)
 		with self._txn(write=False) as txn:
 			return txn.get(key) is not None
 
-	def get_many(self, entity: Entity, subkeys: list[str]) -> dict[str, Any | None]:
+	def get_many(self, entity: Enum, subkeys: list[str]) -> dict[str, Any | None]:
 		"""Retrieve multiple values by a list of keys, returning a dictionary of key-value pairs."""
 
 		if not subkeys:
@@ -311,7 +296,7 @@ class DataStore(BaseStore):
 
 		return {subkey: self._deserialize(value) if value is not None else None for subkey, value in raw}
 
-	def set_many(self, entity: Entity, items: dict[str, Any]) -> None:
+	def set_many(self, entity: Enum, items: dict[str, Any]) -> None:
 		"""Store multiple key-value pairs at once, serializing values before saving."""
 
 		if not items:
@@ -327,7 +312,7 @@ class DataStore(BaseStore):
 
 		self._write(_put_all)
 
-	def delete_many(self, entity: Entity, subkeys: list[str]) -> None:
+	def delete_many(self, entity: Enum, subkeys: list[str]) -> None:
 		"""Delete multiple keys from the storage at once."""
 
 		if not subkeys:
@@ -341,7 +326,7 @@ class DataStore(BaseStore):
 
 		self._write(_delete_all)
 
-	def scan(self, entity: Entity, prefix: str = "", limit: int | None = None) -> dict[str, Any]:
+	def scan(self, entity: Enum, prefix: str = "", limit: int | None = None) -> dict[str, Any]:
 		"""Scan for all key-value pairs that start with a given prefix, returning a dictionary of results."""
 
 		full_prefix = self._make_key(entity, prefix)
@@ -362,7 +347,7 @@ class DataStore(BaseStore):
 
 		return result
 
-	def count(self, entity: Entity, prefix: str = "") -> int:
+	def count(self, entity: Enum, prefix: str = "") -> int:
 		"""Count the number of keys that start with a given prefix."""
 
 		full_prefix = self._make_key(entity, prefix)
@@ -379,7 +364,7 @@ class DataStore(BaseStore):
 
 		return count
 
-	def delete_all(self, entity: Entity) -> None:
+	def delete_all(self, entity: Enum) -> None:
 		"""Delete all keys for a given entity type."""
 
 		self.logger.info(

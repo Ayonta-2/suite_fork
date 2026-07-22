@@ -1,23 +1,26 @@
-import os
-import shutil
+from enum import Enum
 
-import frappe
-from frappe.utils import get_bench_path
-
-from suite.mail.storage.blob_store import BlobStore
-from suite.mail.storage.data_store import DataStore
+from suite.mail.utils.logger import get_storage_logger
+from suite.storage import get_blob_base_path, get_data_base_path
+from suite.storage.blob_store import BlobStore
+from suite.storage.data_store import DataStore
 
 
-def _get_data_base_path() -> str:
-	"""Helper function to get the base path for data storage."""
+class Entity(Enum):
+	"""Defines the different types of entities that can be stored in the DataStore."""
 
-	return os.path.join(get_bench_path(), "sites", frappe.local.site, "private", "files", "data-store")
+	STATE = "state"
 
+	IDENTITY = "identity"
+	MAILBOX = "mailbox"
+	EMAIL = "email"
 
-def _get_blob_base_path() -> str:
-	"""Helper function to get the base path for blob storage."""
+	PARTICIPANT_IDENTITY = "participant_identity"
+	CALENDAR = "calendar"
+	EVENT = "event"
 
-	return os.path.join(get_bench_path(), "sites", frappe.local.site, "private", "files", "blob-store")
+	ADDRESS_BOOK = "address_book"
+	CONTACT_CARD = "contact_card"
 
 
 def get_data_store(account: str) -> DataStore:
@@ -29,26 +32,10 @@ def get_data_store(account: str) -> DataStore:
 	users (and worker processes) can hit the same account's store safely.
 	"""
 
-	base_path = _get_data_base_path()
-
-	return DataStore(base_path=base_path, key=account)
+	return DataStore(base_path=get_data_base_path(), key=account, logger_factory=get_storage_logger)
 
 
-@frappe.whitelist()
-def destroy_data_store() -> None:
-	"""Utility function to destroy the data store."""
-
-	from suite.utils.user import is_system_manager
-
-	if not is_system_manager(frappe.session.user):
-		frappe.throw(frappe._("Only System Manager can destroy the data store."))
-
-	base_path = _get_data_base_path()
-	if os.path.exists(base_path):
-		shutil.rmtree(base_path)
-
-
-def get_blob_store(account: str) -> "BlobStore":
+def get_blob_store(account: str) -> BlobStore:
 	"""Factory function to create a BlobStore instance for the given JMAP account ID.
 
 	Each account's blobs live in their own directory named by the account ID, so the blob
@@ -57,20 +44,4 @@ def get_blob_store(account: str) -> "BlobStore":
 	users/processes is safe.
 	"""
 
-	base_path = _get_blob_base_path()
-
-	return BlobStore(base_path=base_path, key=account)
-
-
-@frappe.whitelist()
-def destroy_blob_store() -> None:
-	"""Utility function to destroy the blob store."""
-
-	from suite.mail.utils.user import is_system_manager
-
-	if not is_system_manager(frappe.session.user):
-		frappe.throw(frappe._("Only System Manager can destroy the blob store."))
-
-	base_path = _get_blob_base_path()
-	if os.path.exists(base_path):
-		shutil.rmtree(base_path)
+	return BlobStore(base_path=get_blob_base_path(), key=account, logger_factory=get_storage_logger)

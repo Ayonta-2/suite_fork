@@ -13,8 +13,7 @@ from suite.mail.doctype.address_book.address_book import validate_address_book_n
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_contact_card_service
 from suite.mail.search import get_email_address_index
-from suite.mail.storage import get_data_store
-from suite.mail.storage.data_store import Entity
+from suite.mail.storage import Entity, get_data_store
 from suite.mail.utils import log_mail_error
 from suite.utils import parse_filters
 from suite.utils.dt import parse_iso_datetime

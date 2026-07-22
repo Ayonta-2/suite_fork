@@ -1,39 +1,42 @@
 import os
 import stat
 import tempfile
+from collections.abc import Callable
 from contextlib import suppress
 from threading import RLock
+from typing import Any
 from urllib.parse import quote, unquote
 
 import frappe
 
-from suite.mail.storage.base_store import BaseStore
+from suite.storage.base_store import BaseStore
 
 
 class BlobStore(BaseStore):
 	"""A blob storage backed by the local file system.
 
-	Each account's blobs live in their own directory named by the account ID
-	(``<base_path>/<account>/``); files inside are named by their encoded blob key.
+	Each key's blobs live in their own directory named by the key
+	(``<base_path>/<key>/``); files inside are named by their encoded blob key.
 	"""
 
 	def __init__(
 		self,
 		base_path: str,
 		key: str,
+		logger_factory: Callable[[dict], Any] | None = None,
 	) -> None:
-		"""Initialize per-account blob storage rooted at ``<base_path>/<account>``."""
+		"""Initialize per-key blob storage rooted at ``<base_path>/<key>``."""
 
-		super().__init__(base_path=base_path, key=key)
+		super().__init__(base_path=base_path, key=key, logger_factory=logger_factory)
 
 		self.logger_context["store"] = "blob"
 
-		# Blobs are isolated per account by directory, so the on-disk file name is just the
-		# (encoded) blob key — no account prefix is needed.
+		# Blobs are isolated per key by directory, so the on-disk file name is just the
+		# (encoded) blob key — no key prefix is needed.
 		self._prefix = ""
 
 	def _get_storage_path(self) -> str:
-		"""Store an account's blobs in their own directory, named by the account ID."""
+		"""Store a key's blobs in their own directory, named by the key."""
 
 		return os.path.join(self.base_path, self._encode_key(self.key))
 
@@ -101,9 +104,9 @@ class BlobStore(BaseStore):
 		process_lock = self._get_process_lock(blob_path)
 
 		with process_lock:
-			# Write the temp file in the base path (not the per-account directory) so it stays
+			# Write the temp file in the base path (not the per-key directory) so it stays
 			# outside what scan/count/delete_all walk, while remaining on the same filesystem
-			# for an atomic os.replace into the account directory.
+			# for an atomic os.replace into the key directory.
 			fd, temp_path = tempfile.mkstemp(dir=self.base_path)
 			try:
 				with os.fdopen(fd, "wb") as file:

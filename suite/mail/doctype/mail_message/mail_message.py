@@ -31,8 +31,7 @@ from suite.mail.jmap import get_email_service, get_jmap_connection, get_thread_s
 from suite.mail.jmap.services.mail.email import EmailService
 from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.search import get_email_address_index
-from suite.mail.storage import get_blob_store, get_data_store
-from suite.mail.storage.data_store import Entity
+from suite.mail.storage import Entity, get_blob_store, get_data_store
 from suite.mail.utils import (
 	get_config,
 	log_mail_error,

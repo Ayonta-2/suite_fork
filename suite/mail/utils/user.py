@@ -4,8 +4,7 @@ import frappe
 from frappe import _
 from frappe.utils.caching import request_cache
 
-from suite.mail.storage import get_data_store
-from suite.mail.storage.data_store import Entity
+from suite.mail.storage import Entity, get_data_store
 from suite.utils import reconnect_on_failure
 from suite.utils.user import is_system_manager
 
