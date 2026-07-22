@@ -12,10 +12,10 @@ from suite.mail.utils import log_mail_error
 def execute() -> None:
 	"""Turn screening on by default for existing personal accounts that haven't customised filtering.
 
-	Screening now defaults to on for newly created accounts (JMAP Account.enable_screening), but
-	accounts created before that still have it off. This backfills them, limited to *personal*
-	accounts (a user's own account, not a shared or delegated one) that don't have a custom Sieve
-	script active — if the account's active script is one the user wrote themselves, they've taken
+	Screening now defaults to on for newly created *personal* accounts (JMAP Account.enable_screening),
+	but personal accounts created before that may still have it off. This backfills them, limited to
+	*personal* accounts (a user's own account, not a shared or delegated one) that don't have a custom
+	Sieve script active — if the account's active script is one the user wrote themselves, they've taken
 	over their own filtering and we leave it untouched. Our own scripts (the frappe_mail_automation
 	script and the read-only vacation auto-responder) don't count as custom, and neither does having
 	no active script at all.
