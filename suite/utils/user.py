@@ -1,9 +1,11 @@
 import frappe
 from frappe import _
-from frappe.core.doctype.user.user import generate_keys
+from frappe.core.doctype.user.user import User, generate_keys
 from frappe.utils.caching import request_cache
 
 from suite.utils import user_context
+
+RESERVED_USERS = ("Guest", "Administrator")
 
 
 def is_administrator(user: str) -> bool:
@@ -41,10 +43,60 @@ def is_suite_admin(user: str) -> bool:
 	return has_role(user, "Suite Admin")
 
 
+@request_cache
+def is_suite_user(user: str) -> bool:
+	"""Returns True if the user is a Suite User else False."""
+
+	return has_role(user, "Suite User")
+
+
 def is_user_enabled(user: str) -> bool:
 	"""Returns True if the user account is enabled else False."""
 
 	return bool(frappe.db.get_value("User", user, "enabled"))
+
+
+def assign_role(user: User, role_name: str, desk_access: bool = True) -> None:
+	"""Append `role_name` to an in-memory User doc, creating the Role if missing.
+
+	Meant to be called from a `before_insert` hook so the role is part of the
+	document Frappe validates. Assigning roles after insert is too late for
+	`User.check_roles_added` (which warns "Newly created user X has no roles
+	enabled") and for `User.set_system_user` (which demotes a role-less user to
+	a Website User), and it costs an extra `User.save` per role.
+
+	When the Role does not yet exist (e.g. programmatic site setup before the
+	fixture syncs) it is created with `desk_access` so it matches its fixture.
+	Getting this wrong matters: `set_system_user` keys the new user's `user_type`
+	off whether any assigned role has desk access, so creating a desk-access role
+	without it here would silently demote the user to a Website User.
+	"""
+	# `before_insert` runs ahead of `set_new_name`, so `user.name` is still unset
+	# on a fresh User — fall back to the email it will be named after.
+	identifier = user.name or user.email
+	if not identifier or identifier in RESERVED_USERS:
+		return
+
+	if not frappe.db.exists("Role", role_name):
+		frappe.get_doc(
+			{"doctype": "Role", "role_name": role_name, "desk_access": int(desk_access)}
+		).insert(ignore_permissions=True)
+
+	if any(row.role == role_name for row in user.get("roles") or []):
+		return
+
+	user.append("roles", {"role": role_name})
+
+
+def assign_suite_role(user: User, method: str | None = None) -> None:
+	"""Grant the suite-wide "Suite User" role to a new User.
+
+	Wired to the User `before_insert` hook so every new user gets suite access
+	(mail, calendar, meet, ...) before Frappe validates the document — see
+	`assign_role` for why assignment happens before insert.
+	"""
+
+	assign_role(user, "Suite User")
 
 
 @frappe.whitelist(methods=["POST"])

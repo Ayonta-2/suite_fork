@@ -60,7 +60,7 @@
   {
    "create": 1,
    "read": 1,
-   "role": "Drive User"
+   "role": "Suite User"
   }
  ],
  "row_format": "Dynamic",

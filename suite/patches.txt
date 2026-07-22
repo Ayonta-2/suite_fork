@@ -28,9 +28,9 @@ suite.drive.patches.settings
 suite.drive.patches.new_writer #3
 suite.drive.patches.turn_on_flat_disk
 suite.drive.patches.add_modified_field
-suite.drive.patches.add_drive_user_role
 suite.drive.patches.add_search_index
 suite.drive.patches.migrate_s3_url_prefix
+suite.drive.patches.switch_drive_roles_to_suite_roles
 # --- slides ---
 suite.slides.doctype.presentation.patches.sanitize_attachment_urls
 suite.slides.doctype.presentation.patches.move_attachments_to_private_folder
@@ -44,6 +44,7 @@ suite.writer.patches.autopopulate_html
 suite.sheets.patches.v0_1.migrate_blob_to_cells
 # --- meet ---
 suite.meet.patches.migrate_meeting_fields_to_table_multiselect
+suite.meet.patches.switch_meet_user_to_suite_user
 # --- mail ---
 suite.mail.patches.generate_ssh_keypair_for_cluster
 suite.mail.patches.create_push_subscriptions

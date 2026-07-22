@@ -79,19 +79,6 @@ def get_country_info():
 	return frappe.cache().hget("ip_country_map", ip, generator=_get_country_info)
 
 
-def assign_drive_role(user, method: str | None = None) -> None:
-	"""Assign the "Drive User" role to a new User.
-
-	Runs on `before_insert` (not `after_insert`) so the role is present by the
-	time Frappe's `User.validate` runs: `check_roles_added` would otherwise warn
-	"Newly created user X has no roles enabled", and `set_system_user` would
-	demote the user to a Website User for having no desk-access role.
-	"""
-	from suite.suite_core.roles import assign_role
-
-	assign_role(user, "Drive User")
-
-
 def create_drive_settings_and_team(user, method: str | None = None) -> None:
 	"""Create Drive Settings and a personal team for a newly created User."""
 	from suite.drive.api.product import create_team

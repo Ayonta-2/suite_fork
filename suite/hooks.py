@@ -223,8 +223,7 @@ doc_events = {
 		# User.validate runs — assigning them after insert triggers a spurious
 		# "No Roles Specified" warning and leaves user_type mis-resolved.
 		"before_insert": [
-			"suite.drive.utils.users.assign_drive_role",
-			"suite.meet.utils.user.assign_meet_role",
+			"suite.utils.user.assign_suite_role",
 		],
 		"after_insert": [
 			"suite.drive.utils.users.create_drive_settings_and_team",

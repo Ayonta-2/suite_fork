@@ -288,7 +288,7 @@ def drive_permission_has_permission(doc, ptype="read", user=None):
 	share()/unshare() flows are unaffected as they save with ignore_permissions.
 	"""
 	user = user or frappe.session.user
-	if user == "Administrator" or "Drive Admin" in frappe.get_roles(user):
+	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
 		return True
 	if isinstance(doc, str):
 		doc = frappe.get_doc("Drive Permission", doc)
@@ -307,7 +307,7 @@ def drive_team_has_permission(doc, ptype="read", user=None):
 	can't add or elevate themselves.
 	"""
 	user = user or frappe.session.user
-	if user == "Administrator" or "Drive Admin" in frappe.get_roles(user):
+	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
 		return True
 	if isinstance(doc, str):
 		doc = frappe.get_doc("Drive Team", doc)
