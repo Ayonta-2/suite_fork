@@ -234,60 +234,60 @@ class DataStore(BaseStore):
 		)
 
 	def _entity_prefix(self, entity: Enum) -> str:
-		"""Return the ``<entity>:`` key prefix that scopes keys to an entity within the namespace."""
+		"""Return the ``<entity>:`` prefix that scopes keys to an entity within the namespace."""
 
 		return f"{entity.value}{self.SEPARATOR}"
 
-	def _make_key(self, entity: Enum, subkey: str) -> bytes:
-		"""Construct a full key (entity-scoped) as UTF-8 bytes.
+	def _db_key(self, entity: Enum, key: str) -> bytes:
+		"""Encode a caller's `key` into the entity-scoped LMDB key stored on disk.
 
-		The namespace already isolates this store's directory, so keys carry only the entity
-		prefix, not the namespace.
+		The namespace already isolates this store's directory, so the on-disk key is just
+		``<entity>:<key>`` (as UTF-8 bytes); it does not repeat the namespace.
 		"""
 
-		return f"{self._entity_prefix(entity)}{subkey}".encode()
+		return f"{self._entity_prefix(entity)}{key}".encode()
 
-	def get(self, entity: Enum, subkey: str, default: Any | None = None) -> Any | None:
+	def get(self, entity: Enum, key: str, default: Any | None = None) -> Any | None:
 		"""Retrieve a value by key, returning a default if the key does not exist."""
 
-		key = self._make_key(entity, subkey)
+		db_key = self._db_key(entity, key)
 		with self._txn(write=False) as txn:
-			value = txn.get(key)
+			value = txn.get(db_key)
 
 		return self._deserialize(value) if value is not None else default
 
-	def set(self, entity: Enum, subkey: str, value: Any) -> None:
+	def set(self, entity: Enum, key: str, value: Any) -> None:
 		"""Store a value by key, serializing it before saving."""
 
-		key = self._make_key(entity, subkey)
+		db_key = self._db_key(entity, key)
 		data = self._serialize(value)
-		self._write(lambda txn: txn.put(key, data))
+		self._write(lambda txn: txn.put(db_key, data))
 
-	def delete(self, entity: Enum, subkey: str) -> None:
+	def delete(self, entity: Enum, key: str) -> None:
 		"""Delete a value by key."""
 
-		key = self._make_key(entity, subkey)
-		self._write(lambda txn: txn.delete(key))
+		db_key = self._db_key(entity, key)
+		self._write(lambda txn: txn.delete(db_key))
 
-	def exists(self, entity: Enum, subkey: str) -> bool:
+	def exists(self, entity: Enum, key: str) -> bool:
 		"""Check if a key exists in the storage."""
 
-		key = self._make_key(entity, subkey)
+		db_key = self._db_key(entity, key)
 		with self._txn(write=False) as txn:
-			return txn.get(key) is not None
+			return txn.get(db_key) is not None
 
-	def get_many(self, entity: Enum, subkeys: list[str]) -> dict[str, Any | None]:
+	def get_many(self, entity: Enum, keys: list[str]) -> dict[str, Any | None]:
 		"""Retrieve multiple values by a list of keys, returning a dictionary of key-value pairs."""
 
-		if not subkeys:
+		if not keys:
 			return {}
 
-		keys = [(subkey, self._make_key(entity, subkey)) for subkey in subkeys]
+		db_keys = [(key, self._db_key(entity, key)) for key in keys]
 
 		with self._txn(write=False) as txn:
-			raw = [(subkey, txn.get(key)) for subkey, key in keys]
+			raw = [(key, txn.get(db_key)) for key, db_key in db_keys]
 
-		return {subkey: self._deserialize(value) if value is not None else None for subkey, value in raw}
+		return {key: self._deserialize(value) if value is not None else None for key, value in raw}
 
 	def set_many(self, entity: Enum, items: dict[str, Any]) -> None:
 		"""Store multiple key-value pairs at once, serializing values before saving."""
@@ -295,46 +295,44 @@ class DataStore(BaseStore):
 		if not items:
 			return
 
-		encoded = [
-			(self._make_key(entity, subkey), self._serialize(value)) for subkey, value in items.items()
-		]
+		encoded = [(self._db_key(entity, key), self._serialize(value)) for key, value in items.items()]
 
 		def _put_all(txn: Any) -> None:
-			for key, data in encoded:
-				txn.put(key, data)
+			for db_key, data in encoded:
+				txn.put(db_key, data)
 
 		self._write(_put_all)
 
-	def delete_many(self, entity: Enum, subkeys: list[str]) -> None:
+	def delete_many(self, entity: Enum, keys: list[str]) -> None:
 		"""Delete multiple keys from the storage at once."""
 
-		if not subkeys:
+		if not keys:
 			return
 
-		keys = [self._make_key(entity, subkey) for subkey in subkeys]
+		db_keys = [self._db_key(entity, key) for key in keys]
 
 		def _delete_all(txn: Any) -> None:
-			for key in keys:
-				txn.delete(key)
+			for db_key in db_keys:
+				txn.delete(db_key)
 
 		self._write(_delete_all)
 
 	def scan(self, entity: Enum, prefix: str = "", limit: int | None = None) -> dict[str, Any]:
-		"""Scan for all key-value pairs that start with a given prefix, returning a dictionary of results."""
+		"""Scan for all key-value pairs whose key starts with `prefix`, returning them as a dict."""
 
 		entity_prefix = self._entity_prefix(entity)
-		full_prefix = self._make_key(entity, prefix)
+		db_prefix = self._db_key(entity, prefix)
 		result = {}
 
 		with self._txn(write=False) as txn:
 			cursor = txn.cursor()
-			if cursor.set_range(full_prefix):
-				for key, value in cursor:
-					if not key.startswith(full_prefix):
+			if cursor.set_range(db_prefix):
+				for db_key, value in cursor:
+					if not db_key.startswith(db_prefix):
 						break
 
-					subkey = key.decode().removeprefix(entity_prefix)
-					result[subkey] = self._deserialize(value)
+					key = db_key.decode().removeprefix(entity_prefix)
+					result[key] = self._deserialize(value)
 
 					if limit is not None and len(result) >= limit:
 						break
@@ -342,16 +340,16 @@ class DataStore(BaseStore):
 		return result
 
 	def count(self, entity: Enum, prefix: str = "") -> int:
-		"""Count the number of keys that start with a given prefix."""
+		"""Count the number of keys that start with `prefix`."""
 
-		full_prefix = self._make_key(entity, prefix)
+		db_prefix = self._db_key(entity, prefix)
 		count = 0
 
 		with self._txn(write=False) as txn:
 			cursor = txn.cursor()
-			if cursor.set_range(full_prefix):
-				for key in cursor.iternext(keys=True, values=False):
-					if not key.startswith(full_prefix):
+			if cursor.set_range(db_prefix):
+				for db_key in cursor.iternext(keys=True, values=False):
+					if not db_key.startswith(db_prefix):
 						break
 
 					count += 1
@@ -370,14 +368,14 @@ class DataStore(BaseStore):
 			}
 		)
 
-		full_prefix = self._make_key(entity, "")
+		db_prefix = self._db_key(entity, "")
 
 		def _delete_prefix(txn: Any) -> None:
 			# Delete in place via the cursor (O(1) memory) instead of materializing every key.
 			# cursor.delete() removes the current entry and advances to the next one.
 			cursor = txn.cursor()
-			if cursor.set_range(full_prefix):
-				while cursor.key().startswith(full_prefix):
+			if cursor.set_range(db_prefix):
+				while cursor.key().startswith(db_prefix):
 					if not cursor.delete():
 						break
 

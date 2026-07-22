@@ -490,7 +490,7 @@ def _get_cached_contact_cards(account: str, ids: list[str]) -> dict[str, dict | 
 	"""Returns a dictionary of cached contact cards for the given account and IDs."""
 
 	store = get_data_store(account)
-	return store.get_many(Entity.CONTACT_CARD, subkeys=ids)
+	return store.get_many(Entity.CONTACT_CARD, keys=ids)
 
 
 def _cache_contact_cards(account: str, contact_cards: dict[str, dict]) -> None:
@@ -516,7 +516,7 @@ def _remove_cached_contact_cards(account: str, ids: list[str]) -> None:
 	"""
 
 	store = get_data_store(account)
-	store.delete_many(Entity.CONTACT_CARD, subkeys=ids)
+	store.delete_many(Entity.CONTACT_CARD, keys=ids)
 
 
 def _contact_addresses(contact_cards: list[dict]) -> list[dict]:

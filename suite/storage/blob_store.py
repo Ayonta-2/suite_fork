@@ -50,10 +50,10 @@ class BlobStore(BaseStore):
 
 		return unquote(key)
 
-	def _get_blob_path(self, subkey: str) -> str:
+	def _get_blob_path(self, key: str) -> str:
 		"""Return the file path for the given blob key."""
 
-		return os.path.join(self.path, self._encode_key(subkey))
+		return os.path.join(self.path, self._encode_key(key))
 
 	def _read_blob(self, path: str) -> bytes | None:
 		"""Read a blob from disk if it exists."""
@@ -75,16 +75,16 @@ class BlobStore(BaseStore):
 		except OSError:
 			return None
 
-	def get(self, subkey: str, default: bytes | None = None) -> bytes | None:
+	def get(self, key: str, default: bytes | None = None) -> bytes | None:
 		"""Retrieve a blob by key, returning a default if the key does not exist."""
 
-		value = self._read_blob(self._get_blob_path(subkey))
+		value = self._read_blob(self._get_blob_path(key))
 		return value if value is not None else default
 
-	def set(self, subkey: str, value: bytes | bytearray | memoryview) -> None:
+	def set(self, key: str, value: bytes | bytearray | memoryview) -> None:
 		"""Store a blob by key using an atomic file replacement."""
 
-		blob_path = self._get_blob_path(subkey)
+		blob_path = self._get_blob_path(key)
 		if not self._is_within_storage_path(blob_path):
 			raise ValueError("Invalid blob path")
 
@@ -92,9 +92,9 @@ class BlobStore(BaseStore):
 		process_lock = self._get_process_lock(blob_path)
 
 		with process_lock:
-			# Write the temp file in the base path (not the per-key directory) so it stays
+			# Write the temp file in the base path (not the blob's directory) so it stays
 			# outside what scan/count/delete_all walk, while remaining on the same filesystem
-			# for an atomic os.replace into the key directory.
+			# for an atomic os.replace into place.
 			fd, temp_path = tempfile.mkstemp(dir=self.base_path)
 			try:
 				with os.fdopen(fd, "wb") as file:
@@ -106,10 +106,10 @@ class BlobStore(BaseStore):
 					os.unlink(temp_path)
 				raise
 
-	def delete(self, subkey: str) -> None:
+	def delete(self, key: str) -> None:
 		"""Delete a blob by key."""
 
-		blob_path = self._get_blob_path(subkey)
+		blob_path = self._get_blob_path(key)
 		if not self._is_within_storage_path(blob_path):
 			return
 
@@ -119,10 +119,10 @@ class BlobStore(BaseStore):
 			with suppress(FileNotFoundError):
 				os.remove(blob_path)
 
-	def exists(self, subkey: str) -> bool:
+	def exists(self, key: str) -> bool:
 		"""Check if a blob exists in the storage."""
 
-		blob_path = self._get_blob_path(subkey)
+		blob_path = self._get_blob_path(key)
 		if not self._is_within_storage_path(blob_path):
 			return False
 
@@ -131,15 +131,15 @@ class BlobStore(BaseStore):
 		except FileNotFoundError:
 			return False
 
-	def get_many(self, subkeys: list[str]) -> dict[str, bytes | None]:
+	def get_many(self, keys: list[str]) -> dict[str, bytes | None]:
 		"""Retrieve multiple blobs by key."""
 
-		if not subkeys:
+		if not keys:
 			return {}
 
 		result = {}
-		for subkey in subkeys:
-			result[subkey] = self._read_blob(self._get_blob_path(subkey))
+		for key in keys:
+			result[key] = self._read_blob(self._get_blob_path(key))
 
 		return result
 
@@ -149,16 +149,16 @@ class BlobStore(BaseStore):
 		if not items:
 			return
 
-		for subkey, value in items.items():
-			self.set(subkey, value)
+		for key, value in items.items():
+			self.set(key, value)
 
-	def delete_many(self, subkeys: list[str]) -> None:
+	def delete_many(self, keys: list[str]) -> None:
 		"""Delete multiple blobs."""
 
-		if not subkeys:
+		if not keys:
 			return
 
-		for key in subkeys:
+		for key in keys:
 			self.delete(key)
 
 	def scan(self, prefix: str = "") -> dict[str, bytes]:
@@ -176,8 +176,8 @@ class BlobStore(BaseStore):
 				if value is None:
 					continue
 
-				subkey = self._decode_key(entry.name)
-				result[subkey] = value
+				key = self._decode_key(entry.name)
+				result[key] = value
 
 		return result
 

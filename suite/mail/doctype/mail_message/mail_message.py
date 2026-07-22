@@ -1262,11 +1262,11 @@ def _get_cached_messages(account: str, ids: list[str]) -> dict[str, dict | None]
 	"""Returns a dictionary of cached messages for the provided IDs."""
 
 	store = get_data_store(account)
-	return store.get_many(Entity.EMAIL, subkeys=ids)
+	return store.get_many(Entity.EMAIL, keys=ids)
 
 
 def _cache_messages(account: str, messages: dict[str, dict]) -> None:
-	"""Store messages in cache with the message ID as the subkey, and index their addresses for search."""
+	"""Store messages in cache with the message ID as the key, and index their addresses for search."""
 
 	store = get_data_store(account)
 	store.set_many(Entity.EMAIL, items=messages)
@@ -1288,7 +1288,7 @@ def _remove_cached_messages(account: str, ids: list[str]) -> None:
 	"""
 
 	store = get_data_store(account)
-	store.delete_many(Entity.EMAIL, subkeys=ids)
+	store.delete_many(Entity.EMAIL, keys=ids)
 
 
 def _message_addresses(messages: list[dict]) -> list[dict]:
@@ -1307,11 +1307,11 @@ def _get_cached_blobs(account: str, blob_ids: list[str]) -> dict[str, bytes | No
 	"""Returns a dictionary of cached blobs for the provided blob IDs."""
 
 	store = get_blob_store(account)
-	return store.get_many(subkeys=blob_ids)
+	return store.get_many(keys=blob_ids)
 
 
 def _cache_blobs(account: str, blobs: dict[str, bytes]) -> None:
-	"""Store blobs in cache with the blob ID as the subkey."""
+	"""Store blobs in cache with the blob ID as the key."""
 
 	store = get_blob_store(account)
 	store.set_many(items=blobs)
