@@ -309,6 +309,10 @@ def _ensure_jmap_account_docs(user: str, accounts: dict[str, dict]) -> list[str]
 		doc.is_personal = details["isPersonal"]
 		doc.is_readonly = details["isReadOnly"]
 
+		# Screening is opt-in for shared/team accounts, but on by default for personal
+		# ones. Account owners can still toggle it manually afterwards.
+		doc.enable_screening = doc.is_personal
+
 		# Carry the user so after_insert / validate can reach JMAP for this account.
 		doc.flags.user = user
 
