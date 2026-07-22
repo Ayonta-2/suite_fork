@@ -16,7 +16,7 @@ from suite.mail.doctype.user_account.user_account import (
 )
 from suite.mail.utils import get_config, get_messages_directory
 from suite.mail.utils.logger import get_outbound_logger
-from suite.mail.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 
 @frappe.whitelist(methods=["POST"])

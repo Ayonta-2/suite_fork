@@ -1,7 +1,7 @@
 import frappe
 from frappe.core.api.file import create_new_folder
 
-from suite.mail.doctype.rate_limit.rate_limit import create_rate_limit
+from suite.suite_core.doctype.rate_limit.rate_limit import create_rate_limit
 from suite.mail.stalwart.cli import StalwartCLI
 
 

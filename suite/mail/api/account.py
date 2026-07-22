@@ -14,7 +14,7 @@ from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.stalwart import get_domains
 from suite.mail.utils import is_stalwart_configured, log_mail_error
 from suite.mail.utils.dns import parse_dns_zone_file
-from suite.mail.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import (
 	has_user_settings,
 	is_jmap_configured,

@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 
 from suite.mail.doctype.spam_check_log.spam_check_log import create_spam_check_log
-from suite.mail.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 
 @frappe.whitelist(methods=["POST"])
