@@ -150,7 +150,13 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
         }
         try {
           const result = await call('suite.sheets.api.save_sheet', args, { keepalive })
-          currentTitle.value = title
+          // Deliberately DON'T write `title` back into currentTitle here.
+          // `title` is a snapshot captured when this save was queued (up to
+          // the 2s debounce + network round-trip ago), and the server echoes
+          // nothing new — so assigning it back can only clobber keystrokes the
+          // user typed while the save was in flight and reset their caret to
+          // the end (the "jittery title" bug). currentTitle is already the
+          // local source of truth; leave it alone.
           // First success clears any sticky error from a previous failure.
           saveError.value = ''
           _lastSaveArgs   = null
