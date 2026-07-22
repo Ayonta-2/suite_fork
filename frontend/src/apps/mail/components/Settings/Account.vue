@@ -47,6 +47,17 @@
 		>
 			<Switch v-model="destroyNewsletterAfterSubmit" />
 		</SettingsRow>
+		<SettingsRow
+			class="!py-0"
+			:title="__('Keep Forwarded Email In Thread')"
+			:description="
+				__(
+					'Keep forwarded emails in the same thread as the original by referencing it in the In-Reply-To header.',
+				)
+			"
+		>
+			<Switch v-model="keepForwardedEmailInThread" />
+		</SettingsRow>
 
 		<h2 class="text-base-semibold text-ink-gray-8">{{ __('Incoming') }}</h2>
 		<SettingsRow
@@ -148,6 +159,11 @@ const destroyEmailAfterSubmit = computed({
 const destroyNewsletterAfterSubmit = computed({
 	get: () => !!jmapAccount.doc.destroy_newsletter_after_submit,
 	set: (val: boolean) => (jmapAccount.doc.destroy_newsletter_after_submit = val ? 1 : 0),
+})
+
+const keepForwardedEmailInThread = computed({
+	get: () => !!jmapAccount.doc.keep_forwarded_email_in_thread,
+	set: (val: boolean) => (jmapAccount.doc.keep_forwarded_email_in_thread = val ? 1 : 0),
 })
 
 const enableScreening = computed({

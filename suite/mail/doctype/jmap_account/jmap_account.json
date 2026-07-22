@@ -16,6 +16,7 @@
   "create_contacts_after_email_submit",
   "destroy_email_after_submit",
   "destroy_newsletter_after_submit",
+  "keep_forwarded_email_in_thread",
   "incoming_section",
   "on_mark_as_junk",
   "column_break_fnnk",
@@ -74,6 +75,14 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Destroy Newsletter After Submit"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, forwarded emails include an In-Reply-To header pointing to the original email, so the mail server keeps them in the same thread as the original.",
+   "fieldname": "keep_forwarded_email_in_thread",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Keep Forwarded Email In Thread"
   },
   {
    "fieldname": "incoming_section",
@@ -330,7 +339,7 @@
    "link_fieldname": "account"
   }
  ],
- "modified": "2026-07-22 14:56:41.320704",
+ "modified": "2026-07-22 15:10:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "JMAP Account",
