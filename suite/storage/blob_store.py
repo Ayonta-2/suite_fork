@@ -194,6 +194,22 @@ class BlobStore(BaseStore):
 
 		return count
 
+	def browse(self, limit: int | None = None) -> list[dict]:
+		"""List blobs as ``{key, size}`` without reading their contents (for tooling)."""
+
+		entries = []
+		with os.scandir(self.path) as scan:
+			for entry in scan:
+				if not entry.is_file(follow_symlinks=False):
+					continue
+
+				entries.append({"key": self._decode_key(entry.name), "size": entry.stat().st_size})
+
+				if limit is not None and len(entries) >= limit:
+					break
+
+		return entries
+
 	def delete_all(self) -> None:
 		"""Delete every blob in this namespace's directory."""
 

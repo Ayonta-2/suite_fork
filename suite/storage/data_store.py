@@ -380,3 +380,33 @@ class DataStore(BaseStore):
 						break
 
 		self._write(_delete_prefix)
+
+	def browse(self, limit: int | None = None) -> list[dict]:
+		"""List every entry as ``{entity, key, size}`` without deserializing values (for tooling)."""
+
+		entries = []
+		with self._txn(write=False) as txn:
+			for db_key, value in txn.cursor():
+				entity, _, key = db_key.decode().partition(self.SEPARATOR)
+				entries.append({"entity": entity, "key": key, "size": len(value)})
+
+				if limit is not None and len(entries) >= limit:
+					break
+
+		return entries
+
+	def read(self, entity: str, key: str) -> dict | None:
+		"""Return ``{value, size}`` for a single entry, or None if it is absent (for tooling).
+
+		Unlike `get`, `entity` is a plain string, so callers (e.g. the Store Entry browser) do
+		not need the entity enum.
+		"""
+
+		db_key = f"{entity}{self.SEPARATOR}{key}".encode()
+		with self._txn(write=False) as txn:
+			raw = txn.get(db_key)
+
+		if raw is None:
+			return None
+
+		return {"value": self._deserialize(raw), "size": len(raw)}
