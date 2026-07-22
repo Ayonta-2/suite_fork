@@ -107,7 +107,7 @@ export const useTextEditor = () => {
 	const toggleMark = (property) => {
 		const currentEditor = activeEditor.value
 
-		const chain = currentEditor.chain().focus()
+		const chain = currentEditor.chain()
 
 		const { empty } = currentEditor.state.selection
 		if (empty) chain.selectAll()
@@ -160,7 +160,7 @@ export const useTextEditor = () => {
 
 		if (value == current) return
 
-		const chain = activeEditor.value.chain().focus()
+		const chain = activeEditor.value.chain()
 
 		if (value == 'none') {
 			chain.liftListItem('listItem').run()
@@ -179,7 +179,7 @@ export const useTextEditor = () => {
 	const updateProperty = (property, value) => {
 		const currentEditor = activeEditor.value
 
-		const chain = currentEditor.chain().focus()
+		const chain = currentEditor.chain()
 
 		if (property == 'list') return setListProperty(value)
 

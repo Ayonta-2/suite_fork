@@ -1,5 +1,8 @@
 <template>
-	<div class="no-scrollbar flex h-full w-72 flex-col overflow-y-auto border-l bg-surface-base px-4">
+	<div
+		class="no-scrollbar flex h-full w-72 flex-col overflow-y-auto border-l bg-surface-base px-4"
+		@mousedown="keepEditorFocus"
+	>
 		<div v-if="activeElementIds.length">
 			<PositionSection />
 			<Divider flexItem />
@@ -59,4 +62,9 @@ import TransitionSection from './TransitionSection.vue'
 const isEditingShapeText = computed(
 	() => activeElement.value?.type === 'shape' && focusElementId.value === activeElement.value?.id,
 )
+
+const keepEditorFocus = (e) => {
+	if (e.target.closest('input, textarea')) return
+	e.preventDefault()
+}
 </script>
