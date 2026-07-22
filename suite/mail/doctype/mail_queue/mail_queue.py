@@ -270,7 +270,7 @@ class MailQueue(OwnerFromUser, Document):
 		from suite.mail.doctype.mail_message.mail_message import _get_cached_blobs
 
 		if self.blob_id:
-			blobs = _get_cached_blobs(f"{self.user}:{self.account}", [self.blob_id])
+			blobs = _get_cached_blobs(self.account, [self.blob_id])
 			if content := blobs.get(self.blob_id):
 				return content.decode("utf-8")
 
@@ -664,7 +664,7 @@ class MailQueue(OwnerFromUser, Document):
 
 		from suite.mail.doctype.mail_message.mail_message import fetch_blob
 
-		return fetch_blob(f"{self.user}:{self.account}", self.blob_id).decode("utf-8")
+		return fetch_blob(self.account, self.blob_id).decode("utf-8")
 
 	def _process(self) -> None:
 		"""Create, Update or Submit the Email."""
