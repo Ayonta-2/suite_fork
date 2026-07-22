@@ -9,36 +9,27 @@ from urllib.parse import quote, unquote
 
 import frappe
 
-from suite.storage.base_store import BaseStore
+from suite.storage.base_store import BaseStore, Namespace
 
 
 class BlobStore(BaseStore):
 	"""A blob storage backed by the local file system.
 
-	Each key's blobs live in their own directory named by the key
-	(``<base_path>/<key>/``); files inside are named by their encoded blob key.
+	Each namespace's blobs live in their own directory (``<base_path>/<namespace>/``); files
+	inside are named by their encoded blob key.
 	"""
 
 	def __init__(
 		self,
 		base_path: str,
-		key: str,
+		namespace: Namespace,
 		logger_factory: Callable[[dict], Any] | None = None,
 	) -> None:
-		"""Initialize per-key blob storage rooted at ``<base_path>/<key>``."""
+		"""Initialize per-namespace blob storage rooted at ``<base_path>/<namespace>``."""
 
-		super().__init__(base_path=base_path, key=key, logger_factory=logger_factory)
+		super().__init__(base_path=base_path, namespace=namespace, logger_factory=logger_factory)
 
 		self.logger_context["store"] = "blob"
-
-		# Blobs are isolated per key by directory, so the on-disk file name is just the
-		# (encoded) blob key — no key prefix is needed.
-		self._prefix = ""
-
-	def _get_storage_path(self) -> str:
-		"""Store a key's blobs in their own directory, named by the key."""
-
-		return os.path.join(self.base_path, self._encode_key(self.key))
 
 	def _is_within_storage_path(self, path: str) -> bool:
 		"""Return True when a path resolves within the configured storage directory."""
@@ -65,7 +56,7 @@ class BlobStore(BaseStore):
 	def _get_blob_path(self, subkey: str) -> str:
 		"""Return the file path for the given blob key."""
 
-		return os.path.join(self.path, self._encode_key(self._make_key(subkey)))
+		return os.path.join(self.path, self._encode_key(subkey))
 
 	def _read_blob(self, path: str) -> bytes | None:
 		"""Read a blob from disk if it exists."""
@@ -176,7 +167,7 @@ class BlobStore(BaseStore):
 	def scan(self, prefix: str = "") -> dict[str, bytes]:
 		"""Scan for all blobs whose keys start with the given prefix."""
 
-		encoded_prefix = self._encode_key(self._make_key(prefix))
+		encoded_prefix = self._encode_key(prefix)
 		result = {}
 
 		with os.scandir(self.path) as entries:
@@ -188,7 +179,7 @@ class BlobStore(BaseStore):
 				if value is None:
 					continue
 
-				subkey = self._normalize_scan_key(self._decode_key(entry.name))
+				subkey = self._decode_key(entry.name)
 				result[subkey] = value
 
 		return result
@@ -196,7 +187,7 @@ class BlobStore(BaseStore):
 	def count(self, prefix: str = "") -> int:
 		"""Count the number of blobs whose keys start with the given prefix."""
 
-		encoded_prefix = self._encode_key(self._make_key(prefix))
+		encoded_prefix = self._encode_key(prefix)
 		count = 0
 
 		with os.scandir(self.path) as entries:
@@ -207,14 +198,12 @@ class BlobStore(BaseStore):
 		return count
 
 	def delete_all(self) -> None:
-		"""Delete all blobs in the storage for the current key prefix."""
+		"""Delete every blob in this namespace's directory."""
 
 		self.logger.info({**self.logger_context, "user": frappe.session.user, "event": "deleting-all-blobs"})
 
-		encoded_prefix = self._encode_key(self._get_prefix())
-
 		with os.scandir(self.path) as entries:
 			for entry in entries:
-				if entry.is_file(follow_symlinks=False) and entry.name.startswith(encoded_prefix):
+				if entry.is_file(follow_symlinks=False):
 					with suppress(FileNotFoundError):
 						os.remove(entry.path)

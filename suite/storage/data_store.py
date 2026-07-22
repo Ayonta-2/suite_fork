@@ -1,23 +1,15 @@
-import os
 from collections import OrderedDict
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from enum import Enum
 from threading import RLock
 from typing import Any, ClassVar
-from urllib.parse import quote
 
 import frappe
 import lmdb
 import msgpack
 
-from suite.storage.base_store import BaseStore
-
-
-def env_dirname(key: str) -> str:
-	"""Return the filesystem-safe directory name for a store key's LMDB environment."""
-
-	return quote(key, safe="")
+from suite.storage.base_store import BaseStore, Namespace
 
 
 class _EnvEntry:
@@ -31,9 +23,9 @@ class _EnvEntry:
 
 
 class DataStore(BaseStore):
-	"""A key-value store backed by LMDB, with one environment per ``key``.
+	"""A key-value store backed by LMDB, with one environment per ``namespace``.
 
-	The store is shared by every user with access to the key. LMDB natively supports
+	The store is shared by every user with access to the namespace. LMDB natively supports
 	concurrent multi-process access: many readers run lock-free via MVCC snapshots while a
 	single writer briefly serializes on a robust mutex (and waits
 	rather than failing). Environments are kept open and shared per process, so there is no
@@ -67,22 +59,17 @@ class DataStore(BaseStore):
 	def __init__(
 		self,
 		base_path: str,
-		key: str,
+		namespace: Namespace,
 		map_size: int | None = None,
 		logger_factory: Callable[[dict], Any] | None = None,
 		**_legacy: Any,
 	) -> None:
-		"""Initialize the store for the given base path and ``key``."""
+		"""Initialize the store for the given base path and ``namespace``."""
 
-		super().__init__(base_path=base_path, key=key, logger_factory=logger_factory)
+		super().__init__(base_path=base_path, namespace=namespace, logger_factory=logger_factory)
 
 		self.logger_context["store"] = "data"
 		self.map_size = map_size or self.DEFAULT_MAP_SIZE
-
-	def _get_storage_path(self) -> str:
-		"""Return the per-key LMDB environment directory for this key (no sharding)."""
-
-		return os.path.join(self.base_path, env_dirname(self.key))
 
 	def _open_env(self) -> "lmdb.Environment":
 		"""Open the LMDB environment for this store's path."""
@@ -248,11 +235,19 @@ class DataStore(BaseStore):
 			max_map_len=self.MAX_MSGPACK_COLLECTION_LEN,
 		)
 
-	def _make_key(self, entity: Enum, subkey: str) -> bytes:
-		"""Construct a full key (with entity and storage prefix) as UTF-8 bytes."""
+	def _entity_prefix(self, entity: Enum) -> str:
+		"""Return the ``<entity>:`` key prefix that scopes keys to an entity within the namespace."""
 
-		subkey = f"{entity.value}{self.SEPARATOR}{subkey}"
-		return super()._make_key(subkey).encode()
+		return f"{entity.value}{self.SEPARATOR}"
+
+	def _make_key(self, entity: Enum, subkey: str) -> bytes:
+		"""Construct a full key (entity-scoped) as UTF-8 bytes.
+
+		The namespace already isolates this store's directory, so keys carry only the entity
+		prefix, not the namespace.
+		"""
+
+		return f"{self._entity_prefix(entity)}{subkey}".encode()
 
 	def get(self, entity: Enum, subkey: str, default: Any | None = None) -> Any | None:
 		"""Retrieve a value by key, returning a default if the key does not exist."""
@@ -329,6 +324,7 @@ class DataStore(BaseStore):
 	def scan(self, entity: Enum, prefix: str = "", limit: int | None = None) -> dict[str, Any]:
 		"""Scan for all key-value pairs that start with a given prefix, returning a dictionary of results."""
 
+		entity_prefix = self._entity_prefix(entity)
 		full_prefix = self._make_key(entity, prefix)
 		result = {}
 
@@ -339,7 +335,7 @@ class DataStore(BaseStore):
 					if not key.startswith(full_prefix):
 						break
 
-					subkey = self._normalize_scan_key(key.decode())
+					subkey = key.decode().removeprefix(entity_prefix)
 					result[subkey] = self._deserialize(value)
 
 					if limit is not None and len(result) >= limit:

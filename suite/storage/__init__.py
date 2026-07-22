@@ -4,6 +4,8 @@ import shutil
 import frappe
 from frappe.utils import get_bench_path
 
+from suite.storage.base_store import Namespace, resolve_namespace_path
+
 
 def get_data_base_path() -> str:
 	"""Base directory holding every LMDB data-store environment for the current site.
@@ -23,29 +25,13 @@ def get_blob_base_path() -> str:
 	return os.path.join(get_bench_path(), "sites", frappe.local.site, "private", "files", "blob-store")
 
 
-@frappe.whitelist()
-def destroy_data_store() -> None:
-	"""Delete every data store for the current site. System Manager only."""
+def destroy_namespace(base_path: str, namespace: Namespace) -> None:
+	"""Delete the on-disk directory for `namespace` under `base_path`, if it exists.
 
-	from suite.utils.user import is_system_manager
+	The namespace may be a prefix of the namespaces stores use (e.g. ``"mail"`` removes
+	``<base>/mail`` and every ``mail/<account>`` store beneath it).
+	"""
 
-	if not is_system_manager(frappe.session.user):
-		frappe.throw(frappe._("Only System Manager can destroy the data store."))
-
-	base_path = get_data_base_path()
-	if os.path.exists(base_path):
-		shutil.rmtree(base_path)
-
-
-@frappe.whitelist()
-def destroy_blob_store() -> None:
-	"""Delete every blob store for the current site. System Manager only."""
-
-	from suite.utils.user import is_system_manager
-
-	if not is_system_manager(frappe.session.user):
-		frappe.throw(frappe._("Only System Manager can destroy the blob store."))
-
-	base_path = get_blob_base_path()
-	if os.path.exists(base_path):
-		shutil.rmtree(base_path)
+	path = resolve_namespace_path(base_path, namespace)
+	if os.path.isdir(path):
+		shutil.rmtree(path, ignore_errors=True)

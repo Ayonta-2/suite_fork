@@ -1,10 +1,46 @@
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from threading import RLock
 from typing import Any, ClassVar
+from urllib.parse import quote
 
 import frappe
 from frappe.utils import random_string
+
+# A namespace is a relative path (one or more segments) that scopes a store to its own
+# directory under the base path, e.g. ``("mail", account)`` -> ``<base>/mail/<account>``.
+Namespace = str | Sequence[str]
+
+
+def normalize_namespace(namespace: Namespace) -> tuple[str, ...]:
+	"""Validate a namespace and return it as a tuple of segments.
+
+	Accepts either a ``"a/b"`` string (split on ``/``) or a sequence of segments. Rejects an
+	empty namespace and any empty, ``.`` or ``..`` segment, so a namespace can never escape the
+	base path once its segments are joined.
+	"""
+
+	segments = namespace.split("/") if isinstance(namespace, str) else list(namespace)
+
+	if not segments:
+		raise ValueError("namespace must have at least one segment")
+
+	for segment in segments:
+		if not segment or segment in (".", ".."):
+			raise ValueError(f"invalid namespace segment: {segment!r}")
+
+	return tuple(segments)
+
+
+def resolve_namespace_path(base_path: str, namespace: Namespace) -> str:
+	"""Return the on-disk directory for a namespace under `base_path`.
+
+	Each segment is percent-encoded so it is a single, filesystem-safe path component (a
+	segment containing ``/`` cannot spill into extra directories).
+	"""
+
+	segments = normalize_namespace(namespace)
+	return os.path.join(base_path, *(quote(segment, safe="") for segment in segments))
 
 
 class _DefaultLogger:
@@ -42,6 +78,13 @@ class _DefaultLogger:
 
 
 class BaseStore:
+	"""Base for stores scoped to a `namespace` (a relative directory under `base_path`).
+
+	The namespace gives each store its own directory, so a store's keys need no further
+	prefixing to stay isolated from other namespaces. Subclasses decide how keys map to
+	values within that directory (LMDB entries for `DataStore`, files for `BlobStore`).
+	"""
+
 	SEPARATOR: ClassVar[str] = ":"
 	_PROCESS_LOCKS: ClassVar[dict[str, RLock]] = {}
 	_PROCESS_LOCKS_GUARD: ClassVar[RLock] = RLock()
@@ -49,32 +92,26 @@ class BaseStore:
 	def __init__(
 		self,
 		base_path: str,
-		key: str,
+		namespace: Namespace,
 		logger_factory: Callable[[dict], Any] | None = None,
 	) -> None:
-		"""Initialize the storage with the base path and key.
+		"""Initialize a store rooted at ``<base_path>/<namespace>``.
 
-		`logger_factory` is called with this store's context dict (bound by reference, so
-		subclasses can keep adding fields to `self.logger_context`) and must return a logger
-		exposing debug/info/warning/error/exception. When omitted, a minimal logger writing
-		to the ``suite.storage`` frappe channel is used.
+		`namespace` is a relative path (``"a/b"`` string or sequence of segments) scoping this
+		store to its own directory. `logger_factory` is called with this store's context dict
+		(bound by reference, so subclasses can keep adding fields to `self.logger_context`) and
+		must return a logger exposing debug/info/warning/error/exception. When omitted, a
+		minimal logger writing to the ``suite.storage`` frappe channel is used.
 		"""
 
 		self.base_path = base_path
-		self.key = key
+		self.namespace = normalize_namespace(namespace)
 
-		self.logger_context = {"req_id": random_string(10), "key": self.key}
+		self.logger_context = {"req_id": random_string(10), "namespace": "/".join(self.namespace)}
 		self.logger = (logger_factory or _DefaultLogger)(self.logger_context)
 
-		self.path = self._get_storage_path()
+		self.path = resolve_namespace_path(self.base_path, self.namespace)
 		os.makedirs(self.path, exist_ok=True)
-
-		self._prefix = f"{self.key}{self.SEPARATOR}"
-
-	def _get_storage_path(self) -> str:
-		"""Return the storage path for this store; subclasses scope it per key."""
-
-		return self.base_path
 
 	def _get_process_lock(self, path: str | None = None) -> RLock:
 		"""Return a process-local lock shared by all storage instances for the same path."""
@@ -91,18 +128,3 @@ class BaseStore:
 
 			self.logger.debug("rlock-acquired", path=path)
 			return lock
-
-	def _get_prefix(self) -> str:
-		"""Return the prefix for keys in this storage instance."""
-
-		return self._prefix
-
-	def _make_key(self, subkey: str) -> str:
-		"""Construct the full key with prefix for storage."""
-
-		return f"{self._get_prefix()}{subkey}"
-
-	def _normalize_scan_key(self, key: str) -> str:
-		"""Normalize a key returned from a scan by removing the prefix."""
-
-		return key.removeprefix(self._get_prefix())

@@ -1,4 +1,4 @@
-from suite.storage import destroy_data_store
+from suite.mail.storage import destroy_data_store
 
 
 def execute() -> None:
