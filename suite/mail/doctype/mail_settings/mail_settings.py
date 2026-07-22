@@ -89,9 +89,6 @@ class MailSettings(Document):
 		stalwart_cli_command_timeout: DF.Int
 		stalwart_cli_version: DF.Data
 		stalwart_version: DF.Data
-		storage_log_file_count: DF.Int
-		storage_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
-		storage_log_max_file_size: DF.Int
 		username: DF.Data | None
 		verify_ssl: DF.Check
 	# end: auto-generated types

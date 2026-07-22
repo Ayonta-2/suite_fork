@@ -72,13 +72,6 @@ class PushLogger(EventLogger):
 	config_prefix = "push"
 
 
-class StorageLogger(EventLogger):
-	"""Structured event logger for mail storage operations ("suite.mail.storage")."""
-
-	logger_name = "suite.mail.storage"
-	config_prefix = "storage"
-
-
 class OutboundLogger(EventLogger):
 	"""Structured event logger for outbound mail operations ("suite.mail.outbound")."""
 
@@ -108,16 +101,6 @@ def get_push_logger(ctx: dict | None = None) -> PushLogger:
 	"""
 
 	return PushLogger(ctx)
-
-
-def get_storage_logger(ctx: dict | None = None) -> StorageLogger:
-	"""Returns a structured event logger for mail storage operations.
-
-	The returned logger is bound to `ctx` (by reference); mutating that same
-	dict between log calls is reflected in subsequent records.
-	"""
-
-	return StorageLogger(ctx)
 
 
 def get_outbound_logger(ctx: dict | None = None) -> OutboundLogger:

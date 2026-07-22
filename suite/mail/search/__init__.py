@@ -41,8 +41,7 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
 	# Imported lazily: these modules import this package, so a top-level import would be circular.
 	from suite.mail.doctype.contact_card.contact_card import _contact_addresses
 	from suite.mail.doctype.mail_message.mail_message import _message_addresses
-	from suite.mail.storage import get_data_store
-	from suite.mail.storage.data_store import Entity
+	from suite.mail.storage import Entity, get_data_store
 
 	# Drop the stale index, then take a fresh handle so its directory is recreated before writing.
 	get_email_address_index(account).drop()

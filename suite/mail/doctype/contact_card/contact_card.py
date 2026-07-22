@@ -13,8 +13,7 @@ from suite.mail.doctype.address_book.address_book import validate_address_book_n
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_contact_card_service
 from suite.mail.search import get_email_address_index
-from suite.mail.storage import get_data_store
-from suite.mail.storage.data_store import Entity
+from suite.mail.storage import Entity, get_data_store
 from suite.mail.utils import log_mail_error
 from suite.utils import parse_filters
 from suite.utils.dt import parse_iso_datetime
@@ -491,7 +490,7 @@ def _get_cached_contact_cards(account: str, ids: list[str]) -> dict[str, dict | 
 	"""Returns a dictionary of cached contact cards for the given account and IDs."""
 
 	store = get_data_store(account)
-	return store.get_many(Entity.CONTACT_CARD, subkeys=ids)
+	return store.get_many(Entity.CONTACT_CARD, keys=ids)
 
 
 def _cache_contact_cards(account: str, contact_cards: dict[str, dict]) -> None:
@@ -517,7 +516,7 @@ def _remove_cached_contact_cards(account: str, ids: list[str]) -> None:
 	"""
 
 	store = get_data_store(account)
-	store.delete_many(Entity.CONTACT_CARD, subkeys=ids)
+	store.delete_many(Entity.CONTACT_CARD, keys=ids)
 
 
 def _contact_addresses(contact_cards: list[dict]) -> list[dict]:

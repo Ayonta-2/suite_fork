@@ -7,35 +7,26 @@ from urllib.parse import quote, unquote
 
 import frappe
 
-from suite.mail.storage.base_store import BaseStore
+from suite.storage.base_store import BaseStore, Namespace
 
 
 class BlobStore(BaseStore):
 	"""A blob storage backed by the local file system.
 
-	Each account's blobs live in their own directory named by the account ID
-	(``<base_path>/<account>/``); files inside are named by their encoded blob key.
+	Each namespace's blobs live in their own directory (``<base_path>/<namespace>/``); files
+	inside are named by their encoded blob key.
 	"""
 
 	def __init__(
 		self,
 		base_path: str,
-		key: str,
+		namespace: Namespace,
 	) -> None:
-		"""Initialize per-account blob storage rooted at ``<base_path>/<account>``."""
+		"""Initialize per-namespace blob storage rooted at ``<base_path>/<namespace>``."""
 
-		super().__init__(base_path=base_path, key=key)
+		super().__init__(base_path=base_path, namespace=namespace)
 
 		self.logger_context["store"] = "blob"
-
-		# Blobs are isolated per account by directory, so the on-disk file name is just the
-		# (encoded) blob key — no account prefix is needed.
-		self._prefix = ""
-
-	def _get_storage_path(self) -> str:
-		"""Store an account's blobs in their own directory, named by the account ID."""
-
-		return os.path.join(self.base_path, self._encode_key(self.key))
 
 	def _is_within_storage_path(self, path: str) -> bool:
 		"""Return True when a path resolves within the configured storage directory."""
@@ -59,10 +50,10 @@ class BlobStore(BaseStore):
 
 		return unquote(key)
 
-	def _get_blob_path(self, subkey: str) -> str:
+	def _get_blob_path(self, key: str) -> str:
 		"""Return the file path for the given blob key."""
 
-		return os.path.join(self.path, self._encode_key(self._make_key(subkey)))
+		return os.path.join(self.path, self._encode_key(key))
 
 	def _read_blob(self, path: str) -> bytes | None:
 		"""Read a blob from disk if it exists."""
@@ -84,16 +75,16 @@ class BlobStore(BaseStore):
 		except OSError:
 			return None
 
-	def get(self, subkey: str, default: bytes | None = None) -> bytes | None:
+	def get(self, key: str, default: bytes | None = None) -> bytes | None:
 		"""Retrieve a blob by key, returning a default if the key does not exist."""
 
-		value = self._read_blob(self._get_blob_path(subkey))
+		value = self._read_blob(self._get_blob_path(key))
 		return value if value is not None else default
 
-	def set(self, subkey: str, value: bytes | bytearray | memoryview) -> None:
+	def set(self, key: str, value: bytes | bytearray | memoryview) -> None:
 		"""Store a blob by key using an atomic file replacement."""
 
-		blob_path = self._get_blob_path(subkey)
+		blob_path = self._get_blob_path(key)
 		if not self._is_within_storage_path(blob_path):
 			raise ValueError("Invalid blob path")
 
@@ -101,9 +92,9 @@ class BlobStore(BaseStore):
 		process_lock = self._get_process_lock(blob_path)
 
 		with process_lock:
-			# Write the temp file in the base path (not the per-account directory) so it stays
+			# Write the temp file in the base path (not the blob's directory) so it stays
 			# outside what scan/count/delete_all walk, while remaining on the same filesystem
-			# for an atomic os.replace into the account directory.
+			# for an atomic os.replace into place.
 			fd, temp_path = tempfile.mkstemp(dir=self.base_path)
 			try:
 				with os.fdopen(fd, "wb") as file:
@@ -115,10 +106,10 @@ class BlobStore(BaseStore):
 					os.unlink(temp_path)
 				raise
 
-	def delete(self, subkey: str) -> None:
+	def delete(self, key: str) -> None:
 		"""Delete a blob by key."""
 
-		blob_path = self._get_blob_path(subkey)
+		blob_path = self._get_blob_path(key)
 		if not self._is_within_storage_path(blob_path):
 			return
 
@@ -128,10 +119,10 @@ class BlobStore(BaseStore):
 			with suppress(FileNotFoundError):
 				os.remove(blob_path)
 
-	def exists(self, subkey: str) -> bool:
+	def exists(self, key: str) -> bool:
 		"""Check if a blob exists in the storage."""
 
-		blob_path = self._get_blob_path(subkey)
+		blob_path = self._get_blob_path(key)
 		if not self._is_within_storage_path(blob_path):
 			return False
 
@@ -140,15 +131,15 @@ class BlobStore(BaseStore):
 		except FileNotFoundError:
 			return False
 
-	def get_many(self, subkeys: list[str]) -> dict[str, bytes | None]:
+	def get_many(self, keys: list[str]) -> dict[str, bytes | None]:
 		"""Retrieve multiple blobs by key."""
 
-		if not subkeys:
+		if not keys:
 			return {}
 
 		result = {}
-		for subkey in subkeys:
-			result[subkey] = self._read_blob(self._get_blob_path(subkey))
+		for key in keys:
+			result[key] = self._read_blob(self._get_blob_path(key))
 
 		return result
 
@@ -158,22 +149,22 @@ class BlobStore(BaseStore):
 		if not items:
 			return
 
-		for subkey, value in items.items():
-			self.set(subkey, value)
+		for key, value in items.items():
+			self.set(key, value)
 
-	def delete_many(self, subkeys: list[str]) -> None:
+	def delete_many(self, keys: list[str]) -> None:
 		"""Delete multiple blobs."""
 
-		if not subkeys:
+		if not keys:
 			return
 
-		for key in subkeys:
+		for key in keys:
 			self.delete(key)
 
 	def scan(self, prefix: str = "") -> dict[str, bytes]:
 		"""Scan for all blobs whose keys start with the given prefix."""
 
-		encoded_prefix = self._encode_key(self._make_key(prefix))
+		encoded_prefix = self._encode_key(prefix)
 		result = {}
 
 		with os.scandir(self.path) as entries:
@@ -185,15 +176,15 @@ class BlobStore(BaseStore):
 				if value is None:
 					continue
 
-				subkey = self._normalize_scan_key(self._decode_key(entry.name))
-				result[subkey] = value
+				key = self._decode_key(entry.name)
+				result[key] = value
 
 		return result
 
 	def count(self, prefix: str = "") -> int:
 		"""Count the number of blobs whose keys start with the given prefix."""
 
-		encoded_prefix = self._encode_key(self._make_key(prefix))
+		encoded_prefix = self._encode_key(prefix)
 		count = 0
 
 		with os.scandir(self.path) as entries:
@@ -203,15 +194,29 @@ class BlobStore(BaseStore):
 
 		return count
 
+	def browse(self, limit: int | None = None) -> list[dict]:
+		"""List blobs as ``{key, size}`` without reading their contents (for tooling)."""
+
+		entries = []
+		with os.scandir(self.path) as scan:
+			for entry in scan:
+				if not entry.is_file(follow_symlinks=False):
+					continue
+
+				entries.append({"key": self._decode_key(entry.name), "size": entry.stat().st_size})
+
+				if limit is not None and len(entries) >= limit:
+					break
+
+		return entries
+
 	def delete_all(self) -> None:
-		"""Delete all blobs in the storage for the current key prefix."""
+		"""Delete every blob in this namespace's directory."""
 
 		self.logger.info({**self.logger_context, "user": frappe.session.user, "event": "deleting-all-blobs"})
 
-		encoded_prefix = self._encode_key(self._get_prefix())
-
 		with os.scandir(self.path) as entries:
 			for entry in entries:
-				if entry.is_file(follow_symlinks=False) and entry.name.startswith(encoded_prefix):
+				if entry.is_file(follow_symlinks=False):
 					with suppress(FileNotFoundError):
 						os.remove(entry.path)
