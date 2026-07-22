@@ -53,6 +53,7 @@ class JMAPAccount(Document):
 		enable_screening: DF.Check
 		is_personal: DF.Check
 		is_readonly: DF.Check
+		keep_forwarded_email_in_thread: DF.Check
 		last_active_sieve_script_id: DF.Data | None
 		on_mark_as_junk: DF.Literal["Junk Sender's Mail", "Ask to Block Sender"]
 	# end: auto-generated types

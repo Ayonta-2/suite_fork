@@ -326,6 +326,7 @@ class MailQueue(OwnerFromUser, Document):
 			self.validate_priority()
 			self.validate_in_reply_to()
 			self.validate_in_reply_to_id()
+			self.validate_forwarded_in_reply_to()
 
 	def after_insert(self) -> None:
 		if self.delivery_mode == "Immediate":
@@ -615,6 +616,33 @@ class MailQueue(OwnerFromUser, Document):
 			except Exception:
 				self.in_reply_to_id = None
 				log_mail_error(_("Failed to fetch In Reply To ID"), frappe.get_traceback(with_context=True))
+
+	def validate_forwarded_in_reply_to(self) -> None:
+		"""Threads a forwarded email with the original.
+
+		When the account has "Keep Forwarded Email In Thread" enabled, sets the
+		In-Reply-To (Message-ID) of the forwarded email to the original's Message-ID
+		so the mail server assigns it the same thread as the original. The
+		In-Reply-To ID is intentionally left untouched: a forward should mark the
+		original as ``$forwarded`` (via ``forwarded_from_id``), not ``$answered``.
+		"""
+
+		if not self.forwarded_from_id or self.in_reply_to:
+			return
+
+		if not frappe.db.get_value("JMAP Account", self.account, "keep_forwarded_email_in_thread"):
+			return
+
+		try:
+			service = get_email_service(self.account)
+			emails = service.get([self.forwarded_from_id], properties=["messageId"])
+			# JMAP returns messageId as a list of Message-ID strings (RFC 5322 msg-id values).
+			if emails and (message_ids := emails[0].get("messageId")):
+				self.in_reply_to = message_ids[0].strip("<>")
+		except Exception:
+			log_mail_error(
+				_("Failed to fetch forwarded email Message-ID"), frappe.get_traceback(with_context=True)
+			)
 
 	@frappe.whitelist()
 	def retry(self) -> None:
