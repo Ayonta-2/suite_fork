@@ -16,7 +16,7 @@ from suite.mail.stalwart import delete_domain as delete_stalwart_domain
 from suite.mail.stalwart import get_domains as get_stalwart_domains
 from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
-from suite.mail.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils import execute_with_logging
 from suite.utils.user import is_suite_admin, is_system_manager, is_user_enabled
 
