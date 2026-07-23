@@ -21,7 +21,6 @@ const store = userStore()
 const { identities } = store
 
 const isNew = computed(() => !selectedEvent?.calendarEvent)
-const showRSVP = computed(() => !isNew.value && selectedEvent.calendarEvent.role !== 'Organizer')
 
 // --- Event initialization ---
 
@@ -127,10 +126,6 @@ const participants = computed(() =>
 		event.organizer,
 		selectedEvent?.calendarEvent?.participants,
 	),
-)
-
-const userParticipant = computed(() =>
-	participants.value.find((p) => identities.data.some((id) => id.email === p.email)),
 )
 
 const eventParams = computed(() => {
@@ -457,13 +452,6 @@ const handleSaveClick = () => {
 
 const dialogTitle = computed(() => (isNew.value ? __('Add Event') : __('Edit Event')))
 
-const RSVP_OPTIONS = [
-	{ label: __(' '), value: 'NEEDS-ACTION' },
-	{ label: __('Yes'), value: 'ACCEPTED' },
-	{ label: __('Maybe'), value: 'TENTATIVE' },
-	{ label: __('No'), value: 'DECLINED' },
-]
-
 const AVAILABILITY_OPTIONS = [
 	{ label: __('Free'), value: 'Free' },
 	{ label: __('Busy'), value: 'Busy' },
@@ -683,17 +671,6 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 
 					<!-- right: guests rail -->
 					<div class="w-[300px] shrink-0 overflow-y-auto border-l px-5 py-5">
-						<template v-if="showRSVP">
-							<h3 class="text-base-medium mb-2">{{ __('RSVP') }}</h3>
-							<FormControl
-								v-model="userParticipant.participation_status"
-								type="select"
-								:label="__('Are you attending?')"
-								:options="RSVP_OPTIONS"
-								class="mb-5 w-full"
-							/>
-						</template>
-
 						<div class="mb-3 flex items-baseline gap-2">
 							<Users :size="15" class="icon self-center text-ink-gray-5" />
 							<span class="text-base font-medium">{{ __('Participants') }}</span>
