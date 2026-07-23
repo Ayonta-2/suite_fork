@@ -20,9 +20,24 @@
  *   setMarchingAnts: (v: null) => void,
  *   fillDown: () => void, fillRight: () => void,
  *   runSmartFill: () => void,
+ *   insertRowsCols: () => void, deleteRowsCols: () => void,
+ *   applyNumberFormat: (fmt: string) => void, pasteValues: () => void,
  *   readOnly?: () => boolean,
  * }} actions
  */
+
+// Ctrl/Cmd+Shift+<digit> → number-format key, matching Google Sheets' 1-6 row.
+// Keyed by KeyboardEvent.code so shifted digits ('!', '@', …) still resolve.
+// Exponent/scientific (GS's Ctrl+Shift+6) is intentionally absent — the format
+// engine has no scientific renderer yet, so there's nothing correct to apply.
+const NUMBER_FORMAT_KEYS = {
+  Digit1: 'number',
+  Digit2: 'time',
+  Digit3: 'date',
+  Digit4: 'currency:USD:2',
+  Digit5: 'percentage',
+}
+
 export function useShortcuts(actions) {
   const {
     formulaInputEl, undo, redo, onSave, toggleFmt, repeatLast,
@@ -33,6 +48,7 @@ export function useShortcuts(actions) {
     clipboard, clipboardHas, setMarchingAnts,
     fillDown, fillRight,
     runSmartFill,
+    insertRowsCols, deleteRowsCols, applyNumberFormat, pasteValues,
     readOnly = () => false,
   } = actions
 
@@ -60,8 +76,10 @@ export function useShortcuts(actions) {
     }
     if (mod && e.key === 's')                                              { e.preventDefault(); onSave();                       return true }
     if (mod && e.key === 'f')                                              { e.preventDefault(); showFindReplace.value = true;   return true }
-    if (mod && (e.key === '=' || e.key === '+'))                           { e.preventDefault(); zoomBy(+0.1);                   return true }
-    if (mod && e.key === '-')                                              { e.preventDefault(); zoomBy(-0.1);                   return true }
+    // Alt is excluded so Mod+Alt+= / Mod+Alt+- fall through to insert/delete
+    // rows below rather than being swallowed as zoom.
+    if (mod && !e.altKey && (e.key === '=' || e.key === '+'))              { e.preventDefault(); zoomBy(+0.1);                   return true }
+    if (mod && !e.altKey && e.key === '-')                                 { e.preventDefault(); zoomBy(-0.1);                   return true }
     if (mod && e.key === '0')                                              { e.preventDefault(); resetZoom();                    return true }
     if (!mod && !inInput && e.key === '?')                                 { e.preventDefault(); showShortcutsHelp.value = true; return true }
     return false
@@ -106,6 +124,23 @@ export function useShortcuts(actions) {
     // fills the remaining empty cells in the selection.
     if (mod && (e.key === 'e' || e.key === 'E') && !inInput) {
       e.preventDefault(); runSmartFill?.(); return
+    }
+    // Mod+Alt+= / Mod+Alt+-  — insert / delete rows or columns. Match on
+    // e.code: with Alt held, macOS rewrites e.key ('=' → '≠', '-' → '–'), so
+    // the physical key is the only reliable signal here.
+    if (mod && e.altKey && e.code === 'Equal' && !inInput) {
+      e.preventDefault(); insertRowsCols?.(); return
+    }
+    if (mod && e.altKey && e.code === 'Minus' && !inInput) {
+      e.preventDefault(); deleteRowsCols?.(); return
+    }
+    // Mod+Shift+1..5 — apply a number format to the selection (GS parity).
+    if (mod && e.shiftKey && !inInput && NUMBER_FORMAT_KEYS[e.code]) {
+      e.preventDefault(); applyNumberFormat?.(NUMBER_FORMAT_KEYS[e.code]); return
+    }
+    // Mod+Shift+V — paste values only (drops formatting / formulas).
+    if (mod && e.shiftKey && (e.key === 'v' || e.key === 'V') && !inInput) {
+      e.preventDefault(); pasteValues?.(); return
     }
   }
 
