@@ -28,6 +28,7 @@ class _ListSheetsBase(unittest.TestCase):
 		# The module calls frappe.utils.cint for clamping — give the mock a
 		# real implementation so the arithmetic works.
 		self.frappe.utils.cint.side_effect = _cint
+		self.frappe.utils.now.return_value = "2026-07-23 12:00:00.000001"
 		self.rows = [
 			{"name": "SH-1", "title": "Mine", "modified": "2026-07-22 10:00:00", "owner": ME},
 			{"name": "SH-2", "title": "Theirs", "modified": "2026-07-21 10:00:00", "owner": "bob@example.com"},
@@ -58,6 +59,9 @@ class Defaults(_ListSheetsBase):
 	def test_response_shape_and_is_owner(self):
 		res = self.call()
 		self.assertEqual(res["total"], 42)
+		# Server-clock `now` rides along so the client buckets recency in the
+		# same timezone frame as `modified`.
+		self.assertEqual(res["now"], "2026-07-23 12:00:00.000001")
 		self.assertTrue(res["sheets"][0]["is_owner"])
 		self.assertFalse(res["sheets"][1]["is_owner"])
 
