@@ -69,17 +69,34 @@ class Presentation(Document):
 		)
 
 
+ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+
+
 @frappe.whitelist()
 def save_base64_image(base64_data: str, presentation_name: str, prefix: str) -> str:
-	header, b64 = base64_data.split(",", 1)
-	ext = header.split("/")[1].split(";")[0]
+	presentation = frappe.get_doc("Presentation", presentation_name)
+	presentation.check_permission("write")
+
+	match = re.match(r"^data:image/([a-zA-Z0-9.+-]+);base64,(.+)$", base64_data or "", re.DOTALL)
+	if not match:
+		frappe.throw("Invalid image data")
+
+	ext = match.group(1).lower()
+	if ext not in ALLOWED_IMAGE_EXTENSIONS:
+		frappe.throw("Unsupported image type")
+
+	try:
+		content = base64.b64decode(match.group(2), validate=True)
+	except Exception:
+		frappe.throw("Malformed base64 image content")
+
 	filename = f"{prefix}-{uuid.uuid4().hex[:6]}.{ext}"
 
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",
 			"file_name": filename,
-			"content": base64.b64decode(b64),
+			"content": content,
 			"is_private": 1,
 			"attached_to_doctype": "Presentation",
 			"attached_to_name": presentation_name,
@@ -198,6 +215,8 @@ def get_presentations() -> list[dict]:
 
 @frappe.whitelist()
 def update_slide_attachments(parent: str, slide: dict | str):
+	frappe.get_doc("Presentation", parent).check_permission("write")
+
 	slide = json.loads(slide) if isinstance(slide, str) else slide
 
 	elements_data = slide.get("elements") or "[]"
@@ -348,7 +367,9 @@ def get_attachment(presentation, file_url):
 	if not attachment:
 		source_doc = frappe.get_all("File", filters={"file_url": file_url}, limit=1)
 		if source_doc:
-			new_attachment_doc = frappe.copy_doc(frappe.get_doc("File", source_doc[0].name))
+			source_file = frappe.get_doc("File", source_doc[0].name)
+			source_file.check_permission("read")
+			new_attachment_doc = frappe.copy_doc(source_file)
 			new_attachment_doc.attached_to_name = presentation
 			new_attachment_doc.insert()
 			attachment = new_attachment_doc.name
@@ -357,14 +378,16 @@ def get_attachment(presentation, file_url):
 
 
 @frappe.whitelist()
-def get_updated_json(presentation: str, json: list[dict]):
-	for element in json:
-		if element.get("type") in ["image", "video"]:
-			file_url = element.get("src").replace(frappe.local.site_name, "")
+def get_updated_json(presentation: str, elements: list[dict]):
+	frappe.get_doc("Presentation", presentation).check_permission("write")
+
+	for element in elements:
+		if element.get("type") in ["image", "video"] and element.get("src"):
+			file_url = element["src"].replace(frappe.local.site_name, "")
 			name = get_attachment(presentation, file_url)
 			element["attachmentName"] = name
 
-	return json
+	return elements
 
 
 def get_permission_query_conditions(user):
@@ -432,11 +455,17 @@ def get_templates():
 
 @frappe.whitelist(allow_guest=True)
 def get_composite_presentation(name: str):
+	if not (is_public_presentation(name) and is_composite_presentation(name)):
+		frappe.throw("Presentation is not public", frappe.PermissionError)
+
 	doc = frappe.get_doc("Presentation", name)
 
 	composite_slides = []
 
 	for reference in doc.reference_presentations:
+		# references are public when the composite is saved, but can be made private later
+		if not is_public_presentation(reference.presentation):
+			continue
 		ref_doc = frappe.get_cached_doc("Presentation", reference.presentation)
 		for slide in ref_doc.slides:
 			composite_slides.append(slide)

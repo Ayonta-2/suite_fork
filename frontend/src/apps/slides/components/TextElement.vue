@@ -17,7 +17,7 @@
 	/>
 	<div
 		v-else
-		v-html="element.content"
+		v-html="sanitizedContent"
 		class="textElement select-none"
 		:class="isAutoWidth ? 'text-auto-width' : 'text-fixed-width'"
 		:style="elementLineHeightStyle"
@@ -29,6 +29,8 @@
 import { computed, onBeforeMount, inject, ref } from 'vue'
 
 import SlideshowText from '@/apps/slides/components/SlideshowText.vue'
+
+import { sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 
 import { EditorContent, generateHTML } from '@tiptap/vue-3'
 
@@ -111,6 +113,8 @@ const normalizeContent = () => {
 		element.value.content = generateHTML(content, extensions)
 	}
 }
+
+const sanitizedContent = computed(() => sanitizeSlideHTML(element.value.content || ''))
 
 const isAutoWidth = computed(() => {
 	return !element.value.width || element.value.width == 'auto'
