@@ -3,7 +3,11 @@
 	<header class="flex items-center justify-between border-b px-3 py-2.5 sm:px-5">
 		<div class="flex items-center space-x-2">
 			<Button v-if="isMobile" icon="menu" variant="ghost" @click="openSidebar" />
-			<Breadcrumbs :items="[{ label: __('All Inboxes'), route: { name: 'mail-all-inboxes' } }]" />
+			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
+			<Breadcrumbs
+				:items="[{ label: __('All Inboxes'), route: { name: 'mail-all-inboxes' } }]"
+				class="-ml-0.5"
+			/>
 		</div>
 		<HeaderActions @reload-mails="refreshThreads()" />
 	</header>
