@@ -1,6 +1,9 @@
 # Patches consolidated in Phase 3 (grouped by source app, preserving order).
 
 [pre_model_sync]
+# --- meet ---
+suite.meet.patches.rename_sae_meeting_to_meet_room
+suite.meet.patches.rename_sae_settings_to_meet_settings
 # --- drive ---
 suite.drive.patches.team_restructure #8
 suite.drive.patches.update_roles
@@ -16,6 +19,8 @@ suite.mail.patches.delete_client_module
 suite.mail.patches.capture_user_outgoing_settings
 suite.mail.patches.rebuild_rate_limit_unique_constraint
 suite.mail.patches.rename_account_settings_to_jmap_account
+# --- suite_core ---
+suite.suite_core.patches.move_rate_limit_to_suite_core
 [post_model_sync]
 # --- drive ---
 suite.drive.patches.folder_size #3
@@ -23,14 +28,15 @@ suite.drive.patches.settings
 suite.drive.patches.new_writer #3
 suite.drive.patches.turn_on_flat_disk
 suite.drive.patches.add_modified_field
-suite.drive.patches.add_drive_user_role
 suite.drive.patches.add_search_index
 suite.drive.patches.migrate_s3_url_prefix
+suite.drive.patches.switch_drive_roles_to_suite_roles
 # --- slides ---
 suite.slides.doctype.presentation.patches.sanitize_attachment_urls
 suite.slides.doctype.presentation.patches.move_attachments_to_private_folder
 suite.slides.doctype.presentation.patches.move_slide_thumbnail_to_presentation
 suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files
+suite.slides.doctype.presentation.patches.integrate_with_drive
 # --- writer ---
 suite.writer.patches.change_versioning_schema
 suite.writer.patches.autopopulate_html
@@ -38,6 +44,7 @@ suite.writer.patches.autopopulate_html
 suite.sheets.patches.v0_1.migrate_blob_to_cells
 # --- meet ---
 suite.meet.patches.migrate_meeting_fields_to_table_multiselect
+suite.meet.patches.switch_meet_user_to_suite_user
 # --- mail ---
 suite.mail.patches.generate_ssh_keypair_for_cluster
 suite.mail.patches.create_push_subscriptions
@@ -53,5 +60,14 @@ suite.mail.patches.sync_jmap_accounts_for_configured_users
 suite.mail.patches.copy_sync_history_account_id_to_account
 suite.mail.patches.destroy_data_store
 suite.mail.patches.backfill_screened_email_address_account
+suite.mail.patches.rebuild_email_address_indexes
+suite.mail.patches.enable_screening_for_personal_accounts
+suite.mail.patches.create_suite_user_role
+suite.mail.patches.rename_mail_admin_to_suite_admin
+suite.mail.patches.migrate_cache_to_mail_namespace
+suite.mail.patches.migrate_search_index_to_mail_namespace
+execute:frappe.db.set_single_value("Mail Settings", "verify_ssl", 1)
+execute:frappe.db.set_single_value("Mail Settings", "show_mail_client_config", 1)
+execute:frappe.db.set_single_value("Mail Settings", "custom_event_invites", 1)
 # --- calendar ---
 # (no patches)

@@ -21,6 +21,7 @@ AUTOVERSION_DURATION = 10
 class WriterDocument(Document):
 	@frappe.whitelist(methods=["POST"])
 	def save_doc(self, data: str, html: str | None = None):
+		self.check_permission("write")
 		try:
 			frappe.db.set_value("Writer Document", self.name, "content", data)
 			if html is not None:
@@ -32,6 +33,7 @@ class WriterDocument(Document):
 	@frappe.whitelist(methods=["POST"])
 	def new_version(self, data: str, title: str | None = None):
 		"""Create a new version of the document"""
+		self.check_permission("write")
 		if not data or not data.strip() or data.strip() == "<p></p>":
 			frappe.response["data"] = False
 			return
@@ -78,11 +80,13 @@ class WriterDocument(Document):
 
 	@frappe.whitelist(methods=["POST"])
 	def update_settings(self, data: str):
+		self.check_permission("write")
 		self.settings = data
 		self.save()
 
 	@frappe.whitelist(methods=["POST"])
 	def save_html(self, html: str):
+		self.check_permission("write")
 		self.html = html
 		self.update_file()
 		self.save()

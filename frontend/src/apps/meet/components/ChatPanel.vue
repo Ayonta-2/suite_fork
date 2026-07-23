@@ -7,146 +7,226 @@
 		leave-from-class="opacity-100 transform translate-x-0"
 		leave-to-class="opacity-0 transform translate-x-full"
 	>
-		<div v-show="open" class="h-full py-4 flex justify-end" data-testid="chat-panel-wrapper">
+		<div v-show="open" class="h-full flex justify-end py-2.5" data-testid="chat-panel-wrapper">
 			<div
-				class="w-80 sm:w-96 bg-white border border-gray-200 shadow-xl flex flex-col z-40 h-full rounded-lg mr-4"
+				class="mr-2 flex h-full w-[calc(100%-0.5rem)] max-w-[380px] flex-col rounded-[10px] bg-surface-gray-1 z-40 overflow-hidden"
 				data-testid="chat-panel"
 			>
-				<div class="flex items-center justify-between p-4 border-b border-gray-200">
-
-					 <div class="text-gray-900 text-base font-medium">Chat</div>
-                    
-                    <div class="flex items-center gap-1">
-                        <Dropdown 
-                            v-if="isHost || isCohost"
-                            :options="pollMenuOptions"
-                        >
-                            <Button variant="ghost" icon="more-horizontal" class="text-gray-600 hover:bg-gray-100" />
-                        </Dropdown>
-
-                        <Button variant="ghost" class="text-gray-600 hover:bg-gray-100" @click="$emit('close')">
-                            <lucide-x class="w-4 h-4 text-gray-900 cursor-pointer hover:text-gray-600" />
-                        </Button>
-                    </div>
-                </div>
-
-			<div ref="listEl" class="flex-1 overflow-y-auto p-4 space-y-4" data-testid="chat-messages">
-				<template v-for="item in chatItems" :key="item.key">
-					<div v-if="item.type === 'poll'" class="min-w-0">
-						<div class="text-xs flex items-center gap-2">
-							<span class="truncate font-medium">{{ pollCreatorName(item.poll) }}</span>
-							<span class="text-gray-600">{{ time(item.timestamp) }}</span>
-						</div>
-						<div class="my-1">
-							<PollMessageCard :poll="item.poll" :is-guest="isGuest" />
-						</div>
+				<div class="flex items-center justify-between gap-3 px-4 py-5 shrink-0">
+					<div class="min-w-0 truncate text-sm-medium text-ink-gray-8 tracking-[0.21px]">
+						Chat
 					</div>
-					<div v-else class="min-w-0">
-						<div class="text-xs flex items-center gap-2">
-							<span class="truncate font-medium">{{ item.group.user_name }}</span>
-							<span class="text-gray-600">{{ time(item.group.timestamp) }}</span>
-						</div>
-						<div class="my-1 space-y-2">
+					<div class="flex shrink-0 items-center gap-1">
+						<Dropdown
+							v-if="isHost || isCohost"
+							:options="pollMenuOptions"
+						>
+							<Button variant="ghost" icon="lucide-more-horizontal" />
+						</Dropdown>
+
+						<Button variant="ghost" icon="lucide-x" @click="$emit('close')" />
+					</div>
+				</div>
+
+				<div ref="listEl" class="flex-1 overflow-y-auto px-3 py-7" data-testid="chat-messages">
+					<div class="flex flex-col gap-5">
+						<template v-for="item in chatItems" :key="item.key">
 							<div
-								v-for="message in item.group.messages"
-								:key="message.id"
-								class="text-sm text-gray-900 whitespace-pre-wrap [overflow-wrap:anywhere] leading-4"
+								v-if="item.type === 'poll'"
+								class="flex min-w-0 gap-2"
+								:class="item.poll.createdBy === userId ? 'justify-end' : 'justify-start'"
 							>
-								<template
-									v-for="(token, i) in tokenizeChatMessage(message.message)"
-									:key="i"
+								<MeetAvatar
+									v-if="item.poll.createdBy !== userId"
+									size="lg"
+									:label="item.poll.createdByName || item.poll.createdBy"
+									class="mt-6 shrink-0"
+								/>
+								<div
+									class="flex min-w-0 max-w-[314px] flex-col gap-1.5"
+									:class="item.poll.createdBy === userId ? 'items-end' : 'items-start'"
 								>
-									<a
-										v-if="token.type === 'link'"
-										:href="token.url"
-										target="_blank"
-										rel="noopener noreferrer"
-										class="text-blue-500 underline"
-									>{{ token.text }}</a>
-									<span v-else>{{ token.text }}</span>
-								</template>
+									<div class="flex max-w-full items-center gap-1 text-[11px] tracking-[0.11px]">
+										<template v-if="item.poll.createdBy !== userId">
+											<span class="truncate text-ink-gray-7">{{ pollCreatorName(item.poll) }}</span>
+											<span class="shrink-0 text-ink-gray-5">·</span>
+										</template>
+										<span class="shrink-0 text-ink-gray-5">{{ time(item.timestamp) }}</span>
+									</div>
+									<PollMessageCard :poll="item.poll" :is-guest="isGuest" />
+								</div>
+							</div>
+
+							<div
+							v-else
+							class="flex min-w-0 gap-2"
+							:class="item.group.isOwn ? 'justify-end' : 'justify-start'"
+						>
+							<MeetAvatar
+								v-if="!item.group.isOwn"
+								size="lg"
+								:label="item.group.user_name"
+								class="mt-6 shrink-0"
+							/>
+
+							<div
+								class="flex min-w-0 max-w-[314px] flex-col gap-1.5"
+								:class="item.group.isOwn ? 'items-end' : 'items-start'"
+							>
+								<div v-if="!item.group.isOwn" class="flex max-w-full items-center gap-1 text-[11px] tracking-[0.11px]">
+									<span class="truncate text-ink-gray-7">{{ item.group.user_name }}</span>
+									<span class="shrink-0 text-ink-gray-5">· {{ time(item.group.timestamp) }}</span>
+								</div>
+								<span v-else class="text-[11px] tracking-[0.11px] text-ink-gray-5">{{ time(item.group.timestamp) }}</span>
+
+								<div class="flex flex-col gap-2.5" :class="item.group.isOwn ? 'items-end' : 'items-start'">
+									<div
+										v-for="message in item.group.messages"
+										:key="message.id"
+										class="max-w-full whitespace-pre-wrap rounded-[18px] px-3 py-2.5 text-sm leading-[1.15] tracking-[0.28px] text-ink-gray-8 [overflow-wrap:anywhere]"
+										:class="item.group.isOwn ? 'bg-surface-gray-3 text-right' : 'bg-surface-gray-2'"
+									>
+										<template
+											v-for="(token, i) in tokenizeChatMessage(message.message)"
+											:key="i"
+										>
+											<a
+												v-if="token.type === 'link'"
+												:href="token.url"
+												target="_blank"
+												rel="noopener noreferrer"
+												class="text-ink-blue-5 underline"
+											>{{ token.text }}</a>
+											<span v-else>{{ token.text }}</span>
+										</template>
+									</div>
+								</div>
 							</div>
 						</div>
+						</template>
 					</div>
-				</template>
-				<div v-if="chatItems.length === 0" class="text-gray-500 text-sm text-center mt-8">
-					No messages yet
-				</div>
-			</div>
 
-				<form class="p-2 relative" @submit.prevent="handleSend">
+					<div v-if="chatItems.length === 0" class="mt-8 text-center text-sm text-ink-gray-5">
+						No messages yet
+					</div>
+				</div>
+
+				<form class="relative shrink-0 p-3" @submit.prevent="handleSend">
 					<template v-if="canSendMessages">
-						<div class="flex gap-2">
-							<FormControl
-								size="md"
+						<div
+							class="chat-composer relative flex cursor-text items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-2.5 py-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-outline-gray-3 focus-within:shadow-[0_0_0_1px_var(--outline-gray-3)]"
+							data-testid="chat-input-wrapper"
+							@click="focusInput"
+						>
+							<div
+								v-if="emojiMenuActive"
+								class="absolute bottom-full left-0 z-50 mb-1 max-h-[220px] min-w-[12rem] overflow-y-auto rounded-lg border border-outline-gray-2 bg-surface-modal p-1 shadow-lg"
+								role="listbox"
+								aria-label="Emoji suggestions"
+								data-testid="chat-emoji-suggestions"
+							>
+								<button
+									v-for="(item, index) in emojiSuggestions"
+									:key="item.name"
+									type="button"
+									role="option"
+									class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+									:class="
+										index === emojiSelectedIndex
+											? 'bg-surface-gray-3'
+											: 'hover:bg-surface-gray-2'
+									"
+									:aria-selected="index === emojiSelectedIndex"
+									@mousedown.prevent="selectEmoji(item)"
+									@mouseenter="emojiSelectedIndex = index"
+								>
+									<span class="text-base leading-none">{{ item.emoji }}</span>
+									<span class="truncate text-ink-gray-4">{{ item.name }}</span>
+								</button>
+								<div
+									v-if="emojiSuggestions.length === 0"
+									class="px-2 py-1.5 text-sm text-ink-gray-4"
+								>
+									No results
+								</div>
+							</div>
+							<textarea
+								ref="inputEl"
 								v-model="draft"
-								@keydown="handleKeydown"
+								rows="1"
 								placeholder="Type a message"
-								class="flex-1"
-								autocomplete="off"
+								class="chat-composer-input min-w-0 flex-1 resize-none border-0 bg-transparent py-0 text-sm leading-5 text-ink-gray-8 tracking-[0.28px] shadow-none outline-none ring-0 placeholder:text-ink-gray-5 focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
 								data-testid="chat-input"
+								@input="onInput"
+								@keydown="onKeydown"
 							/>
-							<Button size="md" type="submit" variant="outline" data-testid="chat-send"> Send </Button>
+							<Button
+								type="submit"
+								variant="subtle"
+								theme="gray"
+								class="!h-7 !w-7 shrink-0 !rounded-md p-0"
+								aria-label="Send message"
+								data-testid="chat-send"
+							>
+								<template #icon>
+									<lucide-send class="h-4 w-4" />
+								</template>
+							</Button>
 						</div>
-						<EmojiPicker
-							:show="showEmojiPicker"
-							:filtered-emojis="filteredEmojis"
-							:selected-index="selectedEmojiIndex"
-							@select="addEmoji"
-						/>
 					</template>
-					<div v-else class="text-center text-sm text-gray-500 py-3 bg-gray-50 rounded border border-gray-200 m-2">
+					<div v-else class="m-2 rounded-lg border border-outline-gray-2 bg-surface-gray-2 py-3 text-center text-sm text-ink-gray-5">
 						The host has restricted chat to hosts and co-hosts only.
 					</div>
 				</form>
-				<CreatePollModal 
-                    v-model="showPollModal" 
-                    @submit="handlePollSubmit" 
-                />
+				<CreatePollModal
+					v-model="showPollModal"
+					@submit="handlePollSubmit"
+				/>
 			</div>
 		</div>
 	</Transition>
 </template>
 
 <script setup lang="ts">
-import data from "@emoji-mart/data";
-import { init, SearchIndex } from "emoji-mart";
-import { Button, FormControl, Dropdown } from "frappe-ui";
+import { Button, Dropdown } from "frappe-ui";
 import {
 	computed,
 	inject,
 	markRaw,
 	nextTick,
 	onMounted,
-	type Ref,
 	ref,
-	toRefs,
 	watch,
 } from "vue";
 import { tokenizeChatMessage } from "../utils/chatMessageTokens";
-import EmojiPicker from "./EmojiPicker.vue";
+import {
+	findColonQuery,
+	insertEmojiAtQuery,
+	rememberEmoji,
+	suggestEmojis,
+	type EmojiSuggestion,
+} from "../utils/emojiSuggest";
 import { usePollStore } from "../composables/usePollStore";
 import type { PollPayloadFE } from "../types";
 import CreatePollModal from "./CreatePollModal.vue";
+import MeetAvatar from "./MeetAvatar.vue";
 import PollMessageCard from "./PollMessageCard.vue";
 import LucideChartColumn from "~icons/lucide/chart-column";
 
 interface ChatMessage {
 	id: string | number;
+	user_id: string;
 	user_name: string;
 	message: string;
 	timestamp: string;
 }
 
-interface EmojiItem {
-	emoji: string;
-	keywords: string[];
-}
-
 interface MessageGroup {
 	id: string | number;
+	user_id: string;
 	user_name: string;
 	timestamp: string;
+	isOwn: boolean;
 	messages: ChatMessage[];
 }
 
@@ -166,7 +246,7 @@ const props = defineProps<{
 	open?: boolean;
 	userId?: string;
 	userName?: string;
-	messages?: ChatMessage[] | { value: ChatMessage[] };
+	messages?: ChatMessage[];
 	isHost?: boolean;
 	isCohost?: boolean;
 	isGuest?: boolean;
@@ -205,72 +285,37 @@ const emit = defineEmits<{
 	send: [text: string];
 }>();
 const listEl = ref<HTMLElement | null>(null);
-const { messages } = toRefs(props) as {
-	messages: Ref<ChatMessage[] | { value: ChatMessage[] }>;
-};
+const inputEl = ref<HTMLTextAreaElement | null>(null);
 const draft = ref("");
-const selectedEmojiIndex = ref(0);
-const filteredEmojis = ref<EmojiItem[]>([]);
-const isEmojiDataReady = ref(false);
+
+const emojiSuggestions = ref<EmojiSuggestion[]>([]);
+const emojiSelectedIndex = ref(0);
+const emojiQueryStart = ref<number | null>(null);
+/** True while a trailing `:query` is active at the caret (incl. empty query after `:`). */
+const emojiMenuActive = computed(() => emojiQueryStart.value !== null);
 
 const canSendMessages = computed(() => {
 	if (!props.hostOnlyChat) return true;
 	return props.isHost || props.isCohost;
 });
 
-const defaultEmojis: EmojiItem[] = [
-	{ emoji: "😀", keywords: ["smile"] },
-	{ emoji: "😂", keywords: ["laugh"] },
-	{ emoji: "❤️", keywords: ["heart"] },
-	{ emoji: "👍", keywords: ["thumbs up"] },
-	{ emoji: "👏", keywords: ["clap"] },
-	{ emoji: "🔥", keywords: ["fire"] },
-	{ emoji: "💯", keywords: ["100"] },
-	{ emoji: "🙌", keywords: ["raised hands"] },
-	{ emoji: "😊", keywords: ["blush"] },
-	{ emoji: "🎉", keywords: ["party"] },
-];
-
-const recentlyUsedEmojis = ref<EmojiItem[]>(defaultEmojis.slice());
-
 onMounted(async () => {
 	await scrollToBottom();
-	try {
-		await init({ data });
-		isEmojiDataReady.value = true;
-
-		const stored = localStorage.getItem("recentEmojis");
-		if (stored) {
-			try {
-				recentlyUsedEmojis.value = JSON.parse(stored);
-			} catch {
-				recentlyUsedEmojis.value = defaultEmojis.slice();
-			}
-		} else {
-			recentlyUsedEmojis.value = defaultEmojis.slice();
-		}
-	} catch (error) {
-		console.error("Failed to initialize emoji data:", error);
-	}
-});
-
-const resolvedMessages = computed<ChatMessage[]>(() => {
-	const m = messages.value;
-	if (!m) return [];
-	if (Array.isArray(m)) return m;
-	return m.value || [];
 });
 
 const groupedMessages = computed<MessageGroup[]>(() => {
-	if (resolvedMessages.value.length === 0) return [];
+	const msgs = props.messages;
+	if (!msgs || msgs.length === 0) return [];
 
 	const groups: MessageGroup[] = [];
 	let currentGroup: MessageGroup | null = null;
 
-	for (const message of resolvedMessages.value) {
+	for (const message of msgs) {
+		const isOwn = message.user_id === props.userId;
 		const shouldStartNewGroup =
 			!currentGroup ||
-			currentGroup.user_name !== message.user_name ||
+			currentGroup.user_id !== message.user_id ||
+			currentGroup.isOwn !== isOwn ||
 			(currentGroup.messages.length > 0 &&
 				Math.abs(
 					new Date(message.timestamp).getTime() -
@@ -280,8 +325,10 @@ const groupedMessages = computed<MessageGroup[]>(() => {
 		if (shouldStartNewGroup) {
 			currentGroup = {
 				id: message.id,
+				user_id: message.user_id,
 				user_name: message.user_name,
 				timestamp: message.timestamp,
+				isOwn,
 				messages: [message],
 			};
 			groups.push(currentGroup);
@@ -332,135 +379,145 @@ function pollCreatorName(poll: PollPayloadFE) {
 	return poll.createdByName || poll.createdBy;
 }
 
-const showEmojiPicker = computed(() => {
-	const colonIndex = draft.value.lastIndexOf(":");
-	if (colonIndex === -1) return false;
-	const afterColon = draft.value.slice(colonIndex + 1);
-	return !afterColon.includes(" ") && /^[a-zA-Z0-9]*$/.test(afterColon);
-});
-
-const emojiQuery = computed(() => {
-	const colonIndex = draft.value.lastIndexOf(":");
-	if (colonIndex === -1) return "";
-	const afterColon = draft.value.slice(colonIndex + 1);
-	if (afterColon.includes(" ")) return "";
-	// don't allow special characters in emoji query
-	// or while pasting url you'll have emoji picker popup
-	if (!/^[a-zA-Z0-9]*$/.test(afterColon)) return "";
-	return afterColon;
-});
-
-watch(emojiQuery, async (query) => {
-	if (!query) {
-		filteredEmojis.value = recentlyUsedEmojis.value;
-		selectedEmojiIndex.value = 0;
+function syncEmojiMenu() {
+	const el = inputEl.value;
+	if (!el) {
+		closeEmojiMenu();
 		return;
 	}
-
-	if (!isEmojiDataReady.value) {
-		filteredEmojis.value = [];
+	const caret = el.selectionStart ?? draft.value.length;
+	const found = findColonQuery(draft.value, caret);
+	if (!found) {
+		closeEmojiMenu();
 		return;
 	}
-	try {
-		const results = await SearchIndex.search(query, {
-			maxResults: 10,
-			caller: undefined as unknown as string,
-		});
-		filteredEmojis.value = results.map((emoji) => ({
-			emoji: emoji.skins[0].native,
-			keywords: emoji.keywords || [],
-		}));
-		if (selectedEmojiIndex.value >= filteredEmojis.value.length) {
-			selectedEmojiIndex.value = 0;
-		}
-	} catch (error) {
-		filteredEmojis.value = [];
-	}
-});
-
-// Watch for when emoji picker should be shown
-watch(showEmojiPicker, (isShown) => {
-	if (isShown && emojiQuery.value === "") {
-		// Show recently used emojis when picker first opens with just :
-		filteredEmojis.value = recentlyUsedEmojis.value;
-		selectedEmojiIndex.value = 0;
-	}
-});
-function handleKeydown(event) {
-	if (!showEmojiPicker.value) return;
-	const { key } = event;
-	if (key === "ArrowDown") {
-		event.preventDefault();
-		selectedEmojiIndex.value =
-			(selectedEmojiIndex.value + 1) % filteredEmojis.value.length;
-	} else if (key === "ArrowUp") {
-		event.preventDefault();
-		selectedEmojiIndex.value =
-			selectedEmojiIndex.value === 0
-				? filteredEmojis.value.length - 1
-				: selectedEmojiIndex.value - 1;
-	} else if (key === "Enter") {
-		event.preventDefault();
-		if (filteredEmojis.value.length > 0) {
-			addEmoji(filteredEmojis.value[selectedEmojiIndex.value]);
-		}
-	} else if (key === "Escape") {
-		event.preventDefault();
-		// Remove the last colon to hide picker
-		const colonIndex = draft.value.lastIndexOf(":");
-		if (colonIndex > -1) {
-			draft.value = draft.value.slice(0, colonIndex);
-		}
-	}
+	emojiQueryStart.value = found.start;
+	emojiSuggestions.value = suggestEmojis(found.query);
+	emojiSelectedIndex.value = 0;
 }
 
-function addEmoji(item) {
-	const emoji = item.emoji;
-	const colonIndex = draft.value.lastIndexOf(":");
-	const beforeColon = draft.value.slice(0, colonIndex);
-	const afterColon = draft.value.slice(colonIndex + 1);
+function closeEmojiMenu() {
+	emojiQueryStart.value = null;
+	emojiSuggestions.value = [];
+	emojiSelectedIndex.value = 0;
+}
 
-	if (afterColon) {
-		// Replace :<query> with emoji
-		draft.value = beforeColon + emoji;
-	} else {
-		// Replace : with emoji
-		draft.value = beforeColon + emoji;
+function selectEmoji(item: EmojiSuggestion) {
+	const el = inputEl.value;
+	if (!el || emojiQueryStart.value === null) return;
+	const caret = el.selectionStart ?? draft.value.length;
+	const { text, caret: nextCaret } = insertEmojiAtQuery(
+		draft.value,
+		caret,
+		emojiQueryStart.value,
+		item.emoji,
+	);
+	draft.value = text;
+	rememberEmoji(item);
+	closeEmojiMenu();
+	nextTick(() => {
+		el.focus();
+		el.setSelectionRange(nextCaret, nextCaret);
+		autosize();
+	});
+}
+
+function onInput() {
+	autosize();
+	syncEmojiMenu();
+}
+
+function onKeydown(event: KeyboardEvent) {
+	if (emojiMenuActive.value) {
+		if (event.key === "ArrowDown") {
+			event.preventDefault();
+			if (emojiSuggestions.value.length === 0) return;
+			emojiSelectedIndex.value =
+				(emojiSelectedIndex.value + 1) % emojiSuggestions.value.length;
+			return;
+		}
+		if (event.key === "ArrowUp") {
+			event.preventDefault();
+			if (emojiSuggestions.value.length === 0) return;
+			emojiSelectedIndex.value =
+				(emojiSelectedIndex.value - 1 + emojiSuggestions.value.length) %
+				emojiSuggestions.value.length;
+			return;
+		}
+		if (event.key === "Escape") {
+			event.preventDefault();
+			closeEmojiMenu();
+			return;
+		}
+		if (
+			(event.key === "Enter" || event.key === "Tab") &&
+			!event.shiftKey &&
+			emojiSuggestions.value.length > 0
+		) {
+			event.preventDefault();
+			selectEmoji(emojiSuggestions.value[emojiSelectedIndex.value]);
+			return;
+		}
 	}
 
-	const existingIndex = recentlyUsedEmojis.value.findIndex(
-		(e) => e.emoji === emoji,
-	);
-	if (existingIndex > -1) {
-		recentlyUsedEmojis.value.splice(existingIndex, 1);
+	if (event.key === "Enter" && !event.shiftKey) {
+		event.preventDefault();
+		handleSend();
 	}
-	recentlyUsedEmojis.value.unshift(item);
-	if (recentlyUsedEmojis.value.length > 10) {
-		recentlyUsedEmojis.value = recentlyUsedEmojis.value.slice(0, 10);
-	}
-	localStorage.setItem(
-		"recentEmojis",
-		JSON.stringify(recentlyUsedEmojis.value),
-	);
 }
 
 function handleSend() {
-	if (showEmojiPicker.value && filteredEmojis.value.length > 0) {
-		addEmoji(filteredEmojis.value[selectedEmojiIndex.value]);
-		return;
-	}
 	const text = draft.value.trim();
 	if (!canSendMessages.value) return;
 	if (!text) return;
 	emit("send", text);
 	draft.value = "";
+	closeEmojiMenu();
+	nextTick(() => {
+		autosize();
+		focusInput();
+	});
+}
+
+function focusInput() {
+	inputEl.value?.focus();
+}
+
+function autosize() {
+	const el = inputEl.value;
+	if (!el) return;
+	el.style.height = "auto";
+	el.style.height = `${Math.min(el.scrollHeight, 44)}px`;
 }
 
 async function scrollToBottom() {
 	await nextTick();
 	const el = listEl.value;
+	if (!el) return;
 	el.scrollTop = el.scrollHeight;
 }
 
 watch([chatItems], scrollToBottom, { deep: true });
 </script>
+
+<style scoped>
+.chat-composer-input {
+	min-height: 1.375rem;
+	max-height: 44px;
+	padding: 0;
+	margin: 0;
+	overflow-y: auto;
+	caret-color: var(--ink-gray-8);
+	/* Kill UA / form focus chrome; the wrapper owns focus affordance. */
+	outline: none !important;
+	box-shadow: none !important;
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+.chat-composer-input:focus,
+.chat-composer-input:focus-visible {
+	outline: none !important;
+	box-shadow: none !important;
+}
+</style>

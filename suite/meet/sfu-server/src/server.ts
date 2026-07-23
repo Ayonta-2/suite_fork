@@ -11,8 +11,17 @@ import { FileRosterPersistence } from './server/E2eeRosterPersistenceFile';
 import { E2eeRosterStore } from './server/E2eeRosterStore';
 import { RouteManager } from './server/RouteManager';
 import { SocketHandlerManager } from './server/SocketHandlerManager';
+import { Telemetry } from './telemetry/Telemetry';
 import type { ServerConfig } from './types';
 import { loggers } from './utils/logger';
+import { captureException, flushSentry, initSentry } from './utils/sentry';
+
+initSentry();
+
+function socketTimeout(envName: string, fallback: number): number {
+	const value = Number.parseInt(process.env[envName] || '', 10);
+	return Number.isFinite(value) && value > 0 ? value : fallback;
+}
 
 export class SFUServer {
 	private app: Application;
@@ -23,6 +32,7 @@ export class SFUServer {
 	private routeManager: RouteManager;
 	private socketHandlerManager: SocketHandlerManager;
 	private config: ServerConfig;
+	private telemetry: Telemetry;
 
 	constructor() {
 		const jwtSecret = process.env.JWT_SECRET;
@@ -50,13 +60,19 @@ export class SFUServer {
 				allowedHeaders: ['*'],
 				credentials: false,
 			},
-			pingTimeout: 60000,
-			pingInterval: 25000,
+			pingTimeout: socketTimeout('SOCKET_PING_TIMEOUT', 60000),
+			pingInterval: socketTimeout('SOCKET_PING_INTERVAL', 25000),
 		});
 
 		this.mediasoup = new MediasoupManager();
+		this.telemetry = new Telemetry();
 		this.authManager = new AuthManager(this.config.jwtSecret);
-		this.routeManager = new RouteManager(this.app, this.mediasoup);
+		this.routeManager = new RouteManager(
+			this.app,
+			this.mediasoup,
+			this.telemetry,
+			() => this.io.sockets.sockets.size,
+		);
 		const e2eeRoster = new E2eeRosterStore(
 			process.env.E2EE_ROSTER_PERSISTENCE_DIR
 				? new FileRosterPersistence(
@@ -69,6 +85,7 @@ export class SFUServer {
 			this.io,
 			this.mediasoup,
 			this.authManager,
+			this.telemetry,
 			e2eeRoster,
 			e2eeCoordinatorPersistence,
 		);
@@ -101,6 +118,8 @@ export class SFUServer {
 				'Failed to start SFU server: %s',
 				(error as Error).message,
 			);
+			captureException(error);
+			await flushSentry();
 			process.exit(1);
 		}
 	}
@@ -128,17 +147,17 @@ export class SFUServer {
 	}
 }
 
-const sfuServer = new SFUServer();
+let sfuServer: SFUServer | undefined;
 
 process.on('SIGINT', async () => {
 	loggers.server.info('Received SIGINT, shutting down gracefully');
-	await sfuServer.stop();
+	await sfuServer?.stop();
 	process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
 	loggers.server.info('Received SIGTERM, shutting down gracefully');
-	await sfuServer.stop();
+	await sfuServer?.stop();
 	process.exit(0);
 });
 
@@ -148,7 +167,8 @@ process.on('uncaughtException', (error) => {
 		error.message,
 		error.stack,
 	);
-	process.exit(1);
+	captureException(error);
+	void flushSentry().finally(() => process.exit(1));
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -158,13 +178,25 @@ process.on('unhandledRejection', (reason) => {
 		err.message,
 		err.stack,
 	);
-	process.exit(1);
+	captureException(err);
+	void flushSentry().finally(() => process.exit(1));
 });
 
-sfuServer.start().catch((error) => {
+try {
+	sfuServer = new SFUServer();
+	sfuServer.start().catch((error) => {
+		loggers.server.error(
+			'Failed to start SFU server: %s',
+			(error as Error).message,
+		);
+		captureException(error);
+		void flushSentry().finally(() => process.exit(1));
+	});
+} catch (error) {
 	loggers.server.error(
-		'Failed to start SFU server: %s',
+		'Failed to configure SFU server: %s',
 		(error as Error).message,
 	);
-	process.exit(1);
-});
+	captureException(error);
+	void flushSentry().finally(() => process.exit(1));
+}

@@ -13,11 +13,11 @@ from suite.mail.doctype.jmap_account.jmap_account import sync_jmap_accounts
 from suite.mail.jmap import get_jmap_session_manager
 from suite.mail.jmap.connection import JMAPConnection, JMAPConnectionInfo
 from suite.mail.utils import get_config
-from suite.mail.utils.dt import timestamp_to_datetime
-from suite.mail.utils.user import is_system_manager
+from suite.utils.dt import timestamp_to_datetime
+from suite.utils.permissions import OwnerFromUser
 
 
-class UserSettings(Document):
+class UserSettings(OwnerFromUser, Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -74,11 +74,16 @@ class UserSettings(Document):
 		"""Returns a JMAP connection for the user if the username and app password are set, otherwise returns None."""
 
 		if self.username and self.get_password("app_password"):
-			server_url = get_config("server_url")
+			server_url, verify_ssl = get_config(("server_url", "verify_ssl"))
 
 			try:
 				return JMAPConnection(
-					JMAPConnectionInfo(server_url, self.username, self.get_password("app_password"))
+					JMAPConnectionInfo(
+						server_url,
+						self.username,
+						self.get_password("app_password"),
+						verify_ssl=bool(verify_ssl),
+					)
 				)
 			except Exception:
 				pass
@@ -135,24 +140,3 @@ class UserSettings(Document):
 		"""Updates the document with the given key-value pairs."""
 
 		self.db_set(kwargs, update_modified=update_modified, notify=notify, commit=commit)
-
-
-def get_permission_query_condition(user: str | None = None) -> str:
-	user = user or frappe.session.user
-
-	if is_system_manager(user):
-		return ""
-
-	return f"(`tabUser Settings`.user = '{user}')"
-
-
-def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
-	if doc.doctype != "User Settings":
-		return False
-
-	user = user or frappe.session.user
-
-	if is_system_manager(user):
-		return True
-
-	return doc.user == user

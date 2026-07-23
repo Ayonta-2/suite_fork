@@ -5,11 +5,13 @@ import {
 	type BrowserContext,
 	type Page,
 } from "@playwright/test";
-import * as fs from "node:fs";
-import { MEETINGS_STATE_FILE, type MeetingsState } from "../global-setup";
 import { STUB_MEDIA_SCRIPT } from "./media";
 import { loginViaApi } from "../helpers/auth";
-import { clearMeetingCreateRateLimit, createMeetingViaApi, type MeetingType } from "../helpers/meeting";
+import {
+	clearMeetingCreateRateLimit,
+	createMeetingViaApi,
+	type MeetingType,
+} from "../helpers/meeting";
 
 const isCI = !!process.env.CI;
 const previewTimeout = isCI ? 45_000 : 20_000;
@@ -18,11 +20,6 @@ const baseURL = process.env.BASE_URL ?? "http://localhost:8098";
 
 function appUrl(pathname: string): string {
 	return new URL(pathname, baseURL).toString();
-}
-
-function readMeetingsState(): MeetingsState {
-	const raw = fs.readFileSync(MEETINGS_STATE_FILE, "utf-8");
-	return JSON.parse(raw) as MeetingsState;
 }
 
 interface Participant {
@@ -36,8 +33,6 @@ interface Participant {
 
 interface TestFixtures {
 	hostPage: Page;
-	meetingId: string;
-	restrictedMeetingId: string;
 	createMeeting: (meetingType?: MeetingType) => Promise<string>;
 	createMeetingViaUi: (meetingType?: MeetingType) => Promise<string>;
 	createParticipant: () => Promise<Participant>;
@@ -62,10 +57,7 @@ async function joinFromPreview(page: Page): Promise<void> {
 	const meetingLayout = page.getByTestId("meeting-layout");
 	const joinButton = page.getByTestId("join-meeting-preview-button");
 
-	await Promise.race([
-		preview.waitFor({ state: "visible", timeout: previewTimeout }),
-		meetingLayout.waitFor({ state: "visible", timeout: previewTimeout }),
-	]);
+	await expect(preview.or(meetingLayout)).toBeVisible({ timeout: previewTimeout });
 
 	if (
 		!(await meetingLayout.isVisible().catch(() => false)) &&
@@ -89,6 +81,22 @@ async function joinFromPreview(page: Page): Promise<void> {
 	await waitForMeetingReady(page);
 }
 
+/** Host and guest join the same open meeting concurrently. */
+async function joinHostAndGuest(
+	hostPage: Page,
+	guest: Participant,
+	meetingId: string,
+	guestName: string,
+): Promise<void> {
+	await Promise.all([
+		(async () => {
+			await hostPage.goto(appUrl(`/meet/${meetingId}`));
+			await joinFromPreview(hostPage);
+		})(),
+		guest.joinAsGuest(meetingId, guestName),
+	]);
+}
+
 async function createMeetingViaUi(
 	page: Page,
 	meetingType: MeetingType = "open",
@@ -96,10 +104,9 @@ async function createMeetingViaUi(
 	await page.getByTestId("home-page").waitFor({ state: "visible", timeout: 20_000 });
 
 	if (meetingType === "open") {
-		await page.getByTestId("create-open-meeting-button").click();
+		await page.getByRole("button", { name: "Instant meet" }).click();
 	} else {
-		await page.getByTestId("create-meeting-options").click();
-		await page.getByRole("menuitem", { name: "Create a restricted meeting" }).click();
+		await page.getByRole("button", { name: "Restricted meet" }).click();
 	}
 
 	await page.waitForURL(/\/meet\/[a-z0-9-]+$/);
@@ -162,24 +169,24 @@ export const test = base.extend<TestFixtures>({
 		await context.close();
 	},
 
-	createMeeting: async ({ hostPage }, use) => {
+	// API-only meeting create so tests do not share rooms across workers.
+	createMeeting: async ({ playwright }, use) => {
+		const api = await playwright.request.newContext({ baseURL });
+		await loginViaApi(api);
+
 		await use(async (meetingType = "open") => {
-			return createMeetingViaApi(hostPage.request, meetingType);
+			await clearMeetingCreateRateLimit(api);
+			return createMeetingViaApi(api, meetingType);
 		});
+
+		await api.dispose();
 	},
 
 	createMeetingViaUi: async ({ hostPage }, use) => {
 		await use(async (meetingType = "open") => {
+			await clearMeetingCreateRateLimit(hostPage.request);
 			return createMeetingViaUi(hostPage, meetingType);
 		});
-	},
-
-	meetingId: async ({}, use) => {
-		await use(readMeetingsState().openMeetingId);
-	},
-
-	restrictedMeetingId: async ({}, use) => {
-		await use(readMeetingsState().restrictedMeetingId);
 	},
 
 	createParticipant: async ({ browser }, use) => {
@@ -197,9 +204,6 @@ export const test = base.extend<TestFixtures>({
 	},
 });
 
-test.beforeEach(async ({ hostPage }) => {
-	await clearMeetingCreateRateLimit(hostPage.request);
-});
-
-export { expect, joinFromPreview };
+export { expect, joinFromPreview, joinHostAndGuest };
 export { appUrl };
+export type { Participant };

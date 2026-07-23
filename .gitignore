@@ -13,9 +13,12 @@ yarn-error.log
 /suite/**/public/frontend/
 /suite/**/public/dist/
 /suite/sheets/public/sheets/
-# Built www entrypoints (one per app); sheets.html is a hand-written template
+# Meet DTLN worklet (~17MB) — copied from node_modules by frontend prebuild
+/suite/public/noise-suppression/
+# Built www entrypoints (one per app); the listed pages are hand-written templates
 /suite/**/www/*.html
 !/suite/sheets/www/sheets.html
+!/suite/www/event_rsvp.html
 # Slides service worker — emitted to the unified www root by the vite build
 /suite/www/service-worker.js
 
@@ -29,3 +32,5 @@ stalwart-cli
 .DS_Store
 *.swp
 *.swo
+.claude/
+.vscode

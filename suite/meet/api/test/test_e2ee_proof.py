@@ -43,15 +43,15 @@ class IntegrationTestE2EEEpoch(IntegrationTestCase):
 				}
 			)
 			user.insert(ignore_permissions=True)
-		if not any(r.role == "Meet User" for r in user.roles):
-			user.append("roles", {"role": "Meet User"})
+		if not any(r.role == "Suite User" for r in user.roles):
+			user.append("roles", {"role": "Suite User"})
 			user.save(ignore_permissions=True)
 
 	def _create_meeting_as_host(self):
 		frappe.set_user(self.host_email)
 		meeting = frappe.get_doc(
 			{
-				"doctype": "Sae Meeting",
+				"doctype": "Meet Room",
 				"meeting_type": "open",
 				"allow_guest": 1,
 			}

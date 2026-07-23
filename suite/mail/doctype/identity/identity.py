@@ -11,7 +11,7 @@ from frappe.utils import cint, today
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_identity_service
-from suite.mail.utils import parse_filters
+from suite.utils import parse_filters
 
 
 class Identity(Document):
@@ -294,6 +294,8 @@ def format_identity(account: str, identity: dict) -> dict:
 		"html_signature": identity["htmlSignature"],
 		"text_signature": identity["textSignature"],
 		"may_delete": cint(identity["mayDelete"]),
+		"owner": frappe.session.user,
+		"modified_by": frappe.session.user,
 		"creation": today(),
 		"modified": today(),
 	}

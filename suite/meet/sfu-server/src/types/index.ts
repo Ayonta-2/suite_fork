@@ -11,6 +11,7 @@ import type {
 	RtpCapabilities,
 	RtpCodecCapability,
 	RtpParameters,
+	WebRtcServer,
 	WebRtcTransport,
 	WorkerLogLevel,
 	WorkerSettings,
@@ -98,6 +99,7 @@ export type {
 	SFUScope,
 	UpdateTokenRequest,
 	UserData,
+	WebRtcServer,
 	WebRtcTransport,
 	WorkerLogLevel,
 	WorkerSettings,
@@ -130,6 +132,7 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+	client_telemetry: (data: ClientTelemetryEvent) => void;
 	'auth:update_token': (
 		data: UpdateTokenRequest,
 		callback: (response: SFUResponse) => void,
@@ -242,6 +245,21 @@ export interface ClientToServerEvents {
 	'e2ee:epoch': (data: E2eeEpochEnvelope) => void;
 }
 
+export type ClientTelemetryEvent =
+	| {
+			event: 'first_remote_media';
+			media: 'audio' | 'video';
+			durationMs: number;
+	  }
+	| { event: 'media_stall'; media: 'audio' | 'video' }
+	| {
+			event: 'recovery';
+			direction: 'send' | 'recv' | 'both';
+			trigger: 'signaling' | 'ice' | 'stall';
+			outcome: 'success' | 'failure';
+			durationMs: number;
+	  };
+
 export interface SocketData {
 	userId: string;
 	userName: string;
@@ -335,6 +353,7 @@ export interface ExistingProducer {
 export interface Room {
 	id: string;
 	router: Router;
+	webRtcServer: WebRtcServer;
 	audioLevelObserver: AudioLevelObserver;
 	peers: Map<string, Peer>;
 	created: Date;
@@ -387,6 +406,7 @@ export interface MediasoupConfig {
 	worker: WorkerSettings;
 	router: RouterConfig;
 	webRtcTransport: WebRTCTransportOptions;
+	webRtcServer: WebRTCServerOptions;
 }
 
 export interface RouterConfig {
@@ -394,16 +414,14 @@ export interface RouterConfig {
 }
 
 export interface WebRTCTransportOptions {
-	listenIps: Array<{ ip: string; announcedIp: string }>;
-	enableUdp: boolean;
 	enableTcp: boolean;
-	preferUdp: boolean;
-	portRange: { min: number; max: number };
-	maxIncomingBitrate: number;
-	maxOutgoingBitrate: number;
 	initialAvailableOutgoingBitrate: number;
-	iceServers: Array<{ urls: string[] }>;
-	iceTransportPolicy: string;
+}
+
+export interface WebRTCServerOptions {
+	listenIp: string;
+	announcedAddress: string;
+	basePort: number;
 }
 
 // JWT types

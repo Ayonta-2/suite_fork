@@ -5,6 +5,7 @@ import {
 	StallDetector,
 } from "../utils/media/stallDetector";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
+import { getClientTelemetry } from "../utils/telemetry/ClientTelemetry";
 
 type NetworkQuality = "good" | "poor" | "critical";
 
@@ -96,11 +97,28 @@ export function useNetworkQuality() {
 			getBytesReceived: () => bytes,
 			getCreatedAt: () => entry.createdAt,
 		}));
+		const clientTelemetry = sfuManager.sfuClient
+			? getClientTelemetry(sfuManager.sfuClient)
+			: null;
+		for (const { entry, bytes } of statsResults) {
+			if (bytes !== null && bytes > 0 && (entry.kind === "audio" || entry.kind === "video")) {
+				clientTelemetry?.markFirstRemoteMedia(entry.kind);
+			}
+		}
 
 		const stalledIds = stallDetector.check(samples);
 		if (stalledIds.length === 0) return;
+		const stalledSet = new Set(stalledIds);
+		clientTelemetry?.reportMediaStalls(
+			samples
+				.filter((sample) => stalledSet.has(sample.id))
+				.map((sample) => sample.kind)
+				.filter((kind): kind is "audio" | "video" =>
+					kind === "audio" || kind === "video",
+				),
+		);
 
-		void sfuManager.resyncAfterRecovery(`consumer_stall_${stalledIds.join(",")}`);
+		void sfuManager.connectionManager.resetReceiveSide();
 	};
 
 	const pollStats = async () => {
@@ -125,12 +143,17 @@ export function useNetworkQuality() {
 
 			if (isFailed) {
 				networkQuality.value = "critical";
+				stallDetector.suspend();
 				return;
 			}
 
 			if (transportManager.getNetworkStats) {
 				const stats = await transportManager.getNetworkStats();
 				updateQuality(stats);
+			}
+			if (networkQuality.value !== "good") {
+				stallDetector.suspend();
+				return;
 			}
 
 			await checkConsumerStalls();

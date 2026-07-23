@@ -10,8 +10,7 @@ import { userStore } from '@/apps/calendar/stores/user'
 /**
  * Calendar route-group layout.
  *
- * Maps the standalone app's root App.vue. The suite shell already provides the
- * top-level chrome, so this layout only:
+ * The suite shell already provides the top-level chrome, so this layout only:
  *   - provides the calendar-local `$user` (mail/calendar userResource) and
  *     `$dayjs` injections that calendar components depend on,
  *   - applies the user's color scheme to <html data-theme>,
@@ -26,8 +25,16 @@ provide('$dayjs', dayjs)
 
 watchEffect(() => document.documentElement.setAttribute('data-theme', dataTheme.value))
 
-onMounted(() => window.addEventListener('keydown', handleKeyDown))
-onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
+// Mark <body> while calendar is mounted so the `.icon` helper below (see <style>) can
+// reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.
+onMounted(() => {
+	document.body.classList.add('calendar-app')
+	window.addEventListener('keydown', handleKeyDown)
+})
+onUnmounted(() => {
+	document.body.classList.remove('calendar-app')
+	window.removeEventListener('keydown', handleKeyDown)
+})
 
 const handleKeyDown = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
@@ -47,7 +54,17 @@ const cycleTheme = () => {
 
 	const idx = COLOR_SCHEME_CYCLE.indexOf(current)
 	const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
-	updateColorScheme.submit(next)
+
+	// Optimistic: flip the theme and confirm at once, before the server round-trip resolves.
+	userResource.data.color_scheme = next
+	raiseToast(__('Color scheme updated to {0}.', [next]))
+
+	updateColorScheme.submit(next, {
+		onError: () => {
+			userResource.data.color_scheme = current
+			raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
+		},
+	})
 }
 
 const updateColorScheme = createResource({
@@ -57,8 +74,8 @@ const updateColorScheme = createResource({
 		name: userResource.data.user_settings,
 		fieldname: { color_scheme },
 	}),
-	onSuccess: (data) => {
-		raiseToast(__('Color scheme updated to {0}.', [data.color_scheme]))
+	onSuccess: () => {
+		// Reconcile the optimistic value against server truth (sets the same value; harmless).
 		userResource.reload()
 	},
 })
@@ -69,3 +86,14 @@ const updateColorScheme = createResource({
 		<router-view />
 	</FrappeUIProvider>
 </template>
+
+<style>
+/* Lucide icons render an <svg> whose default stroke-width is 2, and Tailwind has no
+   `stroke-1.5` utility, so give the calendar a shared `.icon` helper for the 1.5 stroke —
+   mirrors the mail layout. Scoped to `body.calendar-app` (toggled while this layout is
+   mounted) so it also reaches Dropdowns/Dialogs that teleport to <body>, and never leaks
+   into the other suite apps. */
+body.calendar-app .icon {
+	stroke-width: 1.5;
+}
+</style>

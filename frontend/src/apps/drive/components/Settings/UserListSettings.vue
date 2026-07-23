@@ -1,16 +1,21 @@
 <template>
-  <div class="flex items-center mb-4">
-    <h1 class="font-semibold text-ink-gray-9">
-      {{ __('Teams') }}
-    </h1>
-    <Button
-      variant="solid"
-      :icon-left="h(LucidePlus, { class: 'size-4' })"
-      :label="__('New')"
-      class="ml-auto"
-      @click="showAddTeam = true"
-    />
-  </div>
+  <AppSettingsHeader :title="__('Teams')">
+    <template #actions>
+      <Button
+        v-if="team"
+        :label="__('Invite')"
+        :icon-left="h(LucideMail, { class: 'size-4' })"
+        @click="showInvite = true"
+      />
+      <Button
+        variant="solid"
+        :icon-left="h(LucidePlus, { class: 'size-4' })"
+        :label="__('New')"
+        @click="showAddTeam = true"
+      />
+    </template>
+  </AppSettingsHeader>
+  <AppSettingsBody>
   <Alert v-if="invite" type="info" :icon="LucideMail" class="mb-4">
     <template #actions>
       <Button
@@ -49,7 +54,7 @@
       </div>
     </div>
   </Alert>
-  <div v-if="Object.values(getTeams.data).length" class="flex gap-2 mb-2">
+  <div v-if="hasTeams" class="flex gap-2 mb-2">
     <TeamSelector v-model="team" />
     <Dropdown
       v-if="team"
@@ -82,12 +87,6 @@
           },
         ])
       "
-    />
-    <Button
-      label="Invite"
-      :icon-left="h(LucideMail, { class: 'size-4' })"
-      class="ml-auto"
-      @click="showInvite = true"
     />
   </div>
   <div v-else class="text-ink-gray-8 text-center text-p-sm py-4">
@@ -414,6 +413,7 @@
       </Button>
     </template>
   </Dialog>
+  </AppSettingsBody>
 </template>
 
 <script setup>
@@ -433,7 +433,11 @@ import {
   createResource,
   FormControl,
   FormLabel,
-  Checkbox, Button} from 'frappe-ui'
+  Checkbox,
+  Button,
+} from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import SyncBreakdown from '@/apps/drive/components/SyncBreakdown.vue'
 import { createDialog } from '@/apps/drive/utils/dialogs'
 import { teamUsers, getDiskSettings } from '@/apps/drive/resources/permissions'
@@ -464,17 +468,21 @@ const invites = createResource({
 
 const isAdmin = createResource({
   url: 'suite.drive.api.permissions.is_admin',
+  // Pending invites are admin-only; only fetch them once the user qualifies.
+  onSuccess: (admin) => {
+    if (admin) invites.fetch({ team: team.value })
+  },
 })
 
 const team = ref(route.params.team || (getTeams.data ? Object.keys(getTeams.data)[0] : null))
 
 const teamData = computed(() => getTeams.data?.[team.value] || {})
+const hasTeams = computed(() => Object.keys(getTeams.data || {}).length > 0)
 watch(
   team,
   (team) => {
     if (!team) return
     teamUsers.fetch({ team })
-    invites.fetch({ team })
     isAdmin.fetch({ team })
     tabIndex.value = 0
   },
@@ -519,16 +527,21 @@ const leaveTeam = createResource({
   },
 })
 
-const tabs = [
+const tabs = computed(() => [
   {
     label: 'Members',
     icon: h(LucideUsers, { class: 'size-4' }),
   },
-  {
-    label: 'Invites',
-    icon: h(LucideMail, { class: 'size-4' }),
-  },
-]
+  // Invite management is admin-only.
+  ...(isAdmin.data
+    ? [
+        {
+          label: 'Invites',
+          icon: h(LucideMail, { class: 'size-4' }),
+        },
+      ]
+    : []),
+])
 
 const updateAccess = (level) => {
   selectedUser.value.access_level = level

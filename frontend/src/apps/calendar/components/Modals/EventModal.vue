@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, inject, reactive, ref, watch } from 'vue'
-import { useDebounceFn } from '@vueuse/core'
-import { Button, Combobox, Dialog, Dropdown, FormControl, createResource, toast } from 'frappe-ui'
+import { AlignLeft, Bell, Briefcase, Clock, MapPin, Users, X } from 'lucide-vue-next'
+import { Button, Dialog, Dropdown, FormControl, Switch, createResource, toast } from 'frappe-ui'
 
-import { getReorderedParticipants, raiseToast } from '@/apps/calendar/utils'
+import meetLogo from '@/assets/app-logos/meet.png'
+import { getReorderedParticipants } from '@/apps/calendar/utils'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
-import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
+import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
 
 const show = defineModel<boolean>()
@@ -42,12 +43,13 @@ const getEventData = () => {
 		endDate: displayEnd.format('YYYY-MM-DD'),
 		endTime: end.format('HH:mm'),
 		free_busy_status: ev.free_busy_status,
-		privacy: ev.privacy,
+		privacy: ev.privacy || 'Public',
 		locations: ev.locations.length ? ev.locations.map((l) => l._name) : [''],
 		alerts: ev.alerts?.map(parseAlert) ?? [],
 		description: ev.description || '',
 		participants: [...ev.participants],
 		recurrence_rule: ev.recurrence_rule,
+		addMeetLink: hasMeetLink(ev),
 	}
 }
 
@@ -71,7 +73,7 @@ const getDefaultEventData = () => {
 		alerts: [],
 		description: '',
 		free_busy_status: 'Busy',
-		privacy: '',
+		privacy: 'Public',
 		participants: [
 			{
 				email: user.data.name,
@@ -81,6 +83,7 @@ const getDefaultEventData = () => {
 			},
 		],
 		recurrence_rule: {},
+		addMeetLink: false,
 	}
 }
 
@@ -103,11 +106,24 @@ const duration = computed(() => {
 	return dayjs.duration({ hours, minutes }).toISOString()
 })
 
+const startsAt = computed(() =>
+	dayjs(`${event.startDate}T${event.isAllDay ? '00:00' : event.startTime}`),
+)
+const endsAt = computed(() => dayjs(`${event.endDate}T${event.isAllDay ? '00:00' : event.endTime}`))
+
+const isDateTimeValid = computed(() => {
+	if (!event.startDate || !event.endDate) return false
+	if (!event.isAllDay && (!event.startTime || !event.endTime)) return false
+	if (!startsAt.value.isValid() || !endsAt.value.isValid()) return false
+	if (event.isAllDay) return !endsAt.value.isBefore(startsAt.value, 'day')
+	return endsAt.value.isAfter(startsAt.value)
+})
+
 const participants = computed(() =>
 	getReorderedParticipants(
 		event.participants,
 		event.organizer,
-		selectedEvent.calendarEvent?.participants,
+		selectedEvent?.calendarEvent?.participants,
 	),
 )
 
@@ -119,9 +135,7 @@ const eventParams = computed(() => {
 	const params: Record<string, any> = {
 		user: user.data.name,
 		organizer: event.organizer,
-		start: dayjs(`${event.startDate}T${event.isAllDay ? '00:00' : event.startTime}`).format(
-			'YYYY-MM-DD[T]HH:mm:ss',
-		),
+		start: startsAt.value.format('YYYY-MM-DD[T]HH:mm:ss'),
 		duration: duration.value,
 	}
 
@@ -162,9 +176,7 @@ const eventParams = computed(() => {
 const patch = computed(() =>
 	Object.fromEntries(
 		[...new Set([...Object.keys(eventParams.value), ...Object.keys(originalParams)])]
-			.filter(
-				(k) => JSON.stringify(eventParams.value[k]) !== JSON.stringify(originalParams[k]),
-			)
+			.filter((k) => JSON.stringify(eventParams.value[k]) !== JSON.stringify(originalParams[k]))
 			.map((k) => [k, eventParams.value[k]]),
 	),
 )
@@ -198,6 +210,10 @@ const parseAlert = (a: any) => {
 const hasParticipantsOtherThanUser = (participants: any[]) =>
 	participants?.some((p) => identities.data.every((i) => i.email !== p.email)) ?? false
 
+const hasMeetLink = (ev: any) =>
+	(ev?.links || []).some((link: any) => link?.href?.includes('/meet/')) ||
+	!!ev?.description?.includes('/meet/')
+
 // --- Watchers ---
 
 watch(show, (val) => {
@@ -211,28 +227,23 @@ watch(showRepeatSettings, (val) => {
 	if (!val && !event.recurrence_rule?.frequency) event.repeat = false
 })
 
-// --- Participants ---
-
-const addParticipant = (email: string) => {
-	if (!email?.trim()) return
-	if (!/^\S+@\S+\.\S+$/.test(email)) return raiseToast(__('Invalid email address'), 'error')
-	if (event.participants.some((p) => p.email.toLowerCase() === email.toLowerCase())) return
-	event.participants.push({ email, participation_status: 'NEEDS-ACTION', expect_reply: true })
+// With a rule applied the row is an entry point to the settings — unchecking
+// only happens through Remove Repeat in the modal.
+const toggleRepeat = () => {
+	if (event.recurrence_rule?.frequency) {
+		showRepeatSettings.value = true
+		return
+	}
+	event.repeat = !event.repeat
+	if (event.repeat) showRepeatSettings.value = true
+	else event.recurrence_rule = {}
 }
 
-const handleParticipantEnter = (e: Event) => {
-	const value = (e.target as HTMLInputElement).value.trim()
-	if (!value) return
-	value
-		.split(',')
-		.map((s) => s.trim())
-		.filter(Boolean)
-		.forEach(addParticipant)
-	;(e.target as HTMLInputElement).value = ''
-}
-
-const removeParticipant = (email: string) =>
-	(event.participants = event.participants.filter((p) => p.email !== email))
+const repeatLabel = computed(() => {
+	if (!event.recurrence_rule?.frequency) return __('Repeat')
+	const message = getRepeatMessage(event.recurrence_rule)
+	return __('Repeats {0}', [message.charAt(0).toLowerCase() + message.slice(1)])
+})
 
 // --- Save logic ---
 
@@ -242,7 +253,17 @@ const handleSuccess = () => {
 }
 
 const createEvent = createResource({
-	url: 'suite.mail.doctype.calendar_event.calendar_event.add_calendar_event',
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.add_calendar_event',
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+		account: store.accountId,
+		...eventParams.value,
+		send_scheduling_messages: sendEmail,
+	}),
+	onSuccess: handleSuccess,
+})
+
+const createMeetEvent = createResource({
+	url: 'suite.meet.api.schedule.create_scheduled_meeting',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		...eventParams.value,
@@ -252,7 +273,7 @@ const createEvent = createResource({
 })
 
 const editEventInstance = createResource({
-	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event_instance',
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		master_id: selectedEvent.calendarEvent.master_id,
@@ -264,7 +285,7 @@ const editEventInstance = createResource({
 })
 
 const editEvent = createResource({
-	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event',
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		// master_id is only set on recurring events; fall back to the event's own id
@@ -280,7 +301,13 @@ const isUpdateInstance = ref(false)
 
 const submitEvent = (sendEmail: boolean) => {
 	const isInstance = isUpdateInstance.value && selectedEvent.calendarEvent?.recurrence_id
-	const resource = isNew.value ? createEvent : isInstance ? editEventInstance : editEvent
+	const resource = isNew.value
+		? event.addMeetLink
+			? createMeetEvent
+			: createEvent
+		: isInstance
+			? editEventInstance
+			: editEvent
 	const messages = isNew.value
 		? { loading: __('Creating event...'), success: __('Event created.') }
 		: { loading: __('Updating event...'), success: __('Event updated.') }
@@ -296,6 +323,11 @@ const showNotifyParticipantsModal = ref(false)
 const showRecurringEventModal = ref(false)
 
 const handleSave = () => {
+	if (!isDateTimeValid.value) {
+		toast.error(__('Enter a valid date and an end time after the start time.'))
+		return
+	}
+
 	const needsEmail =
 		hasParticipantsOtherThanUser(selectedEvent?.calendarEvent?.participants) ||
 		hasParticipantsOtherThanUser(event.participants)
@@ -319,7 +351,7 @@ const shouldShowRecurringEventModal = computed(
 
 const addAlertOptions = computed(() => [
 	{
-		label: __('Relative to event'),
+		label: __('Relative to Event'),
 		onClick: () =>
 			event.alerts.push({
 				type: 'OffsetTrigger',
@@ -331,7 +363,7 @@ const addAlertOptions = computed(() => [
 			}),
 	},
 	{
-		label: __('On specific date'),
+		label: __('On Specific Date'),
 		onClick: () =>
 			event.alerts.push({
 				type: 'AbsoluteTrigger',
@@ -342,23 +374,12 @@ const addAlertOptions = computed(() => [
 	},
 ])
 
-// --- Contacts search ---
-
-const mailContacts = createResource({
-	url: 'suite.mail.api.contacts.get_contacts',
-	makeParams: (text: string) => ({
-		account: store.accountId,
-		filter: { operator: 'OR', conditions: [{ text }, { email: text }] },
-	}),
-	transform: (data) => data.map((o) => o.email),
-})
-
-const debouncedSearch = useDebounceFn((text: string) => text && mailContacts.reload(text), 300)
-
 // --- Dialog options ---
 
 const disableSave = computed(() => {
 	if (createEvent.loading || editEvent.loading || editEventInstance.loading) return true
+	if (createMeetEvent.loading) return true
+	if (!isDateTimeValid.value) return true
 	if (!isNew.value && !Object.keys(patch.value).length) return true
 	return false
 })
@@ -368,10 +389,7 @@ const handleSaveClick = () => {
 	else handleSave()
 }
 
-const dialogOptions = computed(() => ({
-	title: isNew.value ? __('Add Event') : __('Edit Event'),
-	size: '5xl',
-}))
+const dialogTitle = computed(() => (isNew.value ? __('Add Event') : __('Edit Event')))
 
 const RSVP_OPTIONS = [
 	{ label: __(' '), value: 'NEEDS-ACTION' },
@@ -406,182 +424,228 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 </script>
 
 <template>
-	<Dialog v-model="show" :options="dialogOptions">
-		<template #body-content>
-			<div class="grid max-h-[48rem] grid-cols-11 gap-6 overflow-y-auto">
-				<div class="col-span-7 space-y-4">
-					<h3 class="text-base-medium">{{ __('Event Details') }}</h3>
-					<!-- Title -->
-					<FormControl
-						v-model="event.title"
-						:label="__('Title')"
-						:placeholder="__('Meeting with Team')"
-					/>
+	<Dialog v-model="show" size="4xl" bare>
+		<template #default="{ close }">
+			<div class="flex max-h-[85vh] flex-col text-ink-gray-8">
+				<!-- header -->
+				<div class="flex items-center border-b px-6 py-4">
+					<span class="text-lg font-semibold">{{ dialogTitle }}</span>
+					<Button variant="ghost" class="ml-auto" @click="close">
+						<template #icon><X :size="18" class="icon text-ink-gray-5" /></template>
+					</Button>
+				</div>
 
-					<!-- Date and Time -->
-					<FormControl v-model="event.isAllDay" :label="__('All Day')" type="checkbox" />
-					<div class="flex space-x-4">
-						<FormControl
-							v-model="event.startDate"
-							type="date"
-							:label="__('Start Date')"
-							class="w-full"
+				<div class="flex min-h-0 flex-1">
+					<!-- left: event details -->
+					<div class="min-w-0 flex-1 overflow-y-auto px-6 py-5">
+						<!-- lead title -->
+						<input
+							v-model="event.title"
+							:autofocus="isNew"
+							:placeholder="__('Add title')"
+							class="w-full border-none bg-transparent p-0 pb-4 text-2xl font-semibold tracking-tight text-ink-gray-8 outline-none placeholder:text-ink-gray-4 focus:ring-0"
 						/>
-						<FormControl
-							v-if="!event.isAllDay"
-							v-model="event.startTime"
-							type="time"
-							:label="__('Start Time')"
-							class="w-full"
-						/>
-					</div>
-					<div class="flex space-x-4">
-						<FormControl
-							v-model="event.endDate"
-							type="date"
-							:label="__('End Date')"
-							class="w-full"
-						/>
-						<FormControl
-							v-if="!event.isAllDay"
-							v-model="event.endTime"
-							type="time"
-							:label="__('End Time')"
-							class="w-full"
-						/>
-					</div>
 
-					<!-- Repeat -->
-					<div class="flex items-center space-x-3">
-						<FormControl
-							v-model="event.repeat"
-							:label="
-								event.recurrence_rule?.frequency
-									? __('Repeat: {0}', [getRepeatMessage(event.recurrence_rule)])
-									: __('Repeat')
-							"
-							type="checkbox"
-							@update:model-value="
-								$event ? (showRepeatSettings = true) : (event.recurrence_rule = {})
-							"
-						/>
-						<span
-							v-if="event.recurrence_rule?.frequency"
-							class="text-ink-gray-4 cursor-pointer text-base hover:underline"
-							@click="showRepeatSettings = true"
+						<!-- date & time — one grouped card -->
+						<div class="rounded-xl border border-outline-gray-2">
+							<div class="flex items-center gap-3 border-b px-3.5 py-3">
+								<Clock :size="18" class="icon shrink-0 text-ink-gray-5" />
+								<span class="flex-1 text-base font-medium">
+									{{ __('Date & Time') }}
+								</span>
+								<FormControl
+									v-model="event.isAllDay"
+									:label="__('All Day')"
+									type="checkbox"
+									class="dark:[&_input:not(:checked)]:bg-surface-gray-2"
+								/>
+							</div>
+							<div class="flex gap-3 p-3.5">
+								<div class="min-w-0 flex-1 space-y-1.5">
+									<label class="block text-xs text-ink-gray-5">
+										{{ __('Starts') }}
+									</label>
+									<div class="flex gap-2">
+										<FormControl v-model="event.startDate" type="date" class="w-full" />
+										<FormControl
+											v-if="!event.isAllDay"
+											v-model="event.startTime"
+											type="time"
+											class="w-full"
+										/>
+									</div>
+								</div>
+								<div class="min-w-0 flex-1 space-y-1.5">
+									<label class="block text-xs text-ink-gray-5">
+										{{ __('Ends') }}
+									</label>
+									<div class="flex gap-2">
+										<FormControl v-model="event.endDate" type="date" class="w-full" />
+										<FormControl
+											v-if="!event.isAllDay"
+											v-model="event.endTime"
+											type="time"
+											class="w-full"
+										/>
+									</div>
+								</div>
+							</div>
+							<div class="px-3.5 pb-3.5">
+								<div
+									class="group -mx-1.5 flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-surface-gray-2"
+									@click="toggleRepeat"
+								>
+									<FormControl
+										v-model="event.repeat"
+										type="checkbox"
+										class="pointer-events-none dark:[&_input:not(:checked)]:bg-surface-gray-2"
+									/>
+									<span class="min-w-0 flex-1 truncate text-base text-ink-gray-8">
+										{{ repeatLabel }}
+									</span>
+								</div>
+							</div>
+						</div>
+
+						<!-- meet link -->
+						<div
+							v-if="isNew || hasMeetLink(selectedEvent?.calendarEvent)"
+							class="mt-4 flex items-center gap-3 rounded-lg border border-outline-gray-2 px-3.5 py-3"
 						>
-							{{ __('Edit') }}
-						</span>
-					</div>
+							<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-[18px] shrink-0" />
+							<span class="flex-1 text-base">
+								{{ __('Add Frappe Meet Video Call') }}
+							</span>
+							<Switch
+								v-model="event.addMeetLink"
+								:disabled="!isNew && hasMeetLink(selectedEvent?.calendarEvent)"
+							/>
+						</div>
 
-					<!-- Locations -->
-					<div class="space-y-2">
-						<div v-for="(_, i) in event.locations" :key="i" class="flex space-x-2">
-							<FormControl
-								v-model="event.locations[i]"
-								:label="
-									i === 0
-										? event.locations.length > 1
-											? __('Locations')
-											: __('Location')
-										: ''
-								"
-								:placeholder="__('Meeting location {0}', [i + 1])"
-								class="w-full"
-							/>
-							<Button
-								v-if="
-									event.locations.length === i + 1 && event.locations.length < 3
-								"
-								icon="plus"
-								class="mt-auto"
-								@click="event.locations.push('')"
-							/>
-							<Button
-								v-else
-								icon="x"
-								class="mt-auto"
-								@click="event.locations.splice(i, 1)"
-							/>
+						<div class="mt-4 flex flex-col gap-4">
+							<!-- locations -->
+							<div class="flex gap-3">
+								<MapPin :size="18" class="icon mt-7 shrink-0 text-ink-gray-5" />
+								<div class="min-w-0 flex-1 space-y-2">
+									<div v-for="(_, i) in event.locations" :key="i" class="flex gap-2">
+										<FormControl
+											v-model="event.locations[i]"
+											:label="
+												i === 0
+													? event.locations?.length > 1
+														? __('Locations')
+														: __('Location')
+													: ''
+											"
+											:placeholder="__('Meeting location {0}', [i + 1])"
+											class="w-full"
+										/>
+										<Button
+											v-if="event.locations?.length === 1"
+											icon="plus"
+											class="mt-auto"
+											@click="event.locations.push('')"
+										/>
+										<Button v-else icon="x" class="mt-auto" @click="event.locations.splice(i, 1)" />
+									</div>
+									<Button
+										v-if="event.locations?.length > 1 && event.locations?.length < 3"
+										:label="__('Add Location')"
+										@click="event.locations.push('')"
+									/>
+								</div>
+							</div>
+
+							<!-- alerts -->
+							<div class="flex gap-3">
+								<Bell
+									:size="18"
+									class="icon shrink-0 text-ink-gray-5"
+									:class="event.alerts?.length ? 'mt-7' : 'mt-2'"
+								/>
+								<div class="min-w-0 flex-1 space-y-2">
+									<EventAlertList v-model:alerts="event.alerts" />
+									<Dropdown
+										v-if="event.alerts?.length < 3"
+										:button="{ label: __('Add Alert') }"
+										:options="addAlertOptions"
+									/>
+								</div>
+							</div>
+
+							<!-- availability & visibility -->
+							<div class="flex gap-3">
+								<Briefcase :size="18" class="icon mt-7 shrink-0 text-ink-gray-5" />
+								<div class="flex min-w-0 flex-1 gap-3">
+									<FormControl
+										v-model="event.free_busy_status"
+										type="select"
+										:label="__('Availability')"
+										:options="AVAILABILITY_OPTIONS"
+										class="w-full"
+									/>
+									<FormControl
+										v-model="event.privacy"
+										type="select"
+										:label="__('Visibility')"
+										:options="VISIBILITY_OPTIONS"
+										class="w-full"
+									/>
+								</div>
+							</div>
+
+							<!-- description -->
+							<div class="flex gap-3">
+								<AlignLeft :size="18" class="icon mt-7 shrink-0 text-ink-gray-5" />
+								<FormControl
+									v-model="event.description"
+									:label="__('Description')"
+									type="textarea"
+									:placeholder="__('Add description')"
+									class="min-w-0 flex-1"
+								/>
+							</div>
 						</div>
 					</div>
 
-					<!-- Alerts -->
-					<div class="space-y-2">
-						<EventAlertList v-model:alerts="event.alerts" />
-						<Dropdown
-							v-if="event.alerts.length < 3"
-							:button="{ label: __('Add Alert') }"
-							:options="addAlertOptions"
-						/>
-					</div>
+					<!-- right: guests rail -->
+					<div class="w-[300px] shrink-0 overflow-y-auto border-l px-5 py-5">
+						<template v-if="showRSVP">
+							<h3 class="text-base-medium mb-2">{{ __('RSVP') }}</h3>
+							<FormControl
+								v-model="userParticipant.participation_status"
+								type="select"
+								:label="__('Are you attending?')"
+								:options="RSVP_OPTIONS"
+								class="mb-5 w-full"
+							/>
+						</template>
 
-					<!-- Availability and Privacy -->
-					<div class="flex space-x-4">
-						<FormControl
-							v-model="event.free_busy_status"
-							type="select"
-							:label="__('Availability')"
-							:options="AVAILABILITY_OPTIONS"
-							class="w-full"
-						/>
-						<FormControl
-							v-model="event.privacy"
-							type="select"
-							:label="__('Visibility')"
-							:options="VISIBILITY_OPTIONS"
-							class="w-full"
-						/>
-					</div>
-
-					<!-- Description -->
-					<FormControl
-						v-model="event.description"
-						:label="__('Description')"
-						type="textarea"
-						:placeholder="__('Event description')"
-					/>
-				</div>
-				<div class="col-span-4 flex h-full flex-col space-y-4 border-l pl-6">
-					<!-- RSVP -->
-					<template v-if="showRSVP">
-						<h3 class="text-base-medium">{{ __('RSVP') }}</h3>
-						<FormControl
-							v-model="userParticipant.participation_status"
-							type="select"
-							:label="__('Are you attending?')"
-							:options="RSVP_OPTIONS"
-							class="w-full"
-						/>
-					</template>
-
-					<!-- Participants -->
-					<h3 class="text-base-medium">{{ __('Participants') }}</h3>
-					<Combobox
-						:options="mailContacts?.data || []"
-						:placeholder="__('Enter participants')"
-						@input="debouncedSearch($event)"
-						@keyup.enter="handleParticipantEnter($event)"
-					/>
-					<div class="max-h-[32rem] space-y-4 overflow-y-auto">
-						<EventParticipantList
-							:participants
-							@remove-participant="removeParticipant"
+						<div class="mb-3 flex items-baseline gap-2">
+							<Users :size="15" class="icon self-center text-ink-gray-5" />
+							<span class="text-base font-medium">{{ __('Participants') }}</span>
+							<span class="text-sm text-ink-gray-4">{{ participants.length }}</span>
+						</div>
+						<ParticipantSelector
+							v-model="event.participants"
+							:account="store.accountId"
+							:display-participants="participants"
+							label=""
 						/>
 					</div>
 				</div>
-			</div>
-		</template>
-		<template #actions="{ close }">
-			<div class="flex justify-end gap-2">
-				<Button :label="__('Cancel')" variant="outline" @click="close" />
-				<Button
-					:label="__('Save')"
-					variant="solid"
-					:disabled="disableSave"
-					class="w-16"
-					@click="handleSaveClick"
-				/>
+
+				<!-- footer -->
+				<div class="flex justify-end gap-2 border-t px-6 py-3.5">
+					<Button :label="__('Cancel')" variant="outline" @click="close" />
+					<Button
+						:label="__('Save')"
+						variant="solid"
+						:disabled="disableSave"
+						class="w-16"
+						@click="handleSaveClick"
+					/>
+				</div>
 			</div>
 		</template>
 	</Dialog>
@@ -595,14 +659,16 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 	<Dialog v-model="showRecurringEventModal" :options="SHOW_RECURRING_EVENT_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
-				<Button @click="handleSaveRecurringEvent(false)">{{ __('Entire series') }}</Button>
+				<Button @click="handleSaveRecurringEvent(false)">{{ __('Entire Series') }}</Button>
 			</div>
 		</template>
 	</Dialog>
 	<Dialog v-model="showNotifyParticipantsModal" :options="showNotifyParticipantsOptions">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
-				<Button variant="outline" @click="submitEvent(false)"> {{ __('Skip') }} </Button>
+				<Button variant="outline" @click="submitEvent(false)">
+					{{ __('Skip') }}
+				</Button>
 				<Button variant="solid" @click="submitEvent(true)">
 					{{ __('Send Email') }}
 				</Button>

@@ -13,12 +13,13 @@
 		variant="outline"
 		:options="ARCHIVE_TYPE_OPTIONS"
 	/>
-	<Switch
-		v-model="customSelection"
-		:label="__('Custom Selection')"
+	<SettingsRow
+		class="!py-0"
+		:title="__('Custom Selection')"
 		:description="__('Apply filters to select specific events for export.')"
-		class="hover:!bg-surface-base !cursor-default !p-0"
-	/>
+	>
+		<Switch v-model="customSelection" />
+	</SettingsRow>
 	<template v-if="customSelection">
 		<FormControl
 			v-model="filter.inCalendar"
@@ -79,7 +80,7 @@
 
 <script setup lang="ts">
 import { computed, inject, onMounted, reactive, ref } from 'vue'
-import { Button, ErrorMessage, FormControl, Switch, createResource } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl, SettingsRow, Switch, createResource } from 'frappe-ui'
 
 import { userStore } from '@/apps/mail/stores/user'
 
@@ -105,7 +106,7 @@ const filter = reactive({
 })
 
 const calendars = createResource({
-	url: 'suite.mail.doctype.calendar.calendar.fetch_calendars',
+	url: 'suite.calendar.doctype.calendar.calendar.fetch_calendars',
 	auto: true,
 	makeParams: () => ({ account: accountId, limit: 100 }),
 })

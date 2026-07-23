@@ -34,12 +34,6 @@ def mark_as_viewed(entity):
 	return doc
 
 
-def generate_otp():
-	"""Generates a cryptographically secure random OTP"""
-
-	return int.from_bytes(os.urandom(5), byteorder="big") % 900000 + 100000
-
-
 def get_country_info():
 	ip = frappe.local.request_ip
 
@@ -85,22 +79,14 @@ def get_country_info():
 	return frappe.cache().hget("ip_country_map", ip, generator=_get_country_info)
 
 
-def assign_drive_role_and_create_settings(user, method: str) -> None:
-	"""Assign the "Drive User" role, settings and a personal team to a new User."""
+def create_drive_settings_and_team(user, method: str | None = None) -> None:
+	"""Create Drive Settings and a personal team for a newly created User."""
 	from suite.drive.api.product import create_team
 
-	role_name = "Drive User"
 	user_name = user.name
 
 	if not user_name or user_name in ("Guest", "Administrator"):
 		return
-
-	if not frappe.db.exists("Role", role_name):
-		frappe.get_doc({"doctype": "Role", "role_name": role_name}).insert(ignore_permissions=True)
-
-	user_doc = frappe.get_doc("User", user_name)
-	user_doc.append("roles", {"role": role_name})
-	user_doc.save(ignore_permissions=True)
 
 	frappe.get_doc({"doctype": "Drive Settings", "user": user.email}).insert(ignore_permissions=True)
 

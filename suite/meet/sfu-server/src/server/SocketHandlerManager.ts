@@ -1,5 +1,6 @@
 import type { Server } from 'socket.io';
 import type { MediasoupManager } from '../mediasoup/MediasoupManager';
+import type { Telemetry } from '../telemetry/Telemetry';
 import type { ClientToServerEvents, ServerToClientEvents } from '../types';
 import { loggers } from '../utils/logger';
 import { RateLimiter } from '../utils/rateLimiter';
@@ -9,6 +10,7 @@ import type { E2eeCoordinatorPersistence } from './E2eeCoordinatorPersistence';
 import type { E2eeRosterStore } from './E2eeRosterStore';
 import { registerAuthHandlers } from './handlers/AuthHandlers';
 import { registerChatHandlers } from './handlers/ChatHandlers';
+import { registerClientTelemetryHandlers } from './handlers/ClientTelemetryHandlers';
 import { registerConsumerHandlers } from './handlers/ConsumerHandlers';
 import { registerDisconnectHandlers } from './handlers/DisconnectHandlers';
 import { registerErrorHandlers } from './handlers/ErrorHandlers';
@@ -32,6 +34,7 @@ export class SocketHandlerManager {
 	private registry: RoomRegistry;
 	private rateLimiter: RateLimiter;
 	private e2eeEpochRelay: E2EEEpochRelay;
+	private telemetry: Telemetry;
 	private registerHandlers: ((socket: import('socket.io').Socket) => void)[];
 	private idleExpirySweep: NodeJS.Timeout | null = null;
 
@@ -39,12 +42,14 @@ export class SocketHandlerManager {
 		io: Server<ClientToServerEvents, ServerToClientEvents>,
 		mediasoup: MediasoupManager,
 		authManager: AuthManager,
+		telemetry: Telemetry,
 		roster: E2eeRosterStore,
 		coordinatorPersistence?: E2eeCoordinatorPersistence,
 	) {
 		this.io = io;
 		this.mediasoup = mediasoup;
 		this.authManager = authManager;
+		this.telemetry = telemetry;
 		this.rateLimiter = new RateLimiter();
 		this.registry = new RoomRegistry(io);
 		this.e2eeEpochRelay = new E2EEEpochRelay(
@@ -64,10 +69,12 @@ export class SocketHandlerManager {
 			rateLimiter: this.rateLimiter,
 			e2eeEpochRelay: this.e2eeEpochRelay,
 			e2eeRoster: roster,
+			telemetry,
 		};
 
 		this.registerHandlers = [
 			registerAuthHandlers(deps),
+			registerClientTelemetryHandlers(deps),
 			registerRoomJoinHandlers(deps),
 			registerRoomQueryHandlers(deps),
 			registerWebRtcTransportHandlers(deps),
@@ -99,8 +106,12 @@ export class SocketHandlerManager {
 	setupSocketHandlers(): void {
 		this.io.use((socket, next) => {
 			if (!this.authManager.authenticateSocket(socket)) {
+				this.telemetry.socketConnections.inc({ outcome: 'failure' });
+				loggers.telemetry.event('socket_connection', { outcome: 'failure' });
 				return next(new Error('Authentication failed'));
 			}
+			this.telemetry.socketConnections.inc({ outcome: 'success' });
+			loggers.telemetry.event('socket_connection', { outcome: 'success' });
 			next();
 		});
 

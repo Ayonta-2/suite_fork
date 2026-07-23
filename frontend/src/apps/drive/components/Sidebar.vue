@@ -5,8 +5,8 @@
     menuItems: settingsItems,
     logo: FrappeDriveLogo,
   }" :sections="sidebarItems">
-    <template #footer-items="{ isCollapsed }">
-      <StorageBar v-if="teamExists.data" :is-expanded="!isCollapsed" />
+    <template #footer-items>
+      <StorageBar v-if="teamExists.data" :is-expanded="!sidebarCollapsed" />
     </template>
     <template #sidebar-item="{ item, isCollapsed }">
       <SidebarItem :class="draggedSpace === item.label &&
@@ -52,7 +52,7 @@ import SettingsDialog from '@/apps/drive/components/Settings/SettingsDialog.vue'
 import ShortcutsDialog from '@/apps/drive/components/ShortcutsDialog.vue'
 import emitter from '@/apps/drive/emitter'
 import { ref, computed, watch, h } from 'vue'
-import AppsIcon from '@/apps/drive/components/AppsIcon.vue'
+import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useRouter, useRoute } from 'vue-router'
 import { move } from '@/apps/drive/resources/files'
 
@@ -63,7 +63,7 @@ import LucideSun from '~icons/lucide/sun'
 import LucideMoon from '~icons/lucide/moon'
 import LucideMonitor from '~icons/lucide/monitor'
 import LucideCheck from '~icons/lucide/check'
-import { getThemeMode, switchTheme } from '@/apps/drive/utils/setupTheme'
+import { themeMode, switchTheme } from '@/utils/setupTheme'
 
 defineEmits(['toggleMobileSidebar', 'showSearchPopUp'])
 const router = useRouter()
@@ -79,8 +79,8 @@ const teamExists = createResource({
 
 const showSettings = ref(false)
 const showShortcuts = ref(false)
-const suggestedTab = ref(0)
-emitter.on('showSettings', (val = 0) => {
+const suggestedTab = ref('profile')
+emitter.on('showSettings', (val = 'profile') => {
   if (val === -1) showSettings.value = false
   else {
     showSettings.value = true
@@ -91,42 +91,14 @@ emitter.on('toggleShortcuts', () => {
   showShortcuts.value = !showShortcuts.value
 })
 
-const themeMode = ref(getThemeMode())
-
-function selectTheme(theme) {
-  switchTheme(theme)
-  themeMode.value = theme.toLowerCase()
-}
+const appsMenuOption = useAppSwitcher('drive')
 
 const settingsItems = computed(() => [
   {
     group: __('Manage'),
     hideLabel: true,
     items: [
-      {
-        icon: AppsIcon,
-        label: __('Apps'),
-        submenu: apps.data?.map?.((app) => ({
-          label: app.title,
-          icon: app.logo,
-          component: h(
-            'a',
-            {
-              class:
-                'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2',
-              href: app.route,
-            },
-            [
-              h('img', { src: app.logo, class: 'size-6' }),
-              h(
-                'span',
-                { class: 'max-w-18 text-sm w-full truncate text-ink-gray-9' },
-                app.title
-              ),
-            ]
-          ),
-        })),
-      },
+      appsMenuOption.value,
       {
         icon: LucideBook,
         label: __('Documentation'),
@@ -144,17 +116,17 @@ const settingsItems = computed(() => [
           {
             label: __('Light'),
             icon: themeMode.value === 'light' ? LucideCheck : LucideSun,
-            onClick: () => selectTheme('Light'),
+            onClick: () => switchTheme('Light'),
           },
           {
             label: __('Dark'),
             icon: themeMode.value === 'dark' ? LucideCheck : LucideMoon,
-            onClick: () => selectTheme('Dark'),
+            onClick: () => switchTheme('Dark'),
           },
           {
             label: __('Automatic'),
             icon: themeMode.value === 'automatic' ? LucideCheck : LucideMonitor,
-            onClick: () => selectTheme('Automatic'),
+            onClick: () => switchTheme('Automatic'),
           },
         ],
       },

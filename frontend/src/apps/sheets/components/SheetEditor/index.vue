@@ -42,16 +42,21 @@
             <path d="M73.6617 50.6653H63.1611V70.1439H73.6617V50.6653Z" fill="white"/>
           </svg>
         </button>
-        <input
-          name="sheet-title"
-          class="sn-title-input"
-          v-model="currentTitle"
-          :style="{ width: titleInputWidth }"
-          placeholder="Untitled Sheet"
-          spellcheck="false"
-          @focus="onTitleFocus"
-          @blur="onTitleBlur"
-        />
+        <!-- Auto-sizing title. A hidden ::after pseudo mirrors the text and
+             sizes the box via real DOM text layout, so the input grows
+             pixel-perfect and smooth per keystroke, with no JS canvas measuring
+             and no width animation lagging behind the caret. -->
+        <span class="sn-title-fit" :data-value="currentTitle || 'Untitled Sheet'">
+          <input
+            name="sheet-title"
+            class="sn-title-input"
+            v-model="currentTitle"
+            placeholder="Untitled Sheet"
+            spellcheck="false"
+            @focus="onTitleFocus"
+            @blur="onTitleBlur"
+          />
+        </span>
         <!-- Save status — muted inline text; never competes with the title -->
         <span v-if="isSaving" class="sn-save-status">
           <FeatherIcon name="loader" class="sn-save-icon sn-save-spin" />
@@ -72,11 +77,21 @@
             @click="onRetrySave"
           />
         </template>
+        <Badge v-if="protectionNotice" theme="gray" variant="subtle" size="sm" :label="protectionNotice" :tooltip="protectionNotice" />
+        <!-- View-only indicator — shown up front so a viewer knows they can't
+             edit before they try. Neutral gray (not an error) because read
+             access is expected, not a failure. Uses the Frappe UI Badge so it
+             matches the save-error chip beside it and the Espresso tokens. -->
+        <Tooltip v-if="readOnly" text="You have view access. Ask the owner for edit access to make changes.">
+          <Badge theme="gray" variant="subtle" size="lg" label="View only">
+            <template #prefix><FeatherIcon name="eye" class="h-3.5 w-3.5" /></template>
+          </Badge>
+        </Tooltip>
       </div>
       <div class="sn-topbar-right">
         <!-- AI Assist entry point — shown only when an admin has configured a
              key and enabled it (gated server-side via the boot flag). -->
-        <template v-if="aiEnabled">
+        <template v-if="aiEnabled && !readOnly">
           <Button
             variant="ghost"
             size="sm"
@@ -155,7 +170,11 @@
     </div>
 
     <!-- Bar 2 · Formatting toolbar -->
-    <div class="sn-toolbar">
+    <!-- Read-only viewers: dim the whole bar and swallow pointer events so no
+         formatting/insert/chart action is reachable. Undo/Redo and dropdowns
+         come along for free without touching each button. -->
+    <div class="sn-toolbar" :class="{ 'sn-toolbar--readonly': readOnly }"
+         :aria-disabled="readOnly || undefined">
 
       <!-- Number format -->
       <Dropdown :options="numberFormatDropdownOptions" placement="left" class="sn-numfmt">
@@ -296,10 +315,11 @@
           name="formula-bar"
           class="sn-formula-input"
           :value="formulaValue"
+          :readonly="readOnly"
           @input="onFormulaInput"
           @keydown="onFormulaKey"
           @blur="closeAc"
-          placeholder="Enter value or formula"
+          :placeholder="readOnly ? '' : 'Enter value or formula'"
           spellcheck="false"
           autocomplete="off"
         />
@@ -430,6 +450,15 @@
         @choose="onSplitChoose"
         @apply="onSplitApply"
         @cancel="onSplitCancel"
+      />
+
+      <!-- Outline around the active filter's range so its extent is visible.
+           pointer-events:none keeps clicks reaching the canvas underneath. -->
+      <div
+        v-if="filterHighlightStyle"
+        class="sn-filter-range"
+        :style="filterHighlightStyle"
+        aria-hidden="true"
       />
 
       <!-- Filter chevrons on row 0 (the user's header row of data) -->
@@ -584,7 +613,7 @@
     <div class="sn-bottom">
       <!-- Pinned outside the scroll track so it stays reachable no matter
            how many tabs there are. -->
-      <Button variant="ghost" size="sm" icon="plus" class="sn-tab-add" tooltip="Add sheet" @click="addSheet" />
+      <Button variant="ghost" size="sm" icon="plus" class="sn-tab-add" tooltip="Add sheet" :disabled="readOnly" @click="addSheet" />
       <div class="sn-tabs-track">
         <div
           v-for="name in sheetNames"
@@ -657,6 +686,7 @@
     <div v-if="tabMenu.open" class="sn-ctx-menu" :style="{ left: tabMenu.x + 'px', bottom: tabMenu.bottom + 'px' }">
       <Button variant="ghost" size="sm" iconLeft="edit-2"  label="Rename"    @click="openRenameDialog(tabMenu.name)" />
       <Button variant="ghost" size="sm" iconLeft="copy"    label="Duplicate" @click="doDuplicateSheet(tabMenu.name)" />
+      <Button variant="ghost" size="sm" :iconLeft="tabMenuSheetLocked() ? 'unlock' : 'lock'" :label="tabMenuSheetLocked() ? 'Unprotect sheet' : 'Protect sheet'" @click="toggleSheetProtection(tabMenu.name)" />
       <Button
         variant="ghost"
         size="sm"
@@ -738,11 +768,14 @@
         <hr class="sn-ctx-sep" />
         <Button variant="ghost" size="sm" iconLeft="check-square"   label="Data validation…" @click="contextMenu.open=false; openValidationDialog()" />
         <Button variant="ghost" size="sm" iconLeft="blend"          label="Conditional format…" @click="contextMenu.open=false; openCfDialog(null)" />
+        <Button v-if="!selectionHasProtectedRange()" variant="ghost" size="sm" iconLeft="lock"   label="Protect range"     @click="protectSelection()" />
+        <Button v-else                               variant="ghost" size="sm" iconLeft="unlock" label="Remove protection" @click="unprotectSelection()" />
         <hr class="sn-ctx-sep" />
         <Button variant="ghost" size="sm" iconLeft="columns"        label="Split text to columns" @click="doSplitTextToColumns()" />
         <hr class="sn-ctx-sep" />
         <Button variant="ghost" size="sm" iconLeft="layout"         label="Insert pivot table…"   @click="openPivotDialog()" />
         <Button variant="ghost" size="sm" iconLeft="bar-chart-2"    label="Insert chart…"          @click="openChartDialog()" />
+        <Button variant="ghost" size="sm" iconLeft="filter"         label="Insert slicer"          @click="insertSlicer()" />
       </template>
 
     </div>
@@ -809,6 +842,7 @@
       v-if="showFindReplace"
       :sheet="sheet"
       :grid="grid"
+      :is-protected="(id) => _cellSilentlyProtected(id)"
       @close="showFindReplace = false"
       @navigate-to="onNavigateTo"
     />
@@ -845,6 +879,7 @@
           <!-- Type -->
           <FormControl type="select" label="Type" v-model="validationDialog.type"
             :options="[
+              { label: 'Checkbox',       value: 'checkbox' },
               { label: 'List of items',  value: 'list' },
               { label: 'Number',         value: 'number' },
               { label: 'Text length',    value: 'text_length' },
@@ -859,7 +894,7 @@
           />
 
           <!-- Operator (number / text_length) -->
-          <FormControl v-if="validationDialog.type !== 'list'"
+          <FormControl v-if="['number','text_length'].includes(validationDialog.type)"
             type="select" label="Condition" v-model="validationDialog.operator"
             :options="[
               { label: 'Between',             value: 'between' },
@@ -874,7 +909,7 @@
           />
 
           <!-- Values -->
-          <div v-if="validationDialog.type !== 'list'" class="sn-vd-vals">
+          <div v-if="['number','text_length'].includes(validationDialog.type)" class="sn-vd-vals">
             <FormControl
               v-model="validationDialog.val1"
               type="number"
@@ -893,6 +928,15 @@
             v-model="validationDialog.message"
             label="Error message (optional)"
             placeholder="This value is not allowed"
+          />
+
+          <!-- On invalid: block the edit, or allow it with a warning -->
+          <FormControl v-if="validationDialog.type !== 'checkbox'"
+            type="select" label="When the value is invalid" v-model="validationDialog.severity"
+            :options="[
+              { label: 'Reject the input',        value: 'reject' },
+              { label: 'Allow, but show a warning', value: 'warn' },
+            ]"
           />
         </div>
       </template>
@@ -925,6 +969,34 @@
       </template>
     </Dialog>
 
+    <!-- Custom number-format dialog -->
+    <Dialog v-model="customFormatDialog.open" :options="{ title: 'Custom number format', size: 'sm' }">
+      <template #body-content>
+        <div class="sn-form-stack">
+          <FormControl
+            v-model="customFormatDialog.pattern"
+            label="Format code"
+            placeholder="#,##0.00"
+            @keydown.enter="confirmCustomFormat"
+          />
+          <div class="text-sm text-ink-gray-6">
+            Preview: <span class="font-medium text-ink-gray-9">{{ customFormatPreview || '—' }}</span>
+          </div>
+          <div class="text-xs text-ink-gray-5 leading-relaxed">
+            <code>0</code> padded digit · <code>#</code> optional digit · <code>,</code> thousands ·
+            <code>.</code> decimal · <code>%</code> percent · <code>"text"</code> literal.
+            e.g. <code>#,##0.00</code>, <code>0.0%</code>, <code>"$"#,##0</code>
+          </div>
+        </div>
+      </template>
+      <template #actions>
+        <div class="flex flex-row-reverse gap-2">
+          <Button variant="solid" @click="confirmCustomFormat">Apply</Button>
+          <Button @click="customFormatDialog.open = false">Cancel</Button>
+        </div>
+      </template>
+    </Dialog>
+
     <!-- Keyboard shortcut help (?) — uses Frappe UI's KeyboardShortcut for the
          key chips so modifiers render as proper Mac glyphs and look native. -->
     <Dialog v-model="showShortcutsHelp" :options="{ title: 'Keyboard shortcuts', size: 'xl' }">
@@ -946,17 +1018,70 @@
       </template>
     </Dialog>
 
-    <!-- Comment panel (floating near cell) -->
+    <!-- Slicers — floating value-filter controls bound to a filter column -->
+    <div v-for="sl in activeSlicers" :key="sl.id" class="sn-slicer"
+         :style="{ left: sl.x + 'px', top: sl.y + 'px' }">
+      <div class="sn-slicer-head" @mousedown="startSlicerDrag(sl, $event)">
+        <Dropdown :options="slicerColMenu(sl)" placement="bottom-start" class="sn-slicer-colsel">
+          <template #default="{ open }">
+            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" iconRight="chevron-down"
+                    :label="sl.label" tooltip="Filter column"
+                    @mousedown.stop @click.stop />
+          </template>
+        </Dropdown>
+        <Button variant="ghost" size="sm" icon="x" tooltip="Remove slicer"
+                @mousedown.stop @click="removeSlicer(sl)" />
+      </div>
+      <div class="sn-fp-vlinks sn-slicer-actions" @mousedown.stop>
+        <Button variant="ghost" size="sm" label="Select all" @click="selectAllSlicer(sl)" />
+        <Button variant="ghost" size="sm" label="Clear" @click="clearSlicerValues(sl)" />
+      </div>
+      <div class="sn-slicer-values">
+        <div v-for="row in sl.rows" :key="'v:' + row.v"
+             class="sn-fp-value-row" @click="toggleSlicerValue(sl, row.v)">
+          <Checkbox :modelValue="row.checked" @update:modelValue="toggleSlicerValue(sl, row.v)" @click.stop />
+          <span class="sn-fp-value-text">{{ row.v === '' ? '(Blanks)' : row.v }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Threaded comment panel (floating near cell) -->
     <div v-if="commentPanel.open" class="sn-comment-panel"
          :style="{ left: commentPanel.x + 'px', top: commentPanel.y + 'px' }">
       <div class="sn-comment-header">
-        <span class="sn-comment-title">Note</span>
-        <Button variant="ghost" size="sm" icon="x" @click="commentPanel.open = false" />
+        <span class="sn-comment-title">
+          Comment
+          <span v-if="commentPanel.resolved" class="sn-comment-resolved">Resolved</span>
+        </span>
+        <div class="sn-comment-hactions">
+          <Button v-if="commentPanel.thread.length" variant="ghost" size="sm"
+                  :icon="commentPanel.resolved ? 'rotate-ccw' : 'check'"
+                  :tooltip="commentPanel.resolved ? 'Reopen' : 'Mark resolved'"
+                  @click="toggleResolveComment" />
+          <Button variant="ghost" size="sm" icon="x" @click="commentPanel.open = false" />
+        </div>
       </div>
-      <textarea class="sn-comment-ta" v-model="commentPanel.text" rows="4" placeholder="Add a note…" @blur="saveComment" />
+
+      <div v-if="commentPanel.thread.length" class="sn-comment-thread">
+        <div v-for="(r, i) in commentPanel.thread" :key="`${r.ts}-${r.author}`" class="sn-comment-reply">
+          <div class="sn-comment-reply-head">
+            <span class="sn-comment-author">{{ r.name || r.author || 'Someone' }}</span>
+            <span class="sn-comment-time">{{ commentTime(r.ts) }}</span>
+            <Button v-if="r.author && r.author === userEmail" variant="ghost" size="sm" icon="trash-2"
+                    tooltip="Delete" class="sn-comment-del" @click="deleteCommentReply(i)" />
+          </div>
+          <div class="sn-comment-text">{{ r.text }}</div>
+        </div>
+      </div>
+
+      <textarea class="sn-comment-ta" v-model="commentPanel.draft" rows="2"
+                :placeholder="commentPanel.thread.length ? 'Reply…' : 'Add a comment…'"
+                @keydown.enter.exact.prevent="addCommentReply" />
       <div class="sn-comment-actions">
-        <Button size="sm" variant="solid" @click="saveComment">Save</Button>
-        <Button size="sm" variant="ghost" theme="red" @click="deleteComment">Delete</Button>
+        <Button size="sm" variant="solid" :disabled="!commentPanel.draft.trim()" @click="addCommentReply">
+          {{ commentPanel.thread.length ? 'Reply' : 'Comment' }}
+        </Button>
+        <Button v-if="commentPanel.thread.length" size="sm" variant="ghost" theme="red" @click="deleteComment">Delete all</Button>
       </div>
     </div>
 
@@ -1089,10 +1214,14 @@
 <script setup>
 import { h, ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { createGrid }          from '../../canvas/index.js'
+import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { colLabel, parseCellId, cellId } from '../../utils/cells.js'
 import { call } from '../../utils/api.js'
+import { useCurrentUser } from '@/boot/session'
+import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
+import { autoCloseKey } from '../../utils/formula-autoclose.js'
 import { computeFillDown, computeFillRight } from '../../engine/fill-series.js'
 import { detectSeries }                       from '../../engine/patterns/index.js'
 import { adjustFormula }                    from '../../engine/formula-adjust.js'
@@ -1103,8 +1232,10 @@ import { formatScope }         from '../../engine/format-scope.js'
 import { createMergeEngine }   from '../../engine/merge.js'
 import { createClipboard }     from '../../engine/clipboard.js'
 import { createSortFilter }    from '../../engine/sortFilter.js'
+import { createSlicerEngine }  from '../../engine/slicers.js'
 import { createCommentsEngine }  from '../../engine/comments.js'
 import { createValidationEngine } from '../../engine/validation.js'
+import { createProtectionEngine } from '../../engine/protection.js'
 import { chipColor } from '../../canvas/chip-geometry.js'
 import { createCondFormatEngine } from '../../engine/cond-format.js'
 import { useToolbar }          from './useToolbar.js'
@@ -1209,11 +1340,13 @@ const sheet = createSheet({
 const formats    = createFormatsEngine()
 const merge      = createMergeEngine()
 const sortFilter = createSortFilter(sheet)
+const slicers    = createSlicerEngine()
 const comments   = createCommentsEngine()
 const validation = createValidationEngine()
+const protection = createProtectionEngine()
 const condFormat = createCondFormatEngine()
 const clipboard  = createClipboard({
-  sheet, formats, condFormat, validation,
+  sheet, formats, condFormat, validation, protection,
   // Late-bound to the pivot integration (declared below). Only invoked at
   // copy/paste time, long after setup runs, so the forward reference is safe.
   getPivotAt: (sel, sn) => getPivotAt(sel, sn),
@@ -1291,8 +1424,10 @@ const history = createHistory({
       formats:      formats.snapshot(),
       merge:        merge.snapshot(),
       sortFilter:   sortFilter.snapshot(),
+      slicers:      slicers.snapshot(),
       comments:     comments.snapshot(),
       validation:   validation.snapshot(),
+      protection:   protection.snapshot(),
       condFormat:   condFormat.snapshot(),
       pivot:        pivot.snapshot(),
       charts:       charts.snapshot(),
@@ -1315,8 +1450,10 @@ const history = createHistory({
     }
     if (snap.merge)       merge.restore(snap.merge)
     if (snap.sortFilter)  sortFilter.restore(snap.sortFilter)
+    if (snap.slicers)     slicers.restore(snap.slicers)
     if (snap.comments)    comments.restore(snap.comments)
     if (snap.validation)  validation.restore(snap.validation)
+    if (snap.protection)  protection.restore(snap.protection)
     if (snap.condFormat)  condFormat.restore(snap.condFormat)
     if (snap.pivot)       pivot.restore(snap.pivot)
     if (snap.charts)      charts.restore(snap.charts)
@@ -1529,7 +1666,7 @@ const isDirty           = ref(false)
 const isPaintingFormat  = ref(false)
 
 // ── Comment UI state ──────────────────────────────────────────────────────────
-const commentPanel  = reactive({ open: false, id: '', text: '', x: 0, y: 0 })
+const commentPanel  = reactive({ open: false, id: '', x: 0, y: 0, thread: [], resolved: false, draft: '' })
 
 // Notes side panel — global list of notes across all sheets, click-to-jump.
 // `rev` is bumped whenever a note is saved/deleted so the computed list
@@ -1546,6 +1683,7 @@ const validationDialog = reactive({
   val2:     '',
   listRaw:  '',
   message:  '',
+  severity: 'reject',   // 'reject' blocks the edit; 'warn' allows it but flags the cell
 })
 
 // ── Conditional format dialog state ───────────────────────────────────────────
@@ -1699,10 +1837,11 @@ const fileDropdownOptions = computed(() => [
     { label: 'Export as XLSX', icon: 'download',  onClick: () => exportXLSX() },
     { label: 'Export as PDF',  icon: 'printer',   onClick: () => exportPDF() },
   ]},
-  { group: 'Import', items: [
+  // Import writes cells — hide it for viewers (export/read stays available).
+  ...(readOnly.value ? [] : [{ group: 'Import', items: [
     { label: 'Import CSV',  icon: 'upload', onClick: () => csvInputRef.value?.click() },
     { label: 'Import XLSX', icon: 'upload', onClick: () => xlsxInputRef.value?.click() },
-  ]},
+  ]}]),
   // Only shown to admins — gated server-side via the boot flag so non-admins
   // never see a settings entry they can't use.
   ...(window.frappe?.boot?.ai_assist_can_configure
@@ -1787,7 +1926,11 @@ async function onAskSubmit(promptText) {
 // Returns the number of cells written.
 function _applyAiActions(actions) {
   const sn = sheet.getCurrentSheet()
-  const setCells = actions.filter(a => a.type === 'setCell')
+  let setCells = actions.filter(a => a.type === 'setCell')
+  // Drop writes that land on protected cells (rest still apply).
+  const allowed = setCells.filter(a => !_cellSilentlyProtected(a.cell, sn))
+  if (allowed.length !== setCells.length) _flashProtected(sn)
+  setCells = allowed
   if (!setCells.length) return 0
 
   const before = {}
@@ -1841,49 +1984,13 @@ const hAlignIcon = computed(() => {
 })
 
 
-// Title input auto-sizes to content so the "Saved / Saving…" status sits
-// right next to the title text — no trailing whitespace. Canvas measurement
-// is exact (per-char estimates over-allocated and left visible empty space
-// between title and status). Lower bound is a clickable target for very
-// short titles; upper bound stops a runaway title from eating the topbar.
-let _titleMeasureCtx = null
-function _measureTitle(text) {
-  if (!_titleMeasureCtx) {
-    _titleMeasureCtx = document.createElement('canvas').getContext('2d')
-    _titleMeasureCtx.font = '600 15px InterVar, ui-sans-serif, system-ui, sans-serif'
-  }
-  return _titleMeasureCtx.measureText(text).width
-}
-const titleInputWidth = computed(() => {
-  const text = currentTitle.value || 'Untitled Sheet'
-  // +22 = 20px horizontal padding + 2px caret/safety
-  return Math.max(56, Math.min(520, _measureTitle(text) + 22)) + 'px'
-})
 
-
-// window.frappe is now seeded by sheets.html (see www/sheets.py).
-// Read it lazily into refs and refresh on mount so the avatar reflects
-// the actual logged-in user instead of the "U" fallback if Frappe's
-// own boot script later re-populates the global.
-const userEmail    = ref(window.frappe?.session?.user || '')
-const userFullName = ref(window.frappe?.session?.user_fullname || '')
-const userImage    = ref(window.frappe?.session?.user_image || '')
-const userInitial  = computed(() => {
-  // Prefer initials from full name ("Asif Mulani" → "AM"); fall back to
-  // the first letter of the email, then the literal "U" so the avatar
-  // never collapses into something empty.
-  const fn = userFullName.value.trim()
-  if (fn) {
-    const parts = fn.split(/\s+/)
-    return ((parts[0][0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
-  }
-  return (userEmail.value ? userEmail.value[0] : 'U').toUpperCase()
-})
-onMounted(() => {
-  userEmail.value    = window.frappe?.session?.user          || userEmail.value
-  userFullName.value = window.frappe?.session?.user_fullname || userFullName.value
-  userImage.value    = window.frappe?.session?.user_image    || userImage.value
-})
+// The logged-in user for the top-right avatar, from the shared suite session
+// store (cookie-backed, refreshed by userResource — see @/boot/session). The
+// old window.frappe.session reads only worked on the standalone www page; the
+// suite shell never sets window.frappe, so the avatar collapsed to "U".
+const { user: userEmail, fullName: userFullName, imageURL: userImage } = useCurrentUser()
+const userInitial = computed(() => userInitials(userFullName.value, userEmail.value))
 
 // Collaboration — presence + sharing
 const shareOpen   = ref(false)
@@ -1893,8 +2000,13 @@ const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImp
   getSheet:        () => sheet,
   getCurrentTitle: () => currentTitle.value,
   getGrid:         () => grid,
+  getFormats:      () => formats,
+  getMerge:        () => merge,
   queueOp:         _queueOp,
   repopulateGrid:  _repopulateGrid,
+  // Defined later by useSheetTabs — lazy-wrapped so they resolve at call time.
+  syncNames:       () => syncNames(),
+  switchSheet:     (n) => switchSheet(n),
   syncFlags,
   isDirty,
 })
@@ -2133,6 +2245,30 @@ const _FORMAT_LABELS = (() => {
   return m
 })()
 
+// Custom number-format dialog. `pattern` is a raw Excel-style code; it's
+// stored as `custom:<pattern>` so the display path routes it to applyCustomFmt.
+const customFormatDialog = reactive({ open: false, pattern: '' })
+
+function openCustomFormatDialog() {
+  const cur = parseNumberFmt(activeNumberFormat.value)
+  customFormatDialog.pattern = cur.type === 'custom' ? cur.pattern : '#,##0.00'
+  customFormatDialog.open = true
+}
+
+// Live preview against a representative value so the user sees the effect
+// before applying. Falls back to empty on a pattern that throws.
+const customFormatPreview = computed(() => {
+  const p = customFormatDialog.pattern.trim()
+  if (!p) return ''
+  try { return applyNumberFmt(1234.567, 'custom:' + p) } catch { return '' }
+})
+
+function confirmCustomFormat() {
+  const p = customFormatDialog.pattern.trim()
+  if (p) onNumberFormatChange('custom:' + p)
+  customFormatDialog.open = false
+}
+
 const numberFormatLabel = computed(() => {
   const cur = activeNumberFormat.value
   if (_FORMAT_LABELS.has(cur)) return _FORMAT_LABELS.get(cur)
@@ -2147,15 +2283,18 @@ const numberFormatLabel = computed(() => {
   return type[0].toUpperCase() + type.slice(1)
 })
 
-const numberFormatDropdownOptions = computed(() =>
-  NUMBER_FORMAT_GROUPS.map(g => ({
+const numberFormatDropdownOptions = computed(() => [
+  ...NUMBER_FORMAT_GROUPS.map(g => ({
     group: g.group,
     items: g.items.map(it => ({
       label: it.label,
       onClick: () => onNumberFormatChange(activeNumberFormat.value === it.value ? '' : it.value),
     })),
-  }))
-)
+  })),
+  { group: 'Custom', items: [
+    { label: 'Custom format…', onClick: () => openCustomFormatDialog() },
+  ]},
+])
 
 // Active currency code (for the $-button symbol). Defaults to $ when the cell
 // isn't a currency at all, so the button always says *something* clickable.
@@ -2223,9 +2362,9 @@ const textWrapDropdownOptions = computed(() => [
 // fallbacks only cover the impossible window where someone saves before
 // useSheetTabs has finished initializing.
 let _sheetTabs = null
-const { isSaving, saveError, loadError, loadSheet, autoCreate, saveExisting, retrySave } =
+const { isSaving, saveError, canWrite, loadError, loadSheet, autoCreate, saveExisting, retrySave } =
   usePersistence({
-    sheet, formats, merge, comments, validation, condFormat, sortFilter, pivot,
+    sheet, formats, merge, comments, validation, protection, condFormat, sortFilter, slicers, pivot,
     charts, namedRanges,
     getViewState:   () => _sheetTabs?.viewSnapshot?.() ?? grid?.viewSnapshot?.(),
     applyViewState: (s) => {
@@ -2235,7 +2374,14 @@ const { isSaving, saveError, loadError, loadSheet, autoCreate, saveExisting, ret
     currentTitle, emit,
   })
 
-_sheetTabs = useSheetTabs({ sheet, formats, extras: [merge, comments, validation, condFormat, sortFilter], getGrid: () => grid, activeCell, formulaValue, refreshActiveFormat, onSwitch: () => {
+// View-only mode: the loaded sheet is shared with the current user at read
+// (not write) permission. Everything that mutates the doc keys off this — the
+// grid edit gate, the toolbar/formula-bar disable, the context menu, and the
+// autosave path all no-op so a viewer is never misled into editing a doc they
+// can't persist (and never triggers the server's PermissionError on save).
+const readOnly = computed(() => !canWrite.value)
+
+_sheetTabs = useSheetTabs({ sheet, formats, extras: [merge, comments, validation, protection, condFormat, sortFilter, slicers], getGrid: () => grid, activeCell, formulaValue, refreshActiveFormat, onSwitch: () => {
     filterPanel.open = false     // close any open filter popover so it doesn't carry stale state
     _repopulateGrid()
     grid?.setMarchingAnts(null); clipboard.clear(); clipboardHas.value = false
@@ -2265,6 +2411,14 @@ const { acItems, acIdx, acUp, acVisible, updateAc, commitAc, closeAc } =
 // Context menu — placed here because contextMenu is passed to usePivotIntegration below.
 const { contextMenu, tabMenu, openCanvasContextMenu: onCanvasContextMenu, openTabMenu } =
   useContextMenu({ getGrid: () => grid })
+
+// The right-click menu is entirely mutation actions (insert/delete/freeze/
+// paste-special/…), so suppress it for viewers — the native browser menu still
+// offers copy. Defined here (after the alias) and wired at listener setup.
+function _onCanvasContextMenu(e) {
+  if (readOnly.value) return
+  onCanvasContextMenu(e)
+}
 
 // renderVersion is defined here because usePivotIntegration reads it at call time.
 const renderVersion = ref(0)
@@ -2331,8 +2485,10 @@ const {
   getMerge:       () => merge,
   getComments:    () => comments,
   getValidation:  () => validation,
+  getProtection:  () => protection,
   getCondFormat:  () => condFormat,
   getSortFilter:  () => sortFilter,
+  getSlicers:     () => slicers,
   getGrid:        () => grid,
   currentTitle,
   switchSheet,
@@ -2365,6 +2521,7 @@ const {
   syncFlags,
   captureRange:   _captureRange,
   diffRefs:       _diffRefs,
+  blockProtected: (rect, sn) => _rectBlocked(rect, sn),
 })
 
 // `showSortFilter` is the existing template/handler API; with ranged filters
@@ -2530,6 +2687,38 @@ const filterPanelStyle = computed(() => {
   return {
     top:  (rowRect.y + rowRect.height + 2) + 'px',
     left: clampFilterLeft(colRect.x + colRect.width - BTN - 3, wrapW) + 'px',
+  }
+})
+
+// Outline drawn around the active filter's rectangle so its extent is visible
+// (Google-Sheets-style). Mirrors the pivot highlight: bounding box from the
+// range's top-left / bottom-right cell rects, clamped to the header strips so
+// it never paints over the row-number gutter or column-header row when the
+// range is scrolled partly out of view.
+const filterHighlightStyle = computed(() => {
+  renderVersion.value
+  if (!showSortFilter.value || !grid || !filterRange.value) return null
+  const { r0, c0, r1, c1 } = filterRange.value
+  const tl = grid.getCellRect?.(r0, c0)
+  const br = grid.getCellRect?.(r1, c1)
+  if (!tl || !br) return null
+  const zoom    = grid.getZoom?.() ?? 1
+  const headerY = COL_HEADER_H * zoom
+  const headerX = ROW_HEADER_W * zoom
+  const right   = br.x + br.width
+  const bottom  = br.y + br.height
+  // No viewport clamp: when the range runs past the viewport the far borders
+  // sit off-screen and the grid-wrap's overflow:hidden clips them (no frame at
+  // the edge); the opaque scrollbar (z-index 16) covers any border landing in
+  // its gutter while it's visible.
+  if (bottom <= headerY || right <= headerX) return null
+  const top  = Math.max(tl.y, headerY)
+  const left = Math.max(tl.x, headerX)
+  return {
+    top:    top  + 'px',
+    left:   left + 'px',
+    width:  (right  - left) + 'px',
+    height: (bottom - top)  + 'px',
   }
 })
 
@@ -2904,6 +3093,16 @@ function _setupGridInstance() {
       const homeSheet = editingHomeSheet.value
       const writeSheet = (homeSheet && homeSheet !== sheet.getCurrentSheet()) ? homeSheet : sheet.getCurrentSheet()
 
+      // Protection first — blocks writes AND clears (empty value) on a locked
+      // cell. Nothing was written, so repaint the pre-edit value and bail.
+      if (_cellBlocked(id, writeSheet)) {
+        grid?.render?.()
+        editingHomeSheet.value = null
+        editingHomeCell.value  = null
+        syncFlags()
+        return
+      }
+
       // Enforce data validation rules. The engine stores rules in the snapshot
       // and the canvas paints a dropdown arrow for `list` rules, but until
       // now nothing surfaced number / text_length rejection — so "between 1
@@ -2912,7 +3111,9 @@ function _setupGridInstance() {
       const trimmed = String(value ?? '').trim()
       if (trimmed !== '') {
         const v = validation.validate(id, value, writeSheet)
-        if (!v.valid) {
+        // 'warn' rules let the value through but surface a transient notice;
+        // 'reject' (default) blocks the edit and repaints the pre-edit value.
+        if (!v.valid && v.severity !== 'warn') {
           const msg = v.message || 'Value rejected by data validation rule'
           saveError.value = msg
           setTimeout(() => { if (saveError.value === msg) saveError.value = '' }, 3500)
@@ -2923,6 +3124,11 @@ function _setupGridInstance() {
           editingHomeCell.value  = null
           syncFlags()
           return
+        }
+        if (!v.valid && v.severity === 'warn') {
+          const msg = v.message || 'Value flagged by data validation rule'
+          saveError.value = msg
+          setTimeout(() => { if (saveError.value === msg) saveError.value = '' }, 3500)
         }
       }
 
@@ -2972,12 +3178,19 @@ function _setupGridInstance() {
     getMergeInfo: id => merge.getMasterInfo(id, sheet.getCurrentSheet()),
     isSlave:      id => merge.isSlave(id, sheet.getCurrentSheet()),
     getMasterId:  id => merge.getMasterId(id, sheet.getCurrentSheet()),
-    getComment:   id => comments.get(id, sheet.getCurrentSheet()),
+    getComment:   id => comments.hasOpenComment(id, sheet.getCurrentSheet()),
     getValidation: id => validation.get(id, sheet.getCurrentSheet()),
     getCondFormat: (id, val) => condFormat.getFormatOverride(
       id, val, sheet.getCurrentSheet(),
       (cid) => sheet.getDisplayValue(cid, sheet.getCurrentSheet()),
     ),
+    // A SPARKLINE formula evaluates to a spec object; the painter draws it.
+    // In show-formulas mode the cell shows its =SPARKLINE(...) text instead.
+    getSparkline: id => {
+      if (showFormulas.value) return null
+      const v = sheet.getCellValue(id, sheet.getCurrentSheet())
+      return (v && v.__spark) ? v : null
+    },
     getRightInset: id => {
       const range = sortFilter.getRange(sheet.getCurrentSheet())
       if (!range) return 0
@@ -2988,6 +3201,7 @@ function _setupGridInstance() {
     },
     onHyperlinkClick(url) { window.open(url, '_blank', 'noopener,noreferrer') },
     onDropdownClick(id, rule, pos) { openDropdown(id, rule, pos) },
+    onCheckboxToggle(id) { toggleCheckbox(id) },
     onPivotDrill(r, c) { return drillDownAt(r, c) },
     getSheetNames() { return sheetNames.value },
     // Cross-sheet picker — grid prefixes inserted refs with the current sheet
@@ -2995,13 +3209,17 @@ function _setupGridInstance() {
     // active cross-sheet edit, in which case the prefix is omitted.
     getCurrentSheet()    { return sheet.getCurrentSheet() },
     getEditingHomeSheet() { return editingHomeSheet.value },
+    isCellEditable: (r, c) => !protection.isProtected(r, c, sheet.getCurrentSheet()),
+    onBlockedEdit: () => _flashProtected(sheet.getCurrentSheet()),
     onFill(src, total, { withModifier = false } = {}) {
+      if (_fillDestBlocked(src, total)) return   // only the destination cells, not the source
       const series = _previewSeriesKind(src)
       // Cmd/Ctrl held inverts the auto-detected mode — Google Sheets behaviour.
       const mode = withModifier ? (series ? 'copy' : 'series') : 'auto'
       _runFill(src, total, mode)
     },
     onBatchCommit(cells) {
+      if (_cellsBlocked(cells.map(c => c.id))) return
       const { before, after, refs } = diffCells(cells, id => sheet.getCell(id))
       for (const { id, value } of cells) sheet.setCell(id, value)
       if (refs.length) {
@@ -3023,13 +3241,17 @@ function _setupGridInstance() {
     // Lazy render is the default; eager `data` cache stays as an opt-out
     // fallback (`?lazy=0`). See _lazyValuesEnabled.
     lazyValues: _lazyValuesEnabled(),
+    // Gate every in-canvas mutation (begin-edit, delete, fill, resize,
+    // checkbox/dropdown) on write permission. Read-only viewers keep
+    // selection, navigation and copy.
+    canEdit: () => !readOnly.value,
   })
   // Keep DOM overlays (filter chevrons) in sync with canvas scroll/resize/freeze.
   grid.onRender(() => { renderVersion.value++ })
 }
 
 function _setupEventListeners() {
-  canvasRef.value.addEventListener('contextmenu', onCanvasContextMenu)
+  canvasRef.value.addEventListener('contextmenu', _onCanvasContextMenu)
   // computeSelectionStats fires from the grid's onSelect callback on every
   // selection change (moveSel + extendSel both emit it). The redundant
   // mouseup/keyup listeners that used to live here doubled the per-event
@@ -3111,7 +3333,7 @@ onBeforeUnmount(() => {
   // debounce window) silently drops the most recent changes — exactly the
   // "data is lost when I come back" report. The fetch uses `keepalive: true`
   // so the request survives the unmount.
-  if (isDirty.value && props.id && props.id !== 'new') {
+  if (isDirty.value && !readOnly.value && props.id && props.id !== 'new') {
     saveExisting(props.id, currentTitle.value, { keepalive: true })
   }
   window.removeEventListener('beforeunload', onBeforeUnloadGuard)
@@ -3267,6 +3489,103 @@ function _pasteAffectedRects(destSel) {
 	return rects
 }
 
+// ── Protection enforcement ────────────────────────────────────────────────────
+// The single gate every user-initiated write consults. Each helper returns true
+// — and flashes a transient notice — when the target is protected, so callers
+// bail with `if (…) return`. Programmatic paths (undo/restore/collab) never call
+// these, so they can still rewrite protected cells.
+//
+// A dedicated notice ref — NOT saveError — so a "protected" message renders as a
+// neutral badge and doesn't arm the save-error watchdog / retry affordance.
+const protectionNotice = ref('')
+function _flashProtected(sn) {
+  const msg = protection.isSheetLocked(sn)
+    ? 'This sheet is protected'
+    : 'This range is protected and can’t be edited'
+  protectionNotice.value = msg
+  setTimeout(() => { if (protectionNotice.value === msg) protectionNotice.value = '' }, 3500)
+}
+function _rectBlocked(rect, sn = sheet.getCurrentSheet()) {
+  if (!rect || !protection.isAnyProtected(rect, sn)) return false
+  _flashProtected(sn); return true
+}
+function _cellBlocked(id, sn = sheet.getCurrentSheet()) {
+  const p = parseCellId(id)
+  if (!p || !protection.isProtected(p.row, p.col, sn)) return false
+  _flashProtected(sn); return true
+}
+function _cellsBlocked(ids, sn = sheet.getCurrentSheet()) {
+  const hit = ids.some(id => _cellSilentlyProtected(id, sn))
+  if (hit) _flashProtected(sn)
+  return hit
+}
+function _cellSilentlyProtected(id, sn = sheet.getCurrentSheet()) {
+  const p = parseCellId(id)
+  return !!(p && protection.isProtected(p.row, p.col, sn))
+}
+// A fill writes only the destination — the strip(s) of `total` outside `src`.
+// Checking the whole extent would wrongly block a fill that merely *starts*
+// from a protected cell (reading a protected source is fine; only writes are
+// guarded). A fill extends in one direction, so at most one strip is non-empty.
+function _fillDestBlocked(src, total, sn = sheet.getCurrentSheet()) {
+  const strips = []
+  if (total.r1 > src.r1) strips.push({ r0: src.r1 + 1, r1: total.r1, c0: total.c0, c1: total.c1 })
+  if (total.r0 < src.r0) strips.push({ r0: total.r0, r1: src.r0 - 1, c0: total.c0, c1: total.c1 })
+  if (total.c1 > src.c1) strips.push({ r0: total.r0, r1: total.r1, c0: src.c1 + 1, c1: total.c1 })
+  if (total.c0 < src.c0) strips.push({ r0: total.r0, r1: total.r1, c0: total.c0, c1: src.c0 - 1 })
+  if (!strips.some(s => protection.isAnyProtected(s, sn))) return false
+  _flashProtected(sn); return true
+}
+
+// ── Protection UI actions ─────────────────────────────────────────────────────
+function protectSelection() {
+  contextMenu.open = false
+  const sel = grid?.getSelection?.()
+  if (!sel) return
+  protection.addRange(sel, '', sheet.getCurrentSheet())
+  history.push()
+  isDirty.value = true
+  grid?.render?.()
+}
+function unprotectSelection() {
+  contextMenu.open = false
+  const sel = grid?.getSelection?.()
+  if (!sel) return
+  const sn = sheet.getCurrentSheet()
+  // Drop every protected range that overlaps the selection.
+  for (const r of [...protection.getRanges(sn)]) {
+    if (sel.r0 <= r.r1 && sel.r1 >= r.r0 && sel.c0 <= r.c1 && sel.c1 >= r.c0) {
+      protection.removeRange(r.id, sn)
+    }
+  }
+  history.push()
+  isDirty.value = true
+  grid?.render?.()
+}
+function toggleSheetProtection(name) {
+  tabMenu.open = false
+  protection.setSheetLocked(!protection.isSheetLocked(name), name)
+  history.push()
+  isDirty.value = true
+  grid?.render?.()
+}
+// Menu-label reads. These are plain functions (not computed) so the template
+// re-evaluates them against the live selection each time the menu re-renders —
+// a computed would cache a stale answer when neither dep happened to change.
+// selectionHasProtectedRange looks only at ranges: the whole-sheet lock is a
+// separate affordance in the tab menu, so "Remove protection" here never lies
+// about a lock it can't clear.
+function selectionHasProtectedRange() {
+  const sel = grid?.getSelection?.()
+  if (!sel) return false
+  const sn = sheet.getCurrentSheet()
+  return protection.getRanges(sn).some(r =>
+    sel.r0 <= r.r1 && sel.r1 >= r.r0 && sel.c0 <= r.c1 && sel.c1 >= r.c0)
+}
+function tabMenuSheetLocked() {
+  return !!tabMenu.name && protection.isSheetLocked(tabMenu.name)
+}
+
 // Diff two id→value maps, returning the ids whose value changed.  Used to
 // trim noisy before/after pairs down to the cells that actually moved.
 function _diffRefs(before, after) {
@@ -3320,6 +3639,10 @@ function _triggerAutoSave() {
 
 async function _doAutoSave() {
   if (!isDirty.value) return
+  // Backstop: a viewer should never reach save_sheet (which would throw
+  // PermissionError). The input layer already blocks their edits, so isDirty
+  // stays false — but guard here too in case a mutation path is ever missed.
+  if (readOnly.value) return
   // Bootstrap is handled by _loadInitialData's autoCreate(); calling
   // saveExisting('new') would explode with "Sheet new not found". If the
   // bootstrap save failed for any reason, leave it to a subsequent reload
@@ -3416,6 +3739,16 @@ function onFormulaKey(e) {
     if ((e.key === 'Tab' || e.key === 'Enter') && acItems.value[acIdx.value]) { e.preventDefault(); commitAc(acItems.value[acIdx.value]); return }  // item obj
     if (e.key === 'Escape') { acItems.value = []; return }
   }
+  // Auto-close parens in the formula bar, mirroring the in-cell editor.
+  const ac = autoCloseKey(e.key, e.target.value, e.target.selectionStart, e.target.selectionEnd)
+  if (ac) {
+    e.preventDefault()
+    const el = e.target
+    formulaValue.value = ac.value
+    updateAc(ac.value, ac.caret)
+    nextTick(() => el.setSelectionRange(ac.caret, ac.caret))
+    return
+  }
   if (e.key === 'Enter' || e.key === 'Tab') {
     e.preventDefault()
     _commitFormulaBar()
@@ -3435,6 +3768,13 @@ function _commitFormulaBar() {
   const homeCell    = editingHomeCell.value
   const targetSheet = homeSheet || sheet.getCurrentSheet()
   const targetId    = homeCell  || activeCell.value
+  // Protected target — discard the edit and restore the bar to the cell value.
+  if (_cellBlocked(targetId, targetSheet)) {
+    editingHomeSheet.value = null
+    editingHomeCell.value  = null
+    formulaValue.value = sheet.getCell(targetId, targetSheet)
+    return
+  }
   const before      = { [targetId]: sheet.getCell(targetId, targetSheet) }
   if (homeSheet && homeSheet !== sheet.getCurrentSheet()) {
     switchSheet(homeSheet, { preserveEdit: true })
@@ -3471,6 +3811,7 @@ function fillDown() {
   const { r0, c0, r1, c1 } = grid.getSelection()
   if (r1 <= r0) return
   const sn = sheet.getCurrentSheet()
+  if (_rectBlocked({ r0: r0 + 1, c0, r1, c1 }, sn)) return
   const before = {}
   for (let c = c0; c <= c1; c++) {
     for (let r = r0 + 1; r <= r1; r++) {
@@ -3494,6 +3835,7 @@ function fillRight() {
   const { r0, c0, r1, c1 } = grid.getSelection()
   if (c1 <= c0) return
   const sn = sheet.getCurrentSheet()
+  if (_rectBlocked({ r0, c0: c0 + 1, r1, c1 }, sn)) return
   const before = {}
   for (let r = r0; r <= r1; r++) {
     for (let c = c0 + 1; c <= c1; c++) {
@@ -3527,6 +3869,7 @@ const { onGlobalKey } = useShortcuts({
   clipboard, clipboardHas, setMarchingAnts: (v) => grid?.setMarchingAnts(v),
   fillDown, fillRight,
   runSmartFill,
+  readOnly: () => readOnly.value,
 })
 
 // ── Clipboard ─────────────────────────────────────────────────────────────────
@@ -3546,9 +3889,13 @@ function onDocCopy(e) {
 }
 function onDocCut(e) {
   if (!_canvasActive()) return
+  if (readOnly.value) return   // cut deletes cells — viewers may only copy
+
   e.preventDefault()
   const src    = grid.getSelection()
   const sn     = sheet.getCurrentSheet()
+  // Cut moves content out of the source — block it when the source is protected.
+  if (_rectBlocked(src, sn)) return
   const before = _captureRange(src, sn)
   clipboard.cut(src)
   clipboardHas.value = true
@@ -3557,6 +3904,7 @@ function onDocCut(e) {
 }
 async function onDocPaste(e) {
   if (!_canvasActive()) return
+  if (readOnly.value) return   // viewers can't write pasted cells
   e.preventDefault()
   const destSel = grid.getSelection()
   const sn = sheet.getCurrentSheet()
@@ -3567,6 +3915,7 @@ async function onDocPaste(e) {
   // Await the async render, then take one full history.push() snapshot, which
   // captures both the pivot registry and the written cells atomically.
   if (clipboard.hasData() && clipboard.getPivotBlob?.()) {
+    if (_rectBlocked(destSel, sn)) return   // a pivot paste bypasses the cell-write guard
     await clipboard.paste(activeCell.value, () => {}, 'all', destSel)
     clipboardHas.value = clipboard.hasData()
     grid.setMarchingAnts(null)
@@ -3574,6 +3923,24 @@ async function onDocPaste(e) {
     isDirty.value = true
     return
   }
+
+  // Prefer the HTML flavor when it carries a real table — external apps
+  // (Gameplan, Google Sheets, web pages) put a structured <table> there, while
+  // their text/plain flavor can lack tab delimiters and collapse into a single
+  // column. Read both flavors up front so we can also MEASURE the paste extent
+  // before writing (see below).
+  const html = clipboard.hasData() ? null : e.clipboardData?.getData('text/html')
+  const text = clipboard.hasData() ? null : e.clipboardData?.getData('text/plain')
+
+  // For an external paste there is no internal source selection, so
+  // _pasteAffectedRects only sees the clicked cell — the output block's real
+  // size lives in the clipboard payload. Measure it (side-effect free, same
+  // grid math the write uses) and fold it into the capture rect, or undo would
+  // record only the anchor cell and leave the rest of the block behind.
+  const externalRect = clipboard.hasData()
+    ? null
+    : (clipboard.measureHTMLPaste(html, activeCell.value, destSel)
+       ?? clipboard.measureTextPaste(text, activeCell.value, destSel))
 
   // Snapshot the pre-paste state for cells + formats + validation across
   // the destination rect, plus cond-format rule count for the fallback
@@ -3584,6 +3951,7 @@ async function onDocPaste(e) {
   // Capture across everything the paste can touch (dest, full output block,
   // and — for a cut — the vacated source) so undo restores all of it.
   const rects      = _pasteAffectedRects(destSel)
+  if (externalRect) rects.push(externalRect)
   const before     = Object.assign({}, ...rects.map(r => _captureRange(r, sn)))
   const beforeFmt  = Object.assign({}, ...rects.map(r => _captureFormatsRange(r, sn)))
   const beforeVal  = Object.assign({}, ...rects.map(r => _captureValidationRange(r, sn)))
@@ -3593,12 +3961,19 @@ async function onDocPaste(e) {
   if (clipboard.hasData()) {
     // Internal cut/copy — empty historyPush callback so we control the
     // history entry from out here. clipboard still does its mutations.
-    clipboard.paste(activeCell.value, () => {}, 'all', destSel)
+    // A protected destination returns { blocked } and writes nothing; leave
+    // the marching ants + cut buffer intact so the user can retry elsewhere.
+    if (clipboard.paste(activeCell.value, () => {}, 'all', destSel)?.blocked) { _flashProtected(sn); return }
     pasted = true
   } else {
-    const text = e.clipboardData?.getData('text/plain')
-    if (text) {
-      clipboard.pasteFromText(text, activeCell.value, () => {}, destSel)
+    // Prefer a real HTML table; fall back to plain text. Either write into a
+    // protected cell returns { blocked } and we bail without recording it.
+    const htmlRes = html ? clipboard.pasteFromHTML(html, activeCell.value, () => {}, destSel) : false
+    if (htmlRes?.blocked) { _flashProtected(sn); return }
+    if (htmlRes) {
+      pasted = true
+    } else if (text) {
+      if (clipboard.pasteFromText(text, activeCell.value, () => {}, destSel)?.blocked) { _flashProtected(sn); return }
       pasted = true
     }
   }
@@ -3643,7 +4018,9 @@ function doPasteSpecial(kind) {
   const beforeFmt  = Object.assign({}, ...rects.map(r => _captureFormatsRange(r, sn)))
   const beforeVal  = Object.assign({}, ...rects.map(r => _captureValidationRange(r, sn)))
   const cfBefore   = condFormat?.getRules?.(sn)?.length ?? 0
-  clipboard.paste(activeCell.value, () => {}, kind, destSel)
+  if (clipboard.paste(activeCell.value, () => {}, kind, destSel)?.blocked) {
+    _flashProtected(sn); return   // keep the pending cut/copy + its marching ants
+  }
   for (const r of rects) _refreshDisplayForRange(r, sn)
   clipboardHas.value = clipboard.hasData()
   grid?.setMarchingAnts(null)
@@ -3716,6 +4093,9 @@ function _afterHistoryNavigate() {
   _applyHiddenRows()        // filter state restored → re-apply to grid
   _syncViewMirrors()
   syncNames()
+  // The comment panel holds a reference into the (now-replaced) engine thread —
+  // close it so a stale index can't delete the wrong reply after undo/redo.
+  commentPanel.open = false
   activeCell.value   = 'A1'
   formulaValue.value = sheet.getCell('A1')
   refreshActiveFormat(); _syncNumberFormat('A1'); syncFlags()
@@ -3806,20 +4186,52 @@ function openCommentPanel() {
     x = rect.left + 60
     y = rect.top  + 40
   }
-  commentPanel.id   = id
-  commentPanel.text = comments.get(id, sheet.getCurrentSheet()) || ''
-  commentPanel.x    = x
-  commentPanel.y    = y
+  commentPanel.id = id
+  commentPanel.x  = x
+  commentPanel.y  = y
+  commentPanel.draft = ''
+  _loadCommentThread()
   commentPanel.open = true
 }
 
-function saveComment() {
-  comments.set(commentPanel.id, commentPanel.text, sheet.getCurrentSheet())
-  commentPanel.open = false
+// Mirror the engine's thread for `commentPanel.id` into the reactive panel.
+function _loadCommentThread() {
+  const t = comments.getThread(commentPanel.id, sheet.getCurrentSheet())
+  commentPanel.thread   = t ? t.thread : []
+  commentPanel.resolved = t ? t.resolved : false
+}
+
+// Shared post-mutation: repaint, record for undo (comments ride the snapshot),
+// and flag dirty so autosave persists the change.
+function _afterCommentChange() {
+  _loadCommentThread()
   notesPanel.rev++
   grid?.render()
-  history.push()   // comments live in the snapshot; record so undo can revert
+  history.push()
   isDirty.value = true
+}
+
+function addCommentReply() {
+  const text = commentPanel.draft.trim()
+  if (!text) return
+  comments.addReply(commentPanel.id, {
+    author: userEmail.value,
+    name:   userFullName.value || userEmail.value,
+    text,
+  }, sheet.getCurrentSheet())
+  commentPanel.draft = ''
+  _afterCommentChange()
+}
+
+function toggleResolveComment() {
+  comments.resolve(commentPanel.id, !commentPanel.resolved, sheet.getCurrentSheet())
+  _afterCommentChange()
+}
+
+function deleteCommentReply(i) {
+  comments.removeReply(commentPanel.id, i, sheet.getCurrentSheet())
+  _afterCommentChange()
+  if (!commentPanel.thread.length) commentPanel.open = false
 }
 
 function deleteComment() {
@@ -3829,6 +4241,16 @@ function deleteComment() {
   grid?.render()
   history.push()
   isDirty.value = true
+}
+
+// "5m ago" style relative time for a reply's epoch-ms timestamp.
+function commentTime(ts) {
+  if (!ts) return ''
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000))
+  if (s < 60)    return 'just now'
+  const m = Math.round(s / 60);   if (m < 60) return `${m}m ago`
+  const h = Math.round(m / 60);   if (h < 24) return `${h}h ago`
+  return new Date(ts).toLocaleDateString()
 }
 
 // ── Notes side panel ──────────────────────────────────────────────────────────
@@ -3842,11 +4264,11 @@ const allNotes = computed(() => {
   const list = []
   for (const name of sheetNames.value) {
     const map = comments.getAll(name) || {}
-    const entries = Object.entries(map)
-      .map(([id, text]) => ({ id, p: parseCellId(id), text }))
+    const entries = Object.keys(map)
+      .map(id => ({ id, p: parseCellId(id) }))
       .filter(e => e.p)
       .sort((a, b) => a.p.row - b.p.row || a.p.col - b.p.col)
-      .map(e => ({ sheet: name, id: e.id, text: e.text }))
+      .map(e => ({ sheet: name, id: e.id, text: comments.preview(e.id, name), resolved: !!comments.getThread(e.id, name)?.resolved }))
     list.push(...entries)
   }
   list.sort((a, b) => {
@@ -3905,6 +4327,7 @@ function openValidationDialog() {
   validationDialog.val2     = String(e?.max ?? '')
   validationDialog.listRaw  = (e?.options || []).join(', ')
   validationDialog.message  = e?.message  || ''
+  validationDialog.severity = e?.severity || 'reject'
   validationDialog.open     = true
 }
 
@@ -3912,22 +4335,48 @@ function confirmValidation() {
   const ids = selectionIds()
   const sn  = sheet.getCurrentSheet()
   const msg = validationDialog.message.trim() || undefined
+  // 'warn' only differs from the default when the value fails, and a checkbox
+  // is TRUE/FALSE-only where "allow anyway" makes no sense — so scope it out.
+  const severity = validationDialog.type === 'checkbox' ? undefined
+    : (validationDialog.severity === 'warn' ? 'warn' : undefined)
   let rule
-  if (validationDialog.type === 'list') {
+  if (validationDialog.type === 'checkbox') {
+    rule = { type: 'checkbox', message: msg }
+  } else if (validationDialog.type === 'list') {
     const options = validationDialog.listRaw.split(',').map(s => s.trim()).filter(Boolean)
-    rule = { type: 'list', options, message: msg }
+    rule = { type: 'list', options, message: msg, severity }
   } else {
     const op  = validationDialog.operator
     const v1  = parseFloat(validationDialog.val1)
     const v2  = parseFloat(validationDialog.val2)
     const min = isNaN(v1) ? undefined : v1
     const max = ['between', 'not_between'].includes(op) && !isNaN(v2) ? v2 : undefined
-    rule = { type: validationDialog.type, operator: op, min, max, message: msg }
+    rule = { type: validationDialog.type, operator: op, min, max, message: msg, severity }
   }
   for (const id of ids) validation.set(id, rule, sn)
+
+  // Checkbox cells need a concrete value to render as unchecked and to feed
+  // formulas (SUM / COUNTIF) right away — fill blanks with FALSE, à la Sheets.
+  // The rule + these values ride in the single history.push() snapshot below,
+  // so one undo reverts the whole "apply checkboxes" action.
+  if (validationDialog.type === 'checkbox') {
+    const filled = []
+    for (const id of ids) {
+      const cur = sheet.getCell(id, sn)
+      if (cur == null || String(cur) === '') {
+        sheet.setCell(id, 'FALSE', sn)
+        filled.push({ id, value: 'FALSE' })
+      }
+    }
+    if (filled.length) {
+      broadcastBatchChange(sn, filled)
+      recomputePivotsForSheet(sn)
+    }
+  }
+
   validationDialog.open = false
   grid?.render()
-  history.push()   // validation rules live in the snapshot; record for undo
+  history.push()   // rule + any FALSE-fill live in the snapshot; record for undo
   isDirty.value = true
 }
 
@@ -3955,10 +4404,22 @@ function openDropdown(id, rule, pos = {}) {
 function pickDropdownOption(opt) {
   const id     = dropdownPanel.id
   const sn     = sheet.getCurrentSheet()
+  if (_cellBlocked(id, sn)) { dropdownPanel.open = false; return }
   const before = { [id]: sheet.getCell(id, sn) }
   sheet.setCell(id, opt)
   dropdownPanel.open = false
   _pushEditOp(sn, before, 'Edit cell')
+  recomputePivotsForSheet(sn)
+}
+
+// Clicking a checkbox cell's tickbox flips TRUE ↔ FALSE (empty → TRUE). Routed
+// through the same edit-op path as a dropdown pick so undo + collab match.
+function toggleCheckbox(id) {
+  const sn     = sheet.getCurrentSheet()
+  const before = { [id]: sheet.getCell(id, sn) }
+  const next   = String(before[id]).toUpperCase() === 'TRUE' ? 'FALSE' : 'TRUE'
+  sheet.setCell(id, next, sn)
+  _pushEditOp(sn, before, 'Toggle checkbox')
   recomputePivotsForSheet(sn)
 }
 
@@ -4207,13 +4668,18 @@ function _detectContiguousBlock(r, c) {
   return { r0, c0, r1, c1 }
 }
 
-// Create a filter on the user's current selection.  Single-cell selection
-// auto-expands to the contiguous data block (or refuses if the cell is empty).
+// Create a filter on the user's current selection.  A selection that spans no
+// data rows — a single cell, or a lone header row like A1:E1 — auto-expands to
+// the contiguous data block around its top-left anchor (or refuses if that
+// anchor is empty). Without this, toggling the filter on just the header row
+// would produce a header-only range (r1 === r0): chevrons appear, but the
+// value list scans zero data rows and comes up empty. A genuine multi-row
+// block is taken verbatim.
 function _createFilterOnSelection() {
   if (!grid) return
   const sel = grid.getSelection()
-  const isSingle = sel.r0 === sel.r1 && sel.c0 === sel.c1
-  const range = isSingle
+  const noDataRows = sel.r0 === sel.r1
+  const range = noDataRows
     ? (_detectContiguousBlock(sel.r0, sel.c0) || { r0: sel.r0, c0: sel.c0, r1: sel.r0, c1: sel.c0 })
     : { r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 }
   sortFilter.setRange(range, sheet.getCurrentSheet())
@@ -4231,6 +4697,167 @@ function _removeFilter() {
   grid?.render?.()
   history.push()
   isDirty.value = true
+}
+
+// ── Slicers ────────────────────────────────────────────────────────────────
+// A slicer is a floating value-filter control bound to a column of the filter
+// range. It reads/writes that column's `inSet` spec in sortFilter; the slicers
+// engine only tracks the column + float position. `slicerVersion` is bumped on
+// every slicer/filter change so the panels re-derive their checklists.
+const slicerVersion = ref(0)
+let _slicerDrag = null
+
+// One reactive snapshot per slicer: the column picker's options, the value list
+// with PLAIN boolean checked flags, and whether a filter is active — all derived
+// together on each slicerVersion bump. The template binds to these plain values
+// (not to function calls over the non-reactive sortFilter engine), so the panel
+// can never drift out of sync with the applied filter.
+const activeSlicers = computed(() => {
+  slicerVersion.value
+  const sn      = currentSheet.value
+  const range   = sortFilter.getRange(sn)
+  const options = range ? _slicerColumnOptions(range, sn) : []
+  return slicers.list(sn).map(sl => {
+    const values = sortFilter.getColumnValues(sl.col, sn)
+    const spec   = sortFilter.getFilterConfig(sn)[sl.col]
+    const set    = spec?.operator === 'inSet' ? new Set(spec.values) : null   // null → unfiltered
+    return {
+      id: sl.id, col: sl.col, x: sl.x, y: sl.y,
+      label: slicerLabel(sl, sn),
+      options,
+      rows: values.map(v => ({ v, checked: !set || set.has(v) })),
+    }
+  })
+})
+
+// Every column of the filter range, as { label: header, value: colIdx } — the
+// raw list the header dropdown is built from.
+function _slicerColumnOptions(range, sn) {
+  const opts = []
+  for (let c = range.c0; c <= range.c1; c++) {
+    const header = sheet.getDisplayValue(colLabel(c) + (range.r0 + 1), sn)
+    opts.push({ label: header || colLabel(c), value: c })
+  }
+  return opts
+}
+// frappe-ui Dropdown options for a slicer's column picker — a styled, teleported
+// popover (not a native <select>, which overflowed the floating panel). The
+// current column is marked so the menu reads like a real selector.
+function slicerColMenu(sl) {
+  return sl.options.map(o => ({
+    label: o.label,
+    icon: o.value === sl.col ? 'check' : null,
+    onClick: () => changeSlicerColumn(sl, o.value),
+  }))
+}
+
+function slicerValues(sl) { return sortFilter.getColumnValues(sl.col, sheet.getCurrentSheet()) }
+function slicerLabel(sl, sn = sheet.getCurrentSheet()) {
+  const range = sortFilter.getRange(sn)
+  const header = range ? sheet.getDisplayValue(colLabel(sl.col) + (range.r0 + 1), sn) : ''
+  return header || colLabel(sl.col)
+}
+// The set of values currently kept visible, or null when the column is unfiltered.
+function _slicerCheckedSet(sl) {
+  const spec = sortFilter.getFilterConfig(sheet.getCurrentSheet())[sl.col]
+  return spec?.operator === 'inSet' ? new Set(spec.values) : null
+}
+function toggleSlicerValue(sl, v) {
+  const all = slicerValues(sl)
+  const set = _slicerCheckedSet(sl) || new Set(all)
+  set.has(v) ? set.delete(v) : set.add(v)
+  _applySlicerFilter(sl, set, all)
+}
+// "Select all" always shows everything — it clears the column's filter outright
+// rather than toggling, so it can never surprise-hide the data.
+function selectAllSlicer(sl) {
+  const sn = sheet.getCurrentSheet()
+  sortFilter.clearFilter(sl.col, sn)
+  _repopulateGrid(); _applyHiddenRows(); history.push(); isDirty.value = true
+}
+// "Clear" empties the selection (an inSet with no values) so the user can then
+// pick just the values they want — the Google-Sheets filter idiom.
+function clearSlicerValues(sl) {
+  const sn = sheet.getCurrentSheet()
+  sortFilter.setFilter(sl.col, { operator: 'inSet', values: [] }, sn)
+  _repopulateGrid(); _applyHiddenRows(); history.push(); isDirty.value = true
+}
+// Re-point a slicer at a different column of the filter range; the old column's
+// filter is released so it stops hiding rows with no visible control.
+function changeSlicerColumn(sl, value) {
+  const sn     = sheet.getCurrentSheet()
+  const newCol = Number(value)
+  if (Number.isNaN(newCol) || newCol === sl.col) return
+  // Bail before touching anything if another slicer already owns the target —
+  // otherwise we'd clear this column's filter for a move that can't happen.
+  if (slicers.list(sn).some(s => s.col === newCol && s.id !== sl.id)) return
+  sortFilter.clearFilter(sl.col, sn)
+  slicers.setCol(sl.id, newCol, sn)
+  _repopulateGrid(); _applyHiddenRows(); history.push(); isDirty.value = true
+}
+function _applySlicerFilter(sl, set, all) {
+  const sn = sheet.getCurrentSheet()
+  // All-checked is identical to no filter — clear the column instead of storing
+  // every value (mirrors applyFilter).
+  if (set.size === all.length) sortFilter.clearFilter(sl.col, sn)
+  else                         sortFilter.setFilter(sl.col, { operator: 'inSet', values: [...set] }, sn)
+  _repopulateGrid()
+  _applyHiddenRows()
+  history.push()
+  isDirty.value = true
+  slicerVersion.value++
+}
+function insertSlicer() {
+  contextMenu.open = false
+  const sn  = sheet.getCurrentSheet()
+  const p   = parseCellId(activeCell.value)
+  const col = p ? p.col : 0
+  if (slicers.list(sn).some(s => s.col === col)) return   // column already has a slicer
+  // A slicer reads distinct values from the filter range — auto-create one over
+  // the surrounding data block if the sheet isn't filtered yet.
+  if (!sortFilter.getRange(sn)) {
+    const block = _detectContiguousBlock(p?.row ?? 0, col)
+    if (!block) return   // no data to slice
+    sortFilter.setRange(block, sn)
+  }
+  // A slicer filters one column OF the filter range. A column outside it has no
+  // values to show and can't appear in the column picker — refuse rather than
+  // strand a dead slicer. (Auto-created ranges are centred on col, so they pass.)
+  const range = sortFilter.getRange(sn)
+  if (!range || col < range.c0 || col > range.c1) return
+  slicers.add(col, 96 + slicers.list(sn).length * 28, 96, sn)
+  _applyHiddenRows()      // paints the filter's chevrons/outline (and bumps slicerVersion)
+  grid?.render?.()
+  history.push()
+  isDirty.value = true
+}
+function removeSlicer(sl) {
+  const sn = sheet.getCurrentSheet()
+  slicers.remove(sl.id, sn)
+  // The slicer IS the filter control for its column — clear the filter it
+  // applied so removing it doesn't strand hidden rows with no visible control.
+  sortFilter.clearFilter(sl.col, sn)
+  _repopulateGrid()
+  _applyHiddenRows()      // un-hides the rows + bumps slicerVersion
+  history.push()
+  isDirty.value = true
+}
+function startSlicerDrag(sl, e) {
+  _slicerDrag = { id: sl.id, sx: e.clientX, sy: e.clientY, ox: sl.x, oy: sl.y }
+  window.addEventListener('mousemove', _onSlicerDrag)
+  window.addEventListener('mouseup', _endSlicerDrag)
+}
+function _onSlicerDrag(e) {
+  if (!_slicerDrag) return
+  const { id, sx, sy, ox, oy } = _slicerDrag
+  slicers.move(id, Math.max(0, ox + e.clientX - sx), Math.max(0, oy + e.clientY - sy), sheet.getCurrentSheet())
+  slicerVersion.value++
+}
+function _endSlicerDrag() {
+  if (_slicerDrag) { history.push(); isDirty.value = true }
+  _slicerDrag = null
+  window.removeEventListener('mousemove', _onSlicerDrag)
+  window.removeEventListener('mouseup', _endSlicerDrag)
 }
 
 function openFilterPanel(colIdx) {
@@ -4337,7 +4964,12 @@ function clearFilterCol() {
 }
 
 function doSort(colIdx, dir) {
-  sortFilter.sort(colIdx, dir, sheet.getCurrentSheet())
+  const sn = sheet.getCurrentSheet()
+  // Sorting permutes values across the filter range — refuse if it overlaps
+  // protection, matching Google Sheets (a protected range blocks the sort).
+  const range = sortFilter.getRange(sn)
+  if (range && _rectBlocked(range, sn)) return
+  sortFilter.sort(colIdx, dir, sn)
   filterPanel.open = false
   _repopulateGrid()
   _applyHiddenRows()
@@ -4430,6 +5062,7 @@ function doInsertRow(below = false, count = 1) {
     formats.insertRow(atRow, sn)
     comments.insertRow(atRow, sn)
     validation.insertRow(atRow, sn)
+    protection.insertRow(atRow, sn)
     condFormat.insertRow(atRow, sn)
     sortFilter.insertRow(atRow, sn)
     grid.shiftRowHeights(atRow, 1)
@@ -4521,6 +5154,7 @@ function confirmHyperlink() {
   if (!url) { showHyperlinkDialog.value = false; return }
   const id = activeCell.value
   const sh = sheet.getCurrentSheet()
+  if (_cellBlocked(id, sh)) { showHyperlinkDialog.value = false; return }
   if (hyperlinkText.value !== sheet.getCell(id)) sheet.setCell(id, hyperlinkText.value)
   formats.applyToRange([id], { hyperlink: url }, sh)
   history.push()   // post-mutate
@@ -4572,6 +5206,7 @@ function doDeleteRow() {
     formats.deleteRow(start, sn)
     comments.deleteRow(start, sn)
     validation.deleteRow(start, sn)
+    protection.deleteRow(start, sn)
     condFormat.deleteRow(start, sn)
     sortFilter.deleteRow(start, sn)
     grid.shiftRowHeights(start + 1, -1)
@@ -4591,8 +5226,10 @@ function doInsertCol(right = false, count = 1) {
     formats.insertCol(atCol, sn)
     comments.insertCol(atCol, sn)
     validation.insertCol(atCol, sn)
+    protection.insertCol(atCol, sn)
     condFormat.insertCol(atCol, sn)
     sortFilter.insertCol(atCol, sn)
+    slicers.insertCol(atCol, sn)
     grid.shiftColWidths(atCol, 1)
   }
   _repopulateGrid()
@@ -4615,8 +5252,10 @@ function doDeleteCol() {
     formats.deleteCol(start, sn)
     comments.deleteCol(start, sn)
     validation.deleteCol(start, sn)
+    protection.deleteCol(start, sn)
     condFormat.deleteCol(start, sn)
     sortFilter.deleteCol(start, sn)
+    slicers.deleteCol(start, sn)
     grid.shiftColWidths(start + 1, -1)
   }
   _repopulateGrid()
@@ -4772,6 +5411,9 @@ function _applyHiddenRows() {
   // Tag the filter subset so grid-painter can render those gaps with the
   // regular gridline color instead of the bold "rows hidden here" stroke.
   grid?.setFilterHiddenRows(filterHidden)
+  // The filter state just changed (panel, sort, undo, sheet switch, or a
+  // slicer) — refresh any open slicer's checklist so both controls agree.
+  slicerVersion.value++
 }
 
 function _applyHiddenCols() {
@@ -5030,7 +5672,7 @@ function toggleShowFormulas() {
 /* Left cluster groups: brand+title tight (gap:4); status chips sit further away
    (gap:12) so the title reads as the focal point, not crowded by badges. */
 .sn-topbar-left  { display:flex; align-items:center; gap:8px; min-width:0; }
-.sn-topbar-left  > .sn-app-icon-btn + .sn-title-input { margin-left:-8px; }
+.sn-topbar-left  > .sn-app-icon-btn + .sn-title-fit { margin-left:-8px; }
 .sn-topbar-right { display:flex; align-items:center; gap:6px; flex-shrink:0; }
 
 .sn-app-icon { width:28px; height:28px; flex-shrink:0; display:block; }
@@ -5042,7 +5684,26 @@ function toggleShowFormulas() {
 .sn-app-icon-btn:hover  { background:var(--surface-gray-2); }
 .sn-app-icon-btn:focus-visible { outline:2px solid var(--outline-gray-4); outline-offset:2px; }
 
-.sn-title-input { height:32px; border:1px solid transparent; border-radius:6px; padding:0 10px; font-size:15px; font-weight:600; color:var(--ink-gray-9); background:transparent; outline:none; font-family:inherit; letter-spacing:-.005em; transition:background-color .12s, border-color .12s, width .1s; }
+/* Auto-sizing title. A hidden ::after mirror carries the exact same typography
+   and box as the input; being normal flow, ITS width sizes the wrapper to the
+   real rendered text. The input is positioned absolutely on top so its own
+   intrinsic ~20ch width is taken out of the layout — otherwise it, not the
+   text, would dictate the box. Result: the box hugs the text and grows smoothly
+   per keystroke, with no width animation lagging the caret and no canvas
+   measurement drifting from actual metrics. min/max-width keep the old
+   click-target floor and runaway-title ceiling. */
+.sn-title-fit { position:relative; display:inline-block; min-width:56px; max-width:520px; }
+.sn-title-fit::after {
+  content:attr(data-value) ' ';
+  display:block;
+  visibility:hidden;
+  white-space:pre;
+  box-sizing:border-box;
+  height:32px; border:1px solid transparent; padding:0 10px;
+  max-width:520px; overflow:hidden;
+  font-size:15px; font-weight:600; font-family:inherit; letter-spacing:-.005em;
+}
+.sn-title-input { position:absolute; inset:0; box-sizing:border-box; width:100%; height:100%; border:1px solid transparent; border-radius:6px; padding:0 10px; font-size:15px; font-weight:600; color:var(--ink-gray-9); background:transparent; outline:none; font-family:inherit; letter-spacing:-.005em; transition:background-color .12s, border-color .12s; }
 
 .sn-title-input:hover { background:var(--surface-gray-2); }
 .sn-title-input:focus { border-color:var(--outline-gray-4); background:var(--surface-base); box-shadow:0 0 0 2px rgba(23,23,23,.10); }
@@ -5123,6 +5784,17 @@ function toggleShowFormulas() {
   border-radius: 2px;
 }
 
+/* Filter range outline — same neutral chrome as the pivot highlight, drawn
+   around the active filter's rectangle so its extent is visible. pointer-events
+   stays off so the chevron buttons and canvas underneath keep receiving clicks. */
+.sn-filter-range {
+  position: absolute; z-index: 14; pointer-events: none;
+  /* Thin green outline, Google-Sheets-style — a 1.5px near-black frame read
+     as far too heavy against the gridlines. */
+  border: 1px solid var(--ink-green-3, #15803d);
+  border-radius: 2px;
+}
+
 /* ── Bar 2 · Formula bar ─────────────────────────────────────────────────── */
 
 .sn-formula-bar   { display:flex; align-items:center; height:48px; padding:0 16px; border-bottom:1px solid var(--outline-gray-2); gap:8px; flex-shrink:0; background:var(--surface-base); }
@@ -5152,6 +5824,10 @@ function toggleShowFormulas() {
 
 /* ── Bar 3 · Formatting toolbar ──────────────────────────────────────────── */
 .sn-toolbar { display:flex; align-items:center; gap:2px; height:44px; padding:0 15px; border-bottom:1px solid var(--outline-gray-2); background:var(--surface-base); flex-shrink:0; }
+/* Read-only: dim and make the whole formatting bar inert. pointer-events:none
+   swallows clicks on every control (buttons + dropdowns) without per-button
+   wiring; the reduced opacity is the visual "disabled" cue. */
+.sn-toolbar--readonly { opacity:.45; pointer-events:none; }
 .sn-toolbar :deep(.fui-form-control) { width:auto; }
 .sn-toolbar :deep(select) { min-width:118px; }
 /* Font family dropdown — uses a Button trigger that hugs the short label. */
@@ -5403,12 +6079,31 @@ function toggleShowFormulas() {
 
 /* Comment panel */
 .sn-comment-panel  { position:fixed; z-index:8500; background:var(--surface-elevation-2); border:1px solid var(--outline-elevation-2); border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.14); padding:12px; min-width:240px; display:flex; flex-direction:column; gap:8px; }
+
+/* Slicers — floating value-filter controls */
+.sn-slicer        { position:fixed; z-index:8400; width:220px; background:var(--surface-elevation-2); border:1px solid var(--outline-elevation-2); border-radius:10px; box-shadow:0 0 1px rgba(0,0,0,.35), 0 6px 8px -4px rgba(0,0,0,.1); padding:10px; display:flex; flex-direction:column; gap:8px; }
+.sn-slicer-head   { display:flex; align-items:center; gap:6px; cursor:move; user-select:none; }
+.sn-slicer-colsel { flex:1 1 auto; min-width:0; }
+.sn-slicer-colsel :deep(button) { width:100%; justify-content:space-between; font-weight:600; }
+.sn-slicer-colsel :deep(button > span) { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sn-slicer-actions { margin:-2px 0; }
+.sn-slicer-values { max-height:220px; overflow-y:auto; border:1px solid var(--outline-gray-2); border-radius:8px; padding:4px 0; background:var(--surface-base); }
 .sn-comment-header { display:flex; align-items:center; justify-content:space-between; }
 .sn-comment-title  { font-size:12px; font-weight:600; letter-spacing:.04em; color:var(--ink-gray-7); text-transform:uppercase; }
 .sn-comment-close  { background:none; border:none; cursor:pointer; color:var(--ink-gray-5); font-size:14px; line-height:1; padding:2px 4px; }
 .sn-comment-ta     { resize:vertical; font-family:inherit; font-size:13px; color:var(--ink-gray-9); background:var(--surface-gray-1); border:1px solid var(--outline-gray-2); border-radius:6px; padding:6px 8px; min-height:64px; outline:none; }
 .sn-comment-ta:focus { border-color:var(--outline-gray-4); }
 .sn-comment-actions { display:flex; gap:6px; justify-content:flex-end; }
+.sn-comment-hactions { display:flex; align-items:center; gap:2px; }
+.sn-comment-resolved { margin-left:6px; font-size:10px; font-weight:600; letter-spacing:.03em; text-transform:none; color:var(--ink-green-3, #15803d); background:var(--surface-green-2, #e4f3e9); border-radius:999px; padding:1px 7px; }
+.sn-comment-thread  { display:flex; flex-direction:column; gap:10px; max-height:240px; overflow-y:auto; }
+.sn-comment-reply   { display:flex; flex-direction:column; gap:2px; }
+.sn-comment-reply-head { display:flex; align-items:center; gap:6px; }
+.sn-comment-author  { font-size:12.5px; font-weight:600; color:var(--ink-gray-9); }
+.sn-comment-time    { font-size:11px; color:var(--ink-gray-5); }
+.sn-comment-del     { margin-left:auto; opacity:0; }
+.sn-comment-reply:hover .sn-comment-del { opacity:1; }
+.sn-comment-text    { font-size:13px; color:var(--ink-gray-8); white-space:pre-wrap; word-break:break-word; }
 
 /* Notes side panel — docks the right edge of sn-grid-wrap, same dock as
    Version History (only one of the two is open at a time). */
@@ -5479,4 +6174,51 @@ function toggleShowFormulas() {
   max-height: min(60vh, 480px);
   overflow-y: auto;
 }
+/* reka-ui teleports the popover to <body> as `.dropdown-content` (frappe-ui
+   default z-index:50) with no marker we can target, so the slicer's column menu
+   rendered behind the floating slicer (8400) / context menu (9000). Gate the
+   bump on `body:has(.sn-slicer)` — only while a Sheets slicer is floating — so
+   dropdowns everywhere else in the app (and other Suite products) keep their
+   normal stacking. The doubled class still outranks the single-class default. */
+body:has(.sn-slicer) .dropdown-content.dropdown-content { z-index: 9500; }
+
+/* A Frappe UI Dialog draws a translucent (~12% black) scrim over the grid.
+   The filter-range outline and pivot-output highlight are full-height dark
+   1.5px borders spanning the whole data region, so their vertical borders stay
+   visible THROUGH that scrim and flank the open dialog — reading as a line
+   cutting across it (e.g. the Share dialog while a filter is active). Hide
+   those decorations whenever a dialog is up. `.dialog-overlay` portals to
+   <body>, so `:has` from body catches every one. */
+body:has(.dialog-overlay) .sn-filter-range,
+body:has(.dialog-overlay) .sn-pivot-highlight { display: none; }
+
+/* Overlay scrollbars for the canvas grid. The elements are created imperatively
+   in canvas/scrollbars.js (appended to .sn-grid-wrap), so they carry no scoped
+   data-attr — these rules must live in the UNSCOPED block to reach them.
+   z-index sits above the filter (14) / pivot (15) range outlines so the opaque
+   track paints over any outline border that reaches the scrollbar gutter, but
+   below the notes drawer (30) and popovers. */
+.sn-sb          { position:absolute; z-index:16; background:var(--surface-menu-bar, #f8f8f8);
+                  border:0 solid var(--outline-gray-2, #e2e2e2);
+                  opacity:1; transition:opacity .2s ease; }
+/* --sn-sb-thick is published by canvas/scrollbars.js from SCROLLBAR_THICK, the
+   single source of truth; the 12px fallback only covers the pre-mount frame. */
+.sn-sb-v        { top:0; right:0; width:var(--sn-sb-thick, 12px); border-left-width:1px; }
+.sn-sb-h        { left:0; bottom:0; height:var(--sn-sb-thick, 12px); border-top-width:1px; }
+.sn-sb-corner   { position:absolute; z-index:16; right:0; bottom:0;
+                  width:var(--sn-sb-thick, 12px); height:var(--sn-sb-thick, 12px);
+                  background:var(--surface-menu-bar, #f8f8f8);
+                  border-left:1px solid var(--outline-gray-2, #e2e2e2);
+                  border-top:1px solid var(--outline-gray-2, #e2e2e2);
+                  opacity:1; transition:opacity .2s ease; }
+/* Auto-hidden state — faded out and click-through so cells under the gutter
+   stay reachable. JS (canvas/scrollbars.js) toggles this on inactivity. */
+.sn-sb--hidden  { opacity:0; pointer-events:none; }
+.sn-sb-thumb    { position:absolute; border-radius:6px; background:var(--ink-gray-4, #b8b8b8);
+                  transition:background .12s ease; cursor:grab; touch-action:none; }
+.sn-sb-v .sn-sb-thumb { top:0; left:2px; right:2px; }
+.sn-sb-h .sn-sb-thumb { left:0; top:2px; bottom:2px; }
+.sn-sb-thumb:hover           { background:var(--ink-gray-5, #7c7c7c); }
+.sn-sb-dragging .sn-sb-thumb { background:var(--ink-gray-6, #6b6b6b); cursor:grabbing; }
+.sn-sb-dragging              { cursor:grabbing; user-select:none; }
 </style>

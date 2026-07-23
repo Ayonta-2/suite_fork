@@ -20,8 +20,8 @@
 			:class="{ 'fixed left-0 top-0 z-10 w-60 !bg-surface-base': isMobile }"
 			:disable-collapse="isMobile"
 		>
-			<template #footer-items="{ isCollapsed }">
-				<QuotaBar v-if="user.data.is_jmap_configured" :is-collapsed />
+			<template #footer-items>
+				<QuotaBar v-if="user.data.is_jmap_configured" :is-collapsed="isSidebarCollapsed" />
 			</template>
 			<template #sidebar-item="{ item }">
 				<SidebarItem
@@ -77,7 +77,7 @@ import { Icon } from 'frappe-ui/icons'
 import { Check, Keyboard, User } from 'lucide-vue-next'
 import { Avatar, Button, Dropdown, Sidebar, SidebarItem } from 'frappe-ui'
 
-import { getAppSwitcherItems } from '@/apps/registry'
+import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
 import { useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
@@ -98,9 +98,9 @@ import ContactRound from '~icons/lucide/contact-round'
 import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
 import Globe from '~icons/lucide/globe'
-import LayoutGrid from '~icons/lucide/layout-grid'
 import LogOut from '~icons/lucide/log-out'
 import Mailbox from '~icons/lucide/mailbox'
+import Mails from '~icons/lucide/mails'
 import Plus from '~icons/lucide/plus'
 import Settings from '~icons/lucide/settings'
 import Star from '~icons/lucide/star'
@@ -114,11 +114,11 @@ const { isSidebarOpen, closeSidebar } = useSidebar()
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 const { logout, branding } = sessionStore()
 const store = userStore()
-const { mailboxes } = store
+const { mailboxes, allInboxesUnread } = store
 
 const user = inject('$user')
 
-const apps = { get data() { return getAppSwitcherItems('mail') } }
+const appsMenuOption = useAppSwitcher('mail')
 
 const { showSettings } = useSettings()
 const showFolderModal = ref(false)
@@ -143,21 +143,7 @@ const menuItems = computed(() => [
 		group: '',
 		items: [
 			{
-				icon: LayoutGrid,
-				label: __('Apps'),
-				submenu: apps.data?.map?.((app) => ({
-					component: h(
-						'a',
-						{
-							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2',
-							href: app.route,
-						},
-						[
-							h('img', { src: app.logo, class: 'size-6' }),
-							h('span', { class: 'max-w-18 text-sm w-full truncate' }, app.title),
-						],
-					),
-				})),
+				...appsMenuOption.value,
 				condition: () => !isMobile.value,
 			},
 			{
@@ -177,7 +163,7 @@ const menuItems = computed(() => [
 						})
 				},
 				condition: () =>
-					user.data.is_mail_admin &&
+					user.data.is_suite_admin &&
 					user.data.is_jmap_configured &&
 					route.meta.isDashboard,
 			},
@@ -187,7 +173,7 @@ const menuItems = computed(() => [
 				onClick: () => router.push('/mail/dashboard'),
 				condition: () =>
 					user.data.is_jmap_configured &&
-					user.data.is_mail_admin &&
+					user.data.is_suite_admin &&
 					!route.meta.isDashboard &&
 					!isMobile.value,
 			},
@@ -221,10 +207,15 @@ const menuItems = computed(() => [
 						{
 							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
 							onClick: async () => {
-								router.push({
-									name: route.name,
-									params: { ...route.params, accountId: a.id },
-								})
+								// Account-scoped routes carry an accountId, so swap it in place to stay in the
+								// same section. Account-agnostic routes (All Inboxes) have no accountId param —
+								// reusing their name would go nowhere, so route through the account shortcut,
+								// which the guard resolves to that account's default mailbox.
+								router.push(
+									route.params.accountId
+										? { name: route.name, params: { ...route.params, accountId: a.id } }
+										: { name: 'mail-account-shortcut', params: { accountId: a.id } },
+								)
 							},
 						},
 						[
@@ -373,9 +364,24 @@ const sidebarItems = computed(() => {
 		{ label: __('Custom'), items: customItems },
 		{ label: __('People'), items: contactsItems },
 	]
-	// Screener is its own nameless group, pinned first — only when screening is enabled.
-	if (screenerItem && screeningEnabled.value)
-		groups.unshift({ label: '', items: [screenerItem] })
+
+	// All Inboxes and Screener share one nameless group pinned above the folders, so they sit at
+	// item spacing (not the wider section gap two separate groups would create). All Inboxes first
+	// (broadest scope: all accounts), then Screener (active account). Each is conditional:
+	// All Inboxes only with more than one account, Screener only when screening is enabled.
+	const pinnedItems = []
+	if (user.data.accounts?.length > 1)
+		pinnedItems.push({
+			label: __('All Inboxes'),
+			icon: Mails,
+			to: { name: 'mail-all-inboxes' },
+			activeFor: ['mail-all-inboxes'],
+			suffix: allInboxesUnread.data ? String(allInboxesUnread.data) : '',
+		})
+	if (screenerItem && screeningEnabled.value) pinnedItems.push(screenerItem)
+
+	if (pinnedItems.length) groups.unshift({ label: '', items: pinnedItems })
+
 	return groups
 })
 

@@ -92,7 +92,7 @@
   },
   {
    "default": "0",
-   "description": "When enabled, mail from senders not on the Accepted list is filed into the Screening folder instead of the inbox (Hey-style screening). Only senders you accept reach the inbox.",
+   "description": "When enabled, mail from senders not on the Accepted list is filed into the Screening folder instead of the inbox (Hey-style screening). Only senders you accept reach the inbox. Enabled by default for personal accounts.",
    "fieldname": "enable_screening",
    "fieldtype": "Check",
    "label": "Enable Screening"
@@ -330,7 +330,7 @@
    "link_fieldname": "account"
   }
  ],
- "modified": "2026-07-02 17:31:11.002220",
+ "modified": "2026-07-22 14:56:41.320704",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "JMAP Account",
@@ -338,7 +338,6 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
    "delete": 1,
    "email": 1,
    "export": 1,
@@ -351,13 +350,20 @@
   },
   {
    "read": 1,
-   "role": "All",
+   "role": "Suite Admin",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Suite User",
    "write": 1
   }
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
+ "show_title_field_in_link": 1,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "_name"
 }

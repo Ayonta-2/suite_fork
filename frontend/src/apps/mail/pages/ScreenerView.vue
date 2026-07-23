@@ -38,13 +38,15 @@
 					<div class="pb-20">
 						<!-- Count bar — matches the mailbox "All Mails" toolbar height/style. -->
 						<div class="flex min-h-[49px] items-center justify-between border-b px-5">
-							<span class="text-ink-gray-5 truncate">{{ waitingLabel }}</span>
-							<Button
-								:label="__('Clear All')"
-								variant="ghost"
-								class="-mr-2"
-								@click="showClearAll = true"
-							/>
+							<span class="truncate">{{ waitingLabel }}</span>
+							<div class="-mr-2 flex items-center gap-1">
+								<Dropdown :options="bulkOptions" placement="bottom-end">
+									<Button variant="ghost" class="!px-1.5">
+										<template #icon><Ellipsis class="icon" /></template>
+									</Button>
+								</Dropdown>
+								<Button :label="__('Allow All')" variant="ghost" @click="allowAll" />
+							</div>
 						</div>
 
 						<div
@@ -59,18 +61,12 @@
 						>
 							<div class="min-w-0 flex-1 space-y-1">
 								<div class="flex min-w-0 items-baseline gap-2">
-									<span
-										class="text-ink-gray-8 truncate text-[15px] !font-semibold sm:text-base"
-									>
+									<span class="text-ink-gray-8 truncate text-[15px] !font-semibold sm:text-base">
 										{{ sender.from_name || sender.from_email }}
 									</span>
-									<span class="text-ink-gray-5 truncate text-[13px]">
-										{{ sender.from_email }}
-									</span>
+									<span class="text-ink-gray-5 truncate text-[13px]">{{ sender.from_email }}</span>
 								</div>
-								<div
-									class="text-ink-gray-8 truncate text-sm !font-semibold !leading-[1.5]"
-								>
+								<div class="text-ink-gray-8 truncate text-sm !font-semibold !leading-[1.5]">
 									{{ sender.subject || __('[No subject]') }}
 								</div>
 								<div
@@ -79,13 +75,12 @@
 								>
 									<span v-if="sender.preview">{{ sender.preview }}</span>
 									<span v-if="sender.count > 1">
-										{{ sender.preview ? ' · ' : ''
-										}}{{ __('{0} messages', [String(sender.count)]) }}
+										{{ sender.preview ? ' · ' : '' }}{{ __('{0} messages', [String(sender.count)]) }}
 									</span>
 								</div>
 							</div>
 
-							<!-- Time top-right, persistent Block / Allow parked bottom-right -->
+							<!-- Received time, with Deny / Allow icon buttons -->
 							<div class="flex shrink-0 flex-col items-end justify-between">
 								<MailDate
 									:datetime="sender.received_at"
@@ -95,14 +90,18 @@
 								<div class="-mr-2 flex gap-2">
 									<Button
 										variant="outline"
-										:label="__('Block')"
+										:tooltip="__('Deny')"
 										@click.stop="screenOut([sender.from_email])"
-									/>
+									>
+										<template #icon><X class="h-4 w-4" stroke-width="1.5" /></template>
+									</Button>
 									<Button
 										variant="outline"
-										:label="__('Allow')"
+										:tooltip="__('Allow')"
 										@click.stop="allow([sender.from_email])"
-									/>
+									>
+										<template #icon><Check class="h-4 w-4" stroke-width="1.5" /></template>
+									</Button>
 								</div>
 							</div>
 						</div>
@@ -120,7 +119,7 @@
 					}"
 				>
 					<template v-if="openSender">
-						<!-- Subject + Block/Allow; back button only when the preview owns the whole pane -->
+						<!-- Subject + Deny/Allow; back button only when the preview owns the whole pane -->
 						<div
 							class="bg-surface-base sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b p-2.5 sm:px-5"
 						>
@@ -139,16 +138,42 @@
 								</h2>
 							</div>
 							<div class="flex shrink-0 gap-2">
-								<Button
-									variant="outline"
-									:label="__('Block')"
-									@click="screenOut([openSender.from_email])"
-								/>
-								<Button
-									variant="solid"
-									:label="__('Allow')"
-									@click="allow([openSender.from_email])"
-								/>
+								<div class="flex items-center">
+									<Button
+										variant="outline"
+										:label="__('Deny')"
+										class="!rounded-r-none"
+										@click="screenOut([openSender.from_email])"
+									/>
+									<Dropdown
+										:options="domainOptions('screenOut', openSender)"
+										placement="bottom-end"
+									>
+										<Button variant="outline" class="-ml-px !rounded-l-none !px-1.5">
+											<template #icon><ChevronDown class="h-4 w-4" stroke-width="1.5" /></template>
+										</Button>
+									</Dropdown>
+								</div>
+								<div class="flex items-center">
+									<Button
+										variant="solid"
+										:label="__('Allow')"
+										class="!rounded-r-none"
+										@click="allow([openSender.from_email])"
+									/>
+									<Dropdown
+										:options="domainOptions('allow', openSender)"
+										placement="bottom-end"
+									>
+										<Button
+											variant="solid"
+											class="!rounded-l-none !px-1.5"
+											style="border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent)"
+										>
+											<template #icon><ChevronDown class="h-4 w-4" stroke-width="1.5" /></template>
+										</Button>
+									</Dropdown>
+								</div>
 							</div>
 						</div>
 
@@ -182,14 +207,15 @@
 		</div>
 
 		<Dialog v-model="showClearAll" :options="clearAllOptions" />
+		<Dialog v-model="showBulkConfirm" :options="bulkConfirmOptions" />
 	</div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronLeft, LoaderCircle } from 'lucide-vue-next'
-import { Breadcrumbs, Button, Dialog, createResource, usePageMeta } from 'frappe-ui'
+import { Check, ChevronDown, ChevronLeft, Ellipsis, LoaderCircle, X } from 'lucide-vue-next'
+import { Breadcrumbs, Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useScreenSize, useSidebar } from '@/apps/mail/utils/composables'
@@ -338,7 +364,7 @@ usePageMeta(() => {
 
 const waitingLabel = computed(() => {
 	const n = senders.data?.length ?? 0
-	return n === 1 ? __('1 new sender.') : __('{0} new senders.', [String(n)])
+	return n === 1 ? __('1 new sender') : __('{0} new senders', [String(n)])
 })
 
 const allowResource = createResource({
@@ -357,7 +383,7 @@ const screenOutResource = createResource({
 	}),
 })
 
-// Block/Allow clicks are coalesced and flushed as one batched request per action. Triaging senders in
+// Deny/Allow clicks are coalesced and flushed as one batched request per action. Triaging senders in
 // quick succession otherwise fires a request per click, and each rebuilds the shared automation sieve —
 // the concurrent rebuilds race on that single script and throw CannotChangeConstantError. The backend
 // already accepts a list, so we just accumulate the burst and submit it once. A sender's latest action
@@ -415,27 +441,31 @@ const queueScreening = (action: 'allow' | 'screenOut', fromEmails: string[]) => 
 	if (!flushTimer) flushTimer = setTimeout(flushScreening, SCREEN_FLUSH_DELAY)
 }
 
-const runAction = (action: 'allow' | 'screenOut', fromEmails: string[]) => {
+// `matchSender` decides which rows this action clears from the list; by default the senders whose
+// address is in `fromEmails`, but a domain action clears everyone in the domain (see runDomainAction).
+const runAction = (
+	action: 'allow' | 'screenOut',
+	fromEmails: string[],
+	matchSender: (s: ScreeningSender) => boolean = (s) => fromEmails.includes(s.from_email),
+) => {
 	if (!fromEmails.length) return
 
 	// When acting on the sender open in the detail view, line up the next one down so you can triage
 	// straight through — resolved before the optimistic removal.
 	const list = senders.data ?? []
-	const actingOnOpen = !!openSender.value && fromEmails.includes(openSender.value.from_email)
+	const actingOnOpen = !!openSender.value && matchSender(openSender.value)
 	let nextSender: ScreeningSender | undefined
 	if (actingOnOpen) {
 		const idx = list.findIndex(
 			(s: ScreeningSender) => s.from_email === openSender.value!.from_email,
 		)
-		nextSender = list
-			.slice(idx + 1)
-			.find((s: ScreeningSender) => !fromEmails.includes(s.from_email))
+		nextSender = list.slice(idx + 1).find((s: ScreeningSender) => !matchSender(s))
 	}
 
 	// Optimistically drop the acted senders so the rows leave immediately and every other row stays
 	// interactive. The row leaving is the only success feedback (no toast); only failures are surfaced
 	// — with a resync to bring the rows back.
-	senders.data = list.filter((s: ScreeningSender) => !fromEmails.includes(s.from_email))
+	senders.data = list.filter((s: ScreeningSender) => !matchSender(s))
 
 	// Advance to the next sender (or close the preview if there's nothing below).
 	if (actingOnOpen) {
@@ -449,8 +479,30 @@ const runAction = (action: 'allow' | 'screenOut', fromEmails: string[]) => {
 const allow = (fromEmails: string[]) => runAction('allow', fromEmails)
 const screenOut = (fromEmails: string[]) => runAction('screenOut', fromEmails)
 
+// Domain-level triage. Screening rules accept an `@domain` value: it covers all future mail from the
+// domain and — because the backend's screened-mail lookup uses a JMAP `from` contains-match — moves
+// every already-screened message from that domain too. We also clear every visible sender in the
+// domain in one go.
+const domainOf = (email: string) => email.slice(email.lastIndexOf('@') + 1).toLowerCase()
+
+const runDomainAction = (action: 'allow' | 'screenOut', sender: ScreeningSender) => {
+	const domain = domainOf(sender.from_email)
+	if (!domain) return
+	runAction(action, [`@${domain}`], (s: ScreeningSender) => domainOf(s.from_email) === domain)
+}
+
+const domainOptions = (action: 'allow' | 'screenOut', sender: ScreeningSender) => [
+	{
+		label:
+			action === 'allow'
+				? __('Allow all emails from {0}', [domainOf(sender.from_email)])
+				: __('Deny all emails from {0}', [domainOf(sender.from_email)]),
+		onClick: () => runDomainAction(action, sender),
+	},
+]
+
 // Clear All empties the queue without judging anyone: it moves all screened mail to the inbox but
-// creates no Block/Allow rule, so a mixed queue can't accidentally whitelist spam or block a real sender.
+// creates no Deny/Allow rule, so a mixed queue can't accidentally whitelist spam or block a real sender.
 const showClearAll = ref(false)
 
 const clearAllResource = createResource({
@@ -466,9 +518,10 @@ const clearAllResource = createResource({
 })
 
 const clearAllOptions = computed(() => ({
-	title: __('Clear the Screener?'),
+	title: __('Move All to Inbox'),
 	message: __(
-		'This will move current unscreened messages to your Inbox. Future emails from these senders will still go to the Screener.',
+		'Messages from {0} senders will be moved to your Inbox. Future emails from them will still go to the Screener.',
+		[String(senders.data?.length ?? 0)],
 	),
 	actions: [
 		{
@@ -479,4 +532,49 @@ const clearAllOptions = computed(() => ({
 		},
 	],
 }))
+
+// Bulk triage over every waiting sender. Allow/Deny reuse the per-sender flow (optimistic clear +
+// batched request) but, since they act on everyone at once, go behind a confirm dialog.
+const allSenderEmails = () => (senders.data ?? []).map((s: ScreeningSender) => s.from_email)
+
+const showBulkConfirm = ref(false)
+const pendingBulkAction = ref<'allow' | 'screenOut' | null>(null)
+
+const allowAll = () => confirmBulk('allow')
+const denyAll = () => confirmBulk('screenOut')
+
+const confirmBulk = (action: 'allow' | 'screenOut') => {
+	pendingBulkAction.value = action
+	showBulkConfirm.value = true
+}
+
+const runBulk = () => {
+	const action = pendingBulkAction.value
+	showBulkConfirm.value = false
+	pendingBulkAction.value = null
+	if (action) runAction(action, allSenderEmails())
+}
+
+const bulkConfirmOptions = computed(() => {
+	const count = senders.data?.length ?? 0
+	const isAllow = pendingBulkAction.value === 'allow'
+	return {
+		title: isAllow ? __('Allow All Senders') : __('Deny All Senders'),
+		message: isAllow
+			? __('{0} senders will be allowed, and their messages moved to your Inbox.', [String(count)])
+			: __('{0} senders will be denied, and their messages moved to Junk.', [String(count)]),
+		actions: [
+			{
+				label: isAllow ? __('Allow All') : __('Deny All'),
+				variant: 'solid',
+				onClick: runBulk,
+			},
+		],
+	}
+})
+
+const bulkOptions = computed(() => [
+	{ label: __('Deny All'), onClick: denyAll },
+	{ label: __('Move All to Inbox'), onClick: () => (showClearAll.value = true) },
+])
 </script>

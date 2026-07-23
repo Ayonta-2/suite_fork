@@ -7,24 +7,6 @@ from werkzeug.exceptions import Forbidden, NotFound
 from werkzeug.wrappers import Response
 
 
-@frappe.whitelist()
-def create_drive_file(name: str, parent: str | None = None, title: str | None = "Untitled") -> str:
-	"""
-	Creates a corresponding Drive File for a Slides Presentation.
-	"""
-	from suite.drive.utils import create_file
-
-	file = create_file(
-		title=title,
-		parent=parent,
-		mime_type="frappe/slides",
-		file_type="Presentation",
-		content_doctype="Presentation",
-		content_docname=name,
-	)
-	return file.name
-
-
 def get_file_size(file_path: str) -> int:
 	"""
 	Returns the size of the file at the given path.
@@ -114,38 +96,30 @@ def get_media_response(src: str) -> Response:
 	return response
 
 
-def is_attached_to_public_presentation(file_doc) -> bool:
-	if file_doc.attached_to_doctype != "Presentation" or not file_doc.attached_to_name:
-		return False
-
-	return bool(frappe.db.get_value("Presentation", file_doc.attached_to_name, "is_public"))
-
-
-def validate_media_file(src: str) -> None:
-	file_docs = frappe.get_all(
-		"File",
-		filters={"file_url": src},
-		fields=["name", "is_private", "attached_to_doctype", "attached_to_name"],
-	)
-
-	if not file_docs:
+def validate_media_file(src) -> None:
+	file_name = frappe.db.exists("File", {"file_url": src})
+	if not file_name:
 		raise NotFound
 
-	for file_doc in file_docs:
-		if not file_doc.is_private:
-			return
-		if is_attached_to_public_presentation(file_doc):
-			return
-		if frappe.has_permission("File", "read", doc=file_doc.name):
-			return
+	file_doc = frappe.get_doc("File", file_name)
+	if frappe.has_permission("File", "read", file_doc):
+		return
+
+	# File role perms exclude Guest, so check the attached presentation directly
+	if file_doc.attached_to_doctype == "Presentation" and frappe.has_permission(
+		"Presentation", "read", file_doc.attached_to_name
+	):
+		return
 
 	raise Forbidden(_("You don't have permission to access this file"))
 
 
 @frappe.whitelist(allow_guest=True)
-def get_media_file(src: str) -> Response:
+def get_media_file(src: str, public: str | None = None) -> Response:
 	"""
 	Fetches permitted video file and returns a response.
+
+	`public` is deprecated and ignored; access is determined server-side.
 	"""
 	validate_media_file(src)
 

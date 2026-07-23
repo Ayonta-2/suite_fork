@@ -20,9 +20,6 @@ CONFIG_KEY_FIELD_MAP = {
 	"push_log_file_count": None,
 	"push_log_level": None,
 	"push_log_max_size": "push_log_max_file_size",
-	"storage_log_file_count": None,
-	"storage_log_level": None,
-	"storage_log_max_size": "storage_log_max_file_size",
 	# Limits
 	"exchange_max_export": None,
 	"exchange_max_import": None,
@@ -41,9 +38,6 @@ CONFIG_KEY_FIELD_MAP = {
 	"stalwart_cli_command_timeout": None,
 	"exchange_export_timeout": None,
 	"exchange_import_timeout": None,
-	"fetch_lock_timeout": None,
-	"lock_acquire_timeout": None,
-	"lock_timeout": None,
 }
 
 

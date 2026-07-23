@@ -5,7 +5,6 @@
 import re
 
 import frappe
-from frappe.core.doctype.user.user import User
 from frappe.utils.caching import redis_cache
 
 
@@ -31,22 +30,6 @@ def unique_users(user_list: list) -> list[dict]:
 		unique_list.append(user_row)
 
 	return unique_list
-
-
-def assign_meet_role(user: User, method: str) -> None:
-	"""Assign the "Meet User" role to a newly created User."""
-	role_name = "Meet User"
-	user_name = user.name
-
-	if not user_name or user_name in ("Guest", "Administrator"):
-		return
-
-	if not frappe.db.exists("Role", role_name):
-		frappe.get_doc({"doctype": "Role", "role_name": role_name}).insert(ignore_permissions=True)
-
-	user_doc = frappe.get_doc("User", user_name)
-	user_doc.append("roles", {"role": role_name})
-	user_doc.save(ignore_permissions=True)
 
 
 def is_guest_user(user_id: str) -> bool:

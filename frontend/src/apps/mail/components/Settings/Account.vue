@@ -1,6 +1,19 @@
 <template>
+	<AppSettingsHeader :title="__('Account')">
+		<template v-if="jmapAccount.doc" #actions>
+			<Button
+				:label="__('Save')"
+				variant="solid"
+				:disabled="loading || !isDirty"
+				:loading="saving"
+				@click="save"
+			/>
+		</template>
+	</AppSettingsHeader>
+	<AppSettingsBody>
 	<template v-if="jmapAccount.doc">
-		<h1>{{ __('Outgoing') }}</h1>
+		<div class="flex flex-col gap-5">
+		<h2 class="text-base-semibold text-ink-gray-8">{{ __('Outgoing') }}</h2>
 		<FormControl
 			v-model="jmapAccount.doc.default_outgoing_email"
 			type="combobox"
@@ -9,46 +22,51 @@
 			:options="identities.data.map((i: Identity) => i.email)"
 			:open-on-click="true"
 		/>
-		<Switch
-			v-model="createContactsAfterEmailSubmit"
-			:label="__('Create Contacts After Sending Email')"
+		<SettingsRow
+			class="!py-0"
+			:title="__('Create Contacts After Sending Email')"
 			:description="
 				__('Automatically creates contacts for new recipients after an email is sent.')
 			"
-			class="!p-0"
-		/>
-		<Switch
-			v-model="destroyEmailAfterSubmit"
-			:label="__('Delete Email After Sending')"
+		>
+			<Switch v-model="createContactsAfterEmailSubmit" />
+		</SettingsRow>
+		<SettingsRow
+			class="!py-0"
+			:title="__('Delete Email After Sending')"
 			:description="
 				__('Automatically deletes the email from your mailbox after it is sent.')
 			"
-			class="!p-0"
-		/>
-		<Switch
-			v-model="destroyNewsletterAfterSubmit"
-			:label="__('Delete Newsletter After Sending')"
+		>
+			<Switch v-model="destroyEmailAfterSubmit" />
+		</SettingsRow>
+		<SettingsRow
+			class="!py-0"
+			:title="__('Delete Newsletter After Sending')"
 			:description="__('Automatically deletes the newsletter after it is sent.')"
-			class="!p-0"
-		/>
+		>
+			<Switch v-model="destroyNewsletterAfterSubmit" />
+		</SettingsRow>
 
-		<h1>{{ __('Incoming') }}</h1>
-		<Switch
-			v-model="enableScreening"
-			:label="__('Screen New Senders')"
+		<h2 class="text-base-semibold text-ink-gray-8">{{ __('Incoming') }}</h2>
+		<SettingsRow
+			class="!py-0"
+			:title="__('Screen New Senders')"
 			:description="
 				__(
 					'Emails from new senders go to the Screener instead of your Inbox. Only accepted senders reach your Inbox.',
 				)
 			"
-			class="!p-0"
-		/>
-		<Switch
-			v-model="blockRemoteImages"
-			:label="__('Block Remote Images')"
+		>
+			<Switch v-model="enableScreening" />
+		</SettingsRow>
+		<SettingsRow
+			class="!py-0"
+			:title="__('Block Remote Images')"
 			:description="__(`Don't load remote images from untrusted sources by default.`)"
-			class="!p-0"
-		/>
+		>
+			<Switch v-model="blockRemoteImages" />
+		</SettingsRow>
 		<FormControl
 			v-model="jmapAccount.doc.on_mark_as_junk"
 			type="select"
@@ -58,7 +76,7 @@
 		/>
 
 		<template v-if="userSettings.doc">
-			<h1>{{ __('Recovery') }}</h1>
+			<h2 class="text-base-semibold text-ink-gray-8">{{ __('Recovery') }}</h2>
 			<FormControl
 				v-model="userSettings.doc.backup_email"
 				:label="__('Backup Email')"
@@ -70,17 +88,11 @@
 		</template>
 
 		<ErrorMessage :message="jmapAccount.save.error || userSettings.save.error" />
-		<Button
-			:label="__('Save')"
-			variant="solid"
-			:disabled="loading || !isDirty"
-			:loading="saving"
-			class="min-h-7"
-			@click="save"
-		/>
 
 		<Dialog v-model="showMoveToInbox" :options="moveToInboxOptions" />
+		</div>
 	</template>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
@@ -90,10 +102,13 @@ import {
 	Dialog,
 	ErrorMessage,
 	FormControl,
+	SettingsRow,
 	Switch,
 	createDocumentResource,
 	createResource,
 } from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
