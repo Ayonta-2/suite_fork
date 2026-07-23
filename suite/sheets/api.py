@@ -348,6 +348,10 @@ def get_sheet(name: str, compressed: int = 0) -> dict:
 		"title": doc.title,
 		"can_write": bool(frappe.has_permission("Sheet", doc=name, ptype="write", throw=False)),
 		"sheets_data": raw if frappe.utils.cint(compressed) else decode_sheets_data(raw),
+		# The sheet's true creator, so the Share dialog can label the owner row
+		# with the real person (and "Owner (you)" only for them) instead of
+		# falling back to whoever happens to have the dialog open.
+		"owner": doc.owner,
 	}
 
 

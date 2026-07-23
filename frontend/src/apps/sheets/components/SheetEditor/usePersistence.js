@@ -13,6 +13,11 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
   // Defaults to true so a brand-new (autoCreate) doc — which the creator always
   // owns — never flashes read-only before the first load resolves.
   const canWrite  = ref(true)
+  // The sheet's true owner (creator's user id), surfaced by get_sheet so the
+  // Share dialog can name the real owner rather than the current viewer. Empty
+  // until the first load resolves; for a brand-new sheet the editor falls back
+  // to the session user (who is the creator).
+  const sheetOwner = ref('')
   // Surfaces "couldn't open this sheet" cases (404 / 403 / network) to the
   // editor so it can render a proper error screen instead of mounting a
   // blank canvas. Shape: { kind: 'denied' | 'missing' | 'other', message }.
@@ -45,6 +50,7 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
       // Older backends predate `can_write`; treat its absence as writable so we
       // never lock out an editor on a stale server.
       canWrite.value = doc.can_write !== false
+      sheetOwner.value = doc.owner || ''
     } catch (err) {
       console.error('Load failed:', err)
       const t = err?.excType || ''
@@ -181,5 +187,5 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
     }
   }
 
-  return { isSaving, saveError, canWrite, loadError, loadSheet, autoCreate, saveExisting, retrySave }
+  return { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCreate, saveExisting, retrySave }
 }
