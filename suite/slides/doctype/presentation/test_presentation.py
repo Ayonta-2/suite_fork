@@ -82,7 +82,12 @@ class TestPresentationSecurity(IntegrationTestCase):
 	def test_save_image_accepts_valid_png(self):
 		with self.set_user(OTHER_USER):
 			url = save_base64_image(PNG_1PX, self.other_presentation, "x")
+
 		self.assertTrue(url.endswith(".png"))
+		file = frappe.get_doc("File", {"file_url": url})
+		self.assertEqual(file.is_private, 1)
+		self.assertEqual(file.attached_to_doctype, "Presentation")
+		self.assertEqual(file.attached_to_name, self.other_presentation)
 
 	def test_composite_blocks_private_presentation(self):
 		with self.set_user("Guest"):

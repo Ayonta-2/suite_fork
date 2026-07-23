@@ -14,4 +14,3 @@ def ensure_user(email):
 				"send_welcome_email": 0,
 			}
 		).insert(ignore_permissions=True)
-	return email
