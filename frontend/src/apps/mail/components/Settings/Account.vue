@@ -86,19 +86,7 @@
 			:options="ON_MARK_AS_JUNK_OPTIONS"
 		/>
 
-		<template v-if="userSettings.doc">
-			<h2 class="text-base-semibold text-ink-gray-8">{{ __('Recovery') }}</h2>
-			<FormControl
-				v-model="userSettings.doc.backup_email"
-				:label="__('Backup Email')"
-				:description="
-					__(`We'll contact you here if there's an issue with your main account.`)
-				"
-				variant="outline"
-			/>
-		</template>
-
-		<ErrorMessage :message="jmapAccount.save.error || userSettings.save.error" />
+		<ErrorMessage :message="jmapAccount.save.error" />
 
 		<Dialog v-model="showMoveToInbox" :options="moveToInboxOptions" />
 		</div>
@@ -132,18 +120,13 @@ const user = inject('$user')
 const store = userStore()
 const { identities, mailboxes, mailboxIds } = store
 
-// Outgoing settings now live on the active account's JMAP Account; backup_email
-// (Recovery) is still per-user on User Settings.
+// Outgoing settings live on the active account's JMAP Account. Recovery (backup_email) and the
+// JMAP connection credentials moved to the dedicated Credentials tab (CredentialsSettings.vue).
 const activeAccount = user.data?.accounts?.find((a) => a.id === store.accountId)
 
 const jmapAccount = createDocumentResource({
 	doctype: 'JMAP Account',
 	name: activeAccount?.jmap_account,
-})
-
-const userSettings = createDocumentResource({
-	doctype: 'User Settings',
-	name: user.data?.user_settings,
 })
 
 const createContactsAfterEmailSubmit = computed({
@@ -187,12 +170,9 @@ const ON_MARK_AS_JUNK_OPTIONS = [
 const accountDirty = computed(
 	() => JSON.stringify(jmapAccount.doc) !== JSON.stringify(jmapAccount.originalDoc),
 )
-const userDirty = computed(
-	() => JSON.stringify(userSettings.doc) !== JSON.stringify(userSettings.originalDoc),
-)
-const isDirty = computed(() => accountDirty.value || userDirty.value)
-const loading = computed(() => jmapAccount.get.loading || userSettings.get.loading)
-const saving = computed(() => jmapAccount.save.loading || userSettings.save.loading)
+const isDirty = computed(() => accountDirty.value)
+const loading = computed(() => jmapAccount.get.loading)
+const saving = computed(() => jmapAccount.save.loading)
 
 const showMoveToInbox = ref(false)
 
@@ -244,7 +224,6 @@ const save = async () => {
 		// Enabling screening creates the Screening folder server-side; reload so it shows up.
 		if (screeningChanged) mailboxes.reload()
 	}
-	if (userDirty.value) await userSettings.save.submit()
 	raiseToast(__('Account updated.'))
 	if (askMoveToInbox) showMoveToInbox.value = true
 }
