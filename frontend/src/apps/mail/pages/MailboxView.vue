@@ -3,7 +3,9 @@
 	<header class="flex items-center justify-between border-b px-3 py-2.5 sm:px-5">
 		<div class="flex items-center space-x-2">
 			<Button v-if="isMobile" icon="menu" variant="ghost" @click="openSidebar" />
+			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
 			<Breadcrumbs
+				class="-ml-0.5"
 				:items="[
 					{
 						label: mailboxName,
@@ -23,9 +25,12 @@
 	<!-- Unscreened-thread nudge on the inbox, mirroring the trash/junk info bar: shown while Hey-style
 	     screening is on and threads are waiting to be screened. -->
 	<div v-if="showScreenerBanner" class="flex items-center space-x-1 border-b py-2.5 px-5">
-		<span class="bg-blue-500 mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full" />
+		<!-- w-4 wrapper centers the dot on the checkbox column below (checkbox is w-4) -->
+		<span class="mr-1 flex w-4 shrink-0 justify-center">
+			<span class="bg-blue-500 inline-block h-2 w-2 rounded-full" />
+		</span>
 		<span class="text-ink-gray-5">{{ screenerBanner.before
-		}}<span class="font-medium text-ink-gray-9">{{ screenerBanner.phrase }}</span>{{ screenerBanner.after }}</span>
+		}}<span class="font-medium text-ink-gray-8">{{ screenerBanner.phrase }}</span>{{ screenerBanner.after }}</span>
 		<Button :label="__('Review Now')" variant="ghost" @click="goToScreener" />
 	</div>
 

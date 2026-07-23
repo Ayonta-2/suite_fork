@@ -50,7 +50,7 @@
 								</Button>
 							</Dropdown>
 							<span
-								class="text-ink-gray-4 text-sm"
+								class="text-ink-gray-4 mr-2 text-sm"
 								:class="{ 'group-hover:hidden': item.menuOptions }"
 							>
 								{{ item.suffix }}

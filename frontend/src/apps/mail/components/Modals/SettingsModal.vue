@@ -25,9 +25,9 @@
 <script setup lang="ts">
 import { computed, inject, markRaw, ref, watch, type Component } from 'vue'
 import {
-	Ban,
 	BellRing,
 	Code,
+	Eye,
 	Feather,
 	Fingerprint,
 	Folders,
@@ -160,9 +160,9 @@ const tabGroups = computed((): SettingsTabGroup[] => {
 			label: __('Privacy'),
 			items: [
 				{
-					label: __('Screened Senders'),
+					label: __('Screener'),
 					value: 'screened-senders',
-					icon: Ban,
+					icon: Eye,
 					component: markRaw(ScreenedEmailAddressSettings),
 					condition: jmap,
 				},

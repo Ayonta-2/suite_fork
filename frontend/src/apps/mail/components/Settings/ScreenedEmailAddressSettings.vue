@@ -1,10 +1,20 @@
 <template>
-	<AppSettingsHeader :title="__('Screened Senders')">
-		<template #actions>
-			<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
-		</template>
-	</AppSettingsHeader>
+	<AppSettingsHeader :title="__('Screener')" />
 	<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-[4.4rem] pb-8 pt-6">
+		<!-- The Screener's master switch, so this tab shows both the switch and the rules. Saves
+		     immediately (no Save button here) — same JMAP Account flag the Account tab edits. -->
+		<SettingsRow
+			class="shrink-0 !py-0"
+			:title="__('Screen New Senders')"
+			:description="
+				__(
+					'Emails from new senders go to the Screener instead of your Inbox. Only accepted senders reach your Inbox.',
+				)
+			"
+		>
+			<Switch v-model="screeningEnabled" :disabled="setScreening.loading" />
+		</SettingsRow>
+
 		<template v-if="screenedAddresses.data?.length">
 			<div class="flex shrink-0 gap-2">
 				<FormControl
@@ -31,6 +41,7 @@
 					:tooltip="sortDir === 'asc' ? __('Ascending') : __('Descending')"
 					@click="toggleSortDir"
 				/>
+				<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
 			</div>
 
 			<div v-if="rows.length" class="relative min-h-0 flex-1">
@@ -73,10 +84,17 @@
 		<div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
 			<p class="text-base font-medium">{{ __('No screened senders.') }}</p>
 			<p>{{ MESSAGE }}</p>
+			<Button
+				icon-left="lucide-plus"
+				:label="__('New')"
+				class="w-fit"
+				@click="showAddModal = true"
+			/>
 		</div>
 
 		<AddScreenedSenderModal v-model="showAddModal" />
 		<Dialog v-model="showRemoveModal" :options="removeModalOptions" />
+		<Dialog v-model="showMoveToInbox" :options="moveToInboxOptions" />
 	</div>
 </template>
 
@@ -92,6 +110,8 @@ import {
 	ListRows,
 	ListSelectBanner,
 	ListView,
+	SettingsRow,
+	Switch,
 	createResource,
 } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
@@ -100,15 +120,82 @@ import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
 import AddScreenedSenderModal from '@/apps/mail/components/Modals/AddScreenedSenderModal.vue'
 
-import type { ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
+import type { MailboxData, ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
 
 const store = userStore()
-const { screenedAddresses } = store
+const { screenedAddresses, mailboxes, mailboxIds } = store
 
 const search = ref('')
 const listViewRef = useTemplateRef('listView')
 const showAddModal = ref(false)
 const showRemoveModal = ref(false)
+
+// Read the flag from the shared user data (not a document draft) so the sidebar pin and the
+// Screener view react to a toggle here without a reload — mirroring the ScreenerView turn-off flow.
+const activeAccount = computed(() =>
+	store.userResource?.data?.accounts?.find((a) => a.id === store.accountId),
+)
+
+const setScreening = createResource({
+	url: 'frappe.client.set_value',
+	makeParams: ({ value }: { value: boolean }) => ({
+		doctype: 'JMAP Account',
+		name: activeAccount.value?.jmap_account,
+		fieldname: 'enable_screening',
+		value: value ? 1 : 0,
+	}),
+})
+
+const screeningEnabled = computed({
+	get: () => !!activeAccount.value?.enable_screening,
+	set: (val: boolean) => toggleScreening(val),
+})
+
+const toggleScreening = async (val: boolean) => {
+	const account = activeAccount.value
+	if (!account) return
+	// Read the count before the reload below refreshes the data from the server.
+	const waiting =
+		mailboxes.data?.find((m: MailboxData) => m.id === mailboxIds.screener)?.total_threads ?? 0
+	account.enable_screening = val
+	try {
+		await setScreening.submit({ value: val })
+		// Enabling screening creates the Screening folder server-side; reload so it shows up.
+		mailboxes.reload()
+		raiseToast(val ? __('Screener turned on.') : __('Screener turned off.'))
+		// Turning screening off leaves the already-screened mail in the Screening folder — offer to
+		// move it to the inbox (only worth asking when there's something there).
+		if (!val && waiting > 0) showMoveToInbox.value = true
+	} catch (error) {
+		account.enable_screening = !val
+		raiseToast((error as Error).message || __('Could not update the Screener.'), 'error')
+	}
+}
+
+const showMoveToInbox = ref(false)
+
+const moveScreeningToInbox = createResource({
+	url: 'suite.mail.api.mail.move_screening_mails_to_inbox',
+	makeParams: () => ({ account: store.accountId }),
+	onSuccess: () => {
+		raiseToast(__('Unscreened messages moved to Inbox.'))
+		showMoveToInbox.value = false
+		mailboxes.reload()
+	},
+})
+
+const moveToInboxOptions = computed(() => ({
+	title: __('Move unscreened messages?'),
+	message: __('Screening is off. Move the messages currently in the Screener to your Inbox?'),
+	actions: [
+		{
+			label: __('Move to Inbox'),
+			variant: 'solid',
+			onClick: () => moveScreeningToInbox.submit(),
+			loading: moveScreeningToInbox.loading,
+		},
+	],
+}))
 
 const ACTION_LABELS: Partial<Record<ScreeningAction, string>> = {
 	Accepted: __('Accept'),

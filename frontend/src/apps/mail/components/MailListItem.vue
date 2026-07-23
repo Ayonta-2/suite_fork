@@ -234,7 +234,7 @@ const highlight = (text?: string) => {
 	if (!term) return escaped
 	return escaped.replace(
 		new RegExp(`(${escapeRegExp(escapeHtml(term))})`, 'gi'),
-		'<mark class="bg-surface-yellow-5 text-ink-gray-9">$1</mark>',
+		'<mark class="bg-surface-yellow-5 text-ink-gray-8">$1</mark>',
 	)
 }
 

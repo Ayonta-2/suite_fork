@@ -3,10 +3,56 @@
 		<header class="flex items-center justify-between border-b px-3 py-2.5 sm:px-5">
 			<div class="flex items-center space-x-2">
 				<Button v-if="isMobile" icon="menu" variant="ghost" @click="openSidebar" />
-				<Breadcrumbs :items="[{ label: __('Screener') }]" />
+				<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
+				<Breadcrumbs :items="[{ label: __('Screener') }]" class="-ml-0.5" />
 			</div>
 			<HeaderActions @reload-mails="senders.reload()" />
 		</header>
+
+		<!-- First-visit explainer — a full-width slab under the header, spanning list and reading
+		     pane. Dismissal sticks per device (education, not account state). -->
+		<div
+			v-if="!explainerDismissed && senders.data?.length && !(openSender && !showReadingPane)"
+			class="bg-surface-blue-1 flex shrink-0 items-start gap-3 border-b px-5 py-4"
+		>
+			<div class="min-w-0 flex-1">
+				<div class="text-ink-gray-8 text-base !font-semibold">
+					{{ __('New senders wait here first') }}
+				</div>
+				<!-- The rows act through icon buttons, so the copy shows the icons next to the words
+				     they stand for — "Allow" and "Deny" appear nowhere else in the view. -->
+				<p class="text-ink-gray-6 mt-1 text-sm !leading-[1.5]">
+					{{
+						__(
+							'The first time someone emails you, their message lands in the Screener instead of your Inbox.',
+						)
+					}}
+					<!-- nowrap keeps each word+icon parenthetical on one line -->
+					<span class="whitespace-nowrap">
+						{{ __('Allow') }} (<Check
+							class="inline h-3.5 w-3.5 align-[-2.5px]"
+							stroke-width="2"
+						/>)
+					</span>
+					{{ __('a sender once and their emails reach your Inbox from then on;') }}
+					<span class="whitespace-nowrap">
+						{{ __('Deny') }} (<X
+							class="inline h-3.5 w-3.5 align-[-2.5px]"
+							stroke-width="2"
+						/>)
+					</span>
+					{{ __('sends them to Junk.') }}
+				</p>
+			</div>
+			<Button
+				variant="ghost"
+				class="-mr-2 -mt-2"
+				:tooltip="__('Dismiss')"
+				@click="dismissExplainer"
+			>
+				<template #icon><X class="icon" /></template>
+			</Button>
+		</div>
 
 		<div class="relative flex flex-1 overflow-hidden">
 			<!-- Loading the sender list — centered like the mailbox empty/loading states. -->
@@ -38,8 +84,56 @@
 					<div class="pb-20">
 						<!-- Count bar — matches the mailbox "All Mails" toolbar height/style. -->
 						<div class="flex min-h-[49px] items-center justify-between border-b px-5">
-							<span class="truncate">{{ waitingLabel }}</span>
-							<div class="-mr-2 flex items-center gap-1">
+							<div class="flex min-w-0 items-center">
+								<span class="truncate">{{ waitingLabel }}</span>
+								<!-- Redundant while the explainer slab is teaching the same lesson above,
+								     and skipped on mobile where the popover doesn't sit well. -->
+								<Popover v-if="explainerDismissed && !isMobile" placement="bottom-start">
+									<template #target="{ togglePopover }">
+										<Button
+											variant="ghost"
+											class="ml-1 !px-1.5"
+											:tooltip="__('How the Screener works')"
+											@click="togglePopover()"
+										>
+											<template #icon><CircleHelp class="icon" /></template>
+										</Button>
+									</template>
+									<template #body-main>
+										<div class="w-80 p-4">
+											<div class="text-ink-gray-8 mb-1.5 text-sm !font-semibold">
+												{{ __('How the Screener works') }}
+											</div>
+											<p class="text-ink-gray-6 text-sm !leading-[1.5]">
+												{{ __('First-time senders wait here until you decide.') }}
+												<!-- nowrap keeps each word+icon parenthetical on one line -->
+												<span class="whitespace-nowrap">
+													{{ __('Allow') }} (<Check
+														class="inline h-3.5 w-3.5 align-[-2.5px]"
+														stroke-width="2"
+													/>)
+												</span>
+												{{ __('a sender and their emails go to your Inbox — now and in the future.') }}
+												<span class="whitespace-nowrap">
+													{{ __('Deny') }} (<X
+														class="inline h-3.5 w-3.5 align-[-2.5px]"
+														stroke-width="2"
+													/>)
+												</span>
+												{{ __('sends them to Junk.') }}
+											</p>
+											<p class="text-ink-gray-6 mt-3 text-sm !leading-[1.5]">
+												{{ __('You can undo decisions or turn the Screener off in') }}
+												<a
+													class="cursor-pointer underline"
+													@click="openSettings(__('Screener'))"
+												>{{ __('Settings') }}</a>{{ '.' }}
+											</p>
+										</div>
+									</template>
+								</Popover>
+							</div>
+							<div class="-mr-2 flex shrink-0 items-center gap-1">
 								<Dropdown :options="bulkOptions" placement="bottom-end">
 									<Button variant="ghost" class="!px-1.5">
 										<template #icon><Ellipsis class="icon" /></template>
@@ -87,7 +181,7 @@
 									:in-list="true"
 									class="text-ink-gray-4 whitespace-nowrap pt-px text-xs tabular-nums"
 								/>
-								<div class="-mr-2 flex gap-2">
+								<div class="flex gap-2">
 									<Button
 										variant="outline"
 										:tooltip="__('Deny')"
@@ -133,7 +227,8 @@
 										<ChevronLeft class="icon" />
 									</template>
 								</Button>
-								<h2 class="truncate font-semibold leading-5">
+								<!-- On mobile the thread header right below shows the subject already. -->
+								<h2 v-if="!isMobile" class="truncate font-semibold leading-5">
 									{{ openSender.subject || __('[No subject]') }}
 								</h2>
 							</div>
@@ -214,11 +309,27 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Check, ChevronDown, ChevronLeft, Ellipsis, LoaderCircle, X } from 'lucide-vue-next'
-import { Breadcrumbs, Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+import {
+	Check,
+	ChevronDown,
+	ChevronLeft,
+	CircleHelp,
+	Ellipsis,
+	LoaderCircle,
+	X,
+} from 'lucide-vue-next'
+import {
+	Breadcrumbs,
+	Button,
+	Dialog,
+	Dropdown,
+	Popover,
+	createResource,
+	usePageMeta,
+} from 'frappe-ui'
 
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
-import { useScreenSize, useSidebar } from '@/apps/mail/utils/composables'
+import { useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
@@ -232,6 +343,7 @@ const store = userStore()
 const router = useRouter()
 const { isMobile } = useScreenSize()
 const { openSidebar } = useSidebar()
+const { openSettings } = useSettings()
 
 const showReadingPane = computed(() => !!store.userResource?.data?.show_reading_pane)
 
@@ -505,17 +617,20 @@ const domainOptions = (action: 'allow' | 'screenOut', sender: ScreeningSender) =
 // creates no Deny/Allow rule, so a mixed queue can't accidentally whitelist spam or block a real sender.
 const showClearAll = ref(false)
 
-const clearAllResource = createResource({
+// Shared by Clear All and the turn-off flow, which is why the success handling lives with each caller.
+const moveScreeningToInbox = createResource({
 	url: 'suite.mail.api.mail.move_screening_mails_to_inbox',
 	makeParams: () => ({ account: store.accountId }),
-	onSuccess: () => {
-		senders.data = []
-		closeSender()
-		showClearAll.value = false
-		store.mailboxes.reload()
-		raiseToast(__('Unscreened messages moved to Inbox.'))
-	},
 })
+
+const clearAll = async () => {
+	await moveScreeningToInbox.submit()
+	senders.data = []
+	closeSender()
+	showClearAll.value = false
+	store.mailboxes.reload()
+	raiseToast(__('Unscreened messages moved to Inbox.'))
+}
 
 const clearAllOptions = computed(() => ({
 	title: __('Move All to Inbox'),
@@ -527,11 +642,34 @@ const clearAllOptions = computed(() => ({
 		{
 			label: __('Move to Inbox'),
 			variant: 'solid',
-			onClick: () => clearAllResource.submit(),
-			loading: clearAllResource.loading,
+			onClick: clearAll,
+			loading: moveScreeningToInbox.loading,
 		},
 	],
 }))
+
+// First-visit explainer card. Dismissal is stored per device, not per account — it's education about
+// the feature, not account state.
+const EXPLAINER_STORAGE_KEY = 'mail-screener-explainer-dismissed'
+// localStorage can throw (private browsing, storage disabled); a broken slab
+// preference must not take the whole view down with it.
+const readExplainerDismissed = () => {
+	try {
+		return localStorage.getItem(EXPLAINER_STORAGE_KEY) === 'true'
+	} catch {
+		return false
+	}
+}
+const explainerDismissed = ref(readExplainerDismissed())
+
+const dismissExplainer = () => {
+	explainerDismissed.value = true
+	try {
+		localStorage.setItem(EXPLAINER_STORAGE_KEY, 'true')
+	} catch {
+		// Storage unavailable — the slab reappears next visit, nothing worse.
+	}
+}
 
 // Bulk triage over every waiting sender. Allow/Deny reuse the per-sender flow (optimistic clear +
 // batched request) but, since they act on everyone at once, go behind a confirm dialog.
