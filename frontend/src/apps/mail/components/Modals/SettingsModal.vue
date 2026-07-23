@@ -33,6 +33,7 @@ import {
 	Folders,
 	HardDriveDownload,
 	HardDriveUpload,
+	KeyRound,
 	Mailbox,
 	Palette,
 	TreePalm,
@@ -51,6 +52,7 @@ import {
 import { useSettings } from '@/apps/mail/utils/composables'
 import Account from '@/apps/mail/components/Settings/Account.vue'
 import AdvancedSettings from '@/apps/mail/components/Settings/AdvancedSettings.vue'
+import CredentialsSettings from '@/apps/mail/components/Settings/CredentialsSettings.vue'
 import AppearanceSettings from '@/apps/mail/components/Settings/AppearanceSettings.vue'
 import AutomationSettings from '@/apps/mail/components/Settings/AutomationSettings.vue'
 import ExportSettings from '@/apps/mail/components/Settings/ExportSettings.vue'
@@ -93,6 +95,12 @@ const tabGroups = computed((): SettingsTabGroup[] => {
 					value: 'profile',
 					icon: User,
 					component: markRaw(ProfileSettings),
+				},
+				{
+					label: __('Credentials'),
+					value: 'credentials',
+					icon: KeyRound,
+					component: markRaw(CredentialsSettings),
 				},
 				{
 					label: __('Account'),
