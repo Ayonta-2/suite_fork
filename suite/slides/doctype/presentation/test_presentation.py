@@ -51,8 +51,8 @@ class TestPresentationSecurity(IntegrationTestCase):
 			(get_updated_json, self.owner_presentation, []),
 			(save_presentation_thumbnail, self.owner_presentation, PNG_1PX),
 			(update_title, self.owner_presentation, "Hijacked"),
-			(delete_presentation, self.owner_presentation),
 			(get_public_presentation, self.owner_presentation),
+			(delete_presentation, self.owner_presentation),
 		]
 		for func, *args in cases:
 			with self.subTest(func.__name__), self.set_user(OTHER_USER):

@@ -88,7 +88,7 @@ def save_base64_image(base64_data: str, presentation_name: str, prefix: str) -> 
 	try:
 		content = base64.b64decode(match.group(2), validate=True)
 	except Exception:
-		frappe.throw("Invalid image data")
+		frappe.throw("Malformed base64 image content")
 
 	filename = f"{prefix}-{uuid.uuid4().hex[:6]}.{ext}"
 
@@ -378,16 +378,16 @@ def get_attachment(presentation, file_url):
 
 
 @frappe.whitelist()
-def get_updated_json(presentation: str, json: list[dict]):
+def get_updated_json(presentation: str, elements: list[dict]):
 	frappe.get_doc("Presentation", presentation).check_permission("write")
 
-	for element in json:
-		if element.get("type") in ["image", "video"]:
-			file_url = element.get("src").replace(frappe.local.site_name, "")
+	for element in elements:
+		if element.get("type") in ["image", "video"] and element.get("src"):
+			file_url = element["src"].replace(frappe.local.site_name, "")
 			name = get_attachment(presentation, file_url)
 			element["attachmentName"] = name
 
-	return json
+	return elements
 
 
 def get_permission_query_conditions(user):
