@@ -303,7 +303,6 @@
 
 		<Dialog v-model="showClearAll" :options="clearAllOptions" />
 		<Dialog v-model="showBulkConfirm" :options="bulkConfirmOptions" />
-		<Dialog v-model="showTurnOff" :options="turnOffOptions" />
 	</div>
 </template>
 
@@ -652,75 +651,25 @@ const clearAllOptions = computed(() => ({
 // First-visit explainer card. Dismissal is stored per device, not per account — it's education about
 // the feature, not account state.
 const EXPLAINER_STORAGE_KEY = 'mail-screener-explainer-dismissed'
-const explainerDismissed = ref(localStorage.getItem(EXPLAINER_STORAGE_KEY) === 'true')
+// localStorage can throw (private browsing, storage disabled); a broken slab
+// preference must not take the whole view down with it.
+const readExplainerDismissed = () => {
+	try {
+		return localStorage.getItem(EXPLAINER_STORAGE_KEY) === 'true'
+	} catch {
+		return false
+	}
+}
+const explainerDismissed = ref(readExplainerDismissed())
 
 const dismissExplainer = () => {
 	explainerDismissed.value = true
-	localStorage.setItem(EXPLAINER_STORAGE_KEY, 'true')
-}
-
-// Turning the Screener off from within the Screener: same JMAP Account flag the Account settings tab
-// saves, plus the move-to-inbox the dialog promises. The redirect to the inbox falls out of the
-// `screeningEnabled` watcher once the shared account flag is synced.
-const showTurnOff = ref(false)
-const turningOff = ref(false)
-
-const disableScreening = createResource({
-	url: 'frappe.client.set_value',
-	makeParams: () => ({
-		doctype: 'JMAP Account',
-		name: store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)
-			?.jmap_account,
-		fieldname: 'enable_screening',
-		value: 0,
-	}),
-})
-
-const turnOffScreener = async () => {
-	turningOff.value = true
 	try {
-		// Move the waiting mail out first, while screening is still on — the dialog promised it.
-		await moveScreeningToInbox.submit()
-		await disableScreening.submit()
-		showTurnOff.value = false
-		store.mailboxes.reload()
-		raiseToast(__('Screener turned off.'))
-		const account = store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)
-		if (account) account.enable_screening = false
-	} catch (error) {
-		raiseToast((error as Error).message || __('Could not turn off the Screener.'), 'error')
-	} finally {
-		turningOff.value = false
+		localStorage.setItem(EXPLAINER_STORAGE_KEY, 'true')
+	} catch {
+		// Storage unavailable — the slab reappears next visit, nothing worse.
 	}
 }
-
-const turnOffOptions = computed(() => {
-	const count = senders.data?.length ?? 0
-	const waiting =
-		count === 1
-			? __('The sender waiting now will be moved there too.')
-			: __('The {0} senders waiting now will be moved there too.', [String(count)])
-	return {
-		title: __('Turn Off Screener?'),
-		message: [
-			__('New senders will go straight to your Inbox.'),
-			count ? waiting : '',
-			__(
-				"Senders you've already allowed or denied keep their decisions. You can turn the Screener back on anytime in Settings.",
-			),
-		]
-			.filter(Boolean)
-			.join(' '),
-		actions: [
-			{
-				label: __('Turn Off'),
-				variant: 'solid',
-				onClick: turnOffScreener,
-				loading: turningOff.value,
-			},
-		],
-	}
-})
 
 // Bulk triage over every waiting sender. Allow/Deny reuse the per-sender flow (optimistic clear +
 // batched request) but, since they act on everyone at once, go behind a confirm dialog.
@@ -765,6 +714,5 @@ const bulkConfirmOptions = computed(() => {
 const bulkOptions = computed(() => [
 	{ label: __('Deny All'), onClick: denyAll },
 	{ label: __('Move All to Inbox'), onClick: () => (showClearAll.value = true) },
-	{ label: __('Turn Off Screener'), onClick: () => (showTurnOff.value = true) },
 ])
 </script>
