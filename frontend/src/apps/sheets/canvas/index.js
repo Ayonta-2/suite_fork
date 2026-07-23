@@ -6,8 +6,8 @@ import { TOTAL_ROWS, TOTAL_COLS, DEFAULT_TOTAL_ROWS, DEFAULT_TOTAL_COLS, DEFAULT
 import { cellId, colLabel, parseCellId } from '../utils/cells.js'
 import { AC_FUNS, AC_FUN_KEYS, parseAcToken, parseSignatureContext, describeSignature, shouldSuggestRange, detectAdjacentRange, isNumericText } from '../utils/formula-ac.js'
 import { autoCloseKey } from '../utils/formula-autoclose.js'
-import { isWrapText } from '../utils/text-wrap.js'
-import { CHIP, chipMetrics } from './chip-geometry.js'
+import { isWrapText, getTextWrap, wrapLines, lineHeightFor } from '../utils/text-wrap.js'
+import { CHIP, chipMetrics, chipFont } from './chip-geometry.js'
 import { checkboxRect } from './checkbox-geometry.js'
 
 export { colLabel, cellId, parseCellId } from '../utils/cells.js'
@@ -832,6 +832,35 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     onCommit?.(id, val)
   }
 
+  // A committed value with hard newlines (Cmd+Enter) grows the row so every
+  // line is visible — Google Sheets behavior. Grow-only (never shrinks a row
+  // the user sized). Called by the host on commit; returns the {before,
+  // after} height diff so it can ride the undo op, or null when no growth.
+  function autoGrowRowFor(r, c, val) {
+    if (typeof val !== 'string' || val.startsWith('=') || !val.includes('\n')) return null
+    const fmt = getFormat ? (getFormat(cellId(r, c)) || {}) : {}
+    const needed = Math.min(400, _cellVisualLines(val, c, fmt) * lineHeightFor(fmt) + 8)
+    const before = rowH[r] ?? DEFAULT_ROW_H
+    if (needed <= before) return null
+    rowH[r] = needed
+    _applyCanvasSize()
+    return { before, after: needed }
+  }
+
+  // How many visual lines `val` occupies in column `c` at `fmt`'s font. In
+  // wrap mode a paragraph also soft-wraps, so count the wrapped lines with the
+  // same maxW the painter uses (cell width minus its 8px inset); otherwise
+  // only hard newlines break.
+  function _cellVisualLines(val, c, fmt) {
+    if (getTextWrap(fmt) !== 'wrap') return String(val).split('\n').length
+    ctx.save()
+    ctx.font = chipFont(fmt)
+    const maxW = Math.max(1, geo.cw(c) - 8)
+    const n = wrapLines(val, maxW, t => ctx.measureText(t).width).length
+    ctx.restore()
+    return n
+  }
+
   overlay.el.addEventListener('input', () => {
     const val = overlay.getValue()
     onInput?.(cellId(sel.r, sel.c), val)
@@ -902,6 +931,14 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     if (e.key === 'Enter') {
       e.preventDefault()
       if (pickerKb) _pickerKbCommit()
+      // Cmd/Ctrl/Alt+Enter: newline inside the cell (Google Sheets), not commit.
+      if (e.metaKey || e.ctrlKey || e.altKey) {
+        const { selectionStart: s0, selectionEnd: s1, value } = overlay.el
+        overlay.el.value = value.slice(0, s0) + '\n' + value.slice(s1)
+        overlay.el.setSelectionRange(s0 + 1, s0 + 1)
+        overlay.el.dispatchEvent(new Event('input', { bubbles: true }))
+        return
+      }
       _commitAndHide()
       const anchorC = _tabAnchorCol ?? sel.c
       _tabAnchorCol = null
@@ -1023,15 +1060,10 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
       if (!p || p.row !== r) continue
       const val = getValue(id)
       if (val == null || val === '') continue
-      const fmt = getFormat ? getFormat(id) : {}
-      let h = 18 // single line height at 13px
-      if (isWrapText(fmt)) {
-        // Estimate wrapped line count from measured width vs. column width.
-        const w   = _measureWidth(val, fmt)
-        const cw  = Math.max(1, geo.cw(p.col) - 8)
-        const ln  = Math.max(1, Math.ceil(w / cw))
-        h = ln * 18
-      }
+      const fmt = getFormat ? (getFormat(id) || {}) : {}
+      // Hard newlines and (in wrap mode) soft-wrapping both add lines; size to
+      // whichever the cell actually renders, at the cell's own line height.
+      const h = _cellVisualLines(val, p.col, fmt) * lineHeightFor(fmt)
       if (h + ROW_PAD > tallest) tallest = h + ROW_PAD
     }
     rowH[r] = Math.max(MIN_H, Math.min(MAX_H, Math.ceil(tallest)))
@@ -1856,7 +1888,7 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     getCellRect: (r, c) => ({ x: geo.colX(c) * _zoom, y: geo.rowY(r) * _zoom,
                               width: geo.cw(c) * _zoom, height: geo.rh(r) * _zoom }),
     setDiffOverlay, setActiveDiffSheet,
-    autoFitCol, autoFitRow,
+    autoFitCol, autoFitRow, autoGrowRowFor,
     expandRows, getTotalRows, isNearBottom,
     expandCols, getTotalCols,
     setZoom, getZoom,
