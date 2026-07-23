@@ -18,6 +18,7 @@ from suite.slides.doctype.presentation.presentation import (
 from suite.slides.tests.utils import (
 	PNG_1PX,
 	make_presentation,
+	make_private,
 	make_private_image,
 	make_public,
 )
@@ -111,3 +112,22 @@ class TestPresentationSecurity(IntegrationTestCase):
 			result = get_composite_presentation(composite.name)
 
 		self.assertEqual(len(result["slides"]), len(ref.slides))
+
+	def test_composite_excludes_reference_made_private_later(self):
+		with self.set_user(OWNER):
+			ref = make_presentation("Later Private Reference")
+			make_public(ref.name)
+			composite = frappe.get_doc(
+				{
+					"doctype": "Presentation",
+					"title": "Stale Composite",
+					"is_composite": 1,
+					"reference_presentations": [{"presentation": ref.name}],
+				}
+			).insert()
+			make_private(ref.name)
+
+		with self.set_user("Guest"):
+			result = get_composite_presentation(composite.name)
+
+		self.assertEqual(result["slides"], [])

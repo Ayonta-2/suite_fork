@@ -45,3 +45,10 @@ def make_public(presentation_name):
 	frappe.get_doc({"doctype": "Drive Permission", "entity": file, "user": "", "read": 1}).insert(
 		ignore_permissions=True
 	)
+
+
+def make_private(presentation_name):
+	from suite.drive.overrides.file import File as DriveFile
+
+	file = DriveFile.get_for_doc("Presentation", presentation_name)
+	frappe.db.delete("Drive Permission", {"entity": file, "user": ""})

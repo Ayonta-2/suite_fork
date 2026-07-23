@@ -463,6 +463,9 @@ def get_composite_presentation(name: str):
 	composite_slides = []
 
 	for reference in doc.reference_presentations:
+		# references are public when the composite is saved, but can be made private later
+		if not is_public_presentation(reference.presentation):
+			continue
 		ref_doc = frappe.get_cached_doc("Presentation", reference.presentation)
 		for slide in ref_doc.slides:
 			composite_slides.append(slide)
