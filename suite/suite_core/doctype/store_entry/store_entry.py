@@ -10,13 +10,27 @@ from frappe.model.document import Document
 from frappe.types.filter import FilterTuple
 from frappe.utils import cint, now
 
-from suite.store import get_blob_base_path, get_data_base_path, list_namespaces
+from suite.store import (
+	get_blob_base_path,
+	get_data_base_path,
+	get_search_base_path,
+	list_namespaces,
+)
 from suite.store.base_store import resolve_namespace_path
 from suite.store.blob_store import BlobStore
 from suite.store.data_store import DataStore
+from suite.store.search_store import SearchIndexBrowser, list_index_entities
 
 DATA_STORE = "Data Store"
 BLOB_STORE = "Blob Store"
+SEARCH_STORE = "Search Store"
+
+# Short, filesystem-agnostic code embedded in a record name so it round-trips through the browser.
+_STORE_CODES = {DATA_STORE: "data", BLOB_STORE: "blob", SEARCH_STORE: "search"}
+_CODE_STORES = {code: store for store, code in _STORE_CODES.items()}
+
+# Stores that scope keys under an entity (``<entity>:<key>``); the blob store has no entity.
+_ENTITY_STORES = (DATA_STORE, SEARCH_STORE)
 
 # Cap the rendered value so browsing a huge cached record doesn't ship megabytes to the client.
 _VALUE_PREVIEW_LIMIT = 20_000
@@ -35,7 +49,7 @@ class StoreEntry(Document):
 		key: DF.Data | None
 		namespace: DF.Data
 		size: DF.Data | None
-		store: DF.Literal["Data Store", "Blob Store"]
+		store: DF.Literal["Data Store", "Blob Store", "Search Store"]
 		value: DF.Code | None
 	# end: auto-generated types
 
@@ -50,6 +64,13 @@ class StoreEntry(Document):
 		if store == DATA_STORE:
 			entity, _sep, key = key_part.partition(":")
 			entry = _data_store(namespace).read(entity, key)
+			if entry is None:
+				_not_found(self.name)
+
+			record = _row(store, namespace, entity, key, entry["size"], value=_pretty(entry["value"]))
+		elif store == SEARCH_STORE:
+			entity, key = _split_search_key(namespace, key_part)
+			entry = _search_index(namespace, entity).read(key)
 			if entry is None:
 				_not_found(self.name)
 
@@ -79,7 +100,7 @@ class StoreEntry(Document):
 		namespace = _filter_value(filters, "namespace")
 
 		if not namespace:
-			available = ["/".join(ns) for ns in list_namespaces(_base_path(store))]
+			available = _available_namespaces(store)
 			hint = ", ".join(available) if available else _("none")
 			frappe.msgprint(_("Select a namespace to browse. Available: {0}").format(hint), alert=True)
 			return []
@@ -102,8 +123,16 @@ class StoreEntry(Document):
 		if not namespace or not _namespace_exists(store, namespace):
 			return 0
 
+		entity = _filter_value(filters, "entity")
+
 		if store == DATA_STORE:
-			return _data_store(namespace).count_entries(_filter_value(filters, "entity"))
+			return _data_store(namespace).count_entries(entity)
+
+		if store == SEARCH_STORE:
+			return sum(
+				_search_index(namespace, index_entity).count()
+				for index_entity in _search_index_entities(namespace, entity)
+			)
 
 		return _blob_store(namespace).count()
 
@@ -145,7 +174,11 @@ def _not_found(name: str) -> None:
 def _base_path(store: str) -> str:
 	"""Return the base directory for the given store."""
 
-	return get_data_base_path() if store == DATA_STORE else get_blob_base_path()
+	if store == DATA_STORE:
+		return get_data_base_path()
+	if store == SEARCH_STORE:
+		return get_search_base_path()
+	return get_blob_base_path()
 
 
 def _data_store(namespace: str) -> DataStore:
@@ -154,6 +187,52 @@ def _data_store(namespace: str) -> DataStore:
 
 def _blob_store(namespace: str) -> BlobStore:
 	return BlobStore(base_path=get_blob_base_path(), namespace=namespace)
+
+
+def _search_index(namespace: str, entity: str) -> SearchIndexBrowser:
+	return SearchIndexBrowser(namespace, entity)
+
+
+def _search_index_entities(namespace: str, entity: str | None = None) -> list[str]:
+	"""Return a namespace's index entities, narrowed to `entity` when the caller filters on one."""
+
+	entities = list_index_entities(namespace)
+	return [e for e in entities if e == entity] if entity else entities
+
+
+def _split_search_key(namespace: str, key_part: str) -> tuple[str, str]:
+	"""Split an ``<entity>:<key>`` search key_part back into (entity, key).
+
+	The entity is resolved against the namespace's real on-disk index names rather than by
+	splitting at the first colon, so an entity that itself contains ``:`` is not mis-parsed (which
+	would otherwise open the wrong index and report an existing document as missing). The longest
+	matching entity wins, disambiguating the case where one entity name is a prefix of another.
+	Falls back to a first-colon split when no index matches (e.g. one dropped since the row was
+	built).
+	"""
+
+	matches = [e for e in list_index_entities(namespace) if key_part == e or key_part.startswith(f"{e}:")]
+	if matches:
+		entity = max(matches, key=len)
+		return entity, key_part[len(entity) + 1 :]
+
+	entity, _sep, key = key_part.partition(":")
+	return entity, key
+
+
+def _available_namespaces(store: str) -> list[str]:
+	"""Return the namespaces a user can browse for `store`, for the "select a namespace" hint.
+
+	A search store nests one index directory per entity under each namespace
+	(``<base>/<namespace>/<entity>``), so its browsable namespaces are the parents of those leaf
+	directories rather than the leaves themselves.
+	"""
+
+	if store == SEARCH_STORE:
+		namespaces = {"/".join(ns[:-1]) for ns in list_namespaces(get_search_base_path()) if len(ns) > 1}
+		return sorted(namespaces)
+
+	return ["/".join(ns) for ns in list_namespaces(_base_path(store))]
 
 
 def _namespace_exists(store: str, namespace: str) -> bool:
@@ -170,6 +249,12 @@ def _entries(store: str, namespace: str, entity: str | None = None) -> list[dict
 			_row(store, namespace, item["entity"], item["key"], item["size"])
 			for item in _data_store(namespace).browse()
 			if not entity or item["entity"] == entity
+		]
+	elif store == SEARCH_STORE:
+		rows = [
+			_row(store, namespace, index_entity, item["key"], item["size"])
+			for index_entity in _search_index_entities(namespace, entity)
+			for item in _search_index(namespace, index_entity).browse()
 		]
 	else:
 		rows = [
@@ -191,7 +276,7 @@ def _row(
 ) -> dict:
 	"""Build a Store Entry record dict for either store."""
 
-	key_part = f"{entity}:{key}" if store == DATA_STORE else key
+	key_part = f"{entity}:{key}" if store in _ENTITY_STORES else key
 	stamp = now()
 
 	return {
@@ -208,16 +293,17 @@ def _row(
 
 
 def _make_name(store: str, namespace: str, key_part: str) -> str:
-	"""Encode a stable, parseable record name: ``<data|blob>|<namespace>|<key_part>``."""
+	"""Encode a stable, parseable record name: ``<data|blob|search>|<namespace>|<key_part>``."""
 
-	return f"{'data' if store == DATA_STORE else 'blob'}|{namespace}|{key_part}"
+	return f"{_STORE_CODES[store]}|{namespace}|{key_part}"
 
 
 def _parse_name(name: str) -> tuple[str, str, str]:
 	"""Split a record name back into (store, namespace, key_part).
 
-	A well-formed name is ``<data|blob>|<namespace>|<key_part>``. A malformed one (e.g. a
-	hand-crafted URL) is treated as a missing record rather than allowed to raise ValueError.
+	A well-formed name is ``<data|blob|search>|<namespace>|<key_part>``. A malformed one (e.g. a
+	hand-crafted URL, or an unknown store code) is treated as a missing record rather than
+	allowed to raise ValueError.
 	"""
 
 	parts = name.split("|", 2)
@@ -225,7 +311,11 @@ def _parse_name(name: str) -> tuple[str, str, str]:
 		_not_found(name)
 
 	code, namespace, key_part = parts
-	return (DATA_STORE if code == "data" else BLOB_STORE), namespace, key_part
+	store = _CODE_STORES.get(code)
+	if store is None:
+		_not_found(name)
+
+	return store, namespace, key_part
 
 
 def _pretty(value) -> str:

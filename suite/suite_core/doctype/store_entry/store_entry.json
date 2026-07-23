@@ -22,7 +22,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Store",
-   "options": "Data Store\nBlob Store",
+   "options": "Data Store\nBlob Store\nSearch Store",
    "read_only": 1,
    "reqd": 1
   },
@@ -41,7 +41,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Data store only: the entity a key belongs to.",
+   "description": "Data/search store only: the entity (index) a key belongs to.",
    "fieldname": "entity",
    "fieldtype": "Data",
    "in_list_view": 1,

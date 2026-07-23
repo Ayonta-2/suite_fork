@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import shutil
 from dataclasses import dataclass
@@ -343,3 +344,115 @@ class SearchStore:
 
 		spec = repr([(f.name, f.kind, f.stored, f.fast, f.tokenizer) for f in self.FIELDS])
 		return hashlib.sha1(f"{self.ID_FIELD}|{spec}".encode()).hexdigest()[:16]
+
+
+def list_index_entities(namespace: Namespace) -> list[str]:
+	"""Return the entity names of the Tantivy indexes directly under `namespace`'s directory.
+
+	Each `SearchStore` writes its index to ``<base>/<namespace>/<entity>``, so a namespace's
+	directory holds one sub-directory per indexed entity. Used by tooling (the Store Entry
+	browser) to discover a namespace's indexes without knowing their subclasses.
+	"""
+
+	namespace_path = resolve_namespace_path(get_search_base_path(), namespace)
+	if not os.path.isdir(namespace_path):
+		return []
+
+	entities = [
+		entry.name
+		for entry in os.scandir(namespace_path)
+		if entry.is_dir(follow_symlinks=False) and tantivy.Index.exists(entry.path)
+	]
+	return sorted(entities)
+
+
+class SearchIndexBrowser:
+	"""Read-only, schema-agnostic view of one on-disk Tantivy index, for tooling.
+
+	Unlike `SearchStore`, this does not know the index's subclass schema (ENTITY/FIELDS); it
+	opens the index with the schema persisted on disk, so any index can be browsed or read
+	generically by the Store Entry browser. Stored fields are the only ones a document exposes.
+	"""
+
+	# Field preferred as the human-facing document key when a document stores it.
+	KEY_FIELD: ClassVar[str] = "id"
+
+	def __init__(self, namespace: Namespace, entity: str) -> None:
+		namespace_path = resolve_namespace_path(get_search_base_path(), namespace)
+		self.path = os.path.join(namespace_path, entity)
+
+	def count(self) -> int:
+		"""Return the number of documents in the index (0 when it has not been created yet)."""
+
+		searcher = self._searcher()
+		return searcher.num_docs if searcher else 0
+
+	def browse(self, limit: int | None = None) -> list[dict]:
+		"""List documents as ``{key, size}`` (stored fields only), for the Store Entry browser."""
+
+		return [
+			{"key": self._key(fields), "size": _document_size(fields)}
+			for fields in self._documents(limit=limit)
+		]
+
+	def read(self, key: str) -> dict | None:
+		"""Return ``{value, size}`` for the document whose key is `key`, or None if it is absent.
+
+		`value` is the document's stored fields, flattened to scalars where a field holds a single
+		value. Scans the index because the key is a stored value, not necessarily an indexed term.
+		"""
+
+		for fields in self._documents():
+			if self._key(fields) == key:
+				return {"value": _flatten(fields), "size": _document_size(fields)}
+
+		return None
+
+	def _searcher(self) -> "tantivy.Searcher | None":
+		"""Open the on-disk index with its persisted schema and return a fresh searcher, or None."""
+
+		if not tantivy.Index.exists(self.path):
+			return None
+
+		index = tantivy.Index.open(self.path)
+		# Pick up commits made since the index files were opened.
+		index.reload()
+		return index.searcher()
+
+	def _documents(self, limit: int | None = None):
+		"""Yield each document's stored fields (a ``{name: [values]}`` dict) via a match-all query."""
+
+		searcher = self._searcher()
+		if not searcher:
+			return
+
+		total = searcher.num_docs
+		if not total:
+			return
+
+		# Tantivy needs a positive limit; cap it at the document count so a single page covers all.
+		page = total if limit is None else min(limit, total)
+		result = searcher.search(tantivy.Query.all_query(), limit=page)
+		for _score, address in result.hits:
+			yield searcher.doc(address).to_dict()
+
+	def _key(self, fields: dict) -> str:
+		"""Pick a document's key: the `KEY_FIELD` value when present, else the first stored field."""
+
+		values = fields.get(self.KEY_FIELD)
+		if values is None and fields:
+			values = next(iter(fields.values()))
+
+		return str(values[0]) if values else ""
+
+
+def _flatten(fields: dict) -> dict:
+	"""Collapse Tantivy's ``{name: [values]}`` into scalars where a field holds a single value."""
+
+	return {name: (values[0] if len(values) == 1 else values) for name, values in fields.items()}
+
+
+def _document_size(fields: dict) -> int:
+	"""Approximate a stored document's size as the byte length of its normalized JSON."""
+
+	return len(json.dumps(_flatten(fields), ensure_ascii=False, default=str).encode())
