@@ -1020,28 +1020,10 @@
       </template>
     </Dialog>
 
-    <!-- Keyboard shortcut help — generated from frappe-ui's shortcut registry
-         (see useShortcuts.js), so it can never drift from the handlers. Read via
-         getActiveShortcuts() off the same 'frappe-ui' import that registers them,
-         so both share one registry instance. -->
-    <Dialog v-model="showShortcutsHelp" :options="{ title: 'Keyboard shortcuts', size: 'xl' }">
-      <template #body-content>
-        <div class="sn-help-grid">
-          <div v-for="(items, group) in shortcutGroups" :key="group" class="sn-help-group">
-            <div class="sn-help-title">{{ group }}</div>
-            <div v-for="s in items" :key="s.id.toString()" class="sn-help-row">
-              <span class="sn-help-label">{{ s.description }}</span>
-              <span class="sn-help-keys">
-                <template v-for="(k, i) in s.keys" :key="k">
-                  <KeyboardShortcut :combo="shortcutCombo(s, k)" />
-                  <span v-if="i < s.keys.length - 1" class="sn-help-or">or</span>
-                </template>
-              </span>
-            </div>
-          </div>
-        </div>
-      </template>
-    </Dialog>
+    <!-- Keyboard shortcut help — frappe-ui's KeyboardShortcutsModal, generated
+         from the shortcut registry populated by useShortcuts.js (via useShortcut),
+         so it can never drift from the handlers. -->
+    <KeyboardShortcutsModal v-model:open="showShortcutsHelp" title="Keyboard shortcuts" />
 
     <!-- Slicers — floating value-filter controls bound to a filter column -->
     <div v-for="sl in activeSlicers" :key="sl.id" class="sn-slicer"
@@ -1311,10 +1293,10 @@ import {
   FeatherIcon,
   FormControl,
   KeyboardShortcut,
+  KeyboardShortcutsModal,
   Spinner,
   TextInput,
   Tooltip,
-  getActiveShortcuts,
 } from 'frappe-ui'
 
 const props = defineProps({ id: { type: String, default: 'new' } })
@@ -1658,26 +1640,6 @@ const hyperlinkText        = ref('')
 const hyperlinkUrl         = ref('')
 const hasActiveHyperlink   = computed(() => !!activeFormat.value?.hyperlink)
 const showFormulas      = ref(false)
-
-// Keyboard-shortcut help is generated from frappe-ui's live shortcut registry
-// (populated by useShortcuts.js via useShortcut). Grouped by each shortcut's
-// `group`; read-only-gated shortcuts drop out automatically (getActiveShortcuts
-// filters by their condition).
-const activeShortcuts = getActiveShortcuts()
-const shortcutGroups = computed(() => {
-  const groups = {}
-  for (const s of activeShortcuts.value) (groups[s.group] ??= []).push(s)
-  return groups
-})
-// Build a KeyboardShortcut `combo` string ("Mod+Shift+K") from a registry entry.
-function shortcutCombo(s, key) {
-  const parts = []
-  if (s.ctrl) parts.push('Mod')
-  if (s.shift) parts.push('Shift')
-  if (s.alt) parts.push('Alt')
-  parts.push(key)
-  return parts.join('+')
-}
 
 const selectionStats    = ref(null)
 const isDirty           = ref(false)
@@ -6259,20 +6221,6 @@ function toggleShowFormulas() {
 .sn-ctx-menu :deep(button) { width:100%; justify-content:flex-start; padding-left:10px; padding-right:10px; }
 .sn-ctx-sep { height:1px; background:var(--outline-gray-1); margin:4px 0; border:none; }
 .sn-rename-err { margin:6px 0 0; font-size:12px; color:var(--ink-red-6); letter-spacing:.02em; }
-
-/* Keyboard-shortcut help dialog — two-column grid of grouped Espresso list rows. */
-.sn-help-grid    { display:grid; grid-template-columns:1fr 1fr; gap:20px 28px; }
-.sn-help-group   { display:flex; flex-direction:column; gap:2px; }
-.sn-help-title   { font-size:11px; font-weight:600; letter-spacing:.06em; color:var(--ink-gray-5); text-transform:uppercase; padding:0 4px; margin-bottom:6px; }
-.sn-help-row     { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 8px; border-radius:6px; }
-.sn-help-row:hover { background:var(--surface-gray-2); }
-.sn-help-label   { font-size:13px; letter-spacing:.02em; color:var(--ink-gray-9); }
-.sn-help-keys    { display:inline-flex; align-items:center; gap:6px; color:var(--ink-gray-7); }
-.sn-help-keys :deep(> div) {
-  padding:2px 6px; border:1px solid var(--outline-gray-2); border-radius:4px;
-  background:var(--surface-base); color:var(--ink-gray-8); min-height:20px;
-}
-.sn-help-or      { font-size:11px; letter-spacing:.02em; color:var(--ink-gray-5); }
 
 /* Sheet-tab drag visual — Espresso ink-gray-9 left edge on the drop target. */
 .sn-tab               { cursor:grab; }
