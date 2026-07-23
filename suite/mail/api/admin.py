@@ -11,9 +11,11 @@ from frappe.utils import cint
 from pypika import Case, Order
 
 from suite.mail.api.utils import get_avatar_url
+from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.stalwart import create_domain as create_stalwart_domain
 from suite.mail.stalwart import delete_domain as delete_stalwart_domain
 from suite.mail.stalwart import get_domains as get_stalwart_domains
+from suite.mail.stalwart.account import AccountService
 from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -319,6 +321,105 @@ def get_members(
 		user["enabled"] = bool(user.get("enabled"))
 
 	return users
+
+
+def _build_quota_usage(total: int, used: int) -> dict:
+	"""Normalizes raw disk-quota byte counts into the shape the member page renders.
+
+	A total of 0 (Stalwart omits maxDiskQuota) means unlimited storage, so percentages and the
+	available figure are meaningless and reported as such.
+	"""
+
+	total = max(total or 0, 0)
+	used = max(used or 0, 0)
+
+	if total <= 0:
+		return {
+			"total": 0,
+			"used": used,
+			"available": 0,
+			"used_percentage": 0,
+			"available_percentage": 0,
+			"unlimited": True,
+		}
+
+	available = max(total - used, 0)
+	used_percentage = min((used / total) * 100, 100)
+
+	return {
+		"total": total,
+		"used": used,
+		"available": available,
+		"used_percentage": used_percentage,
+		"available_percentage": 100 - used_percentage,
+		"unlimited": False,
+	}
+
+
+@frappe.whitelist()
+def get_member(member_id: str) -> dict:
+	"""Returns a member's profile along with their Stalwart quota usage and email addresses.
+
+	Quota and email addresses are read live from the member's personal Stalwart account via the CLI;
+	when the member has no personal account configured, those sections come back empty rather than
+	failing the whole page.
+	"""
+
+	check_admin_permission("view members")
+
+	user = frappe.db.get_value(
+		"User",
+		member_id,
+		["name", "full_name", "user_image", "last_active", "enabled", "creation"],
+		as_dict=True,
+	)
+	if not user:
+		frappe.throw(_("Member not found"), frappe.DoesNotExistError)
+
+	is_admin = bool(frappe.db.exists("Has Role", {"parent": member_id, "role": "Suite Admin"}))
+
+	result = {
+		"name": user.name,
+		"full_name": user.full_name,
+		"user_image": user.user_image or get_avatar_url(user.name),
+		"description": user.full_name,
+		"last_active": user.last_active,
+		"joined_on": user.creation,
+		"enabled": bool(user.enabled),
+		"is_admin": is_admin,
+		"email_addresses": [],
+		"quota": _build_quota_usage(0, 0),
+	}
+
+	account_id = get_user_personal_jmap_account(member_id)
+	if not account_id:
+		return result
+
+	with suppress(Exception):
+		account = AccountService().get(
+			account_id, fields=["emailAddress", "aliases", "quotas", "usedDiskQuota"]
+		)
+
+		emails = []
+		if primary := account.get("emailAddress"):
+			emails.append(primary)
+
+		aliases = account.get("aliases") or {}
+		if aliases:
+			domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
+			for alias in aliases.values():
+				name = alias.get("name")
+				domain_name = domain_names.get(alias.get("domainId"))
+				if name and domain_name:
+					emails.append(f"{name}@{domain_name}")
+
+		result["email_addresses"] = emails
+		result["quota"] = _build_quota_usage(
+			(account.get("quotas") or {}).get("maxDiskQuota") or 0,
+			account.get("usedDiskQuota") or 0,
+		)
+
+	return result
 
 
 @frappe.whitelist()

@@ -202,6 +202,13 @@ export const routes: RouteRecordRaw[] = [
 				component: () => import('@/apps/mail/pages/dashboard/MembersView.vue'),
 				meta: { isDashboard: true },
 			},
+			{
+				path: 'dashboard/members/:memberId',
+				name: 'mail-member',
+				component: () => import('@/apps/mail/pages/dashboard/MemberView.vue'),
+				props: true,
+				meta: { isDashboard: true },
+			},
 			// Shortcut routes: short paths that resolve to their full
 			// account-scoped equivalents once the active accountId is known
 			// (resolved in the mail guard — see ./router.ts).

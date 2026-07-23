@@ -207,6 +207,10 @@ const LIST_OPTIONS = {
 	showTooltip: false,
 	rowHeight: 50,
 	emptyState: { description: __('No members found.') },
+	getRowRoute: (row: MemberRow) => ({
+		name: 'mail-member',
+		params: { memberId: row.name },
+	}),
 }
 
 const enableMembers = createResource({
