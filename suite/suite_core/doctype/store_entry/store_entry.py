@@ -69,7 +69,7 @@ class StoreEntry(Document):
 
 			record = _row(store, namespace, entity, key, entry["size"], value=_pretty(entry["value"]))
 		elif store == SEARCH_STORE:
-			entity, _sep, key = key_part.partition(":")
+			entity, key = _split_search_key(namespace, key_part)
 			entry = _search_index(namespace, entity).read(key)
 			if entry is None:
 				_not_found(self.name)
@@ -198,6 +198,26 @@ def _search_index_entities(namespace: str, entity: str | None = None) -> list[st
 
 	entities = list_index_entities(namespace)
 	return [e for e in entities if e == entity] if entity else entities
+
+
+def _split_search_key(namespace: str, key_part: str) -> tuple[str, str]:
+	"""Split an ``<entity>:<key>`` search key_part back into (entity, key).
+
+	The entity is resolved against the namespace's real on-disk index names rather than by
+	splitting at the first colon, so an entity that itself contains ``:`` is not mis-parsed (which
+	would otherwise open the wrong index and report an existing document as missing). The longest
+	matching entity wins, disambiguating the case where one entity name is a prefix of another.
+	Falls back to a first-colon split when no index matches (e.g. one dropped since the row was
+	built).
+	"""
+
+	matches = [e for e in list_index_entities(namespace) if key_part == e or key_part.startswith(f"{e}:")]
+	if matches:
+		entity = max(matches, key=len)
+		return entity, key_part[len(entity) + 1 :]
+
+	entity, _sep, key = key_part.partition(":")
+	return entity, key
 
 
 def _available_namespaces(store: str) -> list[str]:
