@@ -118,6 +118,9 @@ export default defineConfig(({ mode }) => ({
     },
     // Keep single ProseMirror / Yjs / reka-ui / vue singletons across the 7
     // merged editors (drive/writer/sheets/mail collab) — see _resolved.json.
+    // @vueuse/core must NOT be deduped: frappe-ui needs v10 while reka-ui
+    // ships with its own nested v14, and collapsing them onto one copy breaks
+    // reka-ui (e.g. TabsIndicator's useResizeObserver call under vueuse 10).
     dedupe: [
       'vue',
       'vue-router',
@@ -126,7 +129,6 @@ export default defineConfig(({ mode }) => ({
       'prosemirror-state',
       'prosemirror-view',
       'reka-ui',
-      '@vueuse/core',
     ],
   },
   build: {
