@@ -996,6 +996,8 @@ const screenerCount = computed(
 )
 const showScreenerBanner = computed(
 	() =>
+		// The mobile tab bar's Screener badge carries this nudge; the banner is desktop-only.
+		!isMobile.value &&
 		mailbox === mailboxIds.inbox &&
 		screeningEnabled.value &&
 		screenerCount.value > 0 &&
