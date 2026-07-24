@@ -1,9 +1,26 @@
 <template>
 	<div v-if="screeningEnabled" class="flex h-full flex-col">
-		<header class="hidden items-center justify-between border-b px-3 py-2.5 sm:flex sm:px-5">
-			<div class="flex items-center space-x-2">
+		<!-- On mobile this is the toolbar (same 49px/px-3.5 metrics as the mailbox one)
+		     and it absorbs the count bar's actions; desktop keeps breadcrumbs + count bar. -->
+		<header
+			class="flex items-center justify-between border-b px-3 py-2.5 max-sm:h-[49px] max-sm:px-3.5 max-sm:py-0 sm:px-5"
+		>
+			<div class="flex min-w-0 items-center space-x-2">
+				<span v-if="isMobile" class="flex min-w-0 items-baseline gap-1.5">
+					<span class="truncate text-[15px] !font-semibold">{{ __('Screener') }}</span>
+					<span v-if="senders.data?.length" class="text-ink-gray-5 text-sm">
+						{{ senders.data.length }}
+					</span>
+				</span>
 				<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
-				<Breadcrumbs :items="[{ label: __('Screener') }]" class="-ml-0.5" />
+				<Breadcrumbs v-else :items="[{ label: __('Screener') }]" class="-ml-0.5" />
+			</div>
+			<div v-if="isMobile" class="-mr-1.5 flex shrink-0 items-center gap-1">
+				<AdaptiveDropdown :options="bulkOptions" placement="bottom-end">
+					<Button variant="ghost" class="!px-1.5">
+						<template #icon><Ellipsis class="icon" /></template>
+					</Button>
+				</AdaptiveDropdown>
 			</div>
 			<HeaderActions @reload-mails="senders.reload()" />
 		</header>
@@ -82,7 +99,8 @@
 				>
 					<div class="pb-20">
 						<!-- Count bar — matches the mailbox "All Mails" toolbar height/style. -->
-						<div class="flex min-h-[49px] items-center justify-between border-b px-5">
+						<!-- Desktop-only: on mobile the header above carries these actions. -->
+					<div class="hidden min-h-[49px] items-center justify-between border-b px-5 sm:flex">
 							<div class="flex min-w-0 items-center">
 								<span class="truncate">{{ waitingLabel }}</span>
 								<!-- Redundant while the explainer slab is teaching the same lesson above,
@@ -138,7 +156,6 @@
 										<template #icon><Ellipsis class="icon" /></template>
 									</Button>
 								</Dropdown>
-								<Button :label="__('Allow All')" variant="ghost" @click="allowAll" />
 							</div>
 						</div>
 
@@ -314,6 +331,7 @@ import {
 	ChevronLeft,
 	CircleHelp,
 	Ellipsis,
+	Inbox,
 	LoaderCircle,
 	X,
 } from 'lucide-vue-next'
@@ -330,6 +348,7 @@ import {
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useScreenSize, useSettings } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
+import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
@@ -710,7 +729,8 @@ const bulkConfirmOptions = computed(() => {
 })
 
 const bulkOptions = computed(() => [
-	{ label: __('Deny All'), onClick: denyAll },
-	{ label: __('Move All to Inbox'), onClick: () => (showClearAll.value = true) },
+	{ label: __('Allow All'), icon: Check, onClick: allowAll },
+	{ label: __('Deny All'), icon: X, onClick: denyAll },
+	{ label: __('Move All to Inbox'), icon: Inbox, onClick: () => (showClearAll.value = true) },
 ])
 </script>
