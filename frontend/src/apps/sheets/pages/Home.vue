@@ -956,14 +956,23 @@ async function duplicate(sheet) {
 .home-listhead-cell.is-active  { color: var(--ink-gray-8); font-weight: 500; }
 .home-sort-caret { width: 13px; height: 13px; flex-shrink: 0; }
 
-/* Suppress ListView's own header — the grid + rounded + gray-fill "pill". That
-   three-class combination is unique to ListHeader; data rows never set all
-   three together, so this can't hide a row. */
+/* Suppress ListView's built-in header so only our flat sortable header shows.
+   frappe-ui's ListView exposes no per-column header slot or sort hook and
+   always renders <ListHeader>, so hiding it via its own utility classes is the
+   only seam available. The `.grid.rounded.bg-surface-gray-2` trio is unique to
+   ListHeader (data rows are `flex flex-col`, never all three), so this can't
+   hide a row.
+   ⚠ COUPLING: pinned to frappe-ui's ListHeader class names. If a frappe-ui
+   upgrade renames them the built-in header reappears (a duplicate header) —
+   degraded, not a crash; re-point this selector to match. */
 .home-listcol :deep(.grid.rounded.bg-surface-gray-2) { display: none; }
 
-/* Inset the actual scroll region's content (rows + group headers) to the same
-   1200px band as the header. The padding lives on the scroller itself so the
-   scrollbar stays pinned to the viewport edge while the content is centered. */
+/* Inset the scroll region's content (rows + group headers) to the same 1200px
+   band as the header. The padding lives on the scroller ITSELF so the scrollbar
+   stays pinned to the viewport edge while the content is centered.
+   ⚠ COUPLING: targets ListRows/ListGroups' internal `.h-full.overflow-y-auto`
+   scroll div — frappe-ui hard-codes the scroll there with no prop to hook. If
+   that changes, rows lose the centering inset (full-bleed), not the scroll. */
 .home-listcol :deep(.h-full.overflow-y-auto) {
   padding-inline: var(--list-inset);
 }

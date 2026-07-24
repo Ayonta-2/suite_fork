@@ -88,6 +88,14 @@ class OrderBy(_ListSheetsBase):
 			self.rows_kwargs()["order_by"],
 			"`tabSheet`.`owner` asc, `tabSheet`.`modified` desc",
 		)
+		# desc flips only the owner term; the modified-desc tiebreak stays.
+		self.frappe.get_list.reset_mock()
+		self.frappe.get_list.side_effect = [self.rows, [{"total": 42}]]
+		self.call(order_by="owner", sort_dir="desc")
+		self.assertEqual(
+			self.rows_kwargs()["order_by"],
+			"`tabSheet`.`owner` desc, `tabSheet`.`modified` desc",
+		)
 
 	def test_unknown_order_by_falls_back_to_default(self):
 		malicious = "modified desc; DROP TABLE `tabSheet`--"
