@@ -2593,18 +2593,25 @@ function onTabClick(name) {
 const tabDragName = ref(null)
 const tabDragOver = ref(null)
 
+// Reorder is a mutation. `:draggable="!readOnly"` stops a viewer starting a
+// drag, but dragover/drop still fire when *another* element is dragged onto a
+// tab — guard the whole lifecycle so the invariant "viewers can't reorder" is
+// explicit here, not just an emergent effect of the null tabDragName.
 function onTabDragStart(e, name) {
+  if (readOnly.value) return
   tabDragName.value = name
   e.dataTransfer.effectAllowed = 'move'
   // Some browsers require setData to allow the drag
   try { e.dataTransfer.setData('text/plain', name) } catch (_) {}
 }
 function onTabDragOver(e, name) {
+  if (readOnly.value) return
   if (!tabDragName.value || tabDragName.value === name) return
   e.dataTransfer.dropEffect = 'move'
   tabDragOver.value = name
 }
 function onTabDrop(e, target) {
+  if (readOnly.value) return
   const src = tabDragName.value
   if (!src || src === target) { tabDragOver.value = null; return }
   const next = sheetNames.value.filter(n => n !== src)
