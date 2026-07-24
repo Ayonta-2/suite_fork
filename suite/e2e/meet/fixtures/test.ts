@@ -6,7 +6,7 @@ import {
 	type Page,
 } from "@playwright/test";
 import { STUB_MEDIA_SCRIPT } from "./media";
-import { loginViaApi } from "../helpers/auth";
+import { loginViaApi } from "../../shared/auth";
 import {
 	clearMeetingCreateRateLimit,
 	createMeetingViaApi,

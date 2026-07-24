@@ -1,5 +1,5 @@
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
-import { frappeData } from "./frappe";
+import { frappeData } from "../../shared/frappe";
 
 export interface DriveEntity {
 	name: string;

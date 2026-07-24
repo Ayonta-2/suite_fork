@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { request, type APIRequestContext, type FullConfig } from "@playwright/test";
-import { loginViaApi, type Credentials } from "./helpers/auth";
-import { frappeData } from "./helpers/frappe";
+import { loginViaApi, type Credentials } from "../shared/auth";
+import { frappeData } from "../shared/frappe";
 
 const statePath = resolve(__dirname, ".state/run.json");
 const ownerStatePath = resolve(__dirname, ".state/owner.json");

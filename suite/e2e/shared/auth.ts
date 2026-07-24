@@ -5,9 +5,14 @@ export interface Credentials {
 	password: string;
 }
 
+const admin: Credentials = {
+	email: process.env.E2E_ADMIN_EMAIL ?? "Administrator",
+	password: process.env.E2E_ADMIN_PASSWORD ?? "admin",
+};
+
 export async function loginViaApi(
 	request: APIRequestContext,
-	credentials: Credentials,
+	credentials: Credentials = admin,
 ): Promise<void> {
 	const response = await request.post("/api/method/login", {
 		form: { usr: credentials.email, pwd: credentials.password },

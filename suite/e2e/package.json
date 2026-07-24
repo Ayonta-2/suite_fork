@@ -3,11 +3,13 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "test": "playwright test",
-    "test:headed": "playwright test --headed",
-    "test:debug": "playwright test --debug",
-    "test:ui": "playwright test --ui",
-    "test:report": "playwright show-report",
+    "test": "yarn test:productivity",
+    "test:productivity": "playwright test -c productivity/playwright.config.ts",
+    "test:meet": "playwright test -c meet/playwright.config.ts",
+    "test:headed": "yarn test:productivity --headed",
+    "test:debug": "yarn test:productivity --debug",
+    "test:ui": "yarn test:productivity --ui",
+    "test:report": "playwright show-report productivity/playwright-report",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

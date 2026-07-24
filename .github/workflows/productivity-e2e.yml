@@ -1,4 +1,4 @@
-name: Drive and Writer E2E Tests
+name: Productivity E2E Tests
 
 on:
   push:
@@ -8,9 +8,15 @@ on:
     paths:
       - "suite/drive/**"
       - "suite/writer/**"
-      - "suite/e2e/**"
+      - "suite/slides/**"
+      - "suite/e2e/productivity/**"
+      - "suite/e2e/shared/**"
+      - "suite/e2e/package.json"
+      - "suite/e2e/yarn.lock"
+      - "suite/e2e/tsconfig.json"
       - "frontend/src/apps/drive/**"
       - "frontend/src/apps/writer/**"
+      - "frontend/src/apps/slides/**"
       - "frontend/src/boot/**"
       - "frontend/src/router/**"
       - "frontend/vite.config.ts"
@@ -19,14 +25,20 @@ on:
       - "yarn.lock"
       - "pyproject.toml"
       - "knip.json"
-      - ".github/workflows/drive-writer-e2e.yml"
+      - ".github/workflows/productivity-e2e.yml"
   pull_request:
     paths:
       - "suite/drive/**"
       - "suite/writer/**"
-      - "suite/e2e/**"
+      - "suite/slides/**"
+      - "suite/e2e/productivity/**"
+      - "suite/e2e/shared/**"
+      - "suite/e2e/package.json"
+      - "suite/e2e/yarn.lock"
+      - "suite/e2e/tsconfig.json"
       - "frontend/src/apps/drive/**"
       - "frontend/src/apps/writer/**"
+      - "frontend/src/apps/slides/**"
       - "frontend/src/boot/**"
       - "frontend/src/router/**"
       - "frontend/vite.config.ts"
@@ -35,11 +47,11 @@ on:
       - "yarn.lock"
       - "pyproject.toml"
       - "knip.json"
-      - ".github/workflows/drive-writer-e2e.yml"
+      - ".github/workflows/productivity-e2e.yml"
   workflow_dispatch:
 
 concurrency:
-  group: drive-writer-e2e-${{ github.event.number || github.ref }}
+  group: productivity-e2e-${{ github.event.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -163,7 +175,7 @@ jobs:
 
       - name: Run E2E tests
         working-directory: ${{ github.workspace }}/suite/e2e
-        run: yarn test
+        run: yarn test:productivity
         env:
           BASE_URL: http://drive-writer.test:8000
           CI: true
@@ -172,11 +184,11 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: drive-writer-playwright-report
+          name: productivity-playwright-report
           path: |
-            suite/e2e/playwright-report/
-            suite/e2e/test-results/
-            suite/e2e/results.xml
+            suite/e2e/productivity/playwright-report/
+            suite/e2e/productivity/test-results/
+            suite/e2e/productivity/results.xml
             /home/runner/frappe-bench/bench_start.log
           compression-level: 1
           retention-days: 7

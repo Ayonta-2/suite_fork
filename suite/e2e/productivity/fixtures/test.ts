@@ -7,7 +7,7 @@ import {
 } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Credentials } from "../helpers/auth";
+import type { Credentials } from "../../shared/auth";
 
 const statePath = resolve(__dirname, "../.state/run.json");
 const authStatePaths = [

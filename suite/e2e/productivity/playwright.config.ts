@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { resolve } from "node:path";
 
 const baseURL = process.env.BASE_URL ?? "http://suite.localhost:8000";
 const isCI = !!process.env.CI;
@@ -7,6 +8,7 @@ export default defineConfig({
 	testDir: "./specs",
 	fullyParallel: true,
 	forbidOnly: isCI,
+	outputDir: resolve(__dirname, "test-results"),
 	retries: isCI ? 2 : 0,
 	workers: 2,
 	timeout: isCI ? 90_000 : 60_000,
@@ -15,10 +17,13 @@ export default defineConfig({
 		? [
 				["list"],
 				["github"],
-				["html", { open: "never" }],
-				["junit", { outputFile: "results.xml" }],
+				["html", { open: "never", outputFolder: resolve(__dirname, "playwright-report") }],
+				["junit", { outputFile: resolve(__dirname, "results.xml") }],
 			]
-		: [["list"], ["html", { open: "never" }]],
+		: [
+				["list"],
+				["html", { open: "never", outputFolder: resolve(__dirname, "playwright-report") }],
+			],
 	use: {
 		baseURL,
 		trace: "on-first-retry",

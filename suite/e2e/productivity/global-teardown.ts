@@ -1,7 +1,7 @@
 import { readFileSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { request, type FullConfig } from "@playwright/test";
-import { loginViaApi, type Credentials } from "./helpers/auth";
+import { loginViaApi, type Credentials } from "../shared/auth";
 
 const statePath = resolve(__dirname, ".state/run.json");
 const admin: Credentials = {

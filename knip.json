@@ -14,20 +14,16 @@
       "project": ["src/**/*.{ts,tsx,vue}", "!src/main.ts"],
       "ignoreUnresolved": ["~icons/lucide/*", "unplugin-icons/types/vue"]
     },
-    "suite/meet/e2e": {
-      "project": [
-        "fixtures/**/*.ts",
-        "helpers/**/*.ts",
-        "specs/**/*.ts",
-        "!playwright.config.ts"
-      ]
-    },
     "suite/e2e": {
+      "entry": [
+        "productivity/global-setup.ts",
+        "productivity/global-teardown.ts",
+        "meet/global-setup.ts"
+      ],
       "project": [
-        "fixtures/**/*.ts",
-        "helpers/**/*.ts",
-        "specs/**/*.ts",
-        "!playwright.config.ts"
+        "shared/**/*.ts",
+        "productivity/**/*.ts",
+        "meet/**/*.ts"
       ]
     },
     "suite/meet/sfu-server": {
