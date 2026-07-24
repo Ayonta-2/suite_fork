@@ -175,7 +175,7 @@ jobs:
 
       - name: Run E2E tests
         working-directory: ${{ github.workspace }}/suite/e2e
-        run: yarn test:productivity --workers=2
+        run: yarn test:productivity --workers=1
         env:
           BASE_URL: http://drive-writer.test:8000
           CI: true
