@@ -10,8 +10,7 @@ class SuiteSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		setup_complete: DF.Check
 		workspace_logo: DF.AttachImage | None
 		workspace_name: DF.Data | None
 	# end: auto-generated types
-
-	pass

@@ -66,7 +66,7 @@ const routes: RouteRecordRaw[] = [
     path: '/suite/setup',
     name: 'suite-setup',
     component: () => import('@/shell/SetupView.vue'),
-    meta: { isShell: true, title: 'Frappe Suite', favicon: SUITE_FAVICON },
+    meta: { isShell: true, title: 'Set up Frappe Suite', favicon: SUITE_FAVICON },
   },
   ...placeholderGroups,
   {

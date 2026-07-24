@@ -4,7 +4,7 @@
       <img
         v-if="step !== 'done'"
         :src="suiteLogo"
-        alt="Frappe Suite logo"
+        :alt="__('Frappe Suite logo')"
         class="size-10 shrink-0 object-contain"
         draggable="false"
       />
@@ -28,6 +28,7 @@
           <div class="flex flex-col gap-2" :class="{ 'text-center': step === 'done' }">
             <h1 class="text-4xl-semibold text-ink-gray-9">{{ current.title }}</h1>
             <p class="text-base text-ink-gray-6">{{ current.subtitle }}</p>
+            <p v-if="inviteSummary" class="text-base text-ink-gray-6">{{ inviteSummary }}</p>
           </div>
 
           <div v-if="step !== 'done'" class="h-28">
@@ -35,7 +36,7 @@
               <Tooltip v-for="(app, i) in apps" :key="app.id" :text="app.name">
                 <img
                   :src="app.logo"
-                  :alt="`${app.name} logo`"
+                  :alt="__('{0} logo', [app.name])"
                   class="setup-icon size-[38px] object-contain"
                   :style="{ animationDelay: `${i * 0.06}s` }"
                   draggable="false"
@@ -75,8 +76,8 @@
                   v-model="workspaceName"
                   type="text"
                   variant="outline"
-                  label="Workspace Name"
-                  placeholder="Acme Inc."
+                  :label="__('Workspace Name')"
+                  :placeholder="__('Acme Inc.')"
                 />
                 <ErrorMessage :message="saveWorkspace.error" />
               </div>
@@ -89,7 +90,7 @@
                 variant="outline"
                 :rows="3"
                 class="!resize-none"
-                placeholder="name@company.com, another@company.com"
+                :placeholder="__('name@company.com, another@company.com')"
                 :disabled="invite.loading"
               />
               <ErrorMessage :message="displayError" />
@@ -101,26 +102,27 @@
           v-if="step === 'welcome'"
           class="w-full"
           variant="solid"
-          label="Get started"
+          :label="__('Get started')"
           icon-right="lucide-chevron-right"
-          @click="onPrimary"
+          @click="getStarted"
         />
 
         <Button
           v-else-if="step === 'workspace'"
           class="w-full"
           variant="solid"
-          label="Continue"
+          :label="__('Continue')"
           icon-right="lucide-chevron-right"
           :loading="saveWorkspace.loading"
+          :disabled="!workspaceName.trim()"
           @click="continueWorkspace"
         />
 
         <div v-else-if="step === 'invite'" class="flex items-center justify-between">
-          <Button variant="ghost" label="Skip for now" :disabled="invite.loading" @click="finish" />
+          <Button variant="subtle" :label="__('Skip for now')" :disabled="invite.loading" @click="finish" />
           <Button
             variant="solid"
-            label="Send Invites"
+            :label="__('Send invites')"
             icon-right="lucide-chevron-right"
             :loading="invite.loading"
             :disabled="!hasEmails"
@@ -132,7 +134,7 @@
           <Button
             class="w-full"
             variant="solid"
-            label="Open Suite"
+            :label="__('Open Suite')"
             icon-right="lucide-chevron-right"
             :loading="markComplete.loading"
             @click="openSuite"
@@ -160,6 +162,7 @@ const workspaceName = ref('')
 const workspaceLogo = ref('')
 const emails = ref('')
 const inviteError = ref('')
+const inviteSummary = ref('')
 
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 
@@ -172,10 +175,10 @@ const splitEmails = (s: string) =>
 const hasEmails = computed(() => splitEmails(emails.value).length > 0)
 
 const copy: Record<Step, { title: string; subtitle: string }> = {
-  welcome: { title: 'Welcome to Frappe Suite', subtitle: 'Everything your team needs, all in one place.' },
-  workspace: { title: 'Setup your Workspace', subtitle: 'Customize your shared home.' },
-  invite: { title: "Let's invite your team", subtitle: 'Add teammates and explore Suite together.' },
-  done: { title: "You're all set!", subtitle: 'Your workspace is ready. Time to dive in.' },
+  welcome: { title: __('Welcome to Frappe Suite'), subtitle: __('Everything your team needs, all in one place.') },
+  workspace: { title: __('Setup your Workspace'), subtitle: __('Customize your shared home.') },
+  invite: { title: __("Let's invite your team"), subtitle: __('Add teammates and explore Suite together.') },
+  done: { title: __("You're all set!"), subtitle: __('Your workspace is ready. Time to dive in.') },
 }
 const current = computed(() => copy[step.value])
 
@@ -184,9 +187,9 @@ const displayError = computed(() => {
   const err = invite.error as { exc_type?: string; messages?: string[] } | null
   if (!err) return ''
   if (err.exc_type === 'OutgoingEmailError') {
-    return 'No outgoing email account setup.'
+    return __('No outgoing email account setup.')
   }
-  return err.messages?.join(' ') || String(err)
+  return err.messages?.join(' ') || __('Failed to send invites.')
 })
 
 const markComplete = createResource({ url: 'suite.api.account.mark_setup_complete' })
@@ -207,14 +210,33 @@ const saveWorkspace = createResource({
   },
 })
 
+type InviteResult = {
+  invited_emails?: string[]
+  pending_invite_emails?: string[]
+  accepted_invite_emails?: string[]
+  disabled_user_emails?: string[]
+}
+
 const invite = createResource({
   url: 'suite.api.account.invite_users',
-  onSuccess: () => {
+  onSuccess: (data: InviteResult) => {
+    inviteSummary.value = summarizeInvites(data)
     finish()
   },
 })
 
-function onPrimary() {
+function summarizeInvites(data: InviteResult): string {
+  const sent = data.invited_emails?.length ?? 0
+  const skipped =
+    (data.pending_invite_emails?.length ?? 0) +
+    (data.accepted_invite_emails?.length ?? 0) +
+    (data.disabled_user_emails?.length ?? 0)
+  const parts = [sent === 1 ? __('1 invite sent') : __('{0} invites sent', [sent])]
+  if (skipped) parts.push(__('{0} could not be invited', [skipped]))
+  return parts.join(' · ')
+}
+
+function getStarted() {
   step.value = 'workspace'
 }
 
@@ -232,8 +254,8 @@ function sendInvites() {
   if (invalid.length) {
     inviteError.value =
       invalid.length === 1
-        ? `“${invalid[0]}” doesn’t look like a valid email address.`
-        : `These don’t look like valid email addresses: ${invalid.join(', ')}`
+        ? __('"{0}" doesn\'t look like a valid email address.', [invalid[0]])
+        : __("These don't look like valid email addresses: {0}", [invalid.join(', ')])
     return
   }
   invite.submit({ emails: cleaned.join(', ') })

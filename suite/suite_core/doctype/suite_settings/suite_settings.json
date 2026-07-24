@@ -27,7 +27,6 @@
    "read_only": 1
   }
  ],
- "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
  "modified": "2026-06-26 18:26:27.000000",
@@ -37,13 +36,8 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "print": 1,
    "read": 1,
    "role": "System Manager",
-   "share": 1,
    "write": 1
   }
  ],

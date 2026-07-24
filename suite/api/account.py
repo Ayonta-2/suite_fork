@@ -19,6 +19,8 @@ def mark_setup_complete() -> None:
 
 	from frappe.desk.page.setup_wizard.setup_wizard import enable_setup_wizard_complete
 
+	# Suite needs its own flag: InstalledApplications.update_versions resets
+	# is_setup_complete to 0 for every non-frappe/erpnext app on each migrate.
 	enable_setup_wizard_complete("frappe")
 	frappe.db.set_single_value("Suite Settings", "setup_complete", 1)
 	frappe.db.set_single_value("System Settings", "setup_complete", 1)
@@ -35,6 +37,10 @@ def get_workspace() -> dict[str, str]:
 @frappe.whitelist(methods=["POST"])
 def update_workspace(workspace_name: str, workspace_logo: str = "") -> None:
 	frappe.only_for("System Manager")
+
+	workspace_name = workspace_name.strip()
+	if not workspace_name:
+		frappe.throw("Workspace name is required")
 
 	settings = frappe.get_single("Suite Settings")
 	settings.workspace_name = workspace_name
