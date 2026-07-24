@@ -66,6 +66,10 @@ def _delete_user_drive_data(email: str) -> None:
 
 	for team in teams:
 		frappe.delete_doc("Drive Team", team, ignore_permissions=True)
+	if files:
+		# DriveTeam.before_trash normally removes these rows, but its storage
+		# cleanup is best-effort and catches errors. Guarantee fixture metadata is gone.
+		frappe.db.delete("File", {"name": ["in", files]})
 
 	frappe.db.delete("Drive Settings", {"user": email})
 
