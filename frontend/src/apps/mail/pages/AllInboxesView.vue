@@ -14,7 +14,7 @@
 		<HeaderActions @reload-mails="refreshThreads()" />
 	</header>
 
-	<div class="relative flex h-[calc(100dvh-3.05rem)]">
+	<div class="relative flex h-[calc(100dvh-3.05rem)] max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto">
 		<!-- Loading -->
 		<div v-if="isLoading" class="flex w-full flex-col items-center justify-center">
 			<div class="text-ink-gray-5 flex items-center space-x-2">
@@ -64,10 +64,10 @@
 				</div>
 
 				<!-- Mail list -->
-				<div ref="mailList" class="h-full overflow-y-auto overscroll-contain">
+				<div ref="mailList" class="h-full overflow-y-auto overscroll-contain max-sm:pb-20">
 					<div v-for="(group, key) in groupedThreads" :key="key">
 						<Tooltip
-							v-if="groupMessagesBy !== 'None'"
+							v-if="groupMessagesBy !== 'None' && !isMobile"
 							:text="
 								isLastGroup(key)
 									? ''
@@ -89,7 +89,7 @@
 								/>
 							</div>
 						</Tooltip>
-						<template v-if="!collapsedGroups.includes(key)">
+						<template v-if="isMobile || !collapsedGroups.includes(key)">
 							<MailListItem
 								v-for="mail in group"
 								:key="`${mail.account}:${mail.thread_id}`"

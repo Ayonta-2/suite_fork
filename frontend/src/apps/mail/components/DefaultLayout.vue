@@ -1,5 +1,5 @@
 <template>
-	<div v-if="userResource?.data?.name" class="relative flex h-[100dvh] flex-col">
+	<div v-if="userResource?.data?.name" class="relative flex h-dvh flex-col">
 		<div class="min-h-0 flex-1">
 			<div class="isolate flex h-full text-base">
 				<AppSidebar v-if="isMobile" />
@@ -9,7 +9,7 @@
 				>
 					<AppSidebar />
 				</div>
-				<div id="scrollContainer" class="w-full overflow-auto">
+				<div id="scrollContainer" class="w-full overflow-auto max-sm:flex max-sm:flex-col max-sm:overflow-hidden">
 					<slot />
 				</div>
 			</div>

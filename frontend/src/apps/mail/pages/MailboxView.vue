@@ -43,8 +43,10 @@
 		<Button :label="__('Delete Now')" variant="ghost" @click="showEmptyMailbox = true" />
 	</div>
 
+	<!-- Mobile sizes by flex (the dvh calcs assume desktop chrome and overshoot
+	     once the tab bar exists, making the outer container scroll too). -->
 	<div
-		class="relative flex"
+		class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
 		:class="
 			showDeleteBanner || showScreenerBanner
 				? 'h-[calc(100dvh-6.1rem)]'
@@ -74,12 +76,76 @@
 					v-model:edit-filter="searchEditFilter"
 				/>
 
+				<!-- Mobile toolbar (design: 1·Inbox + 5·Selection): folder name leads and opens
+				     the folder sheet; filter is a funnel icon until active, then a dismissible
+				     chip. In selection mode it swaps to ✕ / count / Select All. -->
+				<div
+					v-if="isMobile"
+					class="relative flex h-14 shrink-0 items-center gap-1.5 border-b px-3.5"
+				>
+					<template v-if="selections.length">
+						<Button variant="ghost" class="-ml-1.5 !h-9 !w-9" @click="toggleSelectAll(false)">
+							<template #icon><X class="h-[18px] w-[18px]" /></template>
+						</Button>
+						<span class="flex-1 truncate text-base !font-semibold">
+							{{ __('{0} selected', [String(selections.length)]) }}
+						</span>
+						<button
+							class="text-ink-gray-8 shrink-0 text-[15px] !font-semibold"
+							@click="toggleSelectAll(!isAllSelected)"
+						>
+							{{ isAllSelected ? __('Unselect All') : __('Select All') }}
+						</button>
+					</template>
+					<template v-else>
+						<button
+							class="flex min-w-0 items-center gap-1.5 text-lg !font-semibold"
+							@click="openFolderSheet"
+						>
+							<span class="truncate">{{ mailboxName }}</span>
+							<ChevronDown class="text-ink-gray-5 h-5 w-5 shrink-0" stroke-width="2" />
+						</button>
+						<span class="flex-1" />
+						<!-- Applied filter: visible and dismissible. Hidden filters lose mail. -->
+						<button
+							v-if="filter && mailbox !== 'search'"
+							class="bg-surface-gray-2 text-ink-gray-7 flex max-w-40 items-center gap-1 rounded-full px-3 py-1.5 text-[13px] !font-semibold"
+							@click="setFilter(null)"
+						>
+							<span class="truncate">{{ title }}</span>
+							<X class="h-3 w-3 shrink-0" stroke-width="2" />
+						</button>
+						<AdaptiveDropdown
+							v-else-if="mailbox !== 'search'"
+							:options="FILTER_OPTIONS"
+							:title="__('Filter')"
+							placement="bottom-end"
+						>
+							<Button variant="ghost" class="-mr-1.5 !h-9 !w-9" :tooltip="__('Filter')">
+								<template #icon><Funnel class="h-[18px] w-[18px]" /></template>
+							</Button>
+						</AdaptiveDropdown>
+					</template>
+
+					<!-- Loading bar -->
+					<div
+						v-if="threadsResource?.loading"
+						class="loading-bar pointer-events-none absolute bottom-[-1px] left-[-1px] right-0 h-0.5 overflow-hidden"
+						role="progressbar"
+						aria-busy="true"
+					>
+						<div
+							class="loading-bar__fill via-ink-gray-3 absolute inset-y-0 left-0 w-[30%] bg-gradient-to-r from-transparent to-transparent"
+						/>
+					</div>
+				</div>
+
 				<!-- Toolbar/Actions -->
 				<div
+					v-else
 					class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
 				>
-					<!-- max-sm:ml-2 centers the 16px checkbox on the rows' 32px avatar column -->
-					<div v-if="!isAllAccountsSearch" class="mr-5 max-sm:ml-2">
+					<div v-if="!isAllAccountsSearch" class="mr-5">
 						<Tooltip
 							:text="
 								isAllSelected
@@ -188,11 +254,11 @@
 				<div
 					v-if="threadsResource?.data?.length"
 					ref="mailList"
-					class="h-full overflow-y-auto overscroll-contain"
+					class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
 				>
 					<div v-for="(group, key) in groupedThreads" :key="key">
 						<div
-							v-if="groupMessagesBy !== 'None'"
+							v-if="groupMessagesBy !== 'None' && !isMobile"
 							class="text-ink-gray-6 group flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
 							:class="{
 								'!bg-surface-blue-1': isGroupSelected(key),
@@ -202,9 +268,10 @@
 							:data-row-key="`group:${key}`"
 							@click="toggleGroupCollapse(key)"
 						>
+							<!-- Mobile: group select ("all of Today") appears only in selection mode. -->
 							<div
-								v-if="!isAllAccountsSearch"
-								class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-5 sm:pl-3"
+								v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
+								class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-3"
 								@click.stop.prevent="
 									toggleSelect(getGroupThreads(key), !isGroupSelected(key))
 								"
@@ -226,7 +293,7 @@
 								class="icon ml-auto"
 							/>
 						</div>
-						<template v-if="!collapsedGroups.includes(key)">
+						<template v-if="isMobile || !collapsedGroups.includes(key)">
 							<!-- A stack row stands in for a run of look-alike threads; when expanded, its
 							     members follow it as ordinary (indented) rows. -->
 							<template v-for="row in groupedRows[key]" :key="row.key">
@@ -262,6 +329,7 @@
 										isAllAccountsSearch ? row.thread.account_name : undefined
 									"
 									:selectable="!isAllAccountsSearch"
+									:selection-mode="mobileSelectionMode"
 									:is-selected="selections.includes(row.thread.thread_id)"
 									:hide-sender="row.inStack"
 									class="border-l-transparent sm:border-l"
@@ -374,6 +442,62 @@
 	<Dialog v-model="showEmptyMailbox" :options="emptyMailboxOptions" />
 	<Dialog v-model="showJunkOrDeleteThreads" :options="junkOrDeleteThreadsOptions" />
 	<ScreenedEmailAddressModal />
+	<!-- Selection action bar (design: 5·Selection) — replaces the tab bar while
+	     selecting: thumb reach, Delete last and red. -->
+	<!-- Same 52px row + safe-area padding as the tab bar it overlays, so entering/
+	     leaving selection mode never shifts the layout. Teleported to body: inside
+	     the layout's `isolate` stacking context, no z-index could beat the nav. -->
+	<Teleport to="body">
+	<div
+		v-if="mobileSelectionMode"
+		class="bg-surface-base fixed inset-x-0 bottom-0 z-20 border-t pb-[env(safe-area-inset-bottom)]"
+	>
+		<!-- Four labeled actions + More: seven unlabeled icons were the old screener
+		     trap (no labels, no tooltips on touch). Overflow actions and the folder
+		     menus live in the More sheet, which chains into the folder sheets. -->
+		<div class="flex h-13 items-stretch justify-around">
+			<button
+				v-for="action in visibleSelectActions.slice(0, 4)"
+				:key="action.label"
+				class="text-ink-gray-7 flex flex-col items-center justify-center gap-1 px-2 text-[11px] !font-semibold"
+				@click="action.onClick"
+			>
+				<component :is="action.icon" class="h-5 w-5" stroke-width="1.8" />
+				<span class="max-w-20 truncate">{{ stripShortcutHint(action.label) }}</span>
+			</button>
+			<button
+				v-if="moreSelectionOptions.length"
+				class="text-ink-gray-7 flex flex-col items-center justify-center gap-1 px-2 text-[11px] !font-semibold"
+				@click="showMoreActions = true"
+			>
+				<Ellipsis class="h-5 w-5" stroke-width="1.8" />
+				<span>{{ __('More') }}</span>
+			</button>
+		</div>
+
+		<AdaptiveDropdown
+			v-model:open="showMoreActions"
+			:options="moreSelectionOptions"
+			:title="__('More')"
+		><span /></AdaptiveDropdown>
+		<AdaptiveDropdown
+			v-model:open="showMoveToSheet"
+			:options="moveToOptions"
+			:title="__('Move To')"
+		><span /></AdaptiveDropdown>
+		<AdaptiveDropdown
+			v-model:open="showAddToSheet"
+			:options="addToOptions"
+			:title="__('Add To')"
+		><span /></AdaptiveDropdown>
+		<AdaptiveDropdown
+			v-model:open="showRemoveFromSheet"
+			:options="removeFromOptions"
+			:title="__('Remove From')"
+		><span /></AdaptiveDropdown>
+	</div>
+	</Teleport>
+
 	<ShortcutsModal v-model="showShortcuts" />
 </template>
 <script setup lang="ts">
@@ -387,6 +511,7 @@ import {
 	CircleAlert,
 	CircleCheck,
 	Ellipsis,
+	Filter as Funnel,
 	FolderInput,
 	FolderMinus,
 	FolderPlus,
@@ -399,6 +524,7 @@ import {
 	Star,
 	StarOff,
 	Trash2,
+	X,
 } from 'lucide-vue-next'
 import {
 	Breadcrumbs,
@@ -419,11 +545,18 @@ import {
 	raiseToast,
 	shouldIgnoreKeypress,
 	startResizing,
+	stripShortcutHint,
 } from '@/apps/mail/utils'
-import { useScreenSize, useUndo } from '@/apps/mail/utils/composables'
+import {
+	useFolderSheet,
+	useMobileSelection,
+	useScreenSize,
+	useUndo,
+} from '@/apps/mail/utils/composables'
 import { buildListRows } from '@/apps/mail/utils/threadStacks'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
+import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
@@ -450,6 +583,8 @@ const { accountId, mailbox, threadID } = defineProps<{
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
+const { openFolderSheet } = useFolderSheet()
+const { setMobileSelectionActive } = useMobileSelection()
 const { undo, setUndoAction } = useUndo()
 
 const socket = inject('$socket')
@@ -621,6 +756,44 @@ const mailThreadRef = useTemplateRef('mailThread')
 const mailListRef = useTemplateRef('mailList')
 
 const selections = ref<string[]>([])
+
+// Mobile selection mode (design: 5·Selection): rows show checkboxes, the toolbar
+// turns contextual, and the action bar replaces the tab bar (via the composable).
+const mobileSelectionMode = computed(() => isMobile.value && selections.value.length > 0)
+watch(mobileSelectionMode, (active) => setMobileSelectionActive(active))
+onUnmounted(() => setMobileSelectionActive(false))
+
+// Selection bar: first four condition-passing actions get labeled slots; the rest,
+// plus the folder menus, overflow into the More sheet (chained sheet opens).
+const showMoreActions = ref(false)
+const showMoveToSheet = ref(false)
+const showAddToSheet = ref(false)
+const showRemoveFromSheet = ref(false)
+
+const visibleSelectActions = computed(() => selectActions.value.filter((a) => a.condition()))
+
+const moreSelectionOptions = computed(() => [
+	...visibleSelectActions.value.slice(4).map((a) => ({
+		label: a.label,
+		icon: a.icon,
+		onClick: a.onClick,
+	})),
+	...(!['search', 'starred'].includes(mailbox)
+		? [{ label: __('Move To'), icon: FolderInput, onClick: () => (showMoveToSheet.value = true) }]
+		: []),
+	...(showAddTo.value
+		? [{ label: __('Add To'), icon: FolderPlus, onClick: () => (showAddToSheet.value = true) }]
+		: []),
+	...(showRemoveFrom.value
+		? [
+				{
+					label: __('Remove From'),
+					icon: FolderMinus,
+					onClick: () => (showRemoveFromSheet.value = true),
+				},
+			]
+		: []),
+])
 const lastSelected = ref<string[]>()
 
 const isAllSelected = computed(
@@ -867,7 +1040,7 @@ interface SelectAction {
 
 const selectActions = computed((): SelectAction[] => [
 	{
-		label: __('Star Mails'),
+		label: __('Star'),
 		onClick: () => setFlaggedByThreadIDs(selections.value, true),
 		icon: Star,
 		condition: () =>
@@ -878,7 +1051,7 @@ const selectActions = computed((): SelectAction[] => [
 			),
 	},
 	{
-		label: __('Unstar Mails'),
+		label: __('Unstar'),
 		onClick: () => setFlaggedByThreadIDs(selections.value, false),
 		icon: StarOff,
 		condition: () =>
@@ -889,7 +1062,7 @@ const selectActions = computed((): SelectAction[] => [
 			),
 	},
 	{
-		label: __('Archive Threads (E)'),
+		label: __('Archive (E)'),
 		onClick: () =>
 			mailbox === mailboxIds.sent
 				? handleAddThreadsToMailbox(mailboxIds.archive, selections.value)
@@ -955,6 +1128,7 @@ const selectActions = computed((): SelectAction[] => [
 			),
 	},
 ])
+
 
 // Search
 

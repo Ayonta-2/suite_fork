@@ -9,11 +9,14 @@
 		@touchstart="onTouchStart"
 		@touchend="clearTouchTimer"
 		@touchcancel="clearTouchTimer"
+		@click.capture="onRowClick"
 	>
 		<!-- Selection column: checkbox on desktop, sender avatar on mobile or where the list has no
 		     bulk selection. Long-pressing the row anywhere selects it on touch. -->
+		<!-- max-sm:justify-start pins the avatar/checkbox to the row's 14px padding
+		     axis; centered, the 40px column left them 2-4px "inside" it. -->
 		<div
-			class="flex shrink-0 items-center justify-center max-sm:w-10"
+			class="flex shrink-0 items-center justify-center max-sm:w-10 max-sm:justify-start"
 			:class="isFullWidth ? 'h-8' : 'h-10 sm:-mt-1.5'"
 		>
 			<div
@@ -25,17 +28,17 @@
 			</div>
 			<div
 				v-else-if="isSelected"
-				class="bg-surface-gray-10 hitbox flex h-8 w-8 shrink-0 rounded-full"
+				class="bg-surface-gray-10 hitbox flex h-8 w-8 shrink-0 rounded-full max-sm:h-10 max-sm:w-10"
 				@click.stop.prevent="emit('setSelected', false)"
 			>
-				<Check class="text-ink-base m-auto h-5 w-5 stroke-[3px]" />
+				<Check class="text-ink-base m-auto h-5 w-5 stroke-[3.5px]" />
 			</div>
 			<Avatar
 				v-show="!isSelected && (isMobile || !selectable)"
 				:label="avatarLabel"
 				:image="avatarImage"
 				size="xl"
-				class="hitbox"
+				class="hitbox max-sm:!h-10 max-sm:!w-10"
 				@click.stop.prevent="emit('setSelected', true)"
 			/>
 		</div>
@@ -128,6 +131,7 @@ const {
 	datetime,
 	subjectItalic = false,
 	previewItalic = false,
+	selectionMode = false,
 } = defineProps<{
 	// Renders the row as a link when set, and as a plain div when not — a thread opens, a stack expands.
 	to?: RouteLocationRaw
@@ -144,6 +148,9 @@ const {
 	datetime: string
 	subjectItalic?: boolean
 	previewItalic?: boolean
+	// Mobile selection mode (a selection exists): rows swap avatars for checkboxes,
+	// hide trailing actions, and a tap toggles selection instead of navigating.
+	selectionMode?: boolean
 }>()
 
 const emit = defineEmits<{ setSelected: [selected: boolean] }>()
@@ -152,6 +159,17 @@ const user = inject('$user') as UserResource
 const { isMobile } = useScreenSize()
 
 const isHovered = ref(false)
+
+// In selection mode a row tap toggles membership; capture-phase so the
+// RouterLink navigation never fires. Real buttons inside the row (the trailing
+// star) are exempt and keep their own action.
+const onRowClick = (e: MouseEvent) => {
+	if (!selectionMode) return
+	if ((e.target as HTMLElement).closest('button')) return
+	e.preventDefault()
+	e.stopPropagation()
+	emit('setSelected', !isSelected)
+}
 
 // With the reading pane hidden the list has the window to itself, so a row lays out as one wide line
 // instead of a stacked block.

@@ -171,4 +171,13 @@ body.mail-app h2 {
 	height: 1rem;
 	color: var(--ink-gray-6);
 }
+
+/* BottomSheets hug their content instead of frappe-ui's fixed 70vh well — a
+   five-row menu shouldn't own the whole screen. The old height stays as the
+   scroll cap, so tall content (the folder list) behaves exactly as before.
+   Scoped to body.mail-app since sheets teleport to <body>. */
+body.mail-app .bottom-sheet-content > .h-\[70vh\] {
+	height: auto;
+	max-height: 70vh;
+}
 </style>

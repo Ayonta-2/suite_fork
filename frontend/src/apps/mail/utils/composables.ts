@@ -44,6 +44,16 @@ export const useFolderSheet = () => {
 	return { isFolderSheetOpen, openFolderSheet, closeFolderSheet }
 }
 
+// Mobile selection mode — MailboxView owns the selection; the tab bar and FAB
+// (mounted in DefaultLayout) hide behind the contextual action bar while it's on.
+const isMobileSelectionActive = ref(false)
+
+export const useMobileSelection = () => {
+	const setMobileSelectionActive = (active: boolean) => (isMobileSelectionActive.value = active)
+
+	return { isMobileSelectionActive, setMobileSelectionActive }
+}
+
 // Mobile profile bottom sheet — opened from the header avatar (any view), so the
 // trigger (HeaderActions) and the mounted sheet (tab bar) stay decoupled.
 const isProfileSheetOpen = ref(false)
