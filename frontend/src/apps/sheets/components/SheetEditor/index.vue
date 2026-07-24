@@ -3270,6 +3270,12 @@ function _setupEventListeners() {
   document.addEventListener('copy',      onDocCopy)
   document.addEventListener('cut',       onDocCut)
   document.addEventListener('mousedown', _onDocMouseDown)
+  // Re-arm the grid for paste when the user switches back to this window
+  // (copied from another app) or back to this tab, so Cmd+V works without a
+  // priming click. 'focus' covers app/window switches; 'visibilitychange'
+  // covers tab switches within the same window.
+  window.addEventListener('focus',              _refocusGridIfIdle)
+  document.addEventListener('visibilitychange', _refocusGridIfIdle)
 }
 
 async function _loadInitialData() {
@@ -3331,6 +3337,9 @@ onMounted(async () => {
   } finally {
     isInitialLoad.value = false
   }
+  // Focus the grid on open so arrow-key nav and Cmd+V work immediately, without
+  // a priming click. Idle-guarded so a load that opened a dialog keeps its focus.
+  _refocusGridIfIdle()
 })
 
 onBeforeUnmount(() => {
@@ -3351,6 +3360,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('copy',      onDocCopy)
   document.removeEventListener('cut',       onDocCut)
   document.removeEventListener('mousedown', _onDocMouseDown)
+  window.removeEventListener('focus',              _refocusGridIfIdle)
+  document.removeEventListener('visibilitychange', _refocusGridIfIdle)
 })
 
 // ── Save ──────────────────────────────────────────────────────────────────────
@@ -3912,6 +3923,19 @@ function _canvasActive() {
   return ae === canvasRef.value || ae === formulaInputRef.value || gridWrapRef.value?.contains(ae)
 }
 
+// Returning to the tab or the sheet route leaves browser focus on <body>, not
+// the grid, so a Cmd+V fires a paste event the canvas never receives (onDocPaste
+// bails at the _canvasActive guard) — the "I have to click a cell first before
+// paste works" report. Pull focus back to the canvas, but ONLY when focus has
+// landed on nothing (body/null); never steal it from the formula bar, an inline
+// cell editor, or an open dialog.
+function _refocusGridIfIdle() {
+  if (document.visibilityState === 'hidden') return
+  const ae = document.activeElement
+  if (ae && ae !== document.body) return
+  canvasRef.value?.focus()
+}
+
 function onDocCopy(e) {
   if (!_canvasActive()) return
   e.preventDefault()
@@ -3952,6 +3976,7 @@ async function onDocPaste(e) {
     await clipboard.paste(activeCell.value, () => {}, 'all', destSel)
     clipboardHas.value = clipboard.hasData()
     grid.setMarchingAnts(null)
+    formulaValue.value = sheet.getCell(activeCell.value)   // fx bar tracks the pasted anchor
     history.push()
     isDirty.value = true
     return
@@ -4018,6 +4043,7 @@ async function onDocPaste(e) {
     // batchSetCells so the canvas painted those cells with the old
     // format, and a cut's vacated source needs to repaint as empty.
     for (const r of rects) _refreshDisplayForRange(r, sn)
+    formulaValue.value = sheet.getCell(activeCell.value)   // fx bar tracks the pasted anchor
     const after    = Object.assign({}, ...rects.map(r => _captureRange(r, sn)))
     const afterFmt = Object.assign({}, ...rects.map(r => _captureFormatsRange(r, sn)))
     const afterVal = Object.assign({}, ...rects.map(r => _captureValidationRange(r, sn)))
@@ -4055,6 +4081,7 @@ function doPasteSpecial(kind) {
     _flashProtected(sn); return   // keep the pending cut/copy + its marching ants
   }
   for (const r of rects) _refreshDisplayForRange(r, sn)
+  formulaValue.value = sheet.getCell(activeCell.value)   // fx bar tracks the pasted anchor
   clipboardHas.value = clipboard.hasData()
   grid?.setMarchingAnts(null)
   const after    = Object.assign({}, ...rects.map(r => _captureRange(r, sn)))
