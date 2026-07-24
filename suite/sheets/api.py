@@ -266,11 +266,25 @@ def unshare_sheet(name: str, user: str = "", everyone: int = 0) -> dict:
 
 # Caller's `order_by` is resolved through this dict — a key lookup, never
 # string interpolation — so arbitrary SQL can't reach the ORDER BY clause.
-_LIST_SHEETS_ORDER_BY = {
-	"modified": "`tabSheet`.`modified` desc",
-	"title": "`tabSheet`.`title` asc",
-	"owner": "`tabSheet`.`owner` asc, `tabSheet`.`modified` desc",
+# The direction is likewise clamped to a literal "asc"/"desc" in
+# `_list_sheets_order_by`, so neither the column nor the direction is ever
+# free text.
+_LIST_SHEETS_SORT_FIELDS = {
+	"modified": "`tabSheet`.`modified`",
+	"title": "`tabSheet`.`title`",
+	"owner": "`tabSheet`.`owner`",
 }
+
+
+def _list_sheets_order_by(order_by: str, sort_dir: str) -> str:
+	field = _LIST_SHEETS_SORT_FIELDS.get(order_by) or _LIST_SHEETS_SORT_FIELDS["modified"]
+	direction = "asc" if str(sort_dir).lower() == "asc" else "desc"
+	order = f"{field} {direction}"
+	# Owner is a low-cardinality column, so a secondary `modified desc` keeps
+	# rows within one owner in a stable, useful order regardless of direction.
+	if order_by == "owner":
+		order += ", `tabSheet`.`modified` desc"
+	return order
 
 
 @frappe.whitelist()
@@ -280,6 +294,7 @@ def list_sheets(
 	search: str = "",
 	owner_filter: str = "all",
 	order_by: str = "modified",
+	sort_dir: str = "desc",
 ) -> dict:
 	# Frappe's get_list applies the permission query, so the base result is
 	# sheets the session user owns plus those shared via DocShare (per-user
@@ -304,7 +319,7 @@ def list_sheets(
 		"Sheet",
 		filters=filters,
 		fields=["name", "title", "modified", "owner"],
-		order_by=_LIST_SHEETS_ORDER_BY.get(order_by, _LIST_SHEETS_ORDER_BY["modified"]),
+		order_by=_list_sheets_order_by(order_by, sort_dir),
 		limit_start=start,
 		limit_page_length=limit,
 	)

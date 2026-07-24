@@ -74,12 +74,16 @@ class Defaults(_ListSheetsBase):
 
 
 class OrderBy(_ListSheetsBase):
-	def test_known_keys_map_to_literals(self):
-		self.call(order_by="title")
+	def test_known_key_and_direction_map_to_literals(self):
+		self.call(order_by="title", sort_dir="asc")
 		self.assertEqual(self.rows_kwargs()["order_by"], "`tabSheet`.`title` asc")
 
-	def test_owner_sort_has_modified_tiebreak(self):
-		self.call(order_by="owner")
+	def test_direction_toggles_to_descending(self):
+		self.call(order_by="title", sort_dir="desc")
+		self.assertEqual(self.rows_kwargs()["order_by"], "`tabSheet`.`title` desc")
+
+	def test_owner_sort_keeps_modified_tiebreak_in_both_directions(self):
+		self.call(order_by="owner", sort_dir="asc")
 		self.assertEqual(
 			self.rows_kwargs()["order_by"],
 			"`tabSheet`.`owner` asc, `tabSheet`.`modified` desc",
@@ -91,6 +95,16 @@ class OrderBy(_ListSheetsBase):
 		kw = self.rows_kwargs()
 		self.assertEqual(kw["order_by"], _DEFAULT_ORDER)
 		# The caller's string must not appear anywhere in the query kwargs.
+		for call in self.frappe.get_list.call_args_list:
+			self.assertNotIn(malicious, repr(call))
+
+	def test_unknown_direction_falls_back_to_desc(self):
+		# Direction is clamped to the "asc"/"desc" literals just like the
+		# column — anything else can't reach the ORDER BY clause as free text.
+		malicious = "asc; DROP TABLE `tabSheet`--"
+		self.call(order_by="modified", sort_dir=malicious)
+		kw = self.rows_kwargs()
+		self.assertEqual(kw["order_by"], _DEFAULT_ORDER)
 		for call in self.frappe.get_list.call_args_list:
 			self.assertNotIn(malicious, repr(call))
 
