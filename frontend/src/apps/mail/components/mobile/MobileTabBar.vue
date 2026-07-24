@@ -37,10 +37,6 @@
 					{{ currentFolder?.label ?? __('Mail') }}
 				</span>
 			</button>
-			<button :class="tabClass(showSearchModal)" @click="showSearchModal = true">
-				<Search class="h-[22px] w-[22px]" stroke-width="2" />
-				<span class="text-[11px] font-medium !leading-3">{{ __('Search') }}</span>
-			</button>
 			<button v-if="screeningEnabled" :class="tabClass(screenerActive)" @click="openScreener">
 				<span class="relative">
 					<Eye class="h-[22px] w-[22px]" stroke-width="2" />
@@ -51,6 +47,10 @@
 					/>
 				</span>
 				<span class="text-[11px] font-medium !leading-3">{{ __('Screener') }}</span>
+			</button>
+			<button :class="tabClass(showSearchModal)" @click="showSearchModal = true">
+				<Search class="h-[22px] w-[22px]" stroke-width="2" />
+				<span class="text-[11px] font-medium !leading-3">{{ __('Search') }}</span>
 			</button>
 			<button :class="tabClass(isProfileSheetOpen)" @click="openProfileSheet">
 				<Avatar :label="activeAccountName" size="md" class="shrink-0" />

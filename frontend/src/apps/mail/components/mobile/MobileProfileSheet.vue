@@ -2,6 +2,7 @@
 	<BottomSheet v-model:open="isProfileSheetOpen">
 		<div class="px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
 			<!-- Accounts: tap to switch (no add-account flow on mobile). -->
+			<div class="text-ink-gray-5 px-3 pb-1 pt-1 text-sm">{{ __('Accounts') }}</div>
 			<button
 				v-for="account in accounts"
 				:key="account.id"
@@ -14,9 +15,6 @@
 			</button>
 
 			<div class="border-outline-gray-1 my-2 border-t" />
-
-			<!-- Storage moved here from the (removed) mobile drawer. -->
-			<QuotaBar v-if="jmapConfigured" :is-collapsed="false" class="px-1" />
 
 			<button :class="rowClass" @click="openAppSettings">
 				<Settings class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" stroke-width="1.6" />
@@ -39,7 +37,6 @@ import { Avatar, BottomSheet } from 'frappe-ui'
 import { useProfileSheet, useSettings } from '@/apps/mail/utils/composables'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { userStore } from '@/apps/mail/stores/user'
-import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -49,7 +46,6 @@ const { isProfileSheetOpen, closeProfileSheet } = useProfileSheet()
 const { openSettings } = useSettings()
 
 const accounts = computed(() => store.userResource?.data?.accounts ?? [])
-const jmapConfigured = computed(() => !!store.userResource?.data?.is_jmap_configured)
 
 // Same in-place accountId swap the sidebar's account submenu does; account-agnostic
 // routes (All Inboxes) go through the account shortcut instead.

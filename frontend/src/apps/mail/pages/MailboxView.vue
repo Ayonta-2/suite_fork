@@ -85,7 +85,7 @@
 				>
 					<template v-if="selections.length">
 						<Button variant="ghost" class="-ml-1.5 !h-9 !w-9" @click="toggleSelectAll(false)">
-							<template #icon><X class="h-[18px] w-[18px]" /></template>
+							<template #icon><X class="icon !h-[18px] !w-[18px]" /></template>
 						</Button>
 						<span class="flex-1 truncate text-base !font-semibold">
 							{{ __('{0} selected', [String(selections.length)]) }}
@@ -122,7 +122,7 @@
 							placement="bottom-end"
 						>
 							<Button variant="ghost" class="-mr-1.5 !h-9 !w-9" :tooltip="__('Filter')">
-								<template #icon><Funnel class="h-[18px] w-[18px]" /></template>
+								<template #icon><Funnel class="icon !h-[18px] !w-[18px]" /></template>
 							</Button>
 						</AdaptiveDropdown>
 					</template>

@@ -174,7 +174,13 @@
 									<span class="text-ink-gray-8 truncate text-[15px] !font-semibold sm:text-base">
 										{{ sender.from_name || sender.from_email }}
 									</span>
-									<span class="text-ink-gray-5 truncate text-[13px]">{{ sender.from_email }}</span>
+									<span class="text-ink-gray-5 flex-1 truncate text-[13px]">{{ sender.from_email }}</span>
+									<MailDate
+										v-if="isMobile"
+										:datetime="sender.received_at"
+										:in-list="true"
+										class="text-ink-gray-4 shrink-0 whitespace-nowrap text-xs tabular-nums"
+									/>
 								</div>
 								<div class="text-ink-gray-8 truncate text-sm !font-semibold !leading-[1.5]">
 									{{ sender.subject || __('[No subject]') }}
@@ -188,10 +194,30 @@
 										{{ sender.preview ? ' · ' : '' }}{{ __('{0} messages', [String(sender.count)]) }}
 									</span>
 								</div>
+								<!-- Variant E: full-width labeled verdict pills — x/check icons alone
+								     relied on tooltips, which never fire on touch. -->
+								<div v-if="isMobile" class="flex gap-2 pt-1.5">
+									<Button
+										variant="outline"
+										class="!h-8 flex-1"
+										:label="__('Deny')"
+										@click.stop="screenOut([sender.from_email])"
+									>
+										<template #prefix><X class="h-4 w-4" stroke-width="1.5" /></template>
+									</Button>
+									<Button
+										variant="outline"
+										class="!h-8 flex-1"
+										:label="__('Allow')"
+										@click.stop="allow([sender.from_email])"
+									>
+										<template #prefix><Check class="h-4 w-4" stroke-width="1.5" /></template>
+									</Button>
+								</div>
 							</div>
 
 							<!-- Received time, with Deny / Allow icon buttons -->
-							<div class="flex shrink-0 flex-col items-end justify-between">
+							<div v-if="!isMobile" class="flex shrink-0 flex-col items-end justify-between">
 								<MailDate
 									:datetime="sender.received_at"
 									:in-list="true"
@@ -215,6 +241,7 @@
 								</div>
 							</div>
 						</div>
+
 					</div>
 				</div>
 
@@ -231,7 +258,7 @@
 					<template v-if="openSender">
 						<!-- Subject + Deny/Allow; back button only when the preview owns the whole pane -->
 						<div
-							class="bg-surface-base sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b p-2.5 sm:px-5"
+							class="bg-surface-base border-b sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 p-2.5 max-sm:border-b-0 sm:px-5"
 						>
 							<div class="flex min-w-0 items-center">
 								<Button
