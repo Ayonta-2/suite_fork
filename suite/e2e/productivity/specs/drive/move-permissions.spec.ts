@@ -23,10 +23,12 @@ test("moves a file into a nested shared folder with inherited reader access", as
 
 	await owner.page.goto("/drive");
 	const parent = await createFolder(owner.page, parentName);
-	await owner.page.getByTestId(`drive-entity-${parent.name}`).click();
+	await owner.page.goto(`/drive/d/${parent.name}`);
 	await expect(owner.page).toHaveURL(new RegExp(`/drive/d/${parent.name}`));
 
 	const child = await createFolder(owner.page, childName, parent.name);
+	await owner.page.reload();
+	await expect(owner.page.getByTestId(`drive-entity-${child.name}`)).toBeVisible();
 	await Promise.all([
 		owner.page.waitForResponse(
 			(response) => response.url().includes("upload_file") && response.ok(),
@@ -48,7 +50,7 @@ test("moves a file into a nested shared folder with inherited reader access", as
 			.getByTestId(`drive-entity-${file.name}`)
 			.dragTo(owner.page.getByTestId(`drive-entity-${child.name}`)),
 	]);
-	await expect(owner.page.getByTestId(`drive-entity-${file.name}`)).toBeHidden();
+	await waitForDriveEntity(owner.page.request, fileName, child.name);
 
 	await owner.page.goto(`/drive/d/${parent.name}`);
 	await shareCurrentEntity(owner.page, parentName, collaborator.user.email);

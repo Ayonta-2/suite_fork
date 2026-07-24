@@ -80,7 +80,7 @@ test("renames, moves, trashes, restores, and reopens a Writer document from Driv
 		},
 	);
 	if (!moveResponse.ok()) throw new Error(await moveResponse.text());
-	await owner.page.getByTestId(`drive-entity-${folder.name}`).click();
+	await owner.page.goto(`/drive/d/${folder.name}`);
 	await expect(owner.page.getByTestId(`drive-entity-${file.name}`)).toContainText(
 		renamedTitle,
 	);

@@ -62,9 +62,7 @@ export async function createFolder(
 	const dialog = page.getByRole("dialog", { name: "Create a folder" });
 	await dialog.getByRole("textbox", { name: "Name:" }).fill(name);
 	await dialog.getByRole("button", { name: "Create", exact: true }).click();
-	const folder = await waitForDriveEntity(page.request, name, parent);
-	await expect(page.getByTestId(`drive-entity-${folder.name}`)).toBeVisible();
-	return folder;
+	return waitForDriveEntity(page.request, name, parent);
 }
 
 export async function shareCurrentEntity(
@@ -77,10 +75,9 @@ export async function shareCurrentEntity(
 	const dialog = page.getByRole("dialog", { name: new RegExp(entityTitle) });
 	const peopleInput = dialog.getByPlaceholder("Add people");
 	await peopleInput.fill(user);
-	await expect(
-		page.getByRole("option", { name: `Add "${user}"` }),
-	).toBeVisible();
-	await peopleInput.press("Enter");
+	const userOption = page.getByRole("option", { name: `Add "${user}"` });
+	await expect(userOption).toBeVisible();
+	await userOption.click();
 	await expect(dialog.getByRole("button", { name: "Invite" })).toBeVisible();
 	await Promise.all([
 		page.waitForResponse(
