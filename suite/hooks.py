@@ -245,7 +245,7 @@ doc_events = {
 
 user_invitation = {
 	"allowed_roles": {
-		"System Manager": ["Drive User", "Meet User"],
+		"System Manager": ["Suite User"],
 	},
 }
 

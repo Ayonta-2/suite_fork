@@ -10,6 +10,11 @@ def is_setup_complete() -> bool:
 
 
 @frappe.whitelist()
+def can_run_setup() -> bool:
+	return "System Manager" in frappe.get_roles()
+
+
+@frappe.whitelist()
 def mark_setup_complete() -> None:
 	frappe.only_for("System Manager")
 
