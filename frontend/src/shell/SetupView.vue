@@ -112,7 +112,7 @@
           />
 
           <div v-else-if="step === 'invite'" class="flex items-center justify-between">
-            <Button variant="ghost" label="Skip for now" :disabled="invite.loading" @click="skip" />
+            <Button variant="ghost" label="Skip for now" :disabled="invite.loading" @click="finish" />
             <Button
               variant="solid"
               label="Send Invites"
@@ -129,7 +129,7 @@
               label="Open Suite"
               icon-right="lucide-chevron-right"
               :loading="markComplete.loading"
-              @click="markComplete.submit()"
+              @click="openSuite"
             />
             <ErrorMessage :message="markComplete.error" />
           </div>
@@ -185,13 +185,7 @@ const displayError = computed(() => {
   return err.messages?.join(' ') || String(err)
 })
 
-// Full reload so the router's cached setup state refetches and routes to /suite.
-const markComplete = createResource({
-  url: 'suite.api.account.mark_setup_complete',
-  onSuccess: () => {
-    window.location.href = '/suite'
-  },
-})
+const markComplete = createResource({ url: 'suite.api.account.mark_setup_complete' })
 
 createResource({
   url: 'suite.api.account.get_workspace',
@@ -212,7 +206,7 @@ const saveWorkspace = createResource({
 const invite = createResource({
   url: 'suite.api.account.invite_users',
   onSuccess: () => {
-    step.value = 'done'
+    finish()
   },
 })
 
@@ -234,7 +228,7 @@ function sendInvites() {
     .map((e) => e.trim())
     .filter(Boolean)
   if (!cleaned.length) {
-    skip()
+    finish()
     return
   }
   const invalid = cleaned.filter((e) => !isEmail(e))
@@ -248,8 +242,21 @@ function sendInvites() {
   invite.submit({ emails: cleaned.join(', ') })
 }
 
-function skip() {
+// Setup is done once the last step is reached, not once the button is clicked,
+// so closing the tab here doesn't send the user back through the wizard.
+function finish() {
   step.value = 'done'
+  markComplete.submit().catch(() => {})
+}
+
+async function openSuite() {
+  try {
+    await markComplete.submit()
+  } catch {
+    return
+  }
+  // Full reload so the router's cached setup state refetches.
+  window.location.href = '/suite'
 }
 </script>
 
