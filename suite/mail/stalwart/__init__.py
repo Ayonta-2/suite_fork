@@ -16,132 +16,135 @@ from suite.mail.stalwart.account import (
 	UserRoles,
 )
 from suite.mail.stalwart.app_password import AppPassword, AppPasswordService
-from suite.mail.stalwart.domain import DkimSignatureService, Domain, DomainService
-from suite.mail.stalwart.role import RoleService
-from suite.mail.utils import get_config
+from suite.mail.stalwart.connection import get_account_management_connection, get_management_connection
+from suite.mail.stalwart.domain import Domain, DomainService
+from suite.mail.stalwart.group import Group, GroupService
+from suite.mail.stalwart.mailing_list import MailingList, MailingListService
+from suite.mail.stalwart.oauth import OAuthClient, OAuthClientService
+from suite.mail.stalwart.role import Role, RoleService
+from suite.mail.stalwart.service import ManagementService
 from suite.utils.dt import utcnow
 
-
-def _resolve_alias(alias: str) -> tuple[str, str]:
-	"""Resolves alias into local-part and domain from a complete email address."""
-
-	alias = alias.strip()
-	if not alias or "@" not in alias:
-		frappe.throw(_("Alias must be a complete email address: {0}").format(alias))
-
-	alias_name, alias_domain = alias.split("@", 1)
-	if not alias_name or not alias_domain:
-		frappe.throw(_("Alias must be a complete email address: {0}").format(alias))
-
-	return alias_name, alias_domain
-
-
-def _resolve_group_ids(groups: list[str] | None = None) -> list[str]:
-	"""Resolves account names in groups to account IDs with validation."""
-
-	group_ids = []
-	for group in groups or []:
-		group_account = get_account_by_name(group, raise_exception=False)
-		if not group_account:
-			frappe.throw(_("Group account {0} not found on server.").format(group))
-
-		group_ids.append(group_account["id"])
-
-	return group_ids
+__all__ = [
+	"Account",
+	"AccountService",
+	"AppPassword",
+	"AppPasswordService",
+	"Domain",
+	"DomainService",
+	"Group",
+	"GroupService",
+	"MailingList",
+	"MailingListService",
+	"ManagementService",
+	"OAuthClient",
+	"OAuthClientService",
+	"Role",
+	"RoleService",
+]
 
 
-@redis_cache(ttl=3600)
-def get_domain_by_name(
-	name: str, fields: list[str] | None = None, raise_exception: bool = True
-) -> dict | None:
-	"""Fetches a domain by name from the Stalwart server, selecting specific fields if provided."""
+# --- service factories -----------------------------------------------------
 
-	domain_service = DomainService()
-	if domains := domain_service.get_all({"name": name}, fields=fields or ["id"]):
-		return domains[0]
 
-	if raise_exception:
-		frappe.throw(_("Domain {0} not found.").format(name))
+def get_account_service() -> AccountService:
+	"""Returns an AccountService bound to the admin management connection."""
+
+	return AccountService(get_management_connection())
+
+
+def get_group_service() -> GroupService:
+	"""Returns a GroupService bound to the admin management connection."""
+
+	return GroupService(get_management_connection())
+
+
+def get_domain_service() -> DomainService:
+	"""Returns a DomainService bound to the admin management connection."""
+
+	return DomainService(get_management_connection())
+
+
+def get_role_service() -> RoleService:
+	"""Returns a RoleService bound to the admin management connection."""
+
+	return RoleService(get_management_connection())
+
+
+def get_mailing_list_service() -> MailingListService:
+	"""Returns a MailingListService bound to the admin management connection."""
+
+	return MailingListService(get_management_connection())
+
+
+def get_oauth_client_service() -> OAuthClientService:
+	"""Returns an OAuthClientService bound to the admin management connection."""
+
+	return OAuthClientService(get_management_connection())
+
+
+def get_app_password_service(account: str) -> AppPasswordService:
+	"""App passwords are account-scoped, so the returned service authenticates as ``account``."""
+
+	return AppPasswordService(get_account_management_connection(account))
+
+
+# --- cached lookups + resolvers --------------------------------------------
 
 
 @redis_cache(ttl=60)
 def get_domains() -> list[dict]:
-	"""Fetches all domains from the Stalwart server, selecting specific fields if provided."""
+	"""Returns all domains on the server (cached briefly)."""
 
-	return DomainService().get_all(
-		{}, fields=["id", "name", "description", "isEnabled", "createdAt", "dnsZoneFile"]
+	return get_domain_service().get_all(
+		properties=["id", "name", "description", "isEnabled", "createdAt", "dnsZoneFile"]
 	)
 
 
 @redis_cache(ttl=3600)
-def get_account_by_name(
-	name: str, fields: list[str] | None = None, raise_exception: bool = True
-) -> dict | None:
-	"""Fetches an account by name from the Stalwart server, selecting specific fields if provided."""
+def get_roles(description: str | None = None) -> list[dict]:
+	"""Returns roles on the server, optionally filtered by description (cached)."""
 
-	account_service = AccountService()
-	if accounts := account_service.get_all({"name": name}, fields=fields or ["id"]):
-		return accounts[0]
-
-	if raise_exception:
-		frappe.throw(_("Account {0} not found.").format(name))
+	filter = {"description": description} if description else None
+	return get_role_service().get_all(filter=filter, properties=["id", "description"])
 
 
-@redis_cache(ttl=3600)
-def get_role_by_description(
-	description: str, fields: list[str] | None = None, raise_exception: bool = True
-) -> dict | None:
-	"""Fetches a role by description from the Stalwart server, selecting specific fields if provided."""
+def resolve_domain_id(name: str, raise_exception: bool = True) -> str | None:
+	"""Resolves a domain name to its Stalwart id."""
 
-	role_service = RoleService()
-	if roles := role_service.get_all({"description": description}, fields=fields or ["id"]):
-		# Assuming description is unique and returning the first match.
-		return roles[0]
-
-	if raise_exception:
-		frappe.throw(_("Role with description {0} not found.").format(description))
+	domain = get_domain_service().get_by_name(name, raise_exception=raise_exception)
+	return domain["id"] if domain else None
 
 
-@redis_cache(ttl=3600)
-def get_roles(description: str | None = None, fields: list[str] | None = None) -> list[dict]:
-	"""Fetches roles from the Stalwart server, filtering by description if provided, and selecting specific fields if provided."""
+def resolve_role_ids(descriptions: list[str] | None) -> list[str]:
+	if not descriptions:
+		return []
 
-	filters = {}
-	if description:
-		filters["description"] = description
+	role_map = {r["description"]: r["id"] for r in get_roles()}
 
-	role_service = RoleService()
-	return role_service.get_all(filters, fields=fields or ["id", "description"])
+	role_ids = []
+	for description in descriptions:
+		role_id = role_map.get(description)
+		if not role_id:
+			frappe.throw(_("Role {0} does not exist on the Stalwart server.").format(description))
 
+		role_ids.append(role_id)
 
-def create_domain(name: str, description: str | None = None) -> str:
-	"""Creates a new domain on the Stalwart server with the specified name and description, returning the new domain's ID."""
-
-	domain = Domain(
-		name=name,
-		description=description,
-	)
-	domain_id = DomainService().create(domain)
-
-	get_domain_by_name.clear_cache()
-	get_domains.clear_cache()
-
-	return domain_id
+	return role_ids
 
 
-def delete_domain(domain_id: str) -> None:
-	"""Deletes a domain from the Stalwart server by ID."""
+def _resolve_alias(alias: str) -> tuple[str, str]:
+	"""Splits a full email address into its local-part and domain."""
 
-	# Stalwart refuses to delete a domain while DKIM signatures are still linked to it,
-	# so the linked DKIM signatures must be removed first.
-	dkim_service = DkimSignatureService()
-	dkim_signature_ids = [signature["id"] for signature in dkim_service.get_all_by_domain(domain_id)]
-	if dkim_signature_ids:
-		dkim_service.delete(dkim_signature_ids)
+	alias = (alias or "").strip()
+	name, _, domain = alias.partition("@")
+	if not name or not domain:
+		frappe.throw(_("Alias must be a complete email address: {0}").format(alias))
 
-	DomainService().delete([domain_id])
-	get_domain_by_name.clear_cache()
-	get_domains.clear_cache()
+	return name, domain
+
+
+# --- high-level conveniences used by hooks, doctypes and admin APIs --------
 
 
 def create_account(
@@ -154,112 +157,87 @@ def create_account(
 	roles: list[str] | None = None,
 	quota: int | None = None,
 	timezone: str | None = None,
-) -> None:
-	"""Creates an account on the Stalwart server with the specified parameters."""
+) -> str:
+	"""Creates a user account, resolving domain/group/role names to ids."""
 
-	domain_id = get_domain_by_name(domain, raise_exception=True)["id"]
-	password = password or random_string(12)
+	account_service = get_account_service()
+	domain_service = get_domain_service()
+
+	domain_id = domain_service.get_by_name(domain, raise_exception=True)["id"]
 
 	email_aliases = []
-	domain_ids_map = {domain: domain_id}
+	domain_ids = {domain: domain_id}
 	for alias in aliases or []:
 		if not alias:
 			continue
 
 		alias_name, alias_domain = _resolve_alias(alias)
+		if alias_domain not in domain_ids:
+			domain_ids[alias_domain] = domain_service.get_by_name(alias_domain, raise_exception=True)["id"]
 
-		alias_domain_id = domain_ids_map.get(alias_domain)
-		if not alias_domain_id:
-			alias_domain_id = get_domain_by_name(alias_domain, raise_exception=True)["id"]
-			domain_ids_map[alias_domain] = alias_domain_id
+		email_aliases.append(EmailAlias(name=alias_name, domain_id=domain_ids[alias_domain]))
 
-		email_aliases.append(EmailAlias(name=alias_name, domain_id=alias_domain_id))
+	member_group_ids = [
+		account_service.get_by_name(group, raise_exception=True)["id"] for group in groups or [] if group
+	]
 
-	member_group_ids = _resolve_group_ids(groups)
-
-	user_roles = UserRoles(type=RoleType.USER)
-	if roles:
-		role_ids = []
-		server_roles_map = {r["description"]: r["id"] for r in get_roles()}
-
-		for role in roles:
-			role_id = server_roles_map.get(role)
-			if not role_id:
-				frappe.throw(_("Role {0} does not exist on the server.").format(role))
-
-			role_ids.append(role_id)
-
-		if role_ids:
-			user_roles = UserRoles(type=RoleType.CUSTOM, roles=CustomRoles(role_ids=role_ids))
-
-	quotas = StorageQuota(max_disk_quota=quota) if quota is not None else None
+	role_ids = resolve_role_ids(roles)
+	user_roles = (
+		UserRoles(type=RoleType.CUSTOM, roles=CustomRoles(role_ids=role_ids))
+		if role_ids
+		else UserRoles(type=RoleType.USER)
+	)
 
 	account = Account(
 		name=name,
 		domain_id=domain_id,
-		credentials=[Credential(password=PasswordCredential(secret=password))],
-		member_group_ids=member_group_ids,
+		credentials=[Credential(password=PasswordCredential(secret=password or random_string(12)))],
+		member_group_ids=member_group_ids or None,
 		roles=user_roles,
-		quotas=quotas,
-		aliases=email_aliases,
+		quotas=StorageQuota(max_disk_quota=quota) if quota is not None else StorageQuota(),
+		aliases=email_aliases or None,
 		description=description,
 		timezone=timezone,
 	)
 
-	AccountService().create(account)
+	return account_service.create(account)
 
 
 def create_app_password(account: str, description: str | None = None) -> str:
-	"""Creates an app password for the specified account on the Stalwart server and returns the generated secret."""
+	"""Creates an app password for ``account`` and returns the generated secret."""
 
 	description = description or f"App Password for {frappe.local.site} - {utcnow()}"
-
-	config = get_config()
-	server_url = config["server_url"]
-	username = f"{account}%{config['username']}"
-	password = config["password"]
-
-	return AppPasswordService(
-		credentials={"server_url": server_url, "username": username, "password": password}
-	).create(AppPassword(description=description))
+	return get_app_password_service(account).create(AppPassword(description=description))
 
 
 def update_password(user: str | None = None, new_password: str | None = None) -> None:
-	"""Updates the password for the specified user's personal account on the Stalwart server."""
+	"""Sets the password of the user's personal Stalwart account (no-op if they have none)."""
 
-	if not user:
-		frappe.throw(_("User is required to update password on Stalwart server."))
-	if not new_password:
-		frappe.throw(_("New password is required to update password on Stalwart server."))
+	if not user or not new_password:
+		frappe.throw(_("User and new password are required to update the Stalwart password."))
 
-	account = get_user_personal_jmap_account(user, raise_exception=False)
-	AccountService().update_password(account, new_password)
+	if account := get_user_personal_jmap_account(user, raise_exception=False):
+		get_account_service().set_password(account, new_password)
 
 
 def delete_account(user: str) -> None:
-	"""Deletes the personal account of the specified user from the Stalwart server."""
+	"""Deletes the user's personal Stalwart account (no-op if they have none)."""
 
-	account = get_user_personal_jmap_account(user, raise_exception=False)
-	AccountService().delete([account])
+	if account := get_user_personal_jmap_account(user, raise_exception=False):
+		get_account_service().delete(account)
 
 
 def add_account_role(user: str, role: str) -> None:
-	"""Applies a Stalwart role (identified by its description) to the specified user's personal account."""
+	"""Applies a role (by description) to the user's personal account (no-op if they have none)."""
 
-	account = get_user_personal_jmap_account(user, raise_exception=False)
-	if not account:
-		return
-
-	role_id = get_role_by_description(role, raise_exception=True)["id"]
-	AccountService().add_roles(account, [role_id])
+	if account := get_user_personal_jmap_account(user, raise_exception=False):
+		role_id = get_role_service().get_by_description(role, raise_exception=True)["id"]
+		get_account_service().add_roles(account, [role_id])
 
 
 def remove_account_role(user: str, role: str) -> None:
-	"""Removes a Stalwart role (identified by its description) from the specified user's personal account."""
+	"""Removes a role (by description) from the user's personal account (no-op if they have none)."""
 
-	account = get_user_personal_jmap_account(user, raise_exception=False)
-	if not account:
-		return
-
-	role_id = get_role_by_description(role, raise_exception=True)["id"]
-	AccountService().remove_roles(account, [role_id])
+	if account := get_user_personal_jmap_account(user, raise_exception=False):
+		role_id = get_role_service().get_by_description(role, raise_exception=True)["id"]
+		get_account_service().remove_roles(account, [role_id])

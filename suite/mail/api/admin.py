@@ -12,10 +12,9 @@ from pypika import Case, Order
 
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
-from suite.mail.stalwart import create_domain as create_stalwart_domain
-from suite.mail.stalwart import delete_domain as delete_stalwart_domain
+from suite.mail.stalwart import get_account_service, get_domain_service
 from suite.mail.stalwart import get_domains as get_stalwart_domains
-from suite.mail.stalwart.account import AccountService
+from suite.mail.stalwart.domain import Domain
 from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -60,12 +59,14 @@ def add_domain(name: str, description: str | None = None) -> str:
 			frappe.throw(_("Domain {0} already exists.").format(name))
 
 	domain_id = execute_with_logging(
-		func=lambda: create_stalwart_domain(name, description),
+		func=lambda: get_domain_service().create(Domain(name=name, description=description)),
 		title=_("Failed to add domain {0}").format(name),
 		user_message=_("An error occurred while adding the domain, check error logs for more details."),
 		with_context=False,
 		module="Mail",
 	)
+
+	get_stalwart_domains.clear_cache()
 	return domain_id
 
 
@@ -186,12 +187,14 @@ def delete_domain(domain_id: str) -> None:
 	check_admin_permission("delete domains")
 
 	execute_with_logging(
-		func=lambda: delete_stalwart_domain(domain_id),
+		func=lambda: get_domain_service().delete([domain_id]),
 		title=_("Failed to delete domain with ID {0}").format(domain_id),
 		user_message=_("An error occurred while deleting the domain, check error logs for more details."),
 		with_context=False,
 		module="Mail",
 	)
+
+	get_stalwart_domains.clear_cache()
 
 
 @frappe.whitelist()
@@ -396,9 +399,11 @@ def get_member(member_id: str) -> dict:
 		return result
 
 	with suppress(Exception):
-		account = AccountService().get(
-			account_id, fields=["emailAddress", "aliases", "quotas", "usedDiskQuota"]
+		account = get_account_service().get(
+			account_id, properties=["emailAddress", "aliases", "quotas", "usedDiskQuota"]
 		)
+		if not account:
+			return result
 
 		emails = []
 		if primary := account.get("emailAddress"):

@@ -2,7 +2,6 @@ import frappe
 from frappe.core.api.file import create_new_folder
 
 from suite.suite_core.doctype.rate_limit.rate_limit import create_rate_limit
-from suite.mail.stalwart.cli import StalwartCLI
 
 
 def after_install() -> None:
@@ -12,7 +11,7 @@ def after_install() -> None:
 
 
 def after_migrate() -> None:
-	StalwartCLI()._install()
+	pass
 
 
 def add_rate_limits() -> None:
