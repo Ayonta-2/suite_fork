@@ -6,6 +6,8 @@ import re
 import frappe
 from frappe.tests.utils import whitelist_for_tests
 
+from suite.utils.user import assign_suite_role
+
 DEFAULT_PASSWORD = "DriveWriterE2E!2026"
 USER_COUNT = 2
 RUN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
@@ -111,6 +113,7 @@ def provision_users(run_id: str, password: str = DEFAULT_PASSWORD) -> dict:
 				"new_password": password,
 			}
 		)
+		assign_suite_role(user)
 		user.flags.skip_drive_setup = True
 		user.insert(ignore_permissions=True)
 		_create_user_drive_data(email)
