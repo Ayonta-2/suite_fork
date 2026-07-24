@@ -94,7 +94,15 @@ let setupCompletePromise: Promise<boolean> | undefined
 
 function ensureSetupComplete(): Promise<boolean> {
   if (!setupCompletePromise) {
-    setupCompletePromise = setupCompleteResource.fetch().then(() => Boolean(setupCompleteResource.data))
+    setupCompletePromise = setupCompleteResource
+      .fetch()
+      .then(() => Boolean(setupCompleteResource.data))
+      .catch(() => {
+        // Retry on the next navigation, and let this one through: a failing
+        // check must not strand every user on the setup screen.
+        setupCompletePromise = undefined
+        return true
+      })
   }
   return setupCompletePromise
 }
