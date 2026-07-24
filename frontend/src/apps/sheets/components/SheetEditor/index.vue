@@ -2119,9 +2119,15 @@ async function _computeSelectionStatsAsync(token) {
   for (let r = r0; r <= r1; r++) {
     const rowSuffix = r + 1
     for (let c = c0; c <= c1; c++) {
-      const val = sheet.getCell(labels[c - c0] + rowSuffix, sn)
-      if (val !== '' && val != null) count++
-      const n = parseFloat(val)
+      const id = labels[c - c0] + rowSuffix
+      const raw = sheet.getCell(id, sn)
+      if (raw === '' || raw == null) continue
+      count++
+      // Aggregate the computed value, not the raw text: a formula cell holds
+      // "=SUM(...)" in getCell but evaluates to a number via getCellValue, so
+      // parseFloat on the raw string would drop it from Sum/Avg (but not Count).
+      const val = sheet.getCellValue(id, sn)
+      const n = typeof val === 'number' ? val : parseFloat(val)
       if (!isNaN(n)) { numCount++; sum += n }
     }
     since += rowWidth
