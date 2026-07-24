@@ -7,27 +7,89 @@ export interface DriveEntity {
 	is_folder: boolean | number;
 }
 
+export interface DriveEntityPermissions extends DriveEntity {
+	read: boolean | number;
+	write: boolean | number;
+	upload: boolean | number;
+	share: boolean | number;
+}
+
 async function driveEntities(
 	request: APIRequestContext,
+	parent?: string,
 ): Promise<DriveEntity[]> {
-	const response = await request.get("/api/method/suite.drive.api.list.files");
+	const response = await request.get("/api/method/suite.drive.api.list.files", {
+		params: parent ? { entity_name: parent } : undefined,
+	});
 	return frappeData<DriveEntity[]>(response);
 }
 
 export async function waitForDriveEntity(
 	request: APIRequestContext,
 	fileName: string,
+	parent?: string,
 ): Promise<DriveEntity> {
 	let entity: DriveEntity | undefined;
 	await expect
 		.poll(async () => {
-			entity = (await driveEntities(request)).find(
+			entity = (await driveEntities(request, parent)).find(
 				(candidate) => candidate.file_name === fileName,
 			);
 			return entity?.name;
 		})
 		.toBeTruthy();
 	return entity as DriveEntity;
+}
+
+export async function getDriveEntity(
+	request: APIRequestContext,
+	entityName: string,
+): Promise<DriveEntityPermissions> {
+	const response = await request.get(
+		"/api/method/suite.drive.api.permissions.get_entity_with_permissions",
+		{ params: { entity_name: entityName } },
+	);
+	return frappeData<DriveEntityPermissions>(response);
+}
+
+export async function createFolder(
+	page: Page,
+	name: string,
+	parent?: string,
+): Promise<DriveEntity> {
+	await page.getByRole("button", { name: "Create", exact: true }).click();
+	await page.getByRole("menuitem", { name: "Folder", exact: true }).click();
+	const dialog = page.getByRole("dialog", { name: "Create a folder" });
+	await dialog.getByRole("textbox", { name: "Name:" }).fill(name);
+	await dialog.getByRole("button", { name: "Create", exact: true }).click();
+	const folder = await waitForDriveEntity(page.request, name, parent);
+	await expect(page.getByTestId(`drive-entity-${folder.name}`)).toBeVisible();
+	return folder;
+}
+
+export async function shareCurrentEntity(
+	page: Page,
+	entityTitle: string,
+	user: string,
+): Promise<void> {
+	await page.getByTestId("drive-current-entity-actions").click();
+	await page.getByRole("menuitem", { name: "Share" }).click();
+	const dialog = page.getByRole("dialog", { name: new RegExp(entityTitle) });
+	const peopleInput = dialog.getByPlaceholder("Add people");
+	await peopleInput.fill(user);
+	await expect(
+		page.getByRole("option", { name: `Add "${user}"` }),
+	).toBeVisible();
+	await peopleInput.press("Enter");
+	await expect(dialog.getByRole("button", { name: "Invite" })).toBeVisible();
+	await Promise.all([
+		page.waitForResponse(
+			(response) =>
+				response.url().includes("suite.drive.api.files.update_access") &&
+				response.ok(),
+		),
+		dialog.getByRole("button", { name: "Invite" }).click(),
+	]);
 }
 
 export async function setDriveAccess(

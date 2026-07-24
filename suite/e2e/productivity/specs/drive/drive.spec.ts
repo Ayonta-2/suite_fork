@@ -4,6 +4,7 @@ import { test, expect } from "../../fixtures/test";
 import {
 	openEntityActions,
 	setDriveAccess,
+	shareCurrentEntity,
 	waitForDriveEntity,
 } from "../../helpers/drive";
 
@@ -83,26 +84,7 @@ test.describe.serial("Drive critical paths", () => {
 
 		await owner.page.getByTestId(`drive-entity-${folder.name}`).click();
 		await expect(owner.page).toHaveURL(new RegExp(`/drive/d/${folder.name}`));
-		await owner.page.getByTestId("drive-current-entity-actions").click();
-		await owner.page.getByRole("menuitem", { name: "Share" }).click();
-		const shareDialog = owner.page.getByRole("dialog", { name: new RegExp(folderName) });
-		const peopleInput = shareDialog.getByPlaceholder("Add people");
-		await peopleInput.fill(collaborator.user.email);
-		await expect(
-			owner.page.getByRole("option", {
-				name: `Add "${collaborator.user.email}"`,
-			}),
-		).toBeVisible();
-		await peopleInput.press("Enter");
-		await expect(shareDialog.getByRole("button", { name: "Invite" })).toBeVisible();
-		await Promise.all([
-			owner.page.waitForResponse(
-				(response) =>
-					response.url().includes("suite.drive.api.files.update_access") &&
-					response.ok(),
-			),
-			shareDialog.getByRole("button", { name: "Invite" }).click(),
-		]);
+		await shareCurrentEntity(owner.page, folderName, collaborator.user.email);
 
 		await collaborator.page.goto(`/drive/d/${folder.name}`);
 		await expect(collaborator.page.getByTestId("drive-app")).toBeVisible();
