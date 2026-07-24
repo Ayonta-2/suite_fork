@@ -3,7 +3,6 @@ from dataclasses import dataclass
 import frappe
 from frappe import _
 
-from suite.mail.stalwart.account import EmailAlias
 from suite.mail.stalwart.service import ManagementService
 
 
@@ -12,25 +11,24 @@ class MailingList:
 	name: str
 	domain_id: str
 	recipients: list[str] | None = None
-	aliases: list[EmailAlias] | None = None
 	description: str | None = None
 
 	def to_dict(self) -> dict:
-		"""Serializes the mailing list to the JMAP wire format."""
+		"""Serializes the mailing list to the JMAP wire format.
 
-		return {
-			"name": self.name,
-			"domainId": self.domain_id,
-			# For a mailing list, recipients and aliases are JSON arrays, not id-keyed maps.
-			"recipients": list(self.recipients) if self.recipients else [],
-			"aliases": [alias.to_dict() for alias in self.aliases] if self.aliases else [],
-			"description": self.description,
-		}
+		``recipients`` is an id-keyed map of the recipient accounts (omitted when empty).
+		"""
+
+		payload = {"name": self.name, "domainId": self.domain_id, "description": self.description}
+		if self.recipients:
+			payload["recipients"] = {account_id: True for account_id in self.recipients}
+
+		return payload
 
 
 class MailingListService(ManagementService):
 	type = "MailingList"
-	default_properties = ["id", "name", "emailAddress", "domainId", "recipients", "aliases", "description"]
+	default_properties = ["id", "name", "emailAddress", "domainId", "recipients", "description"]
 
 	def get_by_name(
 		self, name: str, properties: list[str] | None = None, raise_exception: bool = True

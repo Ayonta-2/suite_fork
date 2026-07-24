@@ -32,15 +32,6 @@ class OAuthClientService(ManagementService):
 	type = "OAuthClient"
 	default_properties = ["id", "clientId", "description", "contacts", "redirectUris", "expiresAt"]
 
-	def create(self, client: OAuthClient) -> dict:
-		"""Creates an OAuth client and returns the created object.
-
-		Returns the whole object rather than just the id because the server-generated secret is
-		only exposed at creation time.
-		"""
-
-		return self._create(client)
-
 	def get_by_client_id(
 		self, client_id: str, properties: list[str] | None = None, raise_exception: bool = True
 	) -> dict | None:

@@ -209,6 +209,64 @@ export const routes: RouteRecordRaw[] = [
 				props: true,
 				meta: { isDashboard: true },
 			},
+			{
+				path: 'dashboard/groups',
+				name: 'mail-groups',
+				component: () => import('@/apps/mail/pages/dashboard/GroupsView.vue'),
+				meta: { isDashboard: true },
+			},
+			{
+				path: 'dashboard/groups/:groupId',
+				name: 'mail-group',
+				component: () => import('@/apps/mail/pages/dashboard/GroupView.vue'),
+				props: true,
+				meta: { isDashboard: true },
+			},
+			{
+				path: 'dashboard/mailing-lists',
+				name: 'mail-mailing-lists',
+				component: () => import('@/apps/mail/pages/dashboard/MailingListsView.vue'),
+				meta: { isDashboard: true },
+			},
+			{
+				path: 'dashboard/mailing-lists/:listId',
+				name: 'mail-mailing-list',
+				component: () => import('@/apps/mail/pages/dashboard/MailingListView.vue'),
+				props: true,
+				meta: { isDashboard: true },
+			},
+			{
+				path: 'dashboard/roles',
+				name: 'mail-roles',
+				component: () => import('@/apps/mail/pages/dashboard/RolesView.vue'),
+				meta: { isDashboard: true },
+			},
+			{
+				path: 'dashboard/roles/:roleId',
+				name: 'mail-role',
+				component: () => import('@/apps/mail/pages/dashboard/RoleView.vue'),
+				props: true,
+				meta: { isDashboard: true },
+			},
+			{
+				path: 'dashboard/oauth-clients',
+				name: 'mail-oauth-clients',
+				component: () => import('@/apps/mail/pages/dashboard/OAuthClientsView.vue'),
+				meta: { isDashboard: true },
+			},
+			{
+				path: 'dashboard/oauth-clients/:clientId',
+				name: 'mail-oauth-client',
+				component: () => import('@/apps/mail/pages/dashboard/OAuthClientView.vue'),
+				props: true,
+				meta: { isDashboard: true },
+			},
+			{
+				path: 'dashboard/dkim-signatures',
+				name: 'mail-dkim-signatures',
+				component: () => import('@/apps/mail/pages/dashboard/DkimSignaturesView.vue'),
+				meta: { isDashboard: true },
+			},
 			// Shortcut routes: short paths that resolve to their full
 			// account-scoped equivalents once the active accountId is known
 			// (resolved in the mail guard — see ./router.ts).

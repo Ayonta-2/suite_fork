@@ -29,6 +29,10 @@ def add_rate_limits() -> None:
 		# suite.mail.api.admin
 		{"method_path": "suite.mail.api.admin.add_domain", "limit": 10, "seconds": 24 * 60 * 60},
 		{"method_path": "suite.mail.api.admin.add_member", "limit": 10, "seconds": 60 * 60},
+		{"method_path": "suite.mail.api.admin.add_group", "limit": 20, "seconds": 60 * 60},
+		{"method_path": "suite.mail.api.admin.add_mailing_list", "limit": 20, "seconds": 60 * 60},
+		{"method_path": "suite.mail.api.admin.add_role", "limit": 20, "seconds": 60 * 60},
+		{"method_path": "suite.mail.api.admin.add_oauth_client", "limit": 20, "seconds": 60 * 60},
 		# suite.mail.api.inbound
 		{"method_path": "suite.mail.api.inbound.fetch_blob", "limit": 60, "seconds": 60},
 		{"method_path": "suite.mail.api.inbound.pull", "limit": 10, "seconds": 60},

@@ -98,14 +98,19 @@ import ContactRound from '~icons/lucide/contact-round'
 import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
 import Globe from '~icons/lucide/globe'
+import KeyRound from '~icons/lucide/key-round'
 import LogOut from '~icons/lucide/log-out'
 import Mailbox from '~icons/lucide/mailbox'
 import Mails from '~icons/lucide/mails'
+import Megaphone from '~icons/lucide/megaphone'
 import Plus from '~icons/lucide/plus'
 import Settings from '~icons/lucide/settings'
+import Shield from '~icons/lucide/shield'
+import Signature from '~icons/lucide/signature'
 import Star from '~icons/lucide/star'
 import Trash2 from '~icons/lucide/trash-2'
 import Users from '~icons/lucide/users'
+import UsersRound from '~icons/lucide/users-round'
 
 const route = useRoute()
 const router = useRouter()
@@ -239,6 +244,42 @@ const menuItems = computed(() => [
 
 const dashboardItems = [
 	{
+		label: __('Directory'),
+		items: [
+			{
+				label: __('Members'),
+				icon: Users,
+				to: { name: 'mail-members' },
+				activeFor: ['mail-members', 'mail-invites', 'mail-member'],
+			},
+			{
+				label: __('Groups'),
+				icon: UsersRound,
+				to: { name: 'mail-groups' },
+				activeFor: ['mail-groups', 'mail-group'],
+			},
+			{
+				label: __('Mailing Lists'),
+				icon: Megaphone,
+				to: { name: 'mail-mailing-lists' },
+				activeFor: ['mail-mailing-lists', 'mail-mailing-list'],
+			},
+			{
+				label: __('Roles'),
+				icon: Shield,
+				to: { name: 'mail-roles' },
+				activeFor: ['mail-roles', 'mail-role'],
+			},
+			{
+				label: __('OAuth Clients'),
+				icon: KeyRound,
+				to: { name: 'mail-oauth-clients' },
+				activeFor: ['mail-oauth-clients', 'mail-oauth-client'],
+			},
+		],
+	},
+	{
+		label: __('Domains'),
 		items: [
 			{
 				label: __('Domains'),
@@ -247,10 +288,10 @@ const dashboardItems = [
 				activeFor: ['mail-domains', 'mail-domain'],
 			},
 			{
-				label: __('Members'),
-				icon: Users,
-				to: { name: 'mail-members' },
-				activeFor: ['mail-members', 'mail-invites', 'mail-member'],
+				label: __('DKIM Signatures'),
+				icon: Signature,
+				to: { name: 'mail-dkim-signatures' },
+				activeFor: ['mail-dkim-signatures'],
 			},
 		],
 	},

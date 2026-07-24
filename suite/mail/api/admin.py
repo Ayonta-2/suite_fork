@@ -12,9 +12,22 @@ from pypika import Case, Order
 
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
-from suite.mail.stalwart import get_account_service, get_domain_service
+from suite.mail.stalwart import (
+	get_account_service,
+	get_dkim_signature_service,
+	get_domain_service,
+	get_group_service,
+	get_mailing_list_service,
+	get_oauth_client_service,
+	get_role_service,
+)
 from suite.mail.stalwart import get_domains as get_stalwart_domains
+from suite.mail.stalwart.account import CustomRoles, RoleType, UserRoles
 from suite.mail.stalwart.domain import Domain
+from suite.mail.stalwart.group import Group
+from suite.mail.stalwart.mailing_list import MailingList
+from suite.mail.stalwart.oauth import OAuthClient
+from suite.mail.stalwart.role import Role
 from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -537,3 +550,557 @@ def change_member_password(member_id: str, new_password: str) -> None:
 	member = frappe.get_doc("User", member_id)
 	member.new_password = new_password
 	member.save(ignore_permissions=True)
+
+
+# ---------------------------------------------------------------------------
+# Directory: shared helpers
+# ---------------------------------------------------------------------------
+
+
+def _listify(value) -> list:
+	"""Coerces a whitelisted argument (which may arrive as a JSON string) into a list."""
+
+	if value is None:
+		return []
+	if isinstance(value, str):
+		value = frappe.parse_json(value)
+	return list(value or [])
+
+
+def _keys(value) -> list[str]:
+	"""Returns the keys of a JMAP id-keyed map, or the list as-is."""
+
+	return list(value.keys()) if isinstance(value, dict) else list(value or [])
+
+
+def _search(rows: list[dict], search: str | None, fields: tuple[str, ...]) -> list[dict]:
+	"""Filters rows whose given fields contain the search text (case-insensitive)."""
+
+	if not search:
+		return rows
+
+	needle = search.lower()
+	return [r for r in rows if any(needle in (str(r.get(f) or "")).lower() for f in fields)]
+
+
+@frappe.whitelist()
+def get_accounts(search: str | None = None) -> list[dict]:
+	"""Returns Stalwart user accounts (id + email) for member/recipient pickers."""
+
+	check_admin_permission("view accounts")
+
+	accounts = get_account_service().get_all(
+		filter={"@type": "User"}, properties=["id", "name", "emailAddress"]
+	)
+	rows = [{"id": a["id"], "name": a.get("name"), "email": a.get("emailAddress")} for a in accounts]
+	return _search(rows, search, ("name", "email"))
+
+
+# ---------------------------------------------------------------------------
+# Directory: Groups
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_groups(search: str | None = None) -> list[dict]:
+	"""Returns all groups."""
+
+	check_admin_permission("view groups")
+
+	groups = get_group_service().get_all_groups(
+		properties=["id", "name", "emailAddress", "description", "createdAt"]
+	)
+	rows = [
+		{
+			"id": g["id"],
+			"name": g.get("name"),
+			"email": g.get("emailAddress"),
+			"description": g.get("description"),
+			"created_at": g.get("createdAt"),
+		}
+		for g in groups
+	]
+	return _search(rows, search, ("name", "email", "description"))
+
+
+@frappe.whitelist()
+def get_group(group_id: str) -> dict:
+	"""Returns a group with its members and assigned role ids."""
+
+	check_admin_permission("view groups")
+
+	service = get_group_service()
+	group = service.get(group_id)
+	if not group:
+		frappe.throw(_("Group not found"), frappe.DoesNotExistError)
+
+	members = service.get_members(group_id, properties=["id", "name", "emailAddress"])
+
+	return {
+		"id": group["id"],
+		"name": group.get("name"),
+		"email": group.get("emailAddress"),
+		"description": group.get("description"),
+		"created_at": group.get("createdAt"),
+		"role_ids": _keys((group.get("roles") or {}).get("roleIds")),
+		"members": [{"id": m["id"], "name": m.get("name"), "email": m.get("emailAddress")} for m in members],
+	}
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def add_group(
+	name: str,
+	domain: str,
+	description: str | None = None,
+	members: list | None = None,
+	roles: list | None = None,
+) -> str:
+	"""Creates a group and returns its id. ``members`` and ``roles`` are account/role ids."""
+
+	check_admin_permission("add groups")
+
+	member_ids = _listify(members)
+	role_ids = _listify(roles)
+
+	def _create() -> str:
+		domain_id = get_domain_service().get_by_name(domain, raise_exception=True)["id"]
+		service = get_group_service()
+		group_id = service.create(
+			Group(name=name, domain_id=domain_id, description=description, role_ids=role_ids or None)
+		)
+		if member_ids:
+			service.add_members(group_id, member_ids)
+		return group_id
+
+	return execute_with_logging(
+		func=_create,
+		title=_("Failed to add group {0}").format(name),
+		user_message=_("An error occurred while adding the group, check error logs for more details."),
+		with_context=False,
+		module="Mail",
+	)
+
+
+@frappe.whitelist()
+def update_group(
+	group_id: str,
+	name: str | None = None,
+	description: str | None = None,
+	members: list | None = None,
+	roles: list | None = None,
+) -> None:
+	"""Updates a group's name/description/members/roles."""
+
+	check_admin_permission("update groups")
+
+	service = get_group_service()
+
+	patch = {}
+	if name is not None:
+		patch["name"] = name
+	if description is not None:
+		patch["description"] = description
+	if roles is not None:
+		role_ids = _listify(roles)
+		patch["roles"] = (
+			UserRoles(type=RoleType.CUSTOM, roles=CustomRoles(role_ids=role_ids)).to_dict()
+			if role_ids
+			else {"@type": "Default"}
+		)
+
+	if patch:
+		service.update(group_id, patch)
+	if members is not None:
+		service.set_members(group_id, _listify(members))
+
+
+@frappe.whitelist()
+def delete_groups(ids: list) -> None:
+	"""Deletes the given groups."""
+
+	check_admin_permission("delete groups")
+	get_group_service().delete(_listify(ids))
+
+
+# ---------------------------------------------------------------------------
+# Directory: Mailing Lists
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_mailing_lists(search: str | None = None) -> list[dict]:
+	"""Returns all mailing lists."""
+
+	check_admin_permission("view mailing lists")
+
+	lists = get_mailing_list_service().get_all(
+		properties=["id", "name", "emailAddress", "description", "createdAt"]
+	)
+	rows = [
+		{
+			"id": ml["id"],
+			"name": ml.get("name"),
+			"email": ml.get("emailAddress"),
+			"description": ml.get("description"),
+			"created_at": ml.get("createdAt"),
+		}
+		for ml in lists
+	]
+	return _search(rows, search, ("name", "email", "description"))
+
+
+@frappe.whitelist()
+def get_mailing_list(list_id: str) -> dict:
+	"""Returns a mailing list with its recipients."""
+
+	check_admin_permission("view mailing lists")
+
+	ml = get_mailing_list_service().get(list_id)
+	if not ml:
+		frappe.throw(_("Mailing list not found"), frappe.DoesNotExistError)
+
+	recipient_ids = _keys(ml.get("recipients"))
+	accounts = {
+		a["id"]: a
+		for a in get_account_service().get_all(properties=["id", "name", "emailAddress"])
+	}
+	recipients = [
+		{"id": rid, "name": accounts.get(rid, {}).get("name"), "email": accounts.get(rid, {}).get("emailAddress")}
+		for rid in recipient_ids
+	]
+
+	return {
+		"id": ml["id"],
+		"name": ml.get("name"),
+		"email": ml.get("emailAddress"),
+		"description": ml.get("description"),
+		"created_at": ml.get("createdAt"),
+		"recipients": recipients,
+	}
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def add_mailing_list(
+	name: str, domain: str, recipients: list | None = None, description: str | None = None
+) -> str:
+	"""Creates a mailing list and returns its id."""
+
+	check_admin_permission("add mailing lists")
+
+	recipient_list = _listify(recipients)
+
+	def _create() -> str:
+		domain_id = get_domain_service().get_by_name(domain, raise_exception=True)["id"]
+		return get_mailing_list_service().create(
+			MailingList(
+				name=name, domain_id=domain_id, recipients=recipient_list or None, description=description
+			)
+		)
+
+	return execute_with_logging(
+		func=_create,
+		title=_("Failed to add mailing list {0}").format(name),
+		user_message=_("An error occurred while adding the mailing list, check error logs for more details."),
+		with_context=False,
+		module="Mail",
+	)
+
+
+@frappe.whitelist()
+def update_mailing_list(
+	list_id: str,
+	name: str | None = None,
+	description: str | None = None,
+	recipients: list | None = None,
+) -> None:
+	"""Updates a mailing list's name/description/recipients."""
+
+	check_admin_permission("update mailing lists")
+
+	patch = {}
+	if name is not None:
+		patch["name"] = name
+	if description is not None:
+		patch["description"] = description
+	if recipients is not None:
+		patch["recipients"] = {account_id: True for account_id in _listify(recipients)}
+
+	if patch:
+		get_mailing_list_service().update(list_id, patch)
+
+
+@frappe.whitelist()
+def delete_mailing_lists(ids: list) -> None:
+	"""Deletes the given mailing lists."""
+
+	check_admin_permission("delete mailing lists")
+	get_mailing_list_service().delete(_listify(ids))
+
+
+# ---------------------------------------------------------------------------
+# Directory: Roles
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_roles_list(search: str | None = None) -> list[dict]:
+	"""Returns all roles with permission counts."""
+
+	check_admin_permission("view roles")
+
+	roles = get_role_service().get_all()
+	rows = [
+		{
+			"id": r["id"],
+			"description": r.get("description"),
+			"enabled_count": len(_keys(r.get("enabledPermissions"))),
+			"disabled_count": len(_keys(r.get("disabledPermissions"))),
+		}
+		for r in roles
+	]
+	return _search(rows, search, ("description",))
+
+
+@frappe.whitelist()
+def get_role(role_id: str) -> dict:
+	"""Returns a role with its permissions and inherited role ids."""
+
+	check_admin_permission("view roles")
+
+	role = get_role_service().get(role_id)
+	if not role:
+		frappe.throw(_("Role not found"), frappe.DoesNotExistError)
+
+	return {
+		"id": role["id"],
+		"description": role.get("description"),
+		"enabled_permissions": _keys(role.get("enabledPermissions")),
+		"disabled_permissions": _keys(role.get("disabledPermissions")),
+		"role_ids": _keys(role.get("roleIds")),
+	}
+
+
+@frappe.whitelist()
+def get_permissions() -> list[str]:
+	"""Returns the assignable permission keys for the role editor."""
+
+	check_admin_permission("view roles")
+	return get_role_service().get_permissions()
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def add_role(
+	description: str,
+	enabled_permissions: list | None = None,
+	disabled_permissions: list | None = None,
+	role_ids: list | None = None,
+) -> str:
+	"""Creates a role and returns its id."""
+
+	check_admin_permission("add roles")
+
+	def _create() -> str:
+		return get_role_service().create(
+			Role(
+				description=description,
+				enabled_permissions=_listify(enabled_permissions),
+				disabled_permissions=_listify(disabled_permissions),
+				role_ids=_listify(role_ids),
+			)
+		)
+
+	return execute_with_logging(
+		func=_create,
+		title=_("Failed to add role {0}").format(description),
+		user_message=_("An error occurred while adding the role, check error logs for more details."),
+		with_context=False,
+		module="Mail",
+	)
+
+
+@frappe.whitelist()
+def update_role(
+	role_id: str,
+	description: str | None = None,
+	enabled_permissions: list | None = None,
+	disabled_permissions: list | None = None,
+	role_ids: list | None = None,
+) -> None:
+	"""Updates a role's description/permissions/inherited roles."""
+
+	check_admin_permission("update roles")
+
+	patch = {}
+	if description is not None:
+		patch["description"] = description
+	if enabled_permissions is not None:
+		patch["enabledPermissions"] = {p: True for p in _listify(enabled_permissions)}
+	if disabled_permissions is not None:
+		patch["disabledPermissions"] = {p: True for p in _listify(disabled_permissions)}
+	if role_ids is not None:
+		patch["roleIds"] = {rid: True for rid in _listify(role_ids)}
+
+	if patch:
+		get_role_service().update(role_id, patch)
+
+
+@frappe.whitelist()
+def delete_roles(ids: list) -> None:
+	"""Deletes the given roles."""
+
+	check_admin_permission("delete roles")
+	get_role_service().delete(_listify(ids))
+
+
+# ---------------------------------------------------------------------------
+# Directory: OAuth Clients
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_oauth_clients(search: str | None = None) -> list[dict]:
+	"""Returns all OAuth clients."""
+
+	check_admin_permission("view oauth clients")
+
+	clients = get_oauth_client_service().get_all(
+		properties=["id", "clientId", "description", "createdAt"]
+	)
+	rows = [
+		{
+			"id": c["id"],
+			"client_id": c.get("clientId"),
+			"description": c.get("description"),
+			"created_at": c.get("createdAt"),
+		}
+		for c in clients
+	]
+	return _search(rows, search, ("client_id", "description"))
+
+
+@frappe.whitelist()
+def get_oauth_client(client_id: str) -> dict:
+	"""Returns an OAuth client with its redirect URIs and contacts."""
+
+	check_admin_permission("view oauth clients")
+
+	client = get_oauth_client_service().get(client_id)
+	if not client:
+		frappe.throw(_("OAuth client not found"), frappe.DoesNotExistError)
+
+	return {
+		"id": client["id"],
+		"client_id": client.get("clientId"),
+		"description": client.get("description"),
+		"created_at": client.get("createdAt"),
+		"expires_at": client.get("expiresAt"),
+		"redirect_uris": _keys(client.get("redirectUris")),
+		"contacts": _keys(client.get("contacts")),
+	}
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def add_oauth_client(
+	client_id: str,
+	description: str | None = None,
+	redirect_uris: list | None = None,
+	contacts: list | None = None,
+	expires_at: str | None = None,
+) -> str:
+	"""Creates an OAuth client and returns its id."""
+
+	check_admin_permission("add oauth clients")
+
+	uris = _listify(redirect_uris)
+	contact_list = _listify(contacts)
+
+	def _create() -> str:
+		return get_oauth_client_service().create(
+			OAuthClient(
+				client_id=client_id,
+				description=description,
+				redirect_uris=uris or None,
+				contacts=contact_list or None,
+				expires_at=expires_at or None,
+			)
+		)
+
+	return execute_with_logging(
+		func=_create,
+		title=_("Failed to add OAuth client {0}").format(client_id),
+		user_message=_("An error occurred while adding the OAuth client, check error logs for more details."),
+		with_context=False,
+		module="Mail",
+	)
+
+
+@frappe.whitelist()
+def update_oauth_client(
+	oauth_client_id: str,
+	description: str | None = None,
+	redirect_uris: list | None = None,
+	contacts: list | None = None,
+) -> None:
+	"""Updates an OAuth client's description/redirect URIs/contacts."""
+
+	check_admin_permission("update oauth clients")
+
+	patch = {}
+	if description is not None:
+		patch["description"] = description
+	if redirect_uris is not None:
+		patch["redirectUris"] = {uri: True for uri in _listify(redirect_uris)}
+	if contacts is not None:
+		patch["contacts"] = {contact: True for contact in _listify(contacts)}
+
+	if patch:
+		get_oauth_client_service().update(oauth_client_id, patch)
+
+
+@frappe.whitelist()
+def delete_oauth_clients(ids: list) -> None:
+	"""Deletes the given OAuth clients."""
+
+	check_admin_permission("delete oauth clients")
+	get_oauth_client_service().delete(_listify(ids))
+
+
+# ---------------------------------------------------------------------------
+# Domains: DKIM Signatures
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_dkim_signatures(domain_id: str | None = None) -> list[dict]:
+	"""Returns DKIM signatures, optionally scoped to a single domain."""
+
+	check_admin_permission("view dkim signatures")
+
+	service = get_dkim_signature_service()
+	signatures = (
+		service.get_all_by_domain(domain_id) if domain_id else service.get_all()
+	)
+
+	domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
+	return [
+		{
+			"id": s["id"],
+			"selector": s.get("selector"),
+			"domain": domain_names.get(s.get("domainId")),
+			"domain_id": s.get("domainId"),
+			"stage": s.get("stage"),
+		}
+		for s in signatures
+	]
+
+
+@frappe.whitelist()
+def delete_dkim_signatures(ids: list) -> None:
+	"""Deletes the given DKIM signatures."""
+
+	check_admin_permission("delete dkim signatures")
+	get_dkim_signature_service().delete(_listify(ids))

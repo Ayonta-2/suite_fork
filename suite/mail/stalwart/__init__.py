@@ -17,7 +17,7 @@ from suite.mail.stalwart.account import (
 )
 from suite.mail.stalwart.app_password import AppPassword, AppPasswordService
 from suite.mail.stalwart.connection import get_account_management_connection, get_management_connection
-from suite.mail.stalwart.domain import Domain, DomainService
+from suite.mail.stalwart.domain import DkimSignatureService, Domain, DomainService
 from suite.mail.stalwart.group import Group, GroupService
 from suite.mail.stalwart.mailing_list import MailingList, MailingListService
 from suite.mail.stalwart.oauth import OAuthClient, OAuthClientService
@@ -63,6 +63,12 @@ def get_domain_service() -> DomainService:
 	"""Returns a DomainService bound to the admin management connection."""
 
 	return DomainService(get_management_connection())
+
+
+def get_dkim_signature_service() -> DkimSignatureService:
+	"""Returns a DkimSignatureService bound to the admin management connection."""
+
+	return DkimSignatureService(get_management_connection())
 
 
 def get_role_service() -> RoleService:
