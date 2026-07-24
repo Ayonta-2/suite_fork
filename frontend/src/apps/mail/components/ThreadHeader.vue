@@ -1,14 +1,14 @@
 <template>
 	<!-- px-3.5 matches the body/subject axis; the max-sm negative margins cancel the
 	     ghost buttons' own padding so the edge glyphs land on that axis too. -->
-	<div class="bg-surface-base border-b sticky top-0 flex items-center px-3.5 py-2.5 max-sm:border-b-0">
+	<div class="bg-surface-base border-b sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:border-b-0 max-sm:py-0">
 		<Button
 			variant="ghost"
-			class="mr-2 shrink-0 max-sm:-ml-2"
+			class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8"
 			@click="$router.push({ name: 'mail-mailbox', params: { mailbox }, query: route.query })"
 		>
 			<template #icon>
-				<ChevronLeft class="icon" />
+				<ChevronLeft class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
 			</template>
 		</Button>
 		<template v-if="thread?.length">
@@ -17,50 +17,54 @@
 					{{ thread?.[0]?.subject || __('[No subject]') }}
 				</h2>
 			</Tooltip>
-			<div class="ml-auto shrink-0 space-x-2 max-sm:-mr-2">
-				<!-- Mobile always shows the actions inline — no "more" collapse. -->
-				<Dropdown v-if="user.data?.show_reading_pane && !isMobile" :options="threadActions">
+			<div class="ml-auto shrink-0 space-x-2 max-sm:-mr-2 max-sm:space-x-2">
+				<AdaptiveDropdown
+					v-if="user.data?.show_reading_pane && !isMobile"
+					:options="threadActions"
+					:title="__('Actions')"
+				>
 					<Button variant="ghost" :tooltip="__('Actions')">
 						<template #icon>
 							<Ellipsis class="icon" />
 						</template>
 					</Button>
-				</Dropdown>
+				</AdaptiveDropdown>
 				<template v-else>
 					<Button
 						v-for="action in threadActions.filter((a) => a.condition())"
 						:key="action.label"
 						:tooltip="action.label"
 						variant="ghost"
+						class="max-sm:!h-8 max-sm:!w-8"
 						@click="action.onClick"
 					>
 						<template #icon>
-							<component :is="action.icon" class="icon" />
+							<component :is="action.icon" class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
 						</template>
 					</Button>
 				</template>
 
-				<Dropdown :options="moveToOptions">
-					<Button variant="ghost" :tooltip="__('Move To')">
+				<AdaptiveDropdown :options="moveToOptions" :title="__('Move To')">
+					<Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Move To')">
 						<template #icon>
-							<FolderInput class="icon" />
+							<FolderInput class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
 						</template>
 					</Button>
-				</Dropdown>
-				<Dropdown v-if="showAddTo" :options="addToOptions">
-					<Button variant="ghost" :tooltip="__('Add To')">
+				</AdaptiveDropdown>
+				<AdaptiveDropdown v-if="showAddTo" :options="addToOptions" :title="__('Add To')">
+					<Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Add To')">
 						<template #icon>
-							<FolderPlus class="icon" />
+							<FolderPlus class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
 						</template>
 					</Button>
-				</Dropdown>
-				<Dropdown v-if="canRemoveFrom" :options="removeFromOptions">
-					<Button variant="ghost" :tooltip="__('Remove From')">
+				</AdaptiveDropdown>
+				<AdaptiveDropdown v-if="canRemoveFrom" :options="removeFromOptions" :title="__('Remove From')">
+					<Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Remove From')">
 						<template #icon>
-							<FolderMinus class="icon" />
+							<FolderMinus class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
 						</template>
 					</Button>
-				</Dropdown>
+				</AdaptiveDropdown>
 
 				<!-- Prev/next thread arrows are a desktop affordance (↑/K, ↓/J). -->
 				<template v-if="threads.includes(threadID) && !isMobile">
@@ -113,6 +117,7 @@ import {
 import { Button, Dropdown, Tooltip } from 'frappe-ui'
 
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
+import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
@@ -168,7 +173,7 @@ const canRemoveFrom = computed(() =>
 
 const threadActions = computed((): Action[] => [
 	{
-		label: __('Star Thread'),
+		label: __('Star'),
 		onClick: () =>
 			emit(
 				'setFlagged',
@@ -179,7 +184,7 @@ const threadActions = computed((): Action[] => [
 		condition: () => thread.some((m) => !m.flagged),
 	},
 	{
-		label: __('Unstar Thread'),
+		label: __('Unstar'),
 		onClick: () =>
 			emit(
 				'setFlagged',
@@ -190,7 +195,7 @@ const threadActions = computed((): Action[] => [
 		condition: () => thread.every((m) => m.flagged),
 	},
 	{
-		label: __('Archive Thread (E)'),
+		label: __('Archive (E)'),
 		onClick: () =>
 			emit(
 				mailbox.value === mailboxIds.sent ? 'addThreadToMailbox' : 'moveThread',

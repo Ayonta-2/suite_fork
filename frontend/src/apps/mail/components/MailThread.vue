@@ -17,12 +17,14 @@
 			@prev-thread="emit('prevThread')"
 			@next-thread="emit('nextThread')"
 		/>
+		<!-- Mobile: the subject is part of the fixed chrome — scrolling starts below it,
+		     and its border is the separator content passes under. -->
+		<div v-if="isMobile && thread?.length" class="shrink-0 border-b px-3.5 pb-3.5 pt-1.5">
+			<h2 class="text-xl-semibold leading-5">
+				{{ thread[0].subject || __('[No subject]') }}
+			</h2>
+		</div>
 		<div ref="threadContainer" class="flex-1 overflow-y-auto">
-			<div v-if="isMobile && thread?.length" class="border-b px-3.5 pb-3.5 pt-1.5">
-				<h2 class="text-xl-semibold leading-5">
-					{{ thread[0].subject || __('[No subject]') }}
-				</h2>
-			</div>
 
 			<div
 				class="sm:space-y-4 sm:px-5 sm:py-6"
