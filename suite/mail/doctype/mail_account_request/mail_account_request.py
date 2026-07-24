@@ -20,7 +20,7 @@ from frappe.utils import (
 
 from suite.mail.stalwart import create_account, create_app_password, get_roles
 from suite.mail.utils import get_config, is_stalwart_configured
-from suite.mail.utils.validation import is_subaddressed_email, is_valid_email_for_domain
+from suite.mail.utils.validation import is_subaddressed_email
 from suite.utils import execute_with_logging
 from suite.utils.user import is_suite_admin, is_system_manager
 
@@ -29,6 +29,27 @@ STALWART_DEFAULT_ADMIN_ROLES = ["User", "Tenant Administrator"]
 
 
 class MailAccountRequest(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		account: DF.Data
+		aliases: DF.SmallText | None
+		backup_email: DF.Data
+		expires_at: DF.Datetime | None
+		invited_by: DF.Link
+		ip_address: DF.Data | None
+		is_admin: DF.Check
+		is_verified: DF.Check
+		request_key: DF.Data | None
+		roles: DF.SmallText | None
+		send_invite: DF.Check
+	# end: auto-generated types
+
 	def autoname(self) -> None:
 		self.name = str(uuid7())
 
@@ -53,6 +74,21 @@ class MailAccountRequest(Document):
 
 		return list(set(roles))
 
+	@property
+	def domain(self) -> str:
+		"""Returns the domain of the primary account."""
+
+		return self.account.split("@", 1)[1] if self.account and "@" in self.account else ""
+
+	@property
+	def _aliases(self) -> list[str]:
+		"""Returns the additional email addresses to attach as aliases to the account."""
+
+		if not self.aliases:
+			return []
+
+		return [alias.strip() for alias in self.aliases.split("\n") if alias.strip()]
+
 	def before_insert(self) -> None:
 		is_stalwart_configured(raise_exception=True)
 		self.validate_backup_email()
@@ -60,8 +96,8 @@ class MailAccountRequest(Document):
 		self.set_expires_at()
 		self.set_ip_address()
 		self.validate_invited_by()
-		self.validate_domain()
 		self.validate_account()
+		self.validate_aliases()
 		self.validate_roles()
 
 	def after_insert(self) -> None:
@@ -103,30 +139,48 @@ class MailAccountRequest(Document):
 		else:
 			self.invited_by = user
 
-	def validate_domain(self) -> None:
-		"""Validates the domain."""
-
-		if not self.domain_name:
-			frappe.throw(_("Domain is mandatory."))
-
-		self.domain_name = self.domain_name.strip().lower()
-
 	def validate_account(self) -> None:
-		"""Validates the account."""
+		"""Validates the primary account email."""
 
 		self.account = self.account.strip().lower()
 		validate_email_address(self.account, throw=True)
 		is_subaddressed_email(self.account, raise_exception=True)
 
-		if not is_valid_email_for_domain(self.account, self.domain_name):
-			frappe.throw(
-				_("Account domain {0} does not match with domain {1}.").format(
-					frappe.bold(self.account.split("@")[1]), frappe.bold(self.domain_name)
-				)
-			)
-
 		if frappe.db.exists("User", {"email": self.account}):
 			frappe.throw(_("User with email {0} already exists.").format(frappe.bold(self.account)))
+
+	def validate_aliases(self) -> None:
+		"""Validates the additional email aliases and normalizes them.
+
+		Each alias must be a valid, non-subaddressed email on a domain that exists on the server.
+		Blanks, duplicates and any alias equal to the primary account are dropped.
+		"""
+
+		if not self.aliases:
+			return
+
+		from suite.mail.stalwart import get_domains
+
+		server_domains = {domain["name"] for domain in get_domains()}
+
+		seen = set()
+		cleaned = []
+		for alias in self.aliases.split("\n"):
+			alias = alias.strip().lower()
+			if not alias or alias == self.account or alias in seen:
+				continue
+
+			validate_email_address(alias, throw=True)
+			is_subaddressed_email(alias, raise_exception=True)
+
+			domain = alias.split("@", 1)[1]
+			if domain not in server_domains:
+				frappe.throw(_("Alias domain {0} does not exist on the server.").format(frappe.bold(domain)))
+
+			seen.add(alias)
+			cleaned.append(alias)
+
+		self.aliases = "\n".join(cleaned)
 
 	def validate_roles(self) -> None:
 		"""Validates the roles."""
@@ -198,17 +252,16 @@ class MailAccountRequest(Document):
 		self.validate_expired()
 
 		is_stalwart_configured(raise_exception=True)
-		self.validate_domain()
 		self.validate_account()
 
 		# Step - 1: Create Account on Stalwart
 		execute_with_logging(
 			func=lambda: create_account(
 				name=self.account.split("@")[0],
-				domain=self.domain_name,
+				domain=self.domain,
 				password=password,
 				description=f"{first_name} {last_name}" if last_name else first_name,
-				aliases=[],
+				aliases=self._aliases,
 				groups=[],
 				roles=self._roles,
 				quota=cint(get_config("default_disk_quota_gb")) * 1024**3,

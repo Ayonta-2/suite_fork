@@ -11,11 +11,11 @@
   "user_details_section",
   "backup_email",
   "roles",
+  "is_admin",
   "column_break_hswp",
   "invited_by",
-  "domain_name",
   "account",
-  "is_admin",
+  "aliases",
   "verification_details_section",
   "send_invite",
   "is_verified",
@@ -30,6 +30,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "Secret token embedded in the verification link, used to look up and verify this request.",
    "fieldname": "request_key",
    "fieldtype": "Data",
    "in_standard_filter": 1,
@@ -39,6 +40,7 @@
    "unique": 1
   },
   {
+   "description": "Alternate email the invite/verification link is sent to; also saved on the created account's settings.",
    "fieldname": "backup_email",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -51,6 +53,7 @@
    "set_only_once": 1
   },
   {
+   "description": "The Suite Admin or System Manager who created this request.",
    "fieldname": "invited_by",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -66,6 +69,7 @@
   {
    "default": "0",
    "depends_on": "eval: !doc.__islocal",
+   "description": "Whether the backup email has been verified via the invite link or OTP.",
    "fieldname": "is_verified",
    "fieldtype": "Check",
    "label": "Is Verified",
@@ -80,6 +84,7 @@
   {
    "default": "0",
    "depends_on": "eval: !doc.__islocal",
+   "description": "Whether the request has passed its expiry time. Computed at read time.",
    "fieldname": "is_expired",
    "fieldtype": "Check",
    "is_virtual": 1,
@@ -92,6 +97,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "description": "Primary email address; becomes the Frappe User and the Stalwart account's primary address.",
    "fieldname": "account",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -104,12 +110,11 @@
    "set_only_once": 1
   },
   {
-   "fieldname": "domain_name",
-   "fieldtype": "Data",
-   "in_standard_filter": 1,
-   "label": "Domain",
-   "reqd": 1,
-   "search_index": 1,
+   "description": "Additional email addresses (one per line) added as aliases to the account.",
+   "fieldname": "aliases",
+   "fieldtype": "Small Text",
+   "label": "Aliases",
+   "no_copy": 1,
    "set_only_once": 1
   },
   {
@@ -124,12 +129,14 @@
   },
   {
    "default": "1",
+   "description": "If enabled, emails a verification link to the backup email; otherwise the account is created immediately.",
    "fieldname": "send_invite",
    "fieldtype": "Check",
    "label": "Send Invite",
    "set_only_once": 1
   },
   {
+   "description": "IP address the request was created from.",
    "fieldname": "ip_address",
    "fieldtype": "Data",
    "label": "IP Address",
@@ -142,6 +149,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "When this request stops being valid and can no longer create an account.",
    "fieldname": "expires_at",
    "fieldtype": "Datetime",
    "label": "Expires At",
@@ -153,6 +161,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "Stalwart roles (one per line) assigned to the account on creation; defaults are chosen by the admin flag.",
    "fieldname": "roles",
    "fieldtype": "Small Text",
    "label": "Roles",
@@ -161,17 +170,19 @@
   },
   {
    "default": "0",
+   "description": "If enabled, the created user gets the Suite Admin role and admin Stalwart roles.",
    "fieldname": "is_admin",
    "fieldtype": "Check",
    "label": "Is Admin",
    "no_copy": 1,
-   "search_index": 1
+   "search_index": 1,
+   "set_only_once": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-21 00:00:00.000000",
+ "modified": "2026-07-24 20:37:34.829154",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Account Request",

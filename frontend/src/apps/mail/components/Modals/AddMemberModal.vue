@@ -14,26 +14,48 @@
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<div class="flex items-center justify-between">
-					<FormControl
-						v-model="accountRequest.username"
-						:label="__('Username')"
-						placeholder="johndoe"
-						class="w-full"
-					/>
-					<FeatherIcon
-						class="text-ink-gray-3 mx-2.5 mb-1.5 mt-auto h-4 w-4"
-						name="at-sign"
-					/>
-					<FormControl
-						v-model="accountRequest.domain"
-						type="combobox"
-						:label="__('Domain')"
-						placeholder="yourdomain.com"
-						class="w-full"
-						:options="domains.data"
-						:open-on-click="true"
-					/>
+				<div class="space-y-3">
+					<div v-for="(email, index) in emails" :key="index" class="space-y-1.5">
+						<div class="flex items-center justify-between">
+							<label class="text-ink-gray-5 block text-xs">
+								{{ index === 0 ? __('Primary Email') : __('Alias') }}
+							</label>
+							<Button
+								v-if="index > 0"
+								variant="ghost"
+								theme="red"
+								size="sm"
+								:label="__('Remove')"
+								@click="emails.splice(index, 1)"
+							/>
+						</div>
+						<div class="flex items-center justify-between">
+							<FormControl
+								v-model="email.username"
+								placeholder="johndoe"
+								class="w-full"
+							/>
+							<FeatherIcon class="text-ink-gray-3 mx-2.5 h-4 w-4" name="at-sign" />
+							<FormControl
+								v-model="email.domain"
+								type="combobox"
+								placeholder="yourdomain.com"
+								class="w-full"
+								:options="domains.data"
+								:open-on-click="true"
+							/>
+						</div>
+					</div>
+					<Button
+						variant="ghost"
+						size="sm"
+						:label="__('Add another email')"
+						@click="emails.push({ username: '', domain: emails[0]?.domain || '' })"
+					>
+						<template #prefix>
+							<FeatherIcon name="plus" class="h-4 w-4" />
+						</template>
+					</Button>
 				</div>
 				<FormControl
 					v-model="accountRequest.role"
@@ -85,8 +107,16 @@
 </template>
 
 <script setup lang="ts">
-import { inject, reactive, watch } from 'vue'
-import { Dialog, ErrorMessage, FeatherIcon, FormControl, Switch, createResource } from 'frappe-ui'
+import { inject, reactive, ref, watch } from 'vue'
+import {
+	Button,
+	Dialog,
+	ErrorMessage,
+	FeatherIcon,
+	FormControl,
+	Switch,
+	createResource,
+} from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
@@ -107,8 +137,6 @@ const ROLE_OPTIONS = [
 ]
 
 const defaultAccountRequest = {
-	username: '',
-	domain: '',
 	role: 'user',
 	send_invite: true,
 	expires_at: dayjs?.().add(1, 'day').format('YYYY-MM-DDTHH:mm') || '',
@@ -119,6 +147,7 @@ const defaultAccountRequest = {
 }
 
 const accountRequest = reactive({ ...defaultAccountRequest })
+const emails = ref<{ username: string; domain: string }[]>([{ username: '', domain: '' }])
 
 const emit = defineEmits(['reload'])
 
@@ -129,16 +158,27 @@ watch(
 watch(show, () => {
 	if (show.value) {
 		Object.assign(accountRequest, defaultAccountRequest)
+		emails.value = [{ username: '', domain: '' }]
 		addMember.reset()
 	}
 })
 
 const addMember = createResource({
 	url: 'suite.mail.api.admin.add_member',
-	makeParams: () => ({
-		...accountRequest,
-		is_admin: accountRequest.role === 'admin',
-	}),
+	makeParams: () => {
+		const [primary, ...rest] = emails.value
+		const aliases = rest
+			.filter((e) => e.username && e.domain)
+			.map((e) => `${e.username}@${e.domain}`)
+
+		return {
+			...accountRequest,
+			username: primary?.username || '',
+			domain: primary?.domain || '',
+			aliases,
+			is_admin: accountRequest.role === 'admin',
+		}
+	},
 	onSuccess: () => {
 		raiseToast(accountRequest.send_invite ? __('Member invited.') : __('Member added.'))
 		emit('reload')

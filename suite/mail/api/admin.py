@@ -268,12 +268,17 @@ def add_member(
 	last_name: str | None = None,
 	password: str | None = None,
 	expires_at: str | None = None,
+	aliases: list | None = None,
 ) -> None:
-	"""Create a new Mail Account Request for adding a member"""
+	"""Create a new Mail Account Request for adding a member.
+
+	``username``/``domain`` are the primary address (becomes the User); ``aliases`` are additional
+	full email addresses attached as aliases to the same account.
+	"""
 
 	account_request = frappe.new_doc("Mail Account Request")
-	account_request.domain_name = domain
 	account_request.account = f"{username}@{domain}"
+	account_request.aliases = "\n".join(_listify(aliases))
 	account_request.is_admin = cint(is_admin)
 	account_request.invited_by = frappe.session.user
 	account_request.backup_email = backup_email
