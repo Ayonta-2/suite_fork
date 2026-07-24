@@ -22,6 +22,14 @@
         "!playwright.config.ts"
       ]
     },
+    "suite/e2e": {
+      "project": [
+        "fixtures/**/*.ts",
+        "helpers/**/*.ts",
+        "specs/**/*.ts",
+        "!playwright.config.ts"
+      ]
+    },
     "suite/meet/sfu-server": {
       "entry": ["src/server.ts", "src/**/*.test.ts"],
       "project": ["src/**/*.ts", "!src/server.ts", "!src/**/*.test.ts"],

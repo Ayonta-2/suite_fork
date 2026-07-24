@@ -1,37 +1,113 @@
 # Copyright (c) 2022, Frappe Technologies Pvt. Ltd. and Contributors
 # MIT License. See license.txt
 
+import re
+
 import frappe
+from frappe.tests.utils import whitelist_for_tests
+
+DEFAULT_PASSWORD = "DriveWriterE2E!2026"
+USER_COUNT = 2
+RUN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 
 
-def whitelist(fn):
-    if not frappe.conf.enable_ui_tests:
-        frappe.throw("Cannot run UI tests. Set 'enable_ui_tests' in site_config.json to continue.")
+def _user_emails(run_id: str) -> list[str]:
+	run_id = (run_id or "").strip().lower()
+	if not RUN_ID_PATTERN.fullmatch(run_id):
+		frappe.throw("run_id must contain 1-40 lowercase letters, numbers, or hyphens")
+	return [f"drive-writer-e2e-{run_id}-{number}@example.test" for number in range(1, USER_COUNT + 1)]
 
-    whitelisted = frappe.whitelist(allow_guest=True)(fn)
-    return whitelisted
+
+def _user_result(email: str, password: str | None = None) -> dict:
+	team = frappe.db.get_value("Drive Team", {"owner": email, "personal": 1}, "name")
+	result = {
+		"email": email,
+		"user": email,
+		"drive_settings": frappe.db.get_value("Drive Settings", {"user": email}, "name"),
+		"personal_team": team,
+	}
+	if password is not None:
+		result["password"] = password
+	return result
 
 
-@whitelist
-def clear_data():
-    doctypes = frappe.get_all("DocType", filters={"module": "Drive", "issingle": 0}, pluck="name")
-    for doctype in doctypes:
-        frappe.db.delete(doctype)
+def _delete_user_drive_data(email: str) -> None:
+	teams = frappe.get_all("Drive Team", filters={"owner": email, "personal": 1}, pluck="name")
+	files = frappe.get_all("File", filters={"team": ["in", teams]}, pluck="name") if teams else []
 
-    frappe.set_user("Administrator")
-    admin = frappe.get_doc("User", "Administrator")
-    admin.add_roles("Suite Admin")
+	if files:
+		writer_documents = frappe.get_all(
+			"File",
+			filters={"name": ["in", files], "content_doctype": "Writer Document"},
+			pluck="content_docname",
+		)
+		for document in set(filter(None, writer_documents)):
+			frappe.db.delete("Writer Version", {"doc": document})
+			frappe.db.delete("Writer Document", {"name": document})
 
-    if not frappe.db.exists("User", "four@test.io"):
-        user = frappe.get_doc(
-            doctype="User",
-            email="four@test.io",
-            first_name="Four",
-            last_name="McTest",
-            send_welcome_email=0,
-        )
-        user.insert()
+		for doctype, field in (
+			("Drive Permission", "entity"),
+			("Drive Favourite", "entity"),
+			("Drive Entity Log", "entity_name"),
+			("Drive Entity Activity Log", "entity"),
+			("Drive Token", "entity"),
+		):
+			frappe.db.delete(doctype, {field: ["in", files]})
 
-    keep_users = ["Administrator", "Guest", "four@test.io"]
-    for user in frappe.get_all("User", filters={"name": ["not in", keep_users]}):
-        frappe.delete_doc("User", user.name)
+	frappe.db.delete("Drive Permission", {"user": email})
+	frappe.db.delete("Drive Favourite", {"user": email})
+	frappe.db.delete("Drive Entity Log", {"user": email})
+	frappe.db.delete("Drive Token", {"user": email})
+	frappe.db.delete("Drive Notification", {"from_user": email})
+	frappe.db.delete("Drive Notification", {"to_user": email})
+	frappe.db.delete("Drive User Invitation", {"email": email})
+	if teams:
+		frappe.db.delete("Drive User Invitation", {"team": ["in", teams]})
+
+	for team in teams:
+		frappe.delete_doc("Drive Team", team, ignore_permissions=True)
+
+	frappe.db.delete("Drive Settings", {"user": email})
+
+
+@whitelist_for_tests(methods=["POST"])
+def provision_users(run_id: str, password: str = DEFAULT_PASSWORD) -> dict:
+	"""Create two ordinary users through the normal User insert lifecycle."""
+	emails = _user_emails(run_id)
+	if not password:
+		frappe.throw("password is required")
+
+	existing = [email for email in emails if frappe.db.exists("User", email)]
+	if existing:
+		frappe.throw(f"E2E users already exist for run_id {run_id}: {', '.join(existing)}")
+
+	for number, email in enumerate(emails, 1):
+		frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": email,
+				"first_name": f"Drive Writer E2E {number}",
+				"enabled": 1,
+				"send_welcome_email": 0,
+				"new_password": password,
+			}
+		).insert(ignore_permissions=True)
+
+	return {"run_id": run_id, "users": [_user_result(email, password) for email in emails]}
+
+
+@whitelist_for_tests(methods=["POST"])
+def cleanup_users(run_id: str) -> dict:
+	"""Delete only users and personal Drive/Writer data named by this run ID."""
+	emails = _user_emails(run_id)
+	deleted = []
+
+	for email in emails:
+		if not frappe.db.exists("User", email):
+			continue
+
+		_delete_user_drive_data(email)
+		frappe.delete_doc("User", email, ignore_permissions=True)
+		deleted.append(email)
+
+	return {"run_id": run_id, "deleted_users": deleted}

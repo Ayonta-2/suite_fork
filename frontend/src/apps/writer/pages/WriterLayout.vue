@@ -29,7 +29,7 @@ onMounted(() => {
 
 <template>
   <FrappeUIProvider>
-    <div class="flex flex-col h-screen">
+    <div data-testid="writer-app" class="flex flex-col h-screen">
       <router-view :key="$route.fullPath" v-slot="{ Component }">
         <component :is="Component" />
       </router-view>

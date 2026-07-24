@@ -8,6 +8,7 @@
       v-for="file in rows"
       :id="file.name"
       :key="file.name"
+      :data-testid="`drive-entity-${file.name}`"
       class="grid-item rounded-lg group select-none entity cursor-pointer relative h-[172px] border bg-surface-base"
       :class="[
         selections.has(file.name) || selectedRow?.name === file.name
@@ -46,6 +47,8 @@
       />
       <Button
         :variant="'subtle'"
+        :aria-label="`Actions for ${file.file_name}`"
+        :data-testid="`drive-entity-actions-${file.name}`"
         class="duration-300 absolute top-2 right-2"
         :class="[
           selections.size > 0 ? '' : '!bg-surface-gray-3 hover:shadow-lg',

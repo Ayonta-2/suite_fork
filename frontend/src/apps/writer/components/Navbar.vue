@@ -86,6 +86,8 @@
         :button="{
           variant: 'ghost',
           icon: LucideMoreHorizontal,
+          'aria-label': 'Document actions',
+          'data-testid': 'writer-document-actions',
         }"
       />
     </div>
