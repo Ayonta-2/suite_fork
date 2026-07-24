@@ -73,4 +73,52 @@ describe("ClientTelemetry", () => {
 
 		expect(sendClientTelemetry).not.toHaveBeenCalled();
 	});
+
+	it("reports bounded recovery exhaustion", () => {
+		const sendClientTelemetry = vi.fn();
+		const telemetry = new ClientTelemetry({ sendClientTelemetry }, true);
+
+		telemetry.reportRecoveryExhausted({
+			subsystem: "consumer",
+			direction: "recv",
+			reason: "retry_limit",
+		});
+
+		expect(sendClientTelemetry).toHaveBeenCalledWith({
+			event: "recovery_exhausted",
+			subsystem: "consumer",
+			direction: "recv",
+			reason: "retry_limit",
+		});
+	});
+
+	it("throttles and bounds sampled network quality", () => {
+		const sendClientTelemetry = vi.fn();
+		let now = 0;
+		const telemetry = new ClientTelemetry(
+			{ sendClientTelemetry },
+			true,
+			() => now,
+		);
+
+		telemetry.reportNetworkQuality({
+			rtt: 100,
+			packetLoss: 150,
+			availableOutgoingBitrate: Number.POSITIVE_INFINITY,
+		});
+		now = 1_000;
+		telemetry.reportNetworkQuality({
+			rtt: 200,
+			packetLoss: 5,
+			availableOutgoingBitrate: 500_000,
+		});
+
+		expect(sendClientTelemetry).toHaveBeenCalledOnce();
+		expect(sendClientTelemetry).toHaveBeenCalledWith({
+			event: "network_quality",
+			rttMs: 100,
+			packetLossPercent: 100,
+			availableOutgoingBitrate: 0,
+		});
+	});
 });

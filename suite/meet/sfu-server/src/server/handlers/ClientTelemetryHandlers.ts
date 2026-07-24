@@ -47,6 +47,22 @@ export function registerClientTelemetryHandlers(deps: HandlerDeps) {
 					);
 					break;
 				}
+				case 'recovery_exhausted':
+					deps.telemetry.clientRecoveryExhausted.inc({
+						subsystem: event.subsystem,
+						direction: event.direction,
+						reason: event.reason,
+					});
+					break;
+				case 'network_quality':
+					deps.telemetry.clientRtt.observe(event.rttMs / 1000);
+					deps.telemetry.clientPacketLoss.observe(
+						event.packetLossPercent / 100,
+					);
+					deps.telemetry.clientAvailableOutgoingBitrate.observe(
+						event.availableOutgoingBitrate,
+					);
+					break;
 			}
 		});
 	};
@@ -93,6 +109,43 @@ export function parseClientTelemetry(
 				}
 			: null;
 	}
+	if (data.event === 'recovery_exhausted') {
+		return hasOnlyKeys(data, ['event', 'subsystem', 'direction', 'reason']) &&
+			(data.subsystem === 'signaling' ||
+				data.subsystem === 'transport' ||
+				data.subsystem === 'consumer') &&
+			(data.direction === 'send' ||
+				data.direction === 'recv' ||
+				data.direction === 'both') &&
+			(data.reason === 'retry_limit' ||
+				data.reason === 'restart_failed' ||
+				data.reason === 'rebuild_failed')
+			? {
+					event: data.event,
+					subsystem: data.subsystem,
+					direction: data.direction,
+					reason: data.reason,
+				}
+			: null;
+	}
+	if (data.event === 'network_quality') {
+		return hasOnlyKeys(data, [
+			'event',
+			'rttMs',
+			'packetLossPercent',
+			'availableOutgoingBitrate',
+		]) &&
+			isBoundedNumber(data.rttMs, 60_000) &&
+			isBoundedNumber(data.packetLossPercent, 100) &&
+			isBoundedNumber(data.availableOutgoingBitrate, 100_000_000)
+			? {
+					event: data.event,
+					rttMs: data.rttMs,
+					packetLossPercent: data.packetLossPercent,
+					availableOutgoingBitrate: data.availableOutgoingBitrate,
+				}
+			: null;
+	}
 	return null;
 }
 
@@ -117,5 +170,14 @@ function isDuration(value: unknown): value is number {
 		Number.isFinite(value) &&
 		value >= 0 &&
 		value <= MAX_DURATION_MS
+	);
+}
+
+function isBoundedNumber(value: unknown, maximum: number): value is number {
+	return (
+		typeof value === 'number' &&
+		Number.isFinite(value) &&
+		value >= 0 &&
+		value <= maximum
 	);
 }

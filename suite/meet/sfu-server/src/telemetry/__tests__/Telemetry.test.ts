@@ -49,4 +49,78 @@ describe('Telemetry', () => {
 		);
 		expect(output).not.toMatch(/meetingId|participantId|socketId|transportId/);
 	});
+
+	it('exports bounded media creation outcomes', async () => {
+		const telemetry = new Telemetry();
+		telemetry.recordMediaOperation(
+			{
+				operation: 'create_producer',
+				direction: 'send',
+				media: 'video',
+				source: 'screen',
+				outcome: 'success',
+			},
+			0.1,
+		);
+
+		const output = await telemetry.registry.metrics();
+
+		expect(output).toContain(
+			'meet_sfu_media_operations_total{operation="create_producer",direction="send",media="video",source="screen",outcome="success"} 1',
+		);
+	});
+
+	it('normalizes transport state transitions', async () => {
+		const telemetry = new Telemetry();
+		telemetry.recordTransportState({
+			protocol: 'ice',
+			direction: 'recv',
+			state: 'user-controlled-state',
+		});
+
+		const output = await telemetry.registry.metrics();
+
+		expect(output).toContain(
+			'meet_sfu_transport_state_changes_total{protocol="ice",direction="recv",state="unknown"} 1',
+		);
+		expect(output).not.toContain('user-controlled-state');
+	});
+
+	it('exports aggregate worker resources and bounded media scores', async () => {
+		const telemetry = new Telemetry();
+		telemetry.mediaScore.observe({ direction: 'recv', media: 'video' }, 7);
+		telemetry.setWorkerResources({
+			userCpuSeconds: 2,
+			systemCpuSeconds: 1,
+			maxResidentMemoryBytes: 2048,
+		});
+
+		const output = await telemetry.registry.metrics();
+
+		expect(output).toContain(
+			'meet_sfu_media_score_count{direction="recv",media="video"} 1',
+		);
+		expect(output).toContain('meet_sfu_worker_cpu_seconds{mode="user"} 2');
+		expect(output).toContain('meet_sfu_worker_max_resident_memory_bytes 2048');
+	});
+
+	it('bounds E2EE event names', async () => {
+		const telemetry = new Telemetry();
+		telemetry.recordE2EEEvent('arbitrary-event', 'received');
+		telemetry.authEvents.inc({
+			stage: 'connection',
+			reason: 'invalid_token',
+			outcome: 'failure',
+		});
+
+		const output = await telemetry.registry.metrics();
+
+		expect(output).toContain(
+			'meet_sfu_e2ee_events_total{event="unknown",outcome="received"} 1',
+		);
+		expect(output).toContain(
+			'meet_sfu_auth_events_total{stage="connection",reason="invalid_token",outcome="failure"} 1',
+		);
+		expect(output).not.toContain('arbitrary-event');
+	});
 });

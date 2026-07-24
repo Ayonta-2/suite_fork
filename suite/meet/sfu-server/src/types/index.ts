@@ -258,6 +258,18 @@ export type ClientTelemetryEvent =
 			trigger: 'signaling' | 'ice' | 'stall';
 			outcome: 'success' | 'failure';
 			durationMs: number;
+	  }
+	| {
+			event: 'recovery_exhausted';
+			subsystem: 'signaling' | 'transport' | 'consumer';
+			direction: 'send' | 'recv' | 'both';
+			reason: 'retry_limit' | 'restart_failed' | 'rebuild_failed';
+	  }
+	| {
+			event: 'network_quality';
+			rttMs: number;
+			packetLossPercent: number;
+			availableOutgoingBitrate: number;
 	  };
 
 export interface SocketData {
