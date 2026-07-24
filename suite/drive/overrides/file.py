@@ -202,7 +202,7 @@ class File(FrappeFile):
 				frappe.throw("User owns parent folder", frappe.PermissionError)
 
 		if user == "$GENERAL":
-			perm_names = frappe.get_all(
+			perm_names = frappe.db.get_list(
 				"Drive Permission",
 				{"entity": self.name},
 				or_filters={"user": "", "team": 1},
