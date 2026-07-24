@@ -44,6 +44,17 @@ export const useFolderSheet = () => {
 	return { isFolderSheetOpen, openFolderSheet, closeFolderSheet }
 }
 
+// Mobile profile bottom sheet — opened from the header avatar (any view), so the
+// trigger (HeaderActions) and the mounted sheet (tab bar) stay decoupled.
+const isProfileSheetOpen = ref(false)
+
+export const useProfileSheet = () => {
+	const openProfileSheet = () => (isProfileSheetOpen.value = true)
+	const closeProfileSheet = () => (isProfileSheetOpen.value = false)
+
+	return { isProfileSheetOpen, openProfileSheet, closeProfileSheet }
+}
+
 export const useTextEditorButtons = () => {
 	const { isMobile } = useScreenSize()
 

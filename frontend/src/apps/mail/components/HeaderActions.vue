@@ -1,6 +1,7 @@
 <template>
-	<!-- On mobile the tab bar's Search tab and Compose FAB own these actions; the
-	     header keeps only the modals (still reachable via v-model from views). -->
+	<!-- On mobile the tab bar owns these actions (Search tab, Compose FAB, Profile
+	     tab); the header is CSS-hidden there but stays mounted so these modals
+	     remain reachable via v-model from views. -->
 	<div v-if="!isMobile" class="flex space-x-2">
 		<Button
 			icon="search"

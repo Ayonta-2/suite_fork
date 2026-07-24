@@ -1,6 +1,9 @@
 <template>
-	<!-- Compose FAB — floats above the bar, right thumb zone. -->
+	<!-- Compose FAB — floats above the bar, right thumb zone. Both the FAB and the
+	     bar step aside while a thread is open: the thread's own reply actions own
+	     the bottom edge there (the modals below stay mounted regardless). -->
 	<Button
+		v-if="!isThreadOpen"
 		variant="solid"
 		class="fixed right-4 z-10 !h-12 !w-12 !rounded-full shadow-lg"
 		:style="{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }"
@@ -15,12 +18,22 @@
 	<!-- Bottom tab bar — Raven-inspired: translucent bar with a hairline top border
 	     and faint upward shadow; lucide icons, tint-only active state. -->
 	<nav
+		v-if="!isThreadOpen"
 		class="bg-surface-base/80 z-10 shrink-0 border-t pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_5px_rgba(0,0,0,0.03)] backdrop-blur-lg"
 	>
 		<div class="flex h-[52px] items-stretch">
+			<!-- Tab 1 morphs into the current folder: the fixed slot position is the
+			     stable cue; icon + label say where you are. Re-tap opens the switcher. -->
 			<button :class="tabClass(mailActive)" @click="openMail">
-				<Inbox class="h-[22px] w-[22px]" stroke-width="2" />
-				<span class="text-[11px] font-medium !leading-3">{{ __('Mail') }}</span>
+				<Icon
+					v-if="currentFolder"
+					:name="currentFolder.icon"
+					class="h-[22px] w-[22px] shrink-0"
+				/>
+				<Inbox v-else class="h-[22px] w-[22px]" stroke-width="2" />
+				<span class="max-w-full truncate px-1 text-[11px] font-medium !leading-3">
+					{{ currentFolder?.label ?? __('Mail') }}
+				</span>
 			</button>
 			<button :class="tabClass(showSearchModal)" @click="showSearchModal = true">
 				<Search class="h-[22px] w-[22px]" stroke-width="2" />
@@ -37,25 +50,33 @@
 				</span>
 				<span class="text-[11px] font-medium !leading-3">{{ __('Screener') }}</span>
 			</button>
+			<button :class="tabClass(isProfileSheetOpen)" @click="openProfileSheet">
+				<Avatar :label="activeAccountName" size="md" class="shrink-0" />
+				<span class="text-[11px] font-medium !leading-3">{{ __('Profile') }}</span>
+			</button>
 		</div>
 	</nav>
 
 	<SendMail v-model="showSendModal" />
 	<SearchModal v-model="showSearchModal" />
 	<MobileFolderSheet />
+	<MobileProfileSheet />
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Eye, Inbox, Search } from 'lucide-vue-next'
-import { Button, FeatherIcon } from 'frappe-ui'
+import { Avatar, Button, FeatherIcon } from 'frappe-ui'
+import { Icon } from 'frappe-ui/icons'
 
-import { useFolderSheet } from '@/apps/mail/utils/composables'
+import { getIcon, getMailboxName } from '@/apps/mail/utils'
+import { useFolderSheet, useProfileSheet } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
 import MobileFolderSheet from '@/apps/mail/components/mobile/MobileFolderSheet.vue'
+import MobileProfileSheet from '@/apps/mail/components/mobile/MobileProfileSheet.vue'
 
 import type { MailboxData } from '@/apps/mail/types'
 
@@ -64,11 +85,26 @@ const router = useRouter()
 const store = userStore()
 const { mailboxes } = store
 const { openFolderSheet } = useFolderSheet()
+const { isProfileSheetOpen, openProfileSheet } = useProfileSheet()
+
+const activeAccountName = computed(
+	() => store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)?._name ?? '',
+)
+
+// The folder currently shown by a mail route; null elsewhere (tab falls back to "Mail").
+const currentFolder = computed(() => {
+	if (route.name === 'mail-all-inboxes') return { label: __('All Inboxes'), icon: 'mails' }
+	if (route.name !== 'mail-mailbox') return null
+	if (route.params.mailbox === 'starred') return { label: __('Starred'), icon: 'star' }
+	const mailbox = mailboxes.data?.find((m: MailboxData) => m.id === route.params.mailbox)
+	return mailbox ? { label: getMailboxName(mailbox), icon: getIcon(mailbox) } : null
+})
 
 const showSendModal = ref(false)
 const showSearchModal = ref(false)
 
 const MAIL_ROUTES = ['mail-mailbox', 'mail-all-inboxes']
+const isThreadOpen = computed(() => !!route.params.threadID)
 const mailActive = computed(() => MAIL_ROUTES.includes(route.name as string))
 const screenerActive = computed(() => route.name === 'mail-screener')
 

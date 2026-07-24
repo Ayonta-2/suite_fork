@@ -31,17 +31,25 @@
 					<span class="flex-1 truncate text-left">{{ folder.label }}</span>
 					<span v-if="folder.count" class="text-ink-gray-5 text-sm">{{ folder.count }}</span>
 				</button>
+				<!-- Folder creation lives here now that the mobile drawer is gone. -->
+				<button v-if="group.isCustom" :class="rowClass(false)" @click="createFolder">
+					<Plus class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" stroke-width="1.6" />
+					<span class="flex-1 truncate text-left">{{ __('New Folder') }}</span>
+				</button>
 			</template>
 		</div>
 	</BottomSheet>
+	<FolderModal v-model="showFolderModal" :mailbox="undefined" />
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
-import { Mails } from 'lucide-vue-next'
+import { Mails, Plus } from 'lucide-vue-next'
 import { BottomSheet } from 'frappe-ui'
 import { Icon } from 'frappe-ui/icons'
+
+import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
@@ -100,11 +108,24 @@ const groups = computed(() => {
 	return [
 		{
 			label: __('Default'),
+			isCustom: false,
 			rows: [...items.filter((m: MailboxData) => m.role).map(toRow), starredRow],
 		},
-		{ label: __('Custom'), rows: items.filter((m: MailboxData) => !m.role).map(toRow) },
-	].filter((group) => group.rows.length)
+		{
+			// Always rendered (even with no custom folders yet): it hosts New Folder.
+			label: __('Custom'),
+			isCustom: true,
+			rows: items.filter((m: MailboxData) => !m.role).map(toRow),
+		},
+	].filter((group) => group.isCustom || group.rows.length)
 })
+
+const showFolderModal = ref(false)
+
+const createFolder = () => {
+	closeFolderSheet()
+	showFolderModal.value = true
+}
 
 const go = (to: RouteLocationRaw) => {
 	closeFolderSheet()

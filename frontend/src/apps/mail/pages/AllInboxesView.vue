@@ -1,20 +1,12 @@
 <template>
 	<!-- Header -->
-	<header class="flex items-center justify-between border-b px-3 py-2.5 sm:px-5">
+	<!-- hidden on mobile: the tab bar's morphing Mail tab carries the folder name, and
+	     the header's actions live in the bar/FAB. Hidden (not v-if) so HeaderActions'
+	     modals stay mounted for the views' v-model bindings. -->
+	<header class="hidden items-center justify-between border-b px-3 py-2.5 sm:flex sm:px-5">
 		<div class="flex items-center space-x-2">
-			<Button v-if="isMobile" icon="menu" variant="ghost" @click="openSidebar" />
-			<!-- On mobile the title is the folder switcher (model 2) -->
-			<button
-				v-if="isMobile"
-				class="text-ink-gray-8 flex items-center gap-1 text-lg font-semibold"
-				@click="openFolderSheet"
-			>
-				<span class="truncate">{{ __('All Inboxes') }}</span>
-				<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" stroke-width="2" />
-			</button>
 			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
 			<Breadcrumbs
-				v-else
 				:items="[{ label: __('All Inboxes'), route: { name: 'mail-all-inboxes' } }]"
 				class="-ml-0.5"
 			/>
@@ -160,7 +152,7 @@ import {
 import { Breadcrumbs, Button, Dropdown, Tooltip, call, createResource, usePageMeta } from 'frappe-ui'
 
 import { getFormattedDate, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
-import { useFolderSheet, useScreenSize, useSidebar } from '@/apps/mail/utils/composables'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
@@ -169,8 +161,6 @@ import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import type { Thread, UserResource } from '@/apps/mail/types'
 
 const { isMobile } = useScreenSize()
-const { openSidebar } = useSidebar()
-const { openFolderSheet } = useFolderSheet()
 
 const socket = inject('$socket')
 const user = inject('$user') as UserResource
