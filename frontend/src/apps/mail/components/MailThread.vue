@@ -18,7 +18,7 @@
 			@next-thread="emit('nextThread')"
 		/>
 		<div ref="threadContainer" class="flex-1 overflow-y-auto">
-			<div v-if="isMobile && thread?.length" class="border-b px-3 py-3.5">
+			<div v-if="isMobile && thread?.length" class="border-b px-3.5 pb-3.5 pt-1.5">
 				<h2 class="text-xl-semibold leading-5">
 					{{ thread[0].subject || __('[No subject]') }}
 				</h2>
@@ -56,7 +56,7 @@
 							v-if="!collapsedMailNames.has(mail.name)"
 							:data-mail-name="mail.name"
 							:class="{
-								'px-3 py-5': isMobile,
+								'px-3.5 py-5': isMobile,
 								'max-sm:border-b':
 									(thread.length > 1 || mail.draft) &&
 									mail.name !== mailBeforeCollapsedGroup &&

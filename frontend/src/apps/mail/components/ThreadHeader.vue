@@ -1,8 +1,10 @@
 <template>
-	<div class="bg-surface-base sticky top-0 flex items-center border-b py-2.5 sm:px-3.5">
+	<!-- px-3.5 matches the body/subject axis; the max-sm negative margins cancel the
+	     ghost buttons' own padding so the edge glyphs land on that axis too. -->
+	<div class="bg-surface-base border-b sticky top-0 flex items-center px-3.5 py-2.5 max-sm:border-b-0">
 		<Button
 			variant="ghost"
-			class="mr-2 shrink-0"
+			class="mr-2 shrink-0 max-sm:-ml-2"
 			@click="$router.push({ name: 'mail-mailbox', params: { mailbox }, query: route.query })"
 		>
 			<template #icon>
@@ -15,8 +17,9 @@
 					{{ thread?.[0]?.subject || __('[No subject]') }}
 				</h2>
 			</Tooltip>
-			<div class="ml-auto shrink-0 space-x-2">
-				<Dropdown v-if="user.data?.show_reading_pane" :options="threadActions">
+			<div class="ml-auto shrink-0 space-x-2 max-sm:-mr-2">
+				<!-- Mobile always shows the actions inline — no "more" collapse. -->
+				<Dropdown v-if="user.data?.show_reading_pane && !isMobile" :options="threadActions">
 					<Button variant="ghost" :tooltip="__('Actions')">
 						<template #icon>
 							<Ellipsis class="icon" />
@@ -59,7 +62,8 @@
 					</Button>
 				</Dropdown>
 
-				<template v-if="threads.includes(threadID)">
+				<!-- Prev/next thread arrows are a desktop affordance (↑/K, ↓/J). -->
+				<template v-if="threads.includes(threadID) && !isMobile">
 					<Button
 						variant="ghost"
 						:tooltip="__('Previous Thread (↑/K)')"
