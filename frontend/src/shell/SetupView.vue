@@ -46,6 +46,12 @@
             <div v-else-if="step === 'workspace'" class="flex items-start gap-4">
               <FileUploader
                 file-types="image/*"
+                :upload-args="{
+                  private: false,
+                  doctype: 'Suite Settings',
+                  docname: 'Suite Settings',
+                  fieldname: 'workspace_logo',
+                }"
                 @success="(file) => (workspaceLogo = file.file_url)"
               >
                 <template #default="{ openFileSelector }">
