@@ -52,5 +52,5 @@ export async function openWriterDocument(page: Page, id: string): Promise<void> 
 }
 
 export function writerEditor(page: Page) {
-	return page.getByTestId("writer-editor").locator(".ProseMirror");
+	return page.getByTestId("writer-editor");
 }

@@ -50,7 +50,7 @@ def _delete_user_drive_data(email: str) -> None:
 			("Drive Favourite", "entity"),
 			("Drive Entity Log", "entity_name"),
 			("Drive Entity Activity Log", "entity"),
-			("Drive Token", "entity"),
+			("Drive Token", "file"),
 		):
 			frappe.db.delete(doctype, {field: ["in", files]})
 
@@ -70,6 +70,21 @@ def _delete_user_drive_data(email: str) -> None:
 	frappe.db.delete("Drive Settings", {"user": email})
 
 
+def _create_user_drive_data(email: str) -> None:
+	frappe.get_doc({"doctype": "Drive Settings", "user": email}).insert(ignore_permissions=True)
+	team = frappe.get_doc(
+		{
+			"doctype": "Drive Team",
+			"title": email,
+			"personal": 1,
+		}
+	).insert(ignore_permissions=True)
+	team.db_set("owner", email, update_modified=False)
+	team.set("users", [{"user": email, "access_level": 2}])
+	team.save(ignore_permissions=True)
+	frappe.db.set_value("File", {"team": team.name}, "owner", email, update_modified=False)
+
+
 @whitelist_for_tests(methods=["POST"])
 def provision_users(run_id: str, password: str = DEFAULT_PASSWORD) -> dict:
 	"""Create two ordinary users through the normal User insert lifecycle."""
@@ -82,7 +97,7 @@ def provision_users(run_id: str, password: str = DEFAULT_PASSWORD) -> dict:
 		frappe.throw(f"E2E users already exist for run_id {run_id}: {', '.join(existing)}")
 
 	for number, email in enumerate(emails, 1):
-		frappe.get_doc(
+		user = frappe.get_doc(
 			{
 				"doctype": "User",
 				"email": email,
@@ -91,7 +106,10 @@ def provision_users(run_id: str, password: str = DEFAULT_PASSWORD) -> dict:
 				"send_welcome_email": 0,
 				"new_password": password,
 			}
-		).insert(ignore_permissions=True)
+		)
+		user.flags.skip_drive_setup = True
+		user.insert(ignore_permissions=True)
+		_create_user_drive_data(email)
 
 	return {"run_id": run_id, "users": [_user_result(email, password) for email in emails]}
 

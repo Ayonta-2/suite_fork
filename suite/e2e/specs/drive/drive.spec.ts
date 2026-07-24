@@ -19,10 +19,12 @@ test.describe.serial("Drive critical paths", () => {
 		const folderName = uniqueName(run.run_id, "folder");
 		const uploadedName = uniqueName(run.run_id, "upload", ".txt");
 		const renamedName = uniqueName(run.run_id, "renamed", ".txt");
+		const uploadedLabel = uploadedName.replace(/\.txt$/, "");
+		const renamedLabel = renamedName.replace(/\.txt$/, "");
 
 		await page.goto("/drive");
 		await expect(page.getByTestId("drive-app")).toBeVisible();
-		await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible();
+		await expect(page.getByRole("link", { name: "Home", exact: true }).first()).toBeVisible();
 
 		await page.getByRole("button", { name: "Create", exact: true }).click();
 		await page.getByRole("menuitem", { name: "Folder", exact: true }).click();
@@ -44,25 +46,27 @@ test.describe.serial("Drive critical paths", () => {
 		]);
 		expect(uploadResponse.ok()).toBe(true);
 		const uploaded = await waitForDriveEntity(page.request, uploadedName);
-		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(uploadedName);
+		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(uploadedLabel);
 
 		await openEntityActions(page, uploaded.name);
 		await page.getByRole("button", { name: "Rename" }).click();
 		const renameDialog = page.getByRole("dialog", { name: "Rename" });
-		await renameDialog.getByRole("textbox").fill(renamedName.replace(/\.txt$/, ""));
+		await renameDialog.getByRole("textbox").fill(renamedLabel);
 		await renameDialog.getByRole("button", { name: "Confirm" }).click();
-		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedName);
+		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedLabel);
 
 		await openEntityActions(page, uploaded.name);
 		await page.getByRole("button", { name: "Favourite" }).click();
-		await page.getByRole("button", { name: "Favourites", exact: true }).click();
-		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedName);
+		await page.getByRole("link", { name: "Favourites", exact: true }).click();
+		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedLabel);
+		await page.getByRole("link", { name: "Home", exact: true }).first().click();
+		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedLabel);
 
 		await openEntityActions(page, uploaded.name);
 		await page.getByRole("button", { name: "Delete" }).click();
 		await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
-		await page.getByRole("button", { name: "Trash", exact: true }).click();
-		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedName);
+		await page.getByRole("link", { name: "Trash", exact: true }).click();
+		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedLabel);
 		await openEntityActions(page, uploaded.name);
 		await page.getByRole("button", { name: "Restore" }).click();
 		await page.getByRole("dialog").getByRole("button", { name: "Restore" }).click();
@@ -84,11 +88,16 @@ test.describe.serial("Drive critical paths", () => {
 		await dialog.getByRole("button", { name: "Create", exact: true }).click();
 		const folder = await waitForDriveEntity(owner.page.request, folderName);
 
-		await openEntityActions(owner.page, folder.name);
-		await owner.page.getByRole("button", { name: "Share" }).click();
+		await owner.page.getByTestId(`drive-entity-${folder.name}`).click();
+		await expect(owner.page).toHaveURL(new RegExp(`/drive/d/${folder.name}`));
+		await owner.page.getByTestId("drive-current-entity-actions").click();
+		await owner.page.getByRole("menuitem", { name: "Share" }).click();
 		const shareDialog = owner.page.getByRole("dialog", { name: new RegExp(folderName) });
-		await shareDialog.getByPlaceholder("Add people").fill(collaborator.user.email);
-		await shareDialog.getByRole("option", { name: new RegExp(collaborator.user.email) }).click();
+		const peopleInput = shareDialog.getByPlaceholder("Add people");
+		await peopleInput.fill(collaborator.user.email);
+		await peopleInput.press("ArrowDown");
+		await peopleInput.press("Enter");
+		await expect(shareDialog.getByRole("button", { name: "Invite" })).toBeVisible();
 		await Promise.all([
 			owner.page.waitForResponse(
 				(response) =>
@@ -101,7 +110,10 @@ test.describe.serial("Drive critical paths", () => {
 		await collaborator.page.goto(`/drive/d/${folder.name}`);
 		await expect(collaborator.page.getByTestId("drive-app")).toBeVisible();
 		await expect(collaborator.page.getByText(folderName, { exact: true })).toBeVisible();
-		await expect(collaborator.page.getByRole("button", { name: "Create", exact: true })).toBeHidden();
+		await collaborator.page.getByTestId("drive-current-entity-actions").click();
+		await expect(collaborator.page.getByRole("menuitem", { name: "Rename" })).toHaveCount(0);
+		await expect(collaborator.page.getByRole("menuitem", { name: "Share" })).toHaveCount(0);
+		await collaborator.page.keyboard.press("Escape");
 
 		await setDriveAccess(owner.page.request, folder.name, "");
 		await guestPage.goto(`/drive/d/${folder.name}`);

@@ -28,6 +28,8 @@
       <Dropdown v-else-if="defaultActions" :options="defaultActions" placement="right" :button="{
         variant: 'ghost',
         icon: LucideMoreHorizontal,
+        'aria-label': 'Entity actions',
+        'data-testid': 'drive-current-entity-actions',
       }" />
       <Dropdown v-if="
         ['drive-Folder', 'drive-Home', 'drive-Team'].includes($route.name) &&

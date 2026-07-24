@@ -50,9 +50,13 @@ export async function setDriveAccess(
 			},
 		},
 	);
-	await frappeData(response);
+	if (!response.ok()) {
+		throw new Error(`Updating Drive access failed: ${await response.text()}`);
+	}
 }
 
 export async function openEntityActions(page: Page, entityName: string) {
-	await page.getByTestId(`drive-entity-actions-${entityName}`).click();
+	const entity = page.getByTestId(`drive-entity-${entityName}`);
+	await expect(entity).toBeVisible();
+	await entity.click({ button: "right" });
 }
