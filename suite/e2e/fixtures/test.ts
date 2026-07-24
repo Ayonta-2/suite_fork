@@ -4,17 +4,16 @@ import {
 	type Browser,
 	type BrowserContext,
 	type Page,
-	request as playwrightRequest,
 } from "@playwright/test";
-import { loginViaApi, type Credentials } from "../helpers/auth";
-import { frappeData } from "../helpers/frappe";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { Credentials } from "../helpers/auth";
 
-const baseURL = process.env.BASE_URL ?? "http://suite.localhost:8000";
-const admin: Credentials = {
-	email: process.env.E2E_ADMIN_EMAIL ?? "Administrator",
-	password: process.env.E2E_ADMIN_PASSWORD ?? "admin",
-};
-const testPassword = process.env.E2E_USER_PASSWORD ?? "DriveWriterE2E!2026";
+const statePath = resolve(__dirname, "../.state/run.json");
+const authStatePaths = [
+	resolve(__dirname, "../.state/owner.json"),
+	resolve(__dirname, "../.state/collaborator.json"),
+];
 
 interface ProvisionedUser extends Credentials {
 	user: string;
@@ -43,54 +42,38 @@ interface WorkerFixtures {
 	run: ProvisionedRun;
 }
 
-function runId(): string {
-	const configured = process.env.E2E_RUN_ID;
-	if (configured) return configured.toLowerCase();
-	return `${Date.now().toString(36)}-${process.pid}`;
-}
-
 async function authenticatedPage(
 	browser: Browser,
 	user: ProvisionedUser,
+	storageState: string,
 ): Promise<AuthenticatedPage> {
-	const context = await browser.newContext();
-	await loginViaApi(context.request, user);
+	const context = await browser.newContext({ storageState });
 	return { context, page: await context.newPage(), user };
 }
 
 export const test = base.extend<Fixtures, WorkerFixtures>({
 	run: [
 		async ({}, use) => {
-			const api = await playwrightRequest.newContext({ baseURL });
-			await loginViaApi(api, admin);
-			const id = runId();
-			const response = await api.post(
-				"/api/method/suite.drive.e2e_api.provision_users",
-				{ form: { run_id: id, password: testPassword } },
-			);
-			const run = await frappeData<ProvisionedRun>(response);
-			try {
-				await use(run);
-			} finally {
-				const cleanup = await api.post(
-					"/api/method/suite.drive.e2e_api.cleanup_users",
-					{ form: { run_id: id } },
-				);
-				if (!cleanup.ok()) {
-					console.warn(`E2E cleanup failed: ${await cleanup.text()}`);
-				}
-				await api.dispose();
-			}
+			const run = JSON.parse(readFileSync(statePath, "utf8")) as ProvisionedRun;
+			await use(run);
 		},
 		{ scope: "worker" },
 	],
 	owner: async ({ browser, run }, use) => {
-		const authenticated = await authenticatedPage(browser, run.users[0]);
+		const authenticated = await authenticatedPage(
+			browser,
+			run.users[0],
+			authStatePaths[0],
+		);
 		await use(authenticated);
 		await authenticated.context.close();
 	},
 	collaborator: async ({ browser, run }, use) => {
-		const authenticated = await authenticatedPage(browser, run.users[1]);
+		const authenticated = await authenticatedPage(
+			browser,
+			run.users[1],
+			authStatePaths[1],
+		);
 		await use(authenticated);
 		await authenticated.context.close();
 	},
@@ -103,4 +86,3 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
 });
 
 export { expect };
-export type { AuthenticatedPage, ProvisionedRun, ProvisionedUser };

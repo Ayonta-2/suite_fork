@@ -5,10 +5,10 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
 	testDir: "./specs",
-	fullyParallel: false,
+	fullyParallel: true,
 	forbidOnly: isCI,
 	retries: isCI ? 2 : 0,
-	workers: 1,
+	workers: 2,
 	timeout: isCI ? 90_000 : 60_000,
 	expect: { timeout: 10_000 },
 	reporter: isCI
@@ -35,4 +35,5 @@ export default defineConfig({
 		},
 	],
 	globalSetup: "./global-setup.ts",
+	globalTeardown: "./global-teardown.ts",
 });
