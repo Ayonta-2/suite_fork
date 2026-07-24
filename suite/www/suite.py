@@ -48,5 +48,9 @@ def get_boot():
 			# (frappe-push-notification.ts / PWASettings.vue). Mirrors the old
 			# standalone www/mail.py boot, which the suite shell replaced.
 			"push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
+			# Setup gate, read synchronously by the router (extend_bootinfo does
+			# not reach this shell, so the flags live in its own boot).
+			"suite_setup_complete": bool(frappe.db.get_single_value("Suite Settings", "setup_complete")),
+			"suite_can_run_setup": "System Manager" in frappe.get_roles(),
 		}
 	)

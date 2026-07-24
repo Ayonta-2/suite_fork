@@ -14,6 +14,9 @@ declare global {
     sentry_dsn?: string
     sentry_environment?: string
     sentry_release?: string
+    /** First-run setup gate flags (served by www/suite.py). */
+    suite_setup_complete?: boolean
+    suite_can_run_setup?: boolean
     /** Frappe translation map (message -> translated); populated per-app. */
     translatedMessages?: Record<string, string>
     /** Global translate helper installed by the suite translation plugin. */

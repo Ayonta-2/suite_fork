@@ -86,25 +86,31 @@ const router = createRouter({
 // Apps whose real route groups have already been registered.
 const registeredApps = new Set<string>()
 
-// Cached first-time-setup state. Fetched once per page load (dev serves no Jinja
-// boot data, so this can't come from a window global); the setup toggle does a
-// full reload, which refreshes it.
-const setupCompleteResource = createResource({ url: 'suite.api.account.is_setup_complete' })
-let setupCompletePromise: Promise<boolean> | undefined
+// First-run setup state. Production reads it synchronously from window globals
+// (www/suite.py); the Vite dev server has no Jinja boot, so fall back to a fetch.
+type SetupState = { complete: boolean; canRunSetup: boolean }
 
-function ensureSetupComplete(): Promise<boolean> {
-  if (!setupCompletePromise) {
-    setupCompletePromise = setupCompleteResource
+const setupStateResource = createResource({ url: 'suite.api.account.get_setup_state' })
+let setupStatePromise: Promise<SetupState> | undefined
+
+function ensureSetupState(): SetupState | Promise<SetupState> {
+  if (typeof window.suite_setup_complete !== 'undefined') {
+    return { complete: !!window.suite_setup_complete, canRunSetup: !!window.suite_can_run_setup }
+  }
+  if (!setupStatePromise) {
+    setupStatePromise = setupStateResource
       .fetch()
-      .then(() => Boolean(setupCompleteResource.data))
+      .then(() => ({
+        complete: !!setupStateResource.data?.setup_complete,
+        canRunSetup: !!setupStateResource.data?.can_run_setup,
+      }))
       .catch(() => {
-        // Retry on the next navigation, and let this one through: a failing
-        // check must not strand every user on the setup screen.
-        setupCompletePromise = undefined
-        return true
+        // Fail open: a failing check must not strand anyone on the setup screen.
+        setupStatePromise = undefined
+        return { complete: true, canRunSetup: false }
       })
   }
-  return setupCompletePromise
+  return setupStatePromise
 }
 
 /**
@@ -153,14 +159,13 @@ router.beforeEach(async (to) => {
     return false
   }
 
-  // 3. First-time setup gate. Mirrors desk's setup-wizard redirect: until the
-  // site's setup is complete, every route funnels to /suite/setup; once it is,
-  // /suite/setup bounces back to the launcher.
-  const setupComplete = await ensureSetupComplete()
-  if (!setupComplete && to.path !== '/suite/setup') {
-    return '/suite/setup'
-  }
-  if (setupComplete && to.path === '/suite/setup') {
+  // 3. First-run setup gate. Only System Managers are sent to /suite/setup — they
+  // alone can complete it; everyone else uses the site as-is.
+  const setup = await ensureSetupState()
+  const onSetupPage = to.path === '/suite/setup'
+  if (setup.canRunSetup && !setup.complete) {
+    if (!onSetupPage) return '/suite/setup'
+  } else if (onSetupPage) {
     return '/suite'
   }
 

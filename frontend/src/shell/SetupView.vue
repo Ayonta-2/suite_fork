@@ -30,7 +30,7 @@
             <p class="text-base text-ink-gray-6">{{ current.subtitle }}</p>
           </div>
 
-          <div v-if="allowed && step !== 'done'" class="h-28">
+          <div v-if="step !== 'done'" class="h-28">
             <div v-if="step === 'welcome'" class="flex h-full items-start justify-between">
               <Tooltip v-for="(app, i) in apps" :key="app.id" :text="app.name">
                 <img
@@ -91,50 +91,48 @@
           </div>
         </div>
 
-        <template v-if="allowed">
+        <Button
+          v-if="step === 'welcome'"
+          class="w-full"
+          variant="solid"
+          label="Get started"
+          icon-right="lucide-chevron-right"
+          @click="onPrimary"
+        />
+
+        <Button
+          v-else-if="step === 'workspace'"
+          class="w-full"
+          variant="solid"
+          label="Continue"
+          icon-right="lucide-chevron-right"
+          :loading="saveWorkspace.loading"
+          @click="continueWorkspace"
+        />
+
+        <div v-else-if="step === 'invite'" class="flex items-center justify-between">
+          <Button variant="ghost" label="Skip for now" :disabled="invite.loading" @click="finish" />
           <Button
-            v-if="step === 'welcome'"
+            variant="solid"
+            label="Send Invites"
+            icon-right="lucide-chevron-right"
+            :loading="invite.loading"
+            :disabled="!hasEmails"
+            @click="sendInvites"
+          />
+        </div>
+
+        <div v-else class="mt-10 flex flex-col gap-3">
+          <Button
             class="w-full"
             variant="solid"
-            label="Get started"
+            label="Open Suite"
             icon-right="lucide-chevron-right"
-            @click="onPrimary"
+            :loading="markComplete.loading"
+            @click="openSuite"
           />
-
-          <Button
-            v-else-if="step === 'workspace'"
-            class="w-full"
-            variant="solid"
-            label="Continue"
-            icon-right="lucide-chevron-right"
-            :loading="saveWorkspace.loading"
-            @click="continueWorkspace"
-          />
-
-          <div v-else-if="step === 'invite'" class="flex items-center justify-between">
-            <Button variant="ghost" label="Skip for now" :disabled="invite.loading" @click="finish" />
-            <Button
-              variant="solid"
-              label="Send Invites"
-              icon-right="lucide-chevron-right"
-              :loading="invite.loading"
-              :disabled="!hasEmails"
-              @click="sendInvites"
-            />
-          </div>
-
-          <div v-else class="mt-10 flex flex-col gap-3">
-            <Button
-              class="w-full"
-              variant="solid"
-              label="Open Suite"
-              icon-right="lucide-chevron-right"
-              :loading="markComplete.loading"
-              @click="openSuite"
-            />
-            <ErrorMessage :message="markComplete.error" />
-          </div>
-        </template>
+          <ErrorMessage :message="markComplete.error" />
+        </div>
       </div>
     </div>
   </div>
@@ -173,16 +171,7 @@ const copy: Record<Step, { title: string; subtitle: string }> = {
   invite: { title: "Let's invite your team", subtitle: 'Add teammates and explore Suite together.' },
   done: { title: "You're all set!", subtitle: 'Your workspace is ready. Time to dive in.' },
 }
-const waiting = {
-  title: 'Setting things up',
-  subtitle: "An admin is still setting up your workspace. You'll get access once they're done.",
-}
-
-const canRunSetup = createResource({ url: 'suite.api.account.can_run_setup', auto: true })
-const allowed = computed(() => canRunSetup.fetched && canRunSetup.data === true)
-const blocked = computed(() => canRunSetup.fetched && canRunSetup.data !== true)
-
-const current = computed(() => (blocked.value ? waiting : copy[step.value]))
+const current = computed(() => copy[step.value])
 
 const displayError = computed(() => {
   if (inviteError.value) return inviteError.value

@@ -5,13 +5,12 @@ from suite.mail.utils.user import is_jmap_configured
 
 
 @frappe.whitelist()
-def is_setup_complete() -> bool:
-	return bool(frappe.db.get_single_value("Suite Settings", "setup_complete"))
-
-
-@frappe.whitelist()
-def can_run_setup() -> bool:
-	return "System Manager" in frappe.get_roles()
+def get_setup_state() -> dict[str, bool]:
+	"""Router's dev fallback; production reads these from window globals (www/suite.py)."""
+	return {
+		"setup_complete": bool(frappe.db.get_single_value("Suite Settings", "setup_complete")),
+		"can_run_setup": "System Manager" in frappe.get_roles(),
+	}
 
 
 @frappe.whitelist()
