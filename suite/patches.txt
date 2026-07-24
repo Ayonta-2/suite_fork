@@ -71,3 +71,5 @@ execute:frappe.db.set_single_value("Mail Settings", "show_mail_client_config", 1
 execute:frappe.db.set_single_value("Mail Settings", "custom_event_invites", 1)
 # --- calendar ---
 # (no patches)
+# --- suite_core ---
+suite.suite_core.patches.mark_setup_complete_for_existing_sites
