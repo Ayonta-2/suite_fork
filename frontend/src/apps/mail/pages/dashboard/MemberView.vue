@@ -159,10 +159,10 @@ const member = createResource({
 
 const data = computed(() => member.data as MemberData | undefined)
 
-const badge = computed<{ label: string; theme: 'orange' | 'blue' }>(() =>
-	data.value?.is_admin
-		? { label: __('Admin'), theme: 'orange' }
-		: { label: __('User'), theme: 'blue' },
+const badge = computed<{ label: string; theme: 'green' | 'gray' }>(() =>
+	data.value?.enabled
+		? { label: __('Enabled'), theme: 'green' }
+		: { label: __('Disabled'), theme: 'gray' },
 )
 
 const formatDate = (value?: string | null) =>
