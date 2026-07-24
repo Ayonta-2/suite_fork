@@ -118,6 +118,7 @@
               label="Send Invites"
               icon-right="lucide-chevron-right"
               :loading="invite.loading"
+              :disabled="!hasEmails"
               @click="sendInvites"
             />
           </div>
@@ -157,6 +158,14 @@ const emails = ref('')
 const inviteError = ref('')
 
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
+
+const splitEmails = (s: string) =>
+  s
+    .split(/[\n,]+/)
+    .map((e) => e.trim())
+    .filter(Boolean)
+
+const hasEmails = computed(() => splitEmails(emails.value).length > 0)
 
 const copy: Record<Step, { title: string; subtitle: string }> = {
   welcome: { title: 'Welcome to Frappe Suite', subtitle: 'Everything your team needs, all in one place.' },
@@ -223,14 +232,7 @@ function continueWorkspace() {
 
 function sendInvites() {
   inviteError.value = ''
-  const cleaned = emails.value
-    .split(/[\n,]+/)
-    .map((e) => e.trim())
-    .filter(Boolean)
-  if (!cleaned.length) {
-    finish()
-    return
-  }
+  const cleaned = splitEmails(emails.value)
   const invalid = cleaned.filter((e) => !isEmail(e))
   if (invalid.length) {
     inviteError.value =
