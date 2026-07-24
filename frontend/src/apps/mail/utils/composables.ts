@@ -33,6 +33,17 @@ export const useSidebar = () => {
 	return { isSidebarOpen, openSidebar, closeSidebar }
 }
 
+// Mobile folder bottom sheet — shared so both the header title (mailbox views)
+// and the tab bar's Mail re-tap can open the same sheet.
+const isFolderSheetOpen = ref(false)
+
+export const useFolderSheet = () => {
+	const openFolderSheet = () => (isFolderSheetOpen.value = true)
+	const closeFolderSheet = () => (isFolderSheetOpen.value = false)
+
+	return { isFolderSheetOpen, openFolderSheet, closeFolderSheet }
+}
+
 export const useTextEditorButtons = () => {
 	const { isMobile } = useScreenSize()
 

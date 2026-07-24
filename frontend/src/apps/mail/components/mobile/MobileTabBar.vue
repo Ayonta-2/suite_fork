@@ -42,6 +42,7 @@
 
 	<SendMail v-model="showSendModal" />
 	<SearchModal v-model="showSearchModal" />
+	<MobileFolderSheet />
 </template>
 
 <script setup lang="ts">
@@ -50,9 +51,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { Eye, Inbox, Search } from 'lucide-vue-next'
 import { Button, FeatherIcon } from 'frappe-ui'
 
+import { useFolderSheet } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
+import MobileFolderSheet from '@/apps/mail/components/mobile/MobileFolderSheet.vue'
 
 import type { MailboxData } from '@/apps/mail/types'
 
@@ -60,6 +63,7 @@ const route = useRoute()
 const router = useRouter()
 const store = userStore()
 const { mailboxes } = store
+const { openFolderSheet } = useFolderSheet()
 
 const showSendModal = ref(false)
 const showSearchModal = ref(false)
@@ -86,7 +90,11 @@ watch(
 )
 
 const openMail = () => {
-	if (mailActive.value) return
+	// Re-tapping the active Mail tab opens the folder switcher (model 2).
+	if (mailActive.value) {
+		openFolderSheet()
+		return
+	}
 	let target = '/mail'
 	try {
 		target = localStorage.getItem(LAST_MAILBOX_KEY) || '/mail'

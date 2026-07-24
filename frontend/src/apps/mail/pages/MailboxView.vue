@@ -3,8 +3,18 @@
 	<header class="flex items-center justify-between border-b px-3 py-2.5 sm:px-5">
 		<div class="flex items-center space-x-2">
 			<Button v-if="isMobile" icon="menu" variant="ghost" @click="openSidebar" />
+			<!-- On mobile the title is the folder switcher (model 2) -->
+			<button
+				v-if="isMobile"
+				class="text-ink-gray-8 flex items-center gap-1 text-lg font-semibold"
+				@click="openFolderSheet"
+			>
+				<span class="truncate">{{ mailboxName }}</span>
+				<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" stroke-width="2" />
+			</button>
 			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
 			<Breadcrumbs
+				v-else
 				class="-ml-0.5"
 				:items="[
 					{
@@ -417,7 +427,7 @@ import {
 	shouldIgnoreKeypress,
 	startResizing,
 } from '@/apps/mail/utils'
-import { useScreenSize, useSidebar, useUndo } from '@/apps/mail/utils/composables'
+import { useFolderSheet, useScreenSize, useSidebar, useUndo } from '@/apps/mail/utils/composables'
 import { buildListRows } from '@/apps/mail/utils/threadStacks'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
@@ -448,6 +458,7 @@ const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
 const { openSidebar } = useSidebar()
+const { openFolderSheet } = useFolderSheet()
 const { undo, setUndoAction } = useUndo()
 
 const socket = inject('$socket')
