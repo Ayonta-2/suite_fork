@@ -513,3 +513,22 @@ def enable_members(names: list) -> None:
 
 		member.enabled = 1
 		member.save(ignore_permissions=True)
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def change_member_password(member_id: str, new_password: str) -> None:
+	"""Set a member's password directly.
+
+	Saving the User with `new_password` set triggers the update_account_password hook, which
+	propagates the new password to the member's Stalwart account.
+	"""
+
+	check_admin_permission("change member password")
+
+	if not new_password:
+		frappe.throw(_("New password is required."))
+
+	member = frappe.get_doc("User", member_id)
+	member.new_password = new_password
+	member.save(ignore_permissions=True)

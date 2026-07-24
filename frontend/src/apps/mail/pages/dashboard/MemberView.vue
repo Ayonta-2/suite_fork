@@ -99,7 +99,10 @@
 			</DashboardCard>
 		</div>
 	</DashboardLayout>
+	<Dialog v-model="showResetPassword" :options="RESET_PASSWORD_OPTIONS" />
+	<Dialog v-model="showToggleEnabled" :options="TOGGLE_ENABLED_OPTIONS" />
 	<Dialog v-model="showDeleteMember" :options="DELETE_MEMBER_OPTIONS" />
+	<ChangeMemberPasswordModal v-model="showChangePassword" :member-id="memberId" />
 </template>
 
 <script setup lang="ts">
@@ -108,6 +111,7 @@ import { useRouter } from 'vue-router'
 import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import ChangeMemberPasswordModal from '@/apps/mail/components/Modals/ChangeMemberPasswordModal.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
@@ -141,6 +145,9 @@ const router = useRouter()
 usePageMeta(() => ({ title: memberId }))
 
 const showDeleteMember = ref(false)
+const showResetPassword = ref(false)
+const showChangePassword = ref(false)
+const showToggleEnabled = ref(false)
 
 const member = createResource({
 	url: 'suite.mail.api.admin.get_member',
@@ -209,12 +216,51 @@ const setEnabled = (enabled: boolean) =>
 			: 'suite.mail.api.admin.disable_members',
 		makeParams: () => ({ names: [memberId] }),
 		onSuccess: () => {
+			showToggleEnabled.value = false
 			member.reload()
 			raiseToast(enabled ? __('Member enabled.') : __('Member disabled.'))
 		},
-		onError: (error: { messages?: string[] }) =>
-			raiseToast(error.messages?.[0] || __('Request failed.'), 'error'),
+		onError: (error: { messages?: string[] }) => {
+			showToggleEnabled.value = false
+			raiseToast(error.messages?.[0] || __('Request failed.'), 'error')
+		},
 	}).submit()
+
+const TOGGLE_ENABLED_OPTIONS = computed(() => {
+	const enabling = !data.value?.enabled
+	return {
+		title: enabling ? __('Enable Member') : __('Disable Member'),
+		message: enabling
+			? __('Are you sure you want to enable this member? They will be able to log in again.')
+			: __(
+					'Are you sure you want to disable this member? They will no longer be able to log in.',
+				),
+		actions: [
+			{ label: __('Confirm'), variant: 'solid', onClick: () => setEnabled(enabling) },
+		],
+	}
+})
+
+const resetPassword = createResource({
+	url: 'suite.mail.api.account.send_reset_password_link',
+	makeParams: () => ({ user: memberId }),
+	onSuccess: (email: string) => {
+		showResetPassword.value = false
+		raiseToast(__('Reset password link sent to {0}.', [email]))
+	},
+	onError: (error: { messages?: string[] }) => {
+		showResetPassword.value = false
+		raiseToast(error.messages?.[0] || __('Failed to send reset password link.'), 'error')
+	},
+})
+
+const RESET_PASSWORD_OPTIONS = {
+	title: __('Reset Password'),
+	message: __(
+		'Send a password reset link to this member? The link will be emailed to their backup email address.',
+	),
+	actions: [{ label: __('Confirm'), variant: 'solid', onClick: () => resetPassword.submit() }],
+}
 
 const deleteMember = createResource({
 	url: 'suite.mail.api.admin.delete_members',
@@ -242,16 +288,31 @@ const dropdownOptions = computed(() => [
 	{
 		group: '',
 		items: [
+			{
+				label: __('Reset Password'),
+				icon: 'mail',
+				onClick: () => (showResetPassword.value = true),
+			},
+			{
+				label: __('Change Password'),
+				icon: 'key',
+				onClick: () => (showChangePassword.value = true),
+			},
+		],
+	},
+	{
+		group: '',
+		items: [
 			data.value?.enabled
 				? {
 						label: __('Disable'),
 						icon: 'user-x',
-						onClick: () => setEnabled(false),
+						onClick: () => (showToggleEnabled.value = true),
 					}
 				: {
 						label: __('Enable'),
 						icon: 'user-check',
-						onClick: () => setEnabled(true),
+						onClick: () => (showToggleEnabled.value = true),
 					},
 			{
 				label: __('Delete'),
