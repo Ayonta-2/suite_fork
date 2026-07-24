@@ -58,6 +58,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 		},
 	);
 	const run = await frappeData<{
+		run_id: string;
 		users: Credentials[];
 	}>(response);
 	mkdirSync(dirname(statePath), { recursive: true });
