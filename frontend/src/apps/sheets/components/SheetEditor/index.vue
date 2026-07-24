@@ -125,7 +125,7 @@
                 size="sm" icon="clock"
                 tooltip="Version history"
                 @click="vhOpen ? closeVersionHistory() : (notesPanel.open = false, openVersionHistory())" />
-        <Button variant="ghost" size="sm" icon="help-circle" tooltip="Keyboard shortcuts (?)" @click="showShortcutsHelp = true" />
+        <Button variant="ghost" size="sm" icon="help-circle" tooltip="Keyboard shortcuts" @click="showShortcutsHelp = true" />
         <span class="sn-topbar-divider" aria-hidden="true" />
         <!-- Presence avatars — other users currently in the workbook.
              Outline = their cursor color; tooltip says which sub-sheet
@@ -1020,26 +1020,10 @@
       </template>
     </Dialog>
 
-    <!-- Keyboard shortcut help (?) — uses Frappe UI's KeyboardShortcut for the
-         key chips so modifiers render as proper Mac glyphs and look native. -->
-    <Dialog v-model="showShortcutsHelp" :options="{ title: 'Keyboard shortcuts', size: 'xl' }">
-      <template #body-content>
-        <div class="sn-help-grid">
-          <div v-for="g in SHORTCUT_GROUPS" :key="g.title" class="sn-help-group">
-            <div class="sn-help-title">{{ g.title }}</div>
-            <div v-for="s in g.items" :key="s.label" class="sn-help-row">
-              <span class="sn-help-label">{{ s.label }}</span>
-              <span class="sn-help-keys">
-                <template v-for="(combo, i) in s.combos" :key="combo">
-                  <KeyboardShortcut :combo="combo" />
-                  <span v-if="i < s.combos.length - 1" class="sn-help-or">or</span>
-                </template>
-              </span>
-            </div>
-          </div>
-        </div>
-      </template>
-    </Dialog>
+    <!-- Keyboard shortcut help — frappe-ui's KeyboardShortcutsModal, generated
+         from the shortcut registry populated by useShortcuts.js (via useShortcut),
+         so it can never drift from the handlers. -->
+    <KeyboardShortcutsModal v-model:open="showShortcutsHelp" title="Keyboard shortcuts" />
 
     <!-- Slicers — floating value-filter controls bound to a filter column -->
     <div v-for="sl in activeSlicers" :key="sl.id" class="sn-slicer"
@@ -1309,6 +1293,7 @@ import {
   FeatherIcon,
   FormControl,
   KeyboardShortcut,
+  KeyboardShortcutsModal,
   Spinner,
   TextInput,
   Tooltip,
@@ -1656,47 +1641,6 @@ const hyperlinkUrl         = ref('')
 const hasActiveHyperlink   = computed(() => !!activeFormat.value?.hyperlink)
 const showFormulas      = ref(false)
 
-// Each row's `combos` is an array of KeyboardShortcut-compatible strings —
-// the dialog renders them as `<KeyboardShortcut :combo="…"/>` chips joined
-// by a small "or" separator when there's more than one.
-const SHORTCUT_GROUPS = [
-  { title: 'Navigation', items: [
-    { label: 'Move selection',            combos: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'] },
-    { label: 'Jump to data-region edge',  combos: ['Mod+ArrowLeft'] },
-    { label: 'Extend selection',          combos: ['Shift+ArrowRight'] },
-    { label: 'Jump to start / end',       combos: ['Mod+Home', 'Mod+End'] },
-  ]},
-  { title: 'Editing', items: [
-    { label: 'Edit cell',                 combos: ['F2'] },
-    { label: 'Clear cell',                combos: ['Delete', 'Backspace'] },
-    { label: 'Commit + move down',        combos: ['Enter'] },
-    { label: 'Commit + move right',       combos: ['Tab'] },
-    { label: 'Cancel edit',               combos: ['Escape'] },
-    { label: 'Fill down / right',         combos: ['Mod+D', 'Mod+R'] },
-    { label: 'Smart Fill from examples',  combos: ['Mod+E'] },
-    { label: 'Cut / Copy / Paste',        combos: ['Mod+X', 'Mod+C', 'Mod+V'] },
-    { label: 'Undo / Redo',               combos: ['Mod+Z', 'Mod+Y'] },
-    { label: 'Repeat last action',        combos: ['F4'] },
-    { label: 'Add / edit comment',        combos: ['Shift+F2'] },
-  ]},
-  { title: 'Formatting', items: [
-    { label: 'Bold',                      combos: ['Mod+B'] },
-    { label: 'Italic',                    combos: ['Mod+I'] },
-    { label: 'Underline',                 combos: ['Mod+U'] },
-    { label: 'Strikethrough',             combos: ['Mod+Shift+X'] },
-  ]},
-  { title: 'View / Tools', items: [
-    { label: 'Command palette',           combos: ['Mod+K'] },
-    { label: 'Find & replace',            combos: ['Mod+F'] },
-    { label: 'Save',                      combos: ['Mod+S'] },
-    { label: 'Show formulas',             combos: ['Mod+`'] },
-    { label: 'Insert hyperlink',          combos: ['Mod+L'] },
-    { label: 'Quick filter on column',    combos: ['Alt+ArrowDown'] },
-    { label: 'Version history',           combos: ['Mod+Alt+Shift+H'] },
-    { label: 'Zoom in / out / reset',     combos: ['Mod+=', 'Mod+-', 'Mod+0'] },
-    { label: 'Shortcut help',             combos: ['?'] },
-  ]},
-]
 const selectionStats    = ref(null)
 const isDirty           = ref(false)
 const isPaintingFormat  = ref(false)
@@ -3922,10 +3866,31 @@ function fillRight() {
 // hide its Paste-Special entries without polling.
 const clipboardHas = ref(false)
 
+// Keyboard-driven insert/delete of rows or columns (Ctrl+Alt+= / Ctrl+Alt+-).
+// The context-menu handlers key off contextMenu.target{Row,Col}, which only a
+// right-click normally populates — so seed it from the live selection first. A
+// whole-column selection acts on columns; anything else acts on rows (matching
+// Google Sheets). The delete/insert span (N selected lines) flows from the
+// selection the same way the right-click menu computes it.
+function _insertRowsColsFromSelection() {
+  if (readOnly.value) return
+  const s = grid?.getSelection?.()
+  if (!s) return
+  if (s.mode === 'col') { contextMenu.targetCol = s.c0; doInsertCol(false, s.c1 - s.c0 + 1) }
+  else                  { contextMenu.targetRow = s.r0; doInsertRow(false, s.r1 - s.r0 + 1) }
+}
+function _deleteRowsColsFromSelection() {
+  if (readOnly.value) return
+  const s = grid?.getSelection?.()
+  if (!s) return
+  if (s.mode === 'col') { contextMenu.targetCol = s.c0; doDeleteCol() }
+  else                  { contextMenu.targetRow = s.r0; doDeleteRow() }
+}
+
 const { onGlobalKey } = useShortcuts({
   formulaInputEl:           () => formulaInputRef.value,
   undo, redo, onSave, toggleFmt, repeatLast, toggleShowFormulas,
-  showFindReplace, showShortcutsHelp,
+  showFindReplace,
   openVersionHistory, openHyperlinkDialog, openCommentPanel, openQuickFilterForActive,
   zoomBy, resetZoom,
   commentPanel, dropdownPanel, splitText,
@@ -3933,6 +3898,10 @@ const { onGlobalKey } = useShortcuts({
   clipboard, clipboardHas, setMarchingAnts: (v) => grid?.setMarchingAnts(v),
   fillDown, fillRight,
   runSmartFill,
+  insertRowsCols:    _insertRowsColsFromSelection,
+  deleteRowsCols:    _deleteRowsColsFromSelection,
+  applyNumberFormat: onNumberFormatChange,
+  pasteValues:       () => doPasteSpecial('values'),
   readOnly: () => readOnly.value,
 })
 
@@ -6252,20 +6221,6 @@ function toggleShowFormulas() {
 .sn-ctx-menu :deep(button) { width:100%; justify-content:flex-start; padding-left:10px; padding-right:10px; }
 .sn-ctx-sep { height:1px; background:var(--outline-gray-1); margin:4px 0; border:none; }
 .sn-rename-err { margin:6px 0 0; font-size:12px; color:var(--ink-red-6); letter-spacing:.02em; }
-
-/* Keyboard-shortcut help dialog — two-column grid of grouped Espresso list rows. */
-.sn-help-grid    { display:grid; grid-template-columns:1fr 1fr; gap:20px 28px; }
-.sn-help-group   { display:flex; flex-direction:column; gap:2px; }
-.sn-help-title   { font-size:11px; font-weight:600; letter-spacing:.06em; color:var(--ink-gray-5); text-transform:uppercase; padding:0 4px; margin-bottom:6px; }
-.sn-help-row     { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 8px; border-radius:6px; }
-.sn-help-row:hover { background:var(--surface-gray-2); }
-.sn-help-label   { font-size:13px; letter-spacing:.02em; color:var(--ink-gray-9); }
-.sn-help-keys    { display:inline-flex; align-items:center; gap:6px; color:var(--ink-gray-7); }
-.sn-help-keys :deep(> div) {
-  padding:2px 6px; border:1px solid var(--outline-gray-2); border-radius:4px;
-  background:var(--surface-base); color:var(--ink-gray-8); min-height:20px;
-}
-.sn-help-or      { font-size:11px; letter-spacing:.02em; color:var(--ink-gray-5); }
 
 /* Sheet-tab drag visual — Espresso ink-gray-9 left edge on the drop target. */
 .sn-tab               { cursor:grab; }
