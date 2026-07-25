@@ -14,7 +14,7 @@
       "project": ["src/**/*.{ts,tsx,vue}", "!src/main.ts"],
       "ignoreUnresolved": ["~icons/lucide/*", "unplugin-icons/types/vue"]
     },
-    "suite/e2e": {
+    "e2e": {
       "entry": [
         "drive-backed-apps/global-setup.ts",
         "drive-backed-apps/global-teardown.ts",

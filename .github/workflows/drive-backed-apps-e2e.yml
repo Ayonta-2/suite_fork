@@ -9,11 +9,11 @@ on:
       - "suite/drive/**"
       - "suite/writer/**"
       - "suite/slides/**"
-      - "suite/e2e/drive-backed-apps/**"
-      - "suite/e2e/shared/**"
-      - "suite/e2e/package.json"
-      - "suite/e2e/yarn.lock"
-      - "suite/e2e/tsconfig.json"
+      - "e2e/drive-backed-apps/**"
+      - "e2e/shared/**"
+      - "e2e/package.json"
+      - "e2e/yarn.lock"
+      - "e2e/tsconfig.json"
       - "frontend/src/apps/drive/**"
       - "frontend/src/apps/writer/**"
       - "frontend/src/apps/slides/**"
@@ -31,11 +31,11 @@ on:
       - "suite/drive/**"
       - "suite/writer/**"
       - "suite/slides/**"
-      - "suite/e2e/drive-backed-apps/**"
-      - "suite/e2e/shared/**"
-      - "suite/e2e/package.json"
-      - "suite/e2e/yarn.lock"
-      - "suite/e2e/tsconfig.json"
+      - "e2e/drive-backed-apps/**"
+      - "e2e/shared/**"
+      - "e2e/package.json"
+      - "e2e/yarn.lock"
+      - "e2e/tsconfig.json"
       - "frontend/src/apps/drive/**"
       - "frontend/src/apps/writer/**"
       - "frontend/src/apps/slides/**"
@@ -158,7 +158,7 @@ jobs:
           bench --site drive-writer.test set-config host_name "http://drive-writer.test:8000"
 
       - name: Install E2E dependencies
-        working-directory: ${{ github.workspace }}/suite/e2e
+        working-directory: ${{ github.workspace }}/e2e
         timeout-minutes: 20
         run: |
           yarn install --frozen-lockfile --non-interactive
@@ -174,7 +174,7 @@ jobs:
           timeout 60 bash -c 'until curl -s http://drive-writer.test:8000 > /dev/null; do sleep 2; done'
 
       - name: Run E2E tests
-        working-directory: ${{ github.workspace }}/suite/e2e
+        working-directory: ${{ github.workspace }}/e2e
         run: yarn test:drive-backed-apps --workers=2
         env:
           BASE_URL: http://drive-writer.test:8000
@@ -186,9 +186,9 @@ jobs:
         with:
           name: drive-backed-apps-playwright-report
           path: |
-            suite/e2e/drive-backed-apps/playwright-report/
-            suite/e2e/drive-backed-apps/test-results/
-            suite/e2e/drive-backed-apps/results.xml
+            e2e/drive-backed-apps/playwright-report/
+            e2e/drive-backed-apps/test-results/
+            e2e/drive-backed-apps/results.xml
             /home/runner/frappe-bench/bench_start.log
           compression-level: 1
           retention-days: 7
