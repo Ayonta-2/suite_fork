@@ -724,12 +724,8 @@ def update_member(
 		)
 
 
-@frappe.whitelist()
-def add_member_email(member_id: str, email: str, description: str | None = None) -> None:
-	"""Adds an email address to the member's account as an alias with an optional description."""
-
-	check_admin_permission("update members")
-	account_id = _require_member_account(member_id)
+def _add_account_alias(account_id: str, email: str, description: str | None = None) -> None:
+	"""Adds ``email`` as an alias (with optional description) to the given account."""
 
 	email = (email or "").strip().lower()
 	validate_email_address(email, throw=True)
@@ -759,12 +755,8 @@ def add_member_email(member_id: str, email: str, description: str | None = None)
 	)
 
 
-@frappe.whitelist()
-def remove_member_email(member_id: str, email: str) -> None:
-	"""Removes an alias email address from the member's account (the primary cannot be removed)."""
-
-	check_admin_permission("update members")
-	account_id = _require_member_account(member_id)
+def _remove_account_alias(account_id: str, email: str) -> None:
+	"""Removes the alias ``email`` from the given account (the primary cannot be removed)."""
 
 	email = (email or "").strip().lower()
 	account_service = get_account_service()
@@ -781,6 +773,22 @@ def remove_member_email(member_id: str, email: str) -> None:
 		with_context=False,
 		module="Mail",
 	)
+
+
+@frappe.whitelist()
+def add_member_email(member_id: str, email: str, description: str | None = None) -> None:
+	"""Adds an email address to the member's account as an alias with an optional description."""
+
+	check_admin_permission("update members")
+	_add_account_alias(_require_member_account(member_id), email, description)
+
+
+@frappe.whitelist()
+def remove_member_email(member_id: str, email: str) -> None:
+	"""Removes an alias email address from the member's account (the primary cannot be removed)."""
+
+	check_admin_permission("update members")
+	_remove_account_alias(_require_member_account(member_id), email)
 
 
 @frappe.whitelist()
@@ -919,9 +927,31 @@ def get_group(group_id: str) -> dict:
 	check_admin_permission("view groups")
 
 	service = get_group_service()
-	group = service.get(group_id)
+	group = service.get(
+		group_id,
+		properties=[
+			"id", "name", "emailAddress", "description", "createdAt", "roles", "aliases", "quotas",
+			"usedDiskQuota",
+		],
+	)
 	if not group:
 		frappe.throw(_("Group not found"), frappe.DoesNotExistError)
+
+	# Email addresses mirror the member page: primary uses the group description, aliases their own.
+	email_addresses = []
+	if primary := group.get("emailAddress"):
+		email_addresses.append({"email": primary, "description": group.get("description"), "is_primary": True})
+
+	aliases = group.get("aliases") or {}
+	if aliases:
+		domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
+		for alias in aliases.values():
+			name = alias.get("name")
+			domain_name = domain_names.get(alias.get("domainId"))
+			if name and domain_name:
+				email_addresses.append(
+					{"email": f"{name}@{domain_name}", "description": alias.get("description"), "is_primary": False}
+				)
 
 	members = service.get_members(group_id, properties=["id", "name", "emailAddress"])
 
@@ -932,7 +962,12 @@ def get_group(group_id: str) -> dict:
 		"description": group.get("description"),
 		"created_at": group.get("createdAt"),
 		"role_ids": _keys((group.get("roles") or {}).get("roleIds")),
+		"email_addresses": email_addresses,
 		"members": [{"id": m["id"], "name": m.get("name"), "email": m.get("emailAddress")} for m in members],
+		"quota": _build_quota_usage(
+			(group.get("quotas") or {}).get("maxDiskQuota") or 0,
+			group.get("usedDiskQuota") or 0,
+		),
 	}
 
 
@@ -974,20 +1009,15 @@ def add_group(
 @frappe.whitelist()
 def update_group(
 	group_id: str,
-	name: str | None = None,
 	description: str | None = None,
-	members: list | None = None,
 	roles: list | None = None,
+	quota_gb: float | None = None,
 ) -> None:
-	"""Updates a group's name/description/members/roles."""
+	"""Updates a group's description (full name), roles and quota."""
 
 	check_admin_permission("update groups")
 
-	service = get_group_service()
-
 	patch = {}
-	if name is not None:
-		patch["name"] = name
 	if description is not None:
 		patch["description"] = description
 	if roles is not None:
@@ -997,11 +1027,43 @@ def update_group(
 			if role_ids
 			else {"@type": "Default"}
 		)
+	if quota_gb is not None:
+		patch["quotas/maxDiskQuota"] = cint(float(quota_gb) * _GB)
 
 	if patch:
-		service.update(group_id, patch)
-	if members is not None:
-		service.set_members(group_id, _listify(members))
+		get_group_service().update(group_id, patch)
+
+
+@frappe.whitelist()
+def add_group_email(group_id: str, email: str, description: str | None = None) -> None:
+	"""Adds an alias email address to the group with an optional description."""
+
+	check_admin_permission("update groups")
+	_add_account_alias(group_id, email, description)
+
+
+@frappe.whitelist()
+def remove_group_email(group_id: str, email: str) -> None:
+	"""Removes an alias email address from the group (the primary cannot be removed)."""
+
+	check_admin_permission("update groups")
+	_remove_account_alias(group_id, email)
+
+
+@frappe.whitelist()
+def add_group_members(group_id: str, account_ids: list) -> None:
+	"""Adds the given accounts to the group."""
+
+	check_admin_permission("update groups")
+	get_group_service().add_members(group_id, _listify(account_ids))
+
+
+@frappe.whitelist()
+def remove_group_member(group_id: str, account_id: str) -> None:
+	"""Removes the given account from the group."""
+
+	check_admin_permission("update groups")
+	get_group_service().remove_members(group_id, [account_id])
 
 
 @frappe.whitelist()

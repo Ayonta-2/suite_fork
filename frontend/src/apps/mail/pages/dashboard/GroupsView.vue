@@ -77,7 +77,6 @@ watchDebounced(() => search.value, groups.reload, { debounce: 300 })
 type GroupRow = { id: string; name: string; email?: string; description?: string; created_at?: string }
 
 const LIST_COLUMNS = [
-	{ label: __('Name'), key: 'name' },
 	{ label: __('Email'), key: 'email' },
 	{ label: __('Description'), key: 'description' },
 	{ label: __('Created At'), key: 'created_at' },
