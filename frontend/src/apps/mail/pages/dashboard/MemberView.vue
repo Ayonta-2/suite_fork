@@ -94,21 +94,31 @@
 						<div
 							v-for="entry in member.data.email_addresses"
 							:key="entry.email"
-							class="group flex items-center border-b px-5 py-3 text-base last:border-b-0"
+							class="group border-b px-5 py-3 text-base last:border-b-0"
 						>
-							<span class="flex-1 truncate">{{ entry.email }}</span>
-							<span class="text-ink-gray-5 flex-1 truncate">{{ entry.description || '—' }}</span>
-							<span class="flex w-8 shrink-0 justify-end">
-								<Button
-									v-if="!entry.is_primary"
-									variant="ghost"
-									theme="red"
-									class="invisible group-hover:visible"
-									@click="removeEmail(entry.email)"
-								>
-									<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
-								</Button>
-							</span>
+							<Tooltip
+								class="block"
+								:text="__('This is the primary address and cannot be removed.')"
+								:disabled="!entry.is_primary"
+							>
+								<div class="flex w-full items-center">
+									<span class="flex-1 truncate">{{ entry.email }}</span>
+									<span class="text-ink-gray-5 flex-1 truncate">
+										{{ entry.description || '—' }}
+									</span>
+									<span class="flex w-8 shrink-0 justify-end">
+										<Button
+											v-if="!entry.is_primary"
+											variant="ghost"
+											theme="red"
+											class="invisible group-hover:visible"
+											@click="removeEmail(entry.email)"
+										>
+											<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
+										</Button>
+									</span>
+								</div>
+							</Tooltip>
 						</div>
 					</template>
 					<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
@@ -202,7 +212,7 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, Dropdown, FeatherIcon, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, Dropdown, FeatherIcon, Tooltip, createResource, usePageMeta } from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import AddMemberEmailModal from '@/apps/mail/components/Modals/AddMemberEmailModal.vue'
