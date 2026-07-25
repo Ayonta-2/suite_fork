@@ -333,14 +333,14 @@ class FileManager:
 
 	@_not_if_flat
 	def rename(self, entity):
-		if not entity.file_url or entity.mime_type == "frappe/slides" or entity.content_doctype:
+		if not entity.file_url or entity.mime_type == "frappe/slides":
 			return
 		new_path = self.get_disk_path(entity)
 		return self.move(entity, new_path)
 
 	@_not_if_flat
 	def move_to_trash(self, entity):
-		if not entity.file_url or entity.mime_type in ["frappe/slides", "link"] or entity.content_doctype:
+		if not entity.file_url or entity.mime_type in ["frappe/slides", "link"]:
 			return
 
 		trash_path = self.__get_trash_path(entity)
@@ -373,8 +373,6 @@ class FileManager:
 		"""
 		Restore a file from the trash.
 		"""
-		if entity.content_doctype:
-			return
 		self.move(frappe._dict(file_url=self.__get_trash_path(entity), team=entity.team), entity.file_url)
 
 	@_not_if_flat

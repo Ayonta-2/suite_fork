@@ -19,6 +19,7 @@ from suite.drive.utils import (
 	ATTACHMENT_CONTENT_DOCTYPE,
 	STATUS_ACTIVE,
 	STATUS_REMOVED,
+	WRITER_CONTENT_DOCTYPE,
 	generate_upward_path,
 	get_default_team,
 	get_home_folder,
@@ -111,7 +112,10 @@ class File(FrappeFile):
 			path.unlink()
 
 	def _not_in_disk(self):
-		return self.file_type == "Link" or not self.file_url or bool(self.content_doctype)
+		content_without_storage = bool(
+			self.content_doctype and self.content_doctype != WRITER_CONTENT_DOCTYPE
+		)
+		return self.file_type == "Link" or not self.file_url or content_without_storage
 
 	# Drive methods
 	def _update_modified(func):
