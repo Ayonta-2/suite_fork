@@ -1,6 +1,7 @@
 <template>
   <div class="flex h-full justify-center overflow-auto bg-surface-base pt-24 pb-14">
     <div class="flex w-full max-w-sm flex-col gap-7 px-4">
+      <div class="sr-only" aria-live="polite">{{ current.title }}</div>
       <div class="flex items-center justify-between">
         <div v-if="step === 'welcome'" class="size-10 shrink-0" aria-hidden="true" />
         <img
@@ -18,141 +19,143 @@
         />
       </div>
 
-      <div>
-        <div class="flex flex-col gap-8">
-          <div class="flex flex-col gap-2">
-            <h1 class="text-4xl-semibold text-ink-gray-9">{{ current.title }}</h1>
-            <p class="text-base text-ink-gray-6">{{ current.subtitle }}</p>
-          </div>
-
-          <div class="h-28">
-            <div v-if="step === 'welcome'" class="flex h-full items-start justify-between">
-              <Tooltip v-for="(app, i) in apps" :key="app.id" :text="app.name">
-                <img
-                  :src="app.logo"
-                  :alt="__('{0} logo', [app.name])"
-                  class="setup-icon size-[38px] object-contain"
-                  :style="{ animationDelay: `${i * 0.06}s` }"
-                  draggable="false"
-                />
-              </Tooltip>
+      <Transition name="setup-step" mode="out-in" @after-enter="focusStep">
+        <div :key="step">
+          <div class="flex flex-col gap-8">
+            <div class="flex flex-col gap-2">
+              <h1 class="text-4xl-semibold text-ink-gray-9">{{ current.title }}</h1>
+              <p class="text-base text-ink-gray-6">{{ current.subtitle }}</p>
             </div>
 
-            <div v-else-if="step === 'workspace'" class="flex items-start gap-4">
-              <WorkspaceLogoInput v-model="workspaceLogo" />
-              <div class="flex flex-1 flex-col gap-2">
-                <FormControl
-                  ref="nameInput"
-                  v-model="workspaceName"
-                  type="text"
-                  variant="outline"
-                  :label="__('Workspace name')"
-                  :placeholder="__('Acme Inc.')"
-                  @keydown.enter="continueWorkspace"
-                />
-                <ErrorMessage :message="saveWorkspace.error" />
+            <div class="h-28">
+              <div v-if="step === 'welcome'" class="flex h-full items-start justify-between">
+                <Tooltip v-for="(app, i) in apps" :key="app.id" :text="app.name">
+                  <img
+                    :src="app.logo"
+                    :alt="__('{0} logo', [app.name])"
+                    class="setup-icon size-[38px] object-contain"
+                    :style="{ animationDelay: `${i * 0.06}s` }"
+                    draggable="false"
+                  />
+                </Tooltip>
               </div>
-            </div>
 
-            <div v-else-if="step === 'invite'" class="flex flex-col gap-2">
-              <FormControl
-                ref="emailInput"
-                v-model="emails"
-                type="textarea"
-                variant="outline"
-                :rows="3"
-                class="resize-none"
-                :placeholder="__('name@company.com, another@company.com')"
-                :disabled="invite.loading"
-                @keydown.enter="sendOnEnter"
-              />
-              <ErrorMessage :message="displayError" />
-            </div>
+              <div v-else-if="step === 'workspace'" class="flex items-start gap-4">
+                <WorkspaceLogoInput v-model="workspaceLogo" />
+                <div class="flex flex-1 flex-col gap-2">
+                  <FormControl
+                    ref="nameInput"
+                    v-model="workspaceName"
+                    type="text"
+                    variant="outline"
+                    :label="__('Workspace name')"
+                    :placeholder="__('Acme Inc.')"
+                    @keydown.enter="continueWorkspace"
+                  />
+                  <ErrorMessage :message="saveWorkspace.error" />
+                </div>
+              </div>
 
-            <div v-else class="flex justify-center">
-              <div class="flex w-full items-center gap-3 rounded-lg bg-surface-gray-2 p-4">
-                <LucideMailCheck v-if="inviteSummary" class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5" />
-                <LucideUser v-else class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5" />
-                <div class="flex flex-col gap-1">
-                  <p class="text-base text-ink-gray-8">{{ doneTitle }}</p>
-                  <p class="text-sm text-ink-gray-5">{{ __('Invite anyone later from Settings.') }}</p>
+              <div v-else-if="step === 'invite'" class="flex flex-col gap-2">
+                <FormControl
+                  ref="emailInput"
+                  v-model="emails"
+                  type="textarea"
+                  variant="outline"
+                  :rows="3"
+                  class="resize-none"
+                  :placeholder="__('name@company.com, another@company.com')"
+                  :disabled="invite.loading"
+                  @keydown.enter="sendOnEnter"
+                />
+                <ErrorMessage :message="displayError" />
+              </div>
+
+              <div v-else class="flex justify-center">
+                <div class="flex w-full items-center gap-3 rounded-lg bg-surface-gray-2 p-4">
+                  <LucideMail v-if="inviteSummary" class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5" />
+                  <LucideUser v-else class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5" />
+                  <div class="flex flex-col gap-1">
+                    <p class="text-base text-ink-gray-8">{{ doneTitle }}</p>
+                    <p class="text-sm text-ink-gray-5">{{ __('Invite anyone later from Settings.') }}</p>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <Button
-          v-if="step === 'welcome'"
-          ref="getStartedButton"
-          class="w-full !gap-1"
-          variant="solid"
-          :label="__('Get started')"
-          icon-right="lucide-chevron-right"
-          @click="getStarted"
-        />
-
-        <Button
-          v-else-if="step === 'workspace'"
-          class="w-full !gap-1"
-          variant="solid"
-          :label="__('Continue')"
-          icon-right="lucide-chevron-right"
-          :loading="saveWorkspace.loading"
-          :disabled="!workspaceName.trim()"
-          @click="continueWorkspace"
-        />
-
-        <div v-else-if="step === 'invite'" class="flex items-center justify-between">
           <Button
-            variant="subtle"
-            icon="lucide-chevron-left"
-            :label="__('Back')"
-            :disabled="invite.loading"
-            @click="back"
+            v-if="step === 'welcome'"
+            ref="getStartedButton"
+            class="w-full !gap-1"
+            variant="solid"
+            :label="__('Get started')"
+            icon-right="lucide-chevron-right"
+            @click="getStarted"
           />
-          <div class="flex items-center gap-2">
-            <Button variant="subtle" :label="__('Skip')" :disabled="invite.loading" @click="finish" />
-            <Button
-              variant="solid"
-              class="!gap-1"
-              :label="__('Send invites')"
-              icon-right="lucide-chevron-right"
-              :loading="invite.loading"
-              :disabled="!hasValidEmail"
-              @click="sendInvites"
-            />
-          </div>
-        </div>
 
-        <div v-else class="flex flex-col items-end gap-2">
-          <div class="flex w-full items-center justify-between">
+          <Button
+            v-else-if="step === 'workspace'"
+            class="w-full !gap-1"
+            variant="solid"
+            :label="__('Continue')"
+            icon-right="lucide-chevron-right"
+            :loading="saveWorkspace.loading"
+            :disabled="!workspaceName.trim()"
+            @click="continueWorkspace"
+          />
+
+          <div v-else-if="step === 'invite'" class="flex items-center justify-between">
             <Button
               variant="subtle"
               icon="lucide-chevron-left"
               :label="__('Back')"
-              :disabled="markComplete.loading"
+              :disabled="invite.loading"
               @click="back"
             />
-            <Button
-              ref="openSuiteButton"
-              variant="solid"
-              class="!gap-1"
-              :label="__('Open Suite')"
-              icon-right="lucide-chevron-right"
-              :loading="markComplete.loading"
-              @click="openSuite"
-            />
+            <div class="flex items-center gap-2">
+              <Button variant="subtle" :label="__('Skip')" :disabled="invite.loading" @click="finish" />
+              <Button
+                variant="solid"
+                class="!gap-1"
+                :label="__('Send invites')"
+                icon-right="lucide-chevron-right"
+                :loading="invite.loading"
+                :disabled="!hasValidEmail"
+                @click="sendInvites"
+              />
+            </div>
           </div>
-          <ErrorMessage :message="markComplete.error" />
+
+          <div v-else class="flex flex-col items-end gap-2">
+            <div class="flex w-full items-center justify-between">
+              <Button
+                variant="subtle"
+                icon="lucide-chevron-left"
+                :label="__('Back')"
+                :disabled="markComplete.loading"
+                @click="back"
+              />
+              <Button
+                ref="openSuiteButton"
+                variant="solid"
+                class="!gap-1"
+                :label="__('Open Suite')"
+                icon-right="lucide-chevron-right"
+                :loading="markComplete.loading"
+                @click="openSuite"
+              />
+            </div>
+            <ErrorMessage :message="markComplete.error" />
+          </div>
         </div>
-      </div>
+      </Transition>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { Button, ErrorMessage, FormControl, Tooltip, createResource } from 'frappe-ui'
 
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
@@ -196,8 +199,8 @@ function focusStep() {
   target?.focus()
 }
 
+// Step changes focus via the Transition's after-enter, once the new content exists.
 onMounted(focusStep)
-watch(step, () => nextTick(focusStep))
 
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 
@@ -247,32 +250,16 @@ const saveWorkspace = createResource({
   },
 })
 
-type InviteResult = {
-  invited_emails?: string[]
-  pending_invite_emails?: string[]
-  accepted_invite_emails?: string[]
-  disabled_user_emails?: string[]
-}
-
 const invite = createResource({
   url: 'suite.api.account.invite_users',
-  onSuccess: (data: InviteResult) => {
-    inviteSummary.value = summarizeInvites(data)
+  onSuccess: () => {
+    const count = new Set(splitEmails(emails.value)).size
+    inviteSummary.value =
+      count === 1 ? __("We'll send 1 invite") : __("We'll send {0} invites", [count])
     emails.value = ''
     finish()
   },
 })
-
-function summarizeInvites(data: InviteResult): string {
-  const sent = data.invited_emails?.length ?? 0
-  const skipped =
-    (data.pending_invite_emails?.length ?? 0) +
-    (data.accepted_invite_emails?.length ?? 0) +
-    (data.disabled_user_emails?.length ?? 0)
-  const parts = [sent === 1 ? __('1 invite sent') : __('{0} invites sent', [sent])]
-  if (skipped) parts.push(__('{0} could not be invited', [skipped]))
-  return parts.join(' · ')
-}
 
 function getStarted() {
   step.value = 'workspace'
@@ -351,11 +338,26 @@ async function openSuite() {
   }
 }
 
+.setup-step-enter-active,
+.setup-step-leave-active {
+  transition: opacity 75ms ease;
+}
+
+.setup-step-enter-from,
+.setup-step-leave-to {
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .setup-icon {
     animation: none;
     opacity: 1;
     transform: none;
+  }
+
+  .setup-step-enter-active,
+  .setup-step-leave-active {
+    transition: none;
   }
 }
 </style>

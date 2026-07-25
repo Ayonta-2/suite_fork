@@ -9,7 +9,7 @@
 			:key="i"
 			class="h-[3px] rounded-full transition-all duration-300 motion-reduce:transition-none"
 			:class="[
-				done ? 'w-0 opacity-0' : i - 1 === current ? 'w-8' : 'w-2.5',
+				done ? 'w-0 opacity-0' : i - 1 === current ? 'w-7' : 'w-3',
 				i - 1 <= current ? 'bg-black dark:bg-white' : 'bg-surface-gray-5',
 			]"
 		/>
