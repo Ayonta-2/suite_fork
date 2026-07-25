@@ -41,19 +41,3 @@ class RoleService(ManagementService):
 			frappe.throw(_("Role {0} not found on the Stalwart server.").format(description))
 
 		return role
-
-	def get_permissions(self) -> list[str]:
-		"""Returns the sorted set of assignable permission keys.
-
-		Stalwart exposes no permission catalogue, so the vocabulary is unioned from the
-		enabled/disabled permissions already present on the server's roles (the built-in
-		administrator role carries the full set).
-		"""
-
-		permissions: set[str] = set()
-		for role in self.get_all(properties=["enabledPermissions", "disabledPermissions"]):
-			for key in ("enabledPermissions", "disabledPermissions"):
-				value = role.get(key) or {}
-				permissions.update(value.keys() if isinstance(value, dict) else value)
-
-		return sorted(permissions)

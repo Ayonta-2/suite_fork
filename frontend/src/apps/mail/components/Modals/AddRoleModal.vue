@@ -49,7 +49,7 @@ const permissions = createResource({ url: 'suite.mail.api.admin.get_permissions'
 const roles = createResource({ url: 'suite.mail.api.admin.get_roles_list', auto: true })
 
 const permissionOptions = computed(() =>
-	(permissions.data || []).map((p: string) => ({ label: p, value: p })),
+	(permissions.data || []).map((p: { value: string; label: string }) => ({ label: p.label, value: p.value })),
 )
 const roleOptions = computed(() =>
 	(roles.data || []).map((r: { id: string; description: string }) => ({ label: r.description, value: r.id })),

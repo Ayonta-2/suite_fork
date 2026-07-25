@@ -1,46 +1,86 @@
 <template>
-	<DashboardLayout v-if="role?.data" :breadcrumbs="breadcrumbs">
+	<DashboardLayout v-if="role.data" :breadcrumbs="breadcrumbs">
 		<template #actions>
 			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
 		</template>
 		<template #default>
-			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-				<DashboardCard :title="__('Role')">
-					<template #actions><span /></template>
+			<div class="grid grid-cols-1 gap-4">
+				<DashboardCard
+					:title="__('General Information')"
+					:button-label="__('Edit')"
+					@action="showEdit = true"
+				>
 					<InformationField :label="__('Description')" :value="role.data.description" />
-					<InformationField :label="__('Inherited Roles')" :value="inheritedLabels.join(', ')" />
 				</DashboardCard>
+
+				<DashboardCard :title="__('Inherited Roles')">
+					<template #actions><span /></template>
+					<div class="p-4">
+						<MultiSelect
+							:model-value="roleIds"
+							:options="roleOptions"
+							@update:model-value="(value) => save('role_ids', value as string[])"
+						/>
+					</div>
+				</DashboardCard>
+
 				<DashboardCard :title="__('Enabled Permissions')">
 					<template #actions><span /></template>
-					<PermissionList :permissions="role.data.enabled_permissions" />
+					<div class="p-4">
+						<MultiSelect
+							:model-value="enabledPermissions"
+							:options="permissionOptions"
+							@update:model-value="(value) => save('enabled_permissions', value as string[])"
+						/>
+					</div>
 				</DashboardCard>
+
 				<DashboardCard :title="__('Disabled Permissions')">
 					<template #actions><span /></template>
-					<PermissionList :permissions="role.data.disabled_permissions" />
+					<div class="p-4">
+						<MultiSelect
+							:model-value="disabledPermissions"
+							:options="permissionOptions"
+							@update:model-value="(value) => save('disabled_permissions', value as string[])"
+						/>
+					</div>
 				</DashboardCard>
 			</div>
 		</template>
 	</DashboardLayout>
-	<EditRoleModal v-model="showEdit" :role="role.data" @reload="role.reload()" />
+	<EditRoleModal v-if="role.data" v-model="showEdit" :role="role.data" @reload="role.reload()" />
 	<Dialog v-model="showDelete" :options="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
-import { computed, ref, h } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+import { Dialog, Dropdown, MultiSelect, createResource, usePageMeta } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import InformationField from '@/apps/mail/components/InformationField.vue'
 import EditRoleModal from '@/apps/mail/components/Modals/EditRoleModal.vue'
+
+type RoleData = {
+	id: string
+	description: string
+	enabled_permissions: string[]
+	disabled_permissions: string[]
+	role_ids: string[]
+}
 
 const { roleId } = defineProps<{ roleId: string }>()
 const router = useRouter()
 
-usePageMeta(() => ({ title: role.data?.description || roleId }))
+usePageMeta(() => ({ title: (role.data as RoleData | undefined)?.description || roleId }))
 
 const showEdit = ref(false)
 const showDelete = ref(false)
+
+const enabledPermissions = ref<string[]>([])
+const disabledPermissions = ref<string[]>([])
+const roleIds = ref<string[]>([])
 
 const role = createResource({
 	url: 'suite.mail.api.admin.get_role',
@@ -50,16 +90,51 @@ const role = createResource({
 	onError: () => router.replace({ name: 'mail-roles' }),
 })
 
+// Keep the editable chip selections in sync whenever the role (re)loads.
+watch(
+	() => role.data as RoleData | undefined,
+	(data) => {
+		if (!data) return
+		enabledPermissions.value = [...data.enabled_permissions]
+		disabledPermissions.value = [...data.disabled_permissions]
+		roleIds.value = [...data.role_ids]
+	},
+	{ immediate: true },
+)
+
+const permissions = createResource({ url: 'suite.mail.api.admin.get_permissions', auto: true })
 const roles = createResource({ url: 'suite.mail.api.admin.get_roles_list', auto: true })
 
-const inheritedLabels = computed(() => {
-	const map = new Map((roles.data || []).map((r: { id: string; description: string }) => [r.id, r.description]))
-	return (role.data?.role_ids || []).map((id: string) => map.get(id) || id)
-})
+const permissionOptions = computed(() =>
+	(permissions.data || []).map((p: { value: string; label: string }) => ({ label: p.label, value: p.value })),
+)
+const roleOptions = computed(() =>
+	(roles.data || [])
+		.filter((r: { id: string }) => r.id !== roleId)
+		.map((r: { id: string; description: string }) => ({ label: r.description, value: r.id })),
+)
+
+const LOCAL_REFS: Record<string, typeof enabledPermissions> = {
+	enabled_permissions: enabledPermissions,
+	disabled_permissions: disabledPermissions,
+	role_ids: roleIds,
+}
+
+const save = (field: 'enabled_permissions' | 'disabled_permissions' | 'role_ids', value: string[]) => {
+	LOCAL_REFS[field].value = value // optimistic; reverted on error via reload
+	createResource({
+		url: 'suite.mail.api.admin.update_role',
+		makeParams: () => ({ role_id: roleId, [field]: value }),
+		onError: (error: { messages?: string[] }) => {
+			role.reload()
+			raiseToast(error.messages?.[0] || __('Request failed.'), 'error')
+		},
+	}).submit()
+}
 
 const breadcrumbs = computed(() => [
 	{ label: __('Roles'), route: '/mail/dashboard/roles' },
-	{ label: role.data?.description || roleId },
+	{ label: (role.data as RoleData | undefined)?.description || roleId },
 ])
 
 const deleteRole = createResource({
@@ -83,22 +158,7 @@ const deleteDialogOptions = computed(() => ({
 const dropdownOptions = computed(() => [
 	{
 		group: '',
-		items: [
-			{ label: __('Edit'), icon: 'edit', onClick: () => (showEdit.value = true) },
-			{ label: __('Delete'), icon: 'trash-2', onClick: () => (showDelete.value = true) },
-		],
+		items: [{ label: __('Delete'), icon: 'trash-2', onClick: () => (showDelete.value = true) }],
 	},
 ])
-
-// Small inline component to render a permission list (or an empty-state).
-const PermissionList = (props: { permissions: string[] }) =>
-	props.permissions.length
-		? h(
-				'div',
-				{ class: 'divide-y' },
-				props.permissions.map((p) =>
-					h('div', { class: 'even:bg-surface-gray-1 px-5 py-3.5 text-base last:rounded-b' }, p),
-				),
-			)
-		: h('div', { class: 'text-ink-gray-5 px-5 py-3.5 text-base' }, __('None.'))
 </script>

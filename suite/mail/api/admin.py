@@ -28,6 +28,7 @@ from suite.mail.stalwart import (
 	remove_account_role,
 )
 from suite.mail.stalwart import get_domains as get_stalwart_domains
+from suite.mail.stalwart import get_permissions as get_stalwart_permissions
 from suite.mail.stalwart.account import CustomRoles, EmailAlias, RoleType, UserRoles
 from suite.mail.stalwart.domain import Domain
 from suite.mail.stalwart.group import Group
@@ -1343,11 +1344,11 @@ def get_role(role_id: str) -> dict:
 
 
 @frappe.whitelist()
-def get_permissions() -> list[str]:
-	"""Returns the assignable permission keys for the role editor."""
+def get_permissions() -> list[dict]:
+	"""Returns the assignable permissions as ``{value, label}`` for the role editor."""
 
 	check_admin_permission("view roles")
-	return get_role_service().get_permissions()
+	return get_stalwart_permissions()
 
 
 @frappe.whitelist()

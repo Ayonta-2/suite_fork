@@ -1,3 +1,5 @@
+from urllib.parse import urljoin
+
 import frappe
 from frappe import _
 from frappe.utils import random_string
@@ -105,6 +107,23 @@ def get_domains() -> list[dict]:
 	return get_domain_service().get_all(
 		properties=["id", "name", "description", "isEnabled", "createdAt", "dnsZoneFile"]
 	)
+
+
+@redis_cache(ttl=3600)
+def get_permissions() -> list[dict]:
+	"""Returns all assignable permissions as ``{value, label}`` from the Stalwart server schema.
+
+	The management API only carries raw permission keys; the server's schema endpoint provides the
+	human-readable labels (version-accurate), so we read them from there.
+	"""
+
+	from suite.mail.utils import get_config
+
+	schema = get_management_connection().request(
+		method="GET", url=urljoin(get_config("server_url"), "/api/schema"), return_json=True
+	)
+	permissions = (schema.get("enums") or {}).get("Permission") or []
+	return [{"value": p["name"], "label": p.get("label") or p["name"]} for p in permissions]
 
 
 @redis_cache(ttl=3600)
