@@ -28,8 +28,7 @@
 			</DashboardCard>
 
 			<!-- Quota Usage -->
-			<DashboardCard :title="__('Quota Usage')">
-				<template #actions><span /></template>
+			<DashboardCard :title="__('Quota Usage')" :button-label="__('Edit')" @action="showEditQuota = true">
 				<div class="flex flex-1 items-center justify-center gap-8 p-6">
 					<div class="relative shrink-0">
 						<svg :width="DONUT_SIZE" :height="DONUT_SIZE" class="-rotate-90">
@@ -179,6 +178,7 @@
 	<Dialog v-model="showDeleteMember" :options="DELETE_MEMBER_OPTIONS" />
 	<ChangeMemberPasswordModal v-model="showChangePassword" :member-id="memberId" />
 		<EditMemberModal v-if="data" v-model="showEdit" :member="data" @reload="member.reload()" />
+		<EditMemberQuotaModal v-if="data" v-model="showEditQuota" :member="data" @reload="member.reload()" />
 		<AddMemberEmailModal v-model="showAddEmail" :member-id="memberId" @reload="member.reload()" />
 		<AddMemberGroupsModal
 			v-model="showAddGroups"
@@ -207,6 +207,7 @@ import ChangeMemberPasswordModal from '@/apps/mail/components/Modals/ChangeMembe
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import EditMemberModal from '@/apps/mail/components/Modals/EditMemberModal.vue'
+import EditMemberQuotaModal from '@/apps/mail/components/Modals/EditMemberQuotaModal.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 
 type DayjsFn = (value?: string | Date | null) => { format: (fmt: string) => string }
@@ -244,6 +245,7 @@ const showResetPassword = ref(false)
 const showChangePassword = ref(false)
 const showToggleEnabled = ref(false)
 const showEdit = ref(false)
+const showEditQuota = ref(false)
 const showAddEmail = ref(false)
 const showAddGroups = ref(false)
 const showAddLists = ref(false)

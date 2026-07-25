@@ -10,12 +10,6 @@
 			<div class="space-y-4">
 				<FormControl v-model="role" type="select" :label="__('Role')" :options="ROLE_OPTIONS" />
 				<FormControl v-model="description" :label="__('Description')" />
-				<FormControl
-					v-model="quotaGb"
-					type="number"
-					:min="0"
-					:label="__('Quota (GB, 0 = unlimited)')"
-				/>
 				<ErrorMessage :message="updateMember.error?.messages?.[0] || updateMember.error?.message" />
 			</div>
 		</template>
@@ -32,7 +26,6 @@ type MemberData = {
 	name: string
 	is_admin: boolean
 	description?: string
-	quota: { total: number }
 }
 
 const show = defineModel<boolean>()
@@ -46,13 +39,11 @@ const ROLE_OPTIONS = [
 
 const role = ref('user')
 const description = ref('')
-const quotaGb = ref(0)
 
 watch(show, () => {
 	if (show.value && member) {
 		role.value = member.is_admin ? 'admin' : 'user'
 		description.value = member.description || ''
-		quotaGb.value = member.quota?.total ? Math.round(member.quota.total / 1024 ** 3) : 0
 		updateMember.reset()
 	}
 })
@@ -63,7 +54,6 @@ const updateMember = createResource({
 		member_id: member.name,
 		role: role.value,
 		description: description.value?.trim(),
-		quota_gb: Number(quotaGb.value) || 0,
 	}),
 	onSuccess: () => {
 		show.value = false
