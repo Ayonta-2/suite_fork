@@ -134,14 +134,15 @@
 						<div
 							v-for="m in filteredMembers"
 							:key="m.id"
-							class="group flex items-center border-b px-5 py-3 text-base last:border-b-0"
+							class="group hover:bg-surface-gray-2 flex cursor-pointer items-center border-b px-5 py-3 text-base last:border-b-0"
+							@click="m.email && router.push({ name: 'mail-member', params: { memberId: m.email } })"
 						>
 							<span class="flex-1 truncate">{{ m.email || m.name }}</span>
 							<Button
 								variant="ghost"
 								theme="red"
 								class="invisible group-hover:visible"
-								@click="removeMember(m.id)"
+								@click.stop="removeMember(m.id)"
 							>
 								<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
 							</Button>
