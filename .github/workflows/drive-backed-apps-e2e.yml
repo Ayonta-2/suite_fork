@@ -1,4 +1,4 @@
-name: Productivity E2E Tests
+name: Drive-Backed Apps E2E Tests
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - "suite/drive/**"
       - "suite/writer/**"
       - "suite/slides/**"
-      - "suite/e2e/productivity/**"
+      - "suite/e2e/drive-backed-apps/**"
       - "suite/e2e/shared/**"
       - "suite/e2e/package.json"
       - "suite/e2e/yarn.lock"
@@ -25,13 +25,13 @@ on:
       - "yarn.lock"
       - "pyproject.toml"
       - "knip.json"
-      - ".github/workflows/productivity-e2e.yml"
+      - ".github/workflows/drive-backed-apps-e2e.yml"
   pull_request:
     paths:
       - "suite/drive/**"
       - "suite/writer/**"
       - "suite/slides/**"
-      - "suite/e2e/productivity/**"
+      - "suite/e2e/drive-backed-apps/**"
       - "suite/e2e/shared/**"
       - "suite/e2e/package.json"
       - "suite/e2e/yarn.lock"
@@ -47,11 +47,11 @@ on:
       - "yarn.lock"
       - "pyproject.toml"
       - "knip.json"
-      - ".github/workflows/productivity-e2e.yml"
+      - ".github/workflows/drive-backed-apps-e2e.yml"
   workflow_dispatch:
 
 concurrency:
-  group: productivity-e2e-${{ github.event.number || github.ref }}
+  group: drive-backed-apps-e2e-${{ github.event.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -175,7 +175,7 @@ jobs:
 
       - name: Run E2E tests
         working-directory: ${{ github.workspace }}/suite/e2e
-        run: yarn test:productivity --workers=2
+        run: yarn test:drive-backed-apps --workers=2
         env:
           BASE_URL: http://drive-writer.test:8000
           CI: true
@@ -184,11 +184,11 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: productivity-playwright-report
+          name: drive-backed-apps-playwright-report
           path: |
-            suite/e2e/productivity/playwright-report/
-            suite/e2e/productivity/test-results/
-            suite/e2e/productivity/results.xml
+            suite/e2e/drive-backed-apps/playwright-report/
+            suite/e2e/drive-backed-apps/test-results/
+            suite/e2e/drive-backed-apps/results.xml
             /home/runner/frappe-bench/bench_start.log
           compression-level: 1
           retention-days: 7

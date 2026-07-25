@@ -3,13 +3,13 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "test": "yarn test:productivity",
-    "test:productivity": "playwright test -c productivity/playwright.config.ts",
+    "test": "yarn test:drive-backed-apps",
+    "test:drive-backed-apps": "playwright test -c drive-backed-apps/playwright.config.ts",
     "test:meet": "playwright test -c meet/playwright.config.ts",
-    "test:headed": "yarn test:productivity --headed",
-    "test:debug": "yarn test:productivity --debug",
-    "test:ui": "yarn test:productivity --ui",
-    "test:report": "playwright show-report productivity/playwright-report",
+    "test:headed": "yarn test:drive-backed-apps --headed",
+    "test:debug": "yarn test:drive-backed-apps --debug",
+    "test:ui": "yarn test:drive-backed-apps --ui",
+    "test:report": "playwright show-report drive-backed-apps/playwright-report",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

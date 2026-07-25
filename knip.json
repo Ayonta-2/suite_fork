@@ -16,13 +16,13 @@
     },
     "suite/e2e": {
       "entry": [
-        "productivity/global-setup.ts",
-        "productivity/global-teardown.ts",
+        "drive-backed-apps/global-setup.ts",
+        "drive-backed-apps/global-teardown.ts",
         "meet/global-setup.ts"
       ],
       "project": [
         "shared/**/*.ts",
-        "productivity/**/*.ts",
+        "drive-backed-apps/**/*.ts",
         "meet/**/*.ts"
       ]
     },
