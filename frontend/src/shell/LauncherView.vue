@@ -1,7 +1,7 @@
 <template>
 	<!-- '/suite' launcher: brand-logo app switcher for all 7 suite apps. -->
 	<div class="flex h-full flex-col">
-		<header class="flex shrink-0 items-center justify-between border-b border-outline-gray-1 p-3">
+		<header class="flex shrink-0 items-center justify-between border-b border-outline-gray-1 p-2">
 			<div v-if="workspaceName" class="flex items-center gap-2.5">
 				<Avatar :image="workspaceLogo" :label="workspaceName" shape="square" size="xl" />
 				<div class="text-xl-semibold text-ink-gray-9">{{ workspaceName }}</div>
@@ -38,45 +38,63 @@
 						<div class="mt-3 text-sm-medium leading-none text-ink-gray-9">{{ app.name }}</div>
 					</router-link>
 
-					<a
-						href="/app/user-settings"
+					<component
+						:is="systemUser ? 'button' : 'a'"
+						:href="systemUser ? undefined : '/app/user-settings'"
 						class="group flex flex-col items-center text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+						@click="systemUser && (showSettings = true)"
 					>
 						<div class="flex size-[3.375rem] items-center justify-center">
 							<img
-								:src="suiteLogo"
+								:src="settingsLogo"
 								:alt="__('Settings logo')"
 								class="size-[3.375rem] object-contain"
 								draggable="false"
 							/>
 						</div>
 						<div class="mt-3 text-sm-medium leading-none text-ink-gray-9">{{ __('Settings') }}</div>
-					</a>
+					</component>
 				</div>
 			</div>
 		</div>
+
+		<SuiteSettingsDialog
+			v-if="systemUser"
+			v-model="showSettings"
+			:workspace-name="workspaceName"
+			:workspace-logo="workspaceLogo"
+			@saved="onWorkspaceSaved"
+		/>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref } from 'vue'
 import { Avatar, Dropdown, createResource } from 'frappe-ui'
 import { LogOut } from 'lucide-vue-next'
 
-import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
+import { SUITE_APPS } from '@/apps/registry'
+import settingsLogo from '@/assets/app-logos/settings.svg'
 import { useThemeMenuOption } from '@/apps/slides/composables/useThemeMenuOption'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
+import SuiteSettingsDialog from '@/shell/SuiteSettingsDialog.vue'
 import { useRootStore } from '@/stores/root'
 import { setupTheme } from '@/utils/setupTheme'
 
 const apps = SUITE_APPS
-const suiteLogo = SUITE_LOGO
 
 const workspaceName = ref(window.suite_workspace_name ?? '')
 const workspaceLogo = ref(window.suite_workspace_logo ?? '')
 
-const { fullName, imageURL, email } = useCurrentUser()
+const { fullName, imageURL, email, systemUser } = useCurrentUser()
 const sessionStore = useSessionStore()
+
+const showSettings = ref(false)
+
+function onWorkspaceSaved(data: { workspace_name: string; workspace_logo: string }) {
+	workspaceName.value = data.workspace_name
+	workspaceLogo.value = data.workspace_logo
+}
 
 const themeMenuOption = useThemeMenuOption()
 
@@ -123,5 +141,10 @@ if (typeof window.suite_workspace_name === 'undefined') {
 onMounted(() => {
 	setupTheme()
 	useRootStore().setActiveApp(null)
+	document.documentElement.style.overscrollBehavior = 'none'
+})
+
+onUnmounted(() => {
+	document.documentElement.style.overscrollBehavior = ''
 })
 </script>
