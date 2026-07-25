@@ -1,8 +1,9 @@
 <template>
   <div class="flex h-full justify-center overflow-auto bg-surface-base pt-24 pb-14">
     <div class="flex w-full max-w-sm flex-col gap-7 px-4">
+      <div v-if="step === 'welcome'" class="size-10 shrink-0" aria-hidden="true" />
       <img
-        v-if="step !== 'done'"
+        v-else-if="step !== 'done'"
         :src="suiteLogo"
         :alt="__('Frappe Suite logo')"
         class="size-10 shrink-0 object-contain"
@@ -76,7 +77,7 @@
                   v-model="workspaceName"
                   type="text"
                   variant="outline"
-                  :label="__('Workspace Name')"
+                  :label="__('Workspace name')"
                   :placeholder="__('Acme Inc.')"
                 />
                 <ErrorMessage :message="saveWorkspace.error" />
@@ -90,6 +91,7 @@
                 variant="outline"
                 :rows="3"
                 class="!resize-none"
+                :label="__('Email addresses')"
                 :placeholder="__('name@company.com, another@company.com')"
                 :disabled="invite.loading"
               />
@@ -100,7 +102,7 @@
 
         <Button
           v-if="step === 'welcome'"
-          class="w-full"
+          class="w-full !gap-1"
           variant="solid"
           :label="__('Get started')"
           icon-right="lucide-chevron-right"
@@ -109,7 +111,7 @@
 
         <Button
           v-else-if="step === 'workspace'"
-          class="w-full"
+          class="w-full !gap-1"
           variant="solid"
           :label="__('Continue')"
           icon-right="lucide-chevron-right"
@@ -122,10 +124,11 @@
           <Button variant="subtle" :label="__('Skip for now')" :disabled="invite.loading" @click="finish" />
           <Button
             variant="solid"
+            class="!gap-1"
             :label="__('Send invites')"
             icon-right="lucide-chevron-right"
             :loading="invite.loading"
-            :disabled="!hasEmails"
+            :disabled="!hasValidEmail"
             @click="sendInvites"
           />
         </div>
@@ -172,11 +175,11 @@ const splitEmails = (s: string) =>
     .map((e) => e.trim())
     .filter(Boolean)
 
-const hasEmails = computed(() => splitEmails(emails.value).length > 0)
+const hasValidEmail = computed(() => splitEmails(emails.value).some(isEmail))
 
 const copy: Record<Step, { title: string; subtitle: string }> = {
   welcome: { title: __('Welcome to Frappe Suite'), subtitle: __('Everything your team needs, all in one place.') },
-  workspace: { title: __('Setup your Workspace'), subtitle: __('Customize your shared home.') },
+  workspace: { title: __('Set up your workspace'), subtitle: __('Make it yours with a name and logo.') },
   invite: { title: __("Let's invite your team"), subtitle: __('Add teammates and explore Suite together.') },
   done: { title: __("You're all set!"), subtitle: __('Your workspace is ready. Time to dive in.') },
 }
@@ -187,7 +190,7 @@ const displayError = computed(() => {
   const err = invite.error as { exc_type?: string; messages?: string[] } | null
   if (!err) return ''
   if (err.exc_type === 'OutgoingEmailError') {
-    return __('No outgoing email account setup.')
+    return __('No outgoing email account is set up. You can skip this and invite your team later.')
   }
   return err.messages?.join(' ') || __('Failed to send invites.')
 })
