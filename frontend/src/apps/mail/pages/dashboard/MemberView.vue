@@ -109,7 +109,8 @@
 						<div
 							v-for="group in member.data.groups"
 							:key="group.id"
-							class="border-b px-5 py-3 text-base last:border-b-0"
+							class="hover:bg-surface-gray-2 cursor-pointer border-b px-5 py-3 text-base last:border-b-0"
+							@click="router.push({ name: 'mail-group', params: { groupId: group.id } })"
 						>
 							{{ group.email || group.name }}
 						</div>
@@ -131,7 +132,8 @@
 						<div
 							v-for="list in member.data.mailing_lists"
 							:key="list.id"
-							class="border-b px-5 py-3 text-base last:border-b-0"
+							class="hover:bg-surface-gray-2 cursor-pointer border-b px-5 py-3 text-base last:border-b-0"
+							@click="router.push({ name: 'mail-mailing-list', params: { listId: list.id } })"
 						>
 							{{ list.email || list.name }}
 						</div>
