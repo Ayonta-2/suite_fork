@@ -1,5 +1,5 @@
 <template>
-	<div class="flex-1 min-h-0 overflow-y-auto flex flex-col bg-surface-base" data-testid="meeting-preview">
+	<div class="flex-1 min-h-0 overflow-y-auto flex flex-col bg-surface-base">
 		<div class="flex-1 flex lg:flex-row flex-col text-ink-gray-8">
  			<div class="max-w-7xl mx-auto w-full flex lg:flex-row flex-col">
  				<!-- Video Section -->
@@ -93,7 +93,6 @@
  									:loading="isConnecting || joinGuestAPI.loading"
  									:disabled="isGuest && !guestName.trim()"
  									class="w-full"
- 									data-testid="join-meeting-preview-button"
  								>
  									<template #prefix>
  										<lucide-video class="w-5 h-5" />
