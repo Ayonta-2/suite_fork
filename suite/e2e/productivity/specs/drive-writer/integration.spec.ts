@@ -77,13 +77,13 @@ test("renames, moves, trashes, restores, and reopens a Writer document from Driv
 	await owner.page.getByRole("button", { name: "Rename" }).click();
 	const renameDialog = owner.page.getByRole("dialog", { name: "Rename" });
 	await renameDialog.getByRole("textbox").fill(renamedTitle);
-	await Promise.all([
+	const [renameResponse] = await Promise.all([
 		owner.page.waitForResponse(
-			(response) =>
-				response.url().includes("suite.drive.api.files.rename") && response.ok(),
+			(response) => response.url().includes("suite.drive.api.files.rename"),
 		),
 		renameDialog.getByRole("button", { name: "Confirm" }).click(),
 	]);
+	if (!renameResponse.ok()) throw new Error(await renameResponse.text());
 	await expect(documentRow).toContainText(renamedTitle);
 	let fetchedEmbed = await owner.page.request.get(embed.file_url);
 	expect(fetchedEmbed.ok()).toBe(true);

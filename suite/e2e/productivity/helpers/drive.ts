@@ -77,7 +77,7 @@ export async function shareCurrentEntity(
 	await peopleInput.fill(user);
 	const userOption = page.getByRole("option", { name: `Add "${user}"` });
 	await expect(userOption).toBeVisible();
-	await userOption.click();
+	await userOption.dispatchEvent("click");
 	await expect(dialog.getByRole("button", { name: "Invite" })).toBeVisible();
 	await Promise.all([
 		page.waitForResponse(

@@ -29,7 +29,7 @@ from suite.drive.utils import (
 	update_file_size,
 	validate_filename,
 )
-from suite.drive.utils.files import FileManager
+from suite.drive.utils.files import S3_URL_PREFIX, FileManager, get_s3_url, storage_key
 
 
 class File(FrappeFile):
@@ -399,9 +399,14 @@ class File(FrappeFile):
 			self.file_url = new
 		for child in self.get_children():
 			if not child._not_in_disk():
-				child.recursive_path_move(
-					child.file_url, str(Path(new) / Path(child.file_url).relative_to(old))
+				new_child_url = str(
+					Path(storage_key(new)) / Path(storage_key(child.file_url)).relative_to(storage_key(old))
 				)
+				if child.file_url.startswith(S3_URL_PREFIX):
+					new_child_url = get_s3_url(new_child_url)
+				elif child.file_url.startswith("/"):
+					new_child_url = "/" + new_child_url
+				child.recursive_path_move(child.file_url, new_child_url)
 		self.save()
 
 	def get_children(self):
