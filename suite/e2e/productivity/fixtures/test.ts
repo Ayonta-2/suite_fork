@@ -10,10 +10,8 @@ import { resolve } from "node:path";
 import type { Credentials } from "../../shared/auth";
 
 const statePath = resolve(__dirname, "../.state/run.json");
-const authStatePaths = [
-	resolve(__dirname, "../.state/owner.json"),
-	resolve(__dirname, "../.state/collaborator.json"),
-];
+const userStatePath = (index: number) =>
+	resolve(__dirname, `../.state/user-${index}.json`);
 
 interface ProvisionedUser extends Credentials {
 	user: string;
@@ -59,20 +57,22 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
 		},
 		{ scope: "worker" },
 	],
-	owner: async ({ browser, run }, use) => {
+	owner: async ({ browser, run }, use, workerInfo) => {
+		const userIndex = workerInfo.parallelIndex * 2;
 		const authenticated = await authenticatedPage(
 			browser,
-			run.users[0],
-			authStatePaths[0],
+			run.users[userIndex],
+			userStatePath(userIndex),
 		);
 		await use(authenticated);
 		await authenticated.context.close();
 	},
-	collaborator: async ({ browser, run }, use) => {
+	collaborator: async ({ browser, run }, use, workerInfo) => {
+		const userIndex = workerInfo.parallelIndex * 2 + 1;
 		const authenticated = await authenticatedPage(
 			browser,
-			run.users[1],
-			authStatePaths[1],
+			run.users[userIndex],
+			userStatePath(userIndex),
 		);
 		await use(authenticated);
 		await authenticated.context.close();

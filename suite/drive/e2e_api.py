@@ -6,18 +6,34 @@ import re
 import frappe
 from frappe.tests.utils import whitelist_for_tests
 
-from suite.utils.user import assign_suite_role
-
 DEFAULT_PASSWORD = "DriveWriterE2E!2026"
 USER_COUNT = 2
+MAX_USER_COUNT = 16
 RUN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 
 
-def _user_emails(run_id: str) -> list[str]:
+def _validate_run_id(run_id: str) -> str:
 	run_id = (run_id or "").strip().lower()
 	if not RUN_ID_PATTERN.fullmatch(run_id):
 		frappe.throw("run_id must contain 1-40 lowercase letters, numbers, or hyphens")
-	return [f"drive-writer-e2e-{run_id}-{number}@example.test" for number in range(1, USER_COUNT + 1)]
+	return run_id
+
+
+def _user_emails(run_id: str, user_count: int = USER_COUNT) -> list[str]:
+	run_id = _validate_run_id(run_id)
+	if user_count < USER_COUNT or user_count > MAX_USER_COUNT or user_count % 2:
+		frappe.throw(f"user_count must be an even number between {USER_COUNT} and {MAX_USER_COUNT}")
+	return [f"drive-writer-e2e-{run_id}-{number}@example.test" for number in range(1, user_count + 1)]
+
+
+def _existing_user_emails(run_id: str) -> list[str]:
+	run_id = _validate_run_id(run_id)
+	return frappe.get_all(
+		"User",
+		filters={"name": ["like", f"drive-writer-e2e-{run_id}-%@example.test"]},
+		pluck="name",
+		order_by="name",
+	)
 
 
 def _user_result(email: str, password: str | None = None) -> dict:
@@ -92,9 +108,9 @@ def _create_user_drive_data(email: str) -> None:
 
 
 @whitelist_for_tests(methods=["POST"])
-def provision_users(run_id: str, password: str = DEFAULT_PASSWORD) -> dict:
-	"""Create two ordinary users through the normal User insert lifecycle."""
-	emails = _user_emails(run_id)
+def provision_users(run_id: str, password: str = DEFAULT_PASSWORD, user_count: int = USER_COUNT) -> dict:
+	"""Create isolated owner/collaborator pairs for each E2E worker."""
+	emails = _user_emails(run_id, user_count)
 	if not password:
 		frappe.throw("password is required")
 
@@ -113,9 +129,10 @@ def provision_users(run_id: str, password: str = DEFAULT_PASSWORD) -> dict:
 				"new_password": password,
 			}
 		)
-		assign_suite_role(user)
 		user.flags.skip_drive_setup = True
 		user.insert(ignore_permissions=True)
+		user.reload()
+		user.add_roles("Suite User")
 		_create_user_drive_data(email)
 
 	return {"run_id": run_id, "users": [_user_result(email, password) for email in emails]}
@@ -124,7 +141,7 @@ def provision_users(run_id: str, password: str = DEFAULT_PASSWORD) -> dict:
 @whitelist_for_tests(methods=["POST"])
 def cleanup_users(run_id: str) -> dict:
 	"""Delete only users and personal Drive/Writer data named by this run ID."""
-	emails = _user_emails(run_id)
+	emails = _existing_user_emails(run_id)
 	deleted = []
 
 	for email in emails:

@@ -5,8 +5,8 @@ import { loginViaApi, type Credentials } from "../shared/auth";
 import { frappeData } from "../shared/frappe";
 
 const statePath = resolve(__dirname, ".state/run.json");
-const ownerStatePath = resolve(__dirname, ".state/owner.json");
-const collaboratorStatePath = resolve(__dirname, ".state/collaborator.json");
+const userStatePath = (index: number) =>
+	resolve(__dirname, `.state/user-${index}.json`);
 const admin: Credentials = {
 	email: process.env.E2E_ADMIN_EMAIL ?? "Administrator",
 	password: process.env.E2E_ADMIN_PASSWORD ?? "admin",
@@ -48,12 +48,14 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 	await loginViaApi(api, admin);
 	await cleanupPreviousRun(api);
 	const runId = `${Date.now().toString(36)}-${process.pid}`;
+	const userCount = Math.max(1, config.workers) * 2;
 	const response = await api.post(
 		"/api/method/suite.drive.e2e_api.provision_users",
 		{
 			form: {
 				run_id: runId,
 				password: process.env.E2E_USER_PASSWORD ?? "DriveWriterE2E!2026",
+				user_count: userCount,
 			},
 		},
 	);
@@ -63,13 +65,10 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 	}>(response);
 	mkdirSync(dirname(statePath), { recursive: true });
 	writeFileSync(statePath, JSON.stringify(run));
-	for (const [user, path] of [
-		[run.users[0], ownerStatePath],
-		[run.users[1], collaboratorStatePath],
-	] as const) {
+	for (const [index, user] of run.users.entries()) {
 		const userApi = await request.newContext({ baseURL });
 		await loginViaApi(userApi, user);
-		await userApi.storageState({ path });
+		await userApi.storageState({ path: userStatePath(index) });
 		await userApi.dispose();
 	}
 	await api.dispose();
