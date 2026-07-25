@@ -240,6 +240,30 @@ class ManagementService:
 		matches = self.get_all(filter=filter, limit=1, properties=properties)
 		return matches[0] if matches else None
 
+	def list_page(
+		self,
+		filter: dict | None = None,
+		sort: list[dict] | None = None,
+		position: int = 0,
+		limit: int | None = None,
+		properties: list[str] | None = None,
+	) -> dict:
+		"""Returns ``{"items", "total"}`` — one page of full objects in query order.
+
+		Unlike ``get_all`` (which fetches everything), this pages via ``position``/``limit`` for
+		large collections such as the queue or the log, and preserves the query's ordering.
+		"""
+
+		page = self.query(filter=filter, sort=sort, position=position, limit=limit)
+		ids = page["ids"]
+		items: list[dict] = []
+		if ids:
+			result = self._invoke("get", ids=ids, properties=self._resolve_properties(properties))
+			by_id = {obj["id"]: obj for obj in (result.get("list") or [])}
+			items = [by_id[id] for id in ids if id in by_id]
+
+		return {"items": items, "total": page["total"]}
+
 	# --- write -------------------------------------------------------------
 
 	def _create(self, obj: Serializable) -> dict:

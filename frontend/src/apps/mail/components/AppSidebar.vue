@@ -94,23 +94,30 @@ import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
 import type { MailboxData } from '@/apps/mail/types'
 
 import BookUser from '~icons/lucide/book-user'
+import Clock from '~icons/lucide/clock'
 import ContactRound from '~icons/lucide/contact-round'
 import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
+import Flag from '~icons/lucide/flag'
 import Globe from '~icons/lucide/globe'
 import KeyRound from '~icons/lucide/key-round'
+import Lock from '~icons/lucide/lock'
 import LogOut from '~icons/lucide/log-out'
 import Mailbox from '~icons/lucide/mailbox'
 import Mails from '~icons/lucide/mails'
 import Megaphone from '~icons/lucide/megaphone'
 import Plus from '~icons/lucide/plus'
+import Radar from '~icons/lucide/radar'
+import ScrollText from '~icons/lucide/scroll-text'
 import Settings from '~icons/lucide/settings'
 import Shield from '~icons/lucide/shield'
+import ShieldCheck from '~icons/lucide/shield-check'
 import Signature from '~icons/lucide/signature'
 import Star from '~icons/lucide/star'
 import Trash2 from '~icons/lucide/trash-2'
 import Users from '~icons/lucide/users'
 import UsersRound from '~icons/lucide/users-round'
+import Wrench from '~icons/lucide/wrench'
 
 const route = useRoute()
 const router = useRouter()
@@ -292,6 +299,85 @@ const dashboardItems = [
 				icon: Signature,
 				to: { name: 'mail-dkim-signatures' },
 				activeFor: ['mail-dkim-signatures', 'mail-dkim-signature'],
+			},
+		],
+	},
+	{
+		label: __('Emails'),
+		items: [
+			{
+				label: __('Queued'),
+				icon: Clock,
+				to: { name: 'mail-queued-messages' },
+				activeFor: ['mail-queued-messages', 'mail-queued-message'],
+			},
+			{
+				label: __('Delivery Test'),
+				icon: Radar,
+				to: { name: 'mail-delivery-test' },
+				activeFor: ['mail-delivery-test'],
+			},
+		],
+	},
+	{
+		label: __('Inbound Reports'),
+		items: [
+			{
+				label: __('DMARC'),
+				icon: ShieldCheck,
+				to: { name: 'mail-reports-dmarc-inbound' },
+				activeFor: ['mail-reports-dmarc-inbound'],
+			},
+			{
+				label: __('TLS'),
+				icon: Lock,
+				to: { name: 'mail-reports-tls-inbound' },
+				activeFor: ['mail-reports-tls-inbound'],
+			},
+			{
+				label: __('ARF'),
+				icon: Flag,
+				to: { name: 'mail-reports-arf-inbound' },
+				activeFor: ['mail-reports-arf-inbound'],
+			},
+		],
+	},
+	{
+		label: __('Outbound Reports'),
+		items: [
+			{
+				label: __('DMARC'),
+				icon: ShieldCheck,
+				to: { name: 'mail-reports-dmarc-outbound' },
+				activeFor: ['mail-reports-dmarc-outbound'],
+			},
+			{
+				label: __('TLS'),
+				icon: Lock,
+				to: { name: 'mail-reports-tls-outbound' },
+				activeFor: ['mail-reports-tls-outbound'],
+			},
+		],
+	},
+	{
+		label: __('Observability'),
+		items: [
+			{
+				label: __('Logs'),
+				icon: ScrollText,
+				to: { name: 'mail-logs' },
+				activeFor: ['mail-logs', 'mail-log'],
+			},
+		],
+	},
+	{
+		label: __('Actions'),
+		items: [
+			{
+				label: __('Actions'),
+				icon: Wrench,
+				to: { name: 'mail-actions' },
+				activeFor: ['mail-actions'],
 			},
 		],
 	},

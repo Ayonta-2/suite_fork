@@ -19,11 +19,17 @@ from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_
 from suite.mail.stalwart import (
 	add_account_role,
 	get_account_service,
+	get_action_service,
+	get_action_types,
 	get_dkim_signature_service,
 	get_domain_service,
 	get_group_service,
+	get_log_service,
+	get_management_connection,
 	get_mailing_list_service,
 	get_oauth_client_service,
+	get_queued_message_service,
+	get_report_service,
 	get_role_service,
 	remove_account_role,
 )
@@ -1697,3 +1703,365 @@ def delete_dkim_signatures(ids: list) -> None:
 
 	check_admin_permission("delete dkim signatures")
 	get_dkim_signature_service().delete(_listify(ids))
+
+
+# ---------------------------------------------------------------------------
+# Emails: Queue
+# ---------------------------------------------------------------------------
+
+
+def _set_keys(value) -> list[str]:
+	"""Returns the members of a JMAP ``set`` property, whether it arrives as a map or a list."""
+
+	if isinstance(value, dict):
+		return sorted(value.keys())
+	return _listify(value)
+
+
+def _queue_row(message: dict) -> dict:
+	"""Maps a queued message to its list-row shape."""
+
+	recipients = list((message.get("recipients") or {}).keys())
+	return {
+		"id": message["id"],
+		"sender": message.get("returnPath"),
+		"recipients": recipients,
+		"recipient_count": len(recipients),
+		"size": message.get("size"),
+		"next_retry": message.get("nextRetry"),
+		"created_at": message.get("createdAt"),
+	}
+
+
+def _queue_filter(search: str | None, to: str | None, sender: str | None) -> dict | None:
+	"""Builds a queue query filter from the provided, non-empty criteria."""
+
+	filter = {}
+	if search:
+		filter["text"] = search
+	if to:
+		filter["to"] = to
+	if sender:
+		filter["returnPath"] = sender
+	return filter or None
+
+
+@frappe.whitelist()
+def get_queued_messages(
+	search: str | None = None,
+	to: str | None = None,
+	sender: str | None = None,
+	page: int = 1,
+	page_length: int = 50,
+) -> dict:
+	"""Returns a page of messages pending outbound delivery with the total count."""
+
+	check_admin_permission("view queued messages")
+
+	page, page_length = cint(page) or 1, cint(page_length) or 50
+	result = get_queued_message_service().list_page(
+		filter=_queue_filter(search, to, sender),
+		position=(page - 1) * page_length,
+		limit=page_length,
+		properties=["id", "returnPath", "recipients", "size", "nextRetry", "createdAt"],
+	)
+	return {"messages": [_queue_row(m) for m in result["items"]], "total": result["total"]}
+
+
+@frappe.whitelist()
+def get_queued_message(message_id: str) -> dict:
+	"""Returns a queued message with its per-recipient delivery status."""
+
+	check_admin_permission("view queued messages")
+
+	message = get_queued_message_service().get(message_id)
+	if not message:
+		frappe.throw(_("Queued message not found"), frappe.DoesNotExistError)
+
+	recipients = []
+	for email, recipient in (message.get("recipients") or {}).items():
+		recipients.append(
+			{
+				"email": email,
+				"status": recipient.get("status"),
+				"retry_count": recipient.get("retryCount"),
+				"retry_due": recipient.get("retryDue"),
+				"notify_count": recipient.get("notifyCount"),
+				"notify_due": recipient.get("notifyDue"),
+				"queue": recipient.get("queueName"),
+				"flags": _set_keys(recipient.get("flags")),
+			}
+		)
+
+	return {
+		"id": message["id"],
+		"sender": message.get("returnPath"),
+		"size": message.get("size"),
+		"priority": message.get("priority"),
+		"env_id": message.get("envId"),
+		"flags": _set_keys(message.get("flags")),
+		"next_retry": message.get("nextRetry"),
+		"next_notify": message.get("nextNotify"),
+		"received_from_ip": message.get("receivedFromIp"),
+		"received_via_port": message.get("receivedViaPort"),
+		"created_at": message.get("createdAt"),
+		"recipients": recipients,
+		"has_content": bool(message.get("blobId")),
+	}
+
+
+@frappe.whitelist()
+def get_queued_message_source(message_id: str) -> dict:
+	"""Returns the raw RFC822 source of a queued message."""
+
+	from urllib.parse import urljoin
+
+	check_admin_permission("view queued messages")
+
+	connection = get_queued_message_service().connection
+	message = get_queued_message_service().get(message_id, properties=["id", "blobId"])
+	blob_id = (message or {}).get("blobId")
+	if not blob_id:
+		frappe.throw(_("Queued message content is not available"), frappe.DoesNotExistError)
+
+	account_id = connection.primary_accounts["urn:stalwart:jmap"]
+	url = urljoin(
+		get_config("server_url"),
+		f"/jmap/download/{account_id}/{blob_id}/message.eml?accept=message/rfc822",
+	)
+	content = connection.request(method="GET", url=url, return_json=False)
+	return {"source": content.decode(errors="replace") if isinstance(content, bytes) else content}
+
+
+@frappe.whitelist()
+def retry_queued_messages(ids: list) -> None:
+	"""Schedules the given queued messages for immediate delivery."""
+
+	check_admin_permission("retry queued messages")
+	get_queued_message_service().retry(_listify(ids))
+
+
+@frappe.whitelist()
+def cancel_queued_messages(ids: list) -> None:
+	"""Cancels (deletes) the given queued messages."""
+
+	check_admin_permission("cancel queued messages")
+	get_queued_message_service().delete(_listify(ids))
+
+
+@frappe.whitelist()
+def retry_all_queued_messages(
+	search: str | None = None, to: str | None = None, sender: str | None = None
+) -> None:
+	"""Schedules every message matching the current filter for immediate delivery."""
+
+	check_admin_permission("retry queued messages")
+	service = get_queued_message_service()
+	service.retry(service.query(filter=_queue_filter(search, to, sender))["ids"])
+
+
+@frappe.whitelist()
+def cancel_all_queued_messages(
+	search: str | None = None, to: str | None = None, sender: str | None = None
+) -> None:
+	"""Cancels (deletes) every message matching the current filter."""
+
+	check_admin_permission("cancel queued messages")
+	service = get_queued_message_service()
+	service.delete(service.query(filter=_queue_filter(search, to, sender))["ids"])
+
+
+# ---------------------------------------------------------------------------
+# Emails: Delivery Test (live SMTP delivery trace)
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist(methods=["GET"])
+def stream_delivery_test(target: str):
+	"""Proxies Stalwart's live SMTP delivery trace for ``target`` as a Server-Sent Events stream.
+
+	Stalwart sends no CORS headers and authenticates the trace with a short-lived token, so the
+	browser cannot connect directly. This mints the token server-side and relays the event stream
+	over the same origin instead.
+	"""
+
+	from urllib.parse import quote, urljoin
+
+	import requests
+	from werkzeug.wrappers import Response
+
+	check_admin_permission("run delivery test")
+
+	connection = get_management_connection()
+	server_url, verify_ssl = get_config(("server_url", "verify_ssl"))
+	token = connection.request(
+		method="GET", url=urljoin(server_url, "/api/token/delivery"), return_json=False
+	)
+	token = token.decode() if isinstance(token, bytes) else token
+
+	url = urljoin(server_url, f"/api/live/delivery/{quote(target)}?token={quote(token)}")
+	upstream = requests.get(url, stream=True, verify=bool(verify_ssl), timeout=(10, 300))
+
+	def relay():
+		try:
+			for chunk in upstream.iter_content(chunk_size=None):
+				if chunk:
+					yield chunk
+		finally:
+			upstream.close()
+
+	return Response(
+		relay(),
+		mimetype="text/event-stream",
+		headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+	)
+
+
+# ---------------------------------------------------------------------------
+# Reports: inbound (received) and outbound (generated) DMARC / TLS / ARF
+# ---------------------------------------------------------------------------
+
+
+def _report_row(direction: str, report: dict) -> dict:
+	"""Maps a report to its list-row shape (columns differ by direction)."""
+
+	if direction == "inbound":
+		return {
+			"id": report["id"],
+			"from": report.get("from"),
+			"subject": report.get("subject"),
+			"received_at": report.get("receivedAt"),
+		}
+	return {
+		"id": report["id"],
+		"domain": report.get("domain"),
+		"created_at": report.get("createdAt"),
+		"deliver_at": report.get("deliverAt"),
+	}
+
+
+@frappe.whitelist()
+def get_reports(
+	kind: str,
+	direction: str,
+	domain: str | None = None,
+	page: int = 1,
+	page_length: int = 50,
+) -> dict:
+	"""Returns a page of ``kind`` reports (dmarc/tls/arf) in the given direction (inbound/outbound)."""
+
+	check_admin_permission("view reports")
+
+	page, page_length = cint(page) or 1, cint(page_length) or 50
+	# Only DMARC/TLS carry a domain filter; ARF does not.
+	filter = {"domain": domain} if domain and kind in ("dmarc", "tls") else None
+	result = get_report_service(kind, direction).list_page(
+		filter=filter, position=(page - 1) * page_length, limit=page_length
+	)
+	return {"reports": [_report_row(direction, r) for r in result["items"]], "total": result["total"]}
+
+
+@frappe.whitelist()
+def get_report(kind: str, direction: str, report_id: str) -> dict:
+	"""Returns a single report's metadata plus its parsed report body."""
+
+	check_admin_permission("view reports")
+
+	report = get_report_service(kind, direction).get(report_id)
+	if not report:
+		frappe.throw(_("Report not found"), frappe.DoesNotExistError)
+
+	meta = {"id": report["id"], "kind": kind, "direction": direction, "report": report.get("report")}
+	if direction == "inbound":
+		meta.update(
+			{
+				"from": report.get("from"),
+				"subject": report.get("subject"),
+				"to": report.get("to"),
+				"received_at": report.get("receivedAt"),
+				"expires_at": report.get("expiresAt"),
+			}
+		)
+	else:
+		meta.update(
+			{
+				"domain": report.get("domain"),
+				"created_at": report.get("createdAt"),
+				"deliver_at": report.get("deliverAt"),
+			}
+		)
+	return meta
+
+
+@frappe.whitelist()
+def delete_reports(kind: str, direction: str, ids: list) -> None:
+	"""Deletes the given reports."""
+
+	check_admin_permission("delete reports")
+	get_report_service(kind, direction).delete(_listify(ids))
+
+
+# ---------------------------------------------------------------------------
+# Observability: Logs
+# ---------------------------------------------------------------------------
+
+
+def _log_row(entry: dict) -> dict:
+	"""Maps a log entry to its row/detail shape."""
+
+	return {
+		"id": entry["id"],
+		"timestamp": entry.get("timestamp"),
+		"level": entry.get("level"),
+		"event": entry.get("event"),
+		"details": entry.get("details"),
+	}
+
+
+@frappe.whitelist()
+def get_logs(search: str | None = None, page: int = 1, page_length: int = 100) -> dict:
+	"""Returns a page of server log entries (most recent first) with the total count."""
+
+	check_admin_permission("view logs")
+
+	page, page_length = cint(page) or 1, cint(page_length) or 100
+	result = get_log_service().list_page(
+		filter={"text": search} if search else None,
+		position=(page - 1) * page_length,
+		limit=page_length,
+	)
+	return {"logs": [_log_row(e) for e in result["items"]], "total": result["total"]}
+
+
+@frappe.whitelist()
+def get_log(log_id: str) -> dict:
+	"""Returns a single log entry."""
+
+	check_admin_permission("view logs")
+
+	entry = get_log_service().get(log_id)
+	if not entry:
+		frappe.throw(_("Log entry not found"), frappe.DoesNotExistError)
+
+	return _log_row(entry)
+
+
+# ---------------------------------------------------------------------------
+# Actions: server management operations
+# ---------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_actions() -> list[dict]:
+	"""Returns the executable server management actions (``{value, label, schema_name}``)."""
+
+	check_admin_permission("view actions")
+	return get_action_types()
+
+
+@frappe.whitelist()
+def run_action(action_type: str, params: dict | None = None) -> dict:
+	"""Executes a server management action and returns its result (empty for parameterless actions)."""
+
+	check_admin_permission("run actions")
+	return get_action_service().run(action_type, params=params or None)

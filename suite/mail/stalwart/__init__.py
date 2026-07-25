@@ -17,12 +17,22 @@ from suite.mail.stalwart.account import (
 	StorageQuota,
 	UserRoles,
 )
+from suite.mail.stalwart.actions import Action, ActionService
 from suite.mail.stalwart.app_password import AppPassword, AppPasswordService
 from suite.mail.stalwart.connection import get_account_management_connection, get_management_connection
 from suite.mail.stalwart.domain import DkimSignatureService, Domain, DomainService
 from suite.mail.stalwart.group import Group, GroupService
+from suite.mail.stalwart.logs import LogService
 from suite.mail.stalwart.mailing_list import MailingList, MailingListService
 from suite.mail.stalwart.oauth import OAuthClient, OAuthClientService
+from suite.mail.stalwart.queue import QueuedMessageService
+from suite.mail.stalwart.reports import (
+	ArfExternalReportService,
+	DmarcExternalReportService,
+	DmarcInternalReportService,
+	TlsExternalReportService,
+	TlsInternalReportService,
+)
 from suite.mail.stalwart.role import Role, RoleService
 from suite.mail.stalwart.service import ManagementService
 from suite.utils.dt import utcnow
@@ -30,19 +40,28 @@ from suite.utils.dt import utcnow
 __all__ = [
 	"Account",
 	"AccountService",
+	"Action",
+	"ActionService",
 	"AppPassword",
 	"AppPasswordService",
+	"ArfExternalReportService",
+	"DmarcExternalReportService",
+	"DmarcInternalReportService",
 	"Domain",
 	"DomainService",
 	"Group",
 	"GroupService",
+	"LogService",
 	"MailingList",
 	"MailingListService",
 	"ManagementService",
 	"OAuthClient",
 	"OAuthClientService",
+	"QueuedMessageService",
 	"Role",
 	"RoleService",
+	"TlsExternalReportService",
+	"TlsInternalReportService",
 ]
 
 
@@ -97,6 +116,45 @@ def get_app_password_service(account: str) -> AppPasswordService:
 	return AppPasswordService(get_account_management_connection(account))
 
 
+def get_queued_message_service() -> QueuedMessageService:
+	"""Returns a QueuedMessageService bound to the admin management connection."""
+
+	return QueuedMessageService(get_management_connection())
+
+
+def get_log_service() -> LogService:
+	"""Returns a LogService bound to the admin management connection."""
+
+	return LogService(get_management_connection())
+
+
+def get_action_service() -> ActionService:
+	"""Returns an ActionService bound to the admin management connection."""
+
+	return ActionService(get_management_connection())
+
+
+# Report kinds keyed by ``(kind, direction)`` → service factory. ``direction`` is ``inbound`` for
+# reports received from other servers and ``outbound`` for reports Stalwart generates and sends.
+_REPORT_SERVICES = {
+	("dmarc", "inbound"): DmarcExternalReportService,
+	("dmarc", "outbound"): DmarcInternalReportService,
+	("tls", "inbound"): TlsExternalReportService,
+	("tls", "outbound"): TlsInternalReportService,
+	("arf", "inbound"): ArfExternalReportService,
+}
+
+
+def get_report_service(kind: str, direction: str) -> ManagementService:
+	"""Returns the report service for ``(kind, direction)``, or throws if the pair is unsupported."""
+
+	service = _REPORT_SERVICES.get((kind, direction))
+	if not service:
+		frappe.throw(_("Unsupported report type: {0} {1}").format(kind, direction))
+
+	return service(get_management_connection())
+
+
 # --- cached lookups + resolvers --------------------------------------------
 
 
@@ -124,6 +182,26 @@ def get_permissions() -> list[dict]:
 	)
 	permissions = (schema.get("enums") or {}).get("Permission") or []
 	return [{"value": p["name"], "label": p.get("label") or p["name"]} for p in permissions]
+
+
+@redis_cache(ttl=3600)
+def get_action_types() -> list[dict]:
+	"""Returns the executable server actions as ``{value, label, schema_name}`` from the schema.
+
+	``schema_name`` is set only for actions that take extra input (e.g. DMARC troubleshooting and
+	spam classification); parameterless actions leave it ``None``.
+	"""
+
+	from suite.mail.utils import get_config
+
+	schema = get_management_connection().request(
+		method="GET", url=urljoin(get_config("server_url"), "/api/schema"), return_json=True
+	)
+	variants = (schema.get("schemas") or {}).get("x:Action", {}).get("variants") or []
+	return [
+		{"value": v["name"], "label": v.get("label") or v["name"], "schema_name": v.get("schemaName")}
+		for v in variants
+	]
 
 
 @redis_cache(ttl=3600)
