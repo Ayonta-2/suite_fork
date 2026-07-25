@@ -19,7 +19,7 @@
       </div>
 
       <div>
-        <div class="flex flex-col gap-[30px]">
+        <div class="flex flex-col gap-8">
           <div class="flex flex-col gap-2">
             <h1 class="text-4xl-semibold text-ink-gray-9">{{ current.title }}</h1>
             <p class="text-base text-ink-gray-6">{{ current.subtitle }}</p>
@@ -69,8 +69,15 @@
               <ErrorMessage :message="displayError" />
             </div>
 
-            <div v-else class="flex h-full items-center justify-center">
-              <p class="text-center text-base text-ink-gray-6">{{ doneSummary }}</p>
+            <div v-else class="flex justify-center">
+              <div class="flex w-full items-center gap-3 rounded-lg bg-surface-gray-2 p-4">
+                <LucideMailCheck v-if="inviteSummary" class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5" />
+                <LucideUser v-else class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5" />
+                <div class="flex flex-col gap-1">
+                  <p class="text-base text-ink-gray-8">{{ doneTitle }}</p>
+                  <p class="text-sm text-ink-gray-5">{{ __('Invite anyone later from Settings.') }}</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -119,15 +126,24 @@
         </div>
 
         <div v-else class="flex flex-col items-end gap-2">
-          <Button
-            ref="openSuiteButton"
-            variant="solid"
-            class="!gap-1 w-full"
-            :label="__('Open Suite')"
-            icon-right="lucide-chevron-right"
-            :loading="markComplete.loading"
-            @click="openSuite"
-          />
+          <div class="flex w-full items-center justify-between">
+            <Button
+              variant="subtle"
+              icon="lucide-chevron-left"
+              :label="__('Back')"
+              :disabled="markComplete.loading"
+              @click="back"
+            />
+            <Button
+              ref="openSuiteButton"
+              variant="solid"
+              class="!gap-1"
+              :label="__('Open Suite')"
+              icon-right="lucide-chevron-right"
+              :loading="markComplete.loading"
+              @click="openSuite"
+            />
+          </div>
           <ErrorMessage :message="markComplete.error" />
         </div>
       </div>
@@ -201,9 +217,7 @@ const copy: Record<Step, { title: string; subtitle: string }> = {
 }
 const current = computed(() => copy[step.value])
 
-const doneSummary = computed(
-  () => inviteSummary.value || __('No invites sent yet. You can invite your team anytime.'),
-)
+const doneTitle = computed(() => inviteSummary.value || __('Working solo for now'))
 
 const displayError = computed(() => {
   if (inviteError.value) return inviteError.value
@@ -244,6 +258,7 @@ const invite = createResource({
   url: 'suite.api.account.invite_users',
   onSuccess: (data: InviteResult) => {
     inviteSummary.value = summarizeInvites(data)
+    emails.value = ''
     finish()
   },
 })
@@ -272,11 +287,11 @@ function continueWorkspace() {
 }
 
 function back() {
-  step.value = 'workspace'
+  step.value = stepOrder[stepIndex.value - 1]
 }
 
 function sendOnEnter(e: KeyboardEvent) {
-  if (e.shiftKey) return
+  if (!e.metaKey && !e.ctrlKey) return
   e.preventDefault()
   sendInvites()
 }
