@@ -25,7 +25,7 @@
 				</div>
 				<FormControl
 					v-model="description"
-					:label="__('Full Name')"
+					:label="__('Description')"
 					:placeholder="__('Used as the display name for this address')"
 				/>
 				<ErrorMessage :message="addEmail.error?.messages?.[0] || addEmail.error?.message" />

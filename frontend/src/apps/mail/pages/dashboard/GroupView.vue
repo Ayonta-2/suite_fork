@@ -13,7 +13,7 @@
 			>
 				<div>
 					<InformationField :label="__('Roles')" :value="roleLabels.join(', ')" />
-					<InformationField :label="__('Full Name')" :value="member.data.description" />
+					<InformationField :label="__('Description')" :value="member.data.description" />
 					<InformationField :label="__('Created At')" :value="createdAt" />
 				</div>
 			</DashboardCard>
@@ -74,7 +74,7 @@
 				<div class="flex flex-col">
 					<div class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded px-5 py-2.5 text-sm">
 						<span class="flex-1">{{ __('Email Address') }}</span>
-						<span class="flex-1">{{ __('Full Name') }}</span>
+						<span class="flex-1">{{ __('Description') }}</span>
 						<span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
 						<span class="w-8 shrink-0" />
 					</div>

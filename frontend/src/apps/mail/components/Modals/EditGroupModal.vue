@@ -8,7 +8,7 @@
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl v-model="description" :label="__('Full Name')" />
+				<FormControl v-model="description" :label="__('Description')" />
 				<div class="space-y-1.5">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Roles') }}</label>
 					<MultiSelect v-model="roleIds" :options="roleOptions" />
