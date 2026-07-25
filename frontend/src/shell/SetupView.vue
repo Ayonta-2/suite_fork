@@ -46,39 +46,16 @@
             </div>
 
             <div v-else-if="step === 'workspace'" class="flex items-start gap-4">
-              <FileUploader
-                file-types="image/*"
-                :upload-args="{
-                  private: false,
-                  doctype: 'Suite Settings',
-                  docname: 'Suite Settings',
-                  fieldname: 'workspace_logo',
-                }"
-                @success="(file) => (workspaceLogo = file.file_url)"
-              >
-                <template #default="{ openFileSelector }">
-                  <button
-                    type="button"
-                    class="size-[54px] shrink-0 rounded-[10px] focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
-                    @click="openFileSelector"
-                  >
-                    <Avatar
-                      :image="workspaceLogo"
-                      :label="workspaceName || 'W'"
-                      shape="square"
-                      size="3xl"
-                      class="!size-full"
-                    />
-                  </button>
-                </template>
-              </FileUploader>
+              <WorkspaceLogoInput v-model="workspaceLogo" />
               <div class="flex flex-1 flex-col gap-2">
                 <FormControl
+                  ref="nameInput"
                   v-model="workspaceName"
                   type="text"
                   variant="outline"
                   :label="__('Workspace name')"
                   :placeholder="__('Acme Inc.')"
+                  @keydown.enter="continueWorkspace"
                 />
                 <ErrorMessage :message="saveWorkspace.error" />
               </div>
@@ -86,14 +63,16 @@
 
             <div v-else-if="step === 'invite'" class="flex flex-col gap-2">
               <FormControl
+                ref="emailInput"
                 v-model="emails"
                 type="textarea"
                 variant="outline"
                 :rows="3"
-                class="!resize-none"
+                class="setup-emails"
                 :label="__('Email addresses')"
                 :placeholder="__('name@company.com, another@company.com')"
                 :disabled="invite.loading"
+                @keydown.enter="sendOnEnter"
               />
               <ErrorMessage :message="displayError" />
             </div>
@@ -102,6 +81,7 @@
 
         <Button
           v-if="step === 'welcome'"
+          ref="getStartedButton"
           class="w-full !gap-1"
           variant="solid"
           :label="__('Get started')"
@@ -121,20 +101,30 @@
         />
 
         <div v-else-if="step === 'invite'" class="flex items-center justify-between">
-          <Button variant="subtle" :label="__('Skip for now')" :disabled="invite.loading" @click="finish" />
           <Button
-            variant="solid"
-            class="!gap-1"
-            :label="__('Send invites')"
-            icon-right="lucide-chevron-right"
-            :loading="invite.loading"
-            :disabled="!hasValidEmail"
-            @click="sendInvites"
+            variant="subtle"
+            icon="lucide-chevron-left"
+            :label="__('Back')"
+            :disabled="invite.loading"
+            @click="back"
           />
+          <div class="flex items-center gap-2">
+            <Button variant="subtle" :label="__('Skip')" :disabled="invite.loading" @click="finish" />
+            <Button
+              variant="solid"
+              class="!gap-1"
+              :label="__('Send invites')"
+              icon-right="lucide-chevron-right"
+              :loading="invite.loading"
+              :disabled="!hasValidEmail"
+              @click="sendInvites"
+            />
+          </div>
         </div>
 
         <div v-else class="mt-10 flex flex-col gap-3">
           <Button
+            ref="openSuiteButton"
             class="w-full"
             variant="solid"
             :label="__('Open Suite')"
@@ -150,10 +140,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Avatar, Button, ErrorMessage, FileUploader, FormControl, Tooltip, createResource } from 'frappe-ui'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { Button, ErrorMessage, FormControl, Tooltip, createResource } from 'frappe-ui'
 
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
+import WorkspaceLogoInput from '@/shell/WorkspaceLogoInput.vue'
 
 const apps = SUITE_APPS
 const suiteLogo = SUITE_LOGO
@@ -166,6 +157,29 @@ const workspaceLogo = ref('')
 const emails = ref('')
 const inviteError = ref('')
 const inviteSummary = ref('')
+const getStartedButton = ref()
+const nameInput = ref()
+const emailInput = ref()
+const openSuiteButton = ref()
+
+const stepFocus: Record<Step, typeof nameInput> = {
+  welcome: getStartedButton,
+  workspace: nameInput,
+  invite: emailInput,
+  done: openSuiteButton,
+}
+
+function focusStep() {
+  const root = stepFocus[step.value].value?.$el as HTMLElement | undefined
+  if (!root) return
+  const target = root.matches('button, input, textarea')
+    ? root
+    : root.querySelector<HTMLElement>('input, textarea')
+  target?.focus()
+}
+
+onMounted(focusStep)
+watch(step, () => nextTick(focusStep))
 
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 
@@ -244,13 +258,25 @@ function getStarted() {
 }
 
 function continueWorkspace() {
+  if (!workspaceName.value.trim() || saveWorkspace.loading) return
   saveWorkspace.submit({
     workspace_name: workspaceName.value,
     workspace_logo: workspaceLogo.value,
   })
 }
 
+function back() {
+  step.value = 'workspace'
+}
+
+function sendOnEnter(e: KeyboardEvent) {
+  if (e.shiftKey) return
+  e.preventDefault()
+  sendInvites()
+}
+
 function sendInvites() {
+  if (!hasValidEmail.value || invite.loading) return
   inviteError.value = ''
   const cleaned = splitEmails(emails.value)
   const invalid = cleaned.filter((e) => !isEmail(e))
@@ -283,6 +309,10 @@ async function openSuite() {
 </script>
 
 <style scoped>
+.setup-emails :deep(textarea) {
+  resize: none;
+}
+
 .setup-icon {
   opacity: 0;
   animation: iconIn 0.6s ease both;
