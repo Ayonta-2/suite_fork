@@ -1,38 +1,31 @@
 <template>
   <div class="flex h-full justify-center overflow-auto bg-surface-base pt-24 pb-14">
     <div class="flex w-full max-w-sm flex-col gap-7 px-4">
-      <div v-if="step === 'welcome'" class="size-10 shrink-0" aria-hidden="true" />
-      <img
-        v-else-if="step !== 'done'"
-        :src="suiteLogo"
-        :alt="__('Frappe Suite logo')"
-        class="size-10 shrink-0 object-contain"
-        draggable="false"
-      />
-      <svg
-        v-else
-        class="mx-auto mt-[102px] size-10 shrink-0"
-        viewBox="0 0 36 36"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-      >
-        <path
-          class="setup-check__bg"
-          d="M0 14.4C0 9.35953 0 6.83929 0.980941 4.91409C1.8438 3.22063 3.22063 1.8438 4.91409 0.980941C6.83929 0 9.35953 0 14.4 0H21.6C26.6405 0 29.1607 0 31.0859 0.980941C32.7794 1.8438 34.1562 3.22063 35.0191 4.91409C36 6.83929 36 9.35953 36 14.4V21.6C36 26.6405 36 29.1607 35.0191 31.0859C34.1562 32.7794 32.7794 34.1562 31.0859 35.0191C29.1607 36 26.6405 36 21.6 36H14.4C9.35953 36 6.83929 36 4.91409 35.0191C3.22063 34.1562 1.8438 32.7794 0.980941 31.0859C0 29.1607 0 26.6405 0 21.6V14.4Z"
+      <div class="flex items-center justify-between">
+        <div v-if="step === 'welcome'" class="size-10 shrink-0" aria-hidden="true" />
+        <img
+          v-else
+          :src="suiteLogo"
+          :alt="__('Frappe Suite logo')"
+          class="size-10 shrink-0 object-contain"
+          draggable="false"
         />
-        <polyline class="setup-check__mark" points="10,18.5 15.5,23.5 26,12.5" />
-      </svg>
+        <SetupProgressTrack
+          v-if="step !== 'welcome'"
+          :total="3"
+          :current="stepIndex - 1"
+          :done="step === 'done'"
+        />
+      </div>
 
       <div>
         <div class="flex flex-col gap-[30px]">
-          <div class="flex flex-col gap-2" :class="{ 'text-center': step === 'done' }">
+          <div class="flex flex-col gap-2">
             <h1 class="text-4xl-semibold text-ink-gray-9">{{ current.title }}</h1>
             <p class="text-base text-ink-gray-6">{{ current.subtitle }}</p>
-            <p v-if="inviteSummary" class="text-base text-ink-gray-6">{{ inviteSummary }}</p>
           </div>
 
-          <div v-if="step !== 'done'" class="h-28">
+          <div class="h-28">
             <div v-if="step === 'welcome'" class="flex h-full items-start justify-between">
               <Tooltip v-for="(app, i) in apps" :key="app.id" :text="app.name">
                 <img
@@ -68,13 +61,16 @@
                 type="textarea"
                 variant="outline"
                 :rows="3"
-                class="setup-emails"
-                :label="__('Email addresses')"
+                class="resize-none"
                 :placeholder="__('name@company.com, another@company.com')"
                 :disabled="invite.loading"
                 @keydown.enter="sendOnEnter"
               />
               <ErrorMessage :message="displayError" />
+            </div>
+
+            <div v-else class="flex h-full items-center justify-center">
+              <p class="text-center text-base text-ink-gray-6">{{ doneSummary }}</p>
             </div>
           </div>
         </div>
@@ -122,11 +118,11 @@
           </div>
         </div>
 
-        <div v-else class="mt-10 flex flex-col gap-3">
+        <div v-else class="flex flex-col items-end gap-2">
           <Button
             ref="openSuiteButton"
-            class="w-full"
             variant="solid"
+            class="!gap-1 w-full"
             :label="__('Open Suite')"
             icon-right="lucide-chevron-right"
             :loading="markComplete.loading"
@@ -144,6 +140,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button, ErrorMessage, FormControl, Tooltip, createResource } from 'frappe-ui'
 
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
+import SetupProgressTrack from '@/shell/SetupProgressTrack.vue'
 import WorkspaceLogoInput from '@/shell/WorkspaceLogoInput.vue'
 
 const apps = SUITE_APPS
@@ -151,7 +148,10 @@ const suiteLogo = SUITE_LOGO
 
 type Step = 'welcome' | 'workspace' | 'invite' | 'done'
 
+const stepOrder: Step[] = ['welcome', 'workspace', 'invite', 'done']
+
 const step = ref<Step>('welcome')
+const stepIndex = computed(() => stepOrder.indexOf(step.value))
 const workspaceName = ref('')
 const workspaceLogo = ref('')
 const emails = ref('')
@@ -170,10 +170,12 @@ const stepFocus: Record<Step, typeof nameInput> = {
 }
 
 function focusStep() {
-  const root = stepFocus[step.value].value?.$el as HTMLElement | undefined
+  // Label-less controls render as fragments, so $el can be a comment node.
+  const node = stepFocus[step.value].value?.$el as Node | undefined
+  const root = node instanceof Element ? node : node?.parentElement
   if (!root) return
   const target = root.matches('button, input, textarea')
-    ? root
+    ? (root as HTMLElement)
     : root.querySelector<HTMLElement>('input, textarea')
   target?.focus()
 }
@@ -198,6 +200,10 @@ const copy: Record<Step, { title: string; subtitle: string }> = {
   done: { title: __("You're all set!"), subtitle: __('Your workspace is ready. Time to dive in.') },
 }
 const current = computed(() => copy[step.value])
+
+const doneSummary = computed(
+  () => inviteSummary.value || __('No invites sent yet. You can invite your team anytime.'),
+)
 
 const displayError = computed(() => {
   if (inviteError.value) return inviteError.value
@@ -294,7 +300,12 @@ function sendInvites() {
 // so closing the tab here doesn't send the user back through the wizard.
 function finish() {
   step.value = 'done'
-  markComplete.submit().catch(() => {})
+  // The button is natively disabled while the request is in flight, so the
+  // step-change focus no-ops; focus again once it settles.
+  markComplete
+    .submit()
+    .catch(() => {})
+    .finally(() => nextTick(focusStep))
 }
 
 async function openSuite() {
@@ -309,10 +320,6 @@ async function openSuite() {
 </script>
 
 <style scoped>
-.setup-emails :deep(textarea) {
-  resize: none;
-}
-
 .setup-icon {
   opacity: 0;
   animation: iconIn 0.6s ease both;
@@ -327,18 +334,6 @@ async function openSuite() {
     opacity: 1;
     transform: scale(1);
   }
-}
-
-.setup-check__bg {
-  fill: var(--surface-gray-2);
-}
-
-.setup-check__mark {
-  fill: none;
-  stroke: var(--ink-gray-8);
-  stroke-width: 1.35;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 @media (prefers-reduced-motion: reduce) {
