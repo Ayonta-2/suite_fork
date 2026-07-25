@@ -97,6 +97,50 @@
 					</div>
 				</div>
 			</DashboardCard>
+
+			<!-- Groups -->
+			<DashboardCard :title="__('Groups')">
+				<template #actions><span /></template>
+				<div class="flex flex-col">
+					<div class="bg-surface-gray-2 text-ink-gray-5 rounded px-5 py-2.5 text-sm">
+						{{ __('Group') }}
+					</div>
+					<template v-if="member.data.groups.length">
+						<div
+							v-for="group in member.data.groups"
+							:key="group.id"
+							class="border-b px-5 py-3 text-base last:border-b-0"
+						>
+							{{ group.email || group.name }}
+						</div>
+					</template>
+					<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
+						{{ __('Not a member of any group.') }}
+					</div>
+				</div>
+			</DashboardCard>
+
+			<!-- Mailing Lists -->
+			<DashboardCard :title="__('Mailing Lists')">
+				<template #actions><span /></template>
+				<div class="flex flex-col">
+					<div class="bg-surface-gray-2 text-ink-gray-5 rounded px-5 py-2.5 text-sm">
+						{{ __('Mailing List') }}
+					</div>
+					<template v-if="member.data.mailing_lists.length">
+						<div
+							v-for="list in member.data.mailing_lists"
+							:key="list.id"
+							class="border-b px-5 py-3 text-base last:border-b-0"
+						>
+							{{ list.email || list.name }}
+						</div>
+					</template>
+					<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
+						{{ __('Not a recipient of any mailing list.') }}
+					</div>
+				</div>
+			</DashboardCard>
 		</div>
 	</DashboardLayout>
 	<Dialog v-model="showResetPassword" :options="RESET_PASSWORD_OPTIONS" />
@@ -134,6 +178,8 @@ type MemberData = {
 	enabled: boolean
 	is_admin: boolean
 	email_addresses: string[]
+	groups: { id: string; name: string; email: string }[]
+	mailing_lists: { id: string; name: string; email: string }[]
 	quota: QuotaUsage
 }
 

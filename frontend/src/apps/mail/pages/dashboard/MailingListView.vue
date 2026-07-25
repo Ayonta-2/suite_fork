@@ -15,11 +15,11 @@
 					<template #actions><span /></template>
 					<div v-if="list.data.recipients.length" class="divide-y">
 						<div
-							v-for="r in list.data.recipients"
-							:key="r.id"
+							v-for="recipient in list.data.recipients"
+							:key="recipient"
 							class="even:bg-surface-gray-1 px-5 py-3.5 text-base last:rounded-b"
 						>
-							{{ r.email || r.name }}
+							{{ recipient }}
 						</div>
 					</div>
 					<div v-else class="text-ink-gray-5 px-5 py-3.5 text-base">{{ __('No recipients.') }}</div>

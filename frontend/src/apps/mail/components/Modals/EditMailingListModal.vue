@@ -10,10 +10,12 @@
 			<div class="space-y-4">
 				<FormControl v-model="name" :label="__('Name')" autocomplete="off" />
 				<FormControl v-model="description" :label="__('Description')" type="textarea" />
-				<div class="space-y-1.5">
-					<label class="text-ink-gray-5 block text-xs">{{ __('Recipients') }}</label>
-					<MultiSelect v-model="recipientIds" :options="accountOptions" />
-				</div>
+				<FormControl
+					v-model="recipients"
+					:label="__('Recipients')"
+					type="textarea"
+					:placeholder="__('One email address per line')"
+				/>
 				<ErrorMessage :message="updateList.error?.messages?.[0] || updateList.error?.message" />
 			</div>
 		</template>
@@ -21,8 +23,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { Dialog, ErrorMessage, FormControl, MultiSelect, createResource } from 'frappe-ui'
+import { ref, watch } from 'vue'
+import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
 
@@ -30,7 +32,7 @@ type ListData = {
 	id: string
 	name: string
 	description?: string
-	recipients: { id: string; email?: string }[]
+	recipients: string[]
 }
 
 const show = defineModel<boolean>()
@@ -39,18 +41,19 @@ const emit = defineEmits(['reload'])
 
 const name = ref('')
 const description = ref('')
-const recipientIds = ref<string[]>([])
+const recipients = ref('')
 
-const accounts = createResource({ url: 'suite.mail.api.admin.get_accounts', auto: true })
-const accountOptions = computed(() =>
-	(accounts.data || []).map((a: { id: string; email: string }) => ({ label: a.email, value: a.id })),
-)
+const toLines = (text: string) =>
+	text
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean)
 
 watch(show, () => {
 	if (show.value && list) {
 		name.value = list.name
 		description.value = list.description || ''
-		recipientIds.value = list.recipients.map((r) => r.id)
+		recipients.value = (list.recipients || []).join('\n')
 		updateList.reset()
 	}
 })
@@ -61,7 +64,7 @@ const updateList = createResource({
 		list_id: list.id,
 		name: name.value,
 		description: description.value?.trim() || '',
-		recipients: recipientIds.value,
+		recipients: toLines(recipients.value),
 	}),
 	onSuccess: () => {
 		show.value = false

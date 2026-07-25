@@ -18,10 +18,12 @@
 				<FormControl v-model="name" :label="__('Name')" placeholder="announce" autocomplete="off" />
 				<FormControl v-model="domain" type="select" :label="__('Domain')" :options="domainOptions" />
 				<FormControl v-model="description" :label="__('Description')" type="textarea" />
-				<div class="space-y-1.5">
-					<label class="text-ink-gray-5 block text-xs">{{ __('Recipients') }}</label>
-					<MultiSelect v-model="recipientIds" :options="accountOptions" />
-				</div>
+				<FormControl
+					v-model="recipients"
+					:label="__('Recipients')"
+					type="textarea"
+					:placeholder="__('One email address per line')"
+				/>
 				<ErrorMessage :message="addList.error?.messages?.[0] || addList.error?.message" />
 			</div>
 		</template>
@@ -31,7 +33,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, ErrorMessage, FormControl, MultiSelect, createResource } from 'frappe-ui'
+import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
 
@@ -42,22 +44,23 @@ const emit = defineEmits(['reload'])
 const name = ref('')
 const domain = ref('')
 const description = ref('')
-const recipientIds = ref<string[]>([])
+const recipients = ref('')
 
 const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', auto: true })
-const accounts = createResource({ url: 'suite.mail.api.admin.get_accounts', auto: true })
-
 const domainOptions = computed(() => (domains.data || []).map((d: string) => ({ label: d, value: d })))
-const accountOptions = computed(() =>
-	(accounts.data || []).map((a: { id: string; email: string }) => ({ label: a.email, value: a.id })),
-)
+
+const toLines = (text: string) =>
+	text
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean)
 
 watch(show, () => {
 	if (show.value) {
 		name.value = ''
 		domain.value = ''
 		description.value = ''
-		recipientIds.value = []
+		recipients.value = ''
 		addList.reset()
 	}
 })
@@ -68,7 +71,7 @@ const addList = createResource({
 		name: name.value,
 		domain: domain.value,
 		description: description.value?.trim() || undefined,
-		recipients: recipientIds.value,
+		recipients: toLines(recipients.value),
 	}),
 	onSuccess: (data: string) => {
 		if (!data) return

@@ -16,12 +16,13 @@ class MailingList:
 	def to_dict(self) -> dict:
 		"""Serializes the mailing list to the JMAP wire format.
 
-		``recipients`` is an id-keyed map of the recipient accounts (omitted when empty).
+		``recipients`` is a set-valued map keyed by recipient email address — internal or
+		external (omitted when empty).
 		"""
 
 		payload = {"name": self.name, "domainId": self.domain_id, "description": self.description}
 		if self.recipients:
-			payload["recipients"] = {account_id: True for account_id in self.recipients}
+			payload["recipients"] = {email: True for email in self.recipients}
 
 		return payload
 

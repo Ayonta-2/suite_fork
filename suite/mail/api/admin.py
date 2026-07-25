@@ -409,6 +409,8 @@ def get_member(member_id: str) -> dict:
 		"enabled": bool(user.enabled),
 		"is_admin": is_admin,
 		"email_addresses": [],
+		"groups": [],
+		"mailing_lists": [],
 		"quota": _build_quota_usage(0, 0),
 	}
 
@@ -418,7 +420,8 @@ def get_member(member_id: str) -> dict:
 
 	with suppress(Exception):
 		account = get_account_service().get(
-			account_id, properties=["emailAddress", "aliases", "quotas", "usedDiskQuota"]
+			account_id,
+			properties=["emailAddress", "aliases", "quotas", "usedDiskQuota", "memberGroupIds"],
 		)
 		if not account:
 			return result
@@ -441,6 +444,30 @@ def get_member(member_id: str) -> dict:
 			(account.get("quotas") or {}).get("maxDiskQuota") or 0,
 			account.get("usedDiskQuota") or 0,
 		)
+
+		# Groups the account belongs to (membership lives on the account's memberGroupIds).
+		group_ids = _keys(account.get("memberGroupIds"))
+		if group_ids:
+			group_map = {
+				g["id"]: g
+				for g in get_group_service().get_all_groups(properties=["id", "name", "emailAddress"])
+			}
+			result["groups"] = [
+				{"id": gid, "name": group_map[gid].get("name"), "email": group_map[gid].get("emailAddress")}
+				for gid in group_ids
+				if gid in group_map
+			]
+
+		# Mailing lists that include the member as a recipient. Recipients are email addresses
+		# (internal or external), so match against the member's own addresses, not the account id.
+		member_emails = {email.lower() for email in emails}
+		result["mailing_lists"] = [
+			{"id": ml["id"], "name": ml.get("name"), "email": ml.get("emailAddress")}
+			for ml in get_mailing_list_service().get_all(
+				properties=["id", "name", "emailAddress", "recipients"]
+			)
+			if member_emails & {recipient.lower() for recipient in _keys(ml.get("recipients"))}
+		]
 
 	return result
 
@@ -765,23 +792,14 @@ def get_mailing_list(list_id: str) -> dict:
 	if not ml:
 		frappe.throw(_("Mailing list not found"), frappe.DoesNotExistError)
 
-	recipient_ids = _keys(ml.get("recipients"))
-	accounts = {
-		a["id"]: a
-		for a in get_account_service().get_all(properties=["id", "name", "emailAddress"])
-	}
-	recipients = [
-		{"id": rid, "name": accounts.get(rid, {}).get("name"), "email": accounts.get(rid, {}).get("emailAddress")}
-		for rid in recipient_ids
-	]
-
 	return {
 		"id": ml["id"],
 		"name": ml.get("name"),
 		"email": ml.get("emailAddress"),
 		"description": ml.get("description"),
 		"created_at": ml.get("createdAt"),
-		"recipients": recipients,
+		# Recipients are email addresses (internal accounts or external).
+		"recipients": _keys(ml.get("recipients")),
 	}
 
 
@@ -830,7 +848,7 @@ def update_mailing_list(
 	if description is not None:
 		patch["description"] = description
 	if recipients is not None:
-		patch["recipients"] = {account_id: True for account_id in _listify(recipients)}
+		patch["recipients"] = {email: True for email in _listify(recipients)}
 
 	if patch:
 		get_mailing_list_service().update(list_id, patch)
