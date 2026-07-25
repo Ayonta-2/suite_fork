@@ -1472,6 +1472,12 @@ def delete_oauth_clients(ids: list) -> None:
 # Domains: DKIM Signatures
 # ---------------------------------------------------------------------------
 
+# Maps Stalwart's DKIM signature @type to a human-readable algorithm label.
+_DKIM_ALGORITHMS = {
+	"Dkim1RsaSha256": "RSA-SHA256",
+	"Dkim1Ed25519Sha256": "Ed25519-SHA256",
+}
+
 
 @frappe.whitelist()
 def get_dkim_signatures(domain_id: str | None = None) -> list[dict]:
@@ -1480,21 +1486,58 @@ def get_dkim_signatures(domain_id: str | None = None) -> list[dict]:
 	check_admin_permission("view dkim signatures")
 
 	service = get_dkim_signature_service()
+	properties = ["id", "@type", "selector", "domainId", "createdAt"]
 	signatures = (
-		service.get_all_by_domain(domain_id) if domain_id else service.get_all()
+		service.get_all_by_domain(domain_id, properties=properties)
+		if domain_id
+		else service.get_all(properties=properties)
 	)
 
 	domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
 	return [
 		{
 			"id": s["id"],
-			"selector": s.get("selector"),
+			"algorithm": _DKIM_ALGORITHMS.get(s.get("@type"), s.get("@type")),
 			"domain": domain_names.get(s.get("domainId")),
-			"domain_id": s.get("domainId"),
-			"stage": s.get("stage"),
+			"selector": s.get("selector"),
+			"created_at": s.get("createdAt"),
 		}
 		for s in signatures
 	]
+
+
+@frappe.whitelist()
+def get_dkim_signature(signature_id: str) -> dict:
+	"""Returns a single DKIM signature's details (read-only; never the private key)."""
+
+	check_admin_permission("view dkim signatures")
+
+	sig = get_dkim_signature_service().get(
+		signature_id,
+		properties=[
+			"id", "@type", "selector", "domainId", "createdAt", "stage", "nextTransitionAt",
+			"headers", "canonicalization", "expire", "report", "auid", "publicKey",
+		],
+	)
+	if not sig:
+		frappe.throw(_("DKIM signature not found"), frappe.DoesNotExistError)
+
+	domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
+	return {
+		"id": sig["id"],
+		"algorithm": _DKIM_ALGORITHMS.get(sig.get("@type"), sig.get("@type")),
+		"selector": sig.get("selector"),
+		"domain": domain_names.get(sig.get("domainId")),
+		"signed_headers": _keys(sig.get("headers")),
+		"canonicalization": sig.get("canonicalization"),
+		"expiration": sig.get("expire"),
+		"request_reports": bool(sig.get("report")),
+		"auid": sig.get("auid"),
+		"public_key": sig.get("publicKey"),
+		"stage": sig.get("stage"),
+		"created_at": sig.get("createdAt"),
+		"next_transition": sig.get("nextTransitionAt"),
+	}
 
 
 @frappe.whitelist()

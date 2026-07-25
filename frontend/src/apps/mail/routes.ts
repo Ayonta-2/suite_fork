@@ -267,6 +267,13 @@ export const routes: RouteRecordRaw[] = [
 				component: () => import('@/apps/mail/pages/dashboard/DkimSignaturesView.vue'),
 				meta: { isDashboard: true },
 			},
+			{
+				path: 'dashboard/dkim-signatures/:signatureId',
+				name: 'mail-dkim-signature',
+				component: () => import('@/apps/mail/pages/dashboard/DkimSignatureView.vue'),
+				props: true,
+				meta: { isDashboard: true },
+			},
 			// Shortcut routes: short paths that resolve to their full
 			// account-scoped equivalents once the active accountId is known
 			// (resolved in the mail guard — see ./router.ts).

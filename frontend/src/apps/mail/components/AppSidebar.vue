@@ -291,7 +291,7 @@ const dashboardItems = [
 				label: __('DKIM Signatures'),
 				icon: Signature,
 				to: { name: 'mail-dkim-signatures' },
-				activeFor: ['mail-dkim-signatures'],
+				activeFor: ['mail-dkim-signatures', 'mail-dkim-signature'],
 			},
 		],
 	},
