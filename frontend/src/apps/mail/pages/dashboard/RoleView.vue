@@ -4,7 +4,7 @@
 			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
 		</template>
 		<template #default>
-			<div class="grid grid-cols-1 gap-4">
+			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 				<DashboardCard
 					:title="__('General Information')"
 					:button-label="__('Edit')"
