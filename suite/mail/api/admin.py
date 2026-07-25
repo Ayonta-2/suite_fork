@@ -7,7 +7,7 @@ from typing import Literal
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Max
-from frappe.utils import cint, validate_email_address
+from frappe.utils import cint, get_datetime, validate_email_address
 from pypika import Case, Order
 
 from suite.mail.api.utils import get_avatar_url
@@ -1448,7 +1448,19 @@ def get_oauth_client(client_id: str) -> dict:
 
 	check_admin_permission("view oauth clients")
 
-	client = get_oauth_client_service().get(client_id)
+	client = get_oauth_client_service().get(
+		client_id,
+		properties=[
+			"id",
+			"clientId",
+			"description",
+			"createdAt",
+			"expiresAt",
+			"redirectUris",
+			"contacts",
+			"logo",
+		],
+	)
 	if not client:
 		frappe.throw(_("OAuth client not found"), frappe.DoesNotExistError)
 
@@ -1460,6 +1472,7 @@ def get_oauth_client(client_id: str) -> dict:
 		"expires_at": client.get("expiresAt"),
 		"redirect_uris": _keys(client.get("redirectUris")),
 		"contacts": _keys(client.get("contacts")),
+		"logo": client.get("logo"),
 	}
 
 
@@ -1468,8 +1481,10 @@ def get_oauth_client(client_id: str) -> dict:
 def add_oauth_client(
 	client_id: str,
 	description: str | None = None,
-	redirect_uris: list | None = None,
 	contacts: list | None = None,
+	redirect_uris: list | None = None,
+	secret: str | None = None,
+	logo: str | None = None,
 	expires_at: str | None = None,
 ) -> str:
 	"""Creates an OAuth client and returns its id."""
@@ -1478,15 +1493,19 @@ def add_oauth_client(
 
 	uris = _listify(redirect_uris)
 	contact_list = _listify(contacts)
+	# Stalwart expects a UTCDateTime; the date picker sends "YYYY-MM-DD".
+	expires = get_datetime(expires_at).strftime("%Y-%m-%dT%H:%M:%SZ") if expires_at else None
 
 	def _create() -> str:
 		return get_oauth_client_service().create(
 			OAuthClient(
 				client_id=client_id,
 				description=description,
-				redirect_uris=uris or None,
 				contacts=contact_list or None,
-				expires_at=expires_at or None,
+				redirect_uris=uris or None,
+				secret=(secret or "").strip() or None,
+				logo=(logo or "").strip() or None,
+				expires_at=expires,
 			)
 		)
 
@@ -1502,24 +1521,94 @@ def add_oauth_client(
 @frappe.whitelist()
 def update_oauth_client(
 	oauth_client_id: str,
+	client_id: str | None = None,
 	description: str | None = None,
 	redirect_uris: list | None = None,
 	contacts: list | None = None,
+	secret: str | None = None,
+	logo: str | None = None,
+	expires_at: str | None = None,
 ) -> None:
-	"""Updates an OAuth client's description/redirect URIs/contacts."""
+	"""Updates an OAuth client's clientId, description, redirect URIs, contacts, secret, logo and expiry."""
 
 	check_admin_permission("update oauth clients")
 
 	patch = {}
+	if client_id is not None and client_id.strip():
+		patch["clientId"] = client_id.strip()
 	if description is not None:
 		patch["description"] = description
 	if redirect_uris is not None:
 		patch["redirectUris"] = {uri: True for uri in _listify(redirect_uris)}
 	if contacts is not None:
 		patch["contacts"] = {contact: True for contact in _listify(contacts)}
+	# A blank secret leaves the existing one untouched (it is never read back).
+	if secret is not None and secret.strip():
+		patch["secret"] = secret.strip()
+	if logo is not None:
+		patch["logo"] = logo.strip() or None
+	if expires_at is not None:
+		# Stalwart expects a UTCDateTime; the date picker sends "YYYY-MM-DD". Blank clears it.
+		patch["expiresAt"] = get_datetime(expires_at).strftime("%Y-%m-%dT%H:%M:%SZ") if expires_at else None
 
 	if patch:
 		get_oauth_client_service().update(oauth_client_id, patch)
+
+
+@frappe.whitelist()
+def add_oauth_client_contacts(client_id: str, contacts: list) -> None:
+	"""Adds contact email addresses to the OAuth client."""
+
+	check_admin_permission("update oauth clients")
+
+	service = get_oauth_client_service()
+	current = dict((service.get(client_id, properties=["contacts"]) or {}).get("contacts") or {})
+	for contact in _listify(contacts):
+		contact = (contact or "").strip()
+		if contact:
+			current[contact] = True
+
+	service.update(client_id, {"contacts": current})
+
+
+@frappe.whitelist()
+def remove_oauth_client_contact(client_id: str, contact: str) -> None:
+	"""Removes a contact email address from the OAuth client."""
+
+	check_admin_permission("update oauth clients")
+
+	service = get_oauth_client_service()
+	current = (service.get(client_id, properties=["contacts"]) or {}).get("contacts") or {}
+	remaining = {c: v for c, v in current.items() if c.lower() != (contact or "").strip().lower()}
+	service.update(client_id, {"contacts": remaining})
+
+
+@frappe.whitelist()
+def add_oauth_client_redirect_uris(client_id: str, redirect_uris: list) -> None:
+	"""Adds redirect URIs to the OAuth client."""
+
+	check_admin_permission("update oauth clients")
+
+	service = get_oauth_client_service()
+	current = dict((service.get(client_id, properties=["redirectUris"]) or {}).get("redirectUris") or {})
+	for uri in _listify(redirect_uris):
+		uri = (uri or "").strip()
+		if uri:
+			current[uri] = True
+
+	service.update(client_id, {"redirectUris": current})
+
+
+@frappe.whitelist()
+def remove_oauth_client_redirect_uri(client_id: str, uri: str) -> None:
+	"""Removes a redirect URI from the OAuth client."""
+
+	check_admin_permission("update oauth clients")
+
+	service = get_oauth_client_service()
+	current = (service.get(client_id, properties=["redirectUris"]) or {}).get("redirectUris") or {}
+	remaining = {u: v for u, v in current.items() if u != (uri or "").strip()}
+	service.update(client_id, {"redirectUris": remaining})
 
 
 @frappe.whitelist()

@@ -8,20 +8,16 @@
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl :label="__('Client ID')" :model-value="client?.client_id" disabled />
+				<FormControl v-model="clientId" :label="__('Client ID')" autocomplete="off" />
 				<FormControl v-model="description" :label="__('Description')" type="textarea" />
 				<FormControl
-					v-model="redirectUris"
-					:label="__('Redirect URIs')"
-					type="textarea"
-					:placeholder="__('One URL per line')"
+					v-model="secret"
+					:label="__('Client Secret')"
+					autocomplete="off"
+					:placeholder="__('Leave blank to keep unchanged')"
 				/>
-				<FormControl
-					v-model="contacts"
-					:label="__('Contacts')"
-					type="textarea"
-					:placeholder="__('One email per line')"
-				/>
+				<FormControl v-model="logo" :label="__('Logo (URL or base64 encoded)')" type="textarea" />
+				<FormControl v-model="expiresAt" type="datetime-local" :label="__('Expires At')" />
 				<ErrorMessage :message="updateClient.error?.messages?.[0] || updateClient.error?.message" />
 			</div>
 		</template>
@@ -38,29 +34,28 @@ type ClientData = {
 	id: string
 	client_id: string
 	description?: string
-	redirect_uris: string[]
-	contacts: string[]
+	logo?: string
+	expires_at?: string
 }
 
 const show = defineModel<boolean>()
 const { client } = defineProps<{ client: ClientData }>()
 const emit = defineEmits(['reload'])
 
+const clientId = ref('')
 const description = ref('')
-const redirectUris = ref('')
-const contacts = ref('')
-
-const toLines = (text: string) =>
-	text
-		.split('\n')
-		.map((line) => line.trim())
-		.filter(Boolean)
+const secret = ref('')
+const logo = ref('')
+const expiresAt = ref('')
 
 watch(show, () => {
 	if (show.value && client) {
+		clientId.value = client.client_id || ''
 		description.value = client.description || ''
-		redirectUris.value = (client.redirect_uris || []).join('\n')
-		contacts.value = (client.contacts || []).join('\n')
+		secret.value = ''
+		logo.value = client.logo || ''
+		// The datetime-local input needs "YYYY-MM-DDTHH:mm"; the stored value is a UTCDateTime.
+		expiresAt.value = client.expires_at ? client.expires_at.slice(0, 16) : ''
 		updateClient.reset()
 	}
 })
@@ -69,9 +64,11 @@ const updateClient = createResource({
 	url: 'suite.mail.api.admin.update_oauth_client',
 	makeParams: () => ({
 		oauth_client_id: client.id,
+		client_id: clientId.value?.trim() || undefined,
 		description: description.value?.trim() || '',
-		redirect_uris: toLines(redirectUris.value),
-		contacts: toLines(contacts.value),
+		secret: secret.value?.trim() || undefined,
+		logo: logo.value?.trim() ?? '',
+		expires_at: expiresAt.value || '',
 	}),
 	onSuccess: () => {
 		show.value = false

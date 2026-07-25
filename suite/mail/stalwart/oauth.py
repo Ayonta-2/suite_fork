@@ -12,8 +12,9 @@ class OAuthClient:
 	description: str | None = None
 	contacts: list[str] | None = None
 	redirect_uris: list[str] | None = None
-	expires_at: str | None = None
+	secret: str | None = None
 	logo: str | None = None
+	expires_at: str | None = None
 
 	def to_dict(self) -> dict:
 		"""Serializes the OAuth client to the JMAP wire format."""
@@ -23,8 +24,9 @@ class OAuthClient:
 			"description": self.description,
 			"contacts": {contact: True for contact in self.contacts} if self.contacts else {},
 			"redirectUris": {uri: True for uri in self.redirect_uris} if self.redirect_uris else {},
-			"expiresAt": self.expires_at,
+			"secret": self.secret,
 			"logo": self.logo,
+			"expiresAt": self.expires_at,
 		}
 
 

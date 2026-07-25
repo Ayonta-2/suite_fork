@@ -12,19 +12,40 @@
 			<div class="space-y-4">
 				<FormControl v-model="clientId" :label="__('Client ID')" autocomplete="off" />
 				<FormControl v-model="description" :label="__('Description')" type="textarea" />
+
+				<div class="space-y-2">
+					<label class="text-ink-gray-5 block text-xs">{{ __('Contacts') }}</label>
+					<div v-for="(row, index) in contacts" :key="index" class="flex items-center gap-2">
+						<FormControl v-model="row.value" type="email" placeholder="someone@example.com" class="w-full" />
+						<Button v-if="contacts.length > 1" variant="ghost" theme="red" @click="contacts.splice(index, 1)">
+							<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
+						</Button>
+					</div>
+					<Button variant="ghost" size="sm" :label="__('Add another')" @click="contacts.push({ value: '' })">
+						<template #prefix><FeatherIcon name="plus" class="h-4 w-4" /></template>
+					</Button>
+				</div>
+
+				<div class="space-y-2">
+					<label class="text-ink-gray-5 block text-xs">{{ __('Redirect URIs') }}</label>
+					<div v-for="(row, index) in redirectUris" :key="index" class="flex items-center gap-2">
+						<FormControl v-model="row.value" placeholder="https://app.example.com/callback" class="w-full" />
+						<Button v-if="redirectUris.length > 1" variant="ghost" theme="red" @click="redirectUris.splice(index, 1)">
+							<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
+						</Button>
+					</div>
+					<Button variant="ghost" size="sm" :label="__('Add another')" @click="redirectUris.push({ value: '' })">
+						<template #prefix><FeatherIcon name="plus" class="h-4 w-4" /></template>
+					</Button>
+				</div>
+
+				<FormControl v-model="secret" :label="__('Client Secret')" autocomplete="off" />
 				<FormControl
-					v-model="redirectUris"
-					:label="__('Redirect URIs')"
+					v-model="logo"
+					:label="__('Logo (URL or base64 encoded)')"
 					type="textarea"
-					:placeholder="__('One URL per line')"
 				/>
-				<FormControl
-					v-model="contacts"
-					:label="__('Contacts')"
-					type="textarea"
-					:placeholder="__('One email per line')"
-				/>
-				<FormControl v-model="expiresAt" type="date" :label="__('Expires At')" />
+				<FormControl v-model="expiresAt" type="datetime-local" :label="__('Expires At')" />
 				<ErrorMessage :message="addClient.error?.messages?.[0] || addClient.error?.message" />
 			</div>
 		</template>
@@ -34,7 +55,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, FeatherIcon, FormControl, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
 
@@ -44,22 +65,22 @@ const emit = defineEmits(['reload'])
 
 const clientId = ref('')
 const description = ref('')
-const redirectUris = ref('')
-const contacts = ref('')
+const contacts = ref<{ value: string }[]>([{ value: '' }])
+const redirectUris = ref<{ value: string }[]>([{ value: '' }])
+const secret = ref('')
+const logo = ref('')
 const expiresAt = ref('')
 
-const toLines = (text: string) =>
-	text
-		.split('\n')
-		.map((line) => line.trim())
-		.filter(Boolean)
+const values = (rows: { value: string }[]) => rows.map((r) => r.value.trim()).filter(Boolean)
 
 watch(show, () => {
 	if (show.value) {
 		clientId.value = ''
 		description.value = ''
-		redirectUris.value = ''
-		contacts.value = ''
+		contacts.value = [{ value: '' }]
+		redirectUris.value = [{ value: '' }]
+		secret.value = ''
+		logo.value = ''
 		expiresAt.value = ''
 		addClient.reset()
 	}
@@ -70,8 +91,10 @@ const addClient = createResource({
 	makeParams: () => ({
 		client_id: clientId.value,
 		description: description.value?.trim() || undefined,
-		redirect_uris: toLines(redirectUris.value),
-		contacts: toLines(contacts.value),
+		contacts: values(contacts.value),
+		redirect_uris: values(redirectUris.value),
+		secret: secret.value?.trim() || undefined,
+		logo: logo.value?.trim() || undefined,
 		expires_at: expiresAt.value || undefined,
 	}),
 	onSuccess: (data: string) => {
