@@ -85,9 +85,10 @@
 				@action="showAddEmail = true"
 			>
 				<div class="flex flex-col">
-					<div class="bg-surface-gray-2 text-ink-gray-5 flex rounded px-5 py-2.5 text-sm">
+					<div class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded px-5 py-2.5 text-sm">
 						<span class="flex-1">{{ __('Email Address') }}</span>
 						<span class="flex-1">{{ __('Full Name') }}</span>
+						<span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
 						<span class="w-8 shrink-0" />
 					</div>
 					<template v-if="member.data.email_addresses.length">
@@ -105,6 +106,13 @@
 									<span class="flex-1 truncate">{{ entry.email }}</span>
 									<span class="text-ink-gray-5 flex-1 truncate">
 										{{ entry.description || '—' }}
+									</span>
+									<span class="flex w-20 shrink-0 justify-center">
+										<Switch
+											:model-value="entry.enabled"
+											:disabled="entry.is_primary"
+											@update:model-value="(value) => toggleEmailEnabled(entry, value)"
+										/>
 									</span>
 									<span class="flex w-8 shrink-0 justify-end">
 										<Button
@@ -212,7 +220,16 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, Dropdown, FeatherIcon, Tooltip, createResource, usePageMeta } from 'frappe-ui'
+import {
+	Button,
+	Dialog,
+	Dropdown,
+	FeatherIcon,
+	Switch,
+	Tooltip,
+	createResource,
+	usePageMeta,
+} from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import AddMemberEmailModal from '@/apps/mail/components/Modals/AddMemberEmailModal.vue'
@@ -242,7 +259,7 @@ type MemberData = {
 	joined_on: string
 	enabled: boolean
 	is_admin: boolean
-	email_addresses: { email: string; description?: string; is_primary: boolean }[]
+	email_addresses: { email: string; description?: string; is_primary: boolean; enabled: boolean }[]
 	groups: { id: string; name: string; email: string }[]
 	mailing_lists: { id: string; name: string; email: string }[]
 	quota: QuotaUsage
@@ -277,6 +294,19 @@ const data = computed(() => member.data as MemberData | undefined)
 
 const currentGroupIds = computed(() => data.value?.groups.map((g) => g.id) || [])
 const currentListIds = computed(() => data.value?.mailing_lists.map((l) => l.id) || [])
+
+const toggleEmailEnabled = (entry: { email: string; enabled: boolean }, value: boolean) => {
+	entry.enabled = value // optimistic; reverted on error via reload
+	createResource({
+		url: 'suite.mail.api.admin.set_member_email_enabled',
+		makeParams: () => ({ member_id: memberId, email: entry.email, enabled: value ? 1 : 0 }),
+		onSuccess: () => raiseToast(value ? __('Email address enabled.') : __('Email address disabled.')),
+		onError: (error: { messages?: string[] }) => {
+			member.reload()
+			raiseToast(error.messages?.[0] || __('Request failed.'), 'error')
+		},
+	}).submit()
+}
 
 const removeEmail = (email: string) =>
 	createResource({

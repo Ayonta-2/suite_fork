@@ -438,7 +438,7 @@ def get_member(member_id: str) -> dict:
 		email_addresses = []
 		if primary := account.get("emailAddress"):
 			email_addresses.append(
-				{"email": primary, "description": account.get("description"), "is_primary": True}
+				{"email": primary, "description": account.get("description"), "is_primary": True, "enabled": True}
 			)
 
 		aliases = account.get("aliases") or {}
@@ -453,6 +453,7 @@ def get_member(member_id: str) -> dict:
 							"email": f"{name}@{domain_name}",
 							"description": alias.get("description"),
 							"is_primary": False,
+							"enabled": bool(alias.get("enabled", True)),
 						}
 					)
 
@@ -775,6 +776,39 @@ def _remove_account_alias(account_id: str, email: str) -> None:
 	)
 
 
+def _set_account_alias_enabled(account_id: str, email: str, enabled: bool) -> None:
+	"""Enables or disables the alias ``email`` on the given account (primary is always enabled)."""
+
+	email = (email or "").strip().lower()
+	account_service = get_account_service()
+	account = account_service.get(account_id, properties=["emailAddress", "aliases"])
+	if not account or email == (account.get("emailAddress") or "").lower():
+		return
+
+	domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
+	aliases = []
+	for alias in (account.get("aliases") or {}).values():
+		domain = domain_names.get(alias.get("domainId"))
+		alias_email = f"{alias.get('name')}@{domain}" if domain else None
+		is_target = bool(alias_email) and alias_email.lower() == email
+		aliases.append(
+			EmailAlias(
+				name=alias["name"],
+				domain_id=alias["domainId"],
+				enabled=enabled if is_target else alias.get("enabled", True),
+				description=alias.get("description"),
+			)
+		)
+
+	execute_with_logging(
+		func=lambda: account_service.set_aliases(account_id, aliases),
+		title=_("Failed to update email {0}").format(email),
+		user_message=_("An error occurred while updating the email, check error logs for more details."),
+		with_context=False,
+		module="Mail",
+	)
+
+
 @frappe.whitelist()
 def add_member_email(member_id: str, email: str, description: str | None = None) -> None:
 	"""Adds an email address to the member's account as an alias with an optional description."""
@@ -789,6 +823,14 @@ def remove_member_email(member_id: str, email: str) -> None:
 
 	check_admin_permission("update members")
 	_remove_account_alias(_require_member_account(member_id), email)
+
+
+@frappe.whitelist()
+def set_member_email_enabled(member_id: str, email: str, enabled: int) -> None:
+	"""Enables or disables one of the member's alias email addresses."""
+
+	check_admin_permission("update members")
+	_set_account_alias_enabled(_require_member_account(member_id), email, bool(cint(enabled)))
 
 
 @frappe.whitelist()
@@ -940,7 +982,9 @@ def get_group(group_id: str) -> dict:
 	# Email addresses mirror the member page: primary uses the group description, aliases their own.
 	email_addresses = []
 	if primary := group.get("emailAddress"):
-		email_addresses.append({"email": primary, "description": group.get("description"), "is_primary": True})
+		email_addresses.append(
+			{"email": primary, "description": group.get("description"), "is_primary": True, "enabled": True}
+		)
 
 	aliases = group.get("aliases") or {}
 	if aliases:
@@ -950,7 +994,12 @@ def get_group(group_id: str) -> dict:
 			domain_name = domain_names.get(alias.get("domainId"))
 			if name and domain_name:
 				email_addresses.append(
-					{"email": f"{name}@{domain_name}", "description": alias.get("description"), "is_primary": False}
+					{
+						"email": f"{name}@{domain_name}",
+						"description": alias.get("description"),
+						"is_primary": False,
+						"enabled": bool(alias.get("enabled", True)),
+					}
 				)
 
 	members = service.get_members(group_id, properties=["id", "name", "emailAddress"])
@@ -1048,6 +1097,14 @@ def remove_group_email(group_id: str, email: str) -> None:
 
 	check_admin_permission("update groups")
 	_remove_account_alias(group_id, email)
+
+
+@frappe.whitelist()
+def set_group_email_enabled(group_id: str, email: str, enabled: int) -> None:
+	"""Enables or disables one of the group's alias email addresses."""
+
+	check_admin_permission("update groups")
+	_set_account_alias_enabled(group_id, email, bool(cint(enabled)))
 
 
 @frappe.whitelist()
