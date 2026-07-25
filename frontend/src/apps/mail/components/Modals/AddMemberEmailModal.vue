@@ -23,6 +23,11 @@
 						:open-on-click="true"
 					/>
 				</div>
+				<FormControl
+					v-model="description"
+					:label="__('Full Name')"
+					:placeholder="__('Used as the display name for this address')"
+				/>
 				<ErrorMessage :message="addEmail.error?.messages?.[0] || addEmail.error?.message" />
 			</div>
 		</template>
@@ -41,6 +46,7 @@ const emit = defineEmits(['reload'])
 
 const username = ref('')
 const domain = ref('')
+const description = ref('')
 
 const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', auto: true })
 
@@ -48,13 +54,18 @@ watch(show, () => {
 	if (show.value) {
 		username.value = ''
 		domain.value = ''
+		description.value = ''
 		addEmail.reset()
 	}
 })
 
 const addEmail = createResource({
 	url: 'suite.mail.api.admin.add_member_email',
-	makeParams: () => ({ member_id: memberId, email: `${username.value}@${domain.value}` }),
+	makeParams: () => ({
+		member_id: memberId,
+		email: `${username.value}@${domain.value}`,
+		description: description.value?.trim() || undefined,
+	}),
 	onSuccess: () => {
 		show.value = false
 		emit('reload')

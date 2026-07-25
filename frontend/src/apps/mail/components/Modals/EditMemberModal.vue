@@ -9,7 +9,7 @@
 		<template #body-content>
 			<div class="space-y-4">
 				<FormControl v-model="role" type="select" :label="__('Role')" :options="ROLE_OPTIONS" />
-				<FormControl v-model="description" :label="__('Description')" />
+				<FormControl v-model="description" :label="__('Full Name')" />
 				<ErrorMessage :message="updateMember.error?.messages?.[0] || updateMember.error?.message" />
 			</div>
 		</template>

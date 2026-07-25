@@ -428,14 +428,18 @@ def get_member(member_id: str) -> dict:
 	with suppress(Exception):
 		account = get_account_service().get(
 			account_id,
-			properties=["emailAddress", "aliases", "quotas", "usedDiskQuota", "memberGroupIds"],
+			properties=["emailAddress", "aliases", "quotas", "usedDiskQuota", "memberGroupIds", "description"],
 		)
 		if not account:
 			return result
 
-		emails = []
+		# Each address carries a description used as its Identity display name: the primary uses the
+		# account description, each alias its own.
+		email_addresses = []
 		if primary := account.get("emailAddress"):
-			emails.append(primary)
+			email_addresses.append(
+				{"email": primary, "description": account.get("description"), "is_primary": True}
+			)
 
 		aliases = account.get("aliases") or {}
 		if aliases:
@@ -444,9 +448,16 @@ def get_member(member_id: str) -> dict:
 				name = alias.get("name")
 				domain_name = domain_names.get(alias.get("domainId"))
 				if name and domain_name:
-					emails.append(f"{name}@{domain_name}")
+					email_addresses.append(
+						{
+							"email": f"{name}@{domain_name}",
+							"description": alias.get("description"),
+							"is_primary": False,
+						}
+					)
 
-		result["email_addresses"] = emails
+		emails = [entry["email"] for entry in email_addresses]
+		result["email_addresses"] = email_addresses
 		result["quota"] = _build_quota_usage(
 			(account.get("quotas") or {}).get("maxDiskQuota") or 0,
 			account.get("usedDiskQuota") or 0,
@@ -714,8 +725,8 @@ def update_member(
 
 
 @frappe.whitelist()
-def add_member_email(member_id: str, email: str) -> None:
-	"""Adds an email address to the member's account as an alias."""
+def add_member_email(member_id: str, email: str, description: str | None = None) -> None:
+	"""Adds an email address to the member's account as an alias with an optional description."""
 
 	check_admin_permission("update members")
 	account_id = _require_member_account(member_id)
@@ -737,7 +748,7 @@ def add_member_email(member_id: str, email: str) -> None:
 		return
 
 	aliases = _rebuild_aliases(account, keep=lambda _e: True)
-	aliases.append(EmailAlias(name=local, domain_id=domain_id))
+	aliases.append(EmailAlias(name=local, domain_id=domain_id, description=(description or "").strip() or None))
 
 	execute_with_logging(
 		func=lambda: account_service.set_aliases(account_id, aliases),

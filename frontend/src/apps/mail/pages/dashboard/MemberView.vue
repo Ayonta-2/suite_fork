@@ -21,7 +21,7 @@
 						:label="__('Role')"
 						:value="member.data.is_admin ? __('Admin') : __('User')"
 					/>
-					<InformationField :label="__('Description')" :value="member.data.description" />
+					<InformationField :label="__('Full Name')" :value="member.data.description" />
 					<InformationField :label="__('Last Active')" :value="lastActive" />
 					<InformationField :label="__('Joined On')" :value="joinedOn" />
 				</div>
@@ -85,25 +85,30 @@
 				@action="showAddEmail = true"
 			>
 				<div class="flex flex-col">
-					<div class="bg-surface-gray-2 text-ink-gray-5 rounded px-5 py-2.5 text-sm">
-						{{ __('Email Address') }}
+					<div class="bg-surface-gray-2 text-ink-gray-5 flex rounded px-5 py-2.5 text-sm">
+						<span class="flex-1">{{ __('Email Address') }}</span>
+						<span class="flex-1">{{ __('Full Name') }}</span>
+						<span class="w-8 shrink-0" />
 					</div>
 					<template v-if="member.data.email_addresses.length">
 						<div
-							v-for="(email, index) in member.data.email_addresses"
-							:key="email"
-							class="group flex items-center justify-between border-b px-5 py-3 text-base last:border-b-0"
+							v-for="entry in member.data.email_addresses"
+							:key="entry.email"
+							class="group flex items-center border-b px-5 py-3 text-base last:border-b-0"
 						>
-							<span>{{ email }}</span>
-							<Button
-								v-if="index > 0"
-								variant="ghost"
-								theme="red"
-								class="invisible group-hover:visible"
-								@click="removeEmail(email)"
-							>
-								<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
-							</Button>
+							<span class="flex-1 truncate">{{ entry.email }}</span>
+							<span class="text-ink-gray-5 flex-1 truncate">{{ entry.description || '—' }}</span>
+							<span class="flex w-8 shrink-0 justify-end">
+								<Button
+									v-if="!entry.is_primary"
+									variant="ghost"
+									theme="red"
+									class="invisible group-hover:visible"
+									@click="removeEmail(entry.email)"
+								>
+									<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
+								</Button>
+							</span>
 						</div>
 					</template>
 					<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
@@ -227,7 +232,7 @@ type MemberData = {
 	joined_on: string
 	enabled: boolean
 	is_admin: boolean
-	email_addresses: string[]
+	email_addresses: { email: string; description?: string; is_primary: boolean }[]
 	groups: { id: string; name: string; email: string }[]
 	mailing_lists: { id: string; name: string; email: string }[]
 	quota: QuotaUsage
