@@ -25,13 +25,11 @@
 					<ListRow
 						v-for="row in lists.data"
 						:key="row.id"
-						v-slot="{ column, item }"
+						v-slot="{ item }"
 						:row="row"
 						class="hover:!bg-surface-gray-1"
 					>
-						<ListRowItem :item="item">
-							<span v-if="column.key === 'created_at'">{{ formatCreatedAt(item) }}</span>
-						</ListRowItem>
+						<ListRowItem :item="item" />
 					</ListRow>
 				</template>
 				<ListEmptyState v-else />
@@ -56,7 +54,6 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 
-import dayjs from '@/apps/mail/utils/dayjs'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import AddMailingListModal from '@/apps/mail/components/Modals/AddMailingListModal.vue'
 
@@ -74,13 +71,12 @@ const lists = createResource({
 
 watchDebounced(() => search.value, lists.reload, { debounce: 300 })
 
-type ListRowType = { id: string; name: string; email?: string; description?: string; created_at?: string }
+type ListRowType = { id: string; email?: string; description?: string; recipient_count?: number }
 
 const LIST_COLUMNS = [
-	{ label: __('Name'), key: 'name' },
 	{ label: __('Email'), key: 'email' },
 	{ label: __('Description'), key: 'description' },
-	{ label: __('Created At'), key: 'created_at' },
+	{ label: __('Recipients'), key: 'recipient_count' },
 ]
 
 const LIST_OPTIONS = {
@@ -89,6 +85,4 @@ const LIST_OPTIONS = {
 	emptyState: { description: __('No mailing lists found.') },
 	getRowRoute: (row: ListRowType) => ({ name: 'mail-mailing-list', params: { listId: row.id } }),
 }
-
-const formatCreatedAt = (createdAt?: string) => (createdAt ? dayjs(createdAt).fromNow() : '-')
 </script>

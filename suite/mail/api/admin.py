@@ -725,8 +725,8 @@ def update_member(
 		)
 
 
-def _add_account_alias(account_id: str, email: str, description: str | None = None) -> None:
-	"""Adds ``email`` as an alias (with optional description) to the given account."""
+def _add_alias(service, resource_id: str, email: str, description: str | None = None) -> None:
+	"""Adds ``email`` as an alias (with optional description) to the given account or mailing list."""
 
 	email = (email or "").strip().lower()
 	validate_email_address(email, throw=True)
@@ -735,20 +735,19 @@ def _add_account_alias(account_id: str, email: str, description: str | None = No
 	local, _sep, domain = email.partition("@")
 	domain_id = get_domain_service().get_by_name(domain, raise_exception=True)["id"]
 
-	account_service = get_account_service()
-	account = account_service.get(account_id, properties=["emailAddress", "aliases"])
-	if email == (account.get("emailAddress") or "").lower():
+	obj = service.get(resource_id, properties=["emailAddress", "aliases"])
+	if email == (obj.get("emailAddress") or "").lower():
 		frappe.throw(_("{0} is already the primary address.").format(email))
 
 	domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
-	if email in {e.lower() for e in _alias_emails(account, domain_names)}:
+	if email in {e.lower() for e in _alias_emails(obj, domain_names)}:
 		return
 
-	aliases = _rebuild_aliases(account, keep=lambda _e: True)
+	aliases = _rebuild_aliases(obj, keep=lambda _e: True)
 	aliases.append(EmailAlias(name=local, domain_id=domain_id, description=(description or "").strip() or None))
 
 	execute_with_logging(
-		func=lambda: account_service.set_aliases(account_id, aliases),
+		func=lambda: service.set_aliases(resource_id, aliases),
 		title=_("Failed to add email {0}").format(email),
 		user_message=_("An error occurred while adding the email, check error logs for more details."),
 		with_context=False,
@@ -756,19 +755,18 @@ def _add_account_alias(account_id: str, email: str, description: str | None = No
 	)
 
 
-def _remove_account_alias(account_id: str, email: str) -> None:
-	"""Removes the alias ``email`` from the given account (the primary cannot be removed)."""
+def _remove_alias(service, resource_id: str, email: str) -> None:
+	"""Removes the alias ``email`` from the given account or mailing list (the primary cannot be removed)."""
 
 	email = (email or "").strip().lower()
-	account_service = get_account_service()
-	account = account_service.get(account_id, properties=["emailAddress", "aliases"])
-	if email == (account.get("emailAddress") or "").lower():
+	obj = service.get(resource_id, properties=["emailAddress", "aliases"])
+	if email == (obj.get("emailAddress") or "").lower():
 		frappe.throw(_("The primary address cannot be removed."))
 
-	aliases = _rebuild_aliases(account, keep=lambda e: e != email)
+	aliases = _rebuild_aliases(obj, keep=lambda e: e != email)
 
 	execute_with_logging(
-		func=lambda: account_service.set_aliases(account_id, aliases),
+		func=lambda: service.set_aliases(resource_id, aliases),
 		title=_("Failed to remove email {0}").format(email),
 		user_message=_("An error occurred while removing the email, check error logs for more details."),
 		with_context=False,
@@ -776,18 +774,17 @@ def _remove_account_alias(account_id: str, email: str) -> None:
 	)
 
 
-def _set_account_alias_enabled(account_id: str, email: str, enabled: bool) -> None:
-	"""Enables or disables the alias ``email`` on the given account (primary is always enabled)."""
+def _set_alias_enabled(service, resource_id: str, email: str, enabled: bool) -> None:
+	"""Enables or disables the alias ``email`` (the primary address is always enabled)."""
 
 	email = (email or "").strip().lower()
-	account_service = get_account_service()
-	account = account_service.get(account_id, properties=["emailAddress", "aliases"])
-	if not account or email == (account.get("emailAddress") or "").lower():
+	obj = service.get(resource_id, properties=["emailAddress", "aliases"])
+	if not obj or email == (obj.get("emailAddress") or "").lower():
 		return
 
 	domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
 	aliases = []
-	for alias in (account.get("aliases") or {}).values():
+	for alias in (obj.get("aliases") or {}).values():
 		domain = domain_names.get(alias.get("domainId"))
 		alias_email = f"{alias.get('name')}@{domain}" if domain else None
 		is_target = bool(alias_email) and alias_email.lower() == email
@@ -801,7 +798,7 @@ def _set_account_alias_enabled(account_id: str, email: str, enabled: bool) -> No
 		)
 
 	execute_with_logging(
-		func=lambda: account_service.set_aliases(account_id, aliases),
+		func=lambda: service.set_aliases(resource_id, aliases),
 		title=_("Failed to update email {0}").format(email),
 		user_message=_("An error occurred while updating the email, check error logs for more details."),
 		with_context=False,
@@ -814,7 +811,7 @@ def add_member_email(member_id: str, email: str, description: str | None = None)
 	"""Adds an email address to the member's account as an alias with an optional description."""
 
 	check_admin_permission("update members")
-	_add_account_alias(_require_member_account(member_id), email, description)
+	_add_alias(get_account_service(), _require_member_account(member_id), email, description)
 
 
 @frappe.whitelist()
@@ -822,7 +819,7 @@ def remove_member_email(member_id: str, email: str) -> None:
 	"""Removes an alias email address from the member's account (the primary cannot be removed)."""
 
 	check_admin_permission("update members")
-	_remove_account_alias(_require_member_account(member_id), email)
+	_remove_alias(get_account_service(), _require_member_account(member_id), email)
 
 
 @frappe.whitelist()
@@ -830,7 +827,7 @@ def set_member_email_enabled(member_id: str, email: str, enabled: int) -> None:
 	"""Enables or disables one of the member's alias email addresses."""
 
 	check_admin_permission("update members")
-	_set_account_alias_enabled(_require_member_account(member_id), email, bool(cint(enabled)))
+	_set_alias_enabled(get_account_service(), _require_member_account(member_id), email, bool(cint(enabled)))
 
 
 @frappe.whitelist()
@@ -1088,7 +1085,7 @@ def add_group_email(group_id: str, email: str, description: str | None = None) -
 	"""Adds an alias email address to the group with an optional description."""
 
 	check_admin_permission("update groups")
-	_add_account_alias(group_id, email, description)
+	_add_alias(get_account_service(), group_id, email, description)
 
 
 @frappe.whitelist()
@@ -1096,7 +1093,7 @@ def remove_group_email(group_id: str, email: str) -> None:
 	"""Removes an alias email address from the group (the primary cannot be removed)."""
 
 	check_admin_permission("update groups")
-	_remove_account_alias(group_id, email)
+	_remove_alias(get_account_service(), group_id, email)
 
 
 @frappe.whitelist()
@@ -1104,7 +1101,7 @@ def set_group_email_enabled(group_id: str, email: str, enabled: int) -> None:
 	"""Enables or disables one of the group's alias email addresses."""
 
 	check_admin_permission("update groups")
-	_set_account_alias_enabled(group_id, email, bool(cint(enabled)))
+	_set_alias_enabled(get_account_service(), group_id, email, bool(cint(enabled)))
 
 
 @frappe.whitelist()
@@ -1143,7 +1140,7 @@ def get_mailing_lists(search: str | None = None) -> list[dict]:
 	check_admin_permission("view mailing lists")
 
 	lists = get_mailing_list_service().get_all(
-		properties=["id", "name", "emailAddress", "description", "createdAt"]
+		properties=["id", "name", "emailAddress", "description", "recipients"]
 	)
 	rows = [
 		{
@@ -1151,7 +1148,7 @@ def get_mailing_lists(search: str | None = None) -> list[dict]:
 			"name": ml.get("name"),
 			"email": ml.get("emailAddress"),
 			"description": ml.get("description"),
-			"created_at": ml.get("createdAt"),
+			"recipient_count": len(_keys(ml.get("recipients"))),
 		}
 		for ml in lists
 	]
@@ -1160,20 +1157,45 @@ def get_mailing_lists(search: str | None = None) -> list[dict]:
 
 @frappe.whitelist()
 def get_mailing_list(list_id: str) -> dict:
-	"""Returns a mailing list with its recipients."""
+	"""Returns a mailing list with its email addresses and recipients."""
 
 	check_admin_permission("view mailing lists")
 
-	ml = get_mailing_list_service().get(list_id)
+	ml = get_mailing_list_service().get(
+		list_id,
+		properties=["id", "name", "emailAddress", "description", "aliases", "recipients"],
+	)
 	if not ml:
 		frappe.throw(_("Mailing list not found"), frappe.DoesNotExistError)
+
+	# Email addresses mirror the member/group pages: primary uses the description, aliases their own.
+	email_addresses = []
+	if primary := ml.get("emailAddress"):
+		email_addresses.append(
+			{"email": primary, "description": ml.get("description"), "is_primary": True, "enabled": True}
+		)
+	aliases = ml.get("aliases") or {}
+	if aliases:
+		domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
+		for alias in aliases.values():
+			name = alias.get("name")
+			domain_name = domain_names.get(alias.get("domainId"))
+			if name and domain_name:
+				email_addresses.append(
+					{
+						"email": f"{name}@{domain_name}",
+						"description": alias.get("description"),
+						"is_primary": False,
+						"enabled": bool(alias.get("enabled", True)),
+					}
+				)
 
 	return {
 		"id": ml["id"],
 		"name": ml.get("name"),
 		"email": ml.get("emailAddress"),
 		"description": ml.get("description"),
-		"created_at": ml.get("createdAt"),
+		"email_addresses": email_addresses,
 		# Recipients are email addresses (internal accounts or external).
 		"recipients": _keys(ml.get("recipients")),
 	}
@@ -1208,26 +1230,65 @@ def add_mailing_list(
 
 
 @frappe.whitelist()
-def update_mailing_list(
-	list_id: str,
-	name: str | None = None,
-	description: str | None = None,
-	recipients: list | None = None,
-) -> None:
-	"""Updates a mailing list's name/description/recipients."""
+def update_mailing_list(list_id: str, description: str | None = None) -> None:
+	"""Updates a mailing list's description."""
 
 	check_admin_permission("update mailing lists")
 
-	patch = {}
-	if name is not None:
-		patch["name"] = name
 	if description is not None:
-		patch["description"] = description
-	if recipients is not None:
-		patch["recipients"] = {email: True for email in _listify(recipients)}
+		get_mailing_list_service().update(list_id, {"description": description})
 
-	if patch:
-		get_mailing_list_service().update(list_id, patch)
+
+@frappe.whitelist()
+def add_mailing_list_email(list_id: str, email: str, description: str | None = None) -> None:
+	"""Adds an alias email address to the mailing list."""
+
+	check_admin_permission("update mailing lists")
+	_add_alias(get_mailing_list_service(), list_id, email, description)
+
+
+@frappe.whitelist()
+def remove_mailing_list_email(list_id: str, email: str) -> None:
+	"""Removes an alias email address from the mailing list (the primary cannot be removed)."""
+
+	check_admin_permission("update mailing lists")
+	_remove_alias(get_mailing_list_service(), list_id, email)
+
+
+@frappe.whitelist()
+def set_mailing_list_email_enabled(list_id: str, email: str, enabled: int) -> None:
+	"""Enables or disables one of the mailing list's alias email addresses."""
+
+	check_admin_permission("update mailing lists")
+	_set_alias_enabled(get_mailing_list_service(), list_id, email, bool(cint(enabled)))
+
+
+@frappe.whitelist()
+def add_mailing_list_recipients(list_id: str, recipients: list) -> None:
+	"""Adds recipient email addresses to the mailing list."""
+
+	check_admin_permission("update mailing lists")
+
+	service = get_mailing_list_service()
+	current = dict((service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {})
+	for email in _listify(recipients):
+		email = (email or "").strip()
+		if email:
+			current[email] = True
+
+	service.update(list_id, {"recipients": current})
+
+
+@frappe.whitelist()
+def remove_mailing_list_recipient(list_id: str, email: str) -> None:
+	"""Removes a recipient email address from the mailing list."""
+
+	check_admin_permission("update mailing lists")
+
+	service = get_mailing_list_service()
+	current = (service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {}
+	remaining = {r: v for r, v in current.items() if r.lower() != (email or "").strip().lower()}
+	service.update(list_id, {"recipients": remaining})
 
 
 @frappe.whitelist()

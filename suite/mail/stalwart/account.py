@@ -323,14 +323,6 @@ class AccountService(ManagementService):
 			remove = set(role_ids)
 			self._set_roles(account_id, [r for r in self._current_role_ids(account_id) if r not in remove])
 
-	def set_aliases(self, account_id: str, aliases: list[EmailAlias]) -> None:
-		"""Replaces the account's aliases with the given set (the primary address is unaffected)."""
-
-		self.update(
-			account_id,
-			{"aliases": {f"{idx}": alias.to_dict() for idx, alias in enumerate(aliases)}},
-		)
-
 	def set_password(self, account_id: str, new_password: str) -> None:
 		"""Sets the account's primary password credential, leaving other credentials intact."""
 

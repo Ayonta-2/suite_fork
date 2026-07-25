@@ -273,6 +273,14 @@ class ManagementService:
 		for batch in self._chunk_dict(patches, self.max_objects_in_set):
 			self._set(update=batch)
 
+	def set_aliases(self, id: str, aliases: list[Serializable]) -> None:
+		"""Replaces the object's aliases with the given set (index-keyed map on the wire).
+
+		Shared by resources that carry an ``aliases`` map (accounts, groups, mailing lists).
+		"""
+
+		self.update(id, {"aliases": {f"{idx}": alias.to_dict() for idx, alias in enumerate(aliases)}})
+
 	def delete(self, ids: str | list[str]) -> None:
 		"""Deletes one id or a list of ids in batches."""
 
