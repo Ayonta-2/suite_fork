@@ -67,6 +67,7 @@ import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
 import { useThemeMenuOption } from '@/apps/slides/composables/useThemeMenuOption'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useRootStore } from '@/stores/root'
+import { setupTheme } from '@/utils/setupTheme'
 
 const apps = SUITE_APPS
 const suiteLogo = SUITE_LOGO
@@ -120,6 +121,7 @@ if (typeof window.suite_workspace_name === 'undefined') {
 }
 
 onMounted(() => {
+	setupTheme()
 	useRootStore().setActiveApp(null)
 })
 </script>

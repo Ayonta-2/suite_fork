@@ -1,5 +1,12 @@
 <template>
-  <div class="flex h-full justify-center overflow-auto bg-surface-base pt-24 pb-14">
+  <div class="relative flex h-full justify-center overflow-auto bg-surface-base pt-24 pb-14">
+    <Button
+      class="absolute top-4 right-4"
+      variant="ghost"
+      :icon="isDark ? 'lucide-sun' : 'lucide-moon-star'"
+      :aria-label="__('Toggle theme')"
+      @click="toggleTheme"
+    />
     <div class="flex w-full max-w-sm flex-col gap-7 px-4">
       <div class="sr-only" aria-live="polite">{{ current.title }}</div>
       <div class="flex items-center justify-between">
@@ -159,6 +166,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { Button, ErrorMessage, FormControl, Tooltip, createResource } from 'frappe-ui'
 
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
+import { setupTheme, switchTheme, themeMode } from '@/utils/setupTheme'
 import SetupProgressTrack from '@/shell/SetupProgressTrack.vue'
 import WorkspaceLogoInput from '@/shell/WorkspaceLogoInput.vue'
 
@@ -200,7 +208,10 @@ function focusStep() {
 }
 
 // Step changes focus via the Transition's after-enter, once the new content exists.
-onMounted(focusStep)
+onMounted(() => {
+  setupTheme()
+  focusStep()
+})
 
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 
@@ -308,6 +319,16 @@ function finish() {
     .submit()
     .catch(() => {})
     .finally(() => nextTick(focusStep))
+}
+
+const isDark = computed(() =>
+  themeMode.value === 'automatic'
+    ? window.matchMedia('(prefers-color-scheme: dark)').matches
+    : themeMode.value === 'dark',
+)
+
+function toggleTheme() {
+  switchTheme(isDark.value ? 'light' : 'dark')
 }
 
 async function openSuite() {
