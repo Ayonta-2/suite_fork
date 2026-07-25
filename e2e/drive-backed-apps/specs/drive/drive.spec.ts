@@ -89,7 +89,7 @@ test.describe.serial("Drive critical paths", () => {
 		await collaborator.page.goto(`/drive/d/${folder.name}`);
 		await expect(collaborator.page.getByTestId("drive-app")).toBeVisible();
 		await expect(collaborator.page.getByText(folderName, { exact: true })).toBeVisible();
-		await collaborator.page.getByTestId("drive-current-entity-actions").click();
+		await collaborator.page.getByRole("button", { name: "Entity actions" }).click();
 		await expect(collaborator.page.getByRole("menuitem", { name: "Rename" })).toHaveCount(0);
 		await expect(collaborator.page.getByRole("menuitem", { name: "Share" })).toHaveCount(0);
 		await collaborator.page.keyboard.press("Escape");

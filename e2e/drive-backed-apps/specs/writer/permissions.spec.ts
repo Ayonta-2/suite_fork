@@ -26,7 +26,9 @@ test("reader cannot edit and editor can edit", async ({
 		"contenteditable",
 		"false",
 	);
-	await expect(collaborator.page.getByTestId("writer-document-actions")).toBeVisible();
+	await expect(
+		collaborator.page.getByRole("button", { name: "Document actions" }),
+	).toBeVisible();
 
 	await shareWriterDocument(owner.page.request, file.name, {
 		user: collaborator.user.user,
@@ -55,5 +57,5 @@ test("a public document is readable but not editable by a guest", async ({
 	await openWriterDocument(guestPage, file.name);
 	await expect(writerEditor(guestPage)).toHaveAttribute("contenteditable", "false");
 	await expect(guestPage.getByRole("button", { name: "Sign In" })).toBeVisible();
-	await expect(guestPage.getByTestId("writer-document-actions")).toHaveCount(0);
+	await expect(guestPage.getByRole("button", { name: "Document actions" })).toHaveCount(0);
 });

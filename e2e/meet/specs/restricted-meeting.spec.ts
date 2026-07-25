@@ -17,12 +17,12 @@ test.describe("Restricted meeting", () => {
 		await joinFromPreview(hostPage);
 
 		await guest.page.goto(appUrl(`/meet/${meetingId}`));
-		await expect(guest.page.getByTestId("meeting-preview")).toBeVisible();
+		await expect(guest.page.getByRole("heading", { name: "Ready to join?" })).toBeVisible();
 		const guestNameInput = guest.page.getByPlaceholder("John Doe");
 		await guestNameInput.fill(guestName);
 		await expect(guestNameInput).toHaveValue(guestName);
-		await expect(guest.page.getByTestId("join-meeting-preview-button")).toBeEnabled();
-		await guest.page.getByTestId("join-meeting-preview-button").click();
+		await expect(guest.page.getByRole("button", { name: "Join Meeting" })).toBeEnabled();
+		await guest.page.getByRole("button", { name: "Join Meeting" }).click();
 
 		await expect(
 			guest.page.getByRole("heading", { name: "Waiting to be admitted" }),
@@ -35,7 +35,7 @@ test.describe("Restricted meeting", () => {
 		await joinRequest.getByRole("button", { name: "Admit" }).click();
 
 		await expect(guest.page.getByTestId("meeting-layout")).toBeVisible();
-		await expect(guest.page.getByTestId("toolbar-end-call")).toBeVisible();
+		await expect(guest.page.getByRole("button", { name: "End Call" })).toBeVisible();
 	});
 
 	test("guest in restricted lobby can't join meeting when rejected", async ({
@@ -51,12 +51,12 @@ test.describe("Restricted meeting", () => {
 		await joinFromPreview(hostPage);
 
 		await guest.page.goto(appUrl(`/meet/${meetingId}`));
-		await expect(guest.page.getByTestId("meeting-preview")).toBeVisible();
+		await expect(guest.page.getByRole("heading", { name: "Ready to join?" })).toBeVisible();
 		const guestNameInput = guest.page.getByPlaceholder("John Doe");
 		await guestNameInput.fill(guestName);
 		await expect(guestNameInput).toHaveValue(guestName);
-		await expect(guest.page.getByTestId("join-meeting-preview-button")).toBeEnabled();
-		await guest.page.getByTestId("join-meeting-preview-button").click();
+		await expect(guest.page.getByRole("button", { name: "Join Meeting" })).toBeEnabled();
+		await guest.page.getByRole("button", { name: "Join Meeting" }).click();
 
 		await expect(
 			guest.page.getByRole("heading", { name: "Waiting to be admitted" }),
@@ -72,8 +72,8 @@ test.describe("Restricted meeting", () => {
 		});
 
 		await guest.page.goto(appUrl(`/meet/${meetingId}`));
-		await expect(guest.page.getByTestId("meeting-preview")).toBeVisible();
-		await guest.page.getByTestId("join-meeting-preview-button").click();
+		await expect(guest.page.getByRole("heading", { name: "Ready to join?" })).toBeVisible();
+		await guest.page.getByRole("button", { name: "Join Meeting" }).click();
 
 		await expect(
 			guest.page.getByRole("heading", { name: "Waiting to be admitted" }),

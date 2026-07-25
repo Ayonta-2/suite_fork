@@ -29,7 +29,7 @@ test.describe("Multi participant", () => {
 			expectRemoteVideoReceiving(guestOne.page, "Administrator"),
 			expectRemoteVideoReceiving(guestTwo.page, "Administrator"),
 		]);
-		await hostPage.getByTestId("toolbar-people").click();
+		await hostPage.getByRole("button", { name: "Show Participants" }).click();
 
 		const peoplePanel = hostPage.getByTestId("people-panel");
 		await expect(peoplePanel).toContainText("People");

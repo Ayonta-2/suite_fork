@@ -25,7 +25,7 @@ test("uploads, previews, and downloads a text file", async ({ owner, run }) => {
 	await expect(owner.page).toHaveURL(new RegExp(`/drive/f/${file.name}`));
 	await expect(owner.page.locator("pre")).toHaveText(fixtureContent);
 
-	await owner.page.getByTestId("drive-current-entity-actions").click();
+	await owner.page.getByRole("button", { name: "Entity actions" }).click();
 	const downloadPromise = owner.page.waitForEvent("download");
 	await owner.page.getByRole("menuitem", { name: "Download" }).click();
 	const download = await downloadPromise;

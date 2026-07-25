@@ -10,10 +10,10 @@ test.describe("Joining and leaving", () => {
 		await hostPage.goto(`/meet/${meetingId}`);
 		await joinFromPreview(hostPage);
 
-		await hostPage.getByTestId("toolbar-end-call").click();
+		await hostPage.getByRole("button", { name: "End Call" }).click();
 
 		await hostPage.waitForURL(/\/meet\/?$/);
-		await expect(hostPage.getByTestId("home-page")).toBeVisible();
+		await expect(hostPage.getByRole("button", { name: "Instant meet" })).toBeVisible();
 	});
 
 	test("guest can join an open meeting from the preview", async ({
@@ -26,6 +26,6 @@ test.describe("Joining and leaving", () => {
 		await guest.joinAsGuest(meetingId, `Guest ${test.info().parallelIndex}`);
 
 		await expect(guest.page.getByTestId("meeting-layout")).toBeVisible();
-		await expect(guest.page.getByTestId("toolbar-end-call")).toBeVisible();
+		await expect(guest.page.getByRole("button", { name: "End Call" })).toBeVisible();
 	});
 });

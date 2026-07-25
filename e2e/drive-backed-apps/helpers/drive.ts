@@ -70,7 +70,7 @@ export async function shareCurrentEntity(
 	entityTitle: string,
 	user: string,
 ): Promise<void> {
-	await page.getByTestId("drive-current-entity-actions").click();
+	await page.getByRole("button", { name: "Entity actions" }).click();
 	await page.getByRole("menuitem", { name: "Share" }).click();
 	const dialog = page.getByRole("dialog", { name: new RegExp(entityTitle) });
 	const peopleInput = dialog.getByPlaceholder("Add people");
