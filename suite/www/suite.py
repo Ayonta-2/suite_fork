@@ -52,5 +52,8 @@ def get_boot():
 			# not reach this shell, so the flags live in its own boot).
 			"suite_setup_complete": bool(frappe.db.get_single_value("Suite Settings", "setup_complete")),
 			"suite_can_run_setup": "System Manager" in frappe.get_roles(),
+			# Workspace branding for the launcher navbar.
+			"suite_workspace_name": frappe.db.get_single_value("Suite Settings", "workspace_name") or "",
+			"suite_workspace_logo": frappe.db.get_single_value("Suite Settings", "workspace_logo") or "",
 		}
 	)

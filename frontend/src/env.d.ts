@@ -17,6 +17,9 @@ declare global {
     /** First-run setup gate flags (served by www/suite.py). */
     suite_setup_complete?: boolean
     suite_can_run_setup?: boolean
+    /** Workspace branding for the launcher navbar (served by www/suite.py). */
+    suite_workspace_name?: string
+    suite_workspace_logo?: string
     /** Frappe translation map (message -> translated); populated per-app. */
     translatedMessages?: Record<string, string>
     /** Global translate helper installed by the suite translation plugin. */
