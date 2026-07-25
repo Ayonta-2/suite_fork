@@ -7,12 +7,17 @@ from typing import Literal
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Max
-from frappe.utils import cint
+from frappe.utils import cint, validate_email_address
 from pypika import Case, Order
 
 from suite.mail.api.utils import get_avatar_url
+from suite.mail.doctype.mail_account_request.mail_account_request import (
+	STALWART_DEFAULT_ADMIN_ROLES,
+	STALWART_DEFAULT_USER_ROLES,
+)
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.stalwart import (
+	add_account_role,
 	get_account_service,
 	get_dkim_signature_service,
 	get_domain_service,
@@ -20,9 +25,10 @@ from suite.mail.stalwart import (
 	get_mailing_list_service,
 	get_oauth_client_service,
 	get_role_service,
+	remove_account_role,
 )
 from suite.mail.stalwart import get_domains as get_stalwart_domains
-from suite.mail.stalwart.account import CustomRoles, RoleType, UserRoles
+from suite.mail.stalwart.account import CustomRoles, EmailAlias, RoleType, UserRoles
 from suite.mail.stalwart.domain import Domain
 from suite.mail.stalwart.group import Group
 from suite.mail.stalwart.mailing_list import MailingList
@@ -30,6 +36,7 @@ from suite.mail.stalwart.oauth import OAuthClient
 from suite.mail.stalwart.role import Role
 from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
+from suite.mail.utils.validation import is_subaddressed_email
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils import execute_with_logging
 from suite.utils.user import is_suite_admin, is_system_manager, is_user_enabled
@@ -582,6 +589,245 @@ def change_member_password(member_id: str, new_password: str) -> None:
 	member = frappe.get_doc("User", member_id)
 	member.new_password = new_password
 	member.save(ignore_permissions=True)
+
+
+# ---------------------------------------------------------------------------
+# Member editing (Frappe User + Stalwart account)
+# ---------------------------------------------------------------------------
+
+_GB = 1024**3
+
+
+def _member_account(member_id: str) -> str | None:
+	"""Returns the member's personal Stalwart account id, or None if they have none."""
+
+	return get_user_personal_jmap_account(member_id, raise_exception=False)
+
+
+def _require_member_account(member_id: str) -> str:
+	account_id = _member_account(member_id)
+	if not account_id:
+		frappe.throw(_("This member does not have a mail account."))
+
+	return account_id
+
+
+def _alias_emails(account: dict, domain_names: dict) -> list[str]:
+	"""Builds the account's alias email addresses from its raw ``aliases`` map."""
+
+	emails = []
+	for alias in (account.get("aliases") or {}).values():
+		name = alias.get("name")
+		domain = domain_names.get(alias.get("domainId"))
+		if name and domain:
+			emails.append(f"{name}@{domain}")
+
+	return emails
+
+
+def _rebuild_aliases(account: dict, *, keep: callable) -> list[EmailAlias]:
+	"""Rebuilds the account's alias objects, keeping those for which ``keep(email)`` is True."""
+
+	domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
+	aliases = []
+	for alias in (account.get("aliases") or {}).values():
+		domain = domain_names.get(alias.get("domainId"))
+		email = f"{alias.get('name')}@{domain}" if domain else None
+		if email and not keep(email.lower()):
+			continue
+
+		aliases.append(
+			EmailAlias(
+				name=alias["name"],
+				domain_id=alias["domainId"],
+				enabled=alias.get("enabled", True),
+				description=alias.get("description"),
+			)
+		)
+
+	return aliases
+
+
+@frappe.whitelist()
+def update_member(
+	member_id: str,
+	role: str | None = None,
+	description: str | None = None,
+	quota_gb: float | None = None,
+) -> None:
+	"""Updates a member's role, display name and quota on both Frappe and Stalwart."""
+
+	check_admin_permission("update members")
+
+	member = frappe.get_doc("User", member_id)
+
+	if role is not None:
+		if role == "admin":
+			member.append_roles("Suite Admin")
+		else:
+			member.set("roles", [r for r in member.get("roles") if r.role != "Suite Admin"])
+
+	description = (description or "").strip()
+	if description:
+		first, _sep, last = description.partition(" ")
+		member.first_name = first
+		member.last_name = last or None
+
+	member.save(ignore_permissions=True)
+
+	account_id = _member_account(member_id)
+	account_service = get_account_service()
+
+	# Role: the base "User" Stalwart role always stays; only the admin-only roles are toggled.
+	if role is not None:
+		extra_roles = list(set(STALWART_DEFAULT_ADMIN_ROLES) - set(STALWART_DEFAULT_USER_ROLES))
+		toggle = add_account_role if role == "admin" else remove_account_role
+		execute_with_logging(
+			func=lambda: [toggle(member_id, r) for r in extra_roles],
+			title=_("Failed to update roles for {0}").format(member_id),
+			user_message=_("An error occurred while updating the role, check error logs for more details."),
+			with_context=False,
+			module="Mail",
+		)
+
+	if not account_id:
+		return
+
+	if description:
+		execute_with_logging(
+			func=lambda: account_service.update(account_id, {"description": description}),
+			title=_("Failed to update description for {0}").format(member_id),
+			user_message=_("An error occurred while updating the description, check error logs for more details."),
+			with_context=False,
+			module="Mail",
+		)
+
+	if quota_gb is not None:
+		quota_bytes = cint(float(quota_gb) * _GB)
+		execute_with_logging(
+			func=lambda: account_service.update(account_id, {"quotas/maxDiskQuota": quota_bytes}),
+			title=_("Failed to update quota for {0}").format(member_id),
+			user_message=_("An error occurred while updating the quota, check error logs for more details."),
+			with_context=False,
+			module="Mail",
+		)
+
+
+@frappe.whitelist()
+def add_member_email(member_id: str, email: str) -> None:
+	"""Adds an email address to the member's account as an alias."""
+
+	check_admin_permission("update members")
+	account_id = _require_member_account(member_id)
+
+	email = (email or "").strip().lower()
+	validate_email_address(email, throw=True)
+	is_subaddressed_email(email, raise_exception=True)
+
+	local, _sep, domain = email.partition("@")
+	domain_id = get_domain_service().get_by_name(domain, raise_exception=True)["id"]
+
+	account_service = get_account_service()
+	account = account_service.get(account_id, properties=["emailAddress", "aliases"])
+	if email == (account.get("emailAddress") or "").lower():
+		frappe.throw(_("{0} is already the primary address.").format(email))
+
+	domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
+	if email in {e.lower() for e in _alias_emails(account, domain_names)}:
+		return
+
+	aliases = _rebuild_aliases(account, keep=lambda _e: True)
+	aliases.append(EmailAlias(name=local, domain_id=domain_id))
+
+	execute_with_logging(
+		func=lambda: account_service.set_aliases(account_id, aliases),
+		title=_("Failed to add email {0}").format(email),
+		user_message=_("An error occurred while adding the email, check error logs for more details."),
+		with_context=False,
+		module="Mail",
+	)
+
+
+@frappe.whitelist()
+def remove_member_email(member_id: str, email: str) -> None:
+	"""Removes an alias email address from the member's account (the primary cannot be removed)."""
+
+	check_admin_permission("update members")
+	account_id = _require_member_account(member_id)
+
+	email = (email or "").strip().lower()
+	account_service = get_account_service()
+	account = account_service.get(account_id, properties=["emailAddress", "aliases"])
+	if email == (account.get("emailAddress") or "").lower():
+		frappe.throw(_("The primary address cannot be removed."))
+
+	aliases = _rebuild_aliases(account, keep=lambda e: e != email)
+
+	execute_with_logging(
+		func=lambda: account_service.set_aliases(account_id, aliases),
+		title=_("Failed to remove email {0}").format(email),
+		user_message=_("An error occurred while removing the email, check error logs for more details."),
+		with_context=False,
+		module="Mail",
+	)
+
+
+@frappe.whitelist()
+def add_member_to_groups(member_id: str, group_ids: list) -> None:
+	"""Adds the member to the given groups."""
+
+	check_admin_permission("update members")
+	account_id = _require_member_account(member_id)
+
+	service = get_group_service()
+	for group_id in _listify(group_ids):
+		service.add_members(group_id, [account_id])
+
+
+@frappe.whitelist()
+def remove_member_from_group(member_id: str, group_id: str) -> None:
+	"""Removes the member from the given group."""
+
+	check_admin_permission("update members")
+	account_id = _require_member_account(member_id)
+	get_group_service().remove_members(group_id, [account_id])
+
+
+@frappe.whitelist()
+def add_member_to_mailing_lists(member_id: str, list_ids: list) -> None:
+	"""Adds the member's primary address as a recipient of the given mailing lists."""
+
+	check_admin_permission("update members")
+	account_id = _require_member_account(member_id)
+
+	account_service = get_account_service()
+	email = (account_service.get(account_id, properties=["emailAddress"]) or {}).get("emailAddress")
+	if not email:
+		return
+
+	service = get_mailing_list_service()
+	for list_id in _listify(list_ids):
+		recipients = dict((service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {})
+		recipients[email] = True
+		service.update(list_id, {"recipients": recipients})
+
+
+@frappe.whitelist()
+def remove_member_from_mailing_list(member_id: str, list_id: str) -> None:
+	"""Removes all of the member's addresses from the given mailing list's recipients."""
+
+	check_admin_permission("update members")
+	account_id = _require_member_account(member_id)
+
+	account_service = get_account_service()
+	account = account_service.get(account_id, properties=["emailAddress", "aliases"])
+	domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
+	member_emails = {(account.get("emailAddress") or "").lower(), *[e.lower() for e in _alias_emails(account, domain_names)]}
+
+	service = get_mailing_list_service()
+	recipients = (service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {}
+	remaining = {r: v for r, v in recipients.items() if r.lower() not in member_emails}
+	service.update(list_id, {"recipients": remaining})
 
 
 # ---------------------------------------------------------------------------

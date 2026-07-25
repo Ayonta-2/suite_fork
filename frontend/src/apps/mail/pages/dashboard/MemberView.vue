@@ -11,8 +11,11 @@
 
 		<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 			<!-- General Information -->
-			<DashboardCard :title="__('General Information')">
-				<template #actions><span /></template>
+			<DashboardCard
+				:title="__('General Information')"
+				:button-label="__('Edit')"
+				@action="showEdit = true"
+			>
 				<div>
 					<InformationField
 						:label="__('Role')"
@@ -77,19 +80,31 @@
 			</DashboardCard>
 
 			<!-- Email Addresses -->
-			<DashboardCard :title="__('Email Addresses')">
-				<template #actions><span /></template>
+			<DashboardCard
+				:title="__('Email Addresses')"
+				:button-label="__('Add')"
+				@action="showAddEmail = true"
+			>
 				<div class="flex flex-col">
 					<div class="bg-surface-gray-2 text-ink-gray-5 rounded px-5 py-2.5 text-sm">
 						{{ __('Email Address') }}
 					</div>
 					<template v-if="member.data.email_addresses.length">
 						<div
-							v-for="email in member.data.email_addresses"
+							v-for="(email, index) in member.data.email_addresses"
 							:key="email"
-							class="border-b px-5 py-3 text-base last:border-b-0"
+							class="group flex items-center justify-between border-b px-5 py-3 text-base last:border-b-0"
 						>
-							{{ email }}
+							<span>{{ email }}</span>
+							<Button
+								v-if="index > 0"
+								variant="ghost"
+								theme="red"
+								class="invisible group-hover:visible"
+								@click="removeEmail(email)"
+							>
+								<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
+							</Button>
 						</div>
 					</template>
 					<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
@@ -99,8 +114,7 @@
 			</DashboardCard>
 
 			<!-- Groups -->
-			<DashboardCard :title="__('Groups')">
-				<template #actions><span /></template>
+			<DashboardCard :title="__('Groups')" :button-label="__('Add')" @action="showAddGroups = true">
 				<div class="flex flex-col">
 					<div class="bg-surface-gray-2 text-ink-gray-5 rounded px-5 py-2.5 text-sm">
 						{{ __('Group') }}
@@ -109,10 +123,18 @@
 						<div
 							v-for="group in member.data.groups"
 							:key="group.id"
-							class="hover:bg-surface-gray-2 cursor-pointer border-b px-5 py-3 text-base last:border-b-0"
+							class="group hover:bg-surface-gray-2 flex cursor-pointer items-center justify-between border-b px-5 py-3 text-base last:border-b-0"
 							@click="router.push({ name: 'mail-group', params: { groupId: group.id } })"
 						>
-							{{ group.email || group.name }}
+							<span>{{ group.email || group.name }}</span>
+							<Button
+								variant="ghost"
+								theme="red"
+								class="invisible group-hover:visible"
+								@click.stop="removeGroup(group.id)"
+							>
+								<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
+							</Button>
 						</div>
 					</template>
 					<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
@@ -122,8 +144,7 @@
 			</DashboardCard>
 
 			<!-- Mailing Lists -->
-			<DashboardCard :title="__('Mailing Lists')">
-				<template #actions><span /></template>
+			<DashboardCard :title="__('Mailing Lists')" :button-label="__('Add')" @action="showAddLists = true">
 				<div class="flex flex-col">
 					<div class="bg-surface-gray-2 text-ink-gray-5 rounded px-5 py-2.5 text-sm">
 						{{ __('Mailing List') }}
@@ -132,10 +153,18 @@
 						<div
 							v-for="list in member.data.mailing_lists"
 							:key="list.id"
-							class="hover:bg-surface-gray-2 cursor-pointer border-b px-5 py-3 text-base last:border-b-0"
+							class="group hover:bg-surface-gray-2 flex cursor-pointer items-center justify-between border-b px-5 py-3 text-base last:border-b-0"
 							@click="router.push({ name: 'mail-mailing-list', params: { listId: list.id } })"
 						>
-							{{ list.email || list.name }}
+							<span>{{ list.email || list.name }}</span>
+							<Button
+								variant="ghost"
+								theme="red"
+								class="invisible group-hover:visible"
+								@click.stop="removeList(list.id)"
+							>
+								<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
+							</Button>
 						</div>
 					</template>
 					<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
@@ -149,17 +178,35 @@
 	<Dialog v-model="showToggleEnabled" :options="TOGGLE_ENABLED_OPTIONS" />
 	<Dialog v-model="showDeleteMember" :options="DELETE_MEMBER_OPTIONS" />
 	<ChangeMemberPasswordModal v-model="showChangePassword" :member-id="memberId" />
+		<EditMemberModal v-if="data" v-model="showEdit" :member="data" @reload="member.reload()" />
+		<AddMemberEmailModal v-model="showAddEmail" :member-id="memberId" @reload="member.reload()" />
+		<AddMemberGroupsModal
+			v-model="showAddGroups"
+			:member-id="memberId"
+			:current-ids="currentGroupIds"
+			@reload="member.reload()"
+		/>
+		<AddMemberMailingListsModal
+			v-model="showAddLists"
+			:member-id="memberId"
+			:current-ids="currentListIds"
+			@reload="member.reload()"
+		/>
 </template>
 
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, Dropdown, FeatherIcon, createResource, usePageMeta } from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import AddMemberEmailModal from '@/apps/mail/components/Modals/AddMemberEmailModal.vue'
+import AddMemberGroupsModal from '@/apps/mail/components/Modals/AddMemberGroupsModal.vue'
+import AddMemberMailingListsModal from '@/apps/mail/components/Modals/AddMemberMailingListsModal.vue'
 import ChangeMemberPasswordModal from '@/apps/mail/components/Modals/ChangeMemberPasswordModal.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import EditMemberModal from '@/apps/mail/components/Modals/EditMemberModal.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 
 type DayjsFn = (value?: string | Date | null) => { format: (fmt: string) => string }
@@ -196,6 +243,10 @@ const showDeleteMember = ref(false)
 const showResetPassword = ref(false)
 const showChangePassword = ref(false)
 const showToggleEnabled = ref(false)
+const showEdit = ref(false)
+const showAddEmail = ref(false)
+const showAddGroups = ref(false)
+const showAddLists = ref(false)
 
 const member = createResource({
 	url: 'suite.mail.api.admin.get_member',
@@ -206,6 +257,45 @@ const member = createResource({
 })
 
 const data = computed(() => member.data as MemberData | undefined)
+
+const currentGroupIds = computed(() => data.value?.groups.map((g) => g.id) || [])
+const currentListIds = computed(() => data.value?.mailing_lists.map((l) => l.id) || [])
+
+const removeEmail = (email: string) =>
+	createResource({
+		url: 'suite.mail.api.admin.remove_member_email',
+		makeParams: () => ({ member_id: memberId, email }),
+		onSuccess: () => {
+			member.reload()
+			raiseToast(__('Email address removed.'))
+		},
+		onError: (error: { messages?: string[] }) =>
+			raiseToast(error.messages?.[0] || __('Request failed.'), 'error'),
+	}).submit()
+
+const removeGroup = (groupId: string) =>
+	createResource({
+		url: 'suite.mail.api.admin.remove_member_from_group',
+		makeParams: () => ({ member_id: memberId, group_id: groupId }),
+		onSuccess: () => {
+			member.reload()
+			raiseToast(__('Removed from group.'))
+		},
+		onError: (error: { messages?: string[] }) =>
+			raiseToast(error.messages?.[0] || __('Request failed.'), 'error'),
+	}).submit()
+
+const removeList = (listId: string) =>
+	createResource({
+		url: 'suite.mail.api.admin.remove_member_from_mailing_list',
+		makeParams: () => ({ member_id: memberId, list_id: listId }),
+		onSuccess: () => {
+			member.reload()
+			raiseToast(__('Removed from mailing list.'))
+		},
+		onError: (error: { messages?: string[] }) =>
+			raiseToast(error.messages?.[0] || __('Request failed.'), 'error'),
+	}).submit()
 
 const badge = computed<{ label: string; theme: 'green' | 'gray' }>(() =>
 	data.value?.enabled
