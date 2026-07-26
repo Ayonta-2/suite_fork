@@ -20,8 +20,8 @@
         />
         <SetupProgressTrack
           v-if="step !== 'welcome'"
-          :total="3"
-          :current="stepIndex - 1"
+          :total="stepOrder.length - 1"
+          :current="trackIndex"
           :done="step === 'done'"
         />
       </div>
@@ -80,8 +80,10 @@
 
               <div v-else class="flex justify-center">
                 <div class="flex w-full items-center gap-3 rounded-lg bg-surface-gray-2 p-4">
-                  <LucideMail v-if="inviteSummary" class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5" />
-                  <LucideUser v-else class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5" />
+                  <component
+                    :is="inviteSummary ? LucideMail : LucideUser"
+                    class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5"
+                  />
                   <div class="flex flex-col gap-1">
                     <p class="text-base text-ink-gray-8">{{ doneTitle }}</p>
                     <p class="text-sm text-ink-gray-5">{{ __('Invite anyone later from Settings.') }}</p>
@@ -164,6 +166,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { Button, ErrorMessage, FormControl, Tooltip, createResource } from 'frappe-ui'
+import LucideMail from '~icons/lucide/mail'
+import LucideUser from '~icons/lucide/user'
 
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
 import { setupTheme, switchTheme, themeMode } from '@/utils/setupTheme'
@@ -179,6 +183,7 @@ const stepOrder: Step[] = ['welcome', 'workspace', 'invite', 'done']
 
 const step = ref<Step>('welcome')
 const stepIndex = computed(() => stepOrder.indexOf(step.value))
+const trackIndex = computed(() => stepIndex.value - 1)
 const workspaceName = ref('')
 const workspaceLogo = ref('')
 const emails = ref('')
@@ -207,7 +212,6 @@ function focusStep() {
   target?.focus()
 }
 
-// Step changes focus via the Transition's after-enter, once the new content exists.
 onMounted(() => {
   setupTheme()
   focusStep()

@@ -25,13 +25,13 @@
             v-for="app in apps"
             :key="app.id"
             :to="app.prefix"
-            class="group flex flex-col items-center text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+            class="flex flex-col items-center text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
           >
-            <div class="flex size-[3.375rem] items-center justify-center">
+            <div class="flex size-[54px] items-center justify-center">
               <img
                 :src="app.logo"
                 :alt="__('{0} logo', [app.name])"
-                class="size-[3.375rem] object-contain"
+                class="size-[54px] object-contain"
                 draggable="false"
               />
             </div>
@@ -41,14 +41,14 @@
           <component
             :is="systemUser ? 'button' : 'a'"
             :href="systemUser ? undefined : '/app/user-settings'"
-            class="group flex flex-col items-center text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+            class="flex flex-col items-center text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
             @click="systemUser && (showSettings = true)"
           >
-            <div class="flex size-[3.375rem] items-center justify-center">
+            <div class="flex size-[54px] items-center justify-center">
               <img
                 :src="settingsLogo"
                 :alt="__('Settings logo')"
-                class="size-[3.375rem] object-contain"
+                class="size-[54px] object-contain"
                 draggable="false"
               />
             </div>
