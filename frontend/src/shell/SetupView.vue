@@ -247,7 +247,10 @@ const displayError = computed(() => {
   return err.messages?.join(' ') || __('Failed to send invites.')
 })
 
-const markComplete = createResource({ url: 'suite.api.account.mark_setup_complete' })
+const markComplete = createResource({
+  url: 'suite.api.account.mark_setup_complete',
+  makeParams: () => ({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+})
 
 createResource({
   url: 'suite.api.account.get_workspace',

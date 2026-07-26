@@ -40,23 +40,6 @@ def after_install():
 	_run("drive.ensure_custom_fields", ensure_custom_fields)
 	_run("drive.after_install", drive_after_install)
 	_run("mail.after_install", mail_after_install)
-	_run("suite.configure_first_run", configure_first_run)
-
-
-def configure_first_run():
-	"""Make Suite's onboarding the first-run experience instead of Frappe's wizard,
-	and land users on /suite. Skipped on a site that was already set up so we don't
-	hijack an existing install. Sets both frappe setup flags: while
-	System Settings.setup_complete is 0, Frappe's setup endpoints stay callable with
-	no role check."""
-	if frappe.is_setup_complete():
-		return
-
-	from frappe.desk.page.setup_wizard.setup_wizard import enable_setup_wizard_complete
-
-	enable_setup_wizard_complete("frappe")
-	frappe.db.set_single_value("System Settings", "setup_complete", 1)
-	frappe.db.set_single_value("System Settings", "default_app", "suite")
 
 
 def after_migrate():

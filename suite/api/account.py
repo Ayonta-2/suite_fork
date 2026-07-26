@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils.caching import redis_cache
 
 from suite.mail.utils.user import is_jmap_configured
+from suite.suite_core.setup import build_setup_args, uses_suite_setup_wizard
 
 ALLOWED_LOGO_EXTENSIONS = ("png", "jpg", "jpeg", "webp")
 
@@ -17,16 +18,15 @@ def get_setup_state() -> dict[str, bool]:
 
 
 @frappe.whitelist(methods=["POST"])
-def mark_setup_complete() -> None:
+def mark_setup_complete(timezone: str | None = None) -> None:
 	frappe.only_for("System Manager")
 
-	from frappe.desk.page.setup_wizard.setup_wizard import enable_setup_wizard_complete
+	if not frappe.is_setup_complete() and uses_suite_setup_wizard():
+		from frappe.desk.page.setup_wizard.setup_wizard import setup_complete
 
-	# Suite needs its own flag: InstalledApplications.update_versions resets
-	# is_setup_complete to 0 for every non-frappe/erpnext app on each migrate.
-	enable_setup_wizard_complete("frappe")
+		setup_complete(build_setup_args(timezone))
+
 	frappe.db.set_single_value("Suite Settings", "setup_complete", 1)
-	frappe.db.set_single_value("System Settings", "setup_complete", 1)
 
 
 @frappe.whitelist()
