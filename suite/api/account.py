@@ -1,7 +1,10 @@
 import frappe
+from frappe import _
 from frappe.utils.caching import redis_cache
 
 from suite.mail.utils.user import is_jmap_configured
+
+ALLOWED_LOGO_EXTENSIONS = ("png", "jpg", "jpeg", "webp")
 
 
 @frappe.whitelist()
@@ -13,7 +16,7 @@ def get_setup_state() -> dict[str, bool]:
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def mark_setup_complete() -> None:
 	frappe.only_for("System Manager")
 
@@ -40,16 +43,63 @@ def update_workspace(workspace_name: str, workspace_logo: str = "") -> None:
 
 	workspace_name = workspace_name.strip()
 	if not workspace_name:
-		frappe.throw("Workspace name is required")
+		frappe.throw(_("Workspace name is required"))
+
+	validate_workspace_logo(workspace_logo)
 
 	settings = frappe.get_single("Suite Settings")
+	old_logo = settings.workspace_logo
 	settings.workspace_name = workspace_name
 	settings.workspace_logo = workspace_logo
 	settings.save()
 
+	if old_logo and old_logo != workspace_logo:
+		delete_logo_file(old_logo)
+
+
+def validate_workspace_logo(workspace_logo: str) -> None:
+	"""The logo is served as a world-readable public file, so only site-local
+	raster uploads are allowed: no external URLs (beacons), no /private paths,
+	no SVG (stored XSS when opened directly)."""
+	if not workspace_logo:
+		return
+
+	if not workspace_logo.startswith("/files/"):
+		frappe.throw(_("Workspace logo must be an image uploaded to this site"))
+
+	if workspace_logo.rsplit(".", 1)[-1].lower() not in ALLOWED_LOGO_EXTENSIONS:
+		frappe.throw(_("Workspace logo must be a PNG, JPEG, or WebP image"))
+
+	file_exists = frappe.db.exists(
+		"File",
+		{
+			"file_url": workspace_logo,
+			"is_private": 0,
+			"attached_to_doctype": "Suite Settings",
+			"attached_to_name": "Suite Settings",
+		},
+	)
+	if not file_exists:
+		frappe.throw(_("Workspace logo file not found"))
+
+
+def delete_logo_file(file_url: str) -> None:
+	file_name = frappe.db.get_value(
+		"File",
+		{
+			"file_url": file_url,
+			"attached_to_doctype": "Suite Settings",
+			"attached_to_name": "Suite Settings",
+		},
+	)
+	if file_name:
+		frappe.delete_doc("File", file_name, ignore_missing=True)
+
 
 @frappe.whitelist(methods=["POST"])
 def invite_users(emails: str) -> dict[str, list[str]]:
+	frappe.only_for("System Manager")
+
 	from frappe.core.api.user_invitation import invite_by_email
 
 	return invite_by_email(

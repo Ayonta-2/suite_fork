@@ -3,6 +3,7 @@ import os
 import frappe
 
 from suite import __version__
+from suite.api.account import get_setup_state, get_workspace
 
 no_cache = 1
 
@@ -37,6 +38,15 @@ def get_boot():
 	if frappe.get_system_settings("enable_telemetry"):
 		sentry_dsn = os.getenv("SUITE_FRONTEND_SENTRY_DSN")
 
+	# Guests get neutral values: the SPA redirects them to login, so the
+	# router never needs the real setup state or workspace branding.
+	if frappe.session.user == "Guest":
+		setup_state = {"setup_complete": False, "can_run_setup": False}
+		workspace = {"workspace_name": "", "workspace_logo": ""}
+	else:
+		setup_state = get_setup_state()
+		workspace = get_workspace()
+
 	return frappe._dict(
 		{
 			"site_name": frappe.local.site,
@@ -50,10 +60,10 @@ def get_boot():
 			"push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
 			# Setup gate, read synchronously by the router (extend_bootinfo does
 			# not reach this shell, so the flags live in its own boot).
-			"suite_setup_complete": bool(frappe.db.get_single_value("Suite Settings", "setup_complete")),
-			"suite_can_run_setup": "System Manager" in frappe.get_roles(),
+			"suite_setup_complete": setup_state["setup_complete"],
+			"suite_can_run_setup": setup_state["can_run_setup"],
 			# Workspace branding for the launcher navbar.
-			"suite_workspace_name": frappe.db.get_single_value("Suite Settings", "workspace_name") or "",
-			"suite_workspace_logo": frappe.db.get_single_value("Suite Settings", "workspace_logo") or "",
+			"suite_workspace_name": workspace["workspace_name"],
+			"suite_workspace_logo": workspace["workspace_logo"],
 		}
 	)
