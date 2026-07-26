@@ -9,6 +9,16 @@ import { createResource } from 'frappe-ui'
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
 import { useSessionStore } from '@/boot/session'
 
+declare module 'vue-router' {
+  interface RouteMeta {
+    appId?: string
+    title?: string
+    favicon?: string
+    isShell?: boolean
+    allowGuest?: boolean
+  }
+}
+
 /**
  * ONE Vue Router for the whole suite.
  *
@@ -144,7 +154,7 @@ async function ensureAppRoutesLoaded(appId: string): Promise<void> {
 
 router.beforeEach(async (to) => {
   // 1. Lazy-load the target app's route module before resolving the route.
-  const appId = to.meta.appId as string | undefined
+  const appId = to.meta.appId
   if (appId && !registeredApps.has(appId)) {
     await ensureAppRoutesLoaded(appId)
     // Re-resolve now that the real routes exist without replacing the previous
@@ -178,17 +188,16 @@ router.afterEach((to) => {
 })
 
 function setDocumentTitle(to: RouteLocationNormalizedLoaded) {
-  const title = to.meta.title
-  if (typeof title === 'string' && title) {
-    document.title = title
+  if (to.meta.title) {
+    document.title = to.meta.title
   }
 }
 
 function setFavicon(to: RouteLocationNormalizedLoaded) {
   const favicon = to.meta.favicon
-  if (typeof favicon !== 'string' || !favicon) return
+  if (!favicon) return
 
-  const scope = (to.meta.appId as string | undefined) ?? 'suite'
+  const scope = to.meta.appId ?? 'suite'
   if (scope === currentFaviconScope) return
 
   const icon = getFaviconElement()

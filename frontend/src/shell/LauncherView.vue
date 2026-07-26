@@ -21,39 +21,21 @@
     <div class="flex-1 overflow-auto">
       <div class="mx-auto flex min-h-full max-w-5xl flex-col px-6 pt-[10%] pb-16">
         <div class="mx-auto grid grid-cols-2 gap-x-10 gap-y-10 min-[480px]:grid-cols-4 min-[480px]:gap-x-20">
-          <router-link
+          <LauncherTile
             v-for="app in apps"
             :key="app.id"
             :to="app.prefix"
-            class="flex flex-col items-center text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
-          >
-            <div class="flex size-[54px] items-center justify-center">
-              <img
-                :src="app.logo"
-                :alt="__('{0} logo', [app.name])"
-                class="size-[54px] object-contain"
-                draggable="false"
-              />
-            </div>
-            <div class="mt-3 text-sm-medium leading-none text-ink-gray-9">{{ app.name }}</div>
-          </router-link>
+            :logo="app.logo"
+            :label="app.name"
+          />
 
-          <component
-            :is="systemUser ? 'button' : 'a'"
-            :href="systemUser ? undefined : '/app/user-settings'"
-            class="flex flex-col items-center text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
-            @click="systemUser && (showSettings = true)"
-          >
-            <div class="flex size-[54px] items-center justify-center">
-              <img
-                :src="settingsLogo"
-                :alt="__('Settings logo')"
-                class="size-[54px] object-contain"
-                draggable="false"
-              />
-            </div>
-            <div class="mt-3 text-sm-medium leading-none text-ink-gray-9">{{ __('Settings') }}</div>
-          </component>
+          <LauncherTile
+            v-if="systemUser"
+            :logo="settingsLogo"
+            :label="__('Settings')"
+            @click="showSettings = true"
+          />
+          <LauncherTile v-else :logo="settingsLogo" :label="__('Settings')" href="/app/user-settings" />
         </div>
       </div>
     </div>
@@ -63,15 +45,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, onUnmounted, ref } from 'vue'
+import { h, onMounted, onUnmounted, ref } from 'vue'
 import { Avatar, Dropdown } from 'frappe-ui'
 import { LogOut } from 'lucide-vue-next'
 
 import { SUITE_APPS } from '@/apps/registry'
 import settingsLogo from '@/assets/app-logos/settings.svg'
-import { useThemeMenuOption } from '@/apps/slides/composables/useThemeMenuOption'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
+import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
+import LauncherTile from '@/shell/LauncherTile.vue'
 import SuiteSettingsDialog from '@/shell/SuiteSettingsDialog.vue'
+import UserMenuCard from '@/shell/UserMenuCard.vue'
 import { useWorkspace } from '@/shell/useWorkspace'
 import { useRootStore } from '@/stores/root'
 import { setupTheme } from '@/utils/setupTheme'
@@ -80,32 +64,20 @@ const apps = SUITE_APPS
 
 const { workspaceName, workspaceLogo } = useWorkspace()
 
-const { fullName, imageURL, email, systemUser } = useCurrentUser()
+const { fullName, imageURL, systemUser } = useCurrentUser()
 const sessionStore = useSessionStore()
 
 const showSettings = ref(false)
 
-const themeMenuOption = useThemeMenuOption()
-
-const userMenuOptions = computed(() => [
+const userMenuOptions = [
   {
     group: '',
-    options: [
-      {
-        component: h('div', { class: 'flex items-center gap-2 px-2 py-1.5' }, [
-          h(Avatar, { image: imageURL.value, label: fullName.value, size: 'xl' }),
-          h('div', { class: 'flex min-w-0 flex-col gap-1' }, [
-            h('div', { class: 'truncate text-base text-ink-gray-8' }, fullName.value),
-            h('div', { class: 'truncate text-sm text-ink-gray-5' }, email.value),
-          ]),
-        ]),
-      },
-    ],
+    options: [{ component: UserMenuCard }],
   },
   {
     group: '',
     options: [
-      themeMenuOption,
+      useThemeMenuOption(),
       {
         label: __('Log out'),
         icon: h(LogOut, { class: 'stroke-[1.5] !size-3.5' }),
@@ -113,7 +85,7 @@ const userMenuOptions = computed(() => [
       },
     ],
   },
-])
+]
 
 onMounted(() => {
   setupTheme()

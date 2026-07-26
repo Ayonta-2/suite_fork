@@ -154,7 +154,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, type ComponentPublicInstance, type Ref } from 'vue'
 import { Button, ErrorMessage, FormControl, Tooltip, createResource } from 'frappe-ui'
 import LucideMail from '~icons/lucide/mail'
 import LucideUser from '~icons/lucide/user'
@@ -177,12 +177,12 @@ const trackIndex = computed(() => stepIndex.value - 1)
 const emails = ref('')
 const inviteError = ref('')
 const inviteSummary = ref('')
-const getStartedButton = ref()
-const workspaceForm = ref()
-const emailInput = ref()
-const openSuiteButton = ref()
+const getStartedButton = ref<ComponentPublicInstance>()
+const workspaceForm = ref<InstanceType<typeof WorkspaceForm>>()
+const emailInput = ref<ComponentPublicInstance>()
+const openSuiteButton = ref<ComponentPublicInstance>()
 
-const stepFocus: Record<Step, typeof workspaceForm> = {
+const stepFocus: Record<Step, Ref<ComponentPublicInstance | undefined>> = {
   welcome: getStartedButton,
   workspace: workspaceForm,
   invite: emailInput,
@@ -191,7 +191,7 @@ const stepFocus: Record<Step, typeof workspaceForm> = {
 
 function focusStep() {
   // Label-less controls render as fragments, so $el can be a comment node.
-  const node = stepFocus[step.value].value?.$el as Node | undefined
+  const node: Node | undefined = stepFocus[step.value].value?.$el
   const root = node instanceof Element ? node : node?.parentElement
   if (!root) return
   const target = root.matches('button, input, textarea')

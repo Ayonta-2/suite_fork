@@ -2,18 +2,15 @@
   <div class="group relative shrink-0">
     <FileUploader
       file-types=".png,.jpg,.jpeg,.webp"
-      :upload-args="{
-        private: false,
-        doctype: 'Suite Settings',
-        docname: 'Suite Settings',
-        fieldname: 'workspace_logo',
-      }"
+      :upload-args="uploadArgs"
       @success="(file) => (logo = file.file_url)"
     >
       <template #default="{ openFileSelector }">
         <button
           type="button"
-          class="relative block size-[54px] overflow-hidden rounded-[10px] border border-outline-gray-2 bg-surface-base hover:border-outline-gray-3 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+          class="relative block size-[54px] overflow-hidden rounded-[10px] border border-outline-gray-2 bg-surface-base
+            hover:border-outline-gray-3 hover:shadow-sm
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
           :class="!logo && 'border-dashed'"
           :aria-label="logo ? __('Replace logo') : __('Upload logo')"
           @click="openFileSelector"
@@ -34,7 +31,9 @@
     <button
       v-if="logo"
       type="button"
-      class="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-surface-gray-7 text-white opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+      class="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-surface-gray-7 text-white
+        opacity-0 group-hover:opacity-100 focus:opacity-100
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
       :aria-label="__('Remove logo')"
       @click="logo = ''"
     >
@@ -47,4 +46,11 @@
 import { FileUploader } from 'frappe-ui'
 
 const logo = defineModel<string>({ required: true })
+
+const uploadArgs = {
+  private: false,
+  doctype: 'Suite Settings',
+  docname: 'Suite Settings',
+  fieldname: 'workspace_logo',
+}
 </script>

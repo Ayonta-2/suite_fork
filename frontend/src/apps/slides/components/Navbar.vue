@@ -53,7 +53,7 @@ import { ArrowLeft, Plus, Copy, Trash, LogOut, Command } from 'lucide-vue-next'
 import slidesLogo from '@/apps/slides/assets/slides-logo.svg'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
-import { useThemeMenuOption } from '@/apps/slides/composables/useThemeMenuOption'
+import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { useSessionStore } from '@/boot/session'
 
 const props = defineProps({
