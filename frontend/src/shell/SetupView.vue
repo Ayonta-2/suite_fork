@@ -160,7 +160,7 @@ import LucideMail from '~icons/lucide/mail'
 import LucideUser from '~icons/lucide/user'
 
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
-import { setupTheme, switchTheme, themeMode } from '@/utils/setupTheme'
+import { setupTheme, switchTheme, systemDark, themeMode } from '@/utils/setupTheme'
 import SetupProgressTrack from '@/shell/SetupProgressTrack.vue'
 import WorkspaceForm from '@/shell/WorkspaceForm.vue'
 
@@ -293,9 +293,7 @@ function finish() {
 }
 
 const isDark = computed(() =>
-  themeMode.value === 'automatic'
-    ? window.matchMedia('(prefers-color-scheme: dark)').matches
-    : themeMode.value === 'dark',
+  themeMode.value === 'automatic' ? systemDark.value : themeMode.value === 'dark',
 )
 
 function toggleTheme() {

@@ -1,7 +1,7 @@
 <template>
   <div class="group relative shrink-0">
     <FileUploader
-      file-types="image/*"
+      file-types=".png,.jpg,.jpeg,.webp"
       :upload-args="{
         private: false,
         doctype: 'Suite Settings',
