@@ -47,21 +47,11 @@
                 </Tooltip>
               </div>
 
-              <div v-else-if="step === 'workspace'" class="flex items-start gap-4">
-                <WorkspaceLogoInput v-model="workspaceLogo" />
-                <div class="flex flex-1 flex-col gap-2">
-                  <FormControl
-                    ref="nameInput"
-                    v-model="workspaceName"
-                    type="text"
-                    variant="outline"
-                    :label="__('Workspace name')"
-                    :placeholder="__('Acme Inc.')"
-                    @keydown.enter="continueWorkspace"
-                  />
-                  <ErrorMessage :message="saveWorkspace.error" />
-                </div>
-              </div>
+              <WorkspaceForm
+                v-else-if="step === 'workspace'"
+                ref="workspaceForm"
+                @saved="step = 'invite'"
+              />
 
               <div v-else-if="step === 'invite'" class="flex flex-col gap-2">
                 <FormControl
@@ -109,9 +99,9 @@
             variant="solid"
             :label="__('Continue')"
             icon-right="lucide-chevron-right"
-            :loading="saveWorkspace.loading"
-            :disabled="!workspaceName.trim()"
-            @click="continueWorkspace"
+            :loading="workspaceForm?.saving"
+            :disabled="!workspaceForm?.canSave"
+            @click="workspaceForm?.save()"
           />
 
           <div v-else-if="step === 'invite'" class="flex items-center justify-between">
@@ -172,7 +162,7 @@ import LucideUser from '~icons/lucide/user'
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
 import { setupTheme, switchTheme, themeMode } from '@/utils/setupTheme'
 import SetupProgressTrack from '@/shell/SetupProgressTrack.vue'
-import WorkspaceLogoInput from '@/shell/WorkspaceLogoInput.vue'
+import WorkspaceForm from '@/shell/WorkspaceForm.vue'
 
 const apps = SUITE_APPS
 const suiteLogo = SUITE_LOGO
@@ -184,19 +174,17 @@ const stepOrder: Step[] = ['welcome', 'workspace', 'invite', 'done']
 const step = ref<Step>('welcome')
 const stepIndex = computed(() => stepOrder.indexOf(step.value))
 const trackIndex = computed(() => stepIndex.value - 1)
-const workspaceName = ref('')
-const workspaceLogo = ref('')
 const emails = ref('')
 const inviteError = ref('')
 const inviteSummary = ref('')
 const getStartedButton = ref()
-const nameInput = ref()
+const workspaceForm = ref()
 const emailInput = ref()
 const openSuiteButton = ref()
 
-const stepFocus: Record<Step, typeof nameInput> = {
+const stepFocus: Record<Step, typeof workspaceForm> = {
   welcome: getStartedButton,
-  workspace: nameInput,
+  workspace: workspaceForm,
   invite: emailInput,
   done: openSuiteButton,
 }
@@ -208,7 +196,7 @@ function focusStep() {
   if (!root) return
   const target = root.matches('button, input, textarea')
     ? (root as HTMLElement)
-    : root.querySelector<HTMLElement>('input, textarea')
+    : root.querySelector<HTMLElement>('input:not([type="file"]), textarea')
   target?.focus()
 }
 
@@ -252,22 +240,6 @@ const markComplete = createResource({
   makeParams: () => ({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
 })
 
-createResource({
-  url: 'suite.api.account.get_workspace',
-  auto: true,
-  onSuccess: (data: { workspace_name: string; workspace_logo: string }) => {
-    workspaceName.value = data.workspace_name
-    workspaceLogo.value = data.workspace_logo
-  },
-})
-
-const saveWorkspace = createResource({
-  url: 'suite.api.account.update_workspace',
-  onSuccess: () => {
-    step.value = 'invite'
-  },
-})
-
 const invite = createResource({
   url: 'suite.api.account.invite_users',
   onSuccess: () => {
@@ -281,14 +253,6 @@ const invite = createResource({
 
 function getStarted() {
   step.value = 'workspace'
-}
-
-function continueWorkspace() {
-  if (!workspaceName.value.trim() || saveWorkspace.loading) return
-  saveWorkspace.submit({
-    workspace_name: workspaceName.value,
-    workspace_logo: workspaceLogo.value,
-  })
 }
 
 function back() {

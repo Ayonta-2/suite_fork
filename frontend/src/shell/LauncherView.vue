@@ -58,19 +58,13 @@
       </div>
     </div>
 
-    <SuiteSettingsDialog
-      v-if="systemUser"
-      v-model="showSettings"
-      :workspace-name="workspaceName"
-      :workspace-logo="workspaceLogo"
-      @saved="onWorkspaceSaved"
-    />
+    <SuiteSettingsDialog v-if="systemUser" v-model="showSettings" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, h, onMounted, onUnmounted, ref } from 'vue'
-import { Avatar, Dropdown, createResource } from 'frappe-ui'
+import { Avatar, Dropdown } from 'frappe-ui'
 import { LogOut } from 'lucide-vue-next'
 
 import { SUITE_APPS } from '@/apps/registry'
@@ -78,23 +72,18 @@ import settingsLogo from '@/assets/app-logos/settings.svg'
 import { useThemeMenuOption } from '@/apps/slides/composables/useThemeMenuOption'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 import SuiteSettingsDialog from '@/shell/SuiteSettingsDialog.vue'
+import { useWorkspace } from '@/shell/useWorkspace'
 import { useRootStore } from '@/stores/root'
 import { setupTheme } from '@/utils/setupTheme'
 
 const apps = SUITE_APPS
 
-const workspaceName = ref(window.suite_workspace_name ?? '')
-const workspaceLogo = ref(window.suite_workspace_logo ?? '')
+const { workspaceName, workspaceLogo } = useWorkspace()
 
 const { fullName, imageURL, email, systemUser } = useCurrentUser()
 const sessionStore = useSessionStore()
 
 const showSettings = ref(false)
-
-function onWorkspaceSaved(data: { workspace_name: string; workspace_logo: string }) {
-  workspaceName.value = data.workspace_name
-  workspaceLogo.value = data.workspace_logo
-}
 
 const themeMenuOption = useThemeMenuOption()
 
@@ -125,18 +114,6 @@ const userMenuOptions = computed(() => [
     ],
   },
 ])
-
-// The Vite dev server serves no Jinja boot data, so fall back to a fetch there.
-if (typeof window.suite_workspace_name === 'undefined') {
-  createResource({
-    url: 'suite.api.account.get_workspace',
-    auto: true,
-    onSuccess: (data: { workspace_name: string; workspace_logo: string }) => {
-      workspaceName.value = data.workspace_name
-      workspaceLogo.value = data.workspace_logo
-    },
-  })
-}
 
 onMounted(() => {
   setupTheme()
