@@ -230,7 +230,7 @@ const displayError = computed(() => {
   const err = invite.error as { exc_type?: string; messages?: string[] } | null
   if (!err) return ''
   if (err.exc_type === 'OutgoingEmailError') {
-    return __('No outgoing email account is set up. You can skip this and invite your team later.')
+    return __('Outgoing email account not set up.')
   }
   return err.messages?.join(' ') || __('Failed to send invites.')
 })

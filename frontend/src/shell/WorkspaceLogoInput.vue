@@ -15,15 +15,19 @@
           :aria-label="logo ? __('Replace logo') : __('Upload logo')"
           @click="openFileSelector"
         >
-          <img v-if="logo" :src="logo" :alt="__('Workspace logo')" class="size-full object-cover" />
-          <span v-else class="flex size-full items-center justify-center">
-            <LucideImagePlus class="size-5 text-ink-gray-5" />
-          </span>
+          <template v-if="logo">
+            <img :src="logo" :alt="__('Workspace logo')" class="size-full object-cover" />
+            <span
+              class="absolute inset-0 hidden items-center justify-center bg-surface-base/30 group-hover:flex"
+            >
+              <LucideImagePlus class="size-5 text-ink-gray-6" />
+            </span>
+          </template>
           <span
-            class="absolute inset-0 hidden items-center justify-center group-hover:flex"
-            :class="logo ? 'bg-surface-base/30' : 'bg-surface-gray-2'"
+            v-else
+            class="flex size-full items-center justify-center group-hover:bg-surface-gray-2"
           >
-            <LucideImagePlus class="size-5 text-ink-gray-6" />
+            <LucideImagePlus class="size-5 text-ink-gray-5 group-hover:text-ink-gray-6" />
           </span>
         </button>
       </template>

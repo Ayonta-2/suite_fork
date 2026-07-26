@@ -1,31 +1,31 @@
 <template>
   <div
-    class="relative flex h-5 items-center gap-1.5 transition-all duration-300 motion-reduce:transition-none"
-    :class="done && 'gap-0'"
+    class="relative flex h-5 items-center transition-all duration-300 motion-reduce:transition-none"
+    :class="done ? 'gap-0' : 'gap-1.5'"
     aria-hidden="true"
   >
-    <span
-      v-for="i in total"
-      :key="i"
-      class="h-[3px] rounded-full transition-all duration-300 motion-reduce:transition-none"
-      :class="[
-        done ? 'w-0 opacity-0' : i - 1 === current ? 'w-7' : 'w-3',
-        i - 1 <= current ? 'bg-black dark:bg-white' : 'bg-surface-gray-5',
-      ]"
-    />
+    <span v-for="step in total" :key="step" :class="segmentClass(step - 1)" />
     <LucideCheck
       v-if="done"
-      class="setup-track__tick absolute top-0 right-0 size-5 stroke-[1.5] text-black dark:text-white"
+      class="tick absolute top-0 right-0 size-5 stroke-[1.5] text-black dark:text-white"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{ total: number; current: number; done?: boolean }>()
+const props = defineProps<{ total: number; current: number; done?: boolean }>()
+
+function segmentClass(index: number) {
+  return [
+    'h-[3px] rounded-full transition-all duration-300 motion-reduce:transition-none',
+    props.done ? 'w-0 opacity-0' : index === props.current ? 'w-7' : 'w-3',
+    index <= props.current ? 'bg-black dark:bg-white' : 'bg-surface-gray-5',
+  ]
+}
 </script>
 
 <style scoped>
-.setup-track__tick {
+.tick {
   animation: tickIn 80ms ease 300ms both;
 }
 
@@ -41,7 +41,7 @@ defineProps<{ total: number; current: number; done?: boolean }>()
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .setup-track__tick {
+  .tick {
     animation: none;
   }
 }
