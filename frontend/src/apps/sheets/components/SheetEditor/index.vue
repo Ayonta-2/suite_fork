@@ -5391,9 +5391,12 @@ function doDeleteRow() {
   contextMenu.open = false
   const sn = sheet.getCurrentSheet()
   // Same span logic as doDeleteCol: delete the whole selected row block when
-  // the right-clicked row falls inside it, else just the targeted row.
+  // the right-clicked row falls inside it, else just the targeted row. Only a
+  // real row span counts — in 'col'/'all' selections getSelection() reports
+  // r1 = last row, which would otherwise delete every row below the target.
   const sel = grid.getSelection()
-  const within = sel && contextMenu.targetRow >= sel.r0 && contextMenu.targetRow <= sel.r1
+  const rowSpan = sel && (sel.mode === 'row' || sel.mode === 'cell')
+  const within = rowSpan && contextMenu.targetRow >= sel.r0 && contextMenu.targetRow <= sel.r1
   const start  = within ? sel.r0 : contextMenu.targetRow
   const count  = within ? sel.r1 - sel.r0 + 1 : 1
   for (let i = 0; i < count; i++) {
@@ -5438,8 +5441,11 @@ function doDeleteCol() {
   // When the right-clicked column is inside a multi-column selection, delete
   // every selected column; otherwise just the targeted one. Each delete shifts
   // the rest left, so the block start index stays fixed across iterations.
+  // Only a real column span counts — in 'row'/'all' selections getSelection()
+  // reports c1 = last col, which would otherwise delete every column to the right.
   const sel = grid.getSelection()
-  const within = sel && contextMenu.targetCol >= sel.c0 && contextMenu.targetCol <= sel.c1
+  const colSpan = sel && (sel.mode === 'col' || sel.mode === 'cell')
+  const within = colSpan && contextMenu.targetCol >= sel.c0 && contextMenu.targetCol <= sel.c1
   const start  = within ? sel.c0 : contextMenu.targetCol
   const count  = within ? sel.c1 - sel.c0 + 1 : 1
   for (let i = 0; i < count; i++) {
