@@ -27,24 +27,25 @@
 			<!-- Tab 1 morphs into the current folder: the fixed slot position is the
 			     stable cue; icon + label say where you are. Re-tap opens the switcher. -->
 			<button :class="tabClass(mailActive)" @click="openMail">
-				<Icon
-					v-if="currentFolder"
-					:name="currentFolder.icon"
-					class="h-[22px] w-[22px] shrink-0"
-				/>
-				<Inbox v-else class="h-[22px] w-[22px] stroke-2" />
+				<span class="relative">
+					<Icon
+						v-if="currentFolder"
+						:name="currentFolder.icon"
+						class="h-[22px] w-[22px] shrink-0"
+					/>
+					<Inbox v-else class="h-[22px] w-[22px] stroke-2" />
+					<span v-if="mailBadgeCount" :class="badgeClass">{{
+						badgeText(mailBadgeCount)
+					}}</span>
+				</span>
 				<span class="max-w-full truncate px-1 text-[11px] font-medium !leading-3">
-					{{ currentFolder?.label ?? __('Mail') }}
+					{{ currentFolder?.label ?? __('Inbox') }}
 				</span>
 			</button>
 			<button v-if="screeningEnabled" :class="tabClass(screenerActive)" @click="openScreener">
 				<span class="relative">
 					<Eye class="h-[22px] w-[22px] stroke-2" />
-					<!-- Raven-style unread dot (RailItemBadge dot recipe): presence, not a count. -->
-					<span
-						v-if="screenerCount"
-						class="bg-surface-red-6 absolute -right-0.5 -top-0.5 block size-2 rounded-full border border-[var(--surface-base)]"
-					/>
+					<span v-if="screenerCount" :class="badgeClass">{{ badgeText(screenerCount) }}</span>
 				</span>
 				<span class="text-[11px] font-medium !leading-3">{{ __('Screener') }}</span>
 			</button>
@@ -66,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Eye, Inbox, Search } from 'lucide-vue-next'
 import { Avatar, Button, FeatherIcon } from 'frappe-ui'
@@ -89,7 +90,7 @@ import type { MailboxData } from '@/apps/mail/types'
 const route = useRoute()
 const router = useRouter()
 const store = userStore()
-const { mailboxes } = store
+const { mailboxes, allInboxesUnread } = store
 const { openFolderSheet } = useFolderSheet()
 const { isProfileSheetOpen, openProfileSheet } = useProfileSheet()
 const { isMobileSelectionActive } = useMobileSelection()
@@ -98,7 +99,7 @@ const activeAccountName = computed(
 	() => store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)?._name ?? '',
 )
 
-// The folder currently shown by a mail route; null elsewhere (tab falls back to "Mail").
+// The folder currently shown by a mail route; null elsewhere (tab falls back to "Inbox").
 const currentFolder = computed(() => {
 	if (route.name === 'mail-all-inboxes') return { label: __('All Inboxes'), icon: 'mails' }
 	if (route.name !== 'mail-mailbox') return null
@@ -115,36 +116,16 @@ const isThreadOpen = computed(() => !!route.params.threadID)
 const mailActive = computed(() => MAIL_ROUTES.includes(route.name as string))
 const screenerActive = computed(() => route.name === 'mail-screener')
 
-// Model 2 (grill-me): the Mail tab reopens the last-viewed mailbox, Inbox on first
-// launch. Stored per device; storage failures degrade to the /mail default redirect.
-const LAST_MAILBOX_KEY = 'mail-last-mailbox-path'
-
-watch(
-	() => route.fullPath,
-	() => {
-		if (!mailActive.value) return
-		try {
-			localStorage.setItem(LAST_MAILBOX_KEY, route.fullPath)
-		} catch {
-			// Storage unavailable — the tab falls back to /mail.
-		}
-	},
-	{ immediate: true },
-)
-
 const openMail = () => {
-	// Re-tapping the active Mail tab opens the folder switcher (model 2).
+	// Re-tapping the active Mail tab opens the folder switcher.
 	if (mailActive.value) {
 		openFolderSheet()
 		return
 	}
-	let target = '/mail'
-	try {
-		target = localStorage.getItem(LAST_MAILBOX_KEY) || '/mail'
-	} catch {
-		// Storage unavailable — /mail redirects to the inbox.
-	}
-	router.push(target)
+	// From elsewhere the tab reads "Inbox" with the Inbox's unread badge, so the
+	// tap must land there — restoring the last-viewed folder made a badged tab
+	// open Sent. (/mail redirects to the inbox.)
+	router.push('/mail')
 }
 
 const openScreener = () => {
@@ -163,6 +144,34 @@ const screenerCount = computed(
 		mailboxes.data?.find((m: MailboxData) => m.id === store.mailboxIds.screener)
 			?.unread_threads ?? 0,
 )
+
+// The badge follows what the tab is showing: the current folder's unread while
+// on a mail route (so Drafts with nothing unread shows no badge), the Inbox's
+// unread when the tab reads "Inbox" from elsewhere. Starred is virtual — no count.
+const mailBadgeCount = computed(() => {
+	if (route.name === 'mail-all-inboxes') return allInboxesUnread.data ?? 0
+	if (route.name === 'mail-mailbox') {
+		if (route.params.mailbox === 'starred') return 0
+		return (
+			mailboxes.data?.find((m: MailboxData) => m.id === route.params.mailbox)
+				?.unread_threads ?? 0
+		)
+	}
+	return (
+		mailboxes.data?.find((m: MailboxData) => m.id === store.mailboxIds.inbox)
+			?.unread_threads ?? 0
+	)
+})
+
+// Numeric unread badge shared by the Mail and Screener tabs (replaces the old
+// presence dot). Bordered like the dot was, to read against the translucent bar.
+// Left-anchored at the icon's top-right corner so wide counts ("99+") grow
+// outward instead of spreading back across the glyph. ink-red-1 (not ink-white,
+// which this token set lacks) is white in both themes — the on-red text step.
+const badgeClass =
+	'bg-surface-red-6 text-ink-red-1 absolute -top-1 left-4 flex h-4 min-w-4 items-center justify-center rounded-full border border-[var(--surface-base)] px-1 text-[10px] font-semibold leading-none'
+
+const badgeText = (count: number) => (count > 99 ? '99+' : String(count))
 
 // Raven's tint model: active tabs at full ink, inactive at ~40%.
 const tabClass = (active: boolean) =>

@@ -19,7 +19,9 @@
 				variant="outline"
 				:options="COLOR_SCHEMES"
 			/>
-			<template v-if="user.data.is_jmap_configured">
+			<!-- Desktop-only concepts: the reading pane doesn't exist on mobile and
+			     the mobile list renders without group headers. -->
+			<template v-if="user.data.is_jmap_configured && !isMobile">
 				<SettingsRow
 					class="!py-0"
 					:title="__('Show Reading Pane')"
@@ -56,8 +58,10 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 
 const user = inject('$user')
+const { isMobile } = useScreenSize()
 
 const colorScheme = ref(user.data.color_scheme)
 const showReadingPane = ref(!!user.data.show_reading_pane)
