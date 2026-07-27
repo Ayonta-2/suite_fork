@@ -2134,11 +2134,28 @@ def _report_row(direction: str, report: dict) -> dict:
 	}
 
 
+def _report_filter(kind: str, direction: str, search: str | None) -> dict | None:
+	"""Maps the search box onto the one filter the report type supports, if any.
+
+	The two families accept different filters: received reports only take Stalwart's free-text
+	``text`` filter (it matches the sender/recipient addresses and the reported domain, not the
+	subject), while the reports Stalwart generates only take an exact ``domain`` match — and ARF
+	has no domain at all. Filtering on anything else is rejected as ``unsupportedFilter``.
+	"""
+
+	search = (search or "").strip()
+	if not search:
+		return None
+	if direction == "inbound":
+		return {"text": search}
+	return {"domain": search} if kind in ("dmarc", "tls") else None
+
+
 @frappe.whitelist()
 def get_reports(
 	kind: str,
 	direction: str,
-	domain: str | None = None,
+	search: str | None = None,
 	page: int = 1,
 	page_length: int = 50,
 ) -> dict:
@@ -2147,10 +2164,8 @@ def get_reports(
 	check_admin_permission("view reports")
 
 	page, page_length = cint(page) or 1, cint(page_length) or 50
-	# Only DMARC/TLS carry a domain filter; ARF does not.
-	filter = {"domain": domain} if domain and kind in ("dmarc", "tls") else None
 	result = get_report_service(kind, direction).list_page(
-		filter=filter, position=(page - 1) * page_length, limit=page_length
+		filter=_report_filter(kind, direction, search), position=(page - 1) * page_length, limit=page_length
 	)
 	return {"reports": [_report_row(direction, r) for r in result["items"]], "total": result["total"]}
 

@@ -1,7 +1,7 @@
 <template>
 	<DashboardLayout :breadcrumbs="[{ label: title }]">
-		<div v-if="supportsDomainFilter" class="flex items-center space-x-3">
-			<FormControl v-model="domain" :placeholder="__('Filter by domain')" class="w-72">
+		<div v-if="supportsSearch" class="flex items-center space-x-3">
+			<FormControl v-model="search" :placeholder="searchPlaceholder" class="w-72">
 				<template #prefix><FeatherIcon name="search" class="text-ink-gray-5 w-4" /></template>
 			</FormControl>
 		</div>
@@ -72,13 +72,17 @@ type ReportRow = { id: string; [key: string]: string | undefined }
 const { kind, direction } = defineProps<{ kind: string; direction: string }>()
 
 const PAGE_LENGTH = 50
-const domain = ref('')
+const search = ref('')
 const page = ref(1)
 const showDelete = ref(false)
 const listView = useTemplateRef<{ selections?: Set<string>; toggleAllRows?: () => void }>('listView')
 
 const KIND_LABELS: Record<string, string> = { dmarc: 'DMARC', tls: 'TLS', arf: 'ARF' }
-const supportsDomainFilter = computed(() => kind === 'dmarc' || kind === 'tls')
+// Received reports support a free-text search; generated ones only an exact domain match, which ARF lacks.
+const supportsSearch = computed(() => direction === 'inbound' || kind === 'dmarc' || kind === 'tls')
+const searchPlaceholder = computed(() =>
+	direction === 'inbound' ? __('Search by sender, recipient or domain') : __('Filter by domain'),
+)
 const title = computed(() => {
 	const dir = direction === 'inbound' ? __('Inbound') : __('Outbound')
 	return `${dir} ${KIND_LABELS[kind] || kind} ${__('Reports')}`
@@ -89,17 +93,17 @@ usePageMeta(() => ({ title: title.value }))
 const reports = createResource({
 	url: 'suite.mail.api.admin.get_reports',
 	auto: true,
-	makeParams: () => ({ kind, direction, domain: domain.value, page: page.value, page_length: PAGE_LENGTH }),
-	cache: ['mailReports', kind, direction, domain.value, page.value],
+	makeParams: () => ({ kind, direction, search: search.value, page: page.value, page_length: PAGE_LENGTH }),
+	cache: ['mailReports', kind, direction, search.value, page.value],
 })
 
 const rows = computed<ReportRow[]>(() => reports.data?.reports || [])
 const total = computed(() => reports.data?.total || 0)
 
-watchDebounced(() => domain.value, () => ((page.value = 1), reports.reload()), { debounce: 300 })
+watchDebounced(() => search.value, () => ((page.value = 1), reports.reload()), { debounce: 300 })
 watch(page, reports.reload)
 // Re-fetch when navigating between report kinds (same component, different props).
-watch(() => [kind, direction], () => ((page.value = 1), (domain.value = ''), reports.reload()))
+watch(() => [kind, direction], () => ((page.value = 1), (search.value = ''), reports.reload()))
 
 const fromNow = (value?: string) => (value ? dayjs(value).fromNow() : '—')
 
