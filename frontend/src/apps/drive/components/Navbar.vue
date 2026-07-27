@@ -96,6 +96,7 @@ import LucideFileUp from '~icons/lucide/file-up'
 import LucideFolderUp from '~icons/lucide/folder-up'
 import LucideFilePlus2 from '~icons/lucide/file-plus-2'
 import LucideGalleryVerticalEnd from '~icons/lucide/gallery-vertical-end'
+import LucideSheet from '~icons/lucide/sheet'
 import LucideFolderPlus from '~icons/lucide/folder-plus'
 
 const route = useRoute()
@@ -305,6 +306,12 @@ const newEntityOptions = computed(() => [
         icon: LucideGalleryVerticalEnd,
         onClick: () => newExternal('Presentation'),
         cond: isPrivate.value && apps.data?.find?.((k) => k.name === 'slides'),
+      },
+      {
+        label: 'Spreadsheet',
+        icon: LucideSheet,
+        onClick: () => newExternal('Spreadsheet'),
+        cond: isPrivate.value && apps.data?.find?.((k) => k.name === 'sheets'),
       },
       {
         label: 'Folder',

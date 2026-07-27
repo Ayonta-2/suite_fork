@@ -2,6 +2,7 @@ import json
 
 import frappe
 
+from suite.drive.overrides.file import set_content_file_trashed, sync_content_file_title
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
 from suite.sheets.versioning import save as save_mod
@@ -385,6 +386,26 @@ def save_sheet(
 
 
 @frappe.whitelist()
+def create_sheet(title: str = "", parent: str = "") -> str:
+	# Create a blank sheet and return its id. Used by Drive's "New › Spreadsheet"
+	# so the sheet is born inside the folder the user is looking at — `parent`
+	# is the Drive folder its backing File should land in (validated for upload
+	# access here, then threaded to Sheet.after_insert). Mirrors Writer's
+	# create_document. "{}" is a valid empty workbook — the editor's loader
+	# falls back to a fresh Sheet1 when the packed payload is absent.
+	if parent:
+		from suite.drive.api.permissions import user_has_permission
+
+		if not user_has_permission(parent, "upload"):
+			frappe.throw(
+				"Cannot access folder due to insufficient permissions",
+				frappe.PermissionError,
+			)
+	result = save_mod.save_sheet(title or "Untitled Spreadsheet", "{}", name=None, parent=parent or None)
+	return result["name"]
+
+
+@frappe.whitelist()
 def record_op(
 	sheet: str,
 	op_type: str,
@@ -426,6 +447,10 @@ def delete_sheet(name: str) -> str:
 		{"trashed": 1, "trashed_on": frappe.utils.now_datetime(), "trashed_by": frappe.session.user},
 		update_modified=False,
 	)
+	# Mirror onto the backing Drive File so a trashed sheet drops out of the
+	# Drive listing too (soft-trash is a status flag, not a delete, so the
+	# on_trash doc-event doesn't fire).
+	set_content_file_trashed("Sheet", name, True)
 	return "ok"
 
 
@@ -439,6 +464,8 @@ def restore_sheet(name: str) -> str:
 		{"trashed": 0, "trashed_on": None, "trashed_by": None},
 		update_modified=False,
 	)
+	# Bring the backing Drive File back into the listing alongside the sheet.
+	set_content_file_trashed("Sheet", name, False)
 	return "ok"
 
 
@@ -489,6 +516,9 @@ def rename_sheet(name: str, title: str) -> str:
 	doc = frappe.get_doc("Sheet", name)
 	doc.title = title
 	doc.save()
+	# doc.save() writes the title but doesn't rename the backing Drive File
+	# (Sheet has no on_update sync — see hooks.py), so mirror it explicitly.
+	sync_content_file_title("Sheet", name, title)
 	return doc.name
 
 
