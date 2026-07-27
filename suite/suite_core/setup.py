@@ -5,7 +5,10 @@ SETUP_WIZARD_URL = "/suite/setup"
 
 def uses_suite_setup_wizard() -> bool:
 	"""Whether this site's setup wizard is Suite's onboarding."""
-	from frappe.desk.page.setup_wizard.setup_wizard import get_setup_wizard_url
+	try:
+		from frappe.desk.page.setup_wizard.setup_wizard import get_setup_wizard_url
+	except ImportError:
+		return False
 
 	return get_setup_wizard_url() == SETUP_WIZARD_URL
 
