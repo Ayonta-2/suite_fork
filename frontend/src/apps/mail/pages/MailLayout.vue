@@ -202,4 +202,30 @@ body.mail-app .menu-content {
 	z-index: 30;
 }
 
+/* Swipe paging (mobile) — shared by the thread pane (MailThread) and the screener
+   preview: the incoming page slides in from the swipe side while the outgoing one —
+   lifted out of flow so they overlap — slides away in tandem. */
+body.mail-app .page-next-enter-active,
+body.mail-app .page-next-leave-active,
+body.mail-app .page-prev-enter-active,
+body.mail-app .page-prev-leave-active {
+	transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+body.mail-app .page-next-leave-active,
+body.mail-app .page-prev-leave-active {
+	position: absolute;
+	inset: 0;
+}
+
+body.mail-app .page-next-enter-from,
+body.mail-app .page-prev-leave-to {
+	transform: translateX(100%);
+}
+
+body.mail-app .page-next-leave-to,
+body.mail-app .page-prev-enter-from {
+	transform: translateX(-100%);
+}
+
 </style>

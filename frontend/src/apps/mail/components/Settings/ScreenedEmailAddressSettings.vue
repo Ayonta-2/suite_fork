@@ -51,7 +51,7 @@
 						@click="toggleSortDir"
 					/>
 				</div>
-				</div>
+			</div>
 
 			<div v-if="rows.length" class="relative min-h-0 flex-1">
 				<div

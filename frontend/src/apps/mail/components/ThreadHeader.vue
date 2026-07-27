@@ -17,7 +17,7 @@
 					{{ thread?.[0]?.subject || __('[No subject]') }}
 				</h2>
 			</Tooltip>
-			<div class="ml-auto shrink-0 space-x-2 max-sm:-mr-2 max-sm:space-x-2">
+			<div class="ml-auto shrink-0 space-x-2 max-sm:-mr-2">
 				<AdaptiveDropdown
 					v-if="user.data?.show_reading_pane && !isMobile"
 					:options="threadActions"
@@ -114,7 +114,7 @@ import {
 	Star,
 	Trash2,
 } from 'lucide-vue-next'
-import { Button, Dropdown, Tooltip } from 'frappe-ui'
+import { Button, Tooltip } from 'frappe-ui'
 
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'

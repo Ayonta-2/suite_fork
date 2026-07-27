@@ -9,8 +9,7 @@
 	<Teleport to="body">
 		<div
 			v-show="show"
-			class="bg-surface-base fixed inset-x-0 top-0 z-10 overflow-y-auto"
-			:style="{ bottom: 'calc(3.5rem + 1px + env(safe-area-inset-bottom))' }"
+			class="bg-surface-base fixed inset-x-0 bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))] top-0 z-10 overflow-y-auto"
 		>
 			<slot name="body" />
 		</div>

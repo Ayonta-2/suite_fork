@@ -40,16 +40,7 @@
 					</AdaptiveDropdown>
 
 					<!-- Loading bar -->
-					<div
-						v-if="threads.loading"
-						class="loading-bar pointer-events-none absolute bottom-[-1px] left-[-1px] right-0 h-0.5 overflow-hidden"
-						role="progressbar"
-						aria-busy="true"
-					>
-						<div
-							class="loading-bar__fill via-ink-gray-3 absolute inset-y-0 left-0 w-[30%] bg-gradient-to-r from-transparent to-transparent"
-						/>
-					</div>
+					<LoadingBar v-if="threads.loading" />
 				</div>
 				<div
 					v-else
@@ -77,16 +68,7 @@
 					</div>
 
 					<!-- Loading bar -->
-					<div
-						v-if="threads.loading"
-						class="loading-bar pointer-events-none absolute bottom-[-1px] left-[-1px] right-0 h-0.5 overflow-hidden"
-						role="progressbar"
-						aria-busy="true"
-					>
-						<div
-							class="loading-bar__fill via-ink-gray-3 absolute inset-y-0 left-0 w-[30%] bg-gradient-to-r from-transparent to-transparent"
-						/>
-					</div>
+					<LoadingBar v-if="threads.loading" />
 				</div>
 
 				<!-- Mail list -->
@@ -183,6 +165,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 
@@ -512,16 +495,4 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.loading-bar__fill {
-	animation: loading-bar-slide 1.2s linear infinite;
-}
-
-@keyframes loading-bar-slide {
-	0% {
-		transform: translateX(-100%);
-	}
-	100% {
-		transform: translateX(333%);
-	}
-}
 </style>

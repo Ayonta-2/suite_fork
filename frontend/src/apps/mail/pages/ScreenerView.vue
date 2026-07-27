@@ -97,7 +97,7 @@
 					<div class="pb-20">
 						<!-- Count bar — matches the mailbox "All Mails" toolbar height/style. -->
 						<!-- Desktop-only: on mobile the header above carries these actions. -->
-					<div class="hidden min-h-[49px] items-center justify-between border-b px-5 sm:flex">
+						<div class="hidden min-h-[49px] items-center justify-between border-b px-5 sm:flex">
 							<div class="flex min-w-0 items-center">
 								<span class="truncate">{{ waitingLabel }}</span>
 								<!-- Redundant while the explainer slab is teaching the same lesson above,
@@ -383,7 +383,7 @@ import {
 } from 'frappe-ui'
 
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
-import { useScreenSize, useSettings } from '@/apps/mail/utils/composables'
+import { useScreenSize, useSettings, useSwipeNav } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
@@ -464,50 +464,23 @@ const senders = createResource({
 	auto: true,
 })
 
-// Horizontal swipe on the open preview (mobile): left → next sender, right → previous —
-// the screener counterpart of the mailbox thread swipe, same detection (judged on
-// touchend, decisively horizontal only). Swipes over the email body arrive as
-// email-swipe events forwarded out of EmailContent's iframe.
-const SWIPE_MIN_X = 64
-let senderTouchOrigin: { x: number; y: number } | null = null
-
-const onPreviewTouchStart = (e: TouchEvent) => {
-	senderTouchOrigin =
-		isMobile.value && openSender.value && e.touches.length === 1
-			? { x: e.touches[0].clientX, y: e.touches[0].clientY }
-			: null
-}
-
-const onPreviewTouchEnd = (e: TouchEvent) => {
-	if (!senderTouchOrigin) return
-	const dx = e.changedTouches[0].clientX - senderTouchOrigin.x
-	const dy = e.changedTouches[0].clientY - senderTouchOrigin.y
-	senderTouchOrigin = null
-	if (Math.abs(dx) < SWIPE_MIN_X || Math.abs(dx) < Math.abs(dy) * 2) return
-	swipeSender(dx < 0 ? 1 : -1)
-}
-
-// The time guard also dedupes the forwarded swipes: expanded mails each mount an
-// EmailContent whose message listener re-dispatches the same event.
-let lastSenderSwipeAt = 0
-const swipeSender = (offset: 1 | -1) => {
-	if (!isMobile.value || !openSender.value) return
-	const now = Date.now()
-	if (now - lastSenderSwipeAt < 250) return
-	const list = senders.data ?? []
-	const idx = list.findIndex(
-		(s: ScreeningSender) => s.from_email === openSender.value!.from_email,
-	)
-	const next = idx === -1 ? undefined : list[idx + offset]
-	if (!next) return
-	lastSenderSwipeAt = now
-	// Arms the paging animation for this navigation only — row taps and the allow/deny
-	// auto-advance keep swapping instantly.
-	senderSlide.value = offset > 0 ? 'sender-next' : 'sender-prev'
-	selectSender(next)
-}
-
-const onEmailSwipe = (e: Event) => swipeSender((e as CustomEvent).detail === 'left' ? 1 : -1)
+// Swipe on the open preview (mobile): left → next sender, right → previous — the
+// screener counterpart of the mailbox thread swipe.
+const { onTouchStart: onPreviewTouchStart, onTouchEnd: onPreviewTouchEnd } = useSwipeNav(
+	() => isMobile.value && !!openSender.value,
+	(offset) => {
+		const list = senders.data ?? []
+		const idx = list.findIndex(
+			(s: ScreeningSender) => s.from_email === openSender.value!.from_email,
+		)
+		const next = idx === -1 ? undefined : list[idx + offset]
+		if (!next) return
+		// Arms the paging animation for this navigation only — row taps and the allow/deny
+		// auto-advance keep swapping instantly.
+		senderSlide.value = offset > 0 ? 'page-next' : 'page-prev'
+		selectSender(next)
+	},
+)
 
 // The <Transition> name while a swipe navigation renders; cleared after the slide.
 const senderSlide = ref('')
@@ -518,9 +491,6 @@ const senderPaneKey = ref('none')
 watch(openSender, (sender) => {
 	if (sender) senderPaneKey.value = sender.from_email
 })
-
-onMounted(() => window.addEventListener('email-swipe', onEmailSwipe))
-onUnmounted(() => window.removeEventListener('email-swipe', onEmailSwipe))
 
 // Once a mail is open, ↑/↓ (or k/j) step to the previous/next sender and Esc closes it. Else inert.
 const handleKeydown = (e: KeyboardEvent) => {
@@ -832,36 +802,3 @@ const bulkOptions = computed(() => [
 ])
 </script>
 
-<style scoped>
-/* Swipe paging between senders (mobile): the incoming preview slides in from the swipe
-   side while the outgoing one — lifted out of flow so they overlap — slides away in
-   tandem. Mirrors the mailbox thread swipe's timing. */
-.sender-next-enter-active,
-.sender-next-leave-active,
-.sender-prev-enter-active,
-.sender-prev-leave-active {
-	transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.sender-next-leave-active,
-.sender-prev-leave-active {
-	position: absolute;
-	inset: 0;
-}
-
-.sender-next-enter-from {
-	transform: translateX(100%);
-}
-
-.sender-next-leave-to {
-	transform: translateX(-100%);
-}
-
-.sender-prev-enter-from {
-	transform: translateX(-100%);
-}
-
-.sender-prev-leave-to {
-	transform: translateX(100%);
-}
-</style>

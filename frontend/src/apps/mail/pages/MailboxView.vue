@@ -123,16 +123,7 @@
 					</div>
 
 					<!-- Loading bar -->
-					<div
-						v-if="threadsResource?.loading"
-						class="loading-bar pointer-events-none absolute bottom-[-1px] left-[-1px] right-0 h-0.5 overflow-hidden"
-						role="progressbar"
-						aria-busy="true"
-					>
-						<div
-							class="loading-bar__fill via-ink-gray-3 absolute inset-y-0 left-0 w-[30%] bg-gradient-to-r from-transparent to-transparent"
-						/>
-					</div>
+					<LoadingBar v-if="threadsResource?.loading" />
 				</div>
 
 				<!-- Toolbar/Actions -->
@@ -233,16 +224,7 @@
 						</Dropdown>
 					</div>
 					<!-- Subtle loading bar: a segment sliding across the bottom outline (no layout shift) -->
-					<div
-						v-if="threadsResource?.loading"
-						class="loading-bar pointer-events-none absolute bottom-[-1px] left-[-1px] right-0 h-0.5 overflow-hidden"
-						role="progressbar"
-						aria-busy="true"
-					>
-						<div
-							class="loading-bar__fill via-ink-gray-3 absolute inset-y-0 left-0 w-[30%] bg-gradient-to-r from-transparent to-transparent"
-						/>
-					</div>
+					<LoadingBar v-if="threadsResource?.loading" />
 				</div>
 
 				<!-- Mail list -->
@@ -574,6 +556,7 @@ import {
 import {
 	useMobileSelection,
 	useScreenSize,
+	useSwipeNav,
 	useUndo,
 } from '@/apps/mail/utils/composables'
 import { buildListRows } from '@/apps/mail/utils/threadStacks'
@@ -581,6 +564,7 @@ import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
+import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
@@ -1160,7 +1144,6 @@ const selectActions = computed((): SelectAction[] => [
 	},
 ])
 
-
 // Search
 
 // Infinite-scroll state (shared by the threads and search resources — only one is active at a time)
@@ -1610,7 +1593,6 @@ const pollForChanges = async () => {
 onMounted(() => {
 	window.addEventListener('keydown', handleKeyDown)
 	window.addEventListener('keyup', handleKeyUp)
-	window.addEventListener('email-swipe', onEmailSwipe)
 	reloadInterval.value = setInterval(pollForChanges, 30000)
 
 	socket.on('new_mail_created', (updatedMailboxes: string[]) => {
@@ -1629,7 +1611,6 @@ onMounted(() => {
 onUnmounted(() => {
 	window.removeEventListener('keydown', handleKeyDown)
 	window.removeEventListener('keyup', handleKeyUp)
-	window.removeEventListener('email-swipe', onEmailSwipe)
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
 	// Leaving the mailbox drops any pending undo so a lingering toast can't undo into another view.
 	setUndoAction(undefined)
@@ -1670,45 +1651,17 @@ const goToThreadByOffset = (offset: number) => {
 	loadMoreThenOpenEdge(offset, 'open')
 }
 
-// Horizontal swipe on the open thread (mobile): left → next thread, right → previous.
-// Judged on touchend (passive) so vertical scrolling is never delayed; a swipe must be
-// decisively horizontal — long enough and at least twice its vertical drift. Swipes over
-// an email body are detected inside the iframe and forwarded (see EmailContent).
-const SWIPE_MIN_X = 64
-let threadTouchOrigin: { x: number; y: number } | null = null
-const onThreadTouchStart = (e: TouchEvent) => {
-	threadTouchOrigin =
-		isMobile.value && threadID && e.touches.length === 1
-			? { x: e.touches[0].clientX, y: e.touches[0].clientY }
-			: null
-}
-const onThreadTouchEnd = (e: TouchEvent) => {
-	if (!threadTouchOrigin) return
-	const dx = e.changedTouches[0].clientX - threadTouchOrigin.x
-	const dy = e.changedTouches[0].clientY - threadTouchOrigin.y
-	threadTouchOrigin = null
-	if (Math.abs(dx) < SWIPE_MIN_X || Math.abs(dx) < Math.abs(dy) * 2) return
-	swipeToThread(dx < 0 ? 1 : -1)
-}
-
-// Shared by the pane's own touch handlers and swipes forwarded out of email iframes —
-// the time guard also dedupes: expanded mails each mount an EmailContent whose message
-// listener re-dispatches the same forwarded swipe.
-let lastSwipeAt = 0
-const swipeToThread = (offset: number) => {
-	if (!isMobile.value || !threadID) return
-	const now = Date.now()
-	if (now - lastSwipeAt < 250) return
-	lastSwipeAt = now
-	// Arms the paging animation for this navigation only — goToThread consumes it, so
-	// taps/arrows (which never set it) keep swapping instantly.
-	pendingThreadSlide = offset > 0 ? 'thread-next' : 'thread-prev'
-	goToThreadByOffset(offset)
-	pendingThreadSlide = ''
-}
-
-const onEmailSwipe = (e: Event) =>
-	swipeToThread((e as CustomEvent).detail === 'left' ? 1 : -1)
+// Swipe on the open thread (mobile): left → next thread, right → previous.
+const { onTouchStart: onThreadTouchStart, onTouchEnd: onThreadTouchEnd } = useSwipeNav(
+	() => isMobile.value && !!threadID,
+	(offset) => {
+		// Arms the paging animation for this navigation only — goToThread consumes it, so
+		// taps/arrows (which never set it) keep swapping instantly.
+		pendingThreadSlide = offset > 0 ? 'page-next' : 'page-prev'
+		goToThreadByOffset(offset)
+		pendingThreadSlide = ''
+	},
+)
 
 // MailThread's slide name while a swipe navigation renders; cleared on its slide-done
 // (and left empty for every other thread change, which should swap instantly).
@@ -2051,17 +2004,5 @@ const threadCount = computed(() => {
 	border-color: var(--outline-gray-7);
 }
 
-.loading-bar__fill {
-	animation: loading-bar-slide 1.2s linear infinite;
-}
-
-@keyframes loading-bar-slide {
-	0% {
-		transform: translateX(-100%);
-	}
-	100% {
-		transform: translateX(333%);
-	}
-}
 
 </style>

@@ -452,8 +452,9 @@ const { mailbox, threadID, threads, messages, canGoNext, readonly, slide } = def
 	// Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
 	// toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.
 	readonly?: boolean
-	// Transition name for the mobile swipe paging ('thread-next' / 'thread-prev'); the owner
-	// arms it per swipe and clears it on slideDone, so other thread changes swap instantly.
+	// Transition name for the mobile swipe paging ('page-next' / 'page-prev', styled in
+	// MailLayout); the owner arms it per swipe and clears it on slideDone, so other thread
+	// changes swap instantly.
 	slide?: string
 }>()
 
@@ -1077,36 +1078,3 @@ const getForwardedContent = (mail: Mail) => {
 }
 </script>
 
-<style scoped>
-/* Swipe paging between threads (mobile): the incoming thread's content slides in from
-   the swipe side while the outgoing one — lifted out of flow so they overlap — slides
-   away in tandem. The toolbar above the sliding region stays put. */
-.thread-next-enter-active,
-.thread-next-leave-active,
-.thread-prev-enter-active,
-.thread-prev-leave-active {
-	transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.thread-next-leave-active,
-.thread-prev-leave-active {
-	position: absolute;
-	inset: 0;
-}
-
-.thread-next-enter-from {
-	transform: translateX(100%);
-}
-
-.thread-next-leave-to {
-	transform: translateX(-100%);
-}
-
-.thread-prev-enter-from {
-	transform: translateX(-100%);
-}
-
-.thread-prev-leave-to {
-	transform: translateX(100%);
-}
-</style>
