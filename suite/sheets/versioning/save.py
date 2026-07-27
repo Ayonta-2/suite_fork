@@ -48,11 +48,16 @@ def save_sheet(
 	sheets_data: str,
 	name: str | None = None,
 	ops: list | str | None = None,
+	parent: str | None = None,
 ) -> dict:
 	"""Create or update a sheet.
 
 	Returns ``{"name": <sheet_id>, "head_seq": <int>}`` so the client
 	knows where its ops landed in the canonical order.
+
+	``parent`` is only honoured on creation (``name`` is falsy): it is the
+	Drive folder the new sheet's backing File should land in, passed through
+	to ``Sheet.after_insert``.
 	"""
 	plain = _validate_payload(sheets_data)
 	clean_title = _clean_title(title)
@@ -63,7 +68,7 @@ def save_sheet(
 	if name:
 		sheet_id, head_seq = _update_existing(name, clean_title, encoded, byte_size, ops_list)
 	else:
-		sheet_id, head_seq = _insert_new(clean_title, encoded, byte_size, ops_list)
+		sheet_id, head_seq = _insert_new(clean_title, encoded, byte_size, ops_list, parent=parent)
 
 	# Snapshot inline — no worker dependency. A failure here must NOT fail
 	# the save; the ops are already persisted (no data loss) and the next
@@ -79,12 +84,16 @@ def save_sheet(
 
 
 def _insert_new(
-	title: str, encoded: str, byte_size: int, ops_list: list[dict]
+	title: str, encoded: str, byte_size: int, ops_list: list[dict], parent: str | None = None
 ) -> tuple[str, int]:
 	doc = frappe.new_doc("Sheet")
 	doc.title = title
 	doc.sheets_data = encoded
 	doc.head_seq = 0
+	# Drive folder for the backing File, read in Sheet.after_insert. Set as a
+	# flag (not a field) so it never persists on the Sheet row itself.
+	if parent:
+		doc.flags.drive_parent = parent
 	doc.insert()
 	head_seq = _append_ops_and_save(doc.name, ops_list, byte_size, save_op_type="create")
 	frappe.db.set_value("Sheet", doc.name, "head_seq", head_seq, update_modified=False)
@@ -95,6 +104,9 @@ def _update_existing(
 	name: str, title: str, encoded: str, byte_size: int, ops_list: list[dict]
 ) -> tuple[str, int]:
 	frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
+	# Cheap PK read so the (un-indexed) Drive-file title sync below only runs on
+	# an actual rename, not on every autosave.
+	old_title = frappe.db.get_value("Sheet", name, "title")
 	head_seq = _append_ops_and_save(name, ops_list, byte_size, save_op_type="save")
 	frappe.db.set_value(
 		"Sheet",
@@ -102,6 +114,12 @@ def _update_existing(
 		{"title": title, "sheets_data": encoded, "head_seq": head_seq},
 		update_modified=True,
 	)
+	# The editor renames a sheet through the autosave (db.set_value skips the
+	# on_update doc-event), so keep the backing Drive File's name in step here.
+	if title != old_title:
+		from suite.drive.overrides.file import sync_content_file_title
+
+		sync_content_file_title("Sheet", name, title)
 	return name, head_seq
 
 

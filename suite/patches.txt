@@ -42,6 +42,7 @@ suite.writer.patches.change_versioning_schema
 suite.writer.patches.autopopulate_html
 # --- sheets ---
 suite.sheets.patches.v0_1.migrate_blob_to_cells
+suite.sheets.patches.integrate_with_drive
 # --- meet ---
 suite.meet.patches.migrate_meeting_fields_to_table_multiselect
 suite.meet.patches.switch_meet_user_to_suite_user
