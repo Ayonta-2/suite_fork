@@ -29,8 +29,30 @@
 
 		<template v-else-if="threads.data?.length">
 			<div ref="mailSidebar" class="sticky top-16 flex w-full flex-col border-r">
-				<!-- Toolbar -->
+				<!-- Toolbar — mobile mirrors the mailbox one (h-12, semibold selector in a
+				     bottom sheet, no refresh: pull the tab or reopen instead). -->
+				<div v-if="isMobile" class="relative flex h-12 items-center border-b px-4">
+					<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
+						<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
+							<span class="truncate">{{ title }}</span>
+							<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
+						</button>
+					</AdaptiveDropdown>
+
+					<!-- Loading bar -->
+					<div
+						v-if="threads.loading"
+						class="loading-bar pointer-events-none absolute bottom-[-1px] left-[-1px] right-0 h-0.5 overflow-hidden"
+						role="progressbar"
+						aria-busy="true"
+					>
+						<div
+							class="loading-bar__fill via-ink-gray-3 absolute inset-y-0 left-0 w-[30%] bg-gradient-to-r from-transparent to-transparent"
+						/>
+					</div>
+				</div>
 				<div
+					v-else
 					class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
 				>
 					<Dropdown :options="FILTER_OPTIONS">
@@ -160,6 +182,7 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
+import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 

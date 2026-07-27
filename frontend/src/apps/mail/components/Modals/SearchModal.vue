@@ -38,9 +38,6 @@
 					v-if="!showAdvancedFilters && !opTrigger"
 					class="flex flex-wrap items-center gap-1.5 px-4 py-2"
 				>
-					<span v-if="!activeFilters.length" class="text-ink-gray-5 text-xs">
-						{{ __('Filter by') }}
-					</span>
 					<span
 						v-for="chip in activeFilters"
 						:key="chip.key"
@@ -465,7 +462,7 @@ const QUICK_FILTERS = computed<QuickFilter[]>(() =>
 		{ label: __('From'), key: 'from', op: 'from' },
 		{ label: __('To'), key: 'to', op: 'to' },
 		{ label: __('With attachments'), key: 'hasAttachment', apply: () => (filter.hasAttachment = 'true') },
-		{ label: __('Read'), key: 'isRead', apply: () => (filter.isRead = 'true') },
+		{ label: __('Unread'), key: 'isRead', apply: () => (filter.isRead = 'false') },
 		// `in:` (folder) is account-scoped, so it's dropped from a cross-account search.
 	].filter((f) => f.op !== 'in' || !allAccounts.value),
 )

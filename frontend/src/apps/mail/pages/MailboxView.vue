@@ -87,15 +87,17 @@
 					/>
 
 					<!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
-					<div v-if="selections.length" class="flex h-12 items-center gap-1.5 px-3">
+					<!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
+					     axis and the count text starts where the title does. -->
+					<div v-if="selections.length" class="flex h-12 items-center gap-1 px-1">
 						<Button variant="ghost" class="!h-10 !w-10 !rounded-full" @click="toggleSelectAll(false)">
-							<template #icon><X class="icon !h-[22px] !w-[22px]" /></template>
+							<template #icon><X class="icon !h-5 !w-5" /></template>
 						</Button>
 						<span class="flex-1 truncate text-base !font-medium">
 							{{ __('{0} selected', [String(selections.length)]) }}
 						</span>
 						<button
-							class="text-ink-gray-8 text-md shrink-0 !font-medium"
+							class="text-ink-gray-8 text-md shrink-0 px-2 !font-medium"
 							@click="toggleSelectAll(!isAllSelected)"
 						>
 							{{ isAllSelected ? __('Unselect All') : __('Select All') }}
@@ -109,7 +111,7 @@
 							:options="FILTER_OPTIONS"
 							:title="__('Filter')"
 						>
-							<button class="flex min-w-0 items-center gap-1.5 text-base !font-semibold">
+							<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
 								<span class="truncate">{{ title }}</span>
 								<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
 							</button>
@@ -369,13 +371,23 @@
 			</div>
 
 			<!-- Mail thread -->
+			<!-- Mobile opens as a page push (iOS-style slide from the right): the pane
+			     stays mounted and slides via transform, so close animates too.
+			     visibility rides the same transition — it flips only after the
+			     slide-out ends, keeping the offscreen pane out of the focus order.
+			     Teleported to body on mobile (like the selection bar): inside the
+			     layout's isolate stacking context the remounting tab bar would paint
+			     over the pane during the slide-out. -->
+			<Teleport to="body" :disabled="!isMobile">
 			<div
 				class="bg-surface-base overflow-y-auto"
 				:class="{
 					'w-2/3': !isMobile && showReadingPane,
 					'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
-					'fixed inset-0': isMobile,
-					hidden: (isMobile || !showReadingPane) && !threadID,
+					'fixed inset-0 z-20 transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
+						isMobile,
+					'invisible translate-x-full': isMobile && !threadID,
+					hidden: !isMobile && !showReadingPane && !threadID,
 				}"
 			>
 				<MailThread
@@ -419,6 +431,7 @@
 					@next-thread="goToThreadByOffset(1)"
 				/>
 			</div>
+			</Teleport>
 		</template>
 
 		<!-- No mails (the search view keeps its header and shows an inline message instead) -->
@@ -444,19 +457,21 @@
 		<!-- Four labeled actions + More: seven unlabeled icons were the old screener
 		     trap (no labels, no tooltips on touch). Overflow actions and the folder
 		     menus live in the More sheet, which chains into the folder sheets. -->
-		<div class="flex h-13 items-stretch justify-around">
+		<!-- flex-1 columns (like the tab bar underneath): equal widths keep the icon
+		     centers evenly spaced regardless of label length. -->
+		<div class="flex h-14 items-stretch">
 			<button
 				v-for="action in visibleSelectActions.slice(0, 4)"
 				:key="action.label"
-				class="text-ink-gray-7 flex flex-col items-center justify-center gap-1 px-2 text-[11px] !font-semibold"
+				class="text-ink-gray-7 flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] !font-semibold"
 				@click="action.onClick"
 			>
 				<component :is="action.icon" class="h-5 w-5" />
-				<span class="max-w-20 truncate">{{ stripShortcutHint(action.label) }}</span>
+				<span class="max-w-full truncate">{{ action.shortLabel ?? stripShortcutHint(action.label) }}</span>
 			</button>
 			<button
 				v-if="moreSelectionOptions.length"
-				class="text-ink-gray-7 flex flex-col items-center justify-center gap-1 px-2 text-[11px] !font-semibold"
+				class="text-ink-gray-7 flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] !font-semibold"
 				@click="showMoreActions = true"
 			>
 				<Ellipsis class="h-5 w-5" />
@@ -1020,6 +1035,8 @@ const handleKeyUp = (e: KeyboardEvent) => {
 
 interface SelectAction {
 	label: string
+	// One-word label for the mobile selection bar; verb phrases stay in menus/tooltips.
+	shortLabel?: string
 	onClick: () => void
 	icon: typeof RefreshCw
 	condition: () => boolean
@@ -1059,6 +1076,7 @@ const selectActions = computed((): SelectAction[] => [
 	},
 	{
 		label: __('Mark as Junk (!)'),
+		shortLabel: __('Junk'),
 		onClick: () => junkOrDeleteThreads(selections.value, true),
 		icon: CircleAlert,
 		condition: () =>
@@ -1071,6 +1089,7 @@ const selectActions = computed((): SelectAction[] => [
 	},
 	{
 		label: __('Mark as Not Junk'),
+		shortLabel: __('Not Junk'),
 		onClick: () => handleSetSpamStatus({ 0: selections.value }),
 		icon: CircleCheck,
 		condition: () =>
@@ -1082,18 +1101,21 @@ const selectActions = computed((): SelectAction[] => [
 	},
 	{
 		label: __('Move to Trash (Delete)'),
+		shortLabel: __('Trash'),
 		onClick: () => handleMoveThreads({ [mailboxIds.trash]: selections.value }),
 		icon: Trash2,
 		condition: () => mailbox !== mailboxIds.trash,
 	},
 	{
 		label: __('Delete Threads (Shift+Delete)'),
+		shortLabel: __('Delete'),
 		onClick: () => junkOrDeleteThreads(selections.value, false),
 		icon: Trash2,
 		condition: () => mailbox === mailboxIds.trash,
 	},
 	{
 		label: __('Mark as Read (Shift+U)'),
+		shortLabel: __('Read'),
 		onClick: () => handleSetSeen({ 1: selections.value }),
 		icon: MailOpen,
 		condition: () =>
@@ -1105,6 +1127,7 @@ const selectActions = computed((): SelectAction[] => [
 	},
 	{
 		label: __('Mark as Unread (U)'),
+		shortLabel: __('Unread'),
 		onClick: () => handleSetSeen({ 0: selections.value }),
 		icon: MailIcon,
 		condition: () =>
@@ -1653,6 +1676,10 @@ const rowForThread = (threadID?: string): NavRow | undefined => {
 const focusOnThread = (threadID?: string) => focusRow(rowForThread(threadID))
 
 const scrollIntoView = (rowKey: string) => {
+	// Centering the focused row is a keyboard-navigation affordance; on mobile it
+	// only made the list visibly jump behind the thread pane's slide-in.
+	if (isMobile.value) return
+
 	// The row may have only just been revealed by its stack or its day opening, so wait for the render
 	// before looking it up. A no-op when nothing changed.
 	nextTick(() => {

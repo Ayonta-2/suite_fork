@@ -9,7 +9,7 @@
 				v-if="isMobile"
 				class="min-w-0 flex-1"
 				:title="__('Screener')"
-				:count="senders.data?.length ? String(senders.data.length) : undefined"
+				:count="senders.data?.length ? waitingLabel : undefined"
 			>
 				<template #actions>
 					<AdaptiveDropdown :options="bulkOptions" placement="bottom-end">
@@ -240,14 +240,19 @@
 					</div>
 				</div>
 
-				<!-- Read-only thread preview — split when the reading pane is on, full-width otherwise -->
+				<!-- Read-only thread preview — split when the reading pane is on, full-width otherwise.
+				     Teleported to body on mobile (like the selection bar): inside the layout's
+				     isolate stacking context the tab bar would paint over the sliding pane. -->
+				<Teleport to="body" :disabled="!isMobile">
 				<div
 					class="bg-surface-base flex flex-col"
 					:class="{
 						'w-2/3': !isMobile && showReadingPane,
 						'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
-						'fixed inset-0': isMobile,
-						hidden: (isMobile || !showReadingPane) && !openSender,
+						'fixed inset-0 z-20 transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
+							isMobile,
+						'invisible translate-x-full': isMobile && !openSender,
+						hidden: !isMobile && !showReadingPane && !openSender,
 					}"
 				>
 					<template v-if="openSender">
@@ -336,6 +341,7 @@
 						</div>
 					</div>
 				</div>
+				</Teleport>
 			</template>
 		</div>
 

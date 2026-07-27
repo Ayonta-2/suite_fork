@@ -6,7 +6,7 @@
 		v-if="!isThreadOpen && !isMobileSelectionActive"
 		variant="solid"
 		class="fixed right-4 z-10 !h-12 !w-12 !rounded-full shadow-lg"
-		:style="{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }"
+		:style="{ bottom: 'calc(4.75rem + env(safe-area-inset-bottom))' }"
 		:aria-label="__('Compose')"
 		@click="showSendModal = true"
 	>
@@ -23,7 +23,7 @@
 		v-if="!isThreadOpen"
 		class="bg-surface-base/80 z-10 shrink-0 border-t pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_5px_rgba(0,0,0,0.03)] backdrop-blur-lg"
 	>
-		<div class="flex h-13 items-stretch">
+		<div class="flex h-14 items-stretch">
 			<!-- Tab 1 morphs into the current folder: the fixed slot position is the
 			     stable cue; icon + label say where you are. Re-tap opens the switcher. -->
 			<button :class="tabClass(mailActive)" @click="openMail">
