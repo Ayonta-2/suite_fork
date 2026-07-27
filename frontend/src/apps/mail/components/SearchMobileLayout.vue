@@ -1,6 +1,6 @@
 <template>
 	<!-- Appears in place, no slide: searching and results are one page, so motion would read
-	     as a different surface. Stops above the tab bar (border + h-14 + safe area, so the
+	     as a different surface. Stops above the tab bar (border + h-15 + safe area, so the
 	     bar's top hairline stays visible) — the bar's tabs dismiss the overlay; back gesture
 	     works via the history entry. Teleported to body: one host instance lives inside
 	     MailboxView's CSS-hidden desktop header (via HeaderActions), where a fixed child
@@ -9,7 +9,7 @@
 	<Teleport to="body">
 		<div
 			v-show="show"
-			class="bg-surface-base fixed inset-x-0 bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))] top-0 z-10 overflow-y-auto"
+			class="bg-surface-base fixed inset-x-0 bottom-[calc(3.75rem+1px+env(safe-area-inset-bottom))] top-0 z-10 overflow-y-auto"
 		>
 			<slot name="body" />
 		</div>

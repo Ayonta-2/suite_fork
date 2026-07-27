@@ -36,7 +36,9 @@
 		<Button :label="__('Review Now')" variant="ghost" @click="goToScreener" />
 	</div>
 
-	<div v-if="showDeleteBanner" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
+	<!-- On mobile this banner renders below the title header instead (inside the mobile
+	     header block) — above it, it read as page chrome sitting on top of the title. -->
+	<div v-if="showDeleteBanner && !isMobile" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
 		<span class="text-ink-gray-5">
 			{{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
 		</span>
@@ -93,6 +95,20 @@
 						:title="mailboxName"
 						:count="threadCount ? __('{0} threads', [threadCount]) : undefined"
 					/>
+
+					<!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
+					     the whole header read as chrome on top of the page). Borderless: it
+					     reads as part of the header block, not a boxed-off strip. -->
+					<div v-if="showDeleteBanner && mailbox !== 'search'" class="space-x-1 px-4">
+						<span class="text-ink-gray-5">
+							{{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
+						</span>
+						<Button
+							:label="__('Delete Now')"
+							variant="ghost"
+							@click="showEmptyMailbox = true"
+						/>
+					</div>
 
 					<!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
 					<!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
@@ -463,7 +479,7 @@
 		     menus live in the More sheet, which chains into the folder sheets. -->
 		<!-- flex-1 columns (like the tab bar underneath): equal widths keep the icon
 		     centers evenly spaced regardless of label length. -->
-		<div class="flex h-14 items-stretch">
+		<div class="flex h-15 items-stretch">
 			<button
 				v-for="action in visibleSelectActions.slice(0, 4)"
 				:key="action.label"

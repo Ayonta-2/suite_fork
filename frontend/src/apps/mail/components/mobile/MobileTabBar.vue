@@ -2,12 +2,17 @@
 	<!-- Compose FAB — floats above the bar, right thumb zone. Both the FAB and the
 	     bar step aside while a thread is open: the thread's own reply actions own
 	     the bottom edge there (the modals below stay mounted regardless). Hidden in
-	     search results too — composing isn't part of the search task. -->
+	     search results and the screener too — composing isn't part of those tasks. -->
 	<Button
-		v-if="!isThreadOpen && !isMobileSelectionActive && !isSearchRoute && !showSearchModal"
+		v-if="
+			!isThreadOpen &&
+			!isMobileSelectionActive &&
+			!isSearchRoute &&
+			!showSearchModal &&
+			!screenerActive
+		"
 		variant="solid"
-		class="fixed right-4 z-10 !h-12 !w-12 !rounded-full shadow-lg"
-		:style="{ bottom: 'calc(4.75rem + env(safe-area-inset-bottom))' }"
+		class="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-10 !h-12 !w-12 !rounded-full shadow-lg"
 		:aria-label="__('Compose')"
 		@click="showSendModal = true"
 	>
@@ -24,7 +29,7 @@
 		v-if="!isThreadOpen"
 		class="bg-surface-base/80 z-10 shrink-0 border-t pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_5px_rgba(0,0,0,0.03)] backdrop-blur-lg"
 	>
-		<div class="flex h-14 items-stretch">
+		<div class="flex h-15 items-stretch">
 			<!-- Tab 1 morphs into the current folder: the fixed slot position is the
 			     stable cue; icon + label say where you are. Re-tap opens the switcher. -->
 			<button :class="tabClass(mailActive)" @click="openMail">
@@ -32,33 +37,33 @@
 					<Icon
 						v-if="currentFolder"
 						:name="currentFolder.icon"
-						class="h-[22px] w-[22px] shrink-0"
+						:class="iconClass(mailActive)"
 					/>
-					<Inbox v-else class="h-[22px] w-[22px] stroke-2" />
+					<Icon v-else name="inbox" :class="iconClass(mailActive)" />
 					<span v-if="mailBadgeCount" :class="badgeClass">{{
 						badgeText(mailBadgeCount)
 					}}</span>
 				</span>
-				<span class="max-w-full truncate px-1 text-[11px] font-medium !leading-3">
+				<span class="max-w-full truncate px-1" :class="labelClass(mailActive)">
 					{{ currentFolder?.label ?? __('Inbox') }}
 				</span>
 			</button>
 			<button v-if="screeningEnabled" :class="tabClass(screenerActive)" @click="openScreener">
 				<span class="relative">
-					<Eye class="h-[22px] w-[22px] stroke-2" />
+					<Icon name="eye" :class="iconClass(screenerActive)" />
 					<span v-if="screenerCount" :class="badgeClass">{{ badgeText(screenerCount) }}</span>
 				</span>
-				<span class="text-[11px] font-medium !leading-3">{{ __('Screener') }}</span>
+				<span :class="labelClass(screenerActive)">{{ __('Screener') }}</span>
 			</button>
 			<button :class="tabClass(searchActive)" @click="openSearch">
-				<Search class="h-[22px] w-[22px] stroke-2" />
-				<span class="text-[11px] font-medium !leading-3">{{ __('Search') }}</span>
+				<Icon name="search" :class="iconClass(searchActive)" />
+				<span :class="labelClass(searchActive)">{{ __('Search') }}</span>
 			</button>
 			<!-- Profile is a sheet over the current surface (search included), not a navigation —
 			     it must not dismiss the search overlay. -->
 			<button :class="tabClass(isProfileSheetOpen)" @click="openProfileSheet">
 				<Avatar :label="activeAccountName" size="md" class="shrink-0" />
-				<span class="text-[11px] font-medium !leading-3">{{ __('Profile') }}</span>
+				<span :class="labelClass(isProfileSheetOpen)">{{ __('Profile') }}</span>
 			</button>
 		</div>
 	</nav>
@@ -72,7 +77,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Eye, Inbox, Search } from 'lucide-vue-next'
 import { Avatar, Button, FeatherIcon } from 'frappe-ui'
 import { Icon } from 'frappe-ui/icons'
 
@@ -198,18 +202,28 @@ const mailBadgeCount = computed(() => {
 
 // Numeric unread badge shared by the Mail and Screener tabs (replaces the old
 // presence dot). Bordered like the dot was, to read against the translucent bar.
-// Left-anchored at the icon's top-right corner so wide counts ("99+") grow
-// outward instead of spreading back across the glyph. ink-red-1 (not ink-white,
-// which this token set lacks) is white in both themes — the on-red text step.
+// Anchored at the icon's top-right (left 60%) and allowed to overflow, so wide
+// counts ("99+") grow outward instead of spreading back across the glyph — the
+// icon keeps its optical centering. ink-red-1 (not ink-white, which this token
+// set lacks) is white in both themes — the on-red text step.
 const badgeClass =
-	'bg-surface-red-6 text-ink-red-1 absolute -top-1 left-4 flex h-4 min-w-4 items-center justify-center rounded-full border border-[var(--surface-base)] px-1 text-[10px] font-semibold leading-none'
+	'bg-surface-red-6 text-ink-red-1 absolute -top-1.5 left-[60%] flex h-4 min-w-5 items-center justify-center rounded-full border border-[var(--surface-base)] px-1 text-[10px] font-semibold leading-none'
 
 const badgeText = (count: number) => (count > 99 ? '99+' : String(count))
 
-// Raven's tint model: active tabs at full ink, inactive at ~40%.
+// Active/inactive contrast rides two channels: ink (9 vs 4 — dropping inactive
+// to 3 read as more disparity but tipped into illegible) and weight (stroke 2
+// vs 1.75, semibold vs medium), so the active tab pops without any label going
+// faint.
 const tabClass = (active: boolean) =>
 	[
 		'flex flex-1 flex-col items-center justify-center gap-1',
-		active ? 'text-ink-gray-8' : 'text-ink-gray-4',
+		active ? 'text-ink-gray-9' : 'text-ink-gray-4',
 	].join(' ')
+
+const iconClass = (active: boolean) =>
+	['h-6 w-6 shrink-0', active ? 'stroke-2' : '[stroke-width:1.75]'].join(' ')
+
+const labelClass = (active: boolean) =>
+	['text-xs !leading-3', active ? '!font-semibold' : '!font-medium'].join(' ')
 </script>
