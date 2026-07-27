@@ -30,9 +30,13 @@
 							<span v-if="column.key === 'timestamp'">{{ formatDate(row.timestamp) }}</span>
 							<Badge
 								v-else-if="column.key === 'level'"
-								:label="row.level || '—'"
+								:label="row.level_label || '—'"
 								:theme="levelTheme(row.level)"
 							/>
+							<span v-else-if="column.key === 'event'">{{ row.event_label || row.event || '—' }}</span>
+							<span v-else-if="column.key === 'details'" class="text-ink-gray-6 truncate">
+								{{ row.details || '—' }}
+							</span>
 						</ListRowItem>
 					</ListRow>
 				</template>
@@ -64,7 +68,15 @@ import dayjs from '@/apps/mail/utils/dayjs'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 
-type LogRow = { id: string; timestamp?: string; level?: string; event?: string; details?: string }
+type LogRow = {
+	id: string
+	timestamp?: string
+	level?: string
+	level_label?: string
+	event?: string
+	event_label?: string
+	details?: string
+}
 
 usePageMeta(() => ({ title: __('Logs') }))
 
@@ -86,23 +98,22 @@ watchDebounced(() => search.value, () => ((page.value = 1), logs.reload()), { de
 watch(page, logs.reload)
 
 const formatDate = (value?: string) => (value ? dayjs(value).format('MMM D, h:mm:ss A') : '—')
-const levelTheme = (level?: string) => {
-	switch ((level || '').toLowerCase()) {
-		case 'error':
-			return 'red'
-		case 'warn':
-			return 'orange'
-		case 'info':
-			return 'blue'
-		default:
-			return 'gray'
-	}
+
+// Mirrors the colours the server's TracingLevel enum assigns to each level.
+const LEVEL_THEMES: Record<string, string> = {
+	error: 'red',
+	warn: 'amber',
+	info: 'green',
+	debug: 'blue',
+	trace: 'violet',
 }
+const levelTheme = (level?: string) => LEVEL_THEMES[(level || '').toLowerCase()] || 'gray'
 
 const LIST_COLUMNS = [
-	{ label: __('Timestamp'), key: 'timestamp' },
-	{ label: __('Level'), key: 'level' },
-	{ label: __('Event'), key: 'event' },
+	{ label: __('Timestamp'), key: 'timestamp', width: '11rem' },
+	{ label: __('Level'), key: 'level', width: '7rem' },
+	{ label: __('Event'), key: 'event', width: '18rem' },
+	{ label: __('Details'), key: 'details', width: 2 },
 ]
 
 const LIST_OPTIONS = {

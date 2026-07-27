@@ -5,8 +5,8 @@
 				<DashboardCard :title="__('Log Entry')">
 					<template #actions><span /></template>
 					<InformationField :label="__('Timestamp')" :value="formatDate(data.timestamp)" />
-					<InformationField :label="__('Level')" :value="data.level" />
-					<InformationField :label="__('Event')" :value="data.event" />
+					<InformationField :label="__('Level')" :value="data.level_label" />
+					<InformationField :label="__('Event')" :value="data.event_label" />
 				</DashboardCard>
 				<DashboardCard :title="__('Details')">
 					<template #actions><span /></template>
@@ -29,7 +29,15 @@ import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 
-type LogData = { id: string; timestamp?: string; level?: string; event?: string; details?: string }
+type LogData = {
+	id: string
+	timestamp?: string
+	level?: string
+	level_label?: string
+	event?: string
+	event_label?: string
+	details?: string
+}
 
 const { logId } = defineProps<{ logId: string }>()
 const router = useRouter()
@@ -49,6 +57,6 @@ const formatDate = (value?: string) => (value ? dayjs(value).format('MMM D YYYY,
 
 const breadcrumbs = computed(() => [
 	{ label: __('Logs'), route: '/mail/dashboard/logs' },
-	{ label: data.value?.event || logId },
+	{ label: data.value?.event_label || data.value?.event || logId },
 ])
 </script>

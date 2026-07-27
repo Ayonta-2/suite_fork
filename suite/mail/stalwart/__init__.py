@@ -205,6 +205,28 @@ def get_action_types() -> list[dict]:
 
 
 @redis_cache(ttl=3600)
+def get_log_labels() -> dict:
+	"""Returns the display labels for log entries as ``{"events": {...}, "levels": {...}}``.
+
+	Log entries carry raw identifiers (``smtp.dmarc-fail``, ``warn``); the schema's ``EventType`` and
+	``TracingLevel`` enums hold the human labels for them, so they stay version-accurate rather than
+	being duplicated here.
+	"""
+
+	from suite.mail.utils import get_config
+
+	schema = get_management_connection().request(
+		method="GET", url=urljoin(get_config("server_url"), "/api/schema"), return_json=True
+	)
+
+	def labels(items: list[dict]) -> dict:
+		return {i["name"]: i.get("label") or i["name"] for i in items}
+
+	enums = schema.get("enums") or {}
+	return {"events": labels(enums.get("EventType") or []), "levels": labels(enums.get("TracingLevel") or [])}
+
+
+@redis_cache(ttl=3600)
 def get_queue_metadata() -> dict:
 	"""Returns the enum/variant option lists used to render and edit queued messages.
 

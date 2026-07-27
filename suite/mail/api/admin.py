@@ -24,6 +24,7 @@ from suite.mail.stalwart import (
 	get_dkim_signature_service,
 	get_domain_service,
 	get_group_service,
+	get_log_labels,
 	get_log_service,
 	get_management_connection,
 	get_mailing_list_service,
@@ -2223,14 +2224,22 @@ def delete_reports(kind: str, direction: str, ids: list) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _log_row(entry: dict) -> dict:
-	"""Maps a log entry to its row/detail shape."""
+def _log_row(entry: dict, labels: dict) -> dict:
+	"""Maps a log entry to its row/detail shape, resolved against the schema's display labels.
 
+	The raw ``level``/``event`` identifiers are kept so the UI can still key off them (e.g. to colour
+	a level); ``labels`` comes from :func:`get_log_labels` and falls back to the identifier itself for
+	anything the server's enums do not describe.
+	"""
+
+	level, event = entry.get("level"), entry.get("event")
 	return {
 		"id": entry["id"],
 		"timestamp": entry.get("timestamp"),
-		"level": entry.get("level"),
-		"event": entry.get("event"),
+		"level": level,
+		"level_label": labels["levels"].get(level, level),
+		"event": event,
+		"event_label": labels["events"].get(event, event),
 		"details": entry.get("details"),
 	}
 
@@ -2247,7 +2256,8 @@ def get_logs(search: str | None = None, page: int = 1, page_length: int = 100) -
 		position=(page - 1) * page_length,
 		limit=page_length,
 	)
-	return {"logs": [_log_row(e) for e in result["items"]], "total": result["total"]}
+	labels = get_log_labels()
+	return {"logs": [_log_row(e, labels) for e in result["items"]], "total": result["total"]}
 
 
 @frappe.whitelist()
@@ -2260,7 +2270,7 @@ def get_log(log_id: str) -> dict:
 	if not entry:
 		frappe.throw(_("Log entry not found"), frappe.DoesNotExistError)
 
-	return _log_row(entry)
+	return _log_row(entry, get_log_labels())
 
 
 # ---------------------------------------------------------------------------
