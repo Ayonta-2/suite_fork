@@ -10,11 +10,16 @@
 						class="flex items-center justify-between gap-3 px-5 py-3.5"
 						:class="cellBorders(index, group.items.length)"
 					>
-						<div class="min-w-0">
-							<p class="truncate text-base">{{ action.name }}</p>
-							<p v-if="needsInput(action)" class="text-ink-gray-5 mt-0.5 text-xs">
-								{{ __('Takes input') }}
-							</p>
+						<div class="flex min-w-0 items-center gap-3">
+							<div class="bg-surface-gray-2 text-ink-gray-7 flex size-7 shrink-0 items-center justify-center rounded">
+								<FeatherIcon :name="actionIcon(action, group.label)" class="size-4" />
+							</div>
+							<div class="min-w-0">
+								<p class="truncate text-base">{{ action.name }}</p>
+								<p v-if="needsInput(action)" class="text-ink-gray-5 mt-0.5 text-xs">
+									{{ __('Takes input') }}
+								</p>
+							</div>
 						</div>
 						<Button class="shrink-0" :label="__('Run')" @click="trigger(action)" />
 					</div>
@@ -27,7 +32,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Button, Dialog, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, FeatherIcon, createResource, usePageMeta } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
@@ -57,6 +62,30 @@ const ACTION_FIELDS: Record<string, ActionField[]> = {
 	],
 }
 
+// Icon per action, falling back to the section's icon for any action the server adds later.
+const ACTION_ICONS: Record<string, string> = {
+	ReloadSettings: 'sliders',
+	ReloadTlsCertificates: 'shield',
+	ReloadLookupStores: 'database',
+	ReloadBlockedIps: 'shield-off',
+	UpdateApps: 'download-cloud',
+	TroubleshootDmarc: 'tool',
+	ClassifySpam: 'filter',
+	InvalidateCaches: 'trash-2',
+	InvalidateNegativeCaches: 'trash',
+	PauseMtaQueue: 'pause-circle',
+	ResumeMtaQueue: 'play-circle',
+}
+const SECTION_ICONS: Record<string, string> = {
+	Reload: 'refresh-cw',
+	Cache: 'trash-2',
+	MTA: 'send',
+	DMARC: 'shield',
+	'Spam Filter': 'filter',
+	'Application Management': 'package',
+}
+const FALLBACK_ICON = 'zap'
+
 const showConfirm = ref(false)
 const showRun = ref(false)
 const activeAction = ref<ActionInfo | null>(null)
@@ -78,6 +107,8 @@ const groupedActions = computed(() => {
 })
 
 const needsInput = (action: ActionInfo) => Boolean(action.schema_name && ACTION_FIELDS[action.schema_name])
+const actionIcon = (action: ActionInfo, section: string) =>
+	ACTION_ICONS[action.value] || SECTION_ICONS[section] || FALLBACK_ICON
 
 // Two actions per row: a cell keeps its bottom divider unless it sits in the last row of the
 // current layout, and its right divider only when a second action shares the row.
