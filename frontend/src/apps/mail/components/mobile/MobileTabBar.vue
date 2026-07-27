@@ -50,7 +50,7 @@
 				</span>
 				<span class="text-[11px] font-medium !leading-3">{{ __('Screener') }}</span>
 			</button>
-			<button :class="tabClass(searchActive)" @click="showSearchModal = true">
+			<button :class="tabClass(searchActive)" @click="openSearch">
 				<Search class="h-[22px] w-[22px] stroke-2" />
 				<span class="text-[11px] font-medium !leading-3">{{ __('Search') }}</span>
 			</button>
@@ -127,9 +127,22 @@ const mailActive = computed(
 const screenerActive = computed(() => route.name === 'mail-screener')
 const searchActive = computed(() => showSearchModal.value || isSearchRoute.value)
 
+// The Search tab is a navigation like the others: it lands on the search page (so tab
+// selection stays route-driven — an overlay over a mail route read as two active tabs),
+// then opens the query editor on top of it. Navigate first: the editor pushes its own
+// history state, which must sit above the search page's entry for back to unwind cleanly.
+const openSearch = async () => {
+	if (!isSearchRoute.value)
+		await router.push({
+			name: 'mail-mailbox',
+			params: { accountId: store.accountId, mailbox: 'search' },
+		})
+	showSearchModal.value = true
+}
+
 const openMail = () => {
-	// The search overlay leaves the bar visible; a tab tap first dismisses it, landing
-	// back on whatever page the overlay covered.
+	// The query editor overlay leaves the bar visible; a tab tap first dismisses it. It
+	// only ever covers the search page now, so the tap always navigates on to the inbox.
 	if (showSearchModal.value) {
 		showSearchModal.value = false
 		if (!mailActive.value) router.push('/mail')
