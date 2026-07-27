@@ -32,7 +32,7 @@
 				class="bg-surface-gray-10 hitbox flex h-8 w-8 shrink-0 rounded-full max-sm:h-10 max-sm:w-10"
 				@click.stop.prevent="emit('setSelected', false)"
 			>
-				<Check class="text-ink-base m-auto h-5 w-5 stroke-[3.5px]" />
+				<Check class="text-ink-base m-auto h-5 w-5 stroke-[4px]" />
 			</div>
 			<Avatar
 				v-show="!isSelected && (isMobile || !selectable)"

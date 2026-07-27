@@ -204,10 +204,12 @@ const mailBadgeCount = computed(() => {
 // presence dot). Bordered like the dot was, to read against the translucent bar.
 // Anchored at the icon's top-right (left 60%) and allowed to overflow, so wide
 // counts ("99+") grow outward instead of spreading back across the glyph — the
-// icon keeps its optical centering. ink-red-1 (not ink-white, which this token
-// set lacks) is white in both themes — the on-red text step.
+// icon keeps its optical centering. Neutral ink pill, not red — counts are
+// information here, and red shouted louder than the active tab. gray-10 +
+// ink-base is the app's inverted-chip pair (see the row selection check),
+// flipping correctly in both themes.
 const badgeClass =
-	'bg-surface-red-6 text-ink-red-1 absolute -top-1.5 left-[60%] flex h-4 min-w-5 items-center justify-center rounded-full border border-[var(--surface-base)] px-1 text-[10px] font-semibold leading-none'
+	'bg-surface-gray-10 text-ink-base absolute -top-1.5 left-[60%] flex h-4 min-w-5 items-center justify-center rounded-full border border-[var(--surface-base)] px-1 text-[10px] font-semibold leading-none'
 
 const badgeText = (count: number) => (count > 99 ? '99+' : String(count))
 
