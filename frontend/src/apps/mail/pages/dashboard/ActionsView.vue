@@ -40,22 +40,24 @@ import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import RunActionModal from '@/apps/mail/components/Modals/RunActionModal.vue'
 
 type ActionInfo = { value: string; label: string; schema_name?: string | null }
-type ActionField = { name: string; label: string; type?: string; placeholder?: string }
+type ActionField = { name: string; label: string; type?: string; placeholder?: string; required?: boolean }
 
 usePageMeta(() => ({ title: __('Actions') }))
 
 // Input fields for the parameterized actions (parameterless actions run directly).
 const ACTION_FIELDS: Record<string, ActionField[]> = {
+	// Mirrors the "Input" section of the server's x:DmarcTroubleshoot form; only the body is optional.
 	'x:DmarcTroubleshoot': [
-		{ name: 'remoteIp', label: 'Remote IP', placeholder: '203.0.113.10' },
-		{ name: 'ehloDomain', label: 'EHLO Domain', placeholder: 'mail.example.com' },
-		{ name: 'mailFrom', label: 'MAIL FROM', placeholder: 'sender@example.com' },
-		{ name: 'to', label: 'RCPT TO', placeholder: 'recipient@example.org' },
+		{ name: 'remoteIp', label: 'Remote IP', placeholder: '192.168.1.1', required: true },
+		{ name: 'ehloDomain', label: 'EHLO Domain', placeholder: 'mail.example.com', required: true },
+		{ name: 'mailFrom', label: 'MAIL FROM', placeholder: 'sender@example.com', required: true },
+		{ name: 'spfEhloDomain', label: 'SPF EHLO Domain', placeholder: 'mail.example.com', required: true },
+		{ name: 'spfMailFromDomain', label: 'SPF MAIL FROM Domain', placeholder: 'example.com', required: true },
 		{ name: 'message', label: 'Message Body', type: 'textarea' },
 	],
 	'x:SpamClassify': [
 		{ name: 'message', label: 'Message', type: 'textarea' },
-		{ name: 'remoteIp', label: 'Remote IP', placeholder: '203.0.113.10' },
+		{ name: 'remoteIp', label: 'Remote IP', placeholder: '192.168.1.1' },
 		{ name: 'ehloDomain', label: 'EHLO Domain', placeholder: 'mail.example.com' },
 		{ name: 'envFrom', label: 'MAIL FROM', placeholder: 'sender@example.com' },
 		{ name: 'envRcptTo', label: 'RCPT TO', placeholder: 'recipient@example.org' },
