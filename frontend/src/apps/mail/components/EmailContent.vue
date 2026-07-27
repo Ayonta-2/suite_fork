@@ -214,6 +214,26 @@ const srcdoc = computed(() => {
 		<body>
 			${transformedContent}
 			<script>
+				// The stylesheet's max-width clamp can't reach fixed-width tables nested
+				// inside other tables: during the outer table's intrinsic sizing a
+				// percentage max-width counts as auto, so the inner pixel width still
+				// propagates up and the whole grid overflows. Rewrite any fixed pixel
+				// width wider than the sheet instead. Desktop panes are wider than the
+				// usual 600px email grid, so this effectively only bites on mobile.
+				const normalizeWidths = () => {
+					const limit = document.documentElement.clientWidth;
+					if (!limit) return;
+					document.querySelectorAll('[width], [style*="width"]').forEach((el) => {
+						if (parseInt(el.getAttribute('width'), 10) > limit) el.setAttribute('width', '100%');
+						const style = el.style;
+						if (style.width.endsWith('px') && parseFloat(style.width) > limit) style.width = '100%';
+						if (style.maxWidth.endsWith('px') && parseFloat(style.maxWidth) > limit) style.maxWidth = '100%';
+						if (style.minWidth.endsWith('px') && parseFloat(style.minWidth) > limit) style.minWidth = '0';
+					});
+				};
+				normalizeWidths();
+				window.addEventListener('resize', normalizeWidths);
+
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {
 					document.addEventListener(eventType, (e) => {

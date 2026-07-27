@@ -894,17 +894,20 @@ const createLocalDraft = (mail: Mail, draftDetails: ComposeMailData) => {
 
 	nextTick(() => {
 		draftMails[name] = { name, ...draftDetails }
+		// The thread entry only hosts the inline desktop editor. On mobile the draft
+		// lives in the slide-up sheet instead — splicing it in anyway would hide the
+		// reply bar (it's suppressed while the thread ends in a draft) until a reload
+		// cleans the entry up, well after the sheet has slid out.
+		if (isMobile.value) return popOutDraft(draftMails[name])
 		const index = thread.value.indexOf(mail)
 		const draft = thread.value.find((m: Mail) => m.name === name)
 		if (index !== -1 && !draft)
 			thread.value.splice(index + 1, 0, { ...draftMails[name], draft: 1, show: true })
-		if (isMobile.value) popOutDraft(draftMails[name])
-		else
-			setTimeout(() =>
-				threadContainerRef.value
-					?.querySelector(`[data-mail-name="${name}"]`)
-					?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-			)
+		setTimeout(() =>
+			threadContainerRef.value
+				?.querySelector(`[data-mail-name="${name}"]`)
+				?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+		)
 	})
 }
 
