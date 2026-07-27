@@ -1,6 +1,6 @@
 import frappe
 
-from suite.drive.utils import STATUS_TRASHED, create_drive_file, get_home_folder
+from suite.drive.utils import STATUS_TRASHED, create_drive_file, get_home_folder, get_new_file_name
 
 
 def execute():
@@ -31,10 +31,14 @@ def execute():
 				)
 				continue
 
+			home = get_home_folder(team).name
 			file = create_drive_file(
 				team,
-				sheet.title or "Untitled Spreadsheet",
-				get_home_folder(team).name,
+				# Dedupe within the home folder so backfilling many like-titled
+				# sheets (e.g. several "Untitled Spreadsheet") doesn't create
+				# ambiguous same-named Drive files.
+				get_new_file_name(sheet.title or "Untitled Spreadsheet", home, "Spreadsheet"),
+				home,
 				"Spreadsheet",
 				None,
 				mime_type="frappe/sheet",

@@ -431,13 +431,22 @@ class File(FrappeFile):
 	):
 		"""Create the Drive File backing `doc`, in `parent` or the session
 		user's home folder. Returns None when the user has no Drive team."""
-		from suite.drive.utils import create_file, get_default_team
+		from suite.drive.utils import create_file, get_default_team, get_home_folder
 
-		if not parent and not get_default_team():
-			return None
+		if not parent:
+			team = get_default_team()
+			if not team:
+				return None
+			parent = get_home_folder(team).name
+
+		# Dedupe within the folder: content docs may share titles, but two Drive
+		# files can't share a name in one folder without becoming ambiguous.
+		# Mirrors validate_filename (rename) — get_new_file_name only counts
+		# active siblings, so it's a no-op when the name is free.
+		title = get_new_file_name(doc.get_title() or "Untitled", parent, file_type)
 
 		return create_file(
-			title=doc.get_title() or "Untitled",
+			title=title,
 			parent=parent,
 			mime_type=mime_type,
 			file_type=file_type,
@@ -529,8 +538,21 @@ def set_content_file_trashed(doctype: str, docname: str, trashed: bool) -> None:
 	name = File.get_for_doc(doctype, docname)
 	if not name:
 		return
+	if trashed:
+		frappe.db.set_value("File", name, "status", STATUS_TRASHED, update_modified=False)
+		return
+	# Restoring: an active sibling may have taken this file's name while it was
+	# trashed, so dedupe before it re-enters the active namespace (the trashed
+	# file itself isn't counted — get_new_file_name only sees active files).
+	f = frappe.db.get_value("File", name, ["file_name", "folder", "file_type"], as_dict=True)
 	frappe.db.set_value(
-		"File", name, "status", STATUS_TRASHED if trashed else STATUS_ACTIVE, update_modified=False
+		"File",
+		name,
+		{
+			"file_name": get_new_file_name(f.file_name, f.folder, f.file_type),
+			"status": STATUS_ACTIVE,
+		},
+		update_modified=False,
 	)
 
 
