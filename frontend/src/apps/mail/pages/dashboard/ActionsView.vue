@@ -1,16 +1,22 @@
 <template>
 	<DashboardLayout :breadcrumbs="[{ label: __('Actions') }]">
-		<div v-if="actions?.data" class="flex flex-col gap-6">
+		<div v-if="actions?.data" class="flex flex-col gap-5">
 			<DashboardCard v-for="group in groupedActions" :key="group.label" :title="group.label">
 				<template #actions><span /></template>
-				<div class="flex flex-col">
+				<div class="grid grid-cols-1 sm:grid-cols-2">
 					<div
-						v-for="action in group.items"
+						v-for="(action, index) in group.items"
 						:key="action.value"
-						class="flex items-center justify-between border-b px-5 py-3.5 last:border-b-0"
+						class="flex items-center justify-between gap-3 px-5 py-3.5"
+						:class="cellBorders(index, group.items.length)"
 					>
-						<span class="text-base">{{ action.name }}</span>
-						<Button :label="__('Run')" @click="trigger(action)" />
+						<div class="min-w-0">
+							<p class="truncate text-base">{{ action.name }}</p>
+							<p v-if="needsInput(action)" class="text-ink-gray-5 mt-0.5 text-xs">
+								{{ __('Takes input') }}
+							</p>
+						</div>
+						<Button class="shrink-0" :label="__('Run')" @click="trigger(action)" />
 					</div>
 				</div>
 			</DashboardCard>
@@ -70,6 +76,19 @@ const groupedActions = computed(() => {
 	}
 	return Array.from(groups.values())
 })
+
+const needsInput = (action: ActionInfo) => Boolean(action.schema_name && ACTION_FIELDS[action.schema_name])
+
+// Two actions per row: a cell keeps its bottom divider unless it sits in the last row of the
+// current layout, and its right divider only when a second action shares the row.
+const cellBorders = (index: number, count: number) => {
+	const lastRowStart = count % 2 === 0 ? count - 2 : count - 1
+	return [
+		index < count - 1 ? 'border-b' : '',
+		index >= lastRowStart ? 'sm:border-b-0' : '',
+		index % 2 === 0 && index + 1 < count ? 'sm:border-r' : '',
+	]
+}
 
 const trigger = (action: ActionInfo) => {
 	activeAction.value = action
