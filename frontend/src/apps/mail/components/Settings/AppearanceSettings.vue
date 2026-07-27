@@ -4,6 +4,7 @@
 			<Button
 				:label="__('Save')"
 				variant="solid"
+				:size="isMobile ? 'md' : 'sm'"
 				:loading="saveSettings.loading"
 				:disabled="isNotDirty"
 				@click="() => saveSettings.submit()"

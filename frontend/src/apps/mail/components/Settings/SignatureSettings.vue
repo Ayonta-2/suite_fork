@@ -1,7 +1,12 @@
 <template>
 	<AppSettingsHeader :title="__('Signatures')">
 		<template #actions>
-			<Button icon-left="plus" :label="__('New')" @click="showAddSignature = true" />
+			<Button
+				icon-left="plus"
+				:label="__('New')"
+				:size="isMobile ? 'md' : 'sm'"
+				@click="showAddSignature = true"
+			/>
 		</template>
 	</AppSettingsHeader>
 	<AppSettingsBody>
@@ -50,6 +55,8 @@
 import { inject, ref } from 'vue'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
 import { Button, useList } from 'frappe-ui'
+
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
@@ -61,6 +68,7 @@ import SetDefaultSignatureModal from '@/apps/mail/components/Modals/SetDefaultSi
 import type { MailSignature } from '@/apps/mail/types'
 
 const user = inject('$user')
+const { isMobile } = useScreenSize()
 
 const showAddSignature = ref(false)
 const selectedSignature = ref('')

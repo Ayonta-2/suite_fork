@@ -1,7 +1,12 @@
 <template>
 	<AppSettingsHeader :title="__('Folders')">
 		<template #actions>
-			<Button icon-left="plus" :label="__('New')" @click="editMailbox()" />
+			<Button
+				icon-left="plus"
+				:label="__('New')"
+				:size="isMobile ? 'md' : 'sm'"
+				@click="editMailbox()"
+			/>
 		</template>
 	</AppSettingsHeader>
 	<AppSettingsBody>
@@ -66,6 +71,7 @@ import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { FOLDER_ICON_COLOR_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
 import { getIcon, raiseToast } from '@/apps/mail/utils'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
@@ -73,6 +79,7 @@ import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 import type { MailboxData } from '@/apps/mail/types'
 
 const { mailboxes } = userStore()
+const { isMobile } = useScreenSize()
 
 // The Screener is a system folder driven by the screening flow, not a user-configurable folder — keep
 // it out of the management list so it can't be renamed, deleted, or given a folder icon/color here.
