@@ -1,9 +1,10 @@
 <template>
 	<!-- Compose FAB — floats above the bar, right thumb zone. Both the FAB and the
 	     bar step aside while a thread is open: the thread's own reply actions own
-	     the bottom edge there (the modals below stay mounted regardless). -->
+	     the bottom edge there (the modals below stay mounted regardless). Hidden in
+	     search results too — composing isn't part of the search task. -->
 	<Button
-		v-if="!isThreadOpen && !isMobileSelectionActive"
+		v-if="!isThreadOpen && !isMobileSelectionActive && !isSearchRoute && !showSearchModal"
 		variant="solid"
 		class="fixed right-4 z-10 !h-12 !w-12 !rounded-full shadow-lg"
 		:style="{ bottom: 'calc(4.75rem + env(safe-area-inset-bottom))' }"
@@ -49,10 +50,12 @@
 				</span>
 				<span class="text-[11px] font-medium !leading-3">{{ __('Screener') }}</span>
 			</button>
-			<button :class="tabClass(showSearchModal)" @click="showSearchModal = true">
+			<button :class="tabClass(searchActive)" @click="showSearchModal = true">
 				<Search class="h-[22px] w-[22px] stroke-2" />
 				<span class="text-[11px] font-medium !leading-3">{{ __('Search') }}</span>
 			</button>
+			<!-- Profile is a sheet over the current surface (search included), not a navigation —
+			     it must not dismiss the search overlay. -->
 			<button :class="tabClass(isProfileSheetOpen)" @click="openProfileSheet">
 				<Avatar :label="activeAccountName" size="md" class="shrink-0" />
 				<span class="text-[11px] font-medium !leading-3">{{ __('Profile') }}</span>
@@ -113,10 +116,25 @@ const showSearchModal = ref(false)
 
 const MAIL_ROUTES = ['mail-mailbox', 'mail-all-inboxes']
 const isThreadOpen = computed(() => !!route.params.threadID)
-const mailActive = computed(() => MAIL_ROUTES.includes(route.name as string))
+// Search results live on the mailbox route with the virtual 'search' mailbox, but
+// they belong to the Search tab — the Mail tab must not read as active there.
+const isSearchRoute = computed(
+	() => route.name === 'mail-mailbox' && route.params.mailbox === 'search',
+)
+const mailActive = computed(
+	() => MAIL_ROUTES.includes(route.name as string) && !isSearchRoute.value,
+)
 const screenerActive = computed(() => route.name === 'mail-screener')
+const searchActive = computed(() => showSearchModal.value || isSearchRoute.value)
 
 const openMail = () => {
+	// The search overlay leaves the bar visible; a tab tap first dismisses it, landing
+	// back on whatever page the overlay covered.
+	if (showSearchModal.value) {
+		showSearchModal.value = false
+		if (!mailActive.value) router.push('/mail')
+		return
+	}
 	// Re-tapping the active Mail tab opens the folder switcher.
 	if (mailActive.value) {
 		openFolderSheet()
@@ -129,6 +147,7 @@ const openMail = () => {
 }
 
 const openScreener = () => {
+	showSearchModal.value = false
 	if (screenerActive.value) return
 	router.push({ name: 'mail-screener', params: { accountId: store.accountId } })
 }
@@ -150,7 +169,8 @@ const screenerCount = computed(
 // unread when the tab reads "Inbox" from elsewhere. Starred is virtual — no count.
 const mailBadgeCount = computed(() => {
 	if (route.name === 'mail-all-inboxes') return allInboxesUnread.data ?? 0
-	if (route.name === 'mail-mailbox') {
+	// In search the tab reads "Inbox" (below), so fall through to the Inbox's count.
+	if (route.name === 'mail-mailbox' && !isSearchRoute.value) {
 		if (route.params.mailbox === 'starred') return 0
 		return (
 			mailboxes.data?.find((m: MailboxData) => m.id === route.params.mailbox)

@@ -1,11 +1,20 @@
 <template>
-	<!-- Presents as a slide-up sheet, same motion as compose/settings. -->
-	<div
-		class="bg-surface-base fixed inset-0 z-10 transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
-		:class="{ 'invisible translate-y-full': !show }"
-	>
-		<slot name="body" />
-	</div>
+	<!-- Appears in place, no slide: searching and results are one page, so motion would read
+	     as a different surface. Stops above the tab bar (border + h-14 + safe area, so the
+	     bar's top hairline stays visible) — the bar's tabs dismiss the overlay; back gesture
+	     works via the history entry. Teleported to body: one host instance lives inside
+	     MailboxView's CSS-hidden desktop header (via HeaderActions), where a fixed child
+	     would never paint on mobile — and the layout's isolate stacking context would trap
+	     its z-index anyway. -->
+	<Teleport to="body">
+		<div
+			v-show="show"
+			class="bg-surface-base fixed inset-x-0 top-0 z-10 overflow-y-auto"
+			:style="{ bottom: 'calc(3.5rem + 1px + env(safe-area-inset-bottom))' }"
+		>
+			<slot name="body" />
+		</div>
+	</Teleport>
 </template>
 
 <script setup lang="ts">

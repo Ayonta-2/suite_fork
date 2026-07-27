@@ -7,12 +7,7 @@
 		<template #body>
 			<div class="bg-surface-base">
 				<div class="flex items-center border-b px-4 py-2">
-					<Button v-if="isMobile" variant="ghost" @click="show = false">
-						<template #icon>
-							<ChevronLeft class="text-ink-gray-5 h-4 w-4" />
-						</template>
-					</Button>
-					<Search v-else class="text-ink-gray-5 h-4 w-4" />
+					<Search class="text-ink-gray-5 h-4 w-4" />
 					<input
 						ref="searchInput"
 						v-model="filter.text"
@@ -41,8 +36,11 @@
 					<span
 						v-for="chip in activeFilters"
 						:key="chip.key"
-						class="bg-surface-gray-2 inline-flex h-7 items-center gap-1 rounded pl-2 pr-1 text-xs"
-						:class="{ 'hover:bg-surface-gray-3 cursor-pointer': isClickableChip(chip.key) }"
+						class="bg-surface-gray-2 inline-flex items-center gap-1 rounded pl-2 pr-1"
+						:class="[
+							isMobile ? 'h-8 text-sm' : 'h-7 text-xs',
+							{ 'hover:bg-surface-gray-3 cursor-pointer': isClickableChip(chip.key) },
+						]"
 						@click="isClickableChip(chip.key) && handleChipClick(chip.key)"
 					>
 						<span class="max-w-40 truncate">{{ chip.label }}</span>
@@ -58,7 +56,7 @@
 						v-for="f in inactiveQuickFilters"
 						:key="f.label"
 						variant="outline"
-						class="!h-7 text-xs"
+						:class="isMobile ? '!h-8 text-sm' : '!h-7 text-xs'"
 						@click="applyQuickFilter(f)"
 					>
 						<span class="flex items-center gap-1">
@@ -69,7 +67,7 @@
 					<Button
 						v-if="activeFilters.length"
 						variant="ghost"
-						class="text-xs"
+						:class="isMobile ? 'text-sm' : 'text-xs'"
 						:label="__('Clear all')"
 						@click="clearFilters()"
 					/>
@@ -266,7 +264,7 @@
 import { computed, nextTick, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
-import { ChevronLeft, Paperclip, Plus, Search, SlidersHorizontal, X } from 'lucide-vue-next'
+import { Paperclip, Plus, Search, SlidersHorizontal, X } from 'lucide-vue-next'
 import { Avatar, Button, Dialog, FormControl, Switch, createResource } from 'frappe-ui'
 import { Icon } from 'frappe-ui/icons'
 

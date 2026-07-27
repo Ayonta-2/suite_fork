@@ -78,9 +78,17 @@
 
 				<!-- Mobile header: title row (folders · mailbox + count · search · compose) over
 				     a toolbar row (filter selector on the left, filter/refresh pills on the
-				     right). In selection mode the toolbar row swaps to ✕ / count / Select All. -->
-				<div v-if="isMobile" class="relative shrink-0 border-b">
+				     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
+				     Search skips both rows (SearchResultsHeader is the header there; the tab
+				     bar carries the "you are in search" cue), keeping only the selection
+				     toolbar and the loading bar — the border goes with the rows it underlines. -->
+				<div
+					v-if="isMobile"
+					class="relative shrink-0"
+					:class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
+				>
 					<MobileTitleHeader
+						v-if="mailbox !== 'search'"
 						with-menu
 						:title="mailboxName"
 						:count="threadCount ? __('{0} threads', [threadCount]) : undefined"
@@ -103,14 +111,10 @@
 							{{ isAllSelected ? __('Unselect All') : __('Select All') }}
 						</button>
 					</div>
-					<div v-else class="flex h-12 items-center px-4">
+					<div v-else-if="mailbox !== 'search'" class="flex h-12 items-center px-4">
 						<!-- The selector label carries the active filter ("Unread Mails", …);
 						     picking "All" in the sheet clears it, so no dismissal chip needed. -->
-						<AdaptiveDropdown
-							v-if="mailbox !== 'search'"
-							:options="FILTER_OPTIONS"
-							:title="__('Filter')"
-						>
+						<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
 							<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
 								<span class="truncate">{{ title }}</span>
 								<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
@@ -354,7 +358,13 @@
 					</div>
 				</div>
 				<div v-else class="flex h-full items-center justify-center">
-					<p class="text-ink-gray-5">
+					<!-- While the (still-mounted) search header's new query loads, this area is the
+					     loading surface — the empty message must not flash first. -->
+					<LoaderCircle
+						v-if="threadsResource?.loading"
+						class="text-ink-gray-5 h-5 w-5 animate-spin"
+					/>
+					<p v-else class="text-ink-gray-5">
 						{{
 							mailbox === 'search'
 								? __('No results found for the given query.')
@@ -1431,6 +1441,10 @@ watch(groupedRows, () => {
 const canGoNext = computed(() => hasMore.value)
 
 const isLoading = computed(() => {
+	// Search is one page: its header (input + filter chips) mounts immediately and stays put
+	// across query changes — loading shows inline in the list area, never as the full spinner.
+	// Checked first: entering the route resets isMailboxLoaded, which must not blank the view.
+	if (mailbox === 'search') return false
 	if (!isMailboxLoaded.value) return true
 	if (emptyMailbox.loading) return true
 	if (refillPending.value) return true
