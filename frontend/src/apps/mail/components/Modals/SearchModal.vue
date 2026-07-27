@@ -99,18 +99,14 @@
 							v-model="filter.to"
 							:label="__('To')"
 						/>
-						<div class="flex space-x-4">
-							<ContactCombobox
-								v-model="filter.cc"
-								:label="__('Cc')"
-								class="w-full"
-							/>
-							<ContactCombobox
-								v-model="filter.bcc"
-								:label="__('Bcc')"
-								class="w-full"
-							/>
-						</div>
+						<ContactCombobox
+							v-model="filter.cc"
+							:label="__('Cc')"
+						/>
+						<ContactCombobox
+							v-model="filter.bcc"
+							:label="__('Bcc')"
+						/>
 						<div class="flex space-x-4">
 							<FormControl
 								v-model="filter.after"
@@ -125,32 +121,32 @@
 								class="w-full"
 							/>
 						</div>
-						<FormControl
-							v-model="filter.hasAttachment"
-							type="select"
-							:label="__('Attachments')"
-							:options="getAttachmentOptions()"
-						/>
-						<FormControl
-							v-model="filter.isRead"
-							type="select"
-							:label="__('Read Status')"
-							:options="getReadStatusOptions()"
-						/>
+						<div class="flex space-x-4">
+							<FormControl
+								v-model="filter.hasAttachment"
+								type="select"
+								:label="__('Attachments')"
+								:options="getAttachmentOptions()"
+								class="w-full min-w-0"
+							/>
+							<FormControl
+								v-model="filter.isRead"
+								type="select"
+								:label="__('Read Status')"
+								:options="getReadStatusOptions()"
+								class="w-full min-w-0"
+							/>
+						</div>
 					</div>
-					<div
-						class="flex w-full p-4"
-						:class="isMobile ? 'flex-col space-y-4' : 'justify-end space-x-4'"
-					>
-						<Button
-							:label="__('Clear Filters')"
-							class="w-full sm:w-28"
-							@click="clearFilters()"
-						/>
+					<!-- Desktop-only: on mobile filters apply live (the chips row and quick
+					     results reflect them as they're set), so the footer buttons are
+					     redundant next to the filters toggle and Enter. -->
+					<div v-if="!isMobile" class="flex w-full justify-end space-x-4 p-4">
+						<Button :label="__('Clear Filters')" class="w-28" @click="clearFilters()" />
 						<Button
 							:label="__('Search')"
 							variant="solid"
-							class="w-full sm:w-28"
+							class="w-28"
 							@click="openSearchPage"
 						/>
 					</div>
