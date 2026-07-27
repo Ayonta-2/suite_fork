@@ -34,9 +34,12 @@
 								:theme="levelTheme(row.level)"
 							/>
 							<span v-else-if="column.key === 'event'">{{ row.event_label || row.event || '—' }}</span>
-							<span v-else-if="column.key === 'details'" class="text-ink-gray-6 truncate">
+							<code
+								v-else-if="column.key === 'details'"
+								class="text-ink-gray-6 block w-full truncate font-mono text-xs"
+							>
 								{{ row.details || '—' }}
-							</span>
+							</code>
 						</ListRowItem>
 					</ListRow>
 				</template>
