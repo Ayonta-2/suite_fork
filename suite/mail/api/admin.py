@@ -2245,19 +2245,30 @@ def _log_row(entry: dict, labels: dict) -> dict:
 
 
 @frappe.whitelist()
-def get_logs(search: str | None = None, page: int = 1, page_length: int = 100) -> dict:
-	"""Returns a page of server log entries (most recent first) with the total count."""
+def get_logs(search: str | None = None, anchor: str | None = None, page_length: int = 100) -> dict:
+	"""Returns a page of server log entries (most recent first), starting after ``anchor``.
+
+	The log store only supports cursor pagination, so pages are walked one at a time using the
+	``next_anchor`` returned here instead of jumping to an arbitrary offset; ``next_anchor`` is
+	``None`` on the last page. ``total`` is how many entries the server retains and, unlike the other
+	listings, is not narrowed by ``search``.
+	"""
 
 	check_admin_permission("view logs")
 
-	page, page_length = cint(page) or 1, cint(page_length) or 100
+	page_length = cint(page_length) or 100
 	result = get_log_service().list_page(
 		filter={"text": search} if search else None,
-		position=(page - 1) * page_length,
+		anchor=anchor,
 		limit=page_length,
 	)
 	labels = get_log_labels()
-	return {"logs": [_log_row(e, labels) for e in result["items"]], "total": result["total"]}
+	logs = [_log_row(e, labels) for e in result["items"]]
+	return {
+		"logs": logs,
+		"total": result["total"],
+		"next_anchor": logs[-1]["id"] if len(logs) == page_length else None,
+	}
 
 
 @frappe.whitelist()

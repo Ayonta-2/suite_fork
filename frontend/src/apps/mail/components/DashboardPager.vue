@@ -6,7 +6,7 @@
 				<template #icon><FeatherIcon name="chevron-left" class="h-4 w-4" /></template>
 			</Button>
 			<span>{{ page }} / {{ totalPages }}</span>
-			<Button variant="ghost" :disabled="page >= totalPages" @click="emit('update:page', page + 1)">
+			<Button variant="ghost" :disabled="!canGoNext" @click="emit('update:page', page + 1)">
 				<template #icon><FeatherIcon name="chevron-right" class="h-4 w-4" /></template>
 			</Button>
 		</div>
@@ -17,10 +17,18 @@
 import { computed } from 'vue'
 import { Button, FeatherIcon } from 'frappe-ui'
 
-const { page, pageLength, total } = defineProps<{ page: number; pageLength: number; total: number }>()
+// `hasNextPage` overrides the count-derived limit, for listings whose total cannot be trusted to
+// bound the pages (the log store reports how many entries it retains, ignoring any search).
+const {
+	page,
+	pageLength,
+	total,
+	hasNextPage = undefined,
+} = defineProps<{ page: number; pageLength: number; total: number; hasNextPage?: boolean }>()
 const emit = defineEmits<{ 'update:page': [value: number] }>()
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total / pageLength)))
+const canGoNext = computed(() => (hasNextPage === undefined ? page < totalPages.value : hasNextPage))
 const rangeLabel = computed(() => {
 	const start = (page - 1) * pageLength + 1
 	const end = Math.min(page * pageLength, total)

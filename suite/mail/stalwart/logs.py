@@ -6,3 +6,5 @@ class LogService(ManagementService):
 
 	type = "Log"
 	default_properties = ["id", "timestamp", "level", "event", "details"]
+	# The log store rejects offset paging ("Pagination is only possible using anchors for logs").
+	cursor_paginated = True

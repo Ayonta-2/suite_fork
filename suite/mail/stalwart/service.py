@@ -34,6 +34,8 @@ class ManagementService:
 
 	type: ClassVar[str] = ""
 	default_properties: ClassVar[list[str] | None] = None
+	# Set by resources the server will only page with a cursor, never an offset.
+	cursor_paginated: ClassVar[bool] = False
 
 	def __init__(self, connection: JMAPConnection) -> None:
 		"""Binds the service to an admin-authenticated management connection."""
@@ -209,17 +211,26 @@ class ManagementService:
 		sort: list[dict] | None = None,
 		position: int = 0,
 		limit: int | None = None,
+		anchor: str | None = None,
 	) -> dict:
-		"""Returns ``{"ids", "total"}`` without fetching the objects, paging until ``limit``/exhausted."""
+		"""Returns ``{"ids", "total"}`` without fetching the objects, paging until ``limit``/exhausted.
+
+		Pages by offset (``position``) unless the resource is ``cursor_paginated`` or an ``anchor`` is
+		given, in which case each page starts *after* that id — the anchor is exclusive, and the server
+		ignores any offset alongside it.
+		"""
 
 		ids: list[str] = []
 		total: int | None = None
 		page = self.max_objects_in_get
+		by_cursor = self.cursor_paginated or anchor is not None
+		cursor = anchor
 
 		while True:
 			take = page if limit is None else min(page, limit - len(ids))
+			paging = {"anchor": cursor} if by_cursor else {"position": position}
 			result = self._invoke(
-				"query", filter=filter, sort=sort, position=position, limit=take, calculateTotal=total is None
+				"query", filter=filter, sort=sort, limit=take, calculateTotal=total is None, **paging
 			)
 
 			batch = result.get("ids") or []
@@ -227,7 +238,10 @@ class ManagementService:
 			if total is None:
 				total = result.get("total")
 
-			position += len(batch)
+			if by_cursor:
+				cursor = batch[-1] if batch else cursor
+			else:
+				position += len(batch)
 			done = not batch or (total is not None and len(ids) >= total) or (limit is not None and len(ids) >= limit)
 			if done:
 				break
@@ -247,14 +261,16 @@ class ManagementService:
 		position: int = 0,
 		limit: int | None = None,
 		properties: list[str] | None = None,
+		anchor: str | None = None,
 	) -> dict:
 		"""Returns ``{"items", "total"}`` — one page of full objects in query order.
 
 		Unlike ``get_all`` (which fetches everything), this pages via ``position``/``limit`` for
-		large collections such as the queue or the log, and preserves the query's ordering.
+		large collections such as the queue, or via ``anchor`` for cursor-only ones such as the log,
+		and preserves the query's ordering.
 		"""
 
-		page = self.query(filter=filter, sort=sort, position=position, limit=limit)
+		page = self.query(filter=filter, sort=sort, position=position, limit=limit, anchor=anchor)
 		ids = page["ids"]
 		items: list[dict] = []
 		if ids:

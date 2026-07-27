@@ -43,7 +43,13 @@
 				<ListEmptyState v-else />
 			</ListRows>
 		</ListView>
-		<DashboardPager :page="page" :page-length="PAGE_LENGTH" :total="total" @update:page="(p) => (page = p)" />
+		<DashboardPager
+			:page="page"
+			:page-length="PAGE_LENGTH"
+			:total="total"
+			:has-next-page="Boolean(nextAnchor)"
+			@update:page="goToPage"
+		/>
 	</DashboardLayout>
 </template>
 <script setup lang="ts">
@@ -83,18 +89,38 @@ usePageMeta(() => ({ title: __('Logs') }))
 const PAGE_LENGTH = 100
 const search = ref('')
 const page = ref(1)
+// The log store pages by cursor only, so each visited page remembers the id it starts after
+// (`undefined` for the first page) and pages are walked one step at a time.
+const anchors = ref<(string | undefined)[]>([undefined])
 
 const logs = createResource({
 	url: 'suite.mail.api.admin.get_logs',
 	auto: true,
-	makeParams: () => ({ search: search.value, page: page.value, page_length: PAGE_LENGTH }),
-	cache: ['mailLogs', search.value, page.value],
+	makeParams: () => ({
+		search: search.value,
+		anchor: anchors.value[page.value - 1],
+		page_length: PAGE_LENGTH,
+	}),
 })
 
 const rows = computed<LogRow[]>(() => logs.data?.logs || [])
 const total = computed(() => logs.data?.total || 0)
+const nextAnchor = computed<string | null>(() => logs.data?.next_anchor ?? null)
 
-watchDebounced(() => search.value, () => ((page.value = 1), logs.reload()), { debounce: 300 })
+const resetPaging = () => {
+	page.value = 1
+	anchors.value = [undefined]
+}
+
+const goToPage = (next: number) => {
+	if (next > page.value) {
+		if (!nextAnchor.value) return
+		anchors.value[next - 1] = nextAnchor.value
+	}
+	page.value = next
+}
+
+watchDebounced(() => search.value, () => (resetPaging(), logs.reload()), { debounce: 300 })
 watch(page, logs.reload)
 
 const formatDate = (value?: string) => (value ? dayjs(value).format('MMM D, h:mm:ss A') : '—')
