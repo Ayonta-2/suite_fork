@@ -1,16 +1,18 @@
 <template>
-	<div class="bg-surface-base fixed inset-0 z-10 flex flex-col">
-		<div class="sticky top-0 flex items-center border-b px-3 py-2.5">
-			<Button variant="ghost" class="mr-2" @click="emit('close')">
+	<div class="bg-surface-base fixed inset-0 z-20 flex flex-col">
+		<!-- Same compact-header recipe as ThreadHeader: -ml-2 cancels the ghost
+		     button's padding so the chevron glyph lands on the body's px-3 axis. -->
+		<div class="sticky top-0 flex min-h-14 items-center border-b px-3">
+			<Button variant="ghost" class="-ml-2 mr-2 !h-8 !w-8 shrink-0" @click="emit('close')">
 				<template #icon>
-					<ChevronLeft class="text-ink-gray-5 h-4 w-4" />
+					<ChevronLeft class="icon !h-[18px] !w-[18px]" />
 				</template>
 			</Button>
 
 			<h2 class="text-xl-semibold leading-5">{{ __('Settings') }}</h2>
 		</div>
 
-		<div class="px-3 py-4">
+		<div class="px-3 py-2">
 			<SettingsRow :title="__('Enable Push Notifications')" :description>
 				<Switch
 					size="md"
@@ -20,7 +22,7 @@
 				/>
 			</SettingsRow>
 
-			<div v-if="isLoading" class="-mt-0.5 flex items-center gap-2 px-3">
+			<div v-if="isLoading" class="-mt-0.5 flex items-center gap-2">
 				<LoadingIndicator class="text-ink-gray-7 h-3 w-3" />
 				<span class="text-sm">
 					{{

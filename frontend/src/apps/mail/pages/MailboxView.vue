@@ -482,7 +482,7 @@
 		<AdaptiveDropdown
 			v-model:open="showMoreActions"
 			:options="moreSelectionOptions"
-			:title="__('More')"
+			:title="__('{0} selected', [String(selections.length)])"
 		/>
 		<AdaptiveDropdown
 			v-model:open="showMoveToSheet"

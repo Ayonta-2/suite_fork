@@ -61,7 +61,11 @@ const switchAccount = (accountId: string) => {
 
 const openAppSettings = () => {
 	closeProfileSheet()
-	openSettings()
+	// The sheet (z-50) closes above the settings dialog (which has no z-index),
+	// so present settings only after the sheet's ~200ms exit — otherwise the
+	// dialog's slide-up plays hidden behind the closing sheet and reads as no
+	// animation at all.
+	setTimeout(openSettings, 250)
 }
 
 const rowClass =

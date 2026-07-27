@@ -190,4 +190,5 @@ body.mail-app .bottom-sheet-content > .h-\[70vh\] {
 	height: auto;
 	max-height: 70vh;
 }
+
 </style>
