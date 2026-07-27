@@ -41,15 +41,14 @@
     >
       <LucideStar
         v-if="$route.name !== 'Favourites' && file.is_favourite"
-        class="text-ink-amber-6 stroke-current fill-current absolute top-2 left-2 h-4"
+        class="z-10 text-ink-amber-6 stroke-current fill-current absolute top-2 left-2 h-4"
         width="16"
         height="16"
       />
       <Button
         :variant="'subtle'"
-        :aria-label="`Actions for ${file.file_name}`"
-        :data-testid="`drive-entity-actions-${file.name}`"
-        class="duration-300 absolute top-2 right-2"
+        :label="`Actions for ${file.file_name}`"
+        class="z-10 duration-300 absolute top-2 right-2"
         :class="[
           selections.size > 0 ? '' : '!bg-surface-gray-3 hover:shadow-lg',
           selectedRow?.name === file.name

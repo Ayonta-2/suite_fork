@@ -634,8 +634,10 @@
            the Button itself stays a clean square pill (frappe-ui puts our
            `class` on the <button> root, so any spacing/border set on it would
            become part of the button's own hover box). -->
-      <div class="sn-tab-add-wrap">
-        <Button variant="ghost" size="sm" icon="plus" class="sn-tab-add" tooltip="Add sheet" :disabled="readOnly" @click="addSheet" />
+      <!-- Add-sheet is a mutation, so viewers don't get it — hide the whole
+           wrapper (button + its divider) rather than leave a dead, greyed pill. -->
+      <div v-if="!readOnly" class="sn-tab-add-wrap">
+        <Button variant="ghost" size="sm" icon="plus" class="sn-tab-add" tooltip="Add sheet" @click="addSheet" />
       </div>
       <div class="sn-tabs-track">
         <div
@@ -646,17 +648,18 @@
             'sn-tab--active':   name === currentSheet,
             'sn-tab--pivot':    isPivotSheet(name),
             'sn-tab-drag-over': tabDragOver === name && tabDragName !== name,
+            'sn-tab--static':   readOnly,
           }"
-          draggable="true"
+          :draggable="!readOnly"
           @dragstart="onTabDragStart($event, name)"
           @dragend="onTabDragEnd"
           @dragover.prevent="onTabDragOver($event, name)"
           @drop.prevent="onTabDrop($event, name)"
         >
           <!-- One visual unit: label + chevron share a single pill background
-               so they read as one button. Chevron renders on every tab so
-               the menu affordance is always visible; clicking it opens the
-               tab menu, clicking the label switches sheets. -->
+               so they read as one button. The chevron — the tab-menu affordance
+               — renders only when editable; a viewer has no tab actions, so it
+               would be a dead button. Clicking the label switches sheets. -->
           <Button
             variant="ghost"
             size="sm"
@@ -666,14 +669,15 @@
             @mousedown="onTabMousedown($event, name)"
             @click="onTabClick(name)"
             @dblclick="openRenameDialog(name)"
-            @contextmenu.prevent="openTabMenu($event, name)"
+            @contextmenu.prevent="_onTabMenu($event, name)"
           />
           <Button
+            v-if="!readOnly"
             variant="ghost"
             size="sm"
             icon="chevron-down"
             class="sn-tab-chevron"
-            @click.stop="openTabMenu($event, name)"
+            @click.stop="_onTabMenu($event, name)"
           />
           <!-- Peer dots — one colored circle per peer currently on this
                tab. Capped at 3 + a "+N" overflow so a busy tab doesn't
@@ -2119,9 +2123,15 @@ async function _computeSelectionStatsAsync(token) {
   for (let r = r0; r <= r1; r++) {
     const rowSuffix = r + 1
     for (let c = c0; c <= c1; c++) {
-      const val = sheet.getCell(labels[c - c0] + rowSuffix, sn)
-      if (val !== '' && val != null) count++
-      const n = parseFloat(val)
+      const id = labels[c - c0] + rowSuffix
+      const raw = sheet.getCell(id, sn)
+      if (raw === '' || raw == null) continue
+      count++
+      // Aggregate the computed value, not the raw text: a formula cell holds
+      // "=SUM(...)" in getCell but evaluates to a number via getCellValue, so
+      // parseFloat on the raw string would drop it from Sum/Avg (but not Count).
+      const val = sheet.getCellValue(id, sn)
+      const n = typeof val === 'number' ? val : parseFloat(val)
       if (!isNaN(n)) { numCount++; sum += n }
     }
     since += rowWidth
@@ -2400,6 +2410,15 @@ function _onCanvasContextMenu(e) {
   onCanvasContextMenu(e)
 }
 
+// Same reasoning for the sheet-tab menu: every item (rename/duplicate/protect/
+// delete) mutates, so a viewer has nothing to do there. Suppress it entirely —
+// `.prevent` on the binding still eats the native menu — rather than open an
+// empty popover. Rename (dbl-click) and reorder (drag) are gated separately.
+function _onTabMenu(e, name) {
+  if (readOnly.value) return
+  openTabMenu(e, name)
+}
+
 // renderVersion is defined here because usePivotIntegration reads it at call time.
 const renderVersion = ref(0)
 
@@ -2574,18 +2593,25 @@ function onTabClick(name) {
 const tabDragName = ref(null)
 const tabDragOver = ref(null)
 
+// Reorder is a mutation. `:draggable="!readOnly"` stops a viewer starting a
+// drag, but dragover/drop still fire when *another* element is dragged onto a
+// tab — guard the whole lifecycle so the invariant "viewers can't reorder" is
+// explicit here, not just an emergent effect of the null tabDragName.
 function onTabDragStart(e, name) {
+  if (readOnly.value) return
   tabDragName.value = name
   e.dataTransfer.effectAllowed = 'move'
   // Some browsers require setData to allow the drag
   try { e.dataTransfer.setData('text/plain', name) } catch (_) {}
 }
 function onTabDragOver(e, name) {
+  if (readOnly.value) return
   if (!tabDragName.value || tabDragName.value === name) return
   e.dataTransfer.dropEffect = 'move'
   tabDragOver.value = name
 }
 function onTabDrop(e, target) {
+  if (readOnly.value) return
   const src = tabDragName.value
   if (!src || src === target) { tabDragOver.value = null; return }
   const next = sheetNames.value.filter(n => n !== src)
@@ -5052,6 +5078,9 @@ const renameInputRef   = ref(null)
 let _renameTarget      = ''
 
 function openRenameDialog(name) {
+  // Reachable via dbl-click on the tab even when the menu is suppressed — gate
+  // here so rename is denied for viewers regardless of entry point.
+  if (readOnly.value) return
   tabMenu.open = false
   _renameTarget      = name
   renameValue.value  = name
@@ -5385,9 +5414,12 @@ function doDeleteRow() {
   contextMenu.open = false
   const sn = sheet.getCurrentSheet()
   // Same span logic as doDeleteCol: delete the whole selected row block when
-  // the right-clicked row falls inside it, else just the targeted row.
+  // the right-clicked row falls inside it, else just the targeted row. Only a
+  // real row span counts — in 'col'/'all' selections getSelection() reports
+  // r1 = last row, which would otherwise delete every row below the target.
   const sel = grid.getSelection()
-  const within = sel && contextMenu.targetRow >= sel.r0 && contextMenu.targetRow <= sel.r1
+  const rowSpan = sel && (sel.mode === 'row' || sel.mode === 'cell')
+  const within = rowSpan && contextMenu.targetRow >= sel.r0 && contextMenu.targetRow <= sel.r1
   const start  = within ? sel.r0 : contextMenu.targetRow
   const count  = within ? sel.r1 - sel.r0 + 1 : 1
   for (let i = 0; i < count; i++) {
@@ -5432,8 +5464,11 @@ function doDeleteCol() {
   // When the right-clicked column is inside a multi-column selection, delete
   // every selected column; otherwise just the targeted one. Each delete shifts
   // the rest left, so the block start index stays fixed across iterations.
+  // Only a real column span counts — in 'row'/'all' selections getSelection()
+  // reports c1 = last col, which would otherwise delete every column to the right.
   const sel = grid.getSelection()
-  const within = sel && contextMenu.targetCol >= sel.c0 && contextMenu.targetCol <= sel.c1
+  const colSpan = sel && (sel.mode === 'col' || sel.mode === 'cell')
+  const within = colSpan && contextMenu.targetCol >= sel.c0 && contextMenu.targetCol <= sel.c1
   const start  = within ? sel.c0 : contextMenu.targetCol
   const count  = within ? sel.c1 - sel.c0 + 1 : 1
   for (let i = 0; i < count; i++) {
@@ -6252,6 +6287,16 @@ function toggleShowFormulas() {
 /* Sheet-tab drag visual — Espresso ink-gray-9 left edge on the drop target. */
 .sn-tab               { cursor:grab; }
 .sn-tab:active        { cursor:grabbing; }
+
+/* Viewer tabs — no chevron, no drag. The `.sn-tab-btn` right padding is only
+   2px because it normally butts against the chevron; with the chevron gone the
+   label needs its own symmetric breathing room. And a grab cursor lies about a
+   tab that can't be dragged — clicking still switches sheets, so use pointer.
+   Placed after the base `.sn-tab` cursor rules to win on equal specificity. */
+.sn-tab--static,
+.sn-tab--static:active            { cursor:pointer; }
+.sn-tab--static .sn-tab-btn       { padding-right:8px !important; }
+
 .sn-tab-drag-over::before {
   content: ''; position:absolute; left:-1px; top:4px; bottom:4px; width:2px;
   background: var(--ink-gray-9); border-radius:1px;
