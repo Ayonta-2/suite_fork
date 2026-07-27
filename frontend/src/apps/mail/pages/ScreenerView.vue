@@ -283,14 +283,14 @@
 										class="!rounded-r-none"
 										@click="screenOut([openSender.from_email])"
 									/>
-									<Dropdown
+									<AdaptiveDropdown
 										:options="domainOptions('screenOut', openSender)"
 										placement="bottom-end"
 									>
 										<Button variant="outline" class="-ml-px !rounded-l-none !px-1.5">
 											<template #icon><ChevronDown class="h-4 w-4" /></template>
 										</Button>
-									</Dropdown>
+									</AdaptiveDropdown>
 								</div>
 								<div class="flex items-center">
 									<Button
@@ -299,7 +299,7 @@
 										class="!rounded-r-none"
 										@click="allow([openSender.from_email])"
 									/>
-									<Dropdown
+									<AdaptiveDropdown
 										:options="domainOptions('allow', openSender)"
 										placement="bottom-end"
 									>
@@ -310,7 +310,7 @@
 										>
 											<template #icon><ChevronDown class="h-4 w-4" /></template>
 										</Button>
-									</Dropdown>
+									</AdaptiveDropdown>
 								</div>
 							</div>
 						</div>
@@ -655,6 +655,7 @@ const domainOptions = (action: 'allow' | 'screenOut', sender: ScreeningSender) =
 			action === 'allow'
 				? __('Allow all emails from {0}', [domainOf(sender.from_email)])
 				: __('Deny all emails from {0}', [domainOf(sender.from_email)]),
+		icon: action === 'allow' ? Check : X,
 		onClick: () => runDomainAction(action, sender),
 	},
 ]

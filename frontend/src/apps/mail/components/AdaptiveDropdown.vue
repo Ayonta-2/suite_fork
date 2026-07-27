@@ -11,6 +11,8 @@
 		<BottomSheet v-model:open="open" :title="title">
 			<div class="px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
 				<template v-for="(group, gi) in groups" :key="gi">
+					<!-- Mirror the desktop Dropdown's separators between label-less groups. -->
+					<div v-if="gi && !group.label" class="mx-3 my-2 border-t" />
 					<div v-if="group.label" class="text-ink-gray-5 px-3 pb-1 pt-3 text-sm">
 						{{ group.label }}
 					</div>
