@@ -2171,7 +2171,7 @@ def get_report(kind: str, direction: str, report_id: str) -> dict:
 			{
 				"from": report.get("from"),
 				"subject": report.get("subject"),
-				"to": report.get("to"),
+				"to": _set_keys(report.get("to")),
 				"received_at": report.get("receivedAt"),
 				"expires_at": report.get("expiresAt"),
 			}

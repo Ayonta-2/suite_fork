@@ -10,7 +10,7 @@
 					<template v-if="direction === 'inbound'">
 						<InformationField :label="__('From')" :value="data.from" />
 						<InformationField :label="__('Subject')" :value="data.subject" />
-						<InformationField :label="__('To')" :value="data.to" />
+						<InformationField :label="__('To')" :value="recipients" />
 						<InformationField :label="__('Received At')" :value="formatDate(data.received_at)" />
 						<InformationField :label="__('Expires At')" :value="formatDate(data.expires_at)" />
 					</template>
@@ -48,7 +48,7 @@ type ReportData = {
 	id: string
 	from?: string
 	subject?: string
-	to?: string
+	to?: string[]
 	received_at?: string
 	expires_at?: string
 	domain?: string
@@ -81,6 +81,7 @@ const report = createResource({
 
 const data = computed(() => report.data as ReportData)
 const reportJson = computed(() => JSON.stringify(data.value?.report ?? {}, null, 2))
+const recipients = computed(() => (data.value?.to ?? []).join(', '))
 const formatDate = (value?: string | null) => (value ? dayjs(value).format('MMM D YYYY, h:mm A') : '—')
 
 const breadcrumbs = computed(() => [
