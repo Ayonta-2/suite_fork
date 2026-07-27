@@ -394,7 +394,6 @@
 			<div
 				class="bg-surface-base"
 				:class="{
-					'overflow-y-auto': !isMobile,
 					'overflow-hidden': isMobile,
 					'w-2/3': !isMobile && showReadingPane,
 					'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
@@ -406,17 +405,14 @@
 				@touchstart.passive="onThreadTouchStart"
 				@touchend.passive="onThreadTouchEnd"
 			>
-				<!-- Mobile keys the wrapper by thread so a swipe pages: the old thread slides out
-				     while the new one (remounted, so it loads fresh) slides in from the swipe side.
-				     Scroll lives on the wrapper there — each thread carries its own scroll position
-				     through the slide. Desktop keys statically: no remount, pane scrolls itself. -->
-				<Transition :name="threadSlide" @after-enter="threadSlide = ''">
-				<div
-					:key="isMobile ? threadPaneKey : 'pane'"
-					:class="{ 'h-full overflow-y-auto': isMobile }"
-				>
+				<!-- The swipe slide lives inside MailThread (its toolbar must not move), armed
+				     via `slide` per swipe and cleared on slide-done. The scroll wrapper must be
+				     h-full on desktop too, or the empty state's h-full collapses. -->
+				<div class="h-full overflow-y-auto">
 				<MailThread
 					ref="mailThread"
+					:slide="threadSlide"
+					@slide-done="threadSlide = ''"
 					:mailbox
 					:thread-i-d
 					:threads="threadIDs"
@@ -456,7 +452,6 @@
 					@next-thread="goToThreadByOffset(1)"
 				/>
 				</div>
-				</Transition>
 			</div>
 			</Teleport>
 		</template>
@@ -1715,21 +1710,10 @@ const swipeToThread = (offset: number) => {
 const onEmailSwipe = (e: Event) =>
 	swipeToThread((e as CustomEvent).detail === 'left' ? 1 : -1)
 
-// The <Transition> name while a swipe navigation renders; cleared after the slide (and
-// left empty for every other thread change, where the wrapper should just swap).
+// MailThread's slide name while a swipe navigation renders; cleared on its slide-done
+// (and left empty for every other thread change, which should swap instantly).
 const threadSlide = ref('')
 let pendingThreadSlide = ''
-
-// The paging wrapper's key: follows the open thread but freezes on close, so the pane's
-// slide-out still shows the thread it closed on instead of a remounted blank wrapper.
-const threadPaneKey = ref('none')
-watch(
-	() => threadID,
-	(id) => {
-		if (id) threadPaneKey.value = id
-	},
-	{ immediate: true },
-)
 
 const openPendingEdgeThread = () => {
 	if (!pendingEdgeThread) return
@@ -2080,35 +2064,4 @@ const threadCount = computed(() => {
 	}
 }
 
-/* Swipe paging between threads (mobile): the incoming thread slides in from the swipe
-   side while the outgoing one — lifted out of flow so they overlap — slides away in
-   tandem. Snappier than the pane's open/close slide: paging is a repeated gesture. */
-.thread-next-enter-active,
-.thread-next-leave-active,
-.thread-prev-enter-active,
-.thread-prev-leave-active {
-	transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.thread-next-leave-active,
-.thread-prev-leave-active {
-	position: absolute;
-	inset: 0;
-}
-
-.thread-next-enter-from {
-	transform: translateX(100%);
-}
-
-.thread-next-leave-to {
-	transform: translateX(-100%);
-}
-
-.thread-prev-enter-from {
-	transform: translateX(-100%);
-}
-
-.thread-prev-leave-to {
-	transform: translateX(100%);
-}
 </style>
