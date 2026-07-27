@@ -4,6 +4,7 @@
 			<Button
 				:label="__('Save')"
 				variant="solid"
+				:size="isMobile ? 'md' : 'sm'"
 				:disabled="
 					vacationResponse.loading ||
 					JSON.stringify(vacationResponse.data) === JSON.stringify(original)
@@ -73,7 +74,7 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { convertHtmlToText, raiseToast } from '@/apps/mail/utils'
-import { useTextEditorButtons } from '@/apps/mail/utils/composables'
+import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScriptStateModal.vue'
 
@@ -83,6 +84,7 @@ const store = userStore()
 const dayjs = inject('$dayjs')
 
 const { buttons } = useTextEditorButtons()
+const { isMobile } = useScreenSize()
 
 const showConfirmDialog = ref(false)
 

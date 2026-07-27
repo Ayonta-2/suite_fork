@@ -2,18 +2,22 @@
 	<component
 		:is="to ? RouterLink : 'div'"
 		:to="to"
-		class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 border-b px-3.5 py-2.5 sm:space-x-5 sm:px-5"
+		class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 border-b px-3.5 py-2.5 [-webkit-touch-callout:none] sm:space-x-5 sm:px-5"
 		:class="{ '!bg-surface-blue-1': isSelected || isTouching, '!py-2': isFullWidth }"
 		@mouseenter="isHovered = true"
 		@mouseleave="isHovered = false"
 		@touchstart="onTouchStart"
 		@touchend="clearTouchTimer"
 		@touchcancel="clearTouchTimer"
+		@contextmenu="onContextMenu"
+		@click.capture="onRowClick"
 	>
 		<!-- Selection column: checkbox on desktop, sender avatar on mobile or where the list has no
 		     bulk selection. Long-pressing the row anywhere selects it on touch. -->
+		<!-- max-sm:justify-start pins the avatar/checkbox to the row's 14px padding
+		     axis; centered, the 40px column left them 2-4px "inside" it. -->
 		<div
-			class="flex shrink-0 items-center justify-center max-sm:w-10"
+			class="flex shrink-0 items-center justify-center max-sm:w-10 max-sm:justify-start"
 			:class="isFullWidth ? 'h-8' : 'h-10 sm:-mt-1.5'"
 		>
 			<div
@@ -25,17 +29,17 @@
 			</div>
 			<div
 				v-else-if="isSelected"
-				class="bg-surface-gray-10 hitbox flex h-8 w-8 shrink-0 rounded-full"
+				class="bg-surface-gray-10 hitbox flex h-8 w-8 shrink-0 rounded-full max-sm:h-10 max-sm:w-10"
 				@click.stop.prevent="emit('setSelected', false)"
 			>
-				<Check class="text-ink-base m-auto h-5 w-5 stroke-[3px]" />
+				<Check class="text-ink-base m-auto h-5 w-5 stroke-[4px]" />
 			</div>
 			<Avatar
 				v-show="!isSelected && (isMobile || !selectable)"
 				:label="avatarLabel"
 				:image="avatarImage"
 				size="xl"
-				class="hitbox"
+				class="hitbox max-sm:!h-10 max-sm:!w-10"
 				@click.stop.prevent="emit('setSelected', true)"
 			/>
 		</div>
@@ -128,6 +132,7 @@ const {
 	datetime,
 	subjectItalic = false,
 	previewItalic = false,
+	selectionMode = false,
 } = defineProps<{
 	// Renders the row as a link when set, and as a plain div when not — a thread opens, a stack expands.
 	to?: RouteLocationRaw
@@ -144,6 +149,9 @@ const {
 	datetime: string
 	subjectItalic?: boolean
 	previewItalic?: boolean
+	// Mobile selection mode (a selection exists): rows swap avatars for checkboxes,
+	// hide trailing actions, and a tap toggles selection instead of navigating.
+	selectionMode?: boolean
 }>()
 
 const emit = defineEmits<{ setSelected: [selected: boolean] }>()
@@ -152,6 +160,17 @@ const user = inject('$user') as UserResource
 const { isMobile } = useScreenSize()
 
 const isHovered = ref(false)
+
+// In selection mode a row tap toggles membership; capture-phase so the
+// RouterLink navigation never fires. Real buttons inside the row (the trailing
+// star) are exempt and keep their own action.
+const onRowClick = (e: MouseEvent) => {
+	if (!selectionMode) return
+	if ((e.target as HTMLElement).closest('button')) return
+	e.preventDefault()
+	e.stopPropagation()
+	emit('setSelected', !isSelected)
+}
 
 // With the reading pane hidden the list has the window to itself, so a row lays out as one wide line
 // instead of a stacked block.
@@ -193,6 +212,14 @@ const clearTouchTimer = () => {
 		clearTimeout(touchTimer)
 		touchTimer = null
 	}
+}
+
+// The row is an anchor, so a long press also summons the browser's link menu on top of the
+// selection the row already handles. Suppress it for touch presses only — a desktop right-click
+// keeps its menu. (iOS shows a callout instead of firing contextmenu; -webkit-touch-callout on
+// the row covers that.)
+const onContextMenu = (e: Event) => {
+	if (isTouching.value) e.preventDefault()
 }
 
 const onTouchMove = (e: TouchEvent) => {

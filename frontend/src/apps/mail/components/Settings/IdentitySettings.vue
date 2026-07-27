@@ -4,6 +4,7 @@
 			<Button
 				:label="__('Save')"
 				variant="solid"
+				:size="isMobile ? 'md' : 'sm'"
 				:disabled="
 					identity.get.loading ||
 					JSON.stringify(identity.doc) === JSON.stringify(identity.originalDoc)
@@ -150,7 +151,7 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { convertHtmlToText, raiseToast } from '@/apps/mail/utils'
-import { useTextEditorButtons } from '@/apps/mail/utils/composables'
+import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
 import { userStore } from '@/apps/mail/stores/user'
 import IdentitySettingsListView from '@/apps/mail/components/IdentitySettingsListView.vue'
@@ -161,6 +162,7 @@ const user = inject('$user')
 const { identities } = userStore()
 
 const { buttons } = useTextEditorButtons()
+const { isMobile } = useScreenSize()
 
 const signatures = useList({
 	doctype: 'Mail Signature',
