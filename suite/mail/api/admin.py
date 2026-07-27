@@ -2199,6 +2199,16 @@ def get_report(kind: str, direction: str, report_id: str) -> dict:
 				"deliver_at": report.get("deliverAt"),
 			}
 		)
+		if kind == "dmarc":
+			# `policyIdentifier` is a u64 hash that overflows JS's safe integer range, so send it as
+			# a string to keep the browser from rounding it.
+			identifier = report.get("policyIdentifier")
+			meta.update(
+				{
+					"rua": _set_keys(report.get("rua")),
+					"policy_identifier": str(identifier) if identifier is not None else None,
+				}
+			)
 	return meta
 
 

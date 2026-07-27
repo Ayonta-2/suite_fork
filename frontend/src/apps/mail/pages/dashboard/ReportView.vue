@@ -16,6 +16,10 @@
 					</template>
 					<template v-else>
 						<InformationField :label="__('Domain')" :value="data.domain" />
+						<template v-if="kind === 'dmarc'">
+							<InformationField :label="__('Report Recipients')" :value="reportRecipients" />
+							<InformationField :label="__('Policy Identifier')" :value="data.policy_identifier" />
+						</template>
 						<InformationField :label="__('Created At')" :value="formatDate(data.created_at)" />
 						<InformationField :label="__('Deliver At')" :value="formatDate(data.deliver_at)" />
 					</template>
@@ -52,6 +56,8 @@ type ReportData = {
 	received_at?: string
 	expires_at?: string
 	domain?: string
+	rua?: string[]
+	policy_identifier?: string
 	created_at?: string
 	deliver_at?: string
 	report?: unknown
@@ -81,7 +87,9 @@ const report = createResource({
 
 const data = computed(() => report.data as ReportData)
 const reportJson = computed(() => JSON.stringify(data.value?.report ?? {}, null, 2))
-const recipients = computed(() => (data.value?.to ?? []).join(', '))
+const joinAddresses = (addresses?: string[]) => (addresses ?? []).join(', ')
+const recipients = computed(() => joinAddresses(data.value?.to))
+const reportRecipients = computed(() => joinAddresses(data.value?.rua))
 const formatDate = (value?: string | null) => (value ? dayjs(value).format('MMM D YYYY, h:mm A') : '—')
 
 const breadcrumbs = computed(() => [
