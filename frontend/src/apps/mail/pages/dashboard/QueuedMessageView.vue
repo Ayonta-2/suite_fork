@@ -5,54 +5,73 @@
 		</template>
 		<template #default>
 			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-				<DashboardCard :title="__('General Information')">
-					<template #actions><span /></template>
+				<DashboardCard :title="__('General Information')" :button-label="__('Edit')" @action="showEditMessage = true">
 					<InformationField :label="__('Sender')" :value="data.sender" />
 					<InformationField :label="__('Size')" :value="formatBytes(data.size || 0)" />
 					<InformationField :label="__('Priority')" :value="String(data.priority ?? '—')" />
 					<InformationField :label="__('Envelope ID')" :value="data.env_id" />
-					<InformationField :label="__('Flags')" :value="(data.flags || []).join(', ')" />
 					<InformationField :label="__('Next Retry')" :value="formatDate(data.next_retry)" />
 					<InformationField :label="__('Next Notification')" :value="formatDate(data.next_notify)" />
 					<InformationField :label="__('Received From IP')" :value="data.received_from_ip" />
 					<InformationField :label="__('Received Via Port')" :value="String(data.received_via_port ?? '—')" />
 					<InformationField :label="__('Received At')" :value="formatDate(data.created_at)" />
+					<div class="px-5 py-3.5">
+						<p class="text-ink-gray-5 mb-1.5 text-sm">{{ __('Flags') }}</p>
+						<div v-if="data.flags.length" class="flex flex-wrap gap-1.5">
+							<Badge v-for="flag in data.flags" :key="flag.value" :label="flag.label" theme="gray" />
+						</div>
+						<span v-else class="text-base">—</span>
+					</div>
 				</DashboardCard>
 
-				<DashboardCard :title="__('Recipients')">
-					<template #actions><span /></template>
+				<DashboardCard :title="__('Recipients')" :button-label="__('Add')" @action="showAddRecipient = true">
 					<div class="flex flex-col">
-						<div class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded px-5 py-2.5 text-sm">
-							<span class="flex-1">{{ __('Address') }}</span>
-							<span class="w-40 shrink-0">{{ __('Status') }}</span>
-							<span class="w-20 shrink-0 text-center">{{ __('Retries') }}</span>
-						</div>
 						<template v-if="data.recipients.length">
 							<div
 								v-for="r in data.recipients"
 								:key="r.email"
-								class="flex items-center border-b px-5 py-3 text-base last:border-b-0"
+								class="group hover:bg-surface-gray-2 flex cursor-pointer items-center gap-3 border-b px-5 py-3 last:border-b-0"
+								@click="editRecipient(r)"
 							>
-								<span class="flex-1 truncate">{{ r.email }}</span>
-								<span class="w-40 shrink-0 truncate">
-									<Badge :label="statusLabel(r.status)" :theme="statusTheme(r.status)" />
-								</span>
-								<span class="w-20 shrink-0 text-center">{{ r.retry_count ?? 0 }}</span>
+								<div class="min-w-0 flex-1">
+									<p class="truncate text-base">{{ r.email }}</p>
+									<p class="text-ink-gray-5 mt-0.5 text-xs">{{ recipientSummary(r) }}</p>
+								</div>
+								<Badge :label="statusLabel(r.status_type)" :theme="statusTheme(r.status_type)" />
+								<Button
+									variant="ghost"
+									theme="red"
+									class="invisible group-hover:visible"
+									@click.stop="removeRecipient(r.email)"
+								>
+									<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
+								</Button>
 							</div>
 						</template>
-						<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
-							{{ __('No recipients.') }}
-						</div>
+						<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">{{ __('No recipients.') }}</div>
 					</div>
 				</DashboardCard>
 			</div>
 		</template>
 	</DashboardLayout>
+
+	<EditQueuedMessageModal
+		v-if="message.data"
+		v-model="showEditMessage"
+		:message-id="messageId"
+		:message="data"
+		@reload="message.reload()"
+	/>
+	<AddQueuedRecipientModal v-model="showAddRecipient" :message-id="messageId" @reload="message.reload()" />
+	<EditQueuedRecipientModal
+		v-model="showEditRecipient"
+		:message-id="messageId"
+		:recipient="activeRecipient"
+		:options="options"
+		@reload="message.reload()"
+	/>
 	<Dialog v-model="showCancel" :options="cancelDialogOptions" />
-	<Dialog
-		v-model="showSource"
-		:options="{ title: __('Message Source'), size: '4xl' }"
-	>
+	<Dialog v-model="showSource" :options="{ title: __('Message Source'), size: '4xl' }">
 		<template #body-content>
 			<pre
 				v-if="source.data"
@@ -66,18 +85,23 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Badge, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, FeatherIcon, createResource, usePageMeta } from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import dayjs from '@/apps/mail/utils/dayjs'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
+import AddQueuedRecipientModal from '@/apps/mail/components/Modals/AddQueuedRecipientModal.vue'
+import EditQueuedRecipientModal from '@/apps/mail/components/Modals/EditQueuedRecipientModal.vue'
+import EditQueuedMessageModal from '@/apps/mail/components/Modals/EditQueuedMessageModal.vue'
 
 type Recipient = {
 	email: string
-	status?: { '@type'?: string } | null
+	status_type?: string
 	retry_count?: number
+	next_retry?: string
+	[key: string]: unknown
 }
 type MessageData = {
 	id: string
@@ -85,7 +109,7 @@ type MessageData = {
 	size?: number
 	priority?: number
 	env_id?: string
-	flags?: string[]
+	flags: { value: string; label: string }[]
 	next_retry?: string
 	next_notify?: string
 	received_from_ip?: string
@@ -100,8 +124,12 @@ const router = useRouter()
 
 usePageMeta(() => ({ title: __('Queued Message') }))
 
+const showEditMessage = ref(false)
+const showAddRecipient = ref(false)
+const showEditRecipient = ref(false)
 const showCancel = ref(false)
 const showSource = ref(false)
+const activeRecipient = ref<Recipient | null>(null)
 
 const message = createResource({
 	url: 'suite.mail.api.admin.get_queued_message',
@@ -113,18 +141,43 @@ const message = createResource({
 
 const data = computed(() => message.data as MessageData)
 
+const recipientOptions = createResource({
+	url: 'suite.mail.api.admin.get_queue_recipient_options',
+	auto: true,
+	cache: 'mailQueueRecipientOptions',
+})
+const options = computed(
+	() => recipientOptions.data || { status_types: [], error_types: [], expiry_types: [] },
+)
+
 const source = createResource({
 	url: 'suite.mail.api.admin.get_queued_message_source',
 	makeParams: () => ({ message_id: messageId }),
 })
 
+const STATUS_LABELS: Record<string, string> = {
+	Scheduled: __('Scheduled'),
+	Completed: __('Delivered'),
+	TemporaryFailure: __('Temporary Failure'),
+	PermanentFailure: __('Permanent Failure'),
+}
 const formatDate = (value?: string | null) => (value ? dayjs(value).format('MMM D YYYY, h:mm A') : '—')
-const statusLabel = (status?: { '@type'?: string } | null) => status?.['@type'] || __('Pending')
-const statusTheme = (status?: { '@type'?: string } | null) => {
-	const type = (status?.['@type'] || '').toLowerCase()
-	if (type.includes('deliver')) return 'green'
-	if (type.includes('error') || type.includes('fail') || type.includes('bounce')) return 'red'
+const statusLabel = (type?: string) => STATUS_LABELS[type || ''] || type || __('Scheduled')
+const statusTheme = (type?: string) => {
+	if (type === 'Completed') return 'green'
+	if (type === 'PermanentFailure') return 'red'
+	if (type === 'TemporaryFailure') return 'orange'
 	return 'gray'
+}
+const recipientSummary = (r: Recipient) => {
+	const parts = [__('Retries: {0}').replace('{0}', String(r.retry_count ?? 0))]
+	if (r.next_retry) parts.push(__('Next retry {0}').replace('{0}', dayjs(r.next_retry).fromNow()))
+	return parts.join(' · ')
+}
+
+const editRecipient = (r: Recipient) => {
+	activeRecipient.value = r
+	showEditRecipient.value = true
 }
 
 const breadcrumbs = computed(() => [
@@ -140,6 +193,18 @@ const retry = createResource({
 		raiseToast(__('Message scheduled for retry.'))
 	},
 })
+
+const removeRecipient = (email: string) =>
+	createResource({
+		url: 'suite.mail.api.admin.remove_queued_recipient',
+		makeParams: () => ({ message_id: messageId, email }),
+		onSuccess: () => {
+			message.reload()
+			raiseToast(__('Recipient removed.'))
+		},
+		onError: (error: { messages?: string[] }) =>
+			raiseToast(error.messages?.[0] || __('Request failed.'), 'error'),
+	}).submit()
 
 const cancel = createResource({
 	url: 'suite.mail.api.admin.cancel_queued_messages',

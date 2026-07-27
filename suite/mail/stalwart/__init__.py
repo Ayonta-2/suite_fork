@@ -205,6 +205,33 @@ def get_action_types() -> list[dict]:
 
 
 @redis_cache(ttl=3600)
+def get_queue_metadata() -> dict:
+	"""Returns the enum/variant option lists used to render and edit queued messages.
+
+	All values come from the server schema so labels stay version-accurate: message flags, recipient
+	status types, delivery error types and expiry types (each as ``{value, label}``).
+	"""
+
+	from suite.mail.utils import get_config
+
+	schema = get_management_connection().request(
+		method="GET", url=urljoin(get_config("server_url"), "/api/schema"), return_json=True
+	)
+
+	def options(items: list[dict]) -> list[dict]:
+		return [{"value": i["name"], "label": i.get("label") or i["name"]} for i in items]
+
+	enums = schema.get("enums") or {}
+	schemas = schema.get("schemas") or {}
+	return {
+		"message_flags": options(enums.get("MessageFlag") or []),
+		"status_types": options((schemas.get("x:RecipientStatus") or {}).get("variants") or []),
+		"error_types": options(enums.get("DeliveryErrorType") or []),
+		"expiry_types": options((schemas.get("x:QueueExpiry") or {}).get("variants") or []),
+	}
+
+
+@redis_cache(ttl=3600)
 def get_roles(description: str | None = None) -> list[dict]:
 	"""Returns roles on the server, optionally filtered by description (cached)."""
 

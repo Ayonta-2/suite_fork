@@ -28,6 +28,7 @@ from suite.mail.stalwart import (
 	get_management_connection,
 	get_mailing_list_service,
 	get_oauth_client_service,
+	get_queue_metadata,
 	get_queued_message_service,
 	get_report_service,
 	get_role_service,
@@ -1769,6 +1770,40 @@ def get_queued_messages(
 
 
 @frappe.whitelist()
+def _recipient_detail(email: str, recipient: dict) -> dict:
+	"""Flattens a queued recipient (status/expiry unions included) into an editable row shape."""
+
+	status = recipient.get("status") or {}
+	expires = recipient.get("expires") or {}
+	return {
+		"email": email,
+		"orcpt": recipient.get("orcpt"),
+		"status_type": status.get("@type"),
+		"error_type": status.get("errorType"),
+		"error_message": status.get("errorMessage"),
+		"smtp_command": status.get("errorCommand"),
+		"hostname": status.get("responseHostname"),
+		"response_code": status.get("responseCode"),
+		"enhanced_code": status.get("responseEnhanced"),
+		"message": status.get("responseMessage"),
+		"next_retry": recipient.get("retryDue"),
+		"retry_count": recipient.get("retryCount"),
+		"next_notification": recipient.get("notifyDue"),
+		"notify_count": recipient.get("notifyCount"),
+		"expiry_type": expires.get("@type"),
+		"expires_at": expires.get("expiresAt"),
+		"expires_attempts": expires.get("expiresAttempts"),
+	}
+
+
+def _message_flags(message: dict) -> list[dict]:
+	"""Returns the message flags as ``{value, label}`` using the server's flag labels."""
+
+	labels = {f["value"]: f["label"] for f in get_queue_metadata()["message_flags"]}
+	return [{"value": flag, "label": labels.get(flag, flag)} for flag in _set_keys(message.get("flags"))]
+
+
+@frappe.whitelist()
 def get_queued_message(message_id: str) -> dict:
 	"""Returns a queued message with its per-recipient delivery status."""
 
@@ -1778,28 +1813,14 @@ def get_queued_message(message_id: str) -> dict:
 	if not message:
 		frappe.throw(_("Queued message not found"), frappe.DoesNotExistError)
 
-	recipients = []
-	for email, recipient in (message.get("recipients") or {}).items():
-		recipients.append(
-			{
-				"email": email,
-				"status": recipient.get("status"),
-				"retry_count": recipient.get("retryCount"),
-				"retry_due": recipient.get("retryDue"),
-				"notify_count": recipient.get("notifyCount"),
-				"notify_due": recipient.get("notifyDue"),
-				"queue": recipient.get("queueName"),
-				"flags": _set_keys(recipient.get("flags")),
-			}
-		)
-
+	recipients = [_recipient_detail(email, r) for email, r in (message.get("recipients") or {}).items()]
 	return {
 		"id": message["id"],
 		"sender": message.get("returnPath"),
 		"size": message.get("size"),
 		"priority": message.get("priority"),
 		"env_id": message.get("envId"),
-		"flags": _set_keys(message.get("flags")),
+		"flags": _message_flags(message),
 		"next_retry": message.get("nextRetry"),
 		"next_notify": message.get("nextNotify"),
 		"received_from_ip": message.get("receivedFromIp"),
@@ -1808,6 +1829,179 @@ def get_queued_message(message_id: str) -> dict:
 		"recipients": recipients,
 		"has_content": bool(message.get("blobId")),
 	}
+
+
+@frappe.whitelist()
+def get_queue_recipient_options() -> dict:
+	"""Returns the option lists (status types, error types, expiry types) for editing recipients."""
+
+	check_admin_permission("view queued messages")
+	meta = get_queue_metadata()
+	return {
+		"status_types": meta["status_types"],
+		"error_types": meta["error_types"],
+		"expiry_types": meta["expiry_types"],
+	}
+
+
+def _utc_datetime(value: str | None) -> str | None:
+	"""Converts a picker value (``YYYY-MM-DDTHH:mm``) to a Stalwart UTCDateTime, or ``None``."""
+
+	return get_datetime(value).strftime("%Y-%m-%dT%H:%M:%SZ") if value else None
+
+
+def _status_object(
+	status_type: str,
+	error_type: str | None,
+	error_message: str | None,
+	smtp_command: str | None,
+	hostname: str | None,
+	response_code: str | int | None,
+	enhanced_code: str | None,
+	message: str | None,
+) -> dict:
+	"""Builds a recipient status union member from the edited fields."""
+
+	status = {"@type": status_type}
+	response = {
+		"responseHostname": hostname or None,
+		"responseCode": cint(response_code) if str(response_code or "").strip() else None,
+		"responseEnhanced": enhanced_code or None,
+		"responseMessage": message or None,
+	}
+	if status_type in ("TemporaryFailure", "PermanentFailure"):
+		status.update(
+			{
+				"errorType": error_type or None,
+				"errorMessage": error_message or None,
+				"errorCommand": smtp_command or None,
+				**response,
+			}
+		)
+	elif status_type == "Completed":
+		status.update(response)
+
+	# The whole status node is replaced, so absent keys are cleared; dropping None-valued keys also
+	# avoids sending null for the non-nullable errorType enum.
+	return {key: value for key, value in status.items() if value is not None}
+
+
+def _expires_object(expiry_type: str, expires_at: str | None, expires_attempts: str | int | None) -> dict:
+	"""Builds a queue-expiry union member from the edited fields."""
+
+	if expiry_type == "Attempts":
+		return {"@type": "Attempts", "expiresAttempts": cint(expires_attempts)}
+	return {"@type": "Ttl", "expiresAt": _utc_datetime(expires_at)}
+
+
+@frappe.whitelist()
+def update_queued_message(message_id: str, next_retry: str | None = None) -> None:
+	"""Updates a queued message's next retry time."""
+
+	check_admin_permission("update queued messages")
+
+	if next_retry is not None:
+		get_queued_message_service().update(message_id, {"nextRetry": _utc_datetime(next_retry)})
+
+
+@frappe.whitelist()
+def update_queued_recipient(
+	message_id: str,
+	email: str,
+	new_email: str | None = None,
+	orcpt: str | None = None,
+	status_type: str | None = None,
+	error_type: str | None = None,
+	error_message: str | None = None,
+	smtp_command: str | None = None,
+	hostname: str | None = None,
+	response_code: str | None = None,
+	enhanced_code: str | None = None,
+	message: str | None = None,
+	next_retry: str | None = None,
+	retry_count: str | None = None,
+	next_notification: str | None = None,
+	notify_count: str | None = None,
+	expiry_type: str | None = None,
+	expires_at: str | None = None,
+	expires_attempts: str | None = None,
+) -> None:
+	"""Updates a single recipient of a queued message (renames the address if ``new_email`` differs)."""
+
+	check_admin_permission("update queued messages")
+	service = get_queued_message_service()
+
+	# Scalar edits keyed by their JMAP property; a ``None`` argument means "leave unchanged".
+	changed = {}
+	if orcpt is not None:
+		changed["orcpt"] = orcpt or None
+	if next_retry is not None:
+		changed["retryDue"] = _utc_datetime(next_retry)
+	if retry_count is not None:
+		changed["retryCount"] = cint(retry_count)
+	if next_notification is not None:
+		changed["notifyDue"] = _utc_datetime(next_notification)
+	if notify_count is not None:
+		changed["notifyCount"] = cint(notify_count)
+	status = (
+		_status_object(status_type, error_type, error_message, smtp_command, hostname, response_code, enhanced_code, message)
+		if status_type
+		else None
+	)
+	expires = _expires_object(expiry_type, expires_at, expires_attempts) if expiry_type else None
+
+	new_email = (new_email or "").strip()
+	if new_email and new_email != email:
+		# Rename: rebuild the recipient (minus server-set fields) under the new key.
+		current = ((service.get(message_id, properties=["recipients"]) or {}).get("recipients") or {}).get(email)
+		if current is None:
+			frappe.throw(_("Recipient not found"), frappe.DoesNotExistError)
+		obj = {k: v for k, v in current.items() if k not in ("flags", "queueName")}
+		obj.update(changed)
+		if status is not None:
+			obj["status"] = status
+		if expires is not None:
+			obj["expires"] = expires
+		service.update(message_id, {f"recipients/{email}": None, f"recipients/{new_email}": obj})
+		return
+
+	patch = {f"recipients/{email}/{prop}": value for prop, value in changed.items()}
+	if status is not None:
+		patch[f"recipients/{email}/status"] = status
+	if expires is not None:
+		patch[f"recipients/{email}/expires"] = expires
+	if patch:
+		service.update(message_id, patch)
+
+
+@frappe.whitelist()
+def add_queued_recipient(message_id: str, email: str) -> None:
+	"""Adds a recipient (pending delivery) to a queued message."""
+
+	from datetime import timedelta
+
+	check_admin_permission("update queued messages")
+
+	email = (email or "").strip()
+	if not email:
+		frappe.throw(_("Recipient email is required."))
+
+	now = frappe.utils.now_datetime()
+	recipient = {
+		"status": {"@type": "Scheduled"},
+		"retryDue": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+		"notifyDue": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+		"expires": {"@type": "Ttl", "expiresAt": (now + timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")},
+	}
+	get_queued_message_service().update(message_id, {f"recipients/{email}": recipient})
+
+
+@frappe.whitelist()
+def remove_queued_recipient(message_id: str, email: str) -> None:
+	"""Removes a recipient from a queued message."""
+
+	check_admin_permission("update queued messages")
+	get_queued_message_service().update(message_id, {f"recipients/{email}": None})
 
 
 @frappe.whitelist()
