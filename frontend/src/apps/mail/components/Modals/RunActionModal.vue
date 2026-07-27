@@ -1,12 +1,5 @@
 <template>
-	<Dialog
-		v-model="show"
-		:options="{
-			title: action?.label,
-			size: '2xl',
-			actions: [{ label: __('Run'), variant: 'solid', onClick: run }],
-		}"
-	>
+	<Dialog v-model="show" :options="dialogOptions">
 		<template #body-content>
 			<div class="space-y-4">
 				<template v-for="field in fields" :key="field.name">
@@ -16,6 +9,7 @@
 						:type="field.type || 'text'"
 						:placeholder="field.placeholder"
 						:required="field.required"
+						:disabled="hasRun"
 					/>
 				</template>
 				<ErrorMessage
@@ -50,6 +44,17 @@ const resultData = ref<Record<string, unknown> | null>(null)
 const validationError = ref('')
 
 const result = computed(() => (resultData.value ? JSON.stringify(resultData.value, null, 2) : ''))
+// The inputs freeze once the action has run, so the result on screen always reflects them; reopening
+// the dialog starts a fresh run.
+const hasRun = computed(() => resultData.value !== null)
+
+const dialogOptions = computed(() => ({
+	title: action?.label,
+	size: '2xl',
+	actions: hasRun.value
+		? [{ label: __('Close'), variant: 'subtle', onClick: () => (show.value = false) }]
+		: [{ label: __('Run'), variant: 'solid', onClick: run }],
+}))
 
 watch(show, () => {
 	if (show.value) {
