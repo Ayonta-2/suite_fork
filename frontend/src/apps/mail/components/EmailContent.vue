@@ -87,8 +87,14 @@ const handleTrust = () => {
 	emit('trust')
 }
 
-// Listen for keyboard events from iframe
+// Listen for keyboard/swipe events from iframe
 const handleMessage = (event: MessageEvent) => {
+	// Horizontal swipes detected inside the iframe, re-broadcast for the thread pane's
+	// swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
+	if (event.data?.type === 'swipe') {
+		window.dispatchEvent(new CustomEvent('email-swipe', { detail: event.data.direction }))
+		return
+	}
 	if (event.data?.type !== 'keyboard') return
 
 	// Create a synthetic keyboard event in the parent
@@ -259,6 +265,36 @@ const srcdoc = computed(() => {
 						}
 					}
 				});
+
+				// Forward horizontal swipes to the parent — touches never leave the iframe, so
+				// the thread pane's swipe navigation can't see them otherwise. A gesture that
+				// starts on horizontally scrollable content (incl. an overflowing body) means
+				// scroll, not navigate.
+				const inHorizontalScroller = (el) => {
+					const doc = document.documentElement;
+					if (doc.scrollWidth > doc.clientWidth + 1) return true;
+					for (; el && el.nodeType === 1; el = el.parentElement) {
+						if (el.scrollWidth > el.clientWidth + 1) {
+							const overflowX = getComputedStyle(el).overflowX;
+							if (overflowX === 'auto' || overflowX === 'scroll') return true;
+						}
+					}
+					return false;
+				};
+				let swipeOrigin = null;
+				document.addEventListener('touchstart', (e) => {
+					swipeOrigin = e.touches.length === 1 && !inHorizontalScroller(e.target)
+						? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+						: null;
+				}, { passive: true });
+				document.addEventListener('touchend', (e) => {
+					if (!swipeOrigin) return;
+					const dx = e.changedTouches[0].clientX - swipeOrigin.x;
+					const dy = e.changedTouches[0].clientY - swipeOrigin.y;
+					swipeOrigin = null;
+					if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 2) return;
+					window.parent.postMessage({ type: 'swipe', direction: dx < 0 ? 'left' : 'right' }, '*');
+				}, { passive: true });
 				${colors.value.script}
 			<\/script>
 		</body>

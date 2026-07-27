@@ -366,9 +366,11 @@
 					/>
 					<p v-else class="text-ink-gray-5">
 						{{
-							mailbox === 'search'
-								? __('No results found for the given query.')
-								: __('No mails found for the selected filter.')
+							mailbox !== 'search'
+								? __('No mails found for the selected filter.')
+								: hasSearchQuery
+									? __('No results found for the given query.')
+									: __('Search your mail')
 						}}
 					</p>
 				</div>
@@ -390,8 +392,10 @@
 			     over the pane during the slide-out. -->
 			<Teleport to="body" :disabled="!isMobile">
 			<div
-				class="bg-surface-base overflow-y-auto"
+				class="bg-surface-base"
 				:class="{
+					'overflow-y-auto': !isMobile,
+					'overflow-hidden': isMobile,
 					'w-2/3': !isMobile && showReadingPane,
 					'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
 					'fixed inset-0 z-20 transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
@@ -399,7 +403,18 @@
 					'invisible translate-x-full': isMobile && !threadID,
 					hidden: !isMobile && !showReadingPane && !threadID,
 				}"
+				@touchstart.passive="onThreadTouchStart"
+				@touchend.passive="onThreadTouchEnd"
 			>
+				<!-- Mobile keys the wrapper by thread so a swipe pages: the old thread slides out
+				     while the new one (remounted, so it loads fresh) slides in from the swipe side.
+				     Scroll lives on the wrapper there — each thread carries its own scroll position
+				     through the slide. Desktop keys statically: no remount, pane scrolls itself. -->
+				<Transition :name="threadSlide" @after-enter="threadSlide = ''">
+				<div
+					:key="isMobile ? threadPaneKey : 'pane'"
+					:class="{ 'h-full overflow-y-auto': isMobile }"
+				>
 				<MailThread
 					ref="mailThread"
 					:mailbox
@@ -440,6 +455,8 @@
 					@prev-thread="goToThreadByOffset(-1)"
 					@next-thread="goToThreadByOffset(1)"
 				/>
+				</div>
+				</Transition>
 			</div>
 			</Teleport>
 		</template>
@@ -1253,6 +1270,11 @@ const onResetSuccess = () => {
 // account, so each row opens in — and acts within — its own account (see the row-action wrappers).
 const isAllAccountsSearch = computed(() => mailbox === 'search' && route.query.all_accounts != null)
 
+// The mobile Search tab lands on this route with no query yet. There's nothing to fetch —
+// an empty filter would run an unbounded search — so the list area shows a hint instead
+// (all_accounts is scope, not a search condition, so it alone doesn't count as a query).
+const hasSearchQuery = computed(() => Object.keys(route.query).some((k) => k !== 'all_accounts'))
+
 // Null while a search is pending — the count is only known once the fetch resolves (set in the
 // searchResults transform below, reset in resetThreads). Guards the title against a stale or zero count.
 const searchTotal = ref<number | null>(null)
@@ -1471,7 +1493,15 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 	epoch.value++
 	resetSelections()
 	// Clear the previous search's count so the header doesn't show a stale total while the new fetch runs.
-	if (mailbox === 'search') searchTotal.value = null
+	if (mailbox === 'search') {
+		searchTotal.value = null
+		// No query yet (the Search tab's landing state): skip the fetch and settle the count
+		// so nothing sits on "Searching…".
+		if (!hasSearchQuery.value) {
+			searchTotal.value = 0
+			return
+		}
+	}
 	threadsResource.value.reload()
 	if (reloadMailboxes) mailboxes.reload()
 }
@@ -1585,6 +1615,7 @@ const pollForChanges = async () => {
 onMounted(() => {
 	window.addEventListener('keydown', handleKeyDown)
 	window.addEventListener('keyup', handleKeyUp)
+	window.addEventListener('email-swipe', onEmailSwipe)
 	reloadInterval.value = setInterval(pollForChanges, 30000)
 
 	socket.on('new_mail_created', (updatedMailboxes: string[]) => {
@@ -1603,6 +1634,7 @@ onMounted(() => {
 onUnmounted(() => {
 	window.removeEventListener('keydown', handleKeyDown)
 	window.removeEventListener('keyup', handleKeyUp)
+	window.removeEventListener('email-swipe', onEmailSwipe)
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
 	// Leaving the mailbox drops any pending undo so a lingering toast can't undo into another view.
 	setUndoAction(undefined)
@@ -1615,6 +1647,7 @@ const getThreadByOffset = (offset: number, currentThread: string = threadID!) =>
 	threadIDs.value[threadIDs.value.indexOf(currentThread) + offset]
 
 const goToThread = (threadID: string) => {
+	threadSlide.value = pendingThreadSlide
 	if (threadID)
 		router.push({ name: 'mail-mail', params: { accountId, mailbox, threadID }, query: route.query })
 }
@@ -1641,6 +1674,62 @@ const goToThreadByOffset = (offset: number) => {
 	if (next) return goToThread(next)
 	loadMoreThenOpenEdge(offset, 'open')
 }
+
+// Horizontal swipe on the open thread (mobile): left → next thread, right → previous.
+// Judged on touchend (passive) so vertical scrolling is never delayed; a swipe must be
+// decisively horizontal — long enough and at least twice its vertical drift. Swipes over
+// an email body are detected inside the iframe and forwarded (see EmailContent).
+const SWIPE_MIN_X = 64
+let threadTouchOrigin: { x: number; y: number } | null = null
+const onThreadTouchStart = (e: TouchEvent) => {
+	threadTouchOrigin =
+		isMobile.value && threadID && e.touches.length === 1
+			? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+			: null
+}
+const onThreadTouchEnd = (e: TouchEvent) => {
+	if (!threadTouchOrigin) return
+	const dx = e.changedTouches[0].clientX - threadTouchOrigin.x
+	const dy = e.changedTouches[0].clientY - threadTouchOrigin.y
+	threadTouchOrigin = null
+	if (Math.abs(dx) < SWIPE_MIN_X || Math.abs(dx) < Math.abs(dy) * 2) return
+	swipeToThread(dx < 0 ? 1 : -1)
+}
+
+// Shared by the pane's own touch handlers and swipes forwarded out of email iframes —
+// the time guard also dedupes: expanded mails each mount an EmailContent whose message
+// listener re-dispatches the same forwarded swipe.
+let lastSwipeAt = 0
+const swipeToThread = (offset: number) => {
+	if (!isMobile.value || !threadID) return
+	const now = Date.now()
+	if (now - lastSwipeAt < 250) return
+	lastSwipeAt = now
+	// Arms the paging animation for this navigation only — goToThread consumes it, so
+	// taps/arrows (which never set it) keep swapping instantly.
+	pendingThreadSlide = offset > 0 ? 'thread-next' : 'thread-prev'
+	goToThreadByOffset(offset)
+	pendingThreadSlide = ''
+}
+
+const onEmailSwipe = (e: Event) =>
+	swipeToThread((e as CustomEvent).detail === 'left' ? 1 : -1)
+
+// The <Transition> name while a swipe navigation renders; cleared after the slide (and
+// left empty for every other thread change, where the wrapper should just swap).
+const threadSlide = ref('')
+let pendingThreadSlide = ''
+
+// The paging wrapper's key: follows the open thread but freezes on close, so the pane's
+// slide-out still shows the thread it closed on instead of a remounted blank wrapper.
+const threadPaneKey = ref('none')
+watch(
+	() => threadID,
+	(id) => {
+		if (id) threadPaneKey.value = id
+	},
+	{ immediate: true },
+)
 
 const openPendingEdgeThread = () => {
 	if (!pendingEdgeThread) return
@@ -1989,5 +2078,37 @@ const threadCount = computed(() => {
 	100% {
 		transform: translateX(333%);
 	}
+}
+
+/* Swipe paging between threads (mobile): the incoming thread slides in from the swipe
+   side while the outgoing one — lifted out of flow so they overlap — slides away in
+   tandem. Snappier than the pane's open/close slide: paging is a repeated gesture. */
+.thread-next-enter-active,
+.thread-next-leave-active,
+.thread-prev-enter-active,
+.thread-prev-leave-active {
+	transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.thread-next-leave-active,
+.thread-prev-leave-active {
+	position: absolute;
+	inset: 0;
+}
+
+.thread-next-enter-from {
+	transform: translateX(100%);
+}
+
+.thread-next-leave-to {
+	transform: translateX(-100%);
+}
+
+.thread-prev-enter-from {
+	transform: translateX(-100%);
+}
+
+.thread-prev-leave-to {
+	transform: translateX(100%);
 }
 </style>
