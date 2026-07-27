@@ -152,6 +152,22 @@ const srcdoc = computed(() => {
 					line-height: 1.25rem;
 					background-color: ${colors.value.background};
 					margin: 0;
+					/* 'anywhere' (unlike 'break-word') also shrinks min-content width, so an
+					   unbreakable run (nbsp-joined text, long URLs) inside a table cell can't
+					   force the table wider than the viewport. */
+					overflow-wrap: anywhere;
+				}
+
+				/* Emails routinely hardcode widths (width attrs, inline styles); clamp them to the
+				   viewport so the message reflows instead of scrolling sideways. max-width wins over
+				   both the width attribute and inline width, covering every fixed-width variant. */
+				table, td, th, div {
+					max-width: 100% !important;
+				}
+
+				img {
+					max-width: 100% !important;
+					height: auto !important;
 				}
 
 				blockquote {
@@ -192,13 +208,6 @@ const srcdoc = computed(() => {
 					white-space: pre;
 					overflow-x: auto;
 				}
-
-				@media (max-width: 640px) {
-                    /* Only override specific problematic patterns */
-                    table[width="600"], table[width="600px"] {
-                        width: 100% !important;
-                    }
-                }
 			</style>
 			<script> ${iframeResizerChildScript} <\/script>
 		</head>
