@@ -35,7 +35,7 @@
           v-if="showTypeIcon"
           loading="lazy"
           class="h-4 w-auto"
-          :src="getIconUrl(file.file_type)"
+          :src="getEntityIcon(file)"
           :draggable="false"
         />
         <p class="truncate">
@@ -51,7 +51,7 @@
   </div>
 </template>
 <script setup>
-import { getIconUrl, getThumbnailUrl } from '@/apps/drive/utils/files'
+import { getEntityIcon, getThumbnailUrl } from '@/apps/drive/utils/files'
 import { ref, computed } from 'vue'
 const props = defineProps({ file: Object })
 

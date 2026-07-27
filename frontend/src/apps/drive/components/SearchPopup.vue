@@ -24,7 +24,7 @@
           @click="openEntity(entity), (open = false)"
         >
           <div class="flex items-center gap-2 w-full col-span-6">
-            <img class="size-4" :src="getIconUrl(entity.is_folder ? 'Folder' : entity.file_type)" />
+            <img class="size-4" :src="entity.is_folder ? getIconUrl('Folder') : getEntityIcon(entity)" />
             <span class="truncate">{{ entity.file_name }}</span>
           </div>
           <div class="col-span-2 grid grid-flow-col justify-start items-center truncate">
@@ -96,7 +96,7 @@
 </template>
 <script setup>
 import { Dialog, Avatar, createResource } from 'frappe-ui'
-import { getIconUrl, openEntity } from '@/apps/drive/utils/files'
+import { getIconUrl, getEntityIcon, openEntity } from '@/apps/drive/utils/files'
 import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 

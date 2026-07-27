@@ -3,6 +3,7 @@ import json
 import frappe
 from frappe.model.document import Document
 
+from suite.drive.overrides.file import File as DriveFile
 from suite.sheets.doctype.sheet.storage import (
 	MAX_SHEETS_DATA_BYTES,
 	decode_sheets_data,
@@ -50,3 +51,19 @@ class Sheet(Document):
 				json.loads(decode_sheets_data(self.sheets_data))
 			except (ValueError, TypeError):
 				frappe.throw("sheets_data is not valid JSON")
+
+	def after_insert(self):
+		# Back every sheet with a Drive File so it shows up in — and opens
+		# from — Drive, exactly like Writer/Slides docs. The Drive File is a
+		# thin pointer (content_doctype/content_docname); the workbook itself
+		# stays in this doctype. `create_for_doc` no-ops (returns None) when
+		# the creator has no Drive team, so this never blocks sheet creation.
+		self.create_drive_file()
+
+	def create_drive_file(self, parent: str | None = None):
+		return DriveFile.create_for_doc(
+			self,
+			parent=parent or self.flags.get("drive_parent"),
+			mime_type="frappe/sheet",
+			file_type="Spreadsheet",
+		)

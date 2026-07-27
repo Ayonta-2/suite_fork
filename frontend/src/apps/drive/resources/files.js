@@ -299,6 +299,12 @@ export const createDocument = createResource({
   makeParams: (params) => params,
 })
 
+export const createSheet = createResource({
+  method: 'POST',
+  url: 'suite.sheets.api.create_sheet',
+  makeParams: (params) => params,
+})
+
 
 export const move = createResource({
   url: 'suite.drive.api.files.move',

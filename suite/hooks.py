@@ -218,6 +218,15 @@ doc_events = {
 		"on_update": ["suite.drive.overrides.file.sync_content_file"],
 		"on_trash": ["suite.drive.overrides.file.sync_content_file"],
 	},
+	"Sheet": {
+		# Remove the backing Drive File when a sheet is hard-deleted (the nightly
+		# purge / "delete forever" calls frappe.delete_doc). Title-sync is NOT an
+		# on_update handler here: a sheet's title is written via db.set_value
+		# (save_sheet / rename_sheet), which never fires on_update — so those
+		# paths call sync_content_file_title explicitly instead. Soft-trash is
+		# likewise a status flag, handled in the trash API.
+		"on_trash": ["suite.drive.overrides.file.sync_content_file"],
+	},
 	"User": {
 		# Roles are assigned before insert so they are present when Frappe's
 		# User.validate runs — assigning them after insert triggers a spurious

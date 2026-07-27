@@ -72,6 +72,7 @@ MIME_LIST_MAP = {
         "frappe_doc",
     ],
     "Spreadsheet": [
+        "frappe/sheet",
         "application/vnd.ms-excel",
         "link/googlesheets",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
