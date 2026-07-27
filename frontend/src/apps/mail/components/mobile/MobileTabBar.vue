@@ -32,14 +32,14 @@
 					:name="currentFolder.icon"
 					class="h-[22px] w-[22px] shrink-0"
 				/>
-				<Inbox v-else class="h-[22px] w-[22px]" stroke-width="2" />
+				<Inbox v-else class="h-[22px] w-[22px] stroke-2" />
 				<span class="max-w-full truncate px-1 text-[11px] font-medium !leading-3">
 					{{ currentFolder?.label ?? __('Mail') }}
 				</span>
 			</button>
 			<button v-if="screeningEnabled" :class="tabClass(screenerActive)" @click="openScreener">
 				<span class="relative">
-					<Eye class="h-[22px] w-[22px]" stroke-width="2" />
+					<Eye class="h-[22px] w-[22px] stroke-2" />
 					<!-- Raven-style unread dot (RailItemBadge dot recipe): presence, not a count. -->
 					<span
 						v-if="screenerCount"
@@ -49,7 +49,7 @@
 				<span class="text-[11px] font-medium !leading-3">{{ __('Screener') }}</span>
 			</button>
 			<button :class="tabClass(showSearchModal)" @click="showSearchModal = true">
-				<Search class="h-[22px] w-[22px]" stroke-width="2" />
+				<Search class="h-[22px] w-[22px] stroke-2" />
 				<span class="text-[11px] font-medium !leading-3">{{ __('Search') }}</span>
 			</button>
 			<button :class="tabClass(isProfileSheetOpen)" @click="openProfileSheet">

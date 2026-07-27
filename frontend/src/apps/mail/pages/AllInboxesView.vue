@@ -1,4 +1,8 @@
 <template>
+	<!-- Mobile title header — no thread count since the merged view has no total.
+	     The toolbar below carries the bottom border, matching the mailbox structure. -->
+	<MobileTitleHeader v-if="isMobile" with-menu :title="__('All Inboxes')" />
+
 	<!-- Header -->
 	<!-- hidden on mobile: the tab bar's morphing Mail tab carries the folder name, and
 	     the header's actions live in the bar/FAB. Hidden (not v-if) so HeaderActions'
@@ -157,6 +161,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
+import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 
 import type { Thread, UserResource } from '@/apps/mail/types'
 

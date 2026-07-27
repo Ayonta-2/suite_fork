@@ -1,27 +1,26 @@
 <template>
 	<div v-if="screeningEnabled" class="flex h-full flex-col">
-		<!-- On mobile this is the toolbar (same 49px/px-3.5 metrics as the mailbox one)
-		     and it absorbs the count bar's actions; desktop keeps breadcrumbs + count bar. -->
+		<!-- On mobile this is the shared title header (minus the hamburger) and it
+		     absorbs the count bar's actions; desktop keeps breadcrumbs + count bar. -->
 		<header
-			class="flex items-center justify-between border-b px-3 py-2.5 max-sm:h-[49px] max-sm:px-3.5 max-sm:py-0 sm:px-5"
+			class="flex items-center justify-between border-b px-3 py-2.5 max-sm:p-0 sm:px-5"
 		>
-			<div class="flex min-w-0 items-center space-x-2">
-				<span v-if="isMobile" class="flex min-w-0 items-baseline gap-1.5">
-					<span class="truncate text-[15px] !font-semibold">{{ __('Screener') }}</span>
-					<span v-if="senders.data?.length" class="text-ink-gray-5 text-sm">
-						{{ senders.data.length }}
-					</span>
-				</span>
-				<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
-				<Breadcrumbs v-else :items="[{ label: __('Screener') }]" class="-ml-0.5" />
-			</div>
-			<div v-if="isMobile" class="-mr-1.5 flex shrink-0 items-center gap-1">
-				<AdaptiveDropdown :options="bulkOptions" placement="bottom-end">
-					<Button variant="ghost" class="!px-1.5">
-						<template #icon><Ellipsis class="icon" /></template>
-					</Button>
-				</AdaptiveDropdown>
-			</div>
+			<MobileTitleHeader
+				v-if="isMobile"
+				class="min-w-0 flex-1"
+				:title="__('Screener')"
+				:count="senders.data?.length ? String(senders.data.length) : undefined"
+			>
+				<template #actions>
+					<AdaptiveDropdown :options="bulkOptions" placement="bottom-end">
+						<Button variant="ghost" class="!h-10 !w-10 !rounded-full">
+							<template #icon><Ellipsis class="icon" /></template>
+						</Button>
+					</AdaptiveDropdown>
+				</template>
+			</MobileTitleHeader>
+			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
+			<Breadcrumbs v-else :items="[{ label: __('Screener') }]" class="-ml-0.5" />
 			<HeaderActions @reload-mails="senders.reload()" />
 		</header>
 
@@ -46,15 +45,13 @@
 					<!-- nowrap keeps each word+icon parenthetical on one line -->
 					<span class="whitespace-nowrap">
 						{{ __('Allow') }} (<Check
-							class="inline h-3.5 w-3.5 align-[-2.5px]"
-							stroke-width="2"
+							class="inline h-3.5 w-3.5 stroke-2 align-[-2.5px]"
 						/>)
 					</span>
 					{{ __('a sender once and their emails reach your Inbox from then on;') }}
 					<span class="whitespace-nowrap">
 						{{ __('Deny') }} (<X
-							class="inline h-3.5 w-3.5 align-[-2.5px]"
-							stroke-width="2"
+							class="inline h-3.5 w-3.5 stroke-2 align-[-2.5px]"
 						/>)
 					</span>
 					{{ __('sends them to Junk.') }}
@@ -126,15 +123,13 @@
 												<!-- nowrap keeps each word+icon parenthetical on one line -->
 												<span class="whitespace-nowrap">
 													{{ __('Allow') }} (<Check
-														class="inline h-3.5 w-3.5 align-[-2.5px]"
-														stroke-width="2"
+														class="inline h-3.5 w-3.5 stroke-2 align-[-2.5px]"
 													/>)
 												</span>
 												{{ __('a sender and their emails go to your Inbox — now and in the future.') }}
 												<span class="whitespace-nowrap">
 													{{ __('Deny') }} (<X
-														class="inline h-3.5 w-3.5 align-[-2.5px]"
-														stroke-width="2"
+														class="inline h-3.5 w-3.5 stroke-2 align-[-2.5px]"
 													/>)
 												</span>
 												{{ __('sends them to Junk.') }}
@@ -203,7 +198,7 @@
 										:label="__('Deny')"
 										@click.stop="screenOut([sender.from_email])"
 									>
-										<template #prefix><X class="h-4 w-4" stroke-width="1.5" /></template>
+										<template #prefix><X class="h-4 w-4" /></template>
 									</Button>
 									<Button
 										variant="outline"
@@ -211,7 +206,7 @@
 										:label="__('Allow')"
 										@click.stop="allow([sender.from_email])"
 									>
-										<template #prefix><Check class="h-4 w-4" stroke-width="1.5" /></template>
+										<template #prefix><Check class="h-4 w-4" /></template>
 									</Button>
 								</div>
 							</div>
@@ -229,14 +224,14 @@
 										:tooltip="__('Deny')"
 										@click.stop="screenOut([sender.from_email])"
 									>
-										<template #icon><X class="h-4 w-4" stroke-width="1.5" /></template>
+										<template #icon><X class="h-4 w-4" /></template>
 									</Button>
 									<Button
 										variant="outline"
 										:tooltip="__('Allow')"
 										@click.stop="allow([sender.from_email])"
 									>
-										<template #icon><Check class="h-4 w-4" stroke-width="1.5" /></template>
+										<template #icon><Check class="h-4 w-4" /></template>
 									</Button>
 								</div>
 							</div>
@@ -288,7 +283,7 @@
 										placement="bottom-end"
 									>
 										<Button variant="outline" class="-ml-px !rounded-l-none !px-1.5">
-											<template #icon><ChevronDown class="h-4 w-4" stroke-width="1.5" /></template>
+											<template #icon><ChevronDown class="h-4 w-4" /></template>
 										</Button>
 									</Dropdown>
 								</div>
@@ -308,7 +303,7 @@
 											class="!rounded-l-none !px-1.5"
 											style="border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent)"
 										>
-											<template #icon><ChevronDown class="h-4 w-4" stroke-width="1.5" /></template>
+											<template #icon><ChevronDown class="h-4 w-4" /></template>
 										</Button>
 									</Dropdown>
 								</div>
@@ -380,6 +375,7 @@ import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
 
 import type { Mail, MailboxData, ScreeningSender } from '@/apps/mail/types'

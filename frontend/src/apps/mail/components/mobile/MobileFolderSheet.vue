@@ -8,7 +8,7 @@
 				:class="rowClass(allInboxesActive)"
 				@click="go({ name: 'mail-all-inboxes' })"
 			>
-				<Mails class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" stroke-width="1.6" />
+				<Mails class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" />
 				<span class="flex-1 truncate text-left">{{ __('All Inboxes') }}</span>
 				<span v-if="allInboxesUnread.data" class="text-ink-gray-5 text-sm">
 					{{ allInboxesUnread.data }}
@@ -33,7 +33,7 @@
 				</button>
 				<!-- Folder creation lives here now that the mobile drawer is gone. -->
 				<button v-if="group.isCustom" :class="rowClass(false)" @click="createFolder">
-					<Plus class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" stroke-width="1.6" />
+					<Plus class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" />
 					<span class="flex-1 truncate text-left">{{ __('New Folder') }}</span>
 				</button>
 			</template>

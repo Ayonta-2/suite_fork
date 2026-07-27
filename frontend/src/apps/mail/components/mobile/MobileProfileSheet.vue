@@ -17,11 +17,11 @@
 			<div class="border-outline-gray-1 my-2 border-t" />
 
 			<button :class="rowClass" @click="openAppSettings">
-				<Settings class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" stroke-width="1.6" />
+				<Settings class="text-ink-gray-6 h-[18px] w-[18px] shrink-0" />
 				<span class="flex-1 truncate text-left">{{ __('Settings') }}</span>
 			</button>
 			<button :class="rowClass" @click="logout.submit">
-				<LogOut class="text-ink-red-6 h-[18px] w-[18px] shrink-0" stroke-width="1.6" />
+				<LogOut class="text-ink-red-6 h-[18px] w-[18px] shrink-0" />
 				<span class="text-ink-red-6 flex-1 truncate text-left">{{ __('Log Out') }}</span>
 			</button>
 		</div>

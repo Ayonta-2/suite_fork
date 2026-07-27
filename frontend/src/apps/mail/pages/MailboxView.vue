@@ -76,56 +76,45 @@
 					v-model:edit-filter="searchEditFilter"
 				/>
 
-				<!-- Mobile toolbar (design: 1·Inbox + 5·Selection): folder name leads and opens
-				     the folder sheet; filter is a funnel icon until active, then a dismissible
-				     chip. In selection mode it swaps to ✕ / count / Select All. -->
-				<div
-					v-if="isMobile"
-					class="relative flex h-14 shrink-0 items-center gap-1.5 border-b px-3.5"
-				>
-					<template v-if="selections.length">
-						<Button variant="ghost" class="-ml-1.5 !h-9 !w-9" @click="toggleSelectAll(false)">
-							<template #icon><X class="icon !h-[18px] !w-[18px]" /></template>
+				<!-- Mobile header: title row (folders · mailbox + count · search · compose) over
+				     a toolbar row (filter selector on the left, filter/refresh pills on the
+				     right). In selection mode the toolbar row swaps to ✕ / count / Select All. -->
+				<div v-if="isMobile" class="relative shrink-0 border-b">
+					<MobileTitleHeader
+						with-menu
+						:title="mailboxName"
+						:count="threadCount ? __('{0} threads', [threadCount]) : undefined"
+					/>
+
+					<!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
+					<div v-if="selections.length" class="flex h-12 items-center gap-1.5 px-3">
+						<Button variant="ghost" class="!h-10 !w-10 !rounded-full" @click="toggleSelectAll(false)">
+							<template #icon><X class="icon !h-[22px] !w-[22px]" /></template>
 						</Button>
-						<span class="flex-1 truncate text-base !font-semibold">
+						<span class="flex-1 truncate text-base !font-medium">
 							{{ __('{0} selected', [String(selections.length)]) }}
 						</span>
 						<button
-							class="text-ink-gray-8 shrink-0 text-[15px] !font-semibold"
+							class="text-ink-gray-8 text-md shrink-0 !font-medium"
 							@click="toggleSelectAll(!isAllSelected)"
 						>
 							{{ isAllSelected ? __('Unselect All') : __('Select All') }}
 						</button>
-					</template>
-					<template v-else>
-						<button
-							class="flex min-w-0 items-center gap-1.5 text-lg !font-semibold"
-							@click="openFolderSheet"
-						>
-							<span class="truncate">{{ mailboxName }}</span>
-							<ChevronDown class="text-ink-gray-5 h-5 w-5 shrink-0" stroke-width="2" />
-						</button>
-						<span class="flex-1" />
-						<!-- Applied filter: visible and dismissible. Hidden filters lose mail. -->
-						<button
-							v-if="filter && mailbox !== 'search'"
-							class="bg-surface-gray-2 text-ink-gray-7 flex max-w-40 items-center gap-1 rounded-full px-3 py-1.5 text-[13px] !font-semibold"
-							@click="setFilter(null)"
-						>
-							<span class="truncate">{{ title }}</span>
-							<X class="h-3 w-3 shrink-0" stroke-width="2" />
-						</button>
+					</div>
+					<div v-else class="flex h-12 items-center px-4">
+						<!-- The selector label carries the active filter ("Unread Mails", …);
+						     picking "All" in the sheet clears it, so no dismissal chip needed. -->
 						<AdaptiveDropdown
-							v-else-if="mailbox !== 'search'"
+							v-if="mailbox !== 'search'"
 							:options="FILTER_OPTIONS"
 							:title="__('Filter')"
-							placement="bottom-end"
 						>
-							<Button variant="ghost" class="-mr-1.5 !h-9 !w-9" :tooltip="__('Filter')">
-								<template #icon><Funnel class="icon !h-[18px] !w-[18px]" /></template>
-							</Button>
+							<button class="flex min-w-0 items-center gap-1.5 text-base !font-semibold">
+								<span class="truncate">{{ title }}</span>
+								<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
+							</button>
 						</AdaptiveDropdown>
-					</template>
+					</div>
 
 					<!-- Loading bar -->
 					<div
@@ -462,7 +451,7 @@
 				class="text-ink-gray-7 flex flex-col items-center justify-center gap-1 px-2 text-[11px] !font-semibold"
 				@click="action.onClick"
 			>
-				<component :is="action.icon" class="h-5 w-5" stroke-width="1.8" />
+				<component :is="action.icon" class="h-5 w-5" />
 				<span class="max-w-20 truncate">{{ stripShortcutHint(action.label) }}</span>
 			</button>
 			<button
@@ -470,7 +459,7 @@
 				class="text-ink-gray-7 flex flex-col items-center justify-center gap-1 px-2 text-[11px] !font-semibold"
 				@click="showMoreActions = true"
 			>
-				<Ellipsis class="h-5 w-5" stroke-width="1.8" />
+				<Ellipsis class="h-5 w-5" />
 				<span>{{ __('More') }}</span>
 			</button>
 		</div>
@@ -479,22 +468,22 @@
 			v-model:open="showMoreActions"
 			:options="moreSelectionOptions"
 			:title="__('More')"
-		><span /></AdaptiveDropdown>
+		/>
 		<AdaptiveDropdown
 			v-model:open="showMoveToSheet"
 			:options="moveToOptions"
 			:title="__('Move To')"
-		><span /></AdaptiveDropdown>
+		/>
 		<AdaptiveDropdown
 			v-model:open="showAddToSheet"
 			:options="addToOptions"
 			:title="__('Add To')"
-		><span /></AdaptiveDropdown>
+		/>
 		<AdaptiveDropdown
 			v-model:open="showRemoveFromSheet"
 			:options="removeFromOptions"
 			:title="__('Remove From')"
-		><span /></AdaptiveDropdown>
+		/>
 	</div>
 	</Teleport>
 
@@ -511,7 +500,6 @@ import {
 	CircleAlert,
 	CircleCheck,
 	Ellipsis,
-	Filter as Funnel,
 	FolderInput,
 	FolderMinus,
 	FolderPlus,
@@ -548,7 +536,6 @@ import {
 	stripShortcutHint,
 } from '@/apps/mail/utils'
 import {
-	useFolderSheet,
 	useMobileSelection,
 	useScreenSize,
 	useUndo,
@@ -561,6 +548,7 @@ import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import ScreenedEmailAddressModal from '@/apps/mail/components/Modals/ScreenedEmailAddressModal.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
@@ -583,7 +571,6 @@ const { accountId, mailbox, threadID } = defineProps<{
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
-const { openFolderSheet } = useFolderSheet()
 const { setMobileSelectionActive } = useMobileSelection()
 const { undo, setUndoAction } = useUndo()
 
@@ -1938,6 +1925,11 @@ const title = computed(() => {
 const showSearchModal = ref(false)
 const showSearchAdvanced = ref(false)
 const searchEditFilter = ref('')
+
+const threadCount = computed(() => {
+	const count = mailboxObj.value?.total_threads
+	return count ? count.toLocaleString() : ''
+})
 </script>
 
 <style scoped>

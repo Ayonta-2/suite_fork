@@ -24,7 +24,6 @@
 	>
 		<Star
 			class="text-ink-gray-5 h-5 w-5"
-			stroke-width="1.5"
 			:style="flagged ? 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' : ''"
 		/>
 	</button>

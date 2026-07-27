@@ -4,8 +4,10 @@
 	</Dropdown>
 	<template v-else>
 		<!-- inline-flex (not `contents`): display:contents elements ignore margins,
-		     which broke parents' space-x-* spacing between triggers. -->
-		<span class="inline-flex" @click="open = true"><slot /></span>
+		     which broke parents' space-x-* spacing between triggers. Skipped entirely
+		     for trigger-less (v-model:open only) usage — even an empty span adds a
+		     line box to the parent. -->
+		<span v-if="$slots.default" class="inline-flex" @click="open = true"><slot /></span>
 		<BottomSheet v-model:open="open" :title="title">
 			<div class="px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
 				<template v-for="(group, gi) in groups" :key="gi">
@@ -22,7 +24,7 @@
 						<component
 							:is="iconOf(item.icon)"
 							v-if="item.icon"
-							class="h-[18px] w-[18px] shrink-0"
+							class="h-4 w-4 shrink-0"
 							:class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-6'"
 						/>
 						<span class="flex-1 truncate text-left">{{ sheetLabel(item.label) }}</span>

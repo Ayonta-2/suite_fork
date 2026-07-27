@@ -2,13 +2,14 @@
 	<component
 		:is="to ? RouterLink : 'div'"
 		:to="to"
-		class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 border-b px-3.5 py-2.5 sm:space-x-5 sm:px-5"
+		class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 border-b px-3.5 py-2.5 [-webkit-touch-callout:none] sm:space-x-5 sm:px-5"
 		:class="{ '!bg-surface-blue-1': isSelected || isTouching, '!py-2': isFullWidth }"
 		@mouseenter="isHovered = true"
 		@mouseleave="isHovered = false"
 		@touchstart="onTouchStart"
 		@touchend="clearTouchTimer"
 		@touchcancel="clearTouchTimer"
+		@contextmenu="onContextMenu"
 		@click.capture="onRowClick"
 	>
 		<!-- Selection column: checkbox on desktop, sender avatar on mobile or where the list has no
@@ -211,6 +212,14 @@ const clearTouchTimer = () => {
 		clearTimeout(touchTimer)
 		touchTimer = null
 	}
+}
+
+// The row is an anchor, so a long press also summons the browser's link menu on top of the
+// selection the row already handles. Suppress it for touch presses only — a desktop right-click
+// keeps its menu. (iOS shows a callout instead of firing contextmenu; -webkit-touch-callout on
+// the row covers that.)
+const onContextMenu = (e: Event) => {
+	if (isTouching.value) e.preventDefault()
 }
 
 const onTouchMove = (e: TouchEvent) => {

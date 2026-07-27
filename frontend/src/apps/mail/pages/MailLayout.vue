@@ -172,6 +172,16 @@ body.mail-app h2 {
 	color: var(--ink-gray-6);
 }
 
+/* The mail app's icon weight is 1.5 (.icon, FeatherIcon's default, and
+   frappe-ui's ~icons pipeline all agree), but icons imported straight from
+   lucide-vue-next ship stroke-width 2 — so default every lucide svg to 1.5
+   instead of repeating the attribute at each call site. :where() keeps the
+   rule at zero specificity, so an explicit stroke-* utility (e.g. stroke-2
+   on the tab bar) still wins. Covers teleported menus/sheets too. */
+:where(body.mail-app svg.lucide) {
+	stroke-width: 1.5;
+}
+
 /* BottomSheets hug their content instead of frappe-ui's fixed 70vh well — a
    five-row menu shouldn't own the whole screen. The old height stays as the
    scroll cap, so tall content (the folder list) behaves exactly as before.
