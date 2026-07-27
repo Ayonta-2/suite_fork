@@ -2135,20 +2135,18 @@ def _report_row(direction: str, report: dict) -> dict:
 
 
 def _report_filter(kind: str, direction: str, search: str | None) -> dict | None:
-	"""Maps the search box onto the one filter the report type supports, if any.
+	"""Maps the search box onto the filter DMARC reports support; other kinds are unfiltered.
 
-	The two families accept different filters: received reports only take Stalwart's free-text
-	``text`` filter (it matches the sender/recipient addresses and the reported domain, not the
-	subject), while the reports Stalwart generates only take an exact ``domain`` match — and ARF
-	has no domain at all. Filtering on anything else is rejected as ``unsupportedFilter``.
+	Only DMARC is searchable, and each direction takes a different filter: received reports take
+	Stalwart's free-text ``text`` filter (matching the sender/recipient addresses and the reported
+	domain, not the subject), while the reports Stalwart generates take an exact ``domain`` match.
+	Anything else is rejected as ``unsupportedFilter``.
 	"""
 
 	search = (search or "").strip()
-	if not search:
+	if not search or kind != "dmarc":
 		return None
-	if direction == "inbound":
-		return {"text": search}
-	return {"domain": search} if kind in ("dmarc", "tls") else None
+	return {"text": search} if direction == "inbound" else {"domain": search}
 
 
 @frappe.whitelist()

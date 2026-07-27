@@ -78,8 +78,8 @@ const showDelete = ref(false)
 const listView = useTemplateRef<{ selections?: Set<string>; toggleAllRows?: () => void }>('listView')
 
 const KIND_LABELS: Record<string, string> = { dmarc: 'DMARC', tls: 'TLS', arf: 'ARF' }
-// Received reports support a free-text search; generated ones only an exact domain match, which ARF lacks.
-const supportsSearch = computed(() => direction === 'inbound' || kind === 'dmarc' || kind === 'tls')
+// Only DMARC reports are searchable: a free-text match on the received ones, a domain match on ours.
+const supportsSearch = computed(() => kind === 'dmarc')
 const searchPlaceholder = computed(() =>
 	direction === 'inbound' ? __('Search by sender, recipient or domain') : __('Filter by domain'),
 )
