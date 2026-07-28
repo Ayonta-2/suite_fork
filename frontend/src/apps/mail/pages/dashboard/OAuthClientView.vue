@@ -86,7 +86,7 @@ import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, FeatherIcon, createResource, usePageMeta } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
-import dayjs from '@/apps/mail/utils/dayjs'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
@@ -112,7 +112,7 @@ const client = createResource({
 	onError: () => router.replace({ name: 'mail-oauth-clients' }),
 })
 
-const formatDate = (value?: string | null) => (value ? dayjs(value).format('MMM D YYYY, h:mm A') : '')
+const formatDate = (value?: string | null) => formatDateTime(value)
 const createdAt = computed(() => formatDate(client.data?.created_at))
 const expiresAt = computed(() => formatDate(client.data?.expires_at))
 

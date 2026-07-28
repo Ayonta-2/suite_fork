@@ -56,7 +56,7 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 
-import dayjs from '@/apps/mail/utils/dayjs'
+import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import AddGroupModal from '@/apps/mail/components/Modals/AddGroupModal.vue'
 
@@ -89,5 +89,5 @@ const LIST_OPTIONS = {
 	getRowRoute: (row: GroupRow) => ({ name: 'mail-group', params: { groupId: row.id } }),
 }
 
-const formatCreatedAt = (createdAt?: string) => (createdAt ? dayjs(createdAt).fromNow() : '-')
+const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '-'
 </script>

@@ -43,7 +43,7 @@ import { useRouter } from 'vue-router'
 import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
-import dayjs from '@/apps/mail/utils/dayjs'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
@@ -90,7 +90,7 @@ const reportJson = computed(() => JSON.stringify(data.value?.report ?? {}, null,
 const joinAddresses = (addresses?: string[]) => (addresses ?? []).join(', ')
 const recipients = computed(() => joinAddresses(data.value?.to))
 const reportRecipients = computed(() => joinAddresses(data.value?.rua))
-const formatDate = (value?: string | null) => (value ? dayjs(value).format('MMM D YYYY, h:mm A') : '—')
+const formatDate = (value?: string | null) => formatDateTime(value) || '—'
 
 const breadcrumbs = computed(() => [
 	{ label: listTitle.value, route: `/mail/dashboard/reports/${direction}/${kind}` },

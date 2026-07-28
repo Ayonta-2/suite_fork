@@ -58,6 +58,7 @@ import { useRouter } from 'vue-router'
 import { Button, Dialog, ErrorMessage, FeatherIcon, FormControl, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { fromLocalInput } from '@/apps/mail/utils/datetime'
 
 const show = defineModel<boolean>()
 const router = useRouter()
@@ -95,7 +96,7 @@ const addClient = createResource({
 		redirect_uris: values(redirectUris.value),
 		secret: secret.value?.trim() || undefined,
 		logo: logo.value?.trim() || undefined,
-		expires_at: expiresAt.value || undefined,
+		expires_at: fromLocalInput(expiresAt.value) || undefined,
 	}),
 	onSuccess: (data: string) => {
 		if (!data) return

@@ -63,7 +63,7 @@ import {
 } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
-import dayjs from '@/apps/mail/utils/dayjs'
+import { fromNow as formatFromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 
@@ -105,7 +105,7 @@ watch(page, reports.reload)
 // Re-fetch when navigating between report kinds (same component, different props).
 watch(() => [kind, direction], () => ((page.value = 1), (search.value = ''), reports.reload()))
 
-const fromNow = (value?: string) => (value ? dayjs(value).fromNow() : '—')
+const fromNow = (value?: string) => formatFromNow(value) || '—'
 
 const columns = computed(() =>
 	direction === 'inbound'

@@ -3,7 +3,7 @@ from typing import Literal
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, get_url, now_datetime
+from frappe.utils import cint, get_datetime, get_system_timezone, get_url, now_datetime
 from frappe.utils.data import sha256_hash
 
 from suite.mail.api.admin import add_member
@@ -191,6 +191,7 @@ def get_user_info() -> dict | None:
 			USER.user_type,
 			USER.username,
 			USER.api_key,
+			USER.time_zone,
 			USER_SETTINGS.color_scheme,
 			USER_SETTINGS.group_messages_by,
 			USER_SETTINGS.show_reading_pane,
@@ -203,6 +204,10 @@ def get_user_info() -> dict | None:
 		return None
 
 	data = result[0]
+
+	# The APIs speak UTC, so the interface needs a zone to render those timestamps in. The User's own
+	# choice wins; sites that never set one fall back to the system zone.
+	data.time_zone = data.time_zone or get_system_timezone()
 
 	data.is_suite_admin = is_suite_admin(user)
 	data.is_system_manager = is_system_manager(user)

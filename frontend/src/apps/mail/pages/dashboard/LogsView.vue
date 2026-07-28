@@ -73,7 +73,7 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 
-import dayjs from '@/apps/mail/utils/dayjs'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 
@@ -126,7 +126,7 @@ const goToPage = (next: number) => {
 watchDebounced(() => search.value, () => (resetPaging(), logs.reload()), { debounce: 300 })
 watch(page, logs.reload)
 
-const formatDate = (value?: string) => (value ? dayjs(value).format('MMM D, h:mm:ss A') : '—')
+const formatDate = (value?: string) => formatDateTime(value, 'MMM D, h:mm:ss A') || '—'
 
 // Mirrors the colours the server's TracingLevel enum assigns to each level.
 const LEVEL_THEMES: Record<string, string> = {

@@ -75,7 +75,7 @@ import {
 } from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
-import dayjs from '@/apps/mail/utils/dayjs'
+import { fromNow as formatFromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 
@@ -117,7 +117,7 @@ watch(page, messages.reload)
 const selectedIds = () => Array.from(listView.value?.selections || [])
 const currentFilter = () => ({ search: search.value, sender: sender.value })
 
-const fromNow = (value?: string) => (value ? dayjs(value).fromNow() : '—')
+const fromNow = (value?: string) => formatFromNow(value) || '—'
 const recipientLabel = (row: QueueRow) => {
 	if (!row.recipients.length) return '—'
 	const [first, ...rest] = row.recipients

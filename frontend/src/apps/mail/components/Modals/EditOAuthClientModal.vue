@@ -29,6 +29,7 @@ import { ref, watch } from 'vue'
 import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 
 type ClientData = {
 	id: string
@@ -54,8 +55,7 @@ watch(show, () => {
 		description.value = client.description || ''
 		secret.value = ''
 		logo.value = client.logo || ''
-		// The datetime-local input needs "YYYY-MM-DDTHH:mm"; the stored value is a UTCDateTime.
-		expiresAt.value = client.expires_at ? client.expires_at.slice(0, 16) : ''
+		expiresAt.value = toLocalInput(client.expires_at)
 		updateClient.reset()
 	}
 })
@@ -68,7 +68,7 @@ const updateClient = createResource({
 		description: description.value?.trim() || '',
 		secret: secret.value?.trim() || undefined,
 		logo: logo.value?.trim() ?? '',
-		expires_at: expiresAt.value || '',
+		expires_at: fromLocalInput(expiresAt.value),
 	}),
 	onSuccess: () => {
 		show.value = false

@@ -56,7 +56,7 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 
-import dayjs from '@/apps/mail/utils/dayjs'
+import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import AddOAuthClientModal from '@/apps/mail/components/Modals/AddOAuthClientModal.vue'
 
@@ -89,5 +89,5 @@ const LIST_OPTIONS = {
 	getRowRoute: (row: ClientRow) => ({ name: 'mail-oauth-client', params: { clientId: row.id } }),
 }
 
-const formatCreatedAt = (createdAt?: string) => (createdAt ? dayjs(createdAt).fromNow() : '-')
+const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '-'
 </script>

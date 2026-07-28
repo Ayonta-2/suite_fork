@@ -55,7 +55,7 @@ import { useRouter } from 'vue-router'
 import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
-import dayjs from '@/apps/mail/utils/dayjs'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
@@ -93,7 +93,7 @@ const signature = createResource({
 
 const data = computed(() => signature.data as DkimData | undefined)
 
-const formatDate = (value?: string | null) => (value ? dayjs(value).format('MMM D YYYY, h:mm A') : '')
+const formatDate = (value?: string | null) => formatDateTime(value)
 
 const stageLabel = computed(() => {
 	const stage = data.value?.stage

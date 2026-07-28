@@ -90,6 +90,7 @@ import { computed, reactive, watch } from 'vue'
 import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 
 type Option = { value: string; label: string }
 type Recipient = {
@@ -141,8 +142,7 @@ const blank = () => ({
 })
 const form = reactive<Record<string, string>>(blank())
 
-// datetime-local wants "YYYY-MM-DDTHH:mm"; stored values are UTCDateTime strings.
-const toLocal = (value?: string) => (value ? value.slice(0, 16) : '')
+const toLocal = toLocalInput
 const str = (value: unknown) => (value === null || value === undefined ? '' : String(value))
 
 const statusOptions = computed(() => options.status_types)
@@ -191,12 +191,12 @@ const updateRecipient = createResource({
 		response_code: hasResponse.value ? form.response_code : '',
 		enhanced_code: hasResponse.value ? form.enhanced_code.trim() : '',
 		message: hasResponse.value ? form.message.trim() : '',
-		next_retry: form.next_retry,
+		next_retry: fromLocalInput(form.next_retry),
 		retry_count: form.retry_count,
-		next_notification: form.next_notification,
+		next_notification: fromLocalInput(form.next_notification),
 		notify_count: form.notify_count,
 		expiry_type: form.expiry_type,
-		expires_at: form.expiry_type === 'Ttl' ? form.expires_at : '',
+		expires_at: form.expiry_type === 'Ttl' ? fromLocalInput(form.expires_at) : '',
 		expires_attempts: form.expiry_type === 'Attempts' ? form.expires_attempts : '',
 	}),
 	onSuccess: () => {

@@ -52,6 +52,8 @@ export interface User {
 	username: string | null
 	user_image: string | null
 	api_key: string | null
+	// The zone every timestamp is shown in and typed in; see utils/datetime.ts.
+	time_zone: string
 	user_settings?: string
 	color_scheme?: COLOR_SCHEME
 	group_messages_by?: 'None' | 'Day' | 'Month'

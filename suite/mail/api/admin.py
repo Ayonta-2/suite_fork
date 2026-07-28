@@ -7,7 +7,7 @@ from typing import Any, Literal
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Max
-from frappe.utils import cint, flt, get_datetime, validate_email_address
+from frappe.utils import cint, flt, validate_email_address
 from pypika import Case, Order
 
 from suite.mail.api.utils import get_avatar_url
@@ -46,10 +46,12 @@ from suite.mail.stalwart.oauth import OAuthClient
 from suite.mail.stalwart.role import Role
 from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
+from suite.mail.utils.dt import from_utc_z, to_utc_z
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils import execute_with_logging
+from suite.utils.dt import get_utc_now
 from suite.utils.user import is_suite_admin, is_system_manager, is_user_enabled
 
 
@@ -325,7 +327,8 @@ def add_member(
 	account_request.invited_by = frappe.session.user
 	account_request.backup_email = backup_email
 	account_request.send_invite = cint(send_invite)
-	account_request.expires_at = expires_at
+	# Arrives as UTC like every other timestamp; the doctype field holds system time.
+	account_request.expires_at = from_utc_z(expires_at)
 	# Insert first: create permission on Mail Account Request is what gates this endpoint, so the
 	# action is only authorized (and worth recording) once the request exists.
 	account_request.insert()
@@ -385,6 +388,8 @@ def get_members(
 
 		user["is_admin"] = bool(user.get("is_admin"))
 		user["enabled"] = bool(user.get("enabled"))
+		# Stored in system time; the API speaks UTC, like every other timestamp it returns.
+		user["last_active"] = to_utc_z(user.get("last_active"))
 
 	return users
 
@@ -449,8 +454,9 @@ def get_member(member_id: str) -> dict:
 		"full_name": user.full_name,
 		"user_image": user.user_image or get_avatar_url(user.name),
 		"description": user.full_name,
-		"last_active": user.last_active,
-		"joined_on": user.creation,
+		# Both are stored in system time; the API speaks UTC.
+		"last_active": to_utc_z(user.last_active),
+		"joined_on": to_utc_z(user.creation),
 		"enabled": bool(user.enabled),
 		"is_admin": is_admin,
 		"email_addresses": [],
@@ -1576,8 +1582,7 @@ def add_oauth_client(
 
 	uris = _listify(redirect_uris)
 	contact_list = _listify(contacts)
-	# Stalwart expects a UTCDateTime; the date picker sends "YYYY-MM-DD".
-	expires = get_datetime(expires_at).strftime("%Y-%m-%dT%H:%M:%SZ") if expires_at else None
+	expires = to_utc_z(expires_at)
 
 	def _create() -> str:
 		return get_oauth_client_service().create(
@@ -1631,8 +1636,8 @@ def update_oauth_client(
 	if logo is not None:
 		patch["logo"] = logo.strip() or None
 	if expires_at is not None:
-		# Stalwart expects a UTCDateTime; the date picker sends "YYYY-MM-DD". Blank clears it.
-		patch["expiresAt"] = get_datetime(expires_at).strftime("%Y-%m-%dT%H:%M:%SZ") if expires_at else None
+		# Blank clears the expiry.
+		patch["expiresAt"] = to_utc_z(expires_at)
 
 	if patch:
 		get_oauth_client_service().update(oauth_client_id, patch)
@@ -1921,9 +1926,9 @@ def get_queue_recipient_options() -> dict:
 
 
 def _utc_datetime(value: str | None) -> str | None:
-	"""Converts a picker value (``YYYY-MM-DDTHH:mm``) to a Stalwart UTCDateTime, or ``None``."""
+	"""Normalizes a timestamp the API was called with to the UTCDateTime Stalwart stores."""
 
-	return get_datetime(value).strftime("%Y-%m-%dT%H:%M:%SZ") if value else None
+	return to_utc_z(value)
 
 
 def _status_object(
@@ -2062,12 +2067,12 @@ def add_queued_recipient(message_id: str, email: str) -> None:
 	if not email:
 		frappe.throw(_("Recipient email is required."))
 
-	now = frappe.utils.now_datetime()
+	now = get_utc_now()
 	recipient = {
 		"status": {"@type": "Scheduled"},
-		"retryDue": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-		"notifyDue": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-		"expires": {"@type": "Ttl", "expiresAt": (now + timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")},
+		"retryDue": to_utc_z(now),
+		"notifyDue": to_utc_z(now),
+		"expires": {"@type": "Ttl", "expiresAt": to_utc_z(now + timedelta(days=5))},
 	}
 	get_queued_message_service().update(message_id, {f"recipients/{email}": recipient})
 

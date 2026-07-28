@@ -140,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import {
 	Button,
 	Combobox,
@@ -154,16 +154,11 @@ import {
 } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { fromLocalInput, toLocalInput, utcFromNow } from '@/apps/mail/utils/datetime'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import { userStore } from '@/apps/mail/stores/user'
 
 const show = defineModel<boolean>()
-
-type DayjsFn = () => {
-	add: (value: number, unit: string) => { format: (fmt: string) => string }
-}
-
-const dayjs = inject<DayjsFn>('$dayjs')
 
 const { domains } = userStore()
 
@@ -175,7 +170,7 @@ const ROLE_OPTIONS = [
 const defaultAccountRequest = {
 	role: 'user',
 	send_invite: true,
-	expires_at: dayjs?.().add(1, 'day').format('YYYY-MM-DDTHH:mm') || '',
+	expires_at: '',
 	backup_email: '',
 	// Blank hands the choice to the server, which falls back to the configured default.
 	quota_gb: '',
@@ -213,7 +208,11 @@ watch(
 )
 watch(show, () => {
 	if (show.value) {
-		Object.assign(accountRequest, defaultAccountRequest)
+		// Shown and typed in the user's zone (converted to UTC on submit), and seeded here rather
+		// than in the default shape so a dialog opened later gets a fresh expiry.
+		Object.assign(accountRequest, defaultAccountRequest, {
+			expires_at: toLocalInput(utcFromNow(1, 'day')),
+		})
 		emails.value = [{ username: '', domain: '' }]
 		groupIds.value = []
 		mailingListIds.value = []
@@ -238,6 +237,7 @@ const addMember = createResource({
 			aliases,
 			groups: groupIds.value,
 			mailing_lists: mailingListIds.value,
+			expires_at: fromLocalInput(accountRequest.expires_at),
 			quota_gb: accountRequest.quota_gb === '' ? null : Number(accountRequest.quota_gb),
 			// Blank means "server default" for both, which the API spells as null.
 			locale: accountRequest.locale || null,

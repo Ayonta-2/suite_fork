@@ -220,7 +220,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
 	Button,
@@ -234,6 +234,7 @@ import {
 } from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import AddMemberEmailModal from '@/apps/mail/components/Modals/AddMemberEmailModal.vue'
 import AddMemberGroupsModal from '@/apps/mail/components/Modals/AddMemberGroupsModal.vue'
@@ -245,7 +246,6 @@ import EditMemberModal from '@/apps/mail/components/Modals/EditMemberModal.vue'
 import EditMemberQuotaModal from '@/apps/mail/components/Modals/EditMemberQuotaModal.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 
-type DayjsFn = (value?: string | Date | null) => { format: (fmt: string) => string }
 type QuotaUsage = {
 	total: number
 	used: number
@@ -270,7 +270,6 @@ type MemberData = {
 
 const { memberId } = defineProps<{ memberId: string }>()
 
-const dayjs = inject<DayjsFn>('$dayjs')
 const router = useRouter()
 const { localeLabel } = useAccountOptions()
 
@@ -354,8 +353,7 @@ const badge = computed<{ label: string; theme: 'green' | 'gray' }>(() =>
 		: { label: __('Disabled'), theme: 'gray' },
 )
 
-const formatDate = (value?: string | null) =>
-	value && dayjs ? dayjs(value).format('MMM D YYYY, h:mm A') : ''
+const formatDate = (value?: string | null) => formatDateTime(value)
 
 const lastActive = computed(() => formatDate(data.value?.last_active) || __('Never'))
 const joinedOn = computed(() => formatDate(data.value?.joined_on))

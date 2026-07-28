@@ -24,7 +24,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { createResource, usePageMeta } from 'frappe-ui'
 
-import dayjs from '@/apps/mail/utils/dayjs'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
@@ -53,7 +53,7 @@ const log = createResource({
 })
 
 const data = computed(() => log.data as LogData)
-const formatDate = (value?: string) => (value ? dayjs(value).format('MMM D YYYY, h:mm:ss A') : '—')
+const formatDate = (value?: string) => formatDateTime(value, 'MMM D YYYY, h:mm:ss A') || '—'
 
 const breadcrumbs = computed(() => [
 	{ label: __('Logs'), route: '/mail/dashboard/logs' },

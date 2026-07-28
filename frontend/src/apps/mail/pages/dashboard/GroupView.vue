@@ -169,7 +169,7 @@
 	<Dialog v-model="showDelete" :options="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
 	Button,
@@ -184,6 +184,7 @@ import {
 } from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import AddGroupEmailModal from '@/apps/mail/components/Modals/AddGroupEmailModal.vue'
 import AddGroupMembersModal from '@/apps/mail/components/Modals/AddGroupMembersModal.vue'
@@ -193,7 +194,6 @@ import EditGroupModal from '@/apps/mail/components/Modals/EditGroupModal.vue'
 import EditGroupQuotaModal from '@/apps/mail/components/Modals/EditGroupQuotaModal.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 
-type DayjsFn = (value?: string | Date | null) => { format: (fmt: string) => string }
 type QuotaUsage = {
 	total: number
 	used: number
@@ -216,7 +216,6 @@ type GroupData = {
 
 const { groupId } = defineProps<{ groupId: string }>()
 
-const dayjs = inject<DayjsFn>('$dayjs')
 const router = useRouter()
 const { localeLabel } = useAccountOptions()
 
@@ -253,9 +252,7 @@ const filteredMembers = computed(() => {
 	return q ? members.filter((m) => (m.email || '').toLowerCase().includes(q)) : members
 })
 
-const createdAt = computed(() =>
-	data.value?.created_at && dayjs ? dayjs(data.value.created_at).format('MMM D YYYY, h:mm A') : '',
-)
+const createdAt = computed(() => formatDateTime(data.value?.created_at))
 
 const breadcrumbs = computed(() => [
 	{ label: __('Groups'), route: '/mail/dashboard/groups' },

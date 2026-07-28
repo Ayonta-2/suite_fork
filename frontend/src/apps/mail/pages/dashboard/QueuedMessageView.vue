@@ -88,7 +88,7 @@ import { useRouter } from 'vue-router'
 import { Badge, Button, Dialog, Dropdown, FeatherIcon, createResource, usePageMeta } from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
-import dayjs from '@/apps/mail/utils/dayjs'
+import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
@@ -161,7 +161,7 @@ const STATUS_LABELS: Record<string, string> = {
 	TemporaryFailure: __('Temporary Failure'),
 	PermanentFailure: __('Permanent Failure'),
 }
-const formatDate = (value?: string | null) => (value ? dayjs(value).format('MMM D YYYY, h:mm A') : '—')
+const formatDate = (value?: string | null) => formatDateTime(value) || '—'
 const statusLabel = (type?: string) => STATUS_LABELS[type || ''] || type || __('Scheduled')
 const statusTheme = (type?: string) => {
 	if (type === 'Completed') return 'green'
@@ -171,7 +171,7 @@ const statusTheme = (type?: string) => {
 }
 const recipientSummary = (r: Recipient) => {
 	const parts = [__('Retries: {0}').replace('{0}', String(r.retry_count ?? 0))]
-	if (r.next_retry) parts.push(__('Next retry {0}').replace('{0}', dayjs(r.next_retry).fromNow()))
+	if (r.next_retry) parts.push(__('Next retry {0}').replace('{0}', fromNow(r.next_retry)))
 	return parts.join(' · ')
 }
 

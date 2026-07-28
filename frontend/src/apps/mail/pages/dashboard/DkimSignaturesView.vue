@@ -40,7 +40,7 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 
-import dayjs from '@/apps/mail/utils/dayjs'
+import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 
 usePageMeta(() => ({ title: __('DKIM Signatures') }))
@@ -67,5 +67,5 @@ const LIST_OPTIONS = {
 	getRowRoute: (row: DkimRow) => ({ name: 'mail-dkim-signature', params: { signatureId: row.id } }),
 }
 
-const formatCreatedAt = (createdAt?: string) => (createdAt ? dayjs(createdAt).fromNow() : '-')
+const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '-'
 </script>

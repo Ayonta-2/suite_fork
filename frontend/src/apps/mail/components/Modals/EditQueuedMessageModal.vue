@@ -20,6 +20,7 @@ import { ref, watch } from 'vue'
 import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 
 const show = defineModel<boolean>()
 const { messageId, message } = defineProps<{ messageId: string; message: { next_retry?: string } }>()
@@ -29,15 +30,14 @@ const nextRetry = ref('')
 
 watch(show, () => {
 	if (show.value) {
-		// datetime-local wants "YYYY-MM-DDTHH:mm"; the stored value is a UTCDateTime.
-		nextRetry.value = message?.next_retry ? message.next_retry.slice(0, 16) : ''
+		nextRetry.value = toLocalInput(message?.next_retry)
 		updateMessage.reset()
 	}
 })
 
 const updateMessage = createResource({
 	url: 'suite.mail.api.admin.update_queued_message',
-	makeParams: () => ({ message_id: messageId, next_retry: nextRetry.value }),
+	makeParams: () => ({ message_id: messageId, next_retry: fromLocalInput(nextRetry.value) }),
 	onSuccess: () => {
 		show.value = false
 		emit('reload')
