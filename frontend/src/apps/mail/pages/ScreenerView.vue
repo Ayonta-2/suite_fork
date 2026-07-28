@@ -801,3 +801,4 @@ const bulkOptions = computed(() => [
 	{ label: __('Move All to Inbox'), icon: Inbox, onClick: () => (showClearAll.value = true) },
 ])
 </script>
+

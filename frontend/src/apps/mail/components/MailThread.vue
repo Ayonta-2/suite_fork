@@ -1077,3 +1077,4 @@ const getForwardedContent = (mail: Mail) => {
 	`
 }
 </script>
+
