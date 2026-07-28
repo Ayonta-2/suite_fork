@@ -3945,6 +3945,12 @@ const { onGlobalKey } = useShortcuts({
 // ── Clipboard ─────────────────────────────────────────────────────────────────
 
 function _canvasActive() {
+  // The inline cell editor is a <textarea> mounted inside gridWrapRef, so a
+  // naive contains() check would treat "editing a cell" as "grid focused" and
+  // hijack Cmd+C/X/V for cell-level ops — breaking paste (and copy of a
+  // substring) inside the open editor. While editing, clipboard ops belong to
+  // the textarea's native handling.
+  if (grid?.isEditing?.()) return false
   const ae = document.activeElement
   return ae === canvasRef.value || ae === formulaInputRef.value || gridWrapRef.value?.contains(ae)
 }

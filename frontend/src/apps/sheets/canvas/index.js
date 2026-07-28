@@ -1917,6 +1917,10 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     // SheetEditor uses this to keep the editor alive across sheet-tab clicks
     // for cross-sheet range picking.
     isEditingFormula: () => editing && overlay.getValue().startsWith('='),
+    // Whether the in-cell overlay editor is open at all. The host uses this to
+    // hand clipboard ops (copy/cut/paste) to the textarea's native handling
+    // while editing, instead of hijacking them for grid-level cell ops.
+    isEditing: () => editing,
     getSelection: getSelRange,
     setSelection: setSelRange,
     getPreMousedownSel,
