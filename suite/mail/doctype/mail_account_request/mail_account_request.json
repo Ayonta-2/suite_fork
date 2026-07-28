@@ -16,6 +16,7 @@
   "invited_by",
   "account",
   "aliases",
+  "quota_gb",
   "membership_details_section",
   "groups",
   "column_break_mlgr",
@@ -120,6 +121,14 @@
    "label": "Aliases",
    "no_copy": 1,
    "set_only_once": 1
+  },
+  {
+   "description": "Disk quota in GB applied to the account on creation, where 0 means unlimited. Left blank, the configured default disk quota is used.",
+   "fieldname": "quota_gb",
+   "fieldtype": "Float",
+   "label": "Disk Quota (GB)",
+   "no_copy": 1,
+   "non_negative": 1
   },
   {
    "fieldname": "membership_details_section",

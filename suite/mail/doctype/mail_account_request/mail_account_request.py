@@ -10,6 +10,7 @@ from frappe.model.document import Document
 from frappe.utils import (
 	add_to_date,
 	cint,
+	flt,
 	get_datetime,
 	get_url,
 	now,
@@ -53,6 +54,7 @@ class MailAccountRequest(Document):
 		is_admin: DF.Check
 		is_verified: DF.Check
 		mailing_lists: DF.SmallText | None
+		quota_gb: DF.Float | None
 		request_key: DF.Data | None
 		roles: DF.SmallText | None
 		send_invite: DF.Check
@@ -108,6 +110,17 @@ class MailAccountRequest(Document):
 		"""Returns the ids of the mailing lists the account is added to on creation."""
 
 		return _lines(self.mailing_lists)
+
+	@property
+	def _quota(self) -> int:
+		"""Returns the disk quota in bytes to create the account with.
+
+		An unset quota falls back to the configured default, which ``get_config`` resolves from Mail
+		Settings first and the site config second. An explicit ``0`` means unlimited and is left alone.
+		"""
+
+		quota_gb = self.quota_gb if self.quota_gb is not None else get_config("default_disk_quota_gb")
+		return cint(flt(quota_gb) * 1024**3)
 
 	def before_insert(self) -> None:
 		is_stalwart_configured(raise_exception=True)
@@ -318,7 +331,7 @@ class MailAccountRequest(Document):
 				aliases=self._aliases,
 				groups=[],
 				roles=self._roles,
-				quota=cint(get_config("default_disk_quota_gb")) * 1024**3,
+				quota=self._quota,
 				timezone=None,
 			),
 			title="Failed to create account on Stalwart",

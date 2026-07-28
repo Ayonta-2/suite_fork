@@ -69,6 +69,13 @@
 					:label="__('Backup Email')"
 					placeholder="johndoe@personal.com"
 				/>
+				<FormControl
+					v-model="accountRequest.quota_gb"
+					type="number"
+					:min="0"
+					:label="__('Quota (GB, 0 = unlimited)')"
+					:description="__('Leave blank to use the configured default disk quota.')"
+				/>
 				<div class="space-y-1.5">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Groups') }}</label>
 					<MultiSelect v-model="groupIds" :options="groupOptions" />
@@ -150,6 +157,8 @@ const defaultAccountRequest = {
 	send_invite: true,
 	expires_at: dayjs?.().add(1, 'day').format('YYYY-MM-DDTHH:mm') || '',
 	backup_email: '',
+	// Blank hands the choice to the server, which falls back to the configured default.
+	quota_gb: '',
 	first_name: '',
 	last_name: '',
 	password: '',
@@ -205,6 +214,7 @@ const addMember = createResource({
 			aliases,
 			groups: groupIds.value,
 			mailing_lists: mailingListIds.value,
+			quota_gb: accountRequest.quota_gb === '' ? null : Number(accountRequest.quota_gb),
 			is_admin: accountRequest.role === 'admin',
 		}
 	},

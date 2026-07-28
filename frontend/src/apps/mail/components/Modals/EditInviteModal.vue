@@ -38,6 +38,14 @@
 					disabled
 				/>
 				<FormControl
+					v-model="inviteQuota"
+					type="number"
+					:min="0"
+					:label="__('Quota (GB, 0 = unlimited)')"
+					:description="__('Leave blank to use the configured default disk quota.')"
+					:disabled="!isEditableInvite"
+				/>
+				<FormControl
 					v-model="inviteRole"
 					type="select"
 					:label="__('Role')"
@@ -110,6 +118,7 @@ type InviteDoc = {
 	backup_email: string
 	invited_by: string
 	expires_at?: string
+	quota_gb?: number | null
 	send_invite: boolean | 0 | 1
 	is_verified: boolean | 0 | 1
 	groups?: string
@@ -140,6 +149,16 @@ const inviteRole = computed<'user' | 'admin'>({
 	set: (value) => {
 		if (!accountRequest.value?.doc) return
 		accountRequest.value.doc.is_admin = value === 'admin'
+	},
+})
+
+// Cleared back to null rather than 0, so a blank field keeps deferring to the configured default
+// instead of silently meaning unlimited.
+const inviteQuota = computed<number | string>({
+	get: () => accountRequest.value?.doc?.quota_gb ?? '',
+	set: (value) => {
+		if (!accountRequest.value?.doc) return
+		accountRequest.value.doc.quota_gb = value === '' ? null : Number(value)
 	},
 })
 

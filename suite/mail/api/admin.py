@@ -7,7 +7,7 @@ from typing import Literal
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Max
-from frappe.utils import cint, get_datetime, validate_email_address
+from frappe.utils import cint, flt, get_datetime, validate_email_address
 from pypika import Case, Order
 
 from suite.mail.api.utils import get_avatar_url
@@ -288,13 +288,15 @@ def add_member(
 	aliases: list | None = None,
 	groups: list | None = None,
 	mailing_lists: list | None = None,
+	quota_gb: float | None = None,
 ) -> None:
 	"""Create a new Mail Account Request for adding a member.
 
 	``username``/``domain`` are the primary address (becomes the User); ``aliases`` are additional
 	full email addresses attached as aliases to the same account. ``groups`` and ``mailing_lists``
 	are ids the account joins once it is created — right away when invites are off, on verification
-	otherwise.
+	otherwise. ``quota_gb`` is the account's disk quota, where ``0`` means unlimited and ``None``
+	falls back to the configured default.
 	"""
 
 	account_request = frappe.new_doc("Mail Account Request")
@@ -302,6 +304,8 @@ def add_member(
 	account_request.aliases = "\n".join(_listify(aliases))
 	account_request.groups = "\n".join(str(g) for g in _listify(groups))
 	account_request.mailing_lists = "\n".join(str(ml) for ml in _listify(mailing_lists))
+	if quota_gb is not None:
+		account_request.quota_gb = flt(quota_gb)
 	account_request.is_admin = cint(is_admin)
 	account_request.invited_by = frappe.session.user
 	account_request.backup_email = backup_email
