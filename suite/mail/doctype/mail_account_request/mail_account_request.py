@@ -294,7 +294,14 @@ class MailAccountRequest(Document):
 			frappe.msgprint(_("Verification email sent successfully."), indicator="green", alert=True)
 
 	@frappe.whitelist()
-	def force_verify_and_create_account(self, first_name: str, last_name: str, password: str) -> None:
+	def force_verify_and_create_account(
+		self,
+		first_name: str,
+		last_name: str,
+		password: str,
+		locale: str | None = None,
+		time_zone: str | None = None,
+	) -> None:
 		"""Force verify and create account for invited user."""
 
 		user = frappe.session.user
@@ -305,10 +312,21 @@ class MailAccountRequest(Document):
 			frappe.throw(_("This account request is already verified."))
 
 		self.db_set("is_verified", 1)
-		self.create_account(first_name, last_name, password)
+		self.create_account(first_name, last_name, password, locale, time_zone)
 
-	def create_account(self, first_name: str, last_name: str, password: str) -> None:
-		"""Create mail account for the user."""
+	def create_account(
+		self,
+		first_name: str,
+		last_name: str,
+		password: str,
+		locale: str | None = None,
+		time_zone: str | None = None,
+	) -> None:
+		"""Create mail account for the user.
+
+		``locale`` and ``time_zone`` come from whoever completes the request — the admin on a forced
+		creation, the invited user on the setup form — and fall back to the server defaults when blank.
+		"""
 
 		if not self.is_verified:
 			frappe.throw(_("Account request is not verified. Please verify your email first."))
@@ -332,7 +350,8 @@ class MailAccountRequest(Document):
 				groups=[],
 				roles=self._roles,
 				quota=self._quota,
-				timezone=None,
+				locale=locale,
+				timezone=time_zone,
 			),
 			title="Failed to create account on Stalwart",
 			user_message=_("Failed to create account on the server, check error log for details."),

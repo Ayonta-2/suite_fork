@@ -114,6 +114,24 @@
 						:label="__('Password')"
 						placeholder="••••••••"
 					/>
+					<!-- Only set here when the account is created right away; an invited member picks
+					their own on the setup form. -->
+					<div class="space-y-1.5">
+						<label class="text-ink-gray-5 block text-xs">{{ __('Locale') }}</label>
+						<Combobox
+							v-model="accountRequest.locale"
+							:options="localeOptions"
+							:placeholder="__('Select a locale')"
+						/>
+					</div>
+					<div class="space-y-1.5">
+						<label class="text-ink-gray-5 block text-xs">{{ __('Time Zone') }}</label>
+						<Combobox
+							v-model="accountRequest.time_zone"
+							:options="timeZoneOptions"
+							:placeholder="__('Select a time zone')"
+						/>
+					</div>
 				</template>
 				<ErrorMessage :message="addMember.error?.messages[0]" />
 			</div>
@@ -125,6 +143,7 @@
 import { computed, inject, reactive, ref, watch } from 'vue'
 import {
 	Button,
+	Combobox,
 	Dialog,
 	ErrorMessage,
 	FeatherIcon,
@@ -135,6 +154,7 @@ import {
 } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import { userStore } from '@/apps/mail/stores/user'
 
 const show = defineModel<boolean>()
@@ -162,6 +182,8 @@ const defaultAccountRequest = {
 	first_name: '',
 	last_name: '',
 	password: '',
+	locale: '',
+	time_zone: '',
 }
 
 const accountRequest = reactive({ ...defaultAccountRequest })
@@ -182,6 +204,8 @@ const mailingLists = createResource({ url: 'suite.mail.api.admin.get_mailing_lis
 const toOptions = (rows: Directory[]) => rows.map((r) => ({ label: r.email || r.name, value: r.id }))
 const groupOptions = computed(() => toOptions(groups.data || []))
 const mailingListOptions = computed(() => toOptions(mailingLists.data || []))
+
+const { localeOptions, timeZoneOptions } = useAccountOptions()
 
 watch(
 	() => accountRequest.send_invite,
@@ -215,6 +239,9 @@ const addMember = createResource({
 			groups: groupIds.value,
 			mailing_lists: mailingListIds.value,
 			quota_gb: accountRequest.quota_gb === '' ? null : Number(accountRequest.quota_gb),
+			// Blank means "server default" for both, which the API spells as null.
+			locale: accountRequest.locale || null,
+			time_zone: accountRequest.time_zone || null,
 			is_admin: accountRequest.role === 'admin',
 		}
 	},

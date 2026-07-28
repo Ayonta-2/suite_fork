@@ -289,6 +289,8 @@ def add_member(
 	groups: list | None = None,
 	mailing_lists: list | None = None,
 	quota_gb: float | None = None,
+	locale: str | None = None,
+	time_zone: str | None = None,
 ) -> None:
 	"""Create a new Mail Account Request for adding a member.
 
@@ -297,6 +299,9 @@ def add_member(
 	are ids the account joins once it is created — right away when invites are off, on verification
 	otherwise. ``quota_gb`` is the account's disk quota, where ``0`` means unlimited and ``None``
 	falls back to the configured default.
+
+	``locale`` and ``time_zone``, like the name and password, only apply when the account is created
+	right away; an invited member picks their own on the setup form.
 	"""
 
 	account_request = frappe.new_doc("Mail Account Request")
@@ -314,7 +319,7 @@ def add_member(
 	account_request.insert()
 
 	if not send_invite:
-		account_request.force_verify_and_create_account(first_name, last_name, password)
+		account_request.force_verify_and_create_account(first_name, last_name, password, locale, time_zone)
 
 
 @frappe.whitelist()

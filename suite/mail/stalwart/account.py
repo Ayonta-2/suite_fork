@@ -8,6 +8,9 @@ from frappe.utils import random_string
 from suite.mail.stalwart.service import ManagementService
 from suite.utils import snake_to_camel
 
+# Stalwart requires every account to carry a locale, so one is picked when none was chosen.
+DEFAULT_LOCALE = "en_US"
+
 
 class CredentialType(Enum):
 	PASSWORD = "Password"
@@ -234,7 +237,7 @@ class Account:
 	quotas: StorageQuota = field(default_factory=StorageQuota)
 	aliases: list[EmailAlias] | None = None
 	description: str | None = None
-	locale: str = "en_US"
+	locale: str = DEFAULT_LOCALE
 	timezone: str | None = None
 	encryption_at_rest: EncryptionAtRest = field(default_factory=EncryptionAtRest)
 

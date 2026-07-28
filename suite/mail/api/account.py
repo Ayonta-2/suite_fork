@@ -109,7 +109,41 @@ def get_account_request(request_key: str) -> dict | None:
 
 @frappe.whitelist(allow_guest=True)
 @dynamic_rate_limit()
-def create_account(request_key: str, first_name: str, last_name: str, password: str) -> None:
+def get_account_setup_options(request_key: str) -> dict:
+	"""Returns the locale and time zone choices for the invite setup form.
+
+	Gated on a pending request key: the choices come from the Stalwart schema, so they are not served
+	to arbitrary callers.
+	"""
+
+	from suite.mail.stalwart import get_account_metadata
+
+	account_request = frappe.db.get_value(
+		"Mail Account Request",
+		{"request_key": request_key},
+		["is_verified", "expires_at"],
+		as_dict=True,
+	)
+	if (
+		not account_request
+		or account_request.is_verified
+		or (account_request.expires_at and get_datetime(account_request.expires_at) < now_datetime())
+	):
+		frappe.throw(_("This request has expired. Please create a new one."))
+
+	return get_account_metadata()
+
+
+@frappe.whitelist(allow_guest=True)
+@dynamic_rate_limit()
+def create_account(
+	request_key: str,
+	first_name: str,
+	last_name: str,
+	password: str,
+	locale: str | None = None,
+	time_zone: str | None = None,
+) -> None:
 	"""Create a new mail account"""
 
 	account_request = frappe.get_last_doc("Mail Account Request", {"request_key": request_key})
@@ -118,7 +152,7 @@ def create_account(request_key: str, first_name: str, last_name: str, password: 
 	account_request.save(ignore_permissions=True)
 
 	if account_request.account:
-		account_request.create_account(first_name, last_name, password)
+		account_request.create_account(first_name, last_name, password, locale, time_zone)
 
 
 @frappe.whitelist(allow_guest=True)

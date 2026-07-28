@@ -7,6 +7,7 @@ from frappe.utils.caching import redis_cache
 
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.stalwart.account import (
+	DEFAULT_LOCALE,
 	Account,
 	AccountService,
 	Credential,
@@ -361,6 +362,7 @@ def create_account(
 	groups: list[str] | None = None,
 	roles: list[str] | None = None,
 	quota: int | None = None,
+	locale: str | None = None,
 	timezone: str | None = None,
 ) -> str:
 	"""Creates a user account, resolving domain/group/role names to ids."""
@@ -402,6 +404,7 @@ def create_account(
 		quotas=StorageQuota(max_disk_quota=quota) if quota is not None else StorageQuota(),
 		aliases=email_aliases or None,
 		description=description,
+		locale=locale or DEFAULT_LOCALE,
 		timezone=timezone,
 	)
 
