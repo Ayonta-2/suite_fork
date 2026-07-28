@@ -21,7 +21,15 @@
 								</p>
 							</div>
 						</div>
-						<Button class="shrink-0" :label="__('Run')" @click="trigger(action)" />
+						<!-- The tooltip sits on a wrapper: a disabled button emits no hover events itself. -->
+						<Tooltip
+							:text="isLocked(action) ? __('Only the Administrator can run this action.') : ''"
+							:disabled="!isLocked(action)"
+						>
+							<span class="shrink-0">
+								<Button :label="__('Run')" :disabled="isLocked(action)" @click="trigger(action)" />
+							</span>
+						</Tooltip>
 					</div>
 				</div>
 			</DashboardCard>
@@ -32,7 +40,9 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Button, Dialog, FeatherIcon, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, FeatherIcon, Tooltip, createResource, usePageMeta } from 'frappe-ui'
+
+import { getSessionUser } from '@/boot/session'
 
 import { raiseToast } from '@/apps/mail/utils'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
@@ -44,6 +54,7 @@ type ActionInfo = {
 	value: string
 	label: string
 	schema_name?: string | null
+	administrator_only?: boolean
 	options?: Record<string, ActionOption[]>
 }
 type ActionField = {
@@ -127,6 +138,9 @@ const groupedActions = computed(() => {
 })
 
 const needsInput = (action: ActionInfo) => Boolean(action.schema_name && ACTION_FIELDS[action.schema_name])
+// Which actions are restricted is the server's call; this only reflects it, and run_action enforces it.
+const isAdministrator = getSessionUser() === 'Administrator'
+const isLocked = (action: ActionInfo) => Boolean(action.administrator_only) && !isAdministrator
 const actionIcon = (action: ActionInfo, section: string) =>
 	ACTION_ICONS[action.value] || SECTION_ICONS[section] || FALLBACK_ICON
 

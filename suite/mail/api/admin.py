@@ -2289,12 +2289,20 @@ def get_log(log_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+# Pausing the queue stops delivery server-wide until someone resumes it, so it is kept to the
+# Administrator; `run_action` refuses it for anyone else.
+ADMINISTRATOR_ONLY_ACTIONS = frozenset({"PauseMtaQueue"})
+
+
 @frappe.whitelist()
 def get_actions() -> list[dict]:
-	"""Returns the executable server management actions (``{value, label, schema_name}``)."""
+	"""Returns the executable server management actions (``{value, label, schema_name}``).
+
+	Each one carries ``administrator_only`` so the UI can lock what ``run_action`` would refuse.
+	"""
 
 	check_admin_permission("view actions")
-	return get_action_types()
+	return [{**a, "administrator_only": a["value"] in ADMINISTRATOR_ONLY_ACTIONS} for a in get_action_types()]
 
 
 @frappe.whitelist()
@@ -2305,7 +2313,12 @@ def run_action(action_type: str, params: dict | None = None) -> dict:
 	a list and are encoded here, since the server rejects a plain list for them.
 	"""
 
-	check_admin_permission("run actions")
+	user = check_admin_permission("run actions")
+	if action_type in ADMINISTRATOR_ONLY_ACTIONS and user != "Administrator":
+		frappe.throw(
+			_("Only the Administrator can run this action."),
+			frappe.PermissionError,
+		)
 
 	params = {k: dict.fromkeys(v, True) if isinstance(v, list) else v for k, v in (params or {}).items()}
 	return get_action_service().run(action_type, params=params or None)
