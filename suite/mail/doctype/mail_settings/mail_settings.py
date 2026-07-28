@@ -26,6 +26,9 @@ class MailSettings(Document):
 			MailClientConfiguration,
 		)
 
+		admin_log_file_count: DF.Int
+		admin_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
+		admin_log_max_file_size: DF.Int
 		allow_signup: DF.Check
 		ansible_play_timeout: DF.Int
 		custom_event_invites: DF.Check

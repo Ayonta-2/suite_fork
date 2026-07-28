@@ -2,7 +2,7 @@ import csv
 import io
 import json
 from contextlib import suppress
-from typing import Literal
+from typing import Any, Literal
 
 import frappe
 from frappe import _
@@ -46,23 +46,31 @@ from suite.mail.stalwart.oauth import OAuthClient
 from suite.mail.stalwart.role import Role
 from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
+from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils import execute_with_logging
 from suite.utils.user import is_suite_admin, is_system_manager, is_user_enabled
 
 
-def check_admin_permission(action: str) -> str:
+def check_admin_permission(action: str, target: Any = None) -> str:
 	"""Ensure the session user is an enabled Suite Admin or System Manager, returning the user.
 
 	The enabled check is defense-in-depth: a disabled admin holding a still-valid session (or an
 	API key) must not be able to perform admin actions, e.g. re-enable their own account via
 	enable_members. Throws frappe.PermissionError otherwise.
+
+	Every action that changes something is also written to the admin log with ``target`` (the object
+	acted on), so a shared inbox of administrators stays accountable. Reads are not logged: each
+	dashboard page issues several and they change nothing.
 	"""
 
 	user = frappe.session.user
 	if (not is_suite_admin(user) and not is_system_manager(user)) or not is_user_enabled(user):
 		frappe.throw(_("User {0} does not have permission to {1}.").format(frappe.bold(user), action))
+
+	if not action.startswith("view "):
+		log_admin_action(action, target)
 
 	return user
 
@@ -83,6 +91,8 @@ def _get_stalwart_domain(domain_id: str) -> dict:
 @dynamic_rate_limit()
 def add_domain(name: str, description: str | None = None) -> str:
 	"""Adds a new domain to Stalwart with the specified name and description, returning the new domain's ID."""
+
+	check_admin_permission("add domains", name)
 
 	for domain in get_stalwart_domains():
 		if domain["name"].lower() == name.lower():
@@ -214,7 +224,7 @@ def get_domain(domain_id: str) -> dict:
 def delete_domain(domain_id: str) -> None:
 	"""Deletes a domain identified by Stalwart domain ID."""
 
-	check_admin_permission("delete domains")
+	check_admin_permission("delete domains", domain_id)
 
 	execute_with_logging(
 		func=lambda: get_domain_service().delete([domain_id]),
@@ -316,7 +326,10 @@ def add_member(
 	account_request.backup_email = backup_email
 	account_request.send_invite = cint(send_invite)
 	account_request.expires_at = expires_at
+	# Insert first: create permission on Mail Account Request is what gates this endpoint, so the
+	# action is only authorized (and worth recording) once the request exists.
 	account_request.insert()
+	log_admin_action("add members", account_request.account)
 
 	if not send_invite:
 		account_request.force_verify_and_create_account(first_name, last_name, password, locale, time_zone)
@@ -565,7 +578,7 @@ def get_account_requests(
 def delete_account_requests(names: list) -> None:
 	"""Delete Mail Account Requests"""
 
-	check_admin_permission("delete account requests")
+	check_admin_permission("delete account requests", names)
 
 	for d in names:
 		frappe.delete_doc("Mail Account Request", d)
@@ -575,7 +588,7 @@ def delete_account_requests(names: list) -> None:
 def delete_members(names: list) -> None:
 	"""Delete member users. The User on_trash hooks cascade to their Stalwart account and settings."""
 
-	user = check_admin_permission("delete members")
+	user = check_admin_permission("delete members", names)
 
 	if user in names:
 		frappe.throw(_("You cannot delete your own account."))
@@ -588,7 +601,7 @@ def delete_members(names: list) -> None:
 def disable_members(names: list) -> None:
 	"""Disable member users. Disabled users can no longer log in and their sessions are cleared."""
 
-	user = check_admin_permission("disable members")
+	user = check_admin_permission("disable members", names)
 
 	if user in names:
 		frappe.throw(_("You cannot disable your own account."))
@@ -606,7 +619,7 @@ def disable_members(names: list) -> None:
 def enable_members(names: list) -> None:
 	"""Enable member users. The configured disabled account role is removed and the users can log in again."""
 
-	check_admin_permission("enable members")
+	check_admin_permission("enable members", names)
 
 	for name in names:
 		member = frappe.get_doc("User", name)
@@ -626,7 +639,7 @@ def change_member_password(member_id: str, new_password: str) -> None:
 	propagates the new password to the member's Stalwart account.
 	"""
 
-	check_admin_permission("change member password")
+	check_admin_permission("change member password", member_id)
 
 	if not new_password:
 		frappe.throw(_("New password is required."))
@@ -727,7 +740,7 @@ def update_member(
 ) -> None:
 	"""Updates a member's role, display name, quota, locale and time zone on Frappe and Stalwart."""
 
-	check_admin_permission("update members")
+	check_admin_permission("update members", member_id)
 
 	member = frappe.get_doc("User", member_id)
 
@@ -877,7 +890,7 @@ def _set_alias_enabled(service, resource_id: str, email: str, enabled: bool) -> 
 def add_member_email(member_id: str, email: str, description: str | None = None) -> None:
 	"""Adds an email address to the member's account as an alias with an optional description."""
 
-	check_admin_permission("update members")
+	check_admin_permission("update members", f"{member_id} ({email})")
 	_add_alias(get_account_service(), _require_member_account(member_id), email, description)
 
 
@@ -885,7 +898,7 @@ def add_member_email(member_id: str, email: str, description: str | None = None)
 def remove_member_email(member_id: str, email: str) -> None:
 	"""Removes an alias email address from the member's account (the primary cannot be removed)."""
 
-	check_admin_permission("update members")
+	check_admin_permission("update members", f"{member_id} ({email})")
 	_remove_alias(get_account_service(), _require_member_account(member_id), email)
 
 
@@ -893,7 +906,7 @@ def remove_member_email(member_id: str, email: str) -> None:
 def set_member_email_enabled(member_id: str, email: str, enabled: int) -> None:
 	"""Enables or disables one of the member's alias email addresses."""
 
-	check_admin_permission("update members")
+	check_admin_permission("update members", f"{member_id} ({email})")
 	_set_alias_enabled(get_account_service(), _require_member_account(member_id), email, bool(cint(enabled)))
 
 
@@ -901,7 +914,7 @@ def set_member_email_enabled(member_id: str, email: str, enabled: int) -> None:
 def add_member_to_groups(member_id: str, group_ids: list) -> None:
 	"""Adds the member to the given groups."""
 
-	check_admin_permission("update members")
+	check_admin_permission("update members", member_id)
 	account_id = _require_member_account(member_id)
 
 	service = get_group_service()
@@ -913,7 +926,7 @@ def add_member_to_groups(member_id: str, group_ids: list) -> None:
 def remove_member_from_group(member_id: str, group_id: str) -> None:
 	"""Removes the member from the given group."""
 
-	check_admin_permission("update members")
+	check_admin_permission("update members", f"{member_id} ({group_id})")
 	account_id = _require_member_account(member_id)
 	get_group_service().remove_members(group_id, [account_id])
 
@@ -922,7 +935,7 @@ def remove_member_from_group(member_id: str, group_id: str) -> None:
 def add_member_to_mailing_lists(member_id: str, list_ids: list) -> None:
 	"""Adds the member's primary address as a recipient of the given mailing lists."""
 
-	check_admin_permission("update members")
+	check_admin_permission("update members", member_id)
 	account_id = _require_member_account(member_id)
 
 	account_service = get_account_service()
@@ -941,7 +954,7 @@ def add_member_to_mailing_lists(member_id: str, list_ids: list) -> None:
 def remove_member_from_mailing_list(member_id: str, list_id: str) -> None:
 	"""Removes all of the member's addresses from the given mailing list's recipients."""
 
-	check_admin_permission("update members")
+	check_admin_permission("update members", f"{member_id} ({list_id})")
 	account_id = _require_member_account(member_id)
 
 	account_service = get_account_service()
@@ -1097,7 +1110,7 @@ def add_group(
 ) -> str:
 	"""Creates a group and returns its id. ``members`` and ``roles`` are account/role ids."""
 
-	check_admin_permission("add groups")
+	check_admin_permission("add groups", f"{name}@{domain}")
 
 	member_ids = _listify(members)
 	role_ids = _listify(roles)
@@ -1132,7 +1145,7 @@ def update_group(
 ) -> None:
 	"""Updates a group's description (full name), roles, quota, locale and time zone."""
 
-	check_admin_permission("update groups")
+	check_admin_permission("update groups", group_id)
 
 	patch = _locale_patch(locale, time_zone)
 	if description is not None:
@@ -1155,7 +1168,7 @@ def update_group(
 def add_group_email(group_id: str, email: str, description: str | None = None) -> None:
 	"""Adds an alias email address to the group with an optional description."""
 
-	check_admin_permission("update groups")
+	check_admin_permission("update groups", f"{group_id} ({email})")
 	_add_alias(get_account_service(), group_id, email, description)
 
 
@@ -1163,7 +1176,7 @@ def add_group_email(group_id: str, email: str, description: str | None = None) -
 def remove_group_email(group_id: str, email: str) -> None:
 	"""Removes an alias email address from the group (the primary cannot be removed)."""
 
-	check_admin_permission("update groups")
+	check_admin_permission("update groups", f"{group_id} ({email})")
 	_remove_alias(get_account_service(), group_id, email)
 
 
@@ -1171,7 +1184,7 @@ def remove_group_email(group_id: str, email: str) -> None:
 def set_group_email_enabled(group_id: str, email: str, enabled: int) -> None:
 	"""Enables or disables one of the group's alias email addresses."""
 
-	check_admin_permission("update groups")
+	check_admin_permission("update groups", f"{group_id} ({email})")
 	_set_alias_enabled(get_account_service(), group_id, email, bool(cint(enabled)))
 
 
@@ -1179,7 +1192,7 @@ def set_group_email_enabled(group_id: str, email: str, enabled: int) -> None:
 def add_group_members(group_id: str, account_ids: list) -> None:
 	"""Adds the given accounts to the group."""
 
-	check_admin_permission("update groups")
+	check_admin_permission("update groups", group_id)
 	get_group_service().add_members(group_id, _listify(account_ids))
 
 
@@ -1187,7 +1200,7 @@ def add_group_members(group_id: str, account_ids: list) -> None:
 def remove_group_member(group_id: str, account_id: str) -> None:
 	"""Removes the given account from the group."""
 
-	check_admin_permission("update groups")
+	check_admin_permission("update groups", f"{group_id} ({account_id})")
 	get_group_service().remove_members(group_id, [account_id])
 
 
@@ -1195,7 +1208,7 @@ def remove_group_member(group_id: str, account_id: str) -> None:
 def delete_groups(ids: list) -> None:
 	"""Deletes the given groups."""
 
-	check_admin_permission("delete groups")
+	check_admin_permission("delete groups", ids)
 	get_group_service().delete(_listify(ids))
 
 
@@ -1279,7 +1292,7 @@ def add_mailing_list(
 ) -> str:
 	"""Creates a mailing list and returns its id."""
 
-	check_admin_permission("add mailing lists")
+	check_admin_permission("add mailing lists", f"{name}@{domain}")
 
 	recipient_list = _listify(recipients)
 
@@ -1304,7 +1317,7 @@ def add_mailing_list(
 def update_mailing_list(list_id: str, description: str | None = None) -> None:
 	"""Updates a mailing list's description."""
 
-	check_admin_permission("update mailing lists")
+	check_admin_permission("update mailing lists", list_id)
 
 	if description is not None:
 		get_mailing_list_service().update(list_id, {"description": description})
@@ -1314,7 +1327,7 @@ def update_mailing_list(list_id: str, description: str | None = None) -> None:
 def add_mailing_list_email(list_id: str, email: str, description: str | None = None) -> None:
 	"""Adds an alias email address to the mailing list."""
 
-	check_admin_permission("update mailing lists")
+	check_admin_permission("update mailing lists", f"{list_id} ({email})")
 	_add_alias(get_mailing_list_service(), list_id, email, description)
 
 
@@ -1322,7 +1335,7 @@ def add_mailing_list_email(list_id: str, email: str, description: str | None = N
 def remove_mailing_list_email(list_id: str, email: str) -> None:
 	"""Removes an alias email address from the mailing list (the primary cannot be removed)."""
 
-	check_admin_permission("update mailing lists")
+	check_admin_permission("update mailing lists", f"{list_id} ({email})")
 	_remove_alias(get_mailing_list_service(), list_id, email)
 
 
@@ -1330,7 +1343,7 @@ def remove_mailing_list_email(list_id: str, email: str) -> None:
 def set_mailing_list_email_enabled(list_id: str, email: str, enabled: int) -> None:
 	"""Enables or disables one of the mailing list's alias email addresses."""
 
-	check_admin_permission("update mailing lists")
+	check_admin_permission("update mailing lists", f"{list_id} ({email})")
 	_set_alias_enabled(get_mailing_list_service(), list_id, email, bool(cint(enabled)))
 
 
@@ -1338,7 +1351,7 @@ def set_mailing_list_email_enabled(list_id: str, email: str, enabled: int) -> No
 def add_mailing_list_recipients(list_id: str, recipients: list) -> None:
 	"""Adds recipient email addresses to the mailing list."""
 
-	check_admin_permission("update mailing lists")
+	check_admin_permission("update mailing lists", list_id)
 
 	service = get_mailing_list_service()
 	current = dict((service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {})
@@ -1354,7 +1367,7 @@ def add_mailing_list_recipients(list_id: str, recipients: list) -> None:
 def remove_mailing_list_recipient(list_id: str, email: str) -> None:
 	"""Removes a recipient email address from the mailing list."""
 
-	check_admin_permission("update mailing lists")
+	check_admin_permission("update mailing lists", f"{list_id} ({email})")
 
 	service = get_mailing_list_service()
 	current = (service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {}
@@ -1366,7 +1379,7 @@ def remove_mailing_list_recipient(list_id: str, email: str) -> None:
 def delete_mailing_lists(ids: list) -> None:
 	"""Deletes the given mailing lists."""
 
-	check_admin_permission("delete mailing lists")
+	check_admin_permission("delete mailing lists", ids)
 	get_mailing_list_service().delete(_listify(ids))
 
 
@@ -1431,7 +1444,7 @@ def add_role(
 ) -> str:
 	"""Creates a role and returns its id."""
 
-	check_admin_permission("add roles")
+	check_admin_permission("add roles", description)
 
 	def _create() -> str:
 		return get_role_service().create(
@@ -1462,7 +1475,7 @@ def update_role(
 ) -> None:
 	"""Updates a role's description/permissions/inherited roles."""
 
-	check_admin_permission("update roles")
+	check_admin_permission("update roles", role_id)
 
 	patch = {}
 	if description is not None:
@@ -1482,7 +1495,7 @@ def update_role(
 def delete_roles(ids: list) -> None:
 	"""Deletes the given roles."""
 
-	check_admin_permission("delete roles")
+	check_admin_permission("delete roles", ids)
 	get_role_service().delete(_listify(ids))
 
 
@@ -1559,7 +1572,7 @@ def add_oauth_client(
 ) -> str:
 	"""Creates an OAuth client and returns its id."""
 
-	check_admin_permission("add oauth clients")
+	check_admin_permission("add oauth clients", client_id)
 
 	uris = _listify(redirect_uris)
 	contact_list = _listify(contacts)
@@ -1601,7 +1614,7 @@ def update_oauth_client(
 ) -> None:
 	"""Updates an OAuth client's clientId, description, redirect URIs, contacts, secret, logo and expiry."""
 
-	check_admin_permission("update oauth clients")
+	check_admin_permission("update oauth clients", oauth_client_id)
 
 	patch = {}
 	if client_id is not None and client_id.strip():
@@ -1629,7 +1642,7 @@ def update_oauth_client(
 def add_oauth_client_contacts(client_id: str, contacts: list) -> None:
 	"""Adds contact email addresses to the OAuth client."""
 
-	check_admin_permission("update oauth clients")
+	check_admin_permission("update oauth clients", client_id)
 
 	service = get_oauth_client_service()
 	current = dict((service.get(client_id, properties=["contacts"]) or {}).get("contacts") or {})
@@ -1645,7 +1658,7 @@ def add_oauth_client_contacts(client_id: str, contacts: list) -> None:
 def remove_oauth_client_contact(client_id: str, contact: str) -> None:
 	"""Removes a contact email address from the OAuth client."""
 
-	check_admin_permission("update oauth clients")
+	check_admin_permission("update oauth clients", f"{client_id} ({contact})")
 
 	service = get_oauth_client_service()
 	current = (service.get(client_id, properties=["contacts"]) or {}).get("contacts") or {}
@@ -1657,7 +1670,7 @@ def remove_oauth_client_contact(client_id: str, contact: str) -> None:
 def add_oauth_client_redirect_uris(client_id: str, redirect_uris: list) -> None:
 	"""Adds redirect URIs to the OAuth client."""
 
-	check_admin_permission("update oauth clients")
+	check_admin_permission("update oauth clients", client_id)
 
 	service = get_oauth_client_service()
 	current = dict((service.get(client_id, properties=["redirectUris"]) or {}).get("redirectUris") or {})
@@ -1673,7 +1686,7 @@ def add_oauth_client_redirect_uris(client_id: str, redirect_uris: list) -> None:
 def remove_oauth_client_redirect_uri(client_id: str, uri: str) -> None:
 	"""Removes a redirect URI from the OAuth client."""
 
-	check_admin_permission("update oauth clients")
+	check_admin_permission("update oauth clients", f"{client_id} ({uri})")
 
 	service = get_oauth_client_service()
 	current = (service.get(client_id, properties=["redirectUris"]) or {}).get("redirectUris") or {}
@@ -1685,7 +1698,7 @@ def remove_oauth_client_redirect_uri(client_id: str, uri: str) -> None:
 def delete_oauth_clients(ids: list) -> None:
 	"""Deletes the given OAuth clients."""
 
-	check_admin_permission("delete oauth clients")
+	check_admin_permission("delete oauth clients", ids)
 	get_oauth_client_service().delete(_listify(ids))
 
 
@@ -1765,7 +1778,7 @@ def get_dkim_signature(signature_id: str) -> dict:
 def delete_dkim_signatures(ids: list) -> None:
 	"""Deletes the given DKIM signatures."""
 
-	check_admin_permission("delete dkim signatures")
+	check_admin_permission("delete dkim signatures", ids)
 	get_dkim_signature_service().delete(_listify(ids))
 
 
@@ -1961,7 +1974,7 @@ def _expires_object(expiry_type: str, expires_at: str | None, expires_attempts: 
 def update_queued_message(message_id: str, next_retry: str | None = None) -> None:
 	"""Updates a queued message's next retry time."""
 
-	check_admin_permission("update queued messages")
+	check_admin_permission("update queued messages", message_id)
 
 	if next_retry is not None:
 		get_queued_message_service().update(message_id, {"nextRetry": _utc_datetime(next_retry)})
@@ -1991,7 +2004,7 @@ def update_queued_recipient(
 ) -> None:
 	"""Updates a single recipient of a queued message (renames the address if ``new_email`` differs)."""
 
-	check_admin_permission("update queued messages")
+	check_admin_permission("update queued messages", f"{message_id} ({email})")
 	service = get_queued_message_service()
 
 	# Scalar edits keyed by their JMAP property; a ``None`` argument means "leave unchanged".
@@ -2043,7 +2056,7 @@ def add_queued_recipient(message_id: str, email: str) -> None:
 
 	from datetime import timedelta
 
-	check_admin_permission("update queued messages")
+	check_admin_permission("update queued messages", f"{message_id} ({email})")
 
 	email = (email or "").strip()
 	if not email:
@@ -2063,7 +2076,7 @@ def add_queued_recipient(message_id: str, email: str) -> None:
 def remove_queued_recipient(message_id: str, email: str) -> None:
 	"""Removes a recipient from a queued message."""
 
-	check_admin_permission("update queued messages")
+	check_admin_permission("update queued messages", f"{message_id} ({email})")
 	get_queued_message_service().update(message_id, {f"recipients/{email}": None})
 
 
@@ -2094,7 +2107,7 @@ def get_queued_message_source(message_id: str) -> dict:
 def retry_queued_messages(ids: list) -> None:
 	"""Schedules the given queued messages for immediate delivery."""
 
-	check_admin_permission("retry queued messages")
+	check_admin_permission("retry queued messages", ids)
 	get_queued_message_service().retry(_listify(ids))
 
 
@@ -2102,7 +2115,7 @@ def retry_queued_messages(ids: list) -> None:
 def cancel_queued_messages(ids: list) -> None:
 	"""Cancels (deletes) the given queued messages."""
 
-	check_admin_permission("cancel queued messages")
+	check_admin_permission("cancel queued messages", ids)
 	get_queued_message_service().delete(_listify(ids))
 
 
@@ -2112,7 +2125,7 @@ def retry_all_queued_messages(
 ) -> None:
 	"""Schedules every message matching the current filter for immediate delivery."""
 
-	check_admin_permission("retry queued messages")
+	check_admin_permission("retry queued messages", "all")
 	service = get_queued_message_service()
 	service.retry(service.query(filter=_queue_filter(search, to, sender))["ids"])
 
@@ -2123,7 +2136,7 @@ def cancel_all_queued_messages(
 ) -> None:
 	"""Cancels (deletes) every message matching the current filter."""
 
-	check_admin_permission("cancel queued messages")
+	check_admin_permission("cancel queued messages", "all")
 	service = get_queued_message_service()
 	service.delete(service.query(filter=_queue_filter(search, to, sender))["ids"])
 
@@ -2147,7 +2160,7 @@ def stream_delivery_test(target: str):
 	import requests
 	from werkzeug.wrappers import Response
 
-	check_admin_permission("run delivery test")
+	check_admin_permission("run delivery test", target)
 
 	connection = get_management_connection()
 	server_url, verify_ssl = get_config(("server_url", "verify_ssl"))
@@ -2277,7 +2290,7 @@ def get_report(kind: str, direction: str, report_id: str) -> dict:
 def delete_reports(kind: str, direction: str, ids: list) -> None:
 	"""Deletes the given reports."""
 
-	check_admin_permission("delete reports")
+	check_admin_permission("delete reports", ids)
 	get_report_service(kind, direction).delete(_listify(ids))
 
 
@@ -2375,7 +2388,7 @@ def run_action(action_type: str, params: dict | None = None) -> dict:
 	a list and are encoded here, since the server rejects a plain list for them.
 	"""
 
-	user = check_admin_permission("run actions")
+	user = check_admin_permission("run actions", action_type)
 	if action_type in ADMINISTRATOR_ONLY_ACTIONS and user != "Administrator":
 		frappe.throw(
 			_("Only the Administrator can run this action."),

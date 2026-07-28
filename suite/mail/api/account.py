@@ -14,6 +14,7 @@ from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.stalwart import get_domains
 from suite.mail.utils import is_stalwart_configured, log_mail_error
 from suite.mail.utils.dns import parse_dns_zone_file
+from suite.mail.utils.logger import log_admin_action
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import (
 	has_user_settings,
@@ -357,6 +358,11 @@ def censor_email(email: str) -> str:
 @dynamic_rate_limit()
 def send_reset_password_link(user: str) -> str:
 	"""Send reset password link to the user"""
+
+	# Only an admin resetting somebody else's password is an administrative act; this same endpoint
+	# backs the public "forgot password" form, and a user asking for their own link is not audited.
+	if frappe.session.user != user:
+		log_admin_action("send reset password link", user)
 
 	email = get_backup_email(user)
 	key = set_reset_password_key(user)

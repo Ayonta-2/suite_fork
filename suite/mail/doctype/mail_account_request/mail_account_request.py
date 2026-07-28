@@ -21,6 +21,7 @@ from frappe.utils import (
 
 from suite.mail.stalwart import create_account, create_app_password, get_roles
 from suite.mail.utils import get_config, is_stalwart_configured
+from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
 from suite.utils import execute_with_logging
 from suite.utils.user import is_suite_admin, is_system_manager
@@ -292,6 +293,11 @@ class MailAccountRequest(Document):
 				now=True,
 			)
 			frappe.msgprint(_("Verification email sent successfully."), indicator="green", alert=True)
+
+			# Sending an invite link is worth recording, but only when an administrator did it: the
+			# signup OTP flow reaches this as Guest and is not part of the admin trail.
+			if is_suite_admin(frappe.session.user) or is_system_manager(frappe.session.user):
+				log_admin_action("send invite email", self.account)
 
 	@frappe.whitelist()
 	def force_verify_and_create_account(
