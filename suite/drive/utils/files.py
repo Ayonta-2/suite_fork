@@ -210,14 +210,48 @@ class FileManager:
 
 	def presigned_url(self, team, key, download_name, mime_type=None, expires=3600):
 		"""Short-lived S3 GET URL, range-capable, served straight to the client."""
+		bucket = self.get_bucket(team)
 		params = {
-			"Bucket": self.get_bucket(team),
+			"Bucket": bucket,
 			"Key": key,
 			"ResponseContentDisposition": content_disposition(download_name),
 		}
 		if mime_type:
 			params["ResponseContentType"] = mime_type
-		return self.conn.generate_presigned_url("get_object", Params=params, ExpiresIn=expires)
+		return self._presign_client(bucket).generate_presigned_url(
+			"get_object", Params=params, ExpiresIn=expires
+		)
+
+	def _presign_client(self, bucket):
+		"""generate_presigned_url signs offline, so it never gets the automatic
+		region-redirect retry that a real S3 call (get_object, put_object, ...)
+		gets for free. Signed against the wrong region, S3 rejects the URL
+		outright with PermanentRedirect instead of serving the object. Detect
+		the bucket's real region once (get_bucket_location is itself
+		region-agnostic) and sign with a client that matches it."""
+		if self.settings.endpoint_url:
+			# custom/S3-compatible endpoints (e.g. MinIO) don't do AWS's
+			# multi-region redirect dance
+			return self.conn
+
+		cache_key = f"drive-s3-bucket-region:{bucket}"
+		region = frappe.cache().get_value(cache_key)
+		if not region:
+			try:
+				region = self.conn.get_bucket_location(Bucket=bucket).get("LocationConstraint") or "us-east-1"
+			except ClientError:
+				region = self.conn.meta.region_name or "us-east-1"
+			frappe.cache().set_value(cache_key, region, expires_in_sec=24 * 60 * 60)
+
+		if region == self.conn.meta.region_name:
+			return self.conn
+		return boto3.client(
+			"s3",
+			aws_access_key_id=self.settings.aws_key,
+			aws_secret_access_key=self.settings.get_password("aws_secret"),
+			region_name=region,
+			config=Config(signature_version=self.settings.signature_version),
+		)
 
 	def iter_blocks(self, entity, block_size=4 * 1024 * 1024):
 		"""Yield a file's bytes lazily so a worker never holds the whole file."""

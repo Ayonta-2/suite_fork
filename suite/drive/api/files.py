@@ -516,6 +516,12 @@ def _write_archive(token, files):
 		return key, team, os.path.getsize(target)
 
 
+def _publish_download_status(token, user, status, **extra):
+	"""Push the terminal build state over the user's realtime room so the
+	client can drop polling and just listen."""
+	frappe.publish_realtime("drive-download-status", {"token": token, "status": status, **extra}, user=user)
+
+
 def build_download_archive(token, entities, zip_name, user):
 	"""Background job: build the archive as `user` and publish its state to cache."""
 	cache = frappe.cache()
@@ -531,6 +537,7 @@ def build_download_archive(token, entities, zip_name, user):
 			{"status": "ready", "owner": user, "key": key, "team": team, "file_name": zip_name, "size": size},
 			expires_in_sec=DOWNLOAD_TTL,
 		)
+		_publish_download_status(token, user, "ready", size=size)
 	except Exception as e:
 		frappe.log_error("Drive: archive build failed", e)
 		cache.set_value(
@@ -538,6 +545,7 @@ def build_download_archive(token, entities, zip_name, user):
 			{"status": "failed", "owner": user, "error": str(e)},
 			expires_in_sec=DOWNLOAD_TTL,
 		)
+		_publish_download_status(token, user, "failed", error=str(e))
 
 
 @frappe.whitelist(allow_guest=True)
