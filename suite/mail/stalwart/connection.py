@@ -24,8 +24,13 @@ def _session_manager(cache_key: str) -> JMAPSessionManager:
 	)
 
 
-def _build_connection(username: str, cache_key: str, timeout: tuple[float, float]) -> JMAPConnection:
-	"""Builds a JMAPConnection for ``username`` using the configured admin password."""
+def _build_connection(
+	username: str, cache_key: str | None, timeout: tuple[float, float]
+) -> JMAPConnection:
+	"""Builds a JMAPConnection for ``username`` using the configured admin password.
+
+	``cache_key`` persists the discovered session; pass ``None`` to always re-discover it.
+	"""
 
 	is_stalwart_configured(raise_exception=True)
 
@@ -39,7 +44,7 @@ def _build_connection(username: str, cache_key: str, timeout: tuple[float, float
 			timeout,
 			verify_ssl=bool(verify_ssl),
 		),
-		session_manager=_session_manager(cache_key),
+		session_manager=_session_manager(cache_key) if cache_key else None,
 	)
 
 
@@ -66,10 +71,15 @@ def get_account_management_connection(
 	Stalwart lets an administrator authenticate as any account by logging in with the username
 	``<account>%<admin_username>`` and the admin password. This is required for account-scoped
 	management objects such as App Passwords, which are created within the target account.
+
+	The session is deliberately not persisted. It carries the account's id, and that id changes
+	whenever an account is deleted and recreated on the same address — a cached session then scopes
+	every call to the id of the account that is gone, which the server rejects with "You are not an
+	owner of account <id>". These connections are short-lived (one app password when an account is
+	set up) and ``request_cache`` already shares them within a request, so rediscovering costs a
+	single request and keeps the account id honest.
 	"""
 
-	server_url, admin_username = get_config(("server_url", "username"))
-	username = f"{account}%{admin_username}"
-	cache_key = hashlib.sha1(f"{server_url}|{username}".encode()).hexdigest()
+	admin_username = get_config("username")
 
-	return _build_connection(username, cache_key, timeout)
+	return _build_connection(f"{account}%{admin_username}", None, timeout)
