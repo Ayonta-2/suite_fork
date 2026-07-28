@@ -132,16 +132,18 @@ const style = computed(() => {
 .sn-lp-card {
 	transform-origin: top left;
 	animation: sn-lp-rise 120ms ease-out;
+	/* Paint the fill with a literal colour, NOT the bg-surface-white utility.
+	   That utility compiles to color-mix(in srgb, var(--surface-white,#fff) …);
+	   in the production runtime --surface-white resolves to an EMPTY value in
+	   this context, and an empty var defeats even the #fff fallback, so the
+	   color-mix is invalid and the whole background-color is dropped — the card
+	   goes transparent and the canvas cell text shows through. A literal colour
+	   can't collapse; !important + the scoped selector's specificity beat the
+	   utility's own !important declaration. */
+	background-color: #fff !important;
 }
-/* Opaque-fill fallback. The bg-surface-white utility compiles to a color-mix()
-   value, which browsers without color-mix() support (pre Chrome 111 / Safari
-   16.2 / Firefox 113) discard as invalid — leaving the card transparent so the
-   canvas cell text shows through. Where color-mix is unsupported, paint the
-   fill from the plain design token instead (equals #fff / dark #0f0f0f). */
-@supports not (background-color: color-mix(in srgb, red, blue)) {
-	.sn-lp-card {
-		background-color: var(--surface-white, #fff);
-	}
+[data-theme='dark'] .sn-lp-card {
+	background-color: #0f0f0f !important;
 }
 @keyframes sn-lp-rise {
 	from { transform: translateY(-4px) scale(0.98); opacity: 0; }
