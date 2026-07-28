@@ -7,6 +7,7 @@
  "field_order": [
   "general_section",
   "preview_size",
+  "quota",
   "use_drive_for_files",
   "disk_section",
   "flat",
@@ -92,6 +93,13 @@
    "in_list_view": 1,
    "label": "Preview size",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Default storage quota per user (in megabytes). 0 means unlimited.",
+   "fieldname": "quota",
+   "fieldtype": "Int",
+   "label": "Quota"
   },
   {
    "fieldname": "disk_section",

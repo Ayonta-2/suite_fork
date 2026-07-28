@@ -12,7 +12,8 @@
     "comment",
     "share",
     "write",
-    "upload"
+    "upload",
+    "deny"
   ],
   "fields": [
     {
@@ -64,6 +65,12 @@
       "fieldname": "team",
       "fieldtype": "Check",
       "label": "Team"
+    },
+    {
+      "default": "0",
+      "fieldname": "deny",
+      "fieldtype": "Check",
+      "label": "Deny"
     }
   ],
   "grid_page_length": 50,
