@@ -28,8 +28,7 @@
       <Button
         v-if="column.key === 'options' && contextMenu"
         class="!bg-inherit"
-        :aria-label="`Actions for ${row.file_name}`"
-        :data-testid="`drive-entity-actions-${row.name}`"
+        :label="`Actions for ${row.file_name}`"
         @click="(e) => contextMenu(e, row)"
       >
         <LucideMoreHorizontal class="size-4" />

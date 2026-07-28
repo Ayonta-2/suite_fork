@@ -2,7 +2,6 @@
   <FrappeUIProvider>
     <div
       v-if="isLoggedIn || $route.meta.allowGuest"
-      data-testid="drive-app"
       class="flex flex-col sm:flex-row h-full"
     >
       <Sidebar v-if="normalView" />

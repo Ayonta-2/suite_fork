@@ -24,7 +24,6 @@ test.describe.serial("Drive critical paths", () => {
 		const renamedLabel = renamedName.replace(/\.txt$/, "");
 
 		await page.goto("/drive");
-		await expect(page.getByTestId("drive-app")).toBeVisible();
 		await expect(page.getByRole("link", { name: "Home", exact: true }).first()).toBeVisible();
 
 		await page.getByRole("button", { name: "Create", exact: true }).click();
@@ -87,7 +86,6 @@ test.describe.serial("Drive critical paths", () => {
 		await shareCurrentEntity(owner.page, folderName, collaborator.user.email);
 
 		await collaborator.page.goto(`/drive/d/${folder.name}`);
-		await expect(collaborator.page.getByTestId("drive-app")).toBeVisible();
 		await expect(collaborator.page.getByText(folderName, { exact: true })).toBeVisible();
 		await collaborator.page.getByRole("button", { name: "Entity actions" }).click();
 		await expect(collaborator.page.getByRole("menuitem", { name: "Rename" })).toHaveCount(0);
@@ -96,7 +94,6 @@ test.describe.serial("Drive critical paths", () => {
 
 		await setDriveAccess(owner.page.request, folder.name, "");
 		await guestPage.goto(`/drive/d/${folder.name}`);
-		await expect(guestPage.getByTestId("drive-app")).toBeVisible();
 		await expect(guestPage.getByText(folderName, { exact: true })).toBeVisible();
 		await expect(guestPage.getByRole("button", { name: "Sign In" })).toBeVisible();
 		await expect(guestPage.getByRole("button", { name: "Create", exact: true })).toBeHidden();

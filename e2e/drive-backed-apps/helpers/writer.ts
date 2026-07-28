@@ -47,10 +47,9 @@ export async function shareWriterDocument(
 
 export async function openWriterDocument(page: Page, id: string): Promise<void> {
 	await page.goto(`/writer/w/${id}`);
-	await expect(page.getByTestId("writer-app")).toBeVisible();
-	await expect(page.getByTestId("writer-editor")).toBeVisible();
+	await expect(writerEditor(page)).toBeVisible();
 }
 
 export function writerEditor(page: Page) {
-	return page.getByTestId("writer-editor");
+	return page.getByRole("textbox", { name: "Document editor" });
 }

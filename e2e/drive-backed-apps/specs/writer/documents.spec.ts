@@ -8,12 +8,10 @@ import {
 
 test("creates a document from Writer and lists it", async ({ owner }) => {
 	await owner.page.goto("/writer");
-	await expect(owner.page.getByTestId("writer-app")).toBeVisible();
-
 	await owner.page.getByRole("button", { name: "New" }).click();
 	await expect(owner.page).toHaveURL(/\/writer\/w\/([^/]+)(?:\/|$)/);
 	const id = new URL(owner.page.url()).pathname.split("/")[3];
-	await expect(owner.page.getByTestId("writer-editor")).toBeVisible();
+	await expect(writerEditor(owner.page)).toBeVisible();
 
 	await owner.page.goto("/writer");
 	await expect(owner.page.getByTestId(`writer-document-${id}`)).toBeVisible();
@@ -32,7 +30,7 @@ test("manual save survives a reload", async ({ owner, run }) => {
 	await expect(owner.page.getByText("Saved document", { exact: true })).toBeVisible();
 
 	await owner.page.reload();
-	await expect(owner.page.getByTestId("writer-editor")).toBeVisible();
+	await expect(writerEditor(owner.page)).toBeVisible();
 	await expect(writerEditor(owner.page)).toContainText(content);
 });
 

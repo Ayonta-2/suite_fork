@@ -13,12 +13,9 @@ import { frappeData } from "../../../shared/frappe";
 
 test("creating from Drive routes into Writer", async ({ owner }) => {
 	await owner.page.goto("/drive/documents");
-	await expect(owner.page.getByTestId("drive-app")).toBeVisible();
-
 	await owner.page.locator("#create-button").click();
 	await expect(owner.page).toHaveURL(/\/writer\/w\/[^/]+(?:\/|$)/);
-	await expect(owner.page.getByTestId("writer-app")).toBeVisible();
-	await expect(owner.page.getByTestId("writer-editor")).toBeVisible();
+	await expect(writerEditor(owner.page)).toBeVisible();
 });
 
 test("the same document is visible in Drive and Writer listings", async ({
