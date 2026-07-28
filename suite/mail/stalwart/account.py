@@ -273,6 +273,7 @@ class AccountService(ManagementService):
 		"emailAddress",
 		"aliases",
 		"domainId",
+		"locale",
 		"memberGroupIds",
 		"quotas",
 		"roles",

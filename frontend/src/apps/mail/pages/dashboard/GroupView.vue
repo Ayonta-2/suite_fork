@@ -14,6 +14,8 @@
 				<div>
 					<InformationField :label="__('Roles')" :value="roleLabels.join(', ')" />
 					<InformationField :label="__('Description')" :value="member.data.description" />
+					<InformationField :label="__('Locale')" :value="localeLabel(member.data.locale)" />
+					<InformationField :label="__('Time Zone')" :value="member.data.time_zone" />
 					<InformationField :label="__('Created At')" :value="createdAt" />
 				</div>
 			</DashboardCard>
@@ -182,6 +184,7 @@ import {
 } from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import AddGroupEmailModal from '@/apps/mail/components/Modals/AddGroupEmailModal.vue'
 import AddGroupMembersModal from '@/apps/mail/components/Modals/AddGroupMembersModal.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
@@ -215,6 +218,7 @@ const { groupId } = defineProps<{ groupId: string }>()
 
 const dayjs = inject<DayjsFn>('$dayjs')
 const router = useRouter()
+const { localeLabel } = useAccountOptions()
 
 usePageMeta(() => ({ title: (member.data as GroupData | undefined)?.email || groupId }))
 

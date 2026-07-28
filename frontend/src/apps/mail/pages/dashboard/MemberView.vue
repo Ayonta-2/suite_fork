@@ -22,6 +22,8 @@
 						:value="member.data.is_admin ? __('Admin') : __('User')"
 					/>
 					<InformationField :label="__('Full Name')" :value="member.data.description" />
+					<InformationField :label="__('Locale')" :value="localeLabel(member.data.locale)" />
+					<InformationField :label="__('Time Zone')" :value="member.data.time_zone" />
 					<InformationField :label="__('Last Active')" :value="lastActive" />
 					<InformationField :label="__('Joined On')" :value="joinedOn" />
 				</div>
@@ -232,6 +234,7 @@ import {
 } from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import AddMemberEmailModal from '@/apps/mail/components/Modals/AddMemberEmailModal.vue'
 import AddMemberGroupsModal from '@/apps/mail/components/Modals/AddMemberGroupsModal.vue'
 import AddMemberMailingListsModal from '@/apps/mail/components/Modals/AddMemberMailingListsModal.vue'
@@ -269,6 +272,7 @@ const { memberId } = defineProps<{ memberId: string }>()
 
 const dayjs = inject<DayjsFn>('$dayjs')
 const router = useRouter()
+const { localeLabel } = useAccountOptions()
 
 usePageMeta(() => ({ title: memberId }))
 

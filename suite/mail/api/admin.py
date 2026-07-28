@@ -18,6 +18,7 @@ from suite.mail.doctype.mail_account_request.mail_account_request import (
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.stalwart import (
 	add_account_role,
+	get_account_metadata,
 	get_account_service,
 	get_action_service,
 	get_action_types,
@@ -428,6 +429,8 @@ def get_member(member_id: str) -> dict:
 		"groups": [],
 		"mailing_lists": [],
 		"quota": _build_quota_usage(0, 0),
+		"locale": None,
+		"time_zone": None,
 	}
 
 	account_id = get_user_personal_jmap_account(member_id)
@@ -437,10 +440,16 @@ def get_member(member_id: str) -> dict:
 	with suppress(Exception):
 		account = get_account_service().get(
 			account_id,
-			properties=["emailAddress", "aliases", "quotas", "usedDiskQuota", "memberGroupIds", "description"],
+			properties=[
+				"emailAddress", "aliases", "quotas", "usedDiskQuota", "memberGroupIds", "description",
+				"locale", "timeZone",
+			],
 		)
 		if not account:
 			return result
+
+		result["locale"] = account.get("locale")
+		result["time_zone"] = account.get("timeZone")
 
 		# Each address carries a description used as its Identity display name: the primary uses the
 		# account description, each alias its own.
@@ -669,14 +678,39 @@ def _rebuild_aliases(account: dict, *, keep: callable) -> list[EmailAlias]:
 	return aliases
 
 
+def _locale_patch(locale: str | None, time_zone: str | None) -> dict:
+	"""Builds the account patch for the locale and time zone, skipping whatever was not passed.
+
+	The two differ on the server: a locale is required, so an empty one leaves it alone, while the
+	time zone is nullable and an empty one clears it back to "unset".
+	"""
+
+	patch = {}
+	if locale:
+		patch["locale"] = locale
+	if time_zone is not None:
+		patch["timeZone"] = time_zone or None
+	return patch
+
+
+@frappe.whitelist()
+def get_account_options() -> dict:
+	"""Returns the locale and time zone choices for editing a member or group."""
+
+	check_admin_permission("view account options")
+	return get_account_metadata()
+
+
 @frappe.whitelist()
 def update_member(
 	member_id: str,
 	role: str | None = None,
 	description: str | None = None,
 	quota_gb: float | None = None,
+	locale: str | None = None,
+	time_zone: str | None = None,
 ) -> None:
-	"""Updates a member's role, display name and quota on both Frappe and Stalwart."""
+	"""Updates a member's role, display name, quota, locale and time zone on Frappe and Stalwart."""
 
 	check_admin_permission("update members")
 
@@ -729,6 +763,15 @@ def update_member(
 			func=lambda: account_service.update(account_id, {"quotas/maxDiskQuota": quota_bytes}),
 			title=_("Failed to update quota for {0}").format(member_id),
 			user_message=_("An error occurred while updating the quota, check error logs for more details."),
+			with_context=False,
+			module="Mail",
+		)
+
+	if patch := _locale_patch(locale, time_zone):
+		execute_with_logging(
+			func=lambda: account_service.update(account_id, patch),
+			title=_("Failed to update locale for {0}").format(member_id),
+			user_message=_("An error occurred while updating the locale, check error logs for more details."),
 			with_context=False,
 			module="Mail",
 		)
@@ -979,7 +1022,7 @@ def get_group(group_id: str) -> dict:
 		group_id,
 		properties=[
 			"id", "name", "emailAddress", "description", "createdAt", "roles", "aliases", "quotas",
-			"usedDiskQuota",
+			"usedDiskQuota", "locale", "timeZone",
 		],
 	)
 	if not group:
@@ -1017,6 +1060,8 @@ def get_group(group_id: str) -> dict:
 		"description": group.get("description"),
 		"created_at": group.get("createdAt"),
 		"role_ids": _keys((group.get("roles") or {}).get("roleIds")),
+		"locale": group.get("locale"),
+		"time_zone": group.get("timeZone"),
 		"email_addresses": email_addresses,
 		"members": [{"id": m["id"], "name": m.get("name"), "email": m.get("emailAddress")} for m in members],
 		"quota": _build_quota_usage(
@@ -1067,12 +1112,14 @@ def update_group(
 	description: str | None = None,
 	roles: list | None = None,
 	quota_gb: float | None = None,
+	locale: str | None = None,
+	time_zone: str | None = None,
 ) -> None:
-	"""Updates a group's description (full name), roles and quota."""
+	"""Updates a group's description (full name), roles, quota, locale and time zone."""
 
 	check_admin_permission("update groups")
 
-	patch = {}
+	patch = _locale_patch(locale, time_zone)
 	if description is not None:
 		patch["description"] = description
 	if roles is not None:

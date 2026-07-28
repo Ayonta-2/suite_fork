@@ -232,6 +232,32 @@ def get_action_types() -> list[dict]:
 
 
 @redis_cache(ttl=3600)
+def get_account_metadata() -> dict:
+	"""Returns the locale and time zone choices for an account, each as ``{value, label}``.
+
+	The locale label leads with the code so it stays scannable, and keeps the schema's description
+	after it because the picker matches on the label — which is what makes searching by language
+	rather than by code work.
+	"""
+
+	from suite.mail.utils import get_config
+
+	schema = get_management_connection().request(
+		method="GET", url=urljoin(get_config("server_url"), "/api/schema"), return_json=True
+	)
+	enums = schema.get("enums") or {}
+	return {
+		"locales": [
+			{"value": v["name"], "label": f"{v['name']} · {v['label']}" if v.get("label") else v["name"]}
+			for v in enums.get("Locale") or []
+		],
+		# The time zone label is only the id with its underscores spaced out, so the id itself reads
+		# better and matches what the member and group pages show.
+		"time_zones": [{"value": v["name"], "label": v["name"]} for v in enums.get("TimeZone") or []],
+	}
+
+
+@redis_cache(ttl=3600)
 def get_log_labels() -> dict:
 	"""Returns the display labels for log entries as ``{"events": {...}, "levels": {...}}``.
 
