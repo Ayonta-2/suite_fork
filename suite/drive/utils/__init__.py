@@ -395,6 +395,7 @@ def if_folder_exists(folder_name, parent):
 		return existing_folder.name
 	else:
 		d = frappe.get_doc({"doctype": "File", **values, "file_modified": frappe.utils.now_datetime()})
+		d.flags.file_created = True
 		d.insert()
 		return d.name
 

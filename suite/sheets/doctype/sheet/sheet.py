@@ -56,8 +56,7 @@ class Sheet(Document):
 		# Back every sheet with a Drive File so it shows up in — and opens
 		# from — Drive, exactly like Writer/Slides docs. The Drive File is a
 		# thin pointer (content_doctype/content_docname); the workbook itself
-		# stays in this doctype. `create_for_doc` no-ops (returns None) when
-		# the creator has no Drive team, so this never blocks sheet creation.
+		# stays in this doctype.
 		self.create_drive_file()
 
 	def create_drive_file(self, parent: str | None = None):

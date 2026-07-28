@@ -126,9 +126,7 @@ class FileManager:
 				if self.s3_enabled:
 					# Removes original file
 					os.remove(file_path)
-					self.conn.upload_file(
-						disk_path, self.bucket, str(save_path.with_suffix(".thumbnail"))
-					)
+					self.conn.upload_file(disk_path, self.bucket, str(save_path.with_suffix(".thumbnail")))
 					disk_path.unlink()
 				else:
 					final_path = disk_path.with_suffix(".thumbnail")
@@ -336,7 +334,7 @@ class FileManager:
 					continue
 
 				mime_type = "folder" if is_folder else mimemapper.get_mime_type(f["Key"], native_first=False)
-				# Team path is key, DB path is f["Key"]
+				# Relative path is key, DB path is f["Key"]
 				files[path] = (f["Size"], f["LastModified"].timestamp(), mime_type, f["Key"])
 		else:
 			root_folder = self.site_folder / "private" / "files" / self.get_prefix()

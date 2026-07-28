@@ -51,7 +51,7 @@ class Presentation(Document):
 			file = DriveFile.get_for_doc("Presentation", self.name)
 			if not file:
 				return
-			existing = frappe.db.get_value("Drive Permission", {"entity": file, "user": "", "team": 0})
+			existing = frappe.db.get_value("Drive Permission", {"entity": file, "user": "", "deny": 0})
 			perm = (
 				frappe.get_doc("Drive Permission", existing)
 				if existing
