@@ -120,7 +120,6 @@ ignore_file_permissions = True
 permission_query_conditions = {
 	# drive
 	"File": "suite.drive.utils.overrides.filter_file",
-	"Drive Team": "suite.drive.utils.overrides.filter_drive_team",
 	"Drive Permission": "suite.drive.utils.overrides.filter_drive_permission",
 	"Drive Favourite": "suite.drive.utils.overrides.filter_drive_favourite",
 	"Drive Entity Log": "suite.drive.utils.overrides.filter_drive_recent",
@@ -150,7 +149,6 @@ has_permission = {
 	# drive
 	"File": "suite.drive.api.permissions.user_has_permission",
 	"Drive Permission": "suite.drive.api.permissions.drive_permission_has_permission",
-	"Drive Team": "suite.drive.api.permissions.drive_team_has_permission",
 	# slides
 	"Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
 	# writer
@@ -235,7 +233,7 @@ doc_events = {
 			"suite.utils.user.assign_suite_role",
 		],
 		"after_insert": [
-			"suite.drive.utils.users.create_drive_settings_and_team",
+			"suite.drive.utils.users.create_drive_settings",
 			"suite.mail.events.create_user_settings",
 		],
 		"on_update": [

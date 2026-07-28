@@ -154,15 +154,19 @@ def hide_storage_key(row):
 
 
 def get_root_folder():
-	"""The single site root folder (`folder IS NULL`); created on first use."""
+	"""The single site root folder: the framework's `Home` File (`folder IS NULL`,
+	created by frappe on install). Its file_url and disk dirs are initialized on
+	first use, since the framework leaves them empty."""
 	root = (
 		frappe.qb.from_(DriveFile)
 		.where(DriveFile.folder.isnull())
 		.select(DriveFile.name, DriveFile.file_url)
+		.orderby(DriveFile.creation)
+		.limit(1)
 		.run(as_dict=True)
-	)
-	if root:
-		return root[0]
+	)[0]
+	if root.file_url:
+		return root
 
 	from suite.drive.utils.files import get_s3_url
 
@@ -175,16 +179,9 @@ def get_root_folder():
 	if settings.flat:
 		(disk_path / "embeds").mkdir(exist_ok=True)
 
-	doc = frappe.get_doc(
-		{
-			"doctype": "File",
-			"file_name": "Home",
-			"is_folder": 1,
-			"file_url": get_s3_url(prefix) if settings.enabled else "/private/files/" + prefix,
-		}
-	)
-	doc.insert(ignore_permissions=True)
-	return frappe._dict(name=doc.name, file_url=doc.file_url)
+	root.file_url = get_s3_url(prefix) if settings.enabled else "/private/files/" + prefix
+	frappe.db.set_value("File", root.name, "file_url", root.file_url, update_modified=False)
+	return root
 
 
 def get_user_folder(user=None):

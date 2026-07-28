@@ -79,28 +79,11 @@ def get_country_info():
 	return frappe.cache().hget("ip_country_map", ip, generator=_get_country_info)
 
 
-def create_drive_settings_and_team(user, method: str | None = None) -> None:
-	"""Create Drive Settings and a personal team for a newly created User."""
-	from suite.drive.api.product import create_team
+def create_drive_settings(user, method: str | None = None) -> None:
+	"""Create Drive Settings and the private user folder for a newly created User."""
+	from suite.drive.utils import get_user_folder
 
-	user_name = user.name
-
-	if not user_name or user_name in ("Guest", "Administrator"):
+	if not user.name or user.name in ("Guest", "Administrator"):
 		return
 
-	frappe.get_doc({"doctype": "Drive Settings", "user": user.email}).insert(ignore_permissions=True)
-
-	# Created as the new user so the team is owned by and shared with them.
-	# Snapshot the full session state: frappe.set_user() overwrites session.sid with the
-	# username and wipes session.data, so restoring only the user would leave the original
-	# session corrupted (logging the acting user out on the next request).
-	original_user = frappe.session.user
-	original_sid = frappe.session.sid
-	original_data = frappe.session.data
-	try:
-		frappe.set_user(user_name)
-		create_team(user=user_name, team_name=user_name, personal=1)
-	finally:
-		frappe.set_user(original_user)
-		frappe.session.sid = original_sid
-		frappe.session.data = original_data
+	get_user_folder(user.name)
