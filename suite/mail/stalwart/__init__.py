@@ -186,10 +186,12 @@ def get_permissions() -> list[dict]:
 
 @redis_cache(ttl=3600)
 def get_action_types() -> list[dict]:
-	"""Returns the executable server actions as ``{value, label, schema_name}`` from the schema.
+	"""Returns the executable server actions as ``{value, label, schema_name, options}`` from the schema.
 
 	``schema_name`` is set only for actions that take extra input (e.g. DMARC troubleshooting and
-	spam classification); parameterless actions leave it ``None``.
+	spam classification); parameterless actions leave it ``None``. ``options`` holds the choices for
+	each enum input of that schema, so a select can be rendered without restating the server's enums —
+	which matters because the server is the only authority on the exact accepted values.
 	"""
 
 	from suite.mail.utils import get_config
@@ -197,9 +199,34 @@ def get_action_types() -> list[dict]:
 	schema = get_management_connection().request(
 		method="GET", url=urljoin(get_config("server_url"), "/api/schema"), return_json=True
 	)
+	enums = schema.get("enums") or {}
+	fields = schema.get("fields") or {}
+
+	def choice(variant: dict) -> dict:
+		# A few enum variants ship with an empty label and the description folded into the name
+		# ("bit8Mime - 8-bit MIME message content"); the name is still the only accepted value.
+		name = variant["name"]
+		label = variant.get("label") or (name.split(" - ", 1)[1] if " - " in name else name)
+		return {"value": name, "label": label}
+
+	def enum_options(schema_name: str | None) -> dict:
+		properties = (fields.get(schema_name) or {}).get("properties") or {}
+		options = {}
+		for name, spec in properties.items():
+			type = spec.get("type") or {}
+			if spec.get("update") == "serverSet" or type.get("type") != "enum":
+				continue
+			options[name] = [choice(v) for v in enums.get(type.get("enumName")) or []]
+		return options
+
 	variants = (schema.get("schemas") or {}).get("x:Action", {}).get("variants") or []
 	return [
-		{"value": v["name"], "label": v.get("label") or v["name"], "schema_name": v.get("schemaName")}
+		{
+			"value": v["name"],
+			"label": v.get("label") or v["name"],
+			"schema_name": v.get("schemaName"),
+			"options": enum_options(v.get("schemaName")),
+		}
 		for v in variants
 	]
 

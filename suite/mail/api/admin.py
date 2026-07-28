@@ -2299,7 +2299,13 @@ def get_actions() -> list[dict]:
 
 @frappe.whitelist()
 def run_action(action_type: str, params: dict | None = None) -> dict:
-	"""Executes a server management action and returns its result (empty for parameterless actions)."""
+	"""Executes a server management action and returns its result (empty for parameterless actions).
+
+	Inputs the schema types as a JMAP ``set`` (e.g. the recipients of a spam classification) arrive as
+	a list and are encoded here, since the server rejects a plain list for them.
+	"""
 
 	check_admin_permission("run actions")
+
+	params = {k: dict.fromkeys(v, True) if isinstance(v, list) else v for k, v in (params or {}).items()}
 	return get_action_service().run(action_type, params=params or None)

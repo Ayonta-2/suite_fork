@@ -39,8 +39,21 @@ import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import RunActionModal from '@/apps/mail/components/Modals/RunActionModal.vue'
 
-type ActionInfo = { value: string; label: string; schema_name?: string | null }
-type ActionField = { name: string; label: string; type?: string; placeholder?: string; required?: boolean }
+type ActionOption = { value: string; label: string }
+type ActionInfo = {
+	value: string
+	label: string
+	schema_name?: string | null
+	options?: Record<string, ActionOption[]>
+}
+type ActionField = {
+	name: string
+	label: string
+	type?: string
+	placeholder?: string
+	required?: boolean
+	options?: ActionOption[]
+}
 
 usePageMeta(() => ({ title: __('Actions') }))
 
@@ -55,12 +68,17 @@ const ACTION_FIELDS: Record<string, ActionField[]> = {
 		{ name: 'spfMailFromDomain', label: 'SPF MAIL FROM Domain', placeholder: 'example.com', required: true },
 		{ name: 'message', label: 'Message Body', type: 'textarea' },
 	],
+	// Mirrors the "Input" section of the server's x:SpamClassify form; the choices for
+	// `envFromParameters` come from the action itself, as only the server knows its exact values.
 	'x:SpamClassify': [
-		{ name: 'message', label: 'Message', type: 'textarea' },
-		{ name: 'remoteIp', label: 'Remote IP', placeholder: '192.168.1.1' },
-		{ name: 'ehloDomain', label: 'EHLO Domain', placeholder: 'mail.example.com' },
-		{ name: 'envFrom', label: 'MAIL FROM', placeholder: 'sender@example.com' },
-		{ name: 'envRcptTo', label: 'RCPT TO', placeholder: 'recipient@example.org' },
+		{ name: 'message', label: 'Message', type: 'textarea', required: true },
+		{ name: 'remoteIp', label: 'Remote IP', placeholder: '192.168.1.1', required: true },
+		{ name: 'ehloDomain', label: 'EHLO Domain', placeholder: 'mail.example.com', required: true },
+		{ name: 'authenticatedAs', label: 'Authenticated As', placeholder: 'user@example.com' },
+		{ name: 'isTls', label: 'TLS Enabled', type: 'checkbox' },
+		{ name: 'envFrom', label: 'MAIL FROM', placeholder: 'sender@example.com', required: true },
+		{ name: 'envFromParameters', label: 'MAIL FROM Parameters', type: 'select' },
+		{ name: 'envRcptTo', label: 'RCPT TO', type: 'list', placeholder: 'recipient@example.org' },
 	],
 }
 
@@ -126,7 +144,10 @@ const cellBorders = (index: number, count: number) => {
 const trigger = (action: ActionInfo) => {
 	activeAction.value = action
 	if (action.schema_name && ACTION_FIELDS[action.schema_name]) {
-		activeFields.value = ACTION_FIELDS[action.schema_name]
+		// Selects take their choices from the schema the server reported alongside the action.
+		activeFields.value = ACTION_FIELDS[action.schema_name].map((field) =>
+			field.type === 'select' ? { ...field, options: action.options?.[field.name] || [] } : field,
+		)
 		showRun.value = true
 	} else {
 		showConfirm.value = true
