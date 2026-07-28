@@ -1,12 +1,11 @@
 import os
-import inspect
 from datetime import datetime
-from functools import wraps
 from pathlib import Path
 
 import frappe
-from pypika import Field, functions as fn
 import mimemapper
+from pypika import Field
+from pypika import functions as fn
 
 DriveFile = frappe.qb.DocType("File")
 
@@ -19,171 +18,221 @@ WRITER_CONTENT_DOCTYPE = "Writer Document"
 PRESENTATION_CONTENT_DOCTYPE = "Presentation"
 
 # `kind` — how Drive may treat a listing row (NOT the MIME `file_kinds` filter):
-#   native   — Drive-managed team file. Rename / move / share allowed.
-#   readonly — Shown in Drive but not managed here. Sub-cases use existing fields:
-#                no `team` → site file ("Open in Desk")
+#   native   — Drive-managed file. Rename / move / share allowed.
+#   readonly — Shown in Drive but not managed here:
 #                content_doctype == "File" → attachment ref ("Go to original")
 #   virtual  — Fabricated folder for the attachments browser (not a DB row).
 KIND_NATIVE = "native"
 KIND_READONLY = "readonly"
 KIND_VIRTUAL = "virtual"
 
+# Drive Permission.user sentinels, from most to least specific:
+#   <email>  — that user
+#   $GENERAL — any logged-in user
+#   ""       — anyone with the link, including guests
+GENERAL_USER = "$GENERAL"
 
-def is_site_file(entity):
-    """Site files live outside any Drive team; they defer to framework storage & perms."""
-    team = entity.get("team") if isinstance(entity, dict) else getattr(entity, "team", None)
-    return not team
+PERMISSION_TYPES = ["read", "comment", "share", "upload", "write"]
 
 
 def entity_kind(row):
-    """Classify a real `File` listing row. See `kind` above.
+	"""Classify a real `File` listing row. See `kind` above.
 
-    `virtual` nodes are built in `list.get_attachments` and never reach here.
-    """
-    if is_site_file(row) or row.get("content_doctype") == ATTACHMENT_CONTENT_DOCTYPE:
-        return KIND_READONLY
-    return KIND_NATIVE
+	`virtual` nodes are built in `list.get_attachments` and never reach here.
+	"""
+	if row.get("content_doctype") == ATTACHMENT_CONTENT_DOCTYPE:
+		return KIND_READONLY
+	return KIND_NATIVE
+
+
 MIME_LIST_MAP = {
-    "Image": [
-        "image/png",
-        "image/jpeg",
-        "image/svg+xml",
-        "image/heic",
-        "image/heif",
-        "image/avif",
-        "image/webp",
-        "image/tiff",
-        "image/gif",
-    ],
-    "PDF": ["application/pdf"],
-    "Text": [
-        "text/plain",
-    ],
-    "XML Data": ["application/xml"],
-    "Document": [
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.oasis.opendocument.text",
-        "application/vnd.apple.pages",
-        "application/x-abiword",
-        "frappe_doc",
-    ],
-    "Frappe Document": [
-        "frappe_doc",
-    ],
-    "Spreadsheet": [
-        "frappe/sheet",
-        "application/vnd.ms-excel",
-        "link/googlesheets",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "application/vnd.oasis.opendocument.spreadsheet",
-        "text/csv",
-        "application/vnd.apple.numbers",
-    ],
-    "Presentation": [
-        "frappe/slides",
-        "application/vnd.ms-powerpoint",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "application/vnd.oasis.opendocument.presentation",
-        "application/vnd.apple.keynote",
-    ],
-    "Code": [
-        "text/x-python",
-        "text/html",
-        "text/css",
-        "text/javascript",
-        "application/javascript",
-        "text/rich-text",
-        "text/x-shellscript",
-        "text/markdown",
-        "application/json",
-        "application/x-httpd-php",
-        "application/x-python-script",
-        "application/x-sql",
-        "text/x-perl",
-        "text/x-csrc",
-        "text/x-sh",
-    ],
-    "Audio": ["audio/mpeg", "audio/wav", "audio/x-midi", "audio/ogg", "audio/mp4", "audio/mp3"],
-    "Video": ["video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/x-matroska"],
-    "Book": ["application/epub+zip", "application/x-mobipocket-ebook"],
-    "Application": [
-        "application/octet-stream",
-        "application/x-sh",
-        "application/vnd.microsoft.portable-executable",
-    ],
-    "Archive": [
-        "application/zip",
-        "application/x-rar-compressed",
-        "application/x-tar",
-        "application/gzip",
-        "application/x-bzip2",
-    ],
+	"Image": [
+		"image/png",
+		"image/jpeg",
+		"image/svg+xml",
+		"image/heic",
+		"image/heif",
+		"image/avif",
+		"image/webp",
+		"image/tiff",
+		"image/gif",
+	],
+	"PDF": ["application/pdf"],
+	"Text": [
+		"text/plain",
+	],
+	"XML Data": ["application/xml"],
+	"Document": [
+		"application/msword",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.oasis.opendocument.text",
+		"application/vnd.apple.pages",
+		"application/x-abiword",
+		"frappe_doc",
+	],
+	"Frappe Document": [
+		"frappe_doc",
+	],
+	"Spreadsheet": [
+		"frappe/sheet",
+		"application/vnd.ms-excel",
+		"link/googlesheets",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"application/vnd.oasis.opendocument.spreadsheet",
+		"text/csv",
+		"application/vnd.apple.numbers",
+	],
+	"Presentation": [
+		"frappe/slides",
+		"application/vnd.ms-powerpoint",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		"application/vnd.oasis.opendocument.presentation",
+		"application/vnd.apple.keynote",
+	],
+	"Code": [
+		"text/x-python",
+		"text/html",
+		"text/css",
+		"text/javascript",
+		"application/javascript",
+		"text/rich-text",
+		"text/x-shellscript",
+		"text/markdown",
+		"application/json",
+		"application/x-httpd-php",
+		"application/x-python-script",
+		"application/x-sql",
+		"text/x-perl",
+		"text/x-csrc",
+		"text/x-sh",
+	],
+	"Audio": ["audio/mpeg", "audio/wav", "audio/x-midi", "audio/ogg", "audio/mp4", "audio/mp3"],
+	"Video": ["video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/x-matroska"],
+	"Book": ["application/epub+zip", "application/x-mobipocket-ebook"],
+	"Application": [
+		"application/octet-stream",
+		"application/x-sh",
+		"application/vnd.microsoft.portable-executable",
+	],
+	"Archive": [
+		"application/zip",
+		"application/x-rar-compressed",
+		"application/x-tar",
+		"application/gzip",
+		"application/x-bzip2",
+	],
 }
 
 
 FILE_FIELDS = [
-    "name",
-    "file_name",
-    "folder",
-    "file_url",
-    "file_size",
-    "file_type",
-    "is_folder",
-    "content_doctype",
-    "content_docname",
-    "team",
-    "creation",
-    fn.Coalesce(Field("file_modified"), DriveFile.modified).as_("modified"),
-    "owner",
-    "attached_to_doctype",
-    "attached_to_name",
+	"name",
+	"file_name",
+	"folder",
+	"file_url",
+	"file_size",
+	"file_type",
+	"is_folder",
+	"content_doctype",
+	"content_docname",
+	"creation",
+	fn.Coalesce(Field("file_modified"), DriveFile.modified).as_("modified"),
+	"owner",
+	"attached_to_doctype",
+	"attached_to_name",
 ]
 
 
 def hide_storage_key(row):
-    """Blank file_url unless the client needs it as a real URL.
+	"""Blank file_url unless the client needs it as a real URL.
 
-    For managed files it's the raw storage key, which leaks the owner's path;
-    only Link/Presentation/site files use it client-side.
-    """
-    if row.get("file_type") not in ("Link", "Presentation") and not is_site_file(row):
-        row["file_url"] = None
-    return row
+	For managed files it's the raw storage key, which leaks the owner's path;
+	only Link/Presentation files use it client-side.
+	"""
+	if row.get("file_type") not in ("Link", "Presentation"):
+		row["file_url"] = None
+	return row
 
 
-def get_home_folder(team):
-    team_filter = DriveFile.team.isnull() if not team else (DriveFile.team == team)
-    ls = (
-        frappe.qb.from_(DriveFile)
-        .where(team_filter & DriveFile.folder.isnull())
-        .select(DriveFile.name, DriveFile.file_url)
-        .run(as_dict=True)
-    )
-    if not ls:
-        error_msg = f"This team doesn't exist."
-        team_names = frappe.get_all(
-            "Drive Team Member",
-            pluck="parent",
-            filters=[
-                ["parenttype", "=", "Drive Team"],
-                ["user", "=", frappe.session.user],
-            ],
-        )
-        if team_names:
-            error_msg += f"<br /><br />Or maybe you want <a class='text-black' href='/drive/t/{team_names[0]}'>{frappe.db.get_value('Drive Team', team_names[0], 'title')}</a>?"
-        if not team_names:
-            error_msg += f"<br /><br />Please <a class='text-black' href='/drive/setup'>setup</a> an account."
-        frappe.throw(error_msg)
-    return ls[0]
+def get_root_folder():
+	"""The single site root folder (`folder IS NULL`); created on first use."""
+	root = (
+		frappe.qb.from_(DriveFile)
+		.where(DriveFile.folder.isnull())
+		.select(DriveFile.name, DriveFile.file_url)
+		.run(as_dict=True)
+	)
+	if root:
+		return root[0]
+
+	from suite.drive.utils.files import get_s3_url
+
+	settings = frappe.get_single("Drive Disk Settings")
+	prefix = settings.root_folder or ""
+	disk_path = Path(frappe.get_site_path("private/files")) / prefix
+	disk_path.mkdir(exist_ok=True, parents=True)
+	(disk_path / ".uploads").mkdir(exist_ok=True)
+	(disk_path / settings.thumbnail_prefix).mkdir(exist_ok=True)
+	if settings.flat:
+		(disk_path / "embeds").mkdir(exist_ok=True)
+
+	doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": "Home",
+			"is_folder": 1,
+			"file_url": get_s3_url(prefix) if settings.enabled else "/private/files/" + prefix,
+		}
+	)
+	doc.insert(ignore_permissions=True)
+	return frappe._dict(name=doc.name, file_url=doc.file_url)
+
+
+def get_user_folder(user=None):
+	"""The user's private folder under the root; created on first use.
+
+	Private by default: creation writes deny rows revoking the root-inherited
+	read for everyone but the owner.
+	"""
+	user = user or frappe.session.user
+	name = frappe.db.get_value("Drive Settings", user, "user_folder")
+	if name:
+		folder = frappe.db.get_value("File", name, ["name", "file_url"], as_dict=1)
+		if folder:
+			return folder
+
+	from suite.drive.utils.files import FileManager
+
+	manager = FileManager()
+	root = get_root_folder()
+	folder = create_drive_file(
+		user,
+		root.name,
+		"Folder",
+		lambda f: manager.create_folder(f, root),
+		owner=user,
+	)
+	frappe.get_doc(
+		{
+			"doctype": "Drive Permission",
+			"entity": folder.name,
+			"user": GENERAL_USER,
+			"deny": 1,
+			**dict.fromkeys(PERMISSION_TYPES, 1),
+		}
+	).insert(ignore_permissions=True)
+
+	if not frappe.db.exists("Drive Settings", user):
+		frappe.get_doc({"doctype": "Drive Settings", "user": user}).insert(ignore_permissions=True)
+	frappe.db.set_value("Drive Settings", user, "user_folder", folder.name, update_modified=False)
+	return frappe._dict(name=folder.name, file_url=folder.file_url)
 
 
 def get_ancestors_of(entity_name):
-    """
-    Return all parent nodes till the root node
-    """
-    result = frappe.db.sql(
-        """
+	"""
+	Return all parent nodes till the root node
+	"""
+	result = frappe.db.sql(
+		"""
         WITH RECURSIVE generated_path as (
         SELECT
             `tabFile`.name,
@@ -200,53 +249,50 @@ def get_ancestors_of(entity_name):
         JOIN `tabFile` as t ON t.name = gp.folder)
         SELECT name FROM generated_path;
     """,
-        values={"entity_name": entity_name},
-        as_dict=0,
-    )
-    flattened_list = [item for sublist in result for item in sublist]
-    flattened_list.pop(0)
-    return flattened_list
+		values={"entity_name": entity_name},
+		as_dict=0,
+	)
+	flattened_list = [item for sublist in result for item in sublist]
+	flattened_list.pop(0)
+	return flattened_list
 
 
-def dribble_access(path):
-    default_access = {
-        "read": 0,
-        "comment": 0,
-        "share": 0,
-        "upload": 0,
-        "write": 0,
-        "shared_team": None,
-    }
-    result = {}
-    for k in path[::-1]:
-        for t in default_access.keys():
-            if k[t] and not result.get(t):
-                result[t] = k[t]
-    return {**default_access, **result}
+def dribble_access(path, default_read=0):
+	"""Resolve access at the leaf of `path` (root→leaf, each node carrying its
+	permission rows nearest-first): for each permission type, the nearest row
+	that mentions it decides — grant → 1, deny → 0. Undecided types fall back
+	to 0, except read which inherits the root baseline."""
+	decided = {}
+	for node in path[::-1]:
+		for row in node.get("perms", ()):
+			for t in PERMISSION_TYPES:
+				if row[t] and t not in decided:
+					decided[t] = 0 if row["deny"] else 1
+	access = dict.fromkeys(PERMISSION_TYPES, 0)
+	access["read"] = default_read
+	access.update(decided)
+	return access
 
 
-def generate_upward_path(entity_name, user=None, team=0):
-    """
-    Given an ID traverse upwards till the root node
-    Stops when parent_drive_file IS NULL
-    """
-    if user is None:
-        user = frappe.session.user
-    user = frappe.db.escape(user if user != "Guest" else "")
+def generate_upward_path(entity_name, user=None):
+	"""
+	Given an ID traverse upwards till the root node
+	Stops when parent_drive_file IS NULL
+	"""
+	if user is None:
+		user = frappe.session.user
+	guest = user == "Guest"
+	user_lit = frappe.db.escape(user)
+	# Guests only see link-access rows; logged-in users also match their own
+	# and $GENERAL rows, most specific first.
+	perm_filter = "p.user = ''" if guest else f"p.user IN ({user_lit}, '{GENERAL_USER}', '')"
 
-    filter_: str
-    if team:
-        filter_ = "p.team = 1"
-    else:
-        filter_ = f"p.user = {user}"
-
-    result = frappe.db.sql(
-        f"""WITH RECURSIVE
+	result = frappe.db.sql(
+		f"""WITH RECURSIVE
             generated_path as (
                 SELECT
                     `tabFile`.file_name,
                     `tabFile`.name,
-                    `tabFile`.team,
                     `tabFile`.folder,
                     `tabFile`.owner,
                     0 AS level
@@ -258,7 +304,6 @@ def generate_upward_path(entity_name, user=None, team=0):
                 SELECT
                     t.file_name,
                     t.name,
-                    t.team,
                     t.folder,
                     t.owner,
                     gp.level + 1
@@ -271,250 +316,202 @@ def generate_upward_path(entity_name, user=None, team=0):
             gp.name,
             gp.owner,
             gp.folder,
-            gp.team,
+            p.user AS perm_user,
+            p.deny,
             p.read,
             p.upload,
-            p.user AS shared_team,
             p.write,
             p.comment,
             p.share
         FROM
             generated_path  as gp
         LEFT JOIN `tabDrive Permission` as p
-        ON gp.name = p.entity AND {filter_}
-        ORDER BY gp.level DESC;
+        ON gp.name = p.entity AND {perm_filter}
+        ORDER BY gp.level DESC,
+            CASE p.user WHEN {user_lit} THEN 0 WHEN '{GENERAL_USER}' THEN 1 ELSE 2 END;
     """,
-        values={"entity_name": entity_name},
-        as_dict=1,
-    )
-    for i, p in enumerate(result):
-        result[i] = {**p, **dribble_access(result[: i + 1])}
-    return result
+		values={"entity_name": entity_name},
+		as_dict=1,
+	)
+
+	nodes = []
+	for row in result:
+		if not nodes or nodes[-1]["name"] != row["name"]:
+			nodes.append(
+				{
+					"file_name": row["file_name"],
+					"name": row["name"],
+					"owner": row["owner"],
+					"folder": row["folder"],
+					"perms": [],
+				}
+			)
+		if row["perm_user"] is not None:
+			nodes[-1]["perms"].append(row)
+
+	default_read = int(not guest)
+	return [{**node, **dribble_access(nodes[: i + 1], default_read)} for i, node in enumerate(nodes)]
 
 
 def get_valid_breadcrumbs(entity_name, user_access):
-    """
-    Determine user access and generate upward path (breadcrumbs).
-    """
-    # If team/admin of this entity, then entire path
-    paths = [generate_upward_path(entity_name)]
-    if user_access.get("type") in ["admin", "user"]:
-        return paths[0]
-    paths.append(generate_upward_path(entity_name, team=1))
-    paths.append(generate_upward_path(entity_name, user="Guest"))
-
-    # Otherwise, slice where they lose read access.
-    try:
-        lose_access = max(next((i for i, k in enumerate(path[::-1]) if not k["read"]), 0) for path in paths if path)
-        return paths[0][-lose_access:]
-    except:
-        frappe.log_error("Breadcrumbs errored out", (entity_name, user_access, frappe.session.user, paths))
-        return paths[0] if len(paths) else []
+	"""
+	Determine user access and generate upward path (breadcrumbs).
+	"""
+	# Admins see the entire path; others get the contiguous readable suffix.
+	path = generate_upward_path(entity_name)
+	if user_access.get("type") in ["admin", "user"]:
+		return path
+	lose_access = next((i for i, k in enumerate(path[::-1]) if not k["read"]), 0)
+	return path[-lose_access:]
 
 
 def get_file_type(mime_type):
-    try:
-        return next(k for (k, v) in MIME_LIST_MAP.items() if mime_type in v)
-    except StopIteration:
-        return "Unknown"
+	try:
+		return next(k for (k, v) in MIME_LIST_MAP.items() if mime_type in v)
+	except StopIteration:
+		return "Unknown"
 
 
 def update_file_size(entity, delta):
-    doc = frappe.get_doc("File", entity)
-    while doc.folder:
-        doc.file_size += delta
-        doc.save(ignore_permissions=True)
-        doc = frappe.get_doc("File", doc.folder)
-    # Update root
-    doc.file_size += delta
-    doc.save(ignore_permissions=True)
+	doc = frappe.get_doc("File", entity)
+	while doc.folder:
+		doc.file_size += delta
+		doc.save(ignore_permissions=True)
+		doc = frappe.get_doc("File", doc.folder)
+	# Update root
+	doc.file_size += delta
+	doc.save(ignore_permissions=True)
 
 
-def if_folder_exists(team, folder_name, parent):
-    values = {
-        "file_name": folder_name,
-        "is_folder": 1,
-        "status": STATUS_ACTIVE,
-        "team": team,
-        "folder": parent,
-    }
-    existing_folder = frappe.db.get_value("File", values, ["name", "file_name", "is_folder", "status"], as_dict=1)
+def if_folder_exists(folder_name, parent):
+	values = {
+		"file_name": folder_name,
+		"is_folder": 1,
+		"status": STATUS_ACTIVE,
+		"folder": parent,
+	}
+	existing_folder = frappe.db.get_value(
+		"File", values, ["name", "file_name", "is_folder", "status"], as_dict=1
+	)
 
-    if existing_folder:
-        return existing_folder.name
-    else:
-        d = frappe.get_doc({"doctype": "File", **values, "file_modified": frappe.utils.now_datetime()})
-        d.insert()
-        return d.name
+	if existing_folder:
+		return existing_folder.name
+	else:
+		d = frappe.get_doc({"doctype": "File", **values, "file_modified": frappe.utils.now_datetime()})
+		d.insert()
+		return d.name
 
 
 def create_drive_file(
-    team,
-    file_name,
-    parent,
-    file_type,
-    entity_path,
-    mime_type=None,
-    file_size=0,
-    file_modified=None,
-    content_doctype=None,
-    content_docname=None,
-    owner=None,
+	file_name,
+	parent,
+	file_type,
+	entity_path,
+	mime_type=None,
+	file_size=0,
+	file_modified=None,
+	content_doctype=None,
+	content_docname=None,
+	owner=None,
 ):
-    values = {
-        "doctype": "File",
-        "is_private": 1,
-        "team": team,
-        "file_name": file_name,
-        "folder": parent,
-        "file_size": file_size,
-        "file_type": file_type,
-        "mime_type": mime_type,
-        "is_folder": file_type == "Folder",
-        "file_modified": (datetime.fromtimestamp(file_modified) if file_modified else frappe.utils.now()),
-    }
-    if content_doctype:
-        values["content_doctype"] = content_doctype
-        values["content_docname"] = content_docname
-    drive_file = frappe.get_doc(values)
-    drive_file.flags.file_created = True
-    drive_file.insert(ignore_permissions=True)
-    path = entity_path(drive_file) if callable(entity_path) else entity_path
-    drive_file.file_url = str(path) if path else ""
-    drive_file.save(ignore_permissions=True)
-    if owner:
-        drive_file.db_set("owner", owner, update_modified=False)
-    return drive_file
+	values = {
+		"doctype": "File",
+		"is_private": 1,
+		"file_name": file_name,
+		"folder": parent,
+		"file_size": file_size,
+		"file_type": file_type,
+		"mime_type": mime_type,
+		"is_folder": file_type == "Folder",
+		"file_modified": (datetime.fromtimestamp(file_modified) if file_modified else frappe.utils.now()),
+	}
+	if content_doctype:
+		values["content_doctype"] = content_doctype
+		values["content_docname"] = content_docname
+	drive_file = frappe.get_doc(values)
+	drive_file.flags.file_created = True
+	drive_file.insert(ignore_permissions=True)
+	path = entity_path(drive_file) if callable(entity_path) else entity_path
+	drive_file.file_url = str(path) if path else ""
+	drive_file.save(ignore_permissions=True)
+	if owner:
+		drive_file.db_set("owner", owner, update_modified=False)
+	return drive_file
 
-
-@frappe.whitelist()
-def get_default_team(with_file: bool = False):
-    default_team = frappe.get_value("Drive Team", {"owner": frappe.session.user, "personal": 1}, "name")
-    if with_file:
-        file = get_home_folder(default_team)
-        return {"team": default_team, "file": file.name}
-    return default_team
-
-
-def default_team(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        # Handle weird frappe thing
-        if "cmd" in kwargs:
-            kwargs.pop("cmd")
-
-        sig = inspect.signature(func)
-        bound_args = sig.bind_partial(*args, **kwargs)
-        bound_args.apply_defaults()
-        if (
-            "team" not in bound_args.arguments
-            or not bound_args.arguments["team"]
-            or bound_args.arguments["team"] == "home"
-        ):
-            kwargs["team"] = get_default_team()
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-# Copied over to avoid circular import
-def get_teams(user=None, details=None, exclude_personal=True):
-    """
-    Returns all the teams that the current user is part of.
-    """
-    if not user:
-        user = frappe.session.user
-
-    teams = frappe.get_all(
-        "Drive Team Member",
-        pluck="parent",
-        filters=[["parenttype", "=", "Drive Team"], ["user", "=", user]],
-    )
-    if details:
-        teams_info = {team: frappe.get_doc("Drive Team", team) for team in teams}
-        if exclude_personal:
-            return {t: team for t, team in teams_info.items() if not team.personal}
-        return teams_info
-    return teams
 
 def get_new_file_name(file_name: str, parent_name: str, type: str = False, entity: str | None = None):
-    entity_title, entity_ext = os.path.splitext(file_name)
+	entity_title, entity_ext = os.path.splitext(file_name)
 
-    filters = {
-        "status": STATUS_ACTIVE,
-        "folder": parent_name,
-        "file_name": ["like", f"{entity_title}%{entity_ext}"],
-    }
+	filters = {
+		"status": STATUS_ACTIVE,
+		"folder": parent_name,
+		"file_name": ["like", f"{entity_title}%{entity_ext}"],
+	}
 
-    if type:
-        filters["file_type"] = type
+	if type:
+		filters["file_type"] = type
 
-    sibling_entity_titles = frappe.db.get_list(
-        "File",
-        filters=filters,
-        fields=["file_name", "name"],
-    )
-    if (
-        not sibling_entity_titles
-        or (sibling_entity_titles[0].name == entity)
-        or not any(k["file_name"] == file_name for k in sibling_entity_titles)
-    ):
-        return file_name
-    return f"{entity_title} ({len(sibling_entity_titles)}){entity_ext}"
+	sibling_entity_titles = frappe.db.get_list(
+		"File",
+		filters=filters,
+		fields=["file_name", "name"],
+	)
+	if (
+		not sibling_entity_titles
+		or (sibling_entity_titles[0].name == entity)
+		or not any(k["file_name"] == file_name for k in sibling_entity_titles)
+	):
+		return file_name
+	return f"{entity_title} ({len(sibling_entity_titles)}){entity_ext}"
 
 
 def validate_filename(file_name, parent, type, error=None):
-    suggested_name = get_new_file_name(file_name, parent, type)
-    if suggested_name != file_name:
-        if not error:
-            error = f"{file_name} exists."
-        frappe.throw(
-            f"{error} Try {suggested_name}",
-            frappe.ValidationError,
-        )
+	suggested_name = get_new_file_name(file_name, parent, type)
+	if suggested_name != file_name:
+		if not error:
+			error = f"{file_name} exists."
+		frappe.throw(
+			f"{error} Try {suggested_name}",
+			frappe.ValidationError,
+		)
 
 
 def map_ff_to_drive_type(file):
-    if file.is_folder:
-        return "Folder"
-    mime_type = mimemapper.get_mime_type(file.file_type) if file.file_type else ""
-    try:
-        return next(k for (k, v) in MIME_LIST_MAP.items() if mime_type in v)
-    except StopIteration:
-        return "Unknown"
+	if file.is_folder:
+		return "Folder"
+	mime_type = mimemapper.get_mime_type(file.file_type) if file.file_type else ""
+	try:
+		return next(k for (k, v) in MIME_LIST_MAP.items() if mime_type in v)
+	except StopIteration:
+		return "Unknown"
 
 
-def get_upload_path(team_path, file_name):
-    uploads_path = Path(frappe.get_site_path(team_path), ".uploads")
-    if not os.path.exists(uploads_path):
-        uploads_path.mkdir()
-    return uploads_path / file_name
+def get_upload_path(base_path, file_name):
+	uploads_path = Path(frappe.get_site_path(base_path), ".uploads")
+	if not os.path.exists(uploads_path):
+		uploads_path.mkdir()
+	return uploads_path / file_name
 
 
-@default_team
 def create_file(
-    title="Untitled",
-    parent=None,
-    path=None,
-    mime_type=None,
-    file_type=None,
-    content_doctype=None,
-    content_docname=None,
-    team=None,
+	title="Untitled",
+	parent=None,
+	path=None,
+	mime_type=None,
+	file_type=None,
+	content_doctype=None,
+	content_docname=None,
 ):
-    """Convenience wrapper for external apps (e.g. Slides, Writer) to create a Drive file."""
-    if not parent:
-        parent = get_home_folder(team).name
-    else:
-        team = frappe.db.get_value("File", parent, "team")
+	"""Convenience wrapper for external apps (e.g. Slides, Writer) to create a Drive file."""
+	if not parent:
+		parent = get_user_folder().name
 
-    return create_drive_file(
-        team,
-        title,
-        parent,
-        file_type or "Unknown",
-        lambda _: path,
-        mime_type=mime_type,
-        content_doctype=content_doctype,
-        content_docname=content_docname,
-    )
+	return create_drive_file(
+		title,
+		parent,
+		file_type or "Unknown",
+		lambda _: path,
+		mime_type=mime_type,
+		content_doctype=content_doctype,
+		content_docname=content_docname,
+	)
