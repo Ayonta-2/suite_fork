@@ -11,13 +11,18 @@
 		</template>
 	</Button>
 
-	<Dropdown v-if="!mail.draft && !isCollapsed" :options="moreActions(mail)">
-		<Button variant="ghost" :tooltip="__('More')" @click.stop>
-			<template #icon>
-				<Ellipsis class="text-ink-gray-5 icon" />
-			</template>
-		</Button>
-	</Dropdown>
+	<!-- .stop lives on the wrapper: AdaptiveDropdown's mobile trigger opens via
+	     the click bubbling to its own span, so stopping on the Button itself
+	     would keep the sheet from opening. -->
+	<div v-if="!mail.draft && !isCollapsed" class="flex" @click.stop>
+		<AdaptiveDropdown :options="moreActions(mail)">
+			<Button variant="ghost" :tooltip="__('More')">
+				<template #icon>
+					<Ellipsis class="text-ink-gray-5 icon" />
+				</template>
+			</Button>
+		</AdaptiveDropdown>
+	</div>
 </template>
 
 <script lang="ts" setup>
@@ -37,11 +42,14 @@ import {
 	MailOpen,
 	Reply,
 	ReplyAll,
+	ShieldCheck,
 	SquarePen,
 	Star,
 	Trash2,
 } from 'lucide-vue-next'
-import { Button, Dropdown, createResource } from 'frappe-ui'
+import { Button, createResource } from 'frappe-ui'
+
+import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 
 import {
 	downloadUrlAsFile,
@@ -231,6 +239,16 @@ const moreActions = (mail: Mail): GroupedAction[] => [
 				condition: () =>
 					mailbox !== mailboxIds.screener && isSenderBlocked(mail.from_email),
 			},
+			{
+				label: __('Mark Domain as Trusted'),
+				onClick: () => trustDomain.submit(),
+				icon: ShieldCheck,
+				condition: () =>
+					mailbox !== mailboxIds.screener &&
+					!mail.draft &&
+					!!mail.from_email &&
+					!isDomainTrusted(mail.from_email),
+			},
 		],
 	},
 	{
@@ -303,6 +321,29 @@ const handleMarkUnreadFromHere = () => {
 		.map((m: Mail) => m.id)
 	if (ids.length) setMailsSeen.submit({ ids })
 }
+
+// The sender's domain as a screened value ('@example.com'). "Trusted" = an
+// Accepted '@domain' entry — the same state that lets remote images load.
+const senderDomain = (email: string) => `@${(email ?? '').trim().toLowerCase().split('@').pop()}`
+const isDomainTrusted = (email: string) =>
+	!!screenedAddresses.data?.some(
+		(a: ScreenedAddress) =>
+			a.action === 'Accepted' && a.email.trim().toLowerCase() === senderDomain(email),
+	)
+
+const trustDomain = createResource({
+	url: 'suite.mail.api.mail.screen_email_addresses',
+	makeParams: () => ({
+		account: store.accountId,
+		emails: [senderDomain(mail.from_email)],
+		action: 'Accepted',
+	}),
+	onSuccess: () => {
+		raiseToast(__('Domain marked as trusted.'))
+		screenedAddresses.reload()
+	},
+	onError: (error) => raiseToast(error.message, 'error'),
+})
 
 const blockEmailAddress = createResource({
 	url: 'suite.mail.api.mail.screen_email_address',

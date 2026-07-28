@@ -4,6 +4,7 @@
 			<Button
 				:label="__('Save')"
 				variant="solid"
+				:size="isMobile ? 'md' : 'sm'"
 				:disabled="loading || !isDirty"
 				:loading="saving"
 				@click="save"
@@ -110,10 +111,12 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { Identity, MailboxData } from '@/apps/mail/types'
 
+const { isMobile } = useScreenSize()
 const user = inject('$user')
 // Read store.accountId live in makeParams; destructuring would snapshot the
 // unwrapped value and miss account switches while this component stays mounted.

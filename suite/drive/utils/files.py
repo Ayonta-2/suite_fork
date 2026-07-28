@@ -1,9 +1,10 @@
 import os
 import shutil
+import unicodedata
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 import boto3
 import frappe
@@ -11,6 +12,7 @@ import mimemapper
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from PIL import Image, ImageOps
+from werkzeug.http import dump_options_header
 
 from suite.drive.locks.distributed_lock import DistributedLock
 
@@ -205,6 +207,31 @@ class FileManager:
 			frappe.throw("Could not find this file.", frappe.DoesNotExistError)
 
 		return buf
+
+	def presigned_url(self, team, key, download_name, mime_type=None, expires=3600):
+		"""Short-lived S3 GET URL, range-capable, served straight to the client."""
+		params = {
+			"Bucket": self.get_bucket(team),
+			"Key": key,
+			"ResponseContentDisposition": content_disposition(download_name),
+		}
+		if mime_type:
+			params["ResponseContentType"] = mime_type
+		return self.conn.generate_presigned_url("get_object", Params=params, ExpiresIn=expires)
+
+	def iter_blocks(self, entity, block_size=4 * 1024 * 1024):
+		"""Yield a file's bytes lazily so a worker never holds the whole file."""
+		if self.s3_enabled:
+			source = self.get_file(entity)
+			try:
+				while chunk := source.read(block_size):
+					yield chunk
+			finally:
+				source.close()
+		else:
+			with open(self.site_folder / storage_key(entity.file_url), "rb") as fh:
+				while chunk := fh.read(block_size):
+					yield chunk
 
 	def write_file(self, path: str | Path, content: str):
 		if self.s3_enabled:
@@ -432,6 +459,19 @@ def storage_key(file_url):
 	if file_url.startswith(S3_URL_PREFIX):
 		return unquote(file_url[len(S3_URL_PREFIX) :])
 	return file_url.lstrip("/")
+
+
+def content_disposition(download_name):
+	"""RFC 6266 attachment header; non-ASCII names ride in RFC 5987 filename*
+	(`secure_filename` would strip them to nothing)."""
+	try:
+		download_name.encode("ascii")
+		names = {"filename": download_name}
+	except UnicodeEncodeError:
+		simple = unicodedata.normalize("NFKD", download_name).encode("ascii", "ignore").decode("ascii")
+		quoted = quote(download_name, safe="!#$&+-.^_`|~")
+		names = {"filename": simple, "filename*": f"UTF-8''{quoted}"}
+	return dump_options_header("attachment", names)
 
 
 def get_s3_key(file_url):
