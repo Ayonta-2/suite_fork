@@ -511,20 +511,38 @@ def sync_content_file(doc, event):
 	if doc.flags.in_insert:
 		return
 
+	before = doc.get_doc_before_save()
+
 	# Mirror soft-trash: content docs carrying a `trashed` flag (e.g. Sheet) drop
 	# out of — or return to — the Drive listing in lockstep. Apps without the
 	# field (Writer/Slides) hard-delete instead, handled by on_trash above.
+	# Only on an actual transition of the flag: Drive's own trash (remove_or_restore)
+	# moves the File without touching the content doc, so re-deriving the status
+	# from `doc.trashed` on every save would silently undo it.
 	if doc.meta.has_field("trashed"):
-		desired_status = STATUS_TRASHED if doc.trashed else STATUS_ACTIVE
-		if drive_file.status != desired_status and drive_file.status in (STATUS_ACTIVE, STATUS_TRASHED):
-			drive_file.db_set("status", desired_status)
+		if before and bool(before.trashed) != bool(doc.trashed):
+			if doc.trashed and drive_file.status == STATUS_ACTIVE:
+				drive_file.db_set("status", STATUS_TRASHED, update_modified=False)
+			elif not doc.trashed and drive_file.status == STATUS_TRASHED:
+				# Restoring: an active sibling may have taken this file's name while
+				# it was trashed, so dedupe before it re-enters the active namespace
+				# (get_new_file_name counts only active files, so the file being
+				# restored is never counted against itself).
+				drive_file.db_set(
+					{
+						"file_name": get_new_file_name(
+							drive_file.file_name, drive_file.folder, drive_file.file_type
+						),
+						"status": STATUS_ACTIVE,
+					},
+					update_modified=False,
+				)
 		if doc.trashed:
 			return
 
 	# Rename to follow the title, but only on an actual title change: a content
 	# edit shouldn't rename the File, and re-running the dedup on every save would
 	# churn the "(n)" suffix as sibling counts shift.
-	before = doc.get_doc_before_save()
 	if before and before.get_title() == doc.get_title():
 		return
 	desired_name = doc.get_title() or drive_file.file_name
