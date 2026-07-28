@@ -272,6 +272,8 @@ scheduler_events = {
 		"suite.mail.doctype.contacts_exchange.contacts_exchange.clean_contacts_import_export_directories",
 	],
 	"hourly": [
+		# drive
+		"suite.drive.api.scripts.clear_download_archives",
 		# mail
 		"suite.mail.doctype.mail_exchange.mail_exchange.retry_stuck_mail_exchanges",
 		"suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
