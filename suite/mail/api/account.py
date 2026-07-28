@@ -3,7 +3,7 @@ from typing import Literal
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, get_url, now_datetime
+from frappe.utils import cint, get_datetime, get_system_timezone, get_url, now_datetime
 from frappe.utils.data import sha256_hash
 
 from suite.mail.api.admin import add_member
@@ -14,6 +14,7 @@ from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.stalwart import get_domains
 from suite.mail.utils import is_stalwart_configured, log_mail_error
 from suite.mail.utils.dns import parse_dns_zone_file
+from suite.mail.utils.logger import log_admin_action
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import (
 	has_user_settings,
@@ -109,7 +110,41 @@ def get_account_request(request_key: str) -> dict | None:
 
 @frappe.whitelist(allow_guest=True)
 @dynamic_rate_limit()
-def create_account(request_key: str, first_name: str, last_name: str, password: str) -> None:
+def get_account_setup_options(request_key: str) -> dict:
+	"""Returns the locale and time zone choices for the invite setup form.
+
+	Gated on a pending request key: the choices come from the Stalwart schema, so they are not served
+	to arbitrary callers.
+	"""
+
+	from suite.mail.stalwart import get_account_metadata
+
+	account_request = frappe.db.get_value(
+		"Mail Account Request",
+		{"request_key": request_key},
+		["is_verified", "expires_at"],
+		as_dict=True,
+	)
+	if (
+		not account_request
+		or account_request.is_verified
+		or (account_request.expires_at and get_datetime(account_request.expires_at) < now_datetime())
+	):
+		frappe.throw(_("This request has expired. Please create a new one."))
+
+	return get_account_metadata()
+
+
+@frappe.whitelist(allow_guest=True)
+@dynamic_rate_limit()
+def create_account(
+	request_key: str,
+	first_name: str,
+	last_name: str,
+	password: str,
+	locale: str | None = None,
+	time_zone: str | None = None,
+) -> None:
 	"""Create a new mail account"""
 
 	account_request = frappe.get_last_doc("Mail Account Request", {"request_key": request_key})
@@ -122,7 +157,7 @@ def create_account(request_key: str, first_name: str, last_name: str, password: 
 		# against the session user, which is Guest on this endpoint — run it elevated,
 		# same as signup().
 		with user_context("Administrator"):
-			account_request.create_account(first_name, last_name, password)
+			account_request.create_account(first_name, last_name, password, locale, time_zone)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -156,6 +191,7 @@ def get_user_info() -> dict | None:
 			USER.user_type,
 			USER.username,
 			USER.api_key,
+			USER.time_zone,
 			USER_SETTINGS.color_scheme,
 			USER_SETTINGS.group_messages_by,
 			USER_SETTINGS.show_reading_pane,
@@ -168,6 +204,10 @@ def get_user_info() -> dict | None:
 		return None
 
 	data = result[0]
+
+	# The APIs speak UTC, so the interface needs a zone to render those timestamps in. The User's own
+	# choice wins; sites that never set one fall back to the system zone.
+	data.time_zone = data.time_zone or get_system_timezone()
 
 	data.is_suite_admin = is_suite_admin(user)
 	data.is_system_manager = is_system_manager(user)
@@ -323,6 +363,11 @@ def censor_email(email: str) -> str:
 @dynamic_rate_limit()
 def send_reset_password_link(user: str) -> str:
 	"""Send reset password link to the user"""
+
+	# Only an admin resetting somebody else's password is an administrative act; this same endpoint
+	# backs the public "forgot password" form, and a user asking for their own link is not audited.
+	if frappe.session.user != user:
+		log_admin_action("send reset password link", user)
 
 	email = get_backup_email(user)
 	key = set_reset_password_key(user)
