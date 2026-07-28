@@ -45,13 +45,9 @@
 					:description="__('Leave blank to use the configured default disk quota.')"
 					:disabled="!isEditableInvite"
 				/>
-				<FormControl
-					v-model="inviteRole"
-					type="select"
-					:label="__('Role')"
-					:options="ROLE_OPTIONS"
-					:disabled="!isEditableInvite"
-				/>
+				<!-- Fixed when the request was created (set_only_once on the doctype), so the roles the
+				account is created with cannot be changed on an existing invite. -->
+				<FormControl :label="__('Role')" :value="roleLabel" disabled />
 				<FormControl
 					:label="__('Backup Email')"
 					:value="accountRequest.doc.backup_email"
@@ -139,18 +135,7 @@ type Directory = { id: string; name: string; email?: string }
 
 const accountRequest = ref<AccountRequestResource>()
 
-const ROLE_OPTIONS = [
-	{ label: __('User'), value: 'user' },
-	{ label: __('Admin'), value: 'admin' },
-]
-
-const inviteRole = computed<'user' | 'admin'>({
-	get: () => (accountRequest.value?.doc?.is_admin ? 'admin' : 'user'),
-	set: (value) => {
-		if (!accountRequest.value?.doc) return
-		accountRequest.value.doc.is_admin = value === 'admin'
-	},
-})
+const roleLabel = computed(() => (accountRequest.value?.doc?.is_admin ? __('Admin') : __('User')))
 
 // Cleared back to null rather than 0, so a blank field keeps deferring to the configured default
 // instead of silently meaning unlimited.
