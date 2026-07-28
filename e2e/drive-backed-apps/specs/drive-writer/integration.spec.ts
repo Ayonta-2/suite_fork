@@ -71,7 +71,7 @@ test("renames, moves, trashes, restores, and reopens a Writer document from Driv
 	const documentRow = owner.page.getByTestId(`drive-entity-${file.name}`);
 	await expect(documentRow).toContainText(title);
 	await openEntityActions(owner.page, file.name);
-	await owner.page.getByRole("button", { name: "Rename" }).click();
+	await owner.page.getByRole("button", { name: "Rename", exact: true }).click();
 	const renameDialog = owner.page.getByRole("dialog", { name: "Rename" });
 	await renameDialog.getByRole("textbox").fill(renamedTitle);
 	const [renameResponse] = await Promise.all([
@@ -105,7 +105,7 @@ test("renames, moves, trashes, restores, and reopens a Writer document from Driv
 	expect(await fetchedEmbed.text()).toBe(embedContent);
 
 	await openEntityActions(owner.page, file.name);
-	await owner.page.getByRole("button", { name: "Delete" }).click();
+	await owner.page.getByRole("button", { name: "Delete", exact: true }).click();
 	await owner.page
 		.getByRole("dialog")
 		.getByRole("button", { name: "Move to Trash" })

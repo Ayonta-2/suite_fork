@@ -49,20 +49,23 @@ test.describe.serial("Drive critical paths", () => {
 		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(uploadedLabel);
 
 		await openEntityActions(page, uploaded.name);
-		await page.getByRole("button", { name: "Rename" }).click();
+		await page.getByRole("button", { name: "Rename", exact: true }).click();
 		const renameDialog = page.getByRole("dialog", { name: "Rename" });
 		await renameDialog.getByRole("textbox").fill(renamedLabel);
 		await renameDialog.getByRole("button", { name: "Confirm" }).click();
 		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedLabel);
 
 		await openEntityActions(page, uploaded.name);
-		await page.getByRole("button", { name: "Delete" }).click();
+		await page.getByRole("button", { name: "Delete", exact: true }).click();
 		await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
 		await page.getByRole("link", { name: "Trash", exact: true }).click();
 		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedLabel);
 		await openEntityActions(page, uploaded.name);
-		await page.getByRole("button", { name: "Restore" }).click();
-		await page.getByRole("dialog").getByRole("button", { name: "Restore" }).click();
+		await page.getByRole("button", { name: "Restore", exact: true }).click();
+		await page
+			.getByRole("dialog")
+			.getByRole("button", { name: "Restore", exact: true })
+			.click();
 		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toBeHidden();
 	});
 

@@ -64,8 +64,16 @@ test("moves a file into a nested shared folder with inherited reader access", as
 	expect(Boolean(permissions.share)).toBe(false);
 
 	await openEntityActions(collaborator.page, file.name);
-	await expect(collaborator.page.getByRole("button", { name: "Download" })).toBeVisible();
-	await expect(collaborator.page.getByRole("button", { name: "Rename" })).toHaveCount(0);
-	await expect(collaborator.page.getByRole("button", { name: "Move" })).toHaveCount(0);
-	await expect(collaborator.page.getByRole("button", { name: "Delete" })).toHaveCount(0);
+	await expect(
+		collaborator.page.getByRole("button", { name: "Download", exact: true }),
+	).toBeVisible();
+	await expect(
+		collaborator.page.getByRole("button", { name: "Rename", exact: true }),
+	).toHaveCount(0);
+	await expect(
+		collaborator.page.getByRole("button", { name: "Move", exact: true }),
+	).toHaveCount(0);
+	await expect(
+		collaborator.page.getByRole("button", { name: "Delete", exact: true }),
+	).toHaveCount(0);
 });
