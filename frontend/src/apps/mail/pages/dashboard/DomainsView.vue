@@ -71,7 +71,7 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 
-import dayjs from '@/apps/mail/utils/dayjs'
+import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import AddDomainModal from '@/apps/mail/components/Modals/AddDomainModal.vue'
 
@@ -116,7 +116,7 @@ const LIST_OPTIONS = {
 	getRowRoute: (row: DomainRow) => ({ name: 'mail-domain', params: { domainId: row.id } }),
 }
 
-const formatCreatedAt = (createdAt?: string) => (createdAt ? dayjs(createdAt).fromNow() : '-')
+const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '-'
 
 const STATUS_OPTIONS = [
 	{ label: __('All'), value: 'All' },

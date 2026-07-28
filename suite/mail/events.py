@@ -183,3 +183,10 @@ def delete_account(doc: Document, method: str | None = None) -> None:
 		with_context=False,
 		module="Mail",
 	)
+
+	# The cached JMAP session carries the account's ids. Left behind, a user recreated on the same
+	# address would inherit the deleted account's ids and every call would be scoped to an account
+	# the server no longer considers theirs.
+	from suite.mail.jmap import get_jmap_session_manager
+
+	get_jmap_session_manager(user).clear_session()
