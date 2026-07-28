@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -6,9 +7,11 @@ import tempfile
 import zipfile
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import quote
 
 import frappe
 import mimemapper
+from frappe.rate_limiter import rate_limit
 from pypika import Order
 from werkzeug.utils import secure_filename, send_file
 from werkzeug.wrappers import Response
@@ -29,7 +32,13 @@ from suite.drive.utils import (
 	validate_filename,
 )
 from suite.drive.utils.api import prettify_file
-from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url, storage_key
+from suite.drive.utils.files import (
+	FileManager,
+	content_disposition,
+	get_s3_key,
+	get_s3_url,
+	storage_key,
+)
 from suite.drive.utils.users import mark_as_viewed
 
 from .permissions import get_teams, user_has_permission
@@ -324,8 +333,9 @@ def _serve_resumable(manager, key, team, download_name, mime_type=None):
 	xaccel_prefix = frappe.conf.get("drive_xaccel_prefix")
 	if xaccel_prefix:
 		response = Response(status=200)
-		response.headers["X-Accel-Redirect"] = f"{xaccel_prefix.rstrip('/')}/{key}"
-		response.headers["Content-Disposition"] = f'attachment; filename="{secure_filename(download_name)}"'
+		# header values must be latin-1 and nginx expects an encoded URI
+		response.headers["X-Accel-Redirect"] = f"{xaccel_prefix.rstrip('/')}/{quote(key)}"
+		response.headers["Content-Disposition"] = content_disposition(download_name)
 		if mime_type:
 			response.headers["Content-Type"] = mime_type
 		return response
@@ -459,6 +469,9 @@ def _collect_download_files(entity_names):
 
 
 DOWNLOAD_TTL = 60 * 60  # finished archives live for an hour
+# a build's cache entry must outlive queue wait + the job timeout, or polls 404
+# on a still-running build
+BUILDING_TTL = 3 * 60 * 60
 ARCHIVE_DIR = "private/files/.drive-downloads"
 
 
@@ -528,6 +541,7 @@ def build_download_archive(token, entities, zip_name, user):
 
 
 @frappe.whitelist(allow_guest=True)
+@rate_limit(limit=10, seconds=10 * 60)
 def download_folder(entities: str):
 	"""Enqueue a zip build and return a token; client polls download_status then
 	fetches download_archive. Avoids timing out large folders into a corrupt zip.
@@ -544,16 +558,32 @@ def download_folder(entities: str):
 	if not files:
 		frappe.throw("No downloadable files found", frappe.NotFound)
 
+	cache = frappe.cache()
+	user = frappe.session.user
+
+	# same selection already building or built → hand back that token instead of
+	# burning another job + artifact
+	selection_key = (
+		f"drive-download-sel:{user}:{hashlib.sha1(json.dumps(sorted(entities)).encode()).hexdigest()}"
+	)
+	existing = cache.get_value(selection_key)
+	if existing:
+		entry = cache.get_value(_download_cache_key(existing))
+		if entry and entry.get("status") in ("building", "ready"):
+			return {"token": existing, "file_name": entry["file_name"]}
+
 	if len(entities) == 1:
 		zip_name = f"{frappe.get_value('File', entities[0], 'file_name')}.zip"
 	else:
 		zip_name = f"Drive Download {frappe.utils.now()}.zip"
 
 	token = secrets.token_urlsafe(24)
-	user = frappe.session.user
-	frappe.cache().set_value(
-		_download_cache_key(token), {"status": "building", "owner": user}, expires_in_sec=DOWNLOAD_TTL
+	cache.set_value(
+		_download_cache_key(token),
+		{"status": "building", "owner": user, "file_name": zip_name},
+		expires_in_sec=BUILDING_TTL,
 	)
+	cache.set_value(selection_key, token, expires_in_sec=BUILDING_TTL)
 	frappe.enqueue(
 		build_download_archive,
 		queue="long",
@@ -586,7 +616,9 @@ def download_archive(token: str):
 	entry = _get_download_entry(token)
 	if entry.get("status") != "ready":
 		frappe.throw("Not found", frappe.DoesNotExistError)
-	return _serve_resumable(FileManager(), entry["key"], entry.get("team"), entry["file_name"], "application/zip")
+	return _serve_resumable(
+		FileManager(), entry["key"], entry.get("team"), entry["file_name"], "application/zip"
+	)
 
 
 @frappe.whitelist()

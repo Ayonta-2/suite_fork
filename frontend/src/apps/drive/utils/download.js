@@ -33,7 +33,9 @@ async function prepareArchive(entities) {
   }
 }
 
-function pollArchive(token, { interval = 2000, timeout = 30 * 60 * 1000 } = {}) {
+// timeout must outlast the job's 1h timeout, or we give up on builds that
+// would still succeed
+function pollArchive(token, { interval = 2000, timeout = 70 * 60 * 1000 } = {}) {
   const start = Date.now()
   return new Promise((resolve, reject) => {
     const tick = async () => {
