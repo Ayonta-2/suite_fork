@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 from suite.mail.doctype.sieve_script.sieve_script import build_automation_sieve, maybe_build_automation_sieve
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
 from suite.mail.utils.user import get_account_emails
-from suite.utils import execute_with_logging
+from suite.utils import execute_with_logging, user_context
 from suite.utils.lock import acquire_lock, release_lock
 from suite.utils.user import is_suite_admin, is_system_manager
 
@@ -294,9 +294,14 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
 		new_accounts = _ensure_jmap_account_docs(user, accounts)
 		_sync_user_accounts(user, set(accounts.keys()))
 
-		for account in new_accounts:
-			create_archive_mailbox(account)
-			build_automation_sieve(account, activate=True)
+		# Reached over JMAP as ``user``, not as whoever triggered the save: these accounts are only
+		# ever linked to ``user``, so an admin setting up a member's account (or any other user
+		# saving someone else's settings) would otherwise resolve the account to nobody and fail
+		# with "JMAP account <id> does not belong to the user <admin>".
+		with user_context(user):
+			for account in new_accounts:
+				create_archive_mailbox(account)
+				build_automation_sieve(account, activate=True)
 	finally:
 		release_lock(lockname, identifier)
 
