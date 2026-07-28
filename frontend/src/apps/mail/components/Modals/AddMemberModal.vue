@@ -69,6 +69,14 @@
 					:label="__('Backup Email')"
 					placeholder="johndoe@personal.com"
 				/>
+				<div class="space-y-1.5">
+					<label class="text-ink-gray-5 block text-xs">{{ __('Groups') }}</label>
+					<MultiSelect v-model="groupIds" :options="groupOptions" />
+				</div>
+				<div class="space-y-1.5">
+					<label class="text-ink-gray-5 block text-xs">{{ __('Mailing Lists') }}</label>
+					<MultiSelect v-model="mailingListIds" :options="mailingListOptions" />
+				</div>
 				<hr />
 
 				<Switch
@@ -107,13 +115,14 @@
 </template>
 
 <script setup lang="ts">
-import { inject, reactive, ref, watch } from 'vue'
+import { computed, inject, reactive, ref, watch } from 'vue'
 import {
 	Button,
 	Dialog,
 	ErrorMessage,
 	FeatherIcon,
 	FormControl,
+	MultiSelect,
 	Switch,
 	createResource,
 } from 'frappe-ui'
@@ -148,8 +157,22 @@ const defaultAccountRequest = {
 
 const accountRequest = reactive({ ...defaultAccountRequest })
 const emails = ref<{ username: string; domain: string }[]>([{ username: '', domain: '' }])
+const groupIds = ref<string[]>([])
+const mailingListIds = ref<string[]>([])
 
 const emit = defineEmits(['reload'])
+
+type Directory = { id: string; name: string; email?: string }
+
+// The account joins these once it exists: immediately when the invite is skipped, otherwise when the
+// invited member verifies and their account is created. Both are read live from Stalwart, so they are
+// fetched when the dialog opens rather than on every visit to the members list.
+const groups = createResource({ url: 'suite.mail.api.admin.get_groups' })
+const mailingLists = createResource({ url: 'suite.mail.api.admin.get_mailing_lists' })
+
+const toOptions = (rows: Directory[]) => rows.map((r) => ({ label: r.email || r.name, value: r.id }))
+const groupOptions = computed(() => toOptions(groups.data || []))
+const mailingListOptions = computed(() => toOptions(mailingLists.data || []))
 
 watch(
 	() => accountRequest.send_invite,
@@ -159,6 +182,10 @@ watch(show, () => {
 	if (show.value) {
 		Object.assign(accountRequest, defaultAccountRequest)
 		emails.value = [{ username: '', domain: '' }]
+		groupIds.value = []
+		mailingListIds.value = []
+		groups.fetch()
+		mailingLists.fetch()
 		addMember.reset()
 	}
 })
@@ -176,6 +203,8 @@ const addMember = createResource({
 			username: primary?.username || '',
 			domain: primary?.domain || '',
 			aliases,
+			groups: groupIds.value,
+			mailing_lists: mailingListIds.value,
 			is_admin: accountRequest.role === 'admin',
 		}
 	},

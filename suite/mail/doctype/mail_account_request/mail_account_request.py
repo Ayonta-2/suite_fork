@@ -28,6 +28,12 @@ STALWART_DEFAULT_USER_ROLES = ["User"]
 STALWART_DEFAULT_ADMIN_ROLES = ["User", "Tenant Administrator"]
 
 
+def _lines(value: str | None) -> list[str]:
+	"""Splits a newline-separated field into its entries, dropping blanks and duplicates."""
+
+	return list(dict.fromkeys(line.strip() for line in (value or "").split("\n") if line.strip()))
+
+
 class MailAccountRequest(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -41,10 +47,12 @@ class MailAccountRequest(Document):
 		aliases: DF.SmallText | None
 		backup_email: DF.Data
 		expires_at: DF.Datetime | None
+		groups: DF.SmallText | None
 		invited_by: DF.Link
 		ip_address: DF.Data | None
 		is_admin: DF.Check
 		is_verified: DF.Check
+		mailing_lists: DF.SmallText | None
 		request_key: DF.Data | None
 		roles: DF.SmallText | None
 		send_invite: DF.Check
@@ -89,6 +97,18 @@ class MailAccountRequest(Document):
 
 		return [alias.strip() for alias in self.aliases.split("\n") if alias.strip()]
 
+	@property
+	def _groups(self) -> list[str]:
+		"""Returns the ids of the groups the account is added to on creation."""
+
+		return _lines(self.groups)
+
+	@property
+	def _mailing_lists(self) -> list[str]:
+		"""Returns the ids of the mailing lists the account is added to on creation."""
+
+		return _lines(self.mailing_lists)
+
 	def before_insert(self) -> None:
 		is_stalwart_configured(raise_exception=True)
 		self.validate_backup_email()
@@ -99,6 +119,8 @@ class MailAccountRequest(Document):
 		self.validate_account()
 		self.validate_aliases()
 		self.validate_roles()
+		self.validate_groups()
+		self.validate_mailing_lists()
 
 	def after_insert(self) -> None:
 		if self.send_invite:
@@ -194,6 +216,38 @@ class MailAccountRequest(Document):
 
 		self.roles = "\n".join(roles_to_assign)
 
+	def validate_groups(self) -> None:
+		"""Validates the groups the account will join and normalizes them."""
+
+		if not self.groups:
+			return
+
+		from suite.mail.stalwart import get_group_service
+
+		server_group_ids = {str(g["id"]) for g in get_group_service().get_all_groups(properties=["id"])}
+
+		for group_id in self._groups:
+			if group_id not in server_group_ids:
+				frappe.throw(_("Group {0} does not exist on the server.").format(frappe.bold(group_id)))
+
+		self.groups = "\n".join(self._groups)
+
+	def validate_mailing_lists(self) -> None:
+		"""Validates the mailing lists the account will be a recipient of and normalizes them."""
+
+		if not self.mailing_lists:
+			return
+
+		from suite.mail.stalwart import get_mailing_list_service
+
+		server_list_ids = {str(ml["id"]) for ml in get_mailing_list_service().get_all(properties=["id"])}
+
+		for list_id in self._mailing_lists:
+			if list_id not in server_list_ids:
+				frappe.throw(_("Mailing list {0} does not exist on the server.").format(frappe.bold(list_id)))
+
+		self.mailing_lists = "\n".join(self._mailing_lists)
+
 	def validate_expired(self) -> None:
 		"""Forbids action if the request has expired."""
 
@@ -255,7 +309,7 @@ class MailAccountRequest(Document):
 		self.validate_account()
 
 		# Step - 1: Create Account on Stalwart
-		execute_with_logging(
+		account_id = execute_with_logging(
 			func=lambda: create_account(
 				name=self.account.split("@")[0],
 				domain=self.domain,
@@ -309,6 +363,42 @@ class MailAccountRequest(Document):
 				title="Failed to create push subscription",
 				module="Mail",
 			)
+
+		# Step - 6: Join the groups and mailing lists picked when the request was created. Logged but
+		# not thrown: the account already exists, so a stale group or list must not fail the signup.
+		if account_id and self._groups:
+			execute_with_logging(
+				func=lambda: self._join_groups(account_id),
+				title="Failed to add account to groups on Stalwart",
+				module="Mail",
+			)
+
+		if self._mailing_lists:
+			execute_with_logging(
+				func=lambda: self._join_mailing_lists(),
+				title="Failed to add account to mailing lists on Stalwart",
+				module="Mail",
+			)
+
+	def _join_groups(self, account_id: str) -> None:
+		"""Adds the created account to each of the requested groups."""
+
+		from suite.mail.stalwart import get_group_service
+
+		service = get_group_service()
+		for group_id in self._groups:
+			service.add_members(group_id, [account_id])
+
+	def _join_mailing_lists(self) -> None:
+		"""Adds the account's primary address as a recipient of each requested mailing list."""
+
+		from suite.mail.stalwart import get_mailing_list_service
+
+		service = get_mailing_list_service()
+		for list_id in self._mailing_lists:
+			recipients = dict((service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {})
+			recipients[self.account] = True
+			service.update(list_id, {"recipients": recipients})
 
 	def _update_user_settings(self, user: str, app_password: str) -> None:
 		"""Updates the user settings with the app password and backup email."""

@@ -16,6 +16,10 @@
   "invited_by",
   "account",
   "aliases",
+  "membership_details_section",
+  "groups",
+  "column_break_mlgr",
+  "mailing_lists",
   "verification_details_section",
   "send_invite",
   "is_verified",
@@ -114,6 +118,31 @@
    "fieldname": "aliases",
    "fieldtype": "Small Text",
    "label": "Aliases",
+   "no_copy": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "membership_details_section",
+   "fieldtype": "Section Break",
+   "label": "Membership Details"
+  },
+  {
+   "description": "Stalwart group ids (one per line) the account is added to on creation.",
+   "fieldname": "groups",
+   "fieldtype": "Small Text",
+   "label": "Groups",
+   "no_copy": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "column_break_mlgr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Stalwart mailing list ids (one per line) the account's primary address is added to as a recipient on creation.",
+   "fieldname": "mailing_lists",
+   "fieldtype": "Small Text",
+   "label": "Mailing Lists",
    "no_copy": 1,
    "set_only_once": 1
   },
