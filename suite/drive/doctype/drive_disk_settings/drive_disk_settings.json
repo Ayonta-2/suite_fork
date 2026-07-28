@@ -8,11 +8,9 @@
   "general_section",
   "preview_size",
   "quota",
-  "use_drive_for_files",
   "disk_section",
   "flat",
   "root_folder",
-  "team_prefix",
   "thumbnail_prefix",
   "s3_section",
   "enabled",
@@ -110,20 +108,6 @@
    "fieldname": "root_folder",
    "fieldtype": "Data",
    "label": "Drive Folder"
-  },
-  {
-   "default": "team_name",
-   "fieldname": "team_prefix",
-   "fieldtype": "Select",
-   "label": "Team Prefix",
-   "options": "team_id\nteam_name\nnone"
-  },
-  {
-   "default": "0",
-   "description": "Make all uploaded files to be managed through Drive, instead of Framework.",
-   "fieldname": "use_drive_for_files",
-   "fieldtype": "Check",
-   "label": "Use Drive for file management"
   }
  ],
  "grid_page_length": 50,

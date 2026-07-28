@@ -6,7 +6,6 @@
   "engine": "InnoDB",
   "field_order": [
     "entity",
-    "team",
     "user",
     "read",
     "comment",
@@ -59,12 +58,6 @@
       "fieldname": "upload",
       "fieldtype": "Check",
       "label": "Upload"
-    },
-    {
-      "default": "0",
-      "fieldname": "team",
-      "fieldtype": "Check",
-      "label": "Team"
     },
     {
       "default": "0",

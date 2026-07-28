@@ -45,6 +45,7 @@ suite.sheets.patches.v0_1.migrate_blob_to_cells
 suite.sheets.patches.integrate_with_drive
 # --- drive (remove teams; after the sheets/slides drive-integration patches) ---
 suite.drive.patches.remove_teams
+suite.drive.patches.drop_team_doctypes
 # --- meet ---
 suite.meet.patches.migrate_meeting_fields_to_table_multiselect
 suite.meet.patches.switch_meet_user_to_suite_user

@@ -332,7 +332,6 @@ signup_form_template = "templates/signup.html"
 # mail — link integrity on delete
 ignore_links_on_delete = [
 	# drive
-	"Drive Team",
 	"Drive Settings",
 	# mail
 	"Mail Account Request",
