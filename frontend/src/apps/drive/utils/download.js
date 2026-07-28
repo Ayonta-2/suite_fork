@@ -1,17 +1,10 @@
-// Downloads are served by storage (S3 presigned URL / nginx / disk) with HTTP
-// Range support, so the browser resumes on flaky connections instead of
-// restarting, and no server worker is held open for the transfer.
-//
-// Single files stream directly. Folders / multi-selections are built into a zip
-// by a background job (suite.drive.api.files.download_folder); we poll for it
-// and then download the finished archive — so a large folder can never time out
-// midway into a corrupt half-zip.
+// Folders build into a zip via a background job, then download; single files
+// download directly. Both are served range/resume-capable off storage.
 
 import { call } from 'frappe-ui'
 import { toast } from '@/apps/drive/utils/toasts.js'
 
 export function entitiesDownload(entities, transfer = false) {
-  // Single file → resumable direct download (supports transfer links).
   if (entities.length === 1 && !entities[0].is_folder) {
     window.location.href = `/api/method/suite.drive.api.files.get_file_content?entity_name=${
       entities[0].name

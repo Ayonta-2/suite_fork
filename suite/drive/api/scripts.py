@@ -122,8 +122,7 @@ def clear_deleted_files():
 
 
 def clear_download_archives():
-    """Sweep stale folder-download zip artifacts. Cache entries pointing at them
-    expire on their own; this reclaims the bytes on disk and in S3."""
+    """Sweep expired folder-download zip artifacts from disk and S3."""
     import os
     import time
 

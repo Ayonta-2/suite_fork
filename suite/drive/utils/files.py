@@ -206,8 +206,7 @@ class FileManager:
         return buf
 
     def presigned_url(self, team, key, download_name, mime_type=None, expires=3600):
-        """A short-lived S3 GET URL that streams the object directly to the client
-        with Range/resume support, so no worker is held for the transfer."""
+        """Short-lived S3 GET URL, range-capable, served straight to the client."""
         params = {
             "Bucket": self.get_bucket(team),
             "Key": key,
@@ -218,9 +217,7 @@ class FileManager:
         return self.conn.generate_presigned_url("get_object", Params=params, ExpiresIn=expires)
 
     def iter_blocks(self, entity, block_size=4 * 1024 * 1024):
-        """Yield a file's bytes lazily, without ever holding the whole file in
-        memory. S3 objects come from the team-aware StreamingBody; disk files are
-        read straight off the filesystem."""
+        """Yield a file's bytes lazily so a worker never holds the whole file."""
         if self.s3_enabled:
             source = self.get_file(entity)
             try:

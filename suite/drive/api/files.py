@@ -312,14 +312,9 @@ def get_file_content(entity_name: str, trigger_download: bool = False, token: st
 
 
 def _serve_resumable(manager, key, team, download_name, mime_type=None):
-	"""Hand the client a Range/resume-capable download that streams from storage
-	instead of through this worker. A dropped connection (flaky link) resumes
-	from where it stopped rather than restarting, and no worker is tied up for
-	the length of the transfer.
+	"""Range/resume-capable download served by storage, not this worker.
 
-	- S3: redirect to a short-lived presigned URL; S3 serves the bytes.
-	- Disk + nginx: X-Accel-Redirect to an internal location; nginx serves them.
-	- Disk otherwise: send_file streams off disk with conditional Range support.
+	S3 → presigned URL; disk+nginx → X-Accel-Redirect; disk → send_file.
 	"""
 	if manager.s3_enabled:
 		frappe.local.response["type"] = "redirect"
@@ -335,7 +330,7 @@ def _serve_resumable(manager, key, team, download_name, mime_type=None):
 			response.headers["Content-Type"] = mime_type
 		return response
 
-	return send_file(
+	response = send_file(
 		str(manager.site_folder / key),
 		mimetype=mime_type or "application/octet-stream",
 		as_attachment=True,
@@ -344,6 +339,9 @@ def _serve_resumable(manager, key, team, download_name, mime_type=None):
 		max_age=0,
 		environ=frappe.request.environ,
 	)
+	# advertise ranges on the 200 too, so browsers resume rather than restart
+	response.headers["Accept-Ranges"] = "bytes"
+	return response
 
 
 def get_file_internal(file, trigger_download=0):
@@ -469,9 +467,7 @@ def _download_cache_key(token):
 
 
 def _build_zip(manager, files, fileobj):
-	"""Write a ZIP_STORED archive of `files` to a seekable file object. Files are
-	streamed block by block so a worker never holds a whole file in memory, and
-	because `fileobj` is seekable zipfile always writes a valid central directory."""
+	"""Write a ZIP_STORED archive to a seekable file, streaming each file in."""
 	with zipfile.ZipFile(fileobj, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
 		for arcname, child in files:
 			info = zipfile.ZipInfo(arcname)
@@ -482,11 +478,8 @@ def _build_zip(manager, files, fileobj):
 
 
 def _write_archive(token, files):
-	"""Build the zip artifact into storage and return (storage_key, team, size).
-
-	On disk the archive is written straight into the site's private files. On S3
-	it is built to a local temp file first, then uploaded, so peak disk use is
-	bounded by one archive and nothing is streamed to S3 half-formed."""
+	"""Build the zip into storage; return (storage_key, team, size). S3 builds to
+	a temp file then uploads so nothing lands half-formed."""
 	manager = FileManager()
 	key = f"{ARCHIVE_DIR}/{token}.zip"
 	team = files[0][1].team
@@ -511,8 +504,7 @@ def _write_archive(token, files):
 
 
 def build_download_archive(token, entities, zip_name, user):
-	"""Background job: resolve the selection under the requesting user's
-	permissions, build the archive, and publish the result in the cache."""
+	"""Background job: build the archive as `user` and publish its state to cache."""
 	cache = frappe.cache()
 	cache_key = _download_cache_key(token)
 	frappe.set_user(user)
@@ -537,11 +529,8 @@ def build_download_archive(token, entities, zip_name, user):
 
 @frappe.whitelist(allow_guest=True)
 def download_folder(entities: str):
-	"""Kick off a background build of a ZIP for one or more entities and return a
-	capability token. The client polls `download_status` and then fetches the
-	finished archive from `download_archive` — a Range/resume-capable, infra-served
-	download that never holds a worker open for the whole (potentially multi-GB)
-	transfer, so large folders no longer time out into a corrupt half-zip.
+	"""Enqueue a zip build and return a token; client polls download_status then
+	fetches download_archive. Avoids timing out large folders into a corrupt zip.
 
 	:param entities: JSON list of File names (the user's selection)
 	"""
@@ -550,8 +539,7 @@ def download_folder(entities: str):
 	if not entities:
 		frappe.throw("Nothing to download", ValueError)
 
-	# Resolve once up front so a permission error surfaces immediately instead of
-	# failing inside the background job.
+	# resolve up front so a permission error surfaces here, not in the job
 	files = list(_collect_download_files(entities))
 	if not files:
 		frappe.throw("No downloadable files found", frappe.NotFound)
