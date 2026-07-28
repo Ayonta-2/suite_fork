@@ -585,7 +585,7 @@ def download_folder(entities: str):
 	)
 	cache.set_value(selection_key, token, expires_in_sec=BUILDING_TTL)
 	frappe.enqueue(
-		build_download_archive,
+		"suite.drive.api.files.build_download_archive",
 		queue="long",
 		timeout=3600,
 		token=token,
