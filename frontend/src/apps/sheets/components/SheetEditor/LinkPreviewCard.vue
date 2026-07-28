@@ -133,6 +133,16 @@ const style = computed(() => {
 	transform-origin: top left;
 	animation: sn-lp-rise 120ms ease-out;
 }
+/* Opaque-fill fallback. The bg-surface-white utility compiles to a color-mix()
+   value, which browsers without color-mix() support (pre Chrome 111 / Safari
+   16.2 / Firefox 113) discard as invalid — leaving the card transparent so the
+   canvas cell text shows through. Where color-mix is unsupported, paint the
+   fill from the plain design token instead (equals #fff / dark #0f0f0f). */
+@supports not (background-color: color-mix(in srgb, red, blue)) {
+	.sn-lp-card {
+		background-color: var(--surface-white, #fff);
+	}
+}
 @keyframes sn-lp-rise {
 	from { transform: translateY(-4px) scale(0.98); opacity: 0; }
 	to   { transform: translateY(0)    scale(1);    opacity: 1; }
