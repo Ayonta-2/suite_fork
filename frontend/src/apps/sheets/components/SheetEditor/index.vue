@@ -1233,6 +1233,7 @@ import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
 import { autoCloseKey } from '../../utils/formula-autoclose.js'
+import { isCanvasClipboardTarget } from '../../utils/clipboard-target.js'
 import { computeFillDown, computeFillRight } from '../../engine/fill-series.js'
 import { detectSeries }                       from '../../engine/patterns/index.js'
 import { adjustFormula }                    from '../../engine/formula-adjust.js'
@@ -3945,14 +3946,13 @@ const { onGlobalKey } = useShortcuts({
 // ── Clipboard ─────────────────────────────────────────────────────────────────
 
 function _canvasActive() {
-  // The inline cell editor is a <textarea> mounted inside gridWrapRef, so a
-  // naive contains() check would treat "editing a cell" as "grid focused" and
-  // hijack Cmd+C/X/V for cell-level ops — breaking paste (and copy of a
-  // substring) inside the open editor. While editing, clipboard ops belong to
-  // the textarea's native handling.
-  if (grid?.isEditing?.()) return false
-  const ae = document.activeElement
-  return ae === canvasRef.value || ae === formulaInputRef.value || gridWrapRef.value?.contains(ae)
+  return isCanvasClipboardTarget({
+    activeEl:  document.activeElement,
+    canvasEl:  canvasRef.value,
+    formulaEl: formulaInputRef.value,
+    gridWrap:  gridWrapRef.value,
+    editing:   grid?.isEditing?.() ?? false,
+  })
 }
 
 // Returning to the tab or the sheet route leaves browser focus on <body>, not
