@@ -3,6 +3,7 @@
 		:to
 		:is-selected
 		:selectable
+		:selection-mode
 		:unread="!mail.seen"
 		:hide-sender
 		:avatar-label="getSenderInitial(mail)"
@@ -61,7 +62,7 @@
 						:blob-i-d="attachment.blob_id"
 						:type="attachment.type"
 						class="mr-2"
-						:class="isFullWidth ? 'max-w-32' : 'max-w-20'"
+						:class="isFullWidth ? 'max-w-32' : 'max-w-44 sm:max-w-20'"
 						@click.stop.prevent="openAttachment(idx)"
 					/>
 				</Tooltip>
@@ -163,6 +164,7 @@ const {
 	accountLabel,
 	selectable = true,
 	hideSender = false,
+	selectionMode = false,
 } = defineProps<{
 	mailbox: string
 	mail: Thread
@@ -176,6 +178,8 @@ const {
 	selectable?: boolean
 	// Set on the members of an expanded stack, whose stack row already names the sender.
 	hideSender?: boolean
+	// Mobile selection mode — forwarded to MailRow.
+	selectionMode?: boolean
 }>()
 
 const emit = defineEmits([

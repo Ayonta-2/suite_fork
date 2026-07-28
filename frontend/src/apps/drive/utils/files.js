@@ -19,6 +19,7 @@ import {
   getRecents,
   mutate,
   createDocument,
+  createSheet,
   getDocuments,
 } from '@/apps/drive/resources/files'
 import { getTeams, getPublicTeams } from '@/apps/drive/resources/files'
@@ -43,6 +44,9 @@ import videoIcon from '../../../../../suite/public/drive/images/icons/video.svg'
 import applicationIcon from '../../../../../suite/public/drive/images/icons/application.svg'
 import archiveIcon from '../../../../../suite/public/drive/images/icons/archive.svg'
 import unknownIcon from '../../../../../suite/public/drive/images/icons/unknown.svg'
+// Native sheets get the Frappe Sheets brand logo rather than the generic
+// spreadsheet icon (which is shared with uploaded .xlsx/.csv).
+import sheetsLogo from '@/assets/app-logos/sheets.svg'
 
 const FILE_ICONS = {
   Folder: folderIcon,
@@ -64,6 +68,7 @@ const FILE_ICONS = {
 
 export const WRITER_CONTENT_DOCTYPE = 'Writer Document'
 export const PRESENTATION_CONTENT_DOCTYPE = 'Presentation'
+export const SHEET_CONTENT_DOCTYPE = 'Sheet'
 export const ATTACHMENT_CONTENT_DOCTYPE = 'File'
 
 export function isWriterDocument(entity) {
@@ -74,8 +79,15 @@ export function isPresentation(entity) {
   return entity?.content_doctype === PRESENTATION_CONTENT_DOCTYPE
 }
 
+// A native Sheets doc (its own `Sheet` doctype), distinct from an *uploaded*
+// spreadsheet (.xlsx/.csv) — both carry file_type 'Spreadsheet', so the
+// content_doctype is the only reliable discriminator.
+export function isSheet(entity) {
+  return entity?.content_doctype === SHEET_CONTENT_DOCTYPE
+}
+
 export function hasHostedContent(entity) {
-  return isWriterDocument(entity) || isPresentation(entity)
+  return isWriterDocument(entity) || isPresentation(entity) || isSheet(entity)
 }
 
 export function isManaged(entity) {
@@ -126,7 +138,7 @@ export const openEntity = (entity, new_tab = false) => {
   if (new_tab) {
     return window.open(getFileLink(entity, false), '_blank')
   }
-  if (!['Link', 'Presentation'].includes(entity.file_type)) {
+  if (!['Link', 'Presentation'].includes(entity.file_type) && !isSheet(entity)) {
     if (!entity.breadcrumbs?.length)
       appendBreadcrumb({
         label: entity.file_name,
@@ -162,6 +174,8 @@ export const openEntity = (entity, new_tab = false) => {
     entity.file_type === 'Markdown'
   ) {
     window.location.href = '/writer/w/' + entity.name
+  } else if (isSheet(entity)) {
+    window.location.href = '/sheets/' + (entity.content_docname || entity.name)
   } else {
     router.push({
       name: 'drive-File',
@@ -284,9 +298,18 @@ export function getIconUrl(file_type) {
   return FILE_ICONS[file_type] ?? unknownIcon
 }
 
+// Entity-aware icon: native sheets show the Frappe Sheets brand logo; everything
+// else falls back to the generic file-type icon.
+export function getEntityIcon(entity) {
+  return isSheet(entity) ? sheetsLogo : getIconUrl(entity?.file_type)
+}
+
 // `src` is the thumbnail (images/videos/PDFs) or the icon; `fallback` is the icon.
-export function getThumbnailUrl({ name, file_type, thumbnail, external }, view = 'list') {
-  const fallback = getIconUrl(file_type ?? 'Presentation')
+export function getThumbnailUrl(
+  { name, file_type, thumbnail, external, content_doctype },
+  view = 'list'
+) {
+  const fallback = getEntityIcon({ file_type: file_type ?? 'Presentation', content_doctype })
   let src = ''
   if (external) src = view !== 'list' ? thumbnail : ''
   else if (['Image', 'Video', 'PDF'].includes(file_type))
@@ -482,6 +505,11 @@ export function getLink(entity, copy = true, withDomain = true) {
     entity.file_type === 'Markdown'
   ) {
     link = window.location.origin + '/writer/w/' + entity.name
+  } else if (entity.mime_type === 'frappe/sheet' || isSheet(entity)) {
+    link =
+      window.location.origin +
+      '/sheets/' +
+      (entity.content_docname || entity.name)
   } else {
     link = `${
       withDomain ? window.location.origin + '/drive' : ''
@@ -693,6 +721,14 @@ export const newExternal = async (type) => {
     window.location.href = `/slides/presentation/new?parent=${
       currentFolder.value.name
     }&team=${route.params.team || ''}`
+    return
+  }
+  if (type === 'Spreadsheet') {
+    // Sheets owns its own doctype + editor, so — like Slides — we create the
+    // sheet (its after_insert backs it with the Drive File in this folder)
+    // then hand off to the Sheets SPA.
+    const name = await createSheet.submit({ parent: currentFolder.value.name })
+    window.location.href = '/sheets/' + name
     return
   }
   const data = await createDocument.submit({

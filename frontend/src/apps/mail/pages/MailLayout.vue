@@ -171,4 +171,61 @@ body.mail-app h2 {
 	height: 1rem;
 	color: var(--ink-gray-6);
 }
+
+/* The mail app's icon weight is 1.5 (.icon, FeatherIcon's default, and
+   frappe-ui's ~icons pipeline all agree), but icons imported straight from
+   lucide-vue-next ship stroke-width 2 — so default every lucide svg to 1.5
+   instead of repeating the attribute at each call site. :where() keeps the
+   rule at zero specificity, so an explicit stroke-* utility (e.g. stroke-2
+   on the tab bar) still wins. Covers teleported menus/sheets too. */
+:where(body.mail-app svg.lucide) {
+	stroke-width: 1.5;
+}
+
+/* BottomSheets hug their content instead of frappe-ui's fixed 70vh well — a
+   five-row menu shouldn't own the whole screen. The old height stays as the
+   scroll cap, so tall content (the folder list) behaves exactly as before.
+   Scoped to body.mail-app since sheets teleport to <body>. */
+body.mail-app .bottom-sheet-content > .h-\[70vh\] {
+	height: auto;
+	max-height: 70vh;
+}
+
+/* Portaled dialogs and menus ship without a z-index (they rely on body DOM
+   order), so the mobile panes with explicit z (thread pane, settings — z-20)
+   would paint over them. Lift them above the panes but below bottom sheets
+   (z-50), preserving sheet-over-dialog ordering. */
+body.mail-app .dialog-overlay {
+	z-index: 30;
+}
+body.mail-app .menu-content {
+	z-index: 30;
+}
+
+/* Swipe paging (mobile) — shared by the thread pane (MailThread) and the screener
+   preview: the incoming page slides in from the swipe side while the outgoing one —
+   lifted out of flow so they overlap — slides away in tandem. */
+body.mail-app .page-next-enter-active,
+body.mail-app .page-next-leave-active,
+body.mail-app .page-prev-enter-active,
+body.mail-app .page-prev-leave-active {
+	transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+body.mail-app .page-next-leave-active,
+body.mail-app .page-prev-leave-active {
+	position: absolute;
+	inset: 0;
+}
+
+body.mail-app .page-next-enter-from,
+body.mail-app .page-prev-leave-to {
+	transform: translateX(100%);
+}
+
+body.mail-app .page-next-leave-to,
+body.mail-app .page-prev-enter-from {
+	transform: translateX(-100%);
+}
+
 </style>

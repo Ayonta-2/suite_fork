@@ -125,7 +125,7 @@
                 size="sm" icon="clock"
                 tooltip="Version history"
                 @click="vhOpen ? closeVersionHistory() : (notesPanel.open = false, openVersionHistory())" />
-        <Button variant="ghost" size="sm" icon="help-circle" tooltip="Keyboard shortcuts (?)" @click="showShortcutsHelp = true" />
+        <Button variant="ghost" size="sm" icon="help-circle" tooltip="Keyboard shortcuts" @click="showShortcutsHelp = true" />
         <span class="sn-topbar-divider" aria-hidden="true" />
         <!-- Presence avatars — other users currently in the workbook.
              Outline = their cursor color; tooltip says which sub-sheet
@@ -634,8 +634,10 @@
            the Button itself stays a clean square pill (frappe-ui puts our
            `class` on the <button> root, so any spacing/border set on it would
            become part of the button's own hover box). -->
-      <div class="sn-tab-add-wrap">
-        <Button variant="ghost" size="sm" icon="plus" class="sn-tab-add" tooltip="Add sheet" :disabled="readOnly" @click="addSheet" />
+      <!-- Add-sheet is a mutation, so viewers don't get it — hide the whole
+           wrapper (button + its divider) rather than leave a dead, greyed pill. -->
+      <div v-if="!readOnly" class="sn-tab-add-wrap">
+        <Button variant="ghost" size="sm" icon="plus" class="sn-tab-add" tooltip="Add sheet" @click="addSheet" />
       </div>
       <div class="sn-tabs-track">
         <div
@@ -646,17 +648,18 @@
             'sn-tab--active':   name === currentSheet,
             'sn-tab--pivot':    isPivotSheet(name),
             'sn-tab-drag-over': tabDragOver === name && tabDragName !== name,
+            'sn-tab--static':   readOnly,
           }"
-          draggable="true"
+          :draggable="!readOnly"
           @dragstart="onTabDragStart($event, name)"
           @dragend="onTabDragEnd"
           @dragover.prevent="onTabDragOver($event, name)"
           @drop.prevent="onTabDrop($event, name)"
         >
           <!-- One visual unit: label + chevron share a single pill background
-               so they read as one button. Chevron renders on every tab so
-               the menu affordance is always visible; clicking it opens the
-               tab menu, clicking the label switches sheets. -->
+               so they read as one button. The chevron — the tab-menu affordance
+               — renders only when editable; a viewer has no tab actions, so it
+               would be a dead button. Clicking the label switches sheets. -->
           <Button
             variant="ghost"
             size="sm"
@@ -666,14 +669,15 @@
             @mousedown="onTabMousedown($event, name)"
             @click="onTabClick(name)"
             @dblclick="openRenameDialog(name)"
-            @contextmenu.prevent="openTabMenu($event, name)"
+            @contextmenu.prevent="_onTabMenu($event, name)"
           />
           <Button
+            v-if="!readOnly"
             variant="ghost"
             size="sm"
             icon="chevron-down"
             class="sn-tab-chevron"
-            @click.stop="openTabMenu($event, name)"
+            @click.stop="_onTabMenu($event, name)"
           />
           <!-- Peer dots — one colored circle per peer currently on this
                tab. Capped at 3 + a "+N" overflow so a busy tab doesn't
@@ -1020,26 +1024,10 @@
       </template>
     </Dialog>
 
-    <!-- Keyboard shortcut help (?) — uses Frappe UI's KeyboardShortcut for the
-         key chips so modifiers render as proper Mac glyphs and look native. -->
-    <Dialog v-model="showShortcutsHelp" :options="{ title: 'Keyboard shortcuts', size: 'xl' }">
-      <template #body-content>
-        <div class="sn-help-grid">
-          <div v-for="g in SHORTCUT_GROUPS" :key="g.title" class="sn-help-group">
-            <div class="sn-help-title">{{ g.title }}</div>
-            <div v-for="s in g.items" :key="s.label" class="sn-help-row">
-              <span class="sn-help-label">{{ s.label }}</span>
-              <span class="sn-help-keys">
-                <template v-for="(combo, i) in s.combos" :key="combo">
-                  <KeyboardShortcut :combo="combo" />
-                  <span v-if="i < s.combos.length - 1" class="sn-help-or">or</span>
-                </template>
-              </span>
-            </div>
-          </div>
-        </div>
-      </template>
-    </Dialog>
+    <!-- Keyboard shortcut help — frappe-ui's KeyboardShortcutsModal, generated
+         from the shortcut registry populated by useShortcuts.js (via useShortcut),
+         so it can never drift from the handlers. -->
+    <KeyboardShortcutsModal v-model:open="showShortcutsHelp" title="Keyboard shortcuts" />
 
     <!-- Slicers — floating value-filter controls bound to a filter column -->
     <div v-for="sl in activeSlicers" :key="sl.id" class="sn-slicer"
@@ -1309,6 +1297,7 @@ import {
   FeatherIcon,
   FormControl,
   KeyboardShortcut,
+  KeyboardShortcutsModal,
   Spinner,
   TextInput,
   Tooltip,
@@ -1656,47 +1645,6 @@ const hyperlinkUrl         = ref('')
 const hasActiveHyperlink   = computed(() => !!activeFormat.value?.hyperlink)
 const showFormulas      = ref(false)
 
-// Each row's `combos` is an array of KeyboardShortcut-compatible strings —
-// the dialog renders them as `<KeyboardShortcut :combo="…"/>` chips joined
-// by a small "or" separator when there's more than one.
-const SHORTCUT_GROUPS = [
-  { title: 'Navigation', items: [
-    { label: 'Move selection',            combos: ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'] },
-    { label: 'Jump to data-region edge',  combos: ['Mod+ArrowLeft'] },
-    { label: 'Extend selection',          combos: ['Shift+ArrowRight'] },
-    { label: 'Jump to start / end',       combos: ['Mod+Home', 'Mod+End'] },
-  ]},
-  { title: 'Editing', items: [
-    { label: 'Edit cell',                 combos: ['F2'] },
-    { label: 'Clear cell',                combos: ['Delete', 'Backspace'] },
-    { label: 'Commit + move down',        combos: ['Enter'] },
-    { label: 'Commit + move right',       combos: ['Tab'] },
-    { label: 'Cancel edit',               combos: ['Escape'] },
-    { label: 'Fill down / right',         combos: ['Mod+D', 'Mod+R'] },
-    { label: 'Smart Fill from examples',  combos: ['Mod+E'] },
-    { label: 'Cut / Copy / Paste',        combos: ['Mod+X', 'Mod+C', 'Mod+V'] },
-    { label: 'Undo / Redo',               combos: ['Mod+Z', 'Mod+Y'] },
-    { label: 'Repeat last action',        combos: ['F4'] },
-    { label: 'Add / edit comment',        combos: ['Shift+F2'] },
-  ]},
-  { title: 'Formatting', items: [
-    { label: 'Bold',                      combos: ['Mod+B'] },
-    { label: 'Italic',                    combos: ['Mod+I'] },
-    { label: 'Underline',                 combos: ['Mod+U'] },
-    { label: 'Strikethrough',             combos: ['Mod+Shift+X'] },
-  ]},
-  { title: 'View / Tools', items: [
-    { label: 'Command palette',           combos: ['Mod+K'] },
-    { label: 'Find & replace',            combos: ['Mod+F'] },
-    { label: 'Save',                      combos: ['Mod+S'] },
-    { label: 'Show formulas',             combos: ['Mod+`'] },
-    { label: 'Insert hyperlink',          combos: ['Mod+L'] },
-    { label: 'Quick filter on column',    combos: ['Alt+ArrowDown'] },
-    { label: 'Version history',           combos: ['Mod+Alt+Shift+H'] },
-    { label: 'Zoom in / out / reset',     combos: ['Mod+=', 'Mod+-', 'Mod+0'] },
-    { label: 'Shortcut help',             combos: ['?'] },
-  ]},
-]
 const selectionStats    = ref(null)
 const isDirty           = ref(false)
 const isPaintingFormat  = ref(false)
@@ -2175,9 +2123,15 @@ async function _computeSelectionStatsAsync(token) {
   for (let r = r0; r <= r1; r++) {
     const rowSuffix = r + 1
     for (let c = c0; c <= c1; c++) {
-      const val = sheet.getCell(labels[c - c0] + rowSuffix, sn)
-      if (val !== '' && val != null) count++
-      const n = parseFloat(val)
+      const id = labels[c - c0] + rowSuffix
+      const raw = sheet.getCell(id, sn)
+      if (raw === '' || raw == null) continue
+      count++
+      // Aggregate the computed value, not the raw text: a formula cell holds
+      // "=SUM(...)" in getCell but evaluates to a number via getCellValue, so
+      // parseFloat on the raw string would drop it from Sum/Avg (but not Count).
+      const val = sheet.getCellValue(id, sn)
+      const n = typeof val === 'number' ? val : parseFloat(val)
       if (!isNaN(n)) { numCount++; sum += n }
     }
     since += rowWidth
@@ -2456,6 +2410,15 @@ function _onCanvasContextMenu(e) {
   onCanvasContextMenu(e)
 }
 
+// Same reasoning for the sheet-tab menu: every item (rename/duplicate/protect/
+// delete) mutates, so a viewer has nothing to do there. Suppress it entirely —
+// `.prevent` on the binding still eats the native menu — rather than open an
+// empty popover. Rename (dbl-click) and reorder (drag) are gated separately.
+function _onTabMenu(e, name) {
+  if (readOnly.value) return
+  openTabMenu(e, name)
+}
+
 // renderVersion is defined here because usePivotIntegration reads it at call time.
 const renderVersion = ref(0)
 
@@ -2630,18 +2593,25 @@ function onTabClick(name) {
 const tabDragName = ref(null)
 const tabDragOver = ref(null)
 
+// Reorder is a mutation. `:draggable="!readOnly"` stops a viewer starting a
+// drag, but dragover/drop still fire when *another* element is dragged onto a
+// tab — guard the whole lifecycle so the invariant "viewers can't reorder" is
+// explicit here, not just an emergent effect of the null tabDragName.
 function onTabDragStart(e, name) {
+  if (readOnly.value) return
   tabDragName.value = name
   e.dataTransfer.effectAllowed = 'move'
   // Some browsers require setData to allow the drag
   try { e.dataTransfer.setData('text/plain', name) } catch (_) {}
 }
 function onTabDragOver(e, name) {
+  if (readOnly.value) return
   if (!tabDragName.value || tabDragName.value === name) return
   e.dataTransfer.dropEffect = 'move'
   tabDragOver.value = name
 }
 function onTabDrop(e, target) {
+  if (readOnly.value) return
   const src = tabDragName.value
   if (!src || src === target) { tabDragOver.value = null; return }
   const next = sheetNames.value.filter(n => n !== src)
@@ -3326,6 +3296,12 @@ function _setupEventListeners() {
   document.addEventListener('copy',      onDocCopy)
   document.addEventListener('cut',       onDocCut)
   document.addEventListener('mousedown', _onDocMouseDown)
+  // Re-arm the grid for paste when the user switches back to this window
+  // (copied from another app) or back to this tab, so Cmd+V works without a
+  // priming click. 'focus' covers app/window switches; 'visibilitychange'
+  // covers tab switches within the same window.
+  window.addEventListener('focus',              _refocusGridIfIdle)
+  document.addEventListener('visibilitychange', _refocusGridIfIdle)
 }
 
 async function _loadInitialData() {
@@ -3387,6 +3363,9 @@ onMounted(async () => {
   } finally {
     isInitialLoad.value = false
   }
+  // Focus the grid on open so arrow-key nav and Cmd+V work immediately, without
+  // a priming click. Idle-guarded so a load that opened a dialog keeps its focus.
+  _refocusGridIfIdle()
 })
 
 onBeforeUnmount(() => {
@@ -3407,6 +3386,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('copy',      onDocCopy)
   document.removeEventListener('cut',       onDocCut)
   document.removeEventListener('mousedown', _onDocMouseDown)
+  window.removeEventListener('focus',              _refocusGridIfIdle)
+  document.removeEventListener('visibilitychange', _refocusGridIfIdle)
 })
 
 // ── Save ──────────────────────────────────────────────────────────────────────
@@ -3922,10 +3903,31 @@ function fillRight() {
 // hide its Paste-Special entries without polling.
 const clipboardHas = ref(false)
 
+// Keyboard-driven insert/delete of rows or columns (Ctrl+Alt+= / Ctrl+Alt+-).
+// The context-menu handlers key off contextMenu.target{Row,Col}, which only a
+// right-click normally populates — so seed it from the live selection first. A
+// whole-column selection acts on columns; anything else acts on rows (matching
+// Google Sheets). The delete/insert span (N selected lines) flows from the
+// selection the same way the right-click menu computes it.
+function _insertRowsColsFromSelection() {
+  if (readOnly.value) return
+  const s = grid?.getSelection?.()
+  if (!s) return
+  if (s.mode === 'col') { contextMenu.targetCol = s.c0; doInsertCol(false, s.c1 - s.c0 + 1) }
+  else                  { contextMenu.targetRow = s.r0; doInsertRow(false, s.r1 - s.r0 + 1) }
+}
+function _deleteRowsColsFromSelection() {
+  if (readOnly.value) return
+  const s = grid?.getSelection?.()
+  if (!s) return
+  if (s.mode === 'col') { contextMenu.targetCol = s.c0; doDeleteCol() }
+  else                  { contextMenu.targetRow = s.r0; doDeleteRow() }
+}
+
 const { onGlobalKey } = useShortcuts({
   formulaInputEl:           () => formulaInputRef.value,
   undo, redo, onSave, toggleFmt, repeatLast, toggleShowFormulas,
-  showFindReplace, showShortcutsHelp,
+  showFindReplace,
   openVersionHistory, openHyperlinkDialog, openCommentPanel, openQuickFilterForActive,
   zoomBy, resetZoom,
   commentPanel, dropdownPanel, splitText,
@@ -3933,6 +3935,10 @@ const { onGlobalKey } = useShortcuts({
   clipboard, clipboardHas, setMarchingAnts: (v) => grid?.setMarchingAnts(v),
   fillDown, fillRight,
   runSmartFill,
+  insertRowsCols:    _insertRowsColsFromSelection,
+  deleteRowsCols:    _deleteRowsColsFromSelection,
+  applyNumberFormat: onNumberFormatChange,
+  pasteValues:       () => doPasteSpecial('values'),
   readOnly: () => readOnly.value,
 })
 
@@ -3941,6 +3947,19 @@ const { onGlobalKey } = useShortcuts({
 function _canvasActive() {
   const ae = document.activeElement
   return ae === canvasRef.value || ae === formulaInputRef.value || gridWrapRef.value?.contains(ae)
+}
+
+// Returning to the tab or the sheet route leaves browser focus on <body>, not
+// the grid, so a Cmd+V fires a paste event the canvas never receives (onDocPaste
+// bails at the _canvasActive guard) — the "I have to click a cell first before
+// paste works" report. Pull focus back to the canvas, but ONLY when focus has
+// landed on nothing (body/null); never steal it from the formula bar, an inline
+// cell editor, or an open dialog.
+function _refocusGridIfIdle() {
+  if (document.visibilityState === 'hidden') return
+  const ae = document.activeElement
+  if (ae && ae !== document.body) return
+  canvasRef.value?.focus()
 }
 
 function onDocCopy(e) {
@@ -3983,6 +4002,7 @@ async function onDocPaste(e) {
     await clipboard.paste(activeCell.value, () => {}, 'all', destSel)
     clipboardHas.value = clipboard.hasData()
     grid.setMarchingAnts(null)
+    formulaValue.value = sheet.getCell(activeCell.value)   // fx bar tracks the pasted anchor
     history.push()
     isDirty.value = true
     return
@@ -4049,6 +4069,7 @@ async function onDocPaste(e) {
     // batchSetCells so the canvas painted those cells with the old
     // format, and a cut's vacated source needs to repaint as empty.
     for (const r of rects) _refreshDisplayForRange(r, sn)
+    formulaValue.value = sheet.getCell(activeCell.value)   // fx bar tracks the pasted anchor
     const after    = Object.assign({}, ...rects.map(r => _captureRange(r, sn)))
     const afterFmt = Object.assign({}, ...rects.map(r => _captureFormatsRange(r, sn)))
     const afterVal = Object.assign({}, ...rects.map(r => _captureValidationRange(r, sn)))
@@ -4086,6 +4107,7 @@ function doPasteSpecial(kind) {
     _flashProtected(sn); return   // keep the pending cut/copy + its marching ants
   }
   for (const r of rects) _refreshDisplayForRange(r, sn)
+  formulaValue.value = sheet.getCell(activeCell.value)   // fx bar tracks the pasted anchor
   clipboardHas.value = clipboard.hasData()
   grid?.setMarchingAnts(null)
   const after    = Object.assign({}, ...rects.map(r => _captureRange(r, sn)))
@@ -5056,6 +5078,9 @@ const renameInputRef   = ref(null)
 let _renameTarget      = ''
 
 function openRenameDialog(name) {
+  // Reachable via dbl-click on the tab even when the menu is suppressed — gate
+  // here so rename is denied for viewers regardless of entry point.
+  if (readOnly.value) return
   tabMenu.open = false
   _renameTarget      = name
   renameValue.value  = name
@@ -5389,9 +5414,12 @@ function doDeleteRow() {
   contextMenu.open = false
   const sn = sheet.getCurrentSheet()
   // Same span logic as doDeleteCol: delete the whole selected row block when
-  // the right-clicked row falls inside it, else just the targeted row.
+  // the right-clicked row falls inside it, else just the targeted row. Only a
+  // real row span counts — in 'col'/'all' selections getSelection() reports
+  // r1 = last row, which would otherwise delete every row below the target.
   const sel = grid.getSelection()
-  const within = sel && contextMenu.targetRow >= sel.r0 && contextMenu.targetRow <= sel.r1
+  const rowSpan = sel && (sel.mode === 'row' || sel.mode === 'cell')
+  const within = rowSpan && contextMenu.targetRow >= sel.r0 && contextMenu.targetRow <= sel.r1
   const start  = within ? sel.r0 : contextMenu.targetRow
   const count  = within ? sel.r1 - sel.r0 + 1 : 1
   for (let i = 0; i < count; i++) {
@@ -5436,8 +5464,11 @@ function doDeleteCol() {
   // When the right-clicked column is inside a multi-column selection, delete
   // every selected column; otherwise just the targeted one. Each delete shifts
   // the rest left, so the block start index stays fixed across iterations.
+  // Only a real column span counts — in 'row'/'all' selections getSelection()
+  // reports c1 = last col, which would otherwise delete every column to the right.
   const sel = grid.getSelection()
-  const within = sel && contextMenu.targetCol >= sel.c0 && contextMenu.targetCol <= sel.c1
+  const colSpan = sel && (sel.mode === 'col' || sel.mode === 'cell')
+  const within = colSpan && contextMenu.targetCol >= sel.c0 && contextMenu.targetCol <= sel.c1
   const start  = within ? sel.c0 : contextMenu.targetCol
   const count  = within ? sel.c1 - sel.c0 + 1 : 1
   for (let i = 0; i < count; i++) {
@@ -6253,23 +6284,19 @@ function toggleShowFormulas() {
 .sn-ctx-sep { height:1px; background:var(--outline-gray-1); margin:4px 0; border:none; }
 .sn-rename-err { margin:6px 0 0; font-size:12px; color:var(--ink-red-6); letter-spacing:.02em; }
 
-/* Keyboard-shortcut help dialog — two-column grid of grouped Espresso list rows. */
-.sn-help-grid    { display:grid; grid-template-columns:1fr 1fr; gap:20px 28px; }
-.sn-help-group   { display:flex; flex-direction:column; gap:2px; }
-.sn-help-title   { font-size:11px; font-weight:600; letter-spacing:.06em; color:var(--ink-gray-5); text-transform:uppercase; padding:0 4px; margin-bottom:6px; }
-.sn-help-row     { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 8px; border-radius:6px; }
-.sn-help-row:hover { background:var(--surface-gray-2); }
-.sn-help-label   { font-size:13px; letter-spacing:.02em; color:var(--ink-gray-9); }
-.sn-help-keys    { display:inline-flex; align-items:center; gap:6px; color:var(--ink-gray-7); }
-.sn-help-keys :deep(> div) {
-  padding:2px 6px; border:1px solid var(--outline-gray-2); border-radius:4px;
-  background:var(--surface-base); color:var(--ink-gray-8); min-height:20px;
-}
-.sn-help-or      { font-size:11px; letter-spacing:.02em; color:var(--ink-gray-5); }
-
 /* Sheet-tab drag visual — Espresso ink-gray-9 left edge on the drop target. */
 .sn-tab               { cursor:grab; }
 .sn-tab:active        { cursor:grabbing; }
+
+/* Viewer tabs — no chevron, no drag. The `.sn-tab-btn` right padding is only
+   2px because it normally butts against the chevron; with the chevron gone the
+   label needs its own symmetric breathing room. And a grab cursor lies about a
+   tab that can't be dragged — clicking still switches sheets, so use pointer.
+   Placed after the base `.sn-tab` cursor rules to win on equal specificity. */
+.sn-tab--static,
+.sn-tab--static:active            { cursor:pointer; }
+.sn-tab--static .sn-tab-btn       { padding-right:8px !important; }
+
 .sn-tab-drag-over::before {
   content: ''; position:absolute; left:-1px; top:4px; bottom:4px; width:2px;
   background: var(--ink-gray-9); border-radius:1px;

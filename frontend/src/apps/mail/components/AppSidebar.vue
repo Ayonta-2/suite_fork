@@ -63,7 +63,20 @@
 	</Transition>
 
 	<SettingsModal v-if="!isMobile" v-model="showSettings" />
-	<PWASettings v-else-if="showSettings" @close="showSettings = false" />
+	<!-- Mobile settings pushes in from the right like a thread: its back-chevron
+	     header is push-navigation language (slide-up is reserved for summoned
+	     tasks — compose/search). Teleported to body: inside the layout's isolate
+	     stacking context the tab bar/FAB would paint over it. -->
+	<Teleport v-else to="body">
+		<Transition
+			enter-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+			enter-from-class="translate-x-full"
+			leave-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+			leave-to-class="translate-x-full"
+		>
+			<PWASettings v-if="showSettings" @close="showSettings = false" />
+		</Transition>
+	</Teleport>
 	<FolderModal v-model="showFolderModal" :mailbox="selectedMailbox" />
 	<DeleteFolderModal v-model="showDeleteMailbox" :mailbox="selectedMailbox" />
 	<ShortcutsModal v-model="showShortcuts" />

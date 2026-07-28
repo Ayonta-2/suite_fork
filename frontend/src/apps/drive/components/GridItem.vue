@@ -1,6 +1,6 @@
 <template>
   <div
-    class="h-[65%] flex items-center justify-center rounded-t-[calc(theme(borderRadius.lg)-1px)] overflow-hidden"
+    class="relative h-[65%] flex items-center justify-center rounded-t-[calc(theme(borderRadius.lg)-1px)] overflow-hidden"
   >
     <img
       v-show="!imgLoaded"
@@ -10,12 +10,14 @@
       :draggable="false"
     />
     <img
-      v-show="imgLoaded"
-      :class="
+      loading="lazy"
+      decoding="async"
+      :class="[
         hasThumbnail
-          ? 'h-full min-w-full object-cover rounded-t-[calc(theme(borderRadius.lg)-1px)]'
-          : 'h-10 w-auto'
-      "
+          ? 'absolute inset-0 h-full min-w-full object-cover rounded-t-[calc(theme(borderRadius.lg)-1px)]'
+          : 'absolute top-1/2 left-1/2 h-10 w-auto -translate-x-1/2 -translate-y-1/2',
+        imgLoaded ? 'opacity-100' : 'opacity-0',
+      ]"
       :src="src"
       :draggable="false"
       @load="imgLoaded = true"
@@ -33,7 +35,7 @@
           v-if="showTypeIcon"
           loading="lazy"
           class="h-4 w-auto"
-          :src="getIconUrl(file.file_type)"
+          :src="getEntityIcon(file)"
           :draggable="false"
         />
         <p class="truncate">
@@ -49,7 +51,7 @@
   </div>
 </template>
 <script setup>
-import { getIconUrl, getThumbnailUrl } from '@/apps/drive/utils/files'
+import { getEntityIcon, getThumbnailUrl } from '@/apps/drive/utils/files'
 import { ref, computed } from 'vue'
 const props = defineProps({ file: Object })
 

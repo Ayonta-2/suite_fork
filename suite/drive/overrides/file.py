@@ -19,6 +19,7 @@ from suite.drive.utils import (
 	ATTACHMENT_CONTENT_DOCTYPE,
 	STATUS_ACTIVE,
 	STATUS_REMOVED,
+	STATUS_TRASHED,
 	generate_upward_path,
 	get_default_team,
 	get_home_folder,
@@ -430,13 +431,22 @@ class File(FrappeFile):
 	):
 		"""Create the Drive File backing `doc`, in `parent` or the session
 		user's home folder. Returns None when the user has no Drive team."""
-		from suite.drive.utils import create_file, get_default_team
+		from suite.drive.utils import create_file, get_default_team, get_home_folder
 
-		if not parent and not get_default_team():
-			return None
+		if not parent:
+			team = get_default_team()
+			if not team:
+				return None
+			parent = get_home_folder(team).name
+
+		# Dedupe within the folder: content docs may share titles, but two Drive
+		# files can't share a name in one folder without becoming ambiguous.
+		# Mirrors validate_filename (rename) — get_new_file_name only counts
+		# active siblings, so it's a no-op when the name is free.
+		title = get_new_file_name(doc.get_title() or "Untitled", parent, file_type)
 
 		return create_file(
-			title=doc.get_title() or "Untitled",
+			title=title,
 			parent=parent,
 			mime_type=mime_type,
 			file_type=file_type,
@@ -499,6 +509,51 @@ def sync_content_file(doc, event):
 		drive_file.rename(doc.get_title() or drive_file.file_name)
 	elif event == "on_trash":
 		drive_file.permanent_delete()
+
+
+def sync_content_file_title(doctype: str, docname: str, title: str) -> None:
+	"""Content-app SDK: rename the backing Drive File to match `title`, deduping
+	within its folder instead of throwing on a name clash (content docs may share
+	titles; Drive files can't). No-op when unbacked or already in sync. Apps whose
+	own save writes the title via `db.set_value` (which doesn't fire the on_update
+	doc-event, so `sync_content_file` never runs) call this from their rename/save
+	paths — ideally only when the title actually changed, since `get_for_doc` is a
+	lookup on the un-indexed content_docname."""
+	name = File.get_for_doc(doctype, docname)
+	if not name:
+		return
+	drive_file = frappe.get_doc("File", name)
+	desired = title or drive_file.file_name
+	if desired == drive_file.file_name:
+		return
+	drive_file.rename(get_new_file_name(desired, drive_file.folder, drive_file.file_type))
+
+
+def set_content_file_trashed(doctype: str, docname: str, trashed: bool) -> None:
+	"""Content-app SDK: mirror a content doc's own soft-trash onto its backing
+	Drive File's status, so trashing/restoring the doc removes it from — or
+	returns it to — the Drive listing in lockstep. Apps whose trash is a status
+	flag (not a `frappe.delete_doc`, which `sync_content_file`'s `on_trash`
+	already covers) call this from their trash/restore endpoints."""
+	name = File.get_for_doc(doctype, docname)
+	if not name:
+		return
+	if trashed:
+		frappe.db.set_value("File", name, "status", STATUS_TRASHED, update_modified=False)
+		return
+	# Restoring: an active sibling may have taken this file's name while it was
+	# trashed, so dedupe before it re-enters the active namespace (the trashed
+	# file itself isn't counted — get_new_file_name only sees active files).
+	f = frappe.db.get_value("File", name, ["file_name", "folder", "file_type"], as_dict=True)
+	frappe.db.set_value(
+		"File",
+		name,
+		{
+			"file_name": get_new_file_name(f.file_name, f.folder, f.file_type),
+			"status": STATUS_ACTIVE,
+		},
+		update_modified=False,
+	)
 
 
 @frappe.whitelist()

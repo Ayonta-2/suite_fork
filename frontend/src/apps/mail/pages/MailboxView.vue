@@ -1,8 +1,10 @@
 <template>
 	<!-- Header -->
-	<header class="flex items-center justify-between border-b px-3 py-2.5 sm:px-5">
+	<!-- hidden on mobile: the tab bar's morphing Mail tab carries the folder name, and
+	     the header's actions live in the bar/FAB. Hidden (not v-if) so HeaderActions'
+	     modals stay mounted for the views' v-model bindings. -->
+	<header class="hidden items-center justify-between border-b px-3 py-2.5 sm:flex sm:px-5">
 		<div class="flex items-center space-x-2">
-			<Button v-if="isMobile" icon="menu" variant="ghost" @click="openSidebar" />
 			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
 			<Breadcrumbs
 				class="-ml-0.5"
@@ -34,15 +36,19 @@
 		<Button :label="__('Review Now')" variant="ghost" @click="goToScreener" />
 	</div>
 
-	<div v-if="showDeleteBanner" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
+	<!-- On mobile this banner renders below the title header instead (inside the mobile
+	     header block) — above it, it read as page chrome sitting on top of the title. -->
+	<div v-if="showDeleteBanner && !isMobile" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
 		<span class="text-ink-gray-5">
 			{{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
 		</span>
 		<Button :label="__('Delete Now')" variant="ghost" @click="showEmptyMailbox = true" />
 	</div>
 
+	<!-- Mobile sizes by flex (the dvh calcs assume desktop chrome and overshoot
+	     once the tab bar exists, making the outer container scroll too). -->
 	<div
-		class="relative flex"
+		class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
 		:class="
 			showDeleteBanner || showScreenerBanner
 				? 'h-[calc(100dvh-6.1rem)]'
@@ -72,11 +78,76 @@
 					v-model:edit-filter="searchEditFilter"
 				/>
 
+				<!-- Mobile header: title row (folders · mailbox + count · search · compose) over
+				     a toolbar row (filter selector on the left, filter/refresh pills on the
+				     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
+				     Search skips both rows (SearchResultsHeader is the header there; the tab
+				     bar carries the "you are in search" cue), keeping only the selection
+				     toolbar and the loading bar — the border goes with the rows it underlines. -->
+				<div
+					v-if="isMobile"
+					class="relative shrink-0"
+					:class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
+				>
+					<MobileTitleHeader
+						v-if="mailbox !== 'search'"
+						with-menu
+						:title="mailboxName"
+						:count="threadCount ? __('{0} threads', [threadCount]) : undefined"
+					/>
+
+					<!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
+					     the whole header read as chrome on top of the page). Borderless: it
+					     reads as part of the header block, not a boxed-off strip. -->
+					<div v-if="showDeleteBanner && mailbox !== 'search'" class="space-x-1 px-4">
+						<span class="text-ink-gray-5">
+							{{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
+						</span>
+						<Button
+							:label="__('Delete Now')"
+							variant="ghost"
+							@click="showEmptyMailbox = true"
+						/>
+					</div>
+
+					<!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
+					<!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
+					     axis and the count text starts where the title does. -->
+					<div v-if="selections.length" class="flex h-12 items-center gap-1 px-1">
+						<Button variant="ghost" class="!h-10 !w-10 !rounded-full" @click="toggleSelectAll(false)">
+							<template #icon><X class="icon !h-5 !w-5" /></template>
+						</Button>
+						<span class="flex-1 truncate text-base !font-medium">
+							{{ __('{0} selected', [String(selections.length)]) }}
+						</span>
+						<button
+							class="text-ink-gray-8 text-md shrink-0 px-2 !font-medium"
+							@click="toggleSelectAll(!isAllSelected)"
+						>
+							{{ isAllSelected ? __('Unselect All') : __('Select All') }}
+						</button>
+					</div>
+					<div v-else-if="mailbox !== 'search'" class="flex h-12 items-center px-4">
+						<!-- The selector label carries the active filter ("Unread Mails", …);
+						     picking "All" in the sheet clears it, so no dismissal chip needed. -->
+						<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
+							<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
+								<span class="truncate">{{ title }}</span>
+								<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
+							</button>
+						</AdaptiveDropdown>
+					</div>
+
+					<!-- Loading bar -->
+					<LoadingBar v-if="threadsResource?.loading" />
+				</div>
+
 				<!-- Toolbar/Actions -->
 				<div
+					v-else
 					class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
 				>
-					<div v-if="!isAllAccountsSearch" class="mr-5 max-sm:ml-3">
+					<div v-if="!isAllAccountsSearch" class="mr-5">
 						<Tooltip
 							:text="
 								isAllSelected
@@ -169,27 +240,18 @@
 						</Dropdown>
 					</div>
 					<!-- Subtle loading bar: a segment sliding across the bottom outline (no layout shift) -->
-					<div
-						v-if="threadsResource?.loading"
-						class="loading-bar pointer-events-none absolute bottom-[-1px] left-[-1px] right-0 h-0.5 overflow-hidden"
-						role="progressbar"
-						aria-busy="true"
-					>
-						<div
-							class="loading-bar__fill via-ink-gray-3 absolute inset-y-0 left-0 w-[30%] bg-gradient-to-r from-transparent to-transparent"
-						/>
-					</div>
+					<LoadingBar v-if="threadsResource?.loading" />
 				</div>
 
 				<!-- Mail list -->
 				<div
 					v-if="threadsResource?.data?.length"
 					ref="mailList"
-					class="h-full overflow-y-auto overscroll-contain"
+					class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
 				>
 					<div v-for="(group, key) in groupedThreads" :key="key">
 						<div
-							v-if="groupMessagesBy !== 'None'"
+							v-if="groupMessagesBy !== 'None' && !isMobile"
 							class="text-ink-gray-6 group flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
 							:class="{
 								'!bg-surface-blue-1': isGroupSelected(key),
@@ -199,9 +261,10 @@
 							:data-row-key="`group:${key}`"
 							@click="toggleGroupCollapse(key)"
 						>
+							<!-- Mobile: group select ("all of Today") appears only in selection mode. -->
 							<div
-								v-if="!isAllAccountsSearch"
-								class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-6 sm:pl-3"
+								v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
+								class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-3"
 								@click.stop.prevent="
 									toggleSelect(getGroupThreads(key), !isGroupSelected(key))
 								"
@@ -223,7 +286,7 @@
 								class="icon ml-auto"
 							/>
 						</div>
-						<template v-if="!collapsedGroups.includes(key)">
+						<template v-if="isMobile || !collapsedGroups.includes(key)">
 							<!-- A stack row stands in for a run of look-alike threads; when expanded, its
 							     members follow it as ordinary (indented) rows. -->
 							<template v-for="row in groupedRows[key]" :key="row.key">
@@ -259,6 +322,7 @@
 										isAllAccountsSearch ? row.thread.account_name : undefined
 									"
 									:selectable="!isAllAccountsSearch"
+									:selection-mode="mobileSelectionMode"
 									:is-selected="selections.includes(row.thread.thread_id)"
 									:hide-sender="row.inStack"
 									class="border-l-transparent sm:border-l"
@@ -292,11 +356,19 @@
 					</div>
 				</div>
 				<div v-else class="flex h-full items-center justify-center">
-					<p class="text-ink-gray-5">
+					<!-- While the (still-mounted) search header's new query loads, this area is the
+					     loading surface — the empty message must not flash first. -->
+					<LoaderCircle
+						v-if="threadsResource?.loading"
+						class="text-ink-gray-5 h-5 w-5 animate-spin"
+					/>
+					<p v-else class="text-ink-gray-5">
 						{{
-							mailbox === 'search'
-								? __('No results found for the given query.')
-								: __('No mails found for the selected filter.')
+							mailbox !== 'search'
+								? __('No mails found for the selected filter.')
+								: hasSearchQuery
+									? __('No results found for the given query.')
+									: __('Search your mail')
 						}}
 					</p>
 				</div>
@@ -309,17 +381,36 @@
 			</div>
 
 			<!-- Mail thread -->
+			<!-- Mobile opens as a page push (iOS-style slide from the right): the pane
+			     stays mounted and slides via transform, so close animates too.
+			     visibility rides the same transition — it flips only after the
+			     slide-out ends, keeping the offscreen pane out of the focus order.
+			     Teleported to body on mobile (like the selection bar): inside the
+			     layout's isolate stacking context the remounting tab bar would paint
+			     over the pane during the slide-out. -->
+			<Teleport to="body" :disabled="!isMobile">
 			<div
-				class="bg-surface-base overflow-y-auto"
+				class="bg-surface-base"
 				:class="{
+					'overflow-hidden': isMobile,
 					'w-2/3': !isMobile && showReadingPane,
 					'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
-					'fixed inset-0': isMobile,
-					hidden: (isMobile || !showReadingPane) && !threadID,
+					'fixed inset-0 z-20 transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
+						isMobile,
+					'invisible translate-x-full': isMobile && !threadID,
+					hidden: !isMobile && !showReadingPane && !threadID,
 				}"
+				@touchstart.passive="onThreadTouchStart"
+				@touchend.passive="onThreadTouchEnd"
 			>
+				<!-- The swipe slide lives inside MailThread (its toolbar must not move), armed
+				     via `slide` per swipe and cleared on slide-done. The scroll wrapper must be
+				     h-full on desktop too, or the empty state's h-full collapses. -->
+				<div class="h-full overflow-y-auto">
 				<MailThread
 					ref="mailThread"
+					:slide="threadSlide"
+					@slide-done="threadSlide = ''"
 					:mailbox
 					:thread-i-d
 					:threads="threadIDs"
@@ -358,7 +449,9 @@
 					@prev-thread="goToThreadByOffset(-1)"
 					@next-thread="goToThreadByOffset(1)"
 				/>
+				</div>
 			</div>
+			</Teleport>
 		</template>
 
 		<!-- No mails (the search view keeps its header and shows an inline message instead) -->
@@ -371,6 +464,63 @@
 	<Dialog v-model="showEmptyMailbox" :options="emptyMailboxOptions" />
 	<Dialog v-model="showJunkOrDeleteThreads" :options="junkOrDeleteThreadsOptions" />
 	<ScreenedEmailAddressModal />
+	<!-- Selection action bar (design: 5·Selection) — replaces the tab bar while
+	     selecting: thumb reach, Delete last and red. -->
+	<!-- Same 52px row + safe-area padding as the tab bar it overlays, so entering/
+	     leaving selection mode never shifts the layout. Teleported to body: inside
+	     the layout's `isolate` stacking context, no z-index could beat the nav. -->
+	<Teleport to="body">
+	<div
+		v-if="mobileSelectionMode"
+		class="bg-surface-base fixed inset-x-0 bottom-0 z-20 border-t pb-[env(safe-area-inset-bottom)]"
+	>
+		<!-- Four labeled actions + More: seven unlabeled icons were the old screener
+		     trap (no labels, no tooltips on touch). Overflow actions and the folder
+		     menus live in the More sheet, which chains into the folder sheets. -->
+		<!-- flex-1 columns (like the tab bar underneath): equal widths keep the icon
+		     centers evenly spaced regardless of label length. -->
+		<div class="flex h-15 items-stretch">
+			<button
+				v-for="action in visibleSelectActions.slice(0, 4)"
+				:key="action.label"
+				class="text-ink-gray-7 flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] !font-semibold"
+				@click="action.onClick"
+			>
+				<component :is="action.icon" class="h-5 w-5" />
+				<span class="max-w-full truncate">{{ action.shortLabel ?? stripShortcutHint(action.label) }}</span>
+			</button>
+			<button
+				v-if="moreSelectionOptions.length"
+				class="text-ink-gray-7 flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] !font-semibold"
+				@click="showMoreActions = true"
+			>
+				<Ellipsis class="h-5 w-5" />
+				<span>{{ __('More') }}</span>
+			</button>
+		</div>
+
+		<AdaptiveDropdown
+			v-model:open="showMoreActions"
+			:options="moreSelectionOptions"
+		/>
+		<AdaptiveDropdown
+			v-model:open="showMoveToSheet"
+			:options="moveToOptions"
+			:title="__('Move To')"
+		/>
+		<AdaptiveDropdown
+			v-model:open="showAddToSheet"
+			:options="addToOptions"
+			:title="__('Add To')"
+		/>
+		<AdaptiveDropdown
+			v-model:open="showRemoveFromSheet"
+			:options="removeFromOptions"
+			:title="__('Remove From')"
+		/>
+	</div>
+	</Teleport>
+
 	<ShortcutsModal v-model="showShortcuts" />
 </template>
 <script setup lang="ts">
@@ -396,6 +546,7 @@ import {
 	Star,
 	StarOff,
 	Trash2,
+	X,
 } from 'lucide-vue-next'
 import {
 	Breadcrumbs,
@@ -416,15 +567,24 @@ import {
 	raiseToast,
 	shouldIgnoreKeypress,
 	startResizing,
+	stripShortcutHint,
 } from '@/apps/mail/utils'
-import { useScreenSize, useSidebar, useUndo } from '@/apps/mail/utils/composables'
+import {
+	useMobileSelection,
+	useScreenSize,
+	useSwipeNav,
+	useUndo,
+} from '@/apps/mail/utils/composables'
 import { buildListRows } from '@/apps/mail/utils/threadStacks'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
+import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
+import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import ScreenedEmailAddressModal from '@/apps/mail/components/Modals/ScreenedEmailAddressModal.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
@@ -447,7 +607,7 @@ const { accountId, mailbox, threadID } = defineProps<{
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
-const { openSidebar } = useSidebar()
+const { setMobileSelectionActive } = useMobileSelection()
 const { undo, setUndoAction } = useUndo()
 
 const socket = inject('$socket')
@@ -619,6 +779,44 @@ const mailThreadRef = useTemplateRef('mailThread')
 const mailListRef = useTemplateRef('mailList')
 
 const selections = ref<string[]>([])
+
+// Mobile selection mode (design: 5·Selection): rows show checkboxes, the toolbar
+// turns contextual, and the action bar replaces the tab bar (via the composable).
+const mobileSelectionMode = computed(() => isMobile.value && selections.value.length > 0)
+watch(mobileSelectionMode, (active) => setMobileSelectionActive(active))
+onUnmounted(() => setMobileSelectionActive(false))
+
+// Selection bar: first four condition-passing actions get labeled slots; the rest,
+// plus the folder menus, overflow into the More sheet (chained sheet opens).
+const showMoreActions = ref(false)
+const showMoveToSheet = ref(false)
+const showAddToSheet = ref(false)
+const showRemoveFromSheet = ref(false)
+
+const visibleSelectActions = computed(() => selectActions.value.filter((a) => a.condition()))
+
+const moreSelectionOptions = computed(() => [
+	...visibleSelectActions.value.slice(4).map((a) => ({
+		label: a.label,
+		icon: a.icon,
+		onClick: a.onClick,
+	})),
+	...(!['search', 'starred'].includes(mailbox)
+		? [{ label: __('Move To'), icon: FolderInput, onClick: () => (showMoveToSheet.value = true) }]
+		: []),
+	...(showAddTo.value
+		? [{ label: __('Add To'), icon: FolderPlus, onClick: () => (showAddToSheet.value = true) }]
+		: []),
+	...(showRemoveFrom.value
+		? [
+				{
+					label: __('Remove From'),
+					icon: FolderMinus,
+					onClick: () => (showRemoveFromSheet.value = true),
+				},
+			]
+		: []),
+])
 const lastSelected = ref<string[]>()
 
 const isAllSelected = computed(
@@ -858,6 +1056,8 @@ const handleKeyUp = (e: KeyboardEvent) => {
 
 interface SelectAction {
 	label: string
+	// One-word label for the mobile selection bar; verb phrases stay in menus/tooltips.
+	shortLabel?: string
 	onClick: () => void
 	icon: typeof RefreshCw
 	condition: () => boolean
@@ -865,7 +1065,7 @@ interface SelectAction {
 
 const selectActions = computed((): SelectAction[] => [
 	{
-		label: __('Star Mails'),
+		label: __('Star'),
 		onClick: () => setFlaggedByThreadIDs(selections.value, true),
 		icon: Star,
 		condition: () =>
@@ -876,7 +1076,7 @@ const selectActions = computed((): SelectAction[] => [
 			),
 	},
 	{
-		label: __('Unstar Mails'),
+		label: __('Unstar'),
 		onClick: () => setFlaggedByThreadIDs(selections.value, false),
 		icon: StarOff,
 		condition: () =>
@@ -887,7 +1087,7 @@ const selectActions = computed((): SelectAction[] => [
 			),
 	},
 	{
-		label: __('Archive Threads (E)'),
+		label: __('Archive (E)'),
 		onClick: () =>
 			mailbox === mailboxIds.sent
 				? handleAddThreadsToMailbox(mailboxIds.archive, selections.value)
@@ -897,6 +1097,7 @@ const selectActions = computed((): SelectAction[] => [
 	},
 	{
 		label: __('Mark as Junk (!)'),
+		shortLabel: __('Junk'),
 		onClick: () => junkOrDeleteThreads(selections.value, true),
 		icon: CircleAlert,
 		condition: () =>
@@ -909,6 +1110,7 @@ const selectActions = computed((): SelectAction[] => [
 	},
 	{
 		label: __('Mark as Not Junk'),
+		shortLabel: __('Not Junk'),
 		onClick: () => handleSetSpamStatus({ 0: selections.value }),
 		icon: CircleCheck,
 		condition: () =>
@@ -920,18 +1122,21 @@ const selectActions = computed((): SelectAction[] => [
 	},
 	{
 		label: __('Move to Trash (Delete)'),
+		shortLabel: __('Trash'),
 		onClick: () => handleMoveThreads({ [mailboxIds.trash]: selections.value }),
 		icon: Trash2,
 		condition: () => mailbox !== mailboxIds.trash,
 	},
 	{
 		label: __('Delete Threads (Shift+Delete)'),
+		shortLabel: __('Delete'),
 		onClick: () => junkOrDeleteThreads(selections.value, false),
 		icon: Trash2,
 		condition: () => mailbox === mailboxIds.trash,
 	},
 	{
 		label: __('Mark as Read (Shift+U)'),
+		shortLabel: __('Read'),
 		onClick: () => handleSetSeen({ 1: selections.value }),
 		icon: MailOpen,
 		condition: () =>
@@ -943,6 +1148,7 @@ const selectActions = computed((): SelectAction[] => [
 	},
 	{
 		label: __('Mark as Unread (U)'),
+		shortLabel: __('Unread'),
 		onClick: () => handleSetSeen({ 0: selections.value }),
 		icon: MailIcon,
 		condition: () =>
@@ -996,6 +1202,8 @@ const screenerCount = computed(
 )
 const showScreenerBanner = computed(
 	() =>
+		// The mobile tab bar's Screener badge carries this nudge; the banner is desktop-only.
+		!isMobile.value &&
 		mailbox === mailboxIds.inbox &&
 		screeningEnabled.value &&
 		screenerCount.value > 0 &&
@@ -1055,6 +1263,11 @@ const onResetSuccess = () => {
 // the query (kept out of the filter conditions on the server). The merged results carry their owning
 // account, so each row opens in — and acts within — its own account (see the row-action wrappers).
 const isAllAccountsSearch = computed(() => mailbox === 'search' && route.query.all_accounts != null)
+
+// The mobile Search tab lands on this route with no query yet. There's nothing to fetch —
+// an empty filter would run an unbounded search — so the list area shows a hint instead
+// (all_accounts is scope, not a search condition, so it alone doesn't count as a query).
+const hasSearchQuery = computed(() => Object.keys(route.query).some((k) => k !== 'all_accounts'))
 
 // Null while a search is pending — the count is only known once the fetch resolves (set in the
 // searchResults transform below, reset in resetThreads). Guards the title against a stale or zero count.
@@ -1244,6 +1457,10 @@ watch(groupedRows, () => {
 const canGoNext = computed(() => hasMore.value)
 
 const isLoading = computed(() => {
+	// Search is one page: its header (input + filter chips) mounts immediately and stays put
+	// across query changes — loading shows inline in the list area, never as the full spinner.
+	// Checked first: entering the route resets isMailboxLoaded, which must not blank the view.
+	if (mailbox === 'search') return false
 	if (!isMailboxLoaded.value) return true
 	if (emptyMailbox.loading) return true
 	if (refillPending.value) return true
@@ -1270,7 +1487,15 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 	epoch.value++
 	resetSelections()
 	// Clear the previous search's count so the header doesn't show a stale total while the new fetch runs.
-	if (mailbox === 'search') searchTotal.value = null
+	if (mailbox === 'search') {
+		searchTotal.value = null
+		// No query yet (the Search tab's landing state): skip the fetch and settle the count
+		// so nothing sits on "Searching…".
+		if (!hasSearchQuery.value) {
+			searchTotal.value = 0
+			return
+		}
+	}
 	threadsResource.value.reload()
 	if (reloadMailboxes) mailboxes.reload()
 }
@@ -1414,6 +1639,7 @@ const getThreadByOffset = (offset: number, currentThread: string = threadID!) =>
 	threadIDs.value[threadIDs.value.indexOf(currentThread) + offset]
 
 const goToThread = (threadID: string) => {
+	threadSlide.value = pendingThreadSlide
 	if (threadID)
 		router.push({ name: 'mail-mail', params: { accountId, mailbox, threadID }, query: route.query })
 }
@@ -1440,6 +1666,23 @@ const goToThreadByOffset = (offset: number) => {
 	if (next) return goToThread(next)
 	loadMoreThenOpenEdge(offset, 'open')
 }
+
+// Swipe on the open thread (mobile): left → next thread, right → previous.
+const { onTouchStart: onThreadTouchStart, onTouchEnd: onThreadTouchEnd } = useSwipeNav(
+	() => isMobile.value && !!threadID,
+	(offset) => {
+		// Arms the paging animation for this navigation only — goToThread consumes it, so
+		// taps/arrows (which never set it) keep swapping instantly.
+		pendingThreadSlide = offset > 0 ? 'page-next' : 'page-prev'
+		goToThreadByOffset(offset)
+		pendingThreadSlide = ''
+	},
+)
+
+// MailThread's slide name while a swipe navigation renders; cleared on its slide-done
+// (and left empty for every other thread change, which should swap instantly).
+const threadSlide = ref('')
+let pendingThreadSlide = ''
 
 const openPendingEdgeThread = () => {
 	if (!pendingEdgeThread) return
@@ -1488,6 +1731,10 @@ const rowForThread = (threadID?: string): NavRow | undefined => {
 const focusOnThread = (threadID?: string) => focusRow(rowForThread(threadID))
 
 const scrollIntoView = (rowKey: string) => {
+	// Centering the focused row is a keyboard-navigation affordance; on mobile it
+	// only made the list visibly jump behind the thread pane's slide-in.
+	if (isMobile.value) return
+
 	// The row may have only just been revealed by its stack or its day opening, so wait for the render
 	// before looking it up. A no-op when nothing changed.
 	nextTick(() => {
@@ -1760,6 +2007,11 @@ const title = computed(() => {
 const showSearchModal = ref(false)
 const showSearchAdvanced = ref(false)
 const searchEditFilter = ref('')
+
+const threadCount = computed(() => {
+	const count = mailboxObj.value?.total_threads
+	return count ? count.toLocaleString() : ''
+})
 </script>
 
 <style scoped>
@@ -1768,16 +2020,5 @@ const searchEditFilter = ref('')
 	border-color: var(--outline-gray-7);
 }
 
-.loading-bar__fill {
-	animation: loading-bar-slide 1.2s linear infinite;
-}
 
-@keyframes loading-bar-slide {
-	0% {
-		transform: translateX(-100%);
-	}
-	100% {
-		transform: translateX(333%);
-	}
-}
 </style>

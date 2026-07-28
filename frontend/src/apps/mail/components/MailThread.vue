@@ -17,12 +17,21 @@
 			@prev-thread="emit('prevThread')"
 			@next-thread="emit('nextThread')"
 		/>
+		<!-- The swipe slide (`slide` prop) pages only the thread-specific part — subject,
+		     messages, reply bar — while the toolbar above stays put. Keyed per thread on
+		     mobile: the outgoing thread's frozen DOM slides away as the incoming one
+		     slides in. Desktop keys statically, so switching threads never remounts. -->
+		<div class="relative min-h-0 flex-1 overflow-hidden">
+		<Transition :name="slide || ''" @after-enter="emit('slideDone')">
+		<div :key="isMobile ? threadID : 'thread'" class="flex h-full flex-col">
+		<!-- Mobile: the subject is part of the fixed chrome — scrolling starts below it,
+		     and its border is the separator content passes under. -->
+		<div v-if="isMobile && thread?.length" class="shrink-0 border-b px-3.5 pb-3.5 pt-1.5">
+			<h2 class="text-xl-semibold leading-5">
+				{{ thread[0].subject || __('[No subject]') }}
+			</h2>
+		</div>
 		<div ref="threadContainer" class="flex-1 overflow-y-auto">
-			<div v-if="isMobile && thread?.length" class="border-b px-3 py-3.5">
-				<h2 class="text-xl-semibold leading-5">
-					{{ thread[0].subject || __('[No subject]') }}
-				</h2>
-			</div>
 
 			<div
 				class="sm:space-y-4 sm:px-5 sm:py-6"
@@ -56,7 +65,7 @@
 							v-if="!collapsedMailNames.has(mail.name)"
 							:data-mail-name="mail.name"
 							:class="{
-								'px-3 py-5': isMobile,
+								'px-3.5 py-5': isMobile,
 								'max-sm:border-b':
 									(thread.length > 1 || mail.draft) &&
 									mail.name !== mailBeforeCollapsedGroup &&
@@ -349,6 +358,9 @@
 				</div>
 			</div>
 		</div>
+		</div>
+		</Transition>
+		</div>
 		<SendMail
 			v-if="focusedDraft"
 			v-model="showSendModal"
@@ -431,7 +443,7 @@ import type {
 	ScreenedAddress,
 } from '@/apps/mail/types'
 
-const { mailbox, threadID, threads, messages, canGoNext, readonly } = defineProps<{
+const { mailbox, threadID, threads, messages, canGoNext, readonly, slide } = defineProps<{
 	mailbox: string
 	threadID?: string
 	threads: string[]
@@ -440,6 +452,10 @@ const { mailbox, threadID, threads, messages, canGoNext, readonly } = defineProp
 	// Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
 	// toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.
 	readonly?: boolean
+	// Transition name for the mobile swipe paging ('page-next' / 'page-prev', styled in
+	// MailLayout); the owner arms it per swipe and clears it on slideDone, so other thread
+	// changes swap instantly.
+	slide?: string
 }>()
 
 const emit = defineEmits([
@@ -458,6 +474,7 @@ const emit = defineEmits([
 	'moveMail',
 	'markMailSpam',
 	'deleteMail',
+	'slideDone',
 ])
 
 const { isMobile } = useScreenSize()
@@ -892,17 +909,20 @@ const createLocalDraft = (mail: Mail, draftDetails: ComposeMailData) => {
 
 	nextTick(() => {
 		draftMails[name] = { name, ...draftDetails }
+		// The thread entry only hosts the inline desktop editor. On mobile the draft
+		// lives in the slide-up sheet instead — splicing it in anyway would hide the
+		// reply bar (it's suppressed while the thread ends in a draft) until a reload
+		// cleans the entry up, well after the sheet has slid out.
+		if (isMobile.value) return popOutDraft(draftMails[name])
 		const index = thread.value.indexOf(mail)
 		const draft = thread.value.find((m: Mail) => m.name === name)
 		if (index !== -1 && !draft)
 			thread.value.splice(index + 1, 0, { ...draftMails[name], draft: 1, show: true })
-		if (isMobile.value) popOutDraft(draftMails[name])
-		else
-			setTimeout(() =>
-				threadContainerRef.value
-					?.querySelector(`[data-mail-name="${name}"]`)
-					?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-			)
+		setTimeout(() =>
+			threadContainerRef.value
+				?.querySelector(`[data-mail-name="${name}"]`)
+				?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+		)
 	})
 }
 
@@ -1057,3 +1077,4 @@ const getForwardedContent = (mail: Mail) => {
 	`
 }
 </script>
+

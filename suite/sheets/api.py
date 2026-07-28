@@ -2,6 +2,7 @@ import json
 
 import frappe
 
+from suite.drive.overrides.file import set_content_file_trashed, sync_content_file_title
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
 from suite.sheets.versioning import save as save_mod
@@ -266,11 +267,25 @@ def unshare_sheet(name: str, user: str = "", everyone: int = 0) -> dict:
 
 # Caller's `order_by` is resolved through this dict — a key lookup, never
 # string interpolation — so arbitrary SQL can't reach the ORDER BY clause.
-_LIST_SHEETS_ORDER_BY = {
-	"modified": "`tabSheet`.`modified` desc",
-	"title": "`tabSheet`.`title` asc",
-	"owner": "`tabSheet`.`owner` asc, `tabSheet`.`modified` desc",
+# The direction is likewise clamped to a literal "asc"/"desc" in
+# `_list_sheets_order_by`, so neither the column nor the direction is ever
+# free text.
+_LIST_SHEETS_SORT_FIELDS = {
+	"modified": "`tabSheet`.`modified`",
+	"title": "`tabSheet`.`title`",
+	"owner": "`tabSheet`.`owner`",
 }
+
+
+def _list_sheets_order_by(order_by: str, sort_dir: str) -> str:
+	field = _LIST_SHEETS_SORT_FIELDS.get(order_by) or _LIST_SHEETS_SORT_FIELDS["modified"]
+	direction = "asc" if str(sort_dir).lower() == "asc" else "desc"
+	order = f"{field} {direction}"
+	# Owner is a low-cardinality column, so a secondary `modified desc` keeps
+	# rows within one owner in a stable, useful order regardless of direction.
+	if order_by == "owner":
+		order += ", `tabSheet`.`modified` desc"
+	return order
 
 
 @frappe.whitelist()
@@ -280,6 +295,7 @@ def list_sheets(
 	search: str = "",
 	owner_filter: str = "all",
 	order_by: str = "modified",
+	sort_dir: str = "desc",
 ) -> dict:
 	# Frappe's get_list applies the permission query, so the base result is
 	# sheets the session user owns plus those shared via DocShare (per-user
@@ -304,7 +320,7 @@ def list_sheets(
 		"Sheet",
 		filters=filters,
 		fields=["name", "title", "modified", "owner"],
-		order_by=_LIST_SHEETS_ORDER_BY.get(order_by, _LIST_SHEETS_ORDER_BY["modified"]),
+		order_by=_list_sheets_order_by(order_by, sort_dir),
 		limit_start=start,
 		limit_page_length=limit,
 	)
@@ -370,6 +386,26 @@ def save_sheet(
 
 
 @frappe.whitelist()
+def create_sheet(title: str = "", parent: str = "") -> str:
+	# Create a blank sheet and return its id. Used by Drive's "New › Spreadsheet"
+	# so the sheet is born inside the folder the user is looking at — `parent`
+	# is the Drive folder its backing File should land in (validated for upload
+	# access here, then threaded to Sheet.after_insert). Mirrors Writer's
+	# create_document. "{}" is a valid empty workbook — the editor's loader
+	# falls back to a fresh Sheet1 when the packed payload is absent.
+	if parent:
+		from suite.drive.api.permissions import user_has_permission
+
+		if not user_has_permission(parent, "upload"):
+			frappe.throw(
+				"Cannot access folder due to insufficient permissions",
+				frappe.PermissionError,
+			)
+	result = save_mod.save_sheet(title or "Untitled Spreadsheet", "{}", name=None, parent=parent or None)
+	return result["name"]
+
+
+@frappe.whitelist()
 def record_op(
 	sheet: str,
 	op_type: str,
@@ -411,6 +447,10 @@ def delete_sheet(name: str) -> str:
 		{"trashed": 1, "trashed_on": frappe.utils.now_datetime(), "trashed_by": frappe.session.user},
 		update_modified=False,
 	)
+	# Mirror onto the backing Drive File so a trashed sheet drops out of the
+	# Drive listing too (soft-trash is a status flag, not a delete, so the
+	# on_trash doc-event doesn't fire).
+	set_content_file_trashed("Sheet", name, True)
 	return "ok"
 
 
@@ -424,6 +464,8 @@ def restore_sheet(name: str) -> str:
 		{"trashed": 0, "trashed_on": None, "trashed_by": None},
 		update_modified=False,
 	)
+	# Bring the backing Drive File back into the listing alongside the sheet.
+	set_content_file_trashed("Sheet", name, False)
 	return "ok"
 
 
@@ -474,6 +516,9 @@ def rename_sheet(name: str, title: str) -> str:
 	doc = frappe.get_doc("Sheet", name)
 	doc.title = title
 	doc.save()
+	# doc.save() writes the title but doesn't rename the backing Drive File
+	# (Sheet has no on_update sync — see hooks.py), so mirror it explicitly.
+	sync_content_file_title("Sheet", name, title)
 	return doc.name
 
 

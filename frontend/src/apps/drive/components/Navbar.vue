@@ -4,7 +4,7 @@
     <slot name="breadcrumbs">
       <Breadcrumbs :items="breadcrumbItems" class="select-none truncate max-w-[80%]">
         <template #prefix="{ item, index }">
-          <LoadingIndicator v-if="item.loading" width="20" scale="70" />
+          <Skeleton v-if="item.loading" class="h-4 w-16 rounded" />
         </template>
       </Breadcrumbs>
     </slot>
@@ -56,7 +56,7 @@
 </template>
 <script setup>
 import EntityDialogs from '@/apps/drive/components/EntityDialogs.vue'
-import { Button, Breadcrumbs, LoadingIndicator, Dropdown } from 'frappe-ui'
+import { Button, Breadcrumbs, Skeleton, Dropdown } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { isHomeContext, pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
 const { systemUser } = useCurrentUser()
@@ -96,6 +96,7 @@ import LucideFileUp from '~icons/lucide/file-up'
 import LucideFolderUp from '~icons/lucide/folder-up'
 import LucideFilePlus2 from '~icons/lucide/file-plus-2'
 import LucideGalleryVerticalEnd from '~icons/lucide/gallery-vertical-end'
+import LucideSheet from '~icons/lucide/sheet'
 import LucideFolderPlus from '~icons/lucide/folder-plus'
 
 const route = useRoute()
@@ -305,6 +306,12 @@ const newEntityOptions = computed(() => [
         icon: LucideGalleryVerticalEnd,
         onClick: () => newExternal('Presentation'),
         cond: isPrivate.value && apps.data?.find?.((k) => k.name === 'slides'),
+      },
+      {
+        label: 'Spreadsheet',
+        icon: LucideSheet,
+        onClick: () => newExternal('Spreadsheet'),
+        cond: isPrivate.value && apps.data?.find?.((k) => k.name === 'sheets'),
       },
       {
         label: 'Folder',

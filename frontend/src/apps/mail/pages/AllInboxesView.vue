@@ -1,8 +1,14 @@
 <template>
+	<!-- Mobile title header — no thread count since the merged view has no total.
+	     The toolbar below carries the bottom border, matching the mailbox structure. -->
+	<MobileTitleHeader v-if="isMobile" with-menu :title="__('All Inboxes')" />
+
 	<!-- Header -->
-	<header class="flex items-center justify-between border-b px-3 py-2.5 sm:px-5">
+	<!-- hidden on mobile: the tab bar's morphing Mail tab carries the folder name, and
+	     the header's actions live in the bar/FAB. Hidden (not v-if) so HeaderActions'
+	     modals stay mounted for the views' v-model bindings. -->
+	<header class="hidden items-center justify-between border-b px-3 py-2.5 sm:flex sm:px-5">
 		<div class="flex items-center space-x-2">
-			<Button v-if="isMobile" icon="menu" variant="ghost" @click="openSidebar" />
 			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
 			<Breadcrumbs
 				:items="[{ label: __('All Inboxes'), route: { name: 'mail-all-inboxes' } }]"
@@ -12,7 +18,7 @@
 		<HeaderActions @reload-mails="refreshThreads()" />
 	</header>
 
-	<div class="relative flex h-[calc(100dvh-3.05rem)]">
+	<div class="relative flex h-[calc(100dvh-3.05rem)] max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto">
 		<!-- Loading -->
 		<div v-if="isLoading" class="flex w-full flex-col items-center justify-center">
 			<div class="text-ink-gray-5 flex items-center space-x-2">
@@ -23,8 +29,21 @@
 
 		<template v-else-if="threads.data?.length">
 			<div ref="mailSidebar" class="sticky top-16 flex w-full flex-col border-r">
-				<!-- Toolbar -->
+				<!-- Toolbar — mobile mirrors the mailbox one (h-12, semibold selector in a
+				     bottom sheet, no refresh: pull the tab or reopen instead). -->
+				<div v-if="isMobile" class="relative flex h-12 items-center border-b px-4">
+					<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
+						<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
+							<span class="truncate">{{ title }}</span>
+							<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
+						</button>
+					</AdaptiveDropdown>
+
+					<!-- Loading bar -->
+					<LoadingBar v-if="threads.loading" />
+				</div>
 				<div
+					v-else
 					class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
 				>
 					<Dropdown :options="FILTER_OPTIONS">
@@ -49,23 +68,14 @@
 					</div>
 
 					<!-- Loading bar -->
-					<div
-						v-if="threads.loading"
-						class="loading-bar pointer-events-none absolute bottom-[-1px] left-[-1px] right-0 h-0.5 overflow-hidden"
-						role="progressbar"
-						aria-busy="true"
-					>
-						<div
-							class="loading-bar__fill via-ink-gray-3 absolute inset-y-0 left-0 w-[30%] bg-gradient-to-r from-transparent to-transparent"
-						/>
-					</div>
+					<LoadingBar v-if="threads.loading" />
 				</div>
 
 				<!-- Mail list -->
-				<div ref="mailList" class="h-full overflow-y-auto overscroll-contain">
+				<div ref="mailList" class="h-full overflow-y-auto overscroll-contain max-sm:pb-20">
 					<div v-for="(group, key) in groupedThreads" :key="key">
 						<Tooltip
-							v-if="groupMessagesBy !== 'None'"
+							v-if="groupMessagesBy !== 'None' && !isMobile"
 							:text="
 								isLastGroup(key)
 									? ''
@@ -87,7 +97,7 @@
 								/>
 							</div>
 						</Tooltip>
-						<template v-if="!collapsedGroups.includes(key)">
+						<template v-if="isMobile || !collapsedGroups.includes(key)">
 							<MailListItem
 								v-for="mail in group"
 								:key="`${mail.account}:${mail.thread_id}`"
@@ -150,16 +160,18 @@ import {
 import { Breadcrumbs, Button, Dropdown, Tooltip, call, createResource, usePageMeta } from 'frappe-ui'
 
 import { getFormattedDate, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
-import { useScreenSize, useSidebar } from '@/apps/mail/utils/composables'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
+import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
+import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 
 import type { Thread, UserResource } from '@/apps/mail/types'
 
 const { isMobile } = useScreenSize()
-const { openSidebar } = useSidebar()
 
 const socket = inject('$socket')
 const user = inject('$user') as UserResource
@@ -483,16 +495,4 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.loading-bar__fill {
-	animation: loading-bar-slide 1.2s linear infinite;
-}
-
-@keyframes loading-bar-slide {
-	0% {
-		transform: translateX(-100%);
-	}
-	100% {
-		transform: translateX(333%);
-	}
-}
 </style>
