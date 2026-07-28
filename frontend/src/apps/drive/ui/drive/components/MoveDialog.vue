@@ -17,7 +17,6 @@
         <Tabs v-model="tabIndex" as="div" :tabs="tabs">
           <template #tab-panel>
             <div class="px-1 py-1 h-64 overflow-auto flex flex-col">
-              <TeamSelector v-if="tabIndex === 1" v-model="chosenTeam" class="mb-2" />
               <Tree v-if="tree.children.length" :nodes="tree.children" node-key="value" guides="none">
                 <template #item="{ node, expanded, hasChildren, toggle }">
                   <div class="group grow min-w-0 flex items-center gap-2"
@@ -104,7 +103,7 @@
               </div>
             </div>
           </div>
-          <Button variant="solid" class="ml-auto" size="sm" :disabled="tabIndex === 1 && !chosenTeam"
+          <Button variant="solid" class="ml-auto" size="sm"
             :loading="move.loading" @click="moveFile">
             <template #prefix>
               <LucideArrowLeftRight class="size-4" />
@@ -130,9 +129,7 @@ import {
   Skeleton,
   toast,
 } from 'frappe-ui'
-import { move, getTeams } from '../js/resources'
-
-import { useRoute } from 'vue-router'
+import { move, rootInfo } from '../js/resources'
 
 import LucideBuilding2 from '~icons/lucide/building-2'
 import LucideCheck from '~icons/lucide/check'
@@ -144,7 +141,6 @@ import LucideFolderClosed from '~icons/lucide/folder-closed'
 import LucideHome from '~icons/lucide/home'
 import LucideArrowLeftRight from '~icons/lucide/arrow-left-right'
 import LucideEllipsis from '~icons/lucide/ellipsis'
-import TeamSelector from './TeamSelector.vue'
 
 const folderWidths = ['45%', '60%', '38%', '52%']
 
@@ -160,9 +156,8 @@ const emit = defineEmits(['success', 'complete'])
 const dialogType = defineModel()
 const open = ref(true)
 
-const route = useRoute()
-const tabIndex = ref(route.name == 'drive-Home' ? 0 : 1)
-const chosenTeam = ref(route.params.team || '')
+const tabIndex = ref(0)
+rootInfo.fetch()
 const tree = reactive({
   name: '',
   label: 'Home',
@@ -174,31 +169,17 @@ const tree = reactive({
 
 // State variables
 const selected = ref('')
-const breadcrumbs = ref([
-  { name: '', file_name: tabIndex.value === 0 ? 'Home' : 'Team' },
+const breadcrumbs = ref([{ name: '', file_name: 'Home' }])
+
+const tabs = computed(() => [
+  { label: 'Home', icon: h(LucideHome, { class: 'size-4' }) },
+  { label: 'Site', icon: h(LucideBuilding2, { class: 'size-4' }) },
 ])
-
-const tabs = computed(() => {
-  const items = [{ label: 'Home', icon: h(LucideHome, { class: 'size-4' }) }]
-  if (Object.keys(getTeams.data || {}).length)
-    items.push({ label: 'Teams', icon: h(LucideBuilding2, { class: 'size-4' }) })
-  return items
-})
-
-// Keep the active tab valid when the Teams tab is hidden (no teams).
-watch(
-  tabs,
-  (t) => {
-    if (tabIndex.value > t.length - 1) tabIndex.value = 0
-  },
-  { immediate: true },
-)
 
 const folderContents = createResource({
   url: 'suite.drive.api.list.files',
   makeParams: (params) => ({
     ...params,
-    team: chosenTeam.value,
     file_kinds: '["Folder"]',
   }),
 })
@@ -234,43 +215,25 @@ const selectedPerms = createResource({
     entity_name: selected.value,
   }),
   onSuccess: (data) => {
-    const team = getTeams.data[data.team]
-    const first = [
-      {
-        name: '',
-        file_name: team ? team.title : 'Home',
-      },
-    ]
-    breadcrumbs.value = first.concat(data.breadcrumbs.slice(1))
+    breadcrumbs.value = data.breadcrumbs.map((k) => ({
+      ...k,
+      file_name: k.name === rootInfo.data?.home ? 'Home' : k.file_name,
+    }))
   },
 })
 
 watch(
-  [tabIndex, chosenTeam],
-  ([newValue, team], [prev, _]) => {
+  tabIndex,
+  (newValue) => {
     selected.value = ''
     tree.loading = true
-    if ((newValue === 1 && !team) || (newValue === 0 && prev == newValue))
-      return
     tree.children = []
-    switch (newValue) {
-      case 0:
-        chosenTeam.value = ''
-        breadcrumbs.value = [{ name: '', file_name: 'Home' }]
-        fetchFolderContents(tree)
-        break
-      case 1:
-        breadcrumbs.value = [
-          { name: '', file_name: getTeams.data[team].title },
-        ]
-        fetchFolderContents(tree)
-        break
-      case 2:
-        folderContents.fetch({
-          entity_name: '',
-          favourites_only: true,
-        })
-        break
+    if (newValue === 0) {
+      breadcrumbs.value = [{ name: '', file_name: 'Home' }]
+      fetchFolderContents(tree)
+    } else {
+      breadcrumbs.value = [{ name: '', file_name: 'Site' }]
+      fetchFolderContents(tree, { entity_name: rootInfo.data?.root })
     }
   },
   { immediate: true },
@@ -301,10 +264,7 @@ const createdNode = ref(null)
 const createFolder = createResource({
   url: 'suite.drive.api.files.create_folder',
   makeParams(params) {
-    return {
-      ...params,
-      team: chosenTeam.value,
-    }
+    return params
   },
   validate(params) {
     if (!params?.file_name) return false
@@ -345,7 +305,6 @@ function closeEntity(name) {
     selected.value = breadcrumbs.value[breadcrumbs.value.length - 1].name
     folderContents.fetch({
       entity_name: selected.value,
-      personal: selected.value === '' ? 1 : -1,
     })
   }
 }
@@ -355,7 +314,6 @@ const moveFile = async () => {
   await move.submit({
     entity_names: props.entities.map((obj) => obj.name),
     new_parent: selected.value,
-    team: chosenTeam.value,
   })
   open.value = false
   emit('complete')

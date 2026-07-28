@@ -14,7 +14,7 @@
     </router-view>
     <SearchPopup v-if="isLoggedIn && showSearchPopup" v-model="showSearchPopup" />
     <button accesskey="u" class="hidden" @click="emitter.emit('uploadFile')" />
-    <FileUploader v-if="normalView && ['drive-Folder', 'drive-Home', 'drive-Team'].includes($route.name)" />
+    <FileUploader v-if="normalView && ['drive-Folder', 'drive-Home'].includes($route.name)" />
     <FDialogs />
   </FrappeUIProvider>
 </template>
@@ -45,12 +45,7 @@ provide('inIframe', inIframe)
 
 const showSearchPopup = ref(false)
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
-const normalView = computed(
-  () =>
-    !inIframe &&
-    isLoggedIn.value &&
-    !['drive-Teams', 'drive-Setup'].includes(route.name)
-)
+const normalView = computed(() => !inIframe && isLoggedIn.value)
 emitter.on('showSearchPopup', (data) => {
   showSearchPopup.value = data
 })

@@ -111,10 +111,6 @@
           <span class="inline-block w-24">Disk path:</span>
           <span class="col-span-1">{{ entity.storage_path }}</span>
         </li>
-        <li>
-          <span class="inline-block w-24">Team:</span>
-          <span class="col-span-1">{{ entity.team }}</span>
-        </li>
       </ul>
   </Dialog>
 </template>
@@ -154,13 +150,16 @@ const getGeneralAccess = createResource({
   transform: (data) => {
     if (!data || !data.read) {
       if (getGeneralAccess.params.user === 'Guest')
-        getGeneralAccess.fetch({ team: 1 })
+        getGeneralAccess.fetch({ user: '$GENERAL' })
       else
         return {
           type: 'restricted',
         }
     }
-    return { ...data, type: getGeneralAccess.params.team ? 'team' : 'public' }
+    return {
+      ...data,
+      type: getGeneralAccess.params.user === 'Guest' ? 'public' : 'site',
+    }
   },
 })
 getGeneralAccess.fetch({ user: 'Guest' })
@@ -177,10 +176,10 @@ onKeyDown('D', () => {
 })
 
 const accessConfig = {
-  team: {
+  site: {
     icon: LucideBuilding2,
     color: 'bg-surface-blue-2 text-ink-blue-5',
-    label: 'Team',
+    label: 'Site',
   },
   public: {
     icon: LucideGlobe2,

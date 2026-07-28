@@ -98,14 +98,12 @@
 import { Dialog, Avatar, createResource } from 'frappe-ui'
 import { getIconUrl, getEntityIcon, openEntity } from '@/apps/drive/utils/files'
 import { ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
 
 import LucideFilePlus2 from '~icons/lucide/file-plus-2'
 import LucideFolderPlus from '~icons/lucide/folder-plus'
 import LucideStar from '~icons/lucide/star'
 
 const search = ref('')
-const route = useRoute()
 
 const open = defineModel()
 
@@ -119,7 +117,6 @@ watch(search, (val) => {
   if (val.length >= 3) {
     searchResults.submit({
       query: val,
-      team: route.params.team,
     })
   } else {
     searchResults.reset()

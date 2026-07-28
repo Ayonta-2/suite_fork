@@ -64,7 +64,6 @@ const options = {
         }
       : null,
   onRowClick: (row) => {
-    if (row.type === 'Team') emitter.emit('showSettings', 'teams')
     if (onlyUnread.value) {
       markAsRead.submit({ name: row.name })
       if (notifCount.data > 0) notifCount.setData(notifCount.data - 1)

@@ -42,8 +42,8 @@ export const userList = createResource({
   url: 'suite.drive.api.permissions.get_shared_with_list',
 })
 
-export const teamUsers = createResource({
-  url: 'suite.drive.api.product.get_team_users',
+export const siteUsers = createResource({
+  url: 'suite.drive.api.product.get_users',
   method: 'GET',
   transform: (data) => {
     data.map((item) => {
@@ -80,14 +80,6 @@ export const diskSettings = createResource({
   url: 'suite.drive.api.product.disk_settings',
   method: 'GET',
   cache: 'disk-settings',
-})
-
-export const createTeam = createResource({
-  url: 'suite.drive.api.product.create_team',
-  makeParams: (params) => ({
-    ...params,
-    user: useSessionStore().user,
-  }),
 })
 
 export const getDiskSettings = createResource({

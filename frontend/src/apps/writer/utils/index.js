@@ -9,7 +9,9 @@ import editorStyle from '@/apps/writer/styles/editor.css?inline'
 import globalStyle from '@/apps/writer/styles/index.css?inline'
 import slugify from 'slugify'
 import { useFileUpload, toast as nToast, createResource } from 'frappe-ui'
-import { getTeams } from '@/apps/drive/sdk'
+import { rootInfo } from '@/apps/drive/sdk'
+
+rootInfo.fetch()
 import emitter from '@/apps/writer/emitter'
 import { createLowlight, common } from 'lowlight'
 import { toHtml } from 'hast-util-to-html'
@@ -58,8 +60,7 @@ export const prettyData = (entities) => {
   })
 }
 export const setBreadCrumbs = (entity) => {
-  const breadcrumbs = entity.breadcrumbs
-  const in_home = entity.in_home
+  let breadcrumbs = entity.breadcrumbs
   let res = [
     {
       label: __('Shared'),
@@ -67,19 +68,11 @@ export const setBreadCrumbs = (entity) => {
       route: useSessionStore().isLoggedIn && '/shared',
     },
   ]
-  const team = getTeams.data?.[breadcrumbs[0].team]
-  if (team || in_home)
-    res = [
-      {
-        label: in_home ? __('Home') : team.title,
-        name: in_home ? 'Home' : team.name,
-        route: in_home
-          ? { name: 'Home' }
-          : { name: 'Team', params: { team: team.name } },
-      },
-    ]
-
-  if (!breadcrumbs[0].folder) breadcrumbs.splice(0, 1)
+  const homeIdx = breadcrumbs.findIndex((k) => k.name === rootInfo.data?.home)
+  if (homeIdx > -1) {
+    res = [{ label: __('Home'), name: 'Home', route: { name: 'Home' } }]
+    breadcrumbs.splice(0, homeIdx + 1)
+  } else if (!breadcrumbs[0].folder) breadcrumbs.splice(0, 1)
   const popBreadcrumbs = (item) => () =>
     res.splice(res.findIndex((k) => k.name === item.name) + 1)
 

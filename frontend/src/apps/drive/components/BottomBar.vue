@@ -20,7 +20,6 @@
   </div>
 </template>
 <script>
-import LucideBuilding2 from '~icons/lucide/building-2'
 import LucideClock from '~icons/lucide/clock'
 import LucideHome from '~icons/lucide/home'
 import LucideStar from '~icons/lucide/star'
@@ -38,12 +37,6 @@ export default {
           route: { name: 'drive-Home' },
           icon: LucideHome,
           highlight: () => first.name === 'drive-Home',
-        },
-        {
-          label: 'Team',
-          route: { name: 'drive-Teams' },
-          icon: LucideBuilding2,
-          highlight: () => this.$route.name === 'drive-Teams',
         },
         {
           label: 'Recents',

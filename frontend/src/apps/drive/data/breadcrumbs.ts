@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import emitter from '@/apps/drive/emitter'
-import { getTeams, getPublicTeams } from '@/apps/drive/resources/files'
+import { rootInfo } from '@/apps/drive/resources/files'
 import { useSessionStore } from '@/boot/session'
 
 export type DriveBreadcrumb = Record<string, unknown>
@@ -45,10 +45,6 @@ export function updateLastBreadcrumbLabel(label: string, entityName?: string) {
 /** Build navbar crumbs from entity API payload — pure, no side effects. */
 export function buildBreadCrumbs(entity: Record<string, unknown>) {
   let breadcrumbs = entity.breadcrumbs as Array<Record<string, unknown>>
-  const in_home = entity.in_home
-  const team =
-    getTeams.data?.[breadcrumbs[0].team as string] ||
-    getPublicTeams.data?.[breadcrumbs[0].team as string]
 
   let res: DriveBreadcrumb[] = []
   if (entity.attached_to_doctype) {
@@ -81,35 +77,36 @@ export function buildBreadCrumbs(entity: Record<string, unknown>) {
       })
     }
     breadcrumbs = breadcrumbs.slice(-1)
-  } else if (team || in_home) {
-    res = [
-      {
-        label: in_home ? __('Home') : team.title,
-        name: in_home ? 'drive-Home' : team.name,
-        route: in_home
-          ? { name: 'drive-Home' }
-          : { name: 'drive-Team', params: { team: team.name } },
-      },
-    ]
-  } else if (entity.folder === 'Home/Attachments' || entity.folder === 'Home') {
-    res = [
-      {
-        label: __('Shared'),
-        name: 'drive-Shared',
-        route: '/drive/shared',
-      },
-    ]
-  } else if (useSessionStore().isLoggedIn) {
-    res = [
-      {
-        label: __('Shared'),
-        name: 'drive-Shared',
-        route: '/drive?shared=1',
-      },
-    ]
+  } else {
+    // The path either runs through the caller's own folder (→ "Home"), starts
+    // at the site root (→ "Site"), or is a shared suffix (→ "Shared").
+    const home = rootInfo.data?.home
+    const homeIdx = breadcrumbs.findIndex((b) => b.name === home)
+    if (homeIdx > -1) {
+      res = [{ label: __('Home'), name: 'drive-Home', route: { name: 'drive-Home' } }]
+      breadcrumbs = breadcrumbs.slice(homeIdx + 1)
+    } else if (!breadcrumbs[0].folder) {
+      res = [
+        {
+          label: __('Site'),
+          name: breadcrumbs[0].name,
+          route: {
+            name: 'drive-Folder',
+            params: { entityName: breadcrumbs[0].name },
+          },
+        },
+      ]
+      breadcrumbs = breadcrumbs.slice(1)
+    } else if (useSessionStore().isLoggedIn) {
+      res = [
+        {
+          label: __('Shared'),
+          name: 'drive-Shared',
+          route: '/drive/shared',
+        },
+      ]
+    }
   }
-
-  if (!breadcrumbs[0].folder) breadcrumbs.splice(0, 1)
   const popBreadcrumbs = (item: DriveBreadcrumb) => () =>
     res.splice(res.findIndex((k) => k.name === item.name) + 1)
 

@@ -1,7 +1,6 @@
 <template>
-  <TeamSelector v-model="chosenTeam" :disabled="Boolean(props.team)" none="home" class="mb-5" />
   <div v-if="!preview.data" class="text-sm text-center py-5">Loading...</div>
-  <div v-else-if="chosenTeam" class="text-base text-ink-gray-8">
+  <div v-else class="text-base text-ink-gray-8">
     <template v-if="preview.data.length">
       <div class="pb-2">
         You're adding {{ preview.data.length }} {{ preview.data.length == 1 ? 'item' : 'items' }}:
@@ -40,7 +39,7 @@
           variant="solid"
           :disabled="!preview.data?.length"
           @click="
-            syncFromDisk.submit({ team: chosenTeam }),
+            syncFromDisk.submit(),
               clearDialogs(),
               emitter.emit('showSettings', -1)
           "
@@ -53,18 +52,11 @@
 <script setup>
 import { createResource, Tree, Button} from 'frappe-ui'
 import Alert from '@/apps/drive/components/Alert.vue'
-import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed } from 'vue'
 import { toast } from '@/apps/drive/utils/toasts'
 import emitter from '@/apps/drive/emitter'
-import TeamSelector from './TeamSelector.vue'
 import { clearDialogs } from '@/apps/drive/utils/dialogs'
 
-const props = defineProps({
-  team: { type: String, required: false },
-})
-const route = useRoute()
-const chosenTeam = ref(props.team || route.params.team || 'home')
 function buildTree(items) {
   const root = {}
 
@@ -115,14 +107,7 @@ const preview = createResource({
   url: 'suite.drive.api.scripts.sync_preview',
   cache: 'preview',
 })
-watch(
-  chosenTeam,
-  (team) => {
-    preview.data = null
-    preview.submit({ team })
-  },
-  { immediate: true }
-)
+preview.submit()
 const syncFromDisk = createResource({
   url: 'suite.drive.api.scripts.sync_from_disk',
   beforeSubmit: () => {

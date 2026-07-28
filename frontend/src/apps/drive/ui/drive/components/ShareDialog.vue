@@ -19,7 +19,6 @@
               <Select v-model="generalAccessLevel" variant="outline" :options="levelOptions" @update:model-value="
                 (val) => updateGeneralAccess(val, generalPerms)
               " />
-              <TeamSelector v-if="generalAccessLevel == 'team'" v-model="chosenTeam" variant="outline" />
             </div>
             <AccessSelect v-if="generalAccessLevel !== 'restricted'" v-model="generalPerms" variant="outline" :options="accessOptions"
               @update:model-value="
@@ -101,7 +100,6 @@ import {
   Button,
 } from 'frappe-ui'
 import AccessSelect from './AccessSelect.vue'
-import TeamSelector from './TeamSelector.vue'
 import TagInput from './TagInput/TagInput.vue'
 import { getFileLink, dynamicList } from '../js/utils'
 
@@ -124,7 +122,7 @@ const props = defineProps({
 const emit = defineEmits(['success'])
 
 props.usersWithAccess.fetch({ entity: props.file.name })
-props.users.fetch({ team: 'all' })
+props.users.fetch()
 
 const levelOptions = [
   {
@@ -133,8 +131,8 @@ const levelOptions = [
     icon: 'lucide-lock',
   },
   {
-    label: 'Accessible to a team',
-    value: 'team',
+    label: 'Accessible to all site users',
+    value: 'site',
     icon: 'lucide-building-2',
   },
   { label: 'Accessible to all', value: 'public', icon: 'lucide-globe-2' },
@@ -168,10 +166,10 @@ const accessOptions = computed(() =>
   })),
 )
 
-// General access
+// General access: '' rows are public (anyone with the link), $GENERAL rows
+// cover all logged-in site users; restricted writes explicit deny rows.
 const generalAccessLevel = ref(levelOptions[0].value)
 const generalPerms = ref('reader')
-const chosenTeam = ref()
 
 let generalParams = {}
 const getGeneralAccess = useCall({
@@ -179,11 +177,10 @@ const getGeneralAccess = useCall({
   immediate: false,
   onSuccess: (data) => {
     if (!data || !data.read) {
-      if (generalParams.user === 'Guest') fetchGeneralAccess({ team: 1 })
+      if (generalParams.user === 'Guest') fetchGeneralAccess({ user: '$GENERAL' })
       return
     }
-    generalAccessLevel.value = generalParams.team ? 'team' : 'public'
-    chosenTeam.value = data.team
+    generalAccessLevel.value = generalParams.user === 'Guest' ? 'public' : 'site'
     generalPerms.value = data.write
       ? 'editor'
       : data.upload
@@ -196,24 +193,17 @@ const fetchGeneralAccess = (params) => {
   getGeneralAccess.submit({ entity: props.file.name, ...params })
 }
 fetchGeneralAccess({ user: 'Guest' })
-let selectingTeam = false
 const updateGeneralAccess = (level, perms) => {
-  if (level === 'team' && !chosenTeam.value) {
-    selectingTeam = true
-    return
-  }
   if (level !== 'restricted') {
     props.updateAccess.submit({
       entity_name: props.file.name,
-      user: level === 'public' ? '' : chosenTeam.value,
-      team: level === 'team',
+      user: level === 'public' ? '' : '$GENERAL',
       read: 1,
       comment: 1,
       share: 1,
       write: perms === 'editor',
       upload: perms === 'editor' || perms === 'upload',
     })
-    selectingTeam = false
   } else {
     props.updateAccess.submit({
       entity_name: props.file.name,
@@ -223,13 +213,6 @@ const updateGeneralAccess = (level, perms) => {
   }
   emit('success')
 }
-
-watch(
-  chosenTeam,
-  (now, prev) =>
-    (prev || selectingTeam) &&
-    updateGeneralAccess(generalAccessLevel.value, generalPerms.value),
-)
 
 // Invite specific users
 const usersToAdd = ref([])

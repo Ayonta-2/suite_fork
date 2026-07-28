@@ -3,7 +3,7 @@
   <AppSettingsBody>
   <div class="flex items-center justify-between w-full mb-2">
     <span class="text-base-medium text-ink-gray-8"
-      >{{ showFileStorage ? 'You have' : 'Your team has' }} used
+      >{{ showFileStorage ? 'You have' : 'This site has' }} used
       {{ formatSize(usedSpace) ? formatSize(usedSpace) + ' out' : 'none' }} of
       {{ showFileStorage ? 'your' : '' }} {{ base2BlockSize(spaceLimit) }} ({{
         formatPercent((usedSpace / spaceLimit) * 100)
@@ -17,7 +17,7 @@
             label: __('You'),
             value: true,
           },
-          { label: __('Team'), value: false },
+          { label: __('Site'), value: false },
         ]"
       />
       <!-- <Button
@@ -159,7 +159,6 @@ watch(
   showFileStorage,
   (val) =>
     storageBreakdown.fetch({
-      team: route.params.team || localStorage.getItem('recentTeam'),
       owned_only: val,
     }),
   { immediate: true }

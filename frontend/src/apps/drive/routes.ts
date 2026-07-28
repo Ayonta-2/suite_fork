@@ -22,9 +22,8 @@ import { setupTheme } from '@/utils/setupTheme'
  * shortcuts.
  *
  * Auth: the suite router's own `beforeEach` redirects guests to /login unless
- * the route is `meta.allowGuest` (publicly-shared files/folders/teams).
- * Drive-specific guard behaviour (recentTeam, clearing active entity) lives in
- * router.ts.
+ * the route is `meta.allowGuest` (publicly-shared files/folders).
+ * Drive-specific guard behaviour (clearing active entity) lives in router.ts.
  */
 
 const manageBreadcrumbs = (to: any) => {
@@ -39,14 +38,13 @@ const manageBreadcrumbs = (to: any) => {
 const setRootBreadCrumb = (to: any) => {
   if (useSessionStore().isLoggedIn) {
     document.title = __(String(to.name).replace(/^drive-/, ''))
-    if (to.name !== 'drive-Team')
-      setPageBreadcrumbs([
-        {
-          label: __(String(to.name).replace(/^drive-/, '')),
-          name: to.name,
-          route: to.path,
-        },
-      ])
+    setPageBreadcrumbs([
+      {
+        label: __(String(to.name).replace(/^drive-/, '')),
+        name: to.name,
+        route: to.path,
+      },
+    ])
   }
 }
 
@@ -65,11 +63,6 @@ export const routes: RouteRecordRaw[] = [
         meta: { allowGuest: true },
       },
       {
-        path: 'setup',
-        name: 'drive-Setup',
-        component: () => import('@/apps/drive/pages/Setup.vue'),
-      },
-      {
         path: '',
         name: 'drive-Home',
         component: () => import('@/apps/drive/pages/Personal.vue'),
@@ -81,11 +74,6 @@ export const routes: RouteRecordRaw[] = [
         name: 'drive-Inbox',
         component: () => import('@/apps/drive/pages/Notifications.vue'),
         beforeEnter: [setRootBreadCrumb],
-      },
-      {
-        path: 'teams',
-        name: 'drive-Teams',
-        component: () => import('@/apps/drive/pages/Teams.vue'),
       },
       {
         path: 'recents',
@@ -153,14 +141,6 @@ export const routes: RouteRecordRaw[] = [
             path: `/drive/${letter}/${entity.data.name}`,
           }
         },
-      },
-      {
-        path: 't/:team/',
-        name: 'drive-Team',
-        component: () => import('@/apps/drive/pages/Team.vue'),
-        beforeEnter: [setRootBreadCrumb],
-        props: true,
-        meta: { allowGuest: true },
       },
       {
         path: 'f/:entityName/:slug?',
@@ -239,6 +219,12 @@ export const routes: RouteRecordRaw[] = [
             path: `/drive/g/${to.params.entityName}`,
           }
         },
+      },
+      {
+        path: 't/:team/',
+        component: () => import('@/apps/drive/pages/Dummy.vue'),
+        meta: { allowGuest: true },
+        beforeEnter: () => ({ name: 'drive-Home' }),
       },
     ],
   },
