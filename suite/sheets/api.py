@@ -2,7 +2,6 @@ import json
 
 import frappe
 
-from suite.drive.overrides.file import set_content_file_trashed, sync_content_file_title
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
 from suite.sheets.versioning import save as save_mod
@@ -11,6 +10,7 @@ MAX_TITLE_LEN = 280
 
 
 # ── Presence ──────────────────────────────────────────────────────────────────
+
 
 @frappe.whitelist()
 def ping_presence(name: str) -> None:
@@ -44,6 +44,7 @@ def ping_presence(name: str) -> None:
 #     affordance and forging another user's position is bounded griefing, not
 #     state corruption.
 
+
 @frappe.whitelist()
 def broadcast_op(name: str, op: str) -> None:
 	"""Broadcast a cell-op JSON string to all clients watching this sheet."""
@@ -63,8 +64,7 @@ def broadcast_cursor(name: str, r: int, c: int, sub_sheet: str) -> None:
 	identity = _user_identity(user)
 	frappe.publish_realtime(
 		"sheet_cursor",
-		{"sheet": name, "user": user, **identity,
-		 "r": int(r), "c": int(c), "sub_sheet": sub_sheet},
+		{"sheet": name, "user": user, **identity, "r": int(r), "c": int(c), "sub_sheet": sub_sheet},
 		after_commit=False,
 	)
 
@@ -111,13 +111,15 @@ def yjs_relay(name: str, event: str, payload: str) -> None:
 	)
 
 
-_YJS_EVENTS = frozenset({
-	"yjs_update",
-	"yjs_state_request",
-	"yjs_state",
-	"yjs_awareness",
-	"yjs_awareness_bye",
-})
+_YJS_EVENTS = frozenset(
+	{
+		"yjs_update",
+		"yjs_state_request",
+		"yjs_state",
+		"yjs_awareness",
+		"yjs_awareness_bye",
+	}
+)
 
 # Events that mutate co-editors' local Yjs document. A read-only sharee
 # may still ask for state (`yjs_state_request`) and emit awareness/presence
@@ -126,6 +128,7 @@ _YJS_WRITE_EVENTS = frozenset({"yjs_update", "yjs_state"})
 
 
 # ── Sharing ───────────────────────────────────────────────────────────────────
+
 
 @frappe.whitelist()
 def get_sheet_shares(name: str) -> list:
@@ -158,8 +161,13 @@ def share_sheet(name: str, user: str = "", write: int = 0, everyone: int = 0) ->
 		# "Accessible to all" → single DocShare with everyone=1, user=NULL.
 		# notify=False because there's no individual to email.
 		frappe.share.add(
-			"Sheet", name, user=None, write=int(write), share=0,
-			everyone=1, notify=False,
+			"Sheet",
+			name,
+			user=None,
+			write=int(write),
+			share=0,
+			everyone=1,
+			notify=False,
 		)
 		return {"status": "ok"}
 	# Reject disabled users (and non-existent ones) up front — silently
@@ -209,25 +217,27 @@ def _notify_sheet_shared(sheet_name: str, recipient: str, can_edit: bool) -> Non
 		link = f"{frappe.utils.get_url()}/sheets?id={sheet_name}"
 		subject = f"{sharer} shared a sheet with you"
 		# Frappe's Notification Log surfaces in the bell-icon dropdown.
-		frappe.get_doc({
-			"doctype": "Notification Log",
-			"subject": (
-				f"{frappe.utils.escape_html(sharer)} shared the sheet "
-				f"<b>{frappe.utils.escape_html(title)}</b> with you "
-				f"(can {role})"
-			),
-			"for_user": recipient,
-			"type": "Share",
-			"document_type": "Sheet",
-			"document_name": sheet_name,
-			"from_user": frappe.session.user,
-			"email_content": (
-				f"<p>{frappe.utils.escape_html(sharer)} shared the sheet "
-				f"<b>{frappe.utils.escape_html(title)}</b> with you. "
-				f"You can {role} it.</p>"
-				f"<p><a href='{link}'>Open sheet</a></p>"
-			),
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Notification Log",
+				"subject": (
+					f"{frappe.utils.escape_html(sharer)} shared the sheet "
+					f"<b>{frappe.utils.escape_html(title)}</b> with you "
+					f"(can {role})"
+				),
+				"for_user": recipient,
+				"type": "Share",
+				"document_type": "Sheet",
+				"document_name": sheet_name,
+				"from_user": frappe.session.user,
+				"email_content": (
+					f"<p>{frappe.utils.escape_html(sharer)} shared the sheet "
+					f"<b>{frappe.utils.escape_html(title)}</b> with you. "
+					f"You can {role} it.</p>"
+					f"<p><a href='{link}'>Open sheet</a></p>"
+				),
+			}
+		).insert(ignore_permissions=True)
 		# Best-effort email — silently skipped if the site has no mailer.
 		frappe.sendmail(
 			recipients=[recipient],
@@ -325,7 +335,7 @@ def list_sheets(
 		limit_page_length=limit,
 	)
 	for r in rows:
-		r["is_owner"] = (r["owner"] == me)
+		r["is_owner"] = r["owner"] == me
 
 	# Permission-aware total for the same filters — an aggregate get_list
 	# keeps the owner + DocShare conditions that frappe.db.count would drop.
@@ -387,7 +397,7 @@ def save_sheet(
 
 @frappe.whitelist()
 def create_sheet(title: str = "", parent: str = "") -> str:
-	# Create a blank sheet and return its id. Used by Drive's "New › Spreadsheet"
+	# Create a blank sheet and return its id. Used by Drive's "New > Spreadsheet"
 	# so the sheet is born inside the folder the user is looking at — `parent`
 	# is the Drive folder its backing File should land in (validated for upload
 	# access here, then threaded to Sheet.after_insert). Mirrors Writer's
@@ -441,16 +451,14 @@ def delete_sheet(name: str) -> str:
 	# fully intact — a restore is a perfect restore, not a last-save recovery.
 	# The nightly purge (suite.sheets.trash.purge_trashed_sheets) does the real erase.
 	frappe.has_permission("Sheet", doc=name, ptype="delete", throw=True)
-	frappe.db.set_value(
-		"Sheet",
-		name,
-		{"trashed": 1, "trashed_on": frappe.utils.now_datetime(), "trashed_by": frappe.session.user},
-		update_modified=False,
-	)
-	# Mirror onto the backing Drive File so a trashed sheet drops out of the
-	# Drive listing too (soft-trash is a status flag, not a delete, so the
-	# on_trash doc-event doesn't fire).
-	set_content_file_trashed("Sheet", name, True)
+	# Flip the flag through the ORM so on_update fires and Drive drops the backing
+	# File from the listing in lockstep (see hooks.py) — no Sheets-specific Drive
+	# call, same front door as a Writer/Slides delete.
+	doc = frappe.get_doc("Sheet", name)
+	doc.trashed = 1
+	doc.trashed_on = frappe.utils.now_datetime()
+	doc.trashed_by = frappe.session.user
+	doc.save()
 	return "ok"
 
 
@@ -458,14 +466,13 @@ def delete_sheet(name: str) -> str:
 def restore_sheet(name: str) -> str:
 	# Same owner-only gate as trashing — restore is the inverse of delete.
 	frappe.has_permission("Sheet", doc=name, ptype="delete", throw=True)
-	frappe.db.set_value(
-		"Sheet",
-		name,
-		{"trashed": 0, "trashed_on": None, "trashed_by": None},
-		update_modified=False,
-	)
-	# Bring the backing Drive File back into the listing alongside the sheet.
-	set_content_file_trashed("Sheet", name, False)
+	# Inverse of trashing: clear the flag through the ORM so on_update returns the
+	# backing File to the Drive listing.
+	doc = frappe.get_doc("Sheet", name)
+	doc.trashed = 0
+	doc.trashed_on = None
+	doc.trashed_by = None
+	doc.save()
 	return "ok"
 
 
@@ -516,9 +523,6 @@ def rename_sheet(name: str, title: str) -> str:
 	doc = frappe.get_doc("Sheet", name)
 	doc.title = title
 	doc.save()
-	# doc.save() writes the title but doesn't rename the backing Drive File
-	# (Sheet has no on_update sync — see hooks.py), so mirror it explicitly.
-	sync_content_file_title("Sheet", name, title)
 	return doc.name
 
 
@@ -647,6 +651,7 @@ def ai_assist(name: str, prompt: str, selection: str) -> dict:
 			if not key:
 				frappe.throw("No Anthropic API key is configured.")
 			from suite.sheets.ai import client as ai_client
+
 			raw = ai_client.generate_actions(prompt, ctx, key, model)
 			source = "model"
 

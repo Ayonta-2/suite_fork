@@ -38,7 +38,6 @@ from suite.sheets.doctype.sheet.storage import (
 from . import seq as seq_mod
 from . import snapshots as snapshots_mod
 
-
 MAX_TITLE_LEN = 280
 MAX_OPS_PER_SAVE = 500
 
@@ -104,28 +103,34 @@ def _update_existing(
 	name: str, title: str, encoded: str, byte_size: int, ops_list: list[dict]
 ) -> tuple[str, int]:
 	frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
-	# Cheap PK read so the (un-indexed) Drive-file title sync below only runs on
-	# an actual rename, not on every autosave.
+	# Cheap PK read so the rare rename path (below) only runs on an actual title
+	# change, not on every autosave.
 	old_title = frappe.db.get_value("Sheet", name, "title")
 	head_seq = _append_ops_and_save(name, ops_list, byte_size, save_op_type="save")
-	frappe.db.set_value(
-		"Sheet",
-		name,
-		{"title": title, "sheets_data": encoded, "head_seq": head_seq},
-		update_modified=True,
-	)
-	# The editor renames a sheet through the autosave (db.set_value skips the
-	# on_update doc-event), so keep the backing Drive File's name in step here.
 	if title != old_title:
-		from suite.drive.overrides.file import sync_content_file_title
-
-		sync_content_file_title("Sheet", name, title)
+		# The editor's inline rename rides the autosave. A title change is rare,
+		# so route the whole write through the ORM: on_update then fires and Drive
+		# renames the backing File via the standard doc-event — the same front
+		# door Writer/Slides use, no Sheets-specific Drive call.
+		doc = frappe.get_doc("Sheet", name)
+		doc.title = title
+		doc.sheets_data = encoded
+		doc.head_seq = head_seq
+		doc.save()
+	else:
+		# The common path: cell-data only. db.set_value keeps this off the full
+		# document lifecycle (validation, on_update, snapshotting) — the op log
+		# is the single chokepoint for advancing the head.
+		frappe.db.set_value(
+			"Sheet",
+			name,
+			{"sheets_data": encoded, "head_seq": head_seq},
+			update_modified=True,
+		)
 	return name, head_seq
 
 
-def _append_ops_and_save(
-	sheet: str, ops_list: list[dict], byte_size: int, save_op_type: str
-) -> int:
+def _append_ops_and_save(sheet: str, ops_list: list[dict], byte_size: int, save_op_type: str) -> int:
 	"""Append the user ops + the implicit save op as one contiguous range.
 
 	Returns the final seq (the save op's seq).
@@ -156,9 +161,7 @@ def append_op(sheet: str, op: dict) -> int:
 	"""Append a single ad-hoc op. Used outside the save path (e.g. realtime)."""
 	frappe.has_permission("Sheet", doc=sheet, ptype="write", throw=True)
 	new_seq = seq_mod.allocate(sheet)
-	frappe.get_doc(_op_doc(sheet, new_seq, op, frappe.session.user)).insert(
-		ignore_permissions=True
-	)
+	frappe.get_doc(_op_doc(sheet, new_seq, op, frappe.session.user)).insert(ignore_permissions=True)
 	# Advance head_seq only forward — never regress.
 	frappe.db.sql(
 		"UPDATE `tabSheet` SET head_seq = GREATEST(IFNULL(head_seq, 0), %s) WHERE name = %s",
