@@ -271,7 +271,7 @@ def dribble_access(path, default_read=0):
 	return access
 
 
-def generate_upward_path(entity_name, user=None):
+def generate_upward_path(entity_name, user=None, baseline_read=True):
 	"""
 	Given an ID traverse upwards till the root node
 	Stops when parent_drive_file IS NULL
@@ -346,7 +346,7 @@ def generate_upward_path(entity_name, user=None):
 		if row["perm_user"] is not None:
 			nodes[-1]["perms"].append(row)
 
-	default_read = int(not guest)
+	default_read = int(baseline_read and not guest)
 	return [{**node, **dribble_access(nodes[: i + 1], default_read)} for i, node in enumerate(nodes)]
 
 

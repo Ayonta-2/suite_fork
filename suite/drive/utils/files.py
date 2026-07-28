@@ -170,7 +170,7 @@ class FileManager:
 		if self.s3_enabled:
 			self.conn.put_object(Bucket=self.bucket, Key=str(path) + "/", Body="")
 		else:
-			(self.site_folder / path).mkdir()
+			(self.site_folder / path).mkdir(exist_ok=True)
 		return str(path) + "/"
 
 	def get_file(self, entity, range_header=None, log=True):

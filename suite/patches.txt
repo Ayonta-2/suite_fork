@@ -36,16 +36,18 @@ suite.slides.doctype.presentation.patches.sanitize_attachment_urls
 suite.slides.doctype.presentation.patches.move_attachments_to_private_folder
 suite.slides.doctype.presentation.patches.move_slide_thumbnail_to_presentation
 suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files
-suite.slides.doctype.presentation.patches.integrate_with_drive
 # --- writer ---
 suite.writer.patches.change_versioning_schema
 suite.writer.patches.autopopulate_html
 # --- sheets ---
 suite.sheets.patches.v0_1.migrate_blob_to_cells
-suite.sheets.patches.integrate_with_drive
-# --- drive (remove teams; after the sheets/slides drive-integration patches) ---
+# --- drive (remove teams) ---
 suite.drive.patches.remove_teams
-suite.drive.patches.drop_team_doctypes
+suite.drive.patches.drop_team_doctypes #2
+# content-app backfills, rewritten for the single-root world so they must
+# run after remove_teams
+suite.slides.doctype.presentation.patches.integrate_with_drive
+suite.sheets.patches.integrate_with_drive
 # --- meet ---
 suite.meet.patches.migrate_meeting_fields_to_table_multiselect
 suite.meet.patches.switch_meet_user_to_suite_user

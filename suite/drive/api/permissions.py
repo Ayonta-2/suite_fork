@@ -39,8 +39,34 @@ def get_user_access(entity: str | Document | frappe._dict, user: str | None = No
 	if user != "Guest" and entity.owner == user:
 		return {**dict.fromkeys(PERMISSION_TYPES, 1), "type": "admin"}
 
+	if entity.get("attached_to_doctype") and entity.get("attached_to_name"):
+		# Attachments follow their reference document — the framework contract
+		# content apps (e.g. Slides media) rely on — instead of the tree's
+		# root-inherited read. Explicit Drive rows on the path still apply.
+		access = filter_access(generate_upward_path(entity.name, user, baseline_read=False))
+		if not any(access.values()):
+			access = _ref_doc_access(entity, user)
+		return {**access, "type": "user" if access["write"] else "guest"}
+
 	access = filter_access(generate_upward_path(entity.name, user))
 	return {**access, "type": "user" if access["write"] else "guest"}
+
+
+def _ref_doc_access(entity, user):
+	"""Framework attachment semantics: write on the reference document gives
+	write, read gives read, public files are readable by anyone."""
+	public = not frappe.db.get_value("File", entity.name, "is_private")
+	write = read = False
+	if frappe.db.exists(entity.attached_to_doctype, entity.attached_to_name):
+		ref = frappe.get_doc(entity.attached_to_doctype, entity.attached_to_name)
+		write = bool(frappe.has_permission(ref.doctype, "write", doc=ref, user=user))
+		read = write or bool(frappe.has_permission(ref.doctype, "read", doc=ref, user=user))
+	return {
+		**NO_ACCESS,
+		"read": int(read or public),
+		"comment": int(write),
+		"write": int(write),
+	}
 
 
 @frappe.whitelist(allow_guest=True)

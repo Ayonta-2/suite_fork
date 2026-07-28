@@ -7,6 +7,9 @@ def execute():
 	frappe.delete_doc_if_exists("Custom Field", "File-team")
 	frappe.delete_doc_if_exists("DocType", "Drive Team Member")
 	frappe.delete_doc_if_exists("DocType", "Drive Team")
+	# deleting a DocType leaves its table behind
+	frappe.db.sql_ddl("DROP TABLE IF EXISTS `tabDrive Team Member`")
+	frappe.db.sql_ddl("DROP TABLE IF EXISTS `tabDrive Team`")
 
 	for table, column in [
 		("File", "team"),
