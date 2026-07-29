@@ -42,7 +42,14 @@ def from_utc_z(value: str | None) -> str | None:
 def parsedate_to_datetime(date_header: str) -> "datetime":
 	"""Returns datetime object from parsed date header."""
 
-	utc_dt = parsedate(date_header)
+	# email.utils.parsedate_to_datetime raises ValueError on an unparsable header rather than
+	# returning None, so the guard below only works if we catch it - otherwise a malformed Date
+	# on an inbound or imported message escapes as a traceback instead of this validation error.
+	try:
+		utc_dt = parsedate(date_header)
+	except ValueError:
+		utc_dt = None
+
 	if not utc_dt:
 		frappe.throw(_("Invalid date format: {0}").format(date_header))
 
