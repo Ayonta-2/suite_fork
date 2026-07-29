@@ -1333,13 +1333,26 @@ def upload_file():
 	if frappe.session.user == "Guest":
 		if frappe.get_system_settings("allow_guests_to_upload_files"):
 			ignore_permissions = True
+			# Kept in step with frappe.handler.upload_file: the file is saved with
+			# ignore_permissions, so this allowlist is the only thing stopping a guest attaching
+			# to an arbitrary doctype on a site that enables guest uploads.
+			if guest_allowed_docs := frappe.get_system_settings("allowed_doctypes_for_guest_uploads"):
+				target_doctype = frappe.form_dict.doctype
+				allowed_docs = [doc.strip() for doc in guest_allowed_docs.splitlines() if doc.strip()]
+				if allowed_docs and target_doctype not in allowed_docs:
+					frappe.throw(
+						_("Guests are not allowed to upload files for {0} Doctype").format(target_doctype),
+						frappe.PermissionError,
+					)
 		else:
 			raise frappe.PermissionError
 	else:
 		ignore_permissions = False
 
 	files = frappe.request.files
-	is_private = frappe.form_dict.is_private
+	# Default to private, as upstream does. Reading the key directly yields None when it is absent,
+	# which cint()s to 0 and would publish mail attachments to the world-readable files tree.
+	is_private = frappe.form_dict.get("is_private", 1)
 	doctype = frappe.form_dict.doctype
 	docname = frappe.form_dict.docname
 	fieldname = frappe.form_dict.fieldname
