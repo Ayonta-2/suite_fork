@@ -154,7 +154,11 @@ export function usePivotIntegration({
     const br = grid.getCellRect?.(ext.r1, ext.c1)
     if (!tl || !br) return null
     const zoom    = grid.getZoom?.() ?? 1
-    const { w: viewW, h: viewH } = grid.getViewportSize?.() ?? { w: Infinity, h: Infinity }
+    // `|| Infinity` treats a 0/undefined viewport (before the first layout) as
+    // "unclamped" — a 0 would otherwise collapse the overlay to nothing.
+    const vp    = grid.getViewportSize?.()
+    const viewW = vp?.w || Infinity
+    const viewH = vp?.h || Infinity
     return overlayRectStyle(tl, br, {
       headerX: ROW_HEADER_W * zoom,
       headerY: COL_HEADER_H * zoom,
