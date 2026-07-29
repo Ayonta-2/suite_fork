@@ -868,7 +868,9 @@ class MailExchange(OwnerFromUser, Document):
 				fetched = len(emails)
 				unique_emails = {}
 				for e in emails:
-					key = e["messageId"][0]
+					# messageId is String[]|null - mail with no Message-ID header comes back null.
+					# Fall back to the email id so those are not all collapsed into one bucket.
+					key = (e.get("messageId") or [e["id"]])[0]
 					if key not in unique_emails:
 						unique_emails[key] = e
 				emails = list(unique_emails.values())
@@ -1086,7 +1088,7 @@ class MailExchange(OwnerFromUser, Document):
 						blob_id=e["blobId"],
 						keywords=set(e["keywords"].keys()),
 						mailbox_ids=set(e["mailboxIds"].keys()),
-						message_id=e.get("messageId", [""])[0],
+						message_id=(e.get("messageId") or [""])[0],
 						received_at=datetime.fromisoformat(e["receivedAt"]),
 						raw=data[e["blobId"]],
 					)
