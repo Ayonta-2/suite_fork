@@ -589,11 +589,11 @@ def rule_object_to_sieve(automation: dict, mailbox_path: str) -> str:
 	conditions = []
 
 	if emails_from:
-		email_list = ", ".join(f'"{email}"' for email in emails_from)
+		email_list = ", ".join(f'"{_escape_sieve_string(email)}"' for email in emails_from)
 		conditions.append(f'address :matches "from" [{email_list}]')
 
 	if subject_contains:
-		keyword_list = ", ".join(f'"{keyword}"' for keyword in subject_contains)
+		keyword_list = ", ".join(f'"{_escape_sieve_string(keyword)}"' for keyword in subject_contains)
 		conditions.append(f'header :contains "subject" [{keyword_list}]')
 
 	match_if = automation.get("match_if", "any")
@@ -706,8 +706,13 @@ def remove_sieve_block(script: str, block_name: str) -> str:
 
 
 def _escape_sieve_string(value: str) -> str:
-	"""Escape a value for embedding in a Sieve quoted string (RFC 5228): backslash then double-quote."""
+	"""Escape a value for embedding in a Sieve quoted string (RFC 5228): backslash then double-quote.
 
+	Line breaks are dropped as well, so a value carrying a newline cannot terminate the statement it
+	is embedded in.
+	"""
+
+	value = value.replace("\r", "").replace("\n", "")
 	return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
