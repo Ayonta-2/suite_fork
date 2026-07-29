@@ -44,12 +44,12 @@ const run = (count: number, overrides: Partial<Thread> = {}) =>
 const rowOptions = { rowKey: (t: Thread) => t.name, isExpanded: () => false }
 
 describe('stackKeyOf', () => {
-	it('ignores the subject entirely — one cast, one day, one pile', () => {
+	it('ignores the subject entirely — one sender, one day, one pile', () => {
 		expect(stackKeyOf(thread({ subject: 'Monitor is UP: preview.frappe.cloud/' }))).toBe(
 			stackKeyOf(thread({ subject: 'Monitor is DOWN: preview.frappe.cloud/' })),
 		)
 		// Even wholly unrelated subjects from the same sender share a key: the accepted cost of the
-		// participant rule, paid back by the count badge and one click to expand.
+		// sender rule, paid back by the count badge and one click to expand.
 		expect(stackKeyOf(thread({ subject: '[PyPI] Unrecognized login to your PyPI account' }))).toBe(
 			stackKeyOf(thread({ subject: '[PyPI] Trusted publisher created project frappectl' })),
 		)
@@ -62,24 +62,14 @@ describe('stackKeyOf', () => {
 		)
 	})
 
-	it('separates a thread the user has written in from one they have not', () => {
-		expect(stackKeyOf(answered())).not.toBe(stackKeyOf(thread()))
-	})
-
-	it('separates threads that differ by a single extra participant', () => {
+	it('returns null once a second person has written, so the thread never stacks', () => {
+		// A thread with an answer in it is correspondence, not a flood — whoever wrote the answer.
+		expect(stackKeyOf(answered())).toBeNull()
 		const two = [participant('alerts@uptimerobot.com'), participant('neha@frappe.io')]
-		expect(stackKeyOf(thread({ participants: two }))).not.toBe(stackKeyOf(thread()))
+		expect(stackKeyOf(thread({ participants: two }))).toBeNull()
 	})
 
-	it('separates the same cast that wrote in a different order', () => {
-		const bot = participant('alerts@uptimerobot.com')
-		const me = participant('vibhav@frappe.io', true)
-		expect(stackKeyOf(thread({ participants: [bot, me] }))).not.toBe(
-			stackKeyOf(thread({ participants: [me, bot] })),
-		)
-	})
-
-	it('is case- and whitespace-insensitive about participants', () => {
+	it('is case- and whitespace-insensitive about the sender', () => {
 		expect(stackKeyOf(thread({ participants: [participant('  Alerts@UptimeRobot.com ')] }))).toBe(
 			stackKeyOf(thread({ participants: [participant('alerts@uptimerobot.com')] })),
 		)
@@ -131,7 +121,7 @@ describe('buildListRows', () => {
 		expect(rows[0].type === 'stack' && rows[0].threads).toHaveLength(4)
 	})
 
-	it('breaks a run at a different cast of participants and preserves order', () => {
+	it('breaks a run at a different sender and preserves order', () => {
 		const [a, b, c, d] = run(4)
 		const other = thread({ name: 'other', participants: [participant('hey@posthog.com')] })
 		const rows = buildListRows([a, b, other, c, d], rowOptions)
@@ -139,16 +129,12 @@ describe('buildListRows', () => {
 		expect(rows.map((r) => r.key)).toEqual(['m0', 'm1', 'other', 'm2', 'm3'])
 	})
 
-	it('leaves a run of threads the user has answered unstacked', () => {
-		// Their latest sender is the user, but each is a conversation of its own: a different person
-		// wrote first in every one, so nothing here is a pile.
-		const answeredRun = ['neha', 'milind', 'brittany'].map((who, i) =>
-			answered({
-				name: `m${i}`,
-				participants: [participant(`${who}@frappe.io`), participant('vibhav@frappe.io', true)],
-			}),
-		)
-		expect(buildListRows(answeredRun, rowOptions).map((r) => r.type)).toEqual([
+	it('never stacks threads more than one person has written in, however alike they are', () => {
+		// Same two people, same day, three in a row — still three conversations, never a pile.
+		const conversations = run(3, {
+			participants: [participant('neha@frappe.io'), participant('vibhav@frappe.io', true)],
+		})
+		expect(buildListRows(conversations, rowOptions).map((r) => r.type)).toEqual([
 			'thread',
 			'thread',
 			'thread',

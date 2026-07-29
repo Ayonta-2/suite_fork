@@ -82,8 +82,8 @@ const emit = defineEmits<{
 // The list is newest-first, so the run's first member is its latest — the row this stack stands in for.
 const latest = computed(() => threads[0])
 
-// A run only stacks when every member has the same participants (see stackKeyOf), so the stack is named
-// exactly the way each of its members is — the name holds whether the run is collapsed or expanded.
+// Only threads with a lone sender stack (see stackKeyOf), and every member shares that sender, so the
+// stack is named exactly the way each of its members is — collapsed or expanded, the name holds.
 const sender = computed(
 	() =>
 		formatThreadParticipants(latest.value.participants ?? []) ||
