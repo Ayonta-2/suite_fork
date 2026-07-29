@@ -213,8 +213,6 @@ const to = computed(() => ({
 	query: route.query,
 }))
 
-const mailboxes = computed(() => mail.mailboxes.map((m) => m.mailbox_id))
-
 const mailboxesToShow = computed(() => mail.mailboxes.filter((m) => m.mailbox_id !== mailbox))
 
 const attachments = computed(
@@ -222,12 +220,18 @@ const attachments = computed(
 )
 
 const header = computed(() => {
-	const isOutgoing =
-		mailboxes.value.includes(mailboxIds.sent) || mailboxes.value.includes(mailboxIds.drafts)
-
 	// Sent and Drafts are about who the mail is going to, so those rows name the recipients.
 	// Everywhere else the row names the thread's participants — search results are single
 	// messages with no thread behind them, so those fall back to the sender.
+	//
+	// It is the VIEW that decides this, not whether the thread happens to hold a sent message:
+	// a thread you have answered carries a sent copy wherever it sits, so testing the row's
+	// mailboxes named recipients all over Inbox and Archive. Worse, those mailboxes come from
+	// the thread's message in the current mailbox while `recipients` comes from its latest
+	// message anywhere — on an archived thread whose newest mail is an incoming reply, the row
+	// took "outgoing" from your own sent copy and then named that reply's recipient: you.
+	const isOutgoing = mailbox === mailboxIds.sent || mailbox === mailboxIds.drafts
+
 	if (isOutgoing) return getFormattedRecipients(mail.recipients) || __('To:')
 	return formatThreadParticipants(mail.participants ?? []) || mail.from_name || mail.from_email
 })
