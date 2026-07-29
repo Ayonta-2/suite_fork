@@ -1,6 +1,10 @@
 <template>
 	<FrappeUIProvider>
-		<component :is="Layout" class="mail-app-root">
+		<!-- Nothing in mail works without the mail server, so an outage replaces the whole
+		     route group (incl. noLayout pages) rather than decorating a UI whose every fetch
+		     would fail. -->
+		<MailServerUnavailableView v-if="mailServerUnavailable" class="mail-app-root" />
+		<component :is="Layout" v-else class="mail-app-root">
 			<router-view />
 		</component>
 		<InstallPrompt v-if="isMobile" />
@@ -12,6 +16,7 @@ import { computed, onMounted, onUnmounted, provide, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 
+import { mailServerUnavailable } from '@/boot/config'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
@@ -20,6 +25,7 @@ import dayjs from '@/apps/mail/utils/dayjs'
 import { userStore } from '@/apps/mail/stores/user'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import InstallPrompt from '@/apps/mail/components/InstallPrompt.vue'
+import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 
 import type { NotificationPayload } from '@/apps/mail/types'
 
