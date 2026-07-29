@@ -69,6 +69,17 @@ export const threadParticipants = (
 
 const capitalizeFirst = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
 
+// "M", "M." — an initial standing before the name rather than being it.
+const isInitial = (word: string) => /^\p{L}\.?$/u.test(word)
+
+// The name a person goes by in a line of several: their first, except where that is an initial, which
+// names nobody — "M Umair Sayed" reads as "M Umair". Relay threads (a forum, an issue tracker) made
+// this worth handling: they name several people on rows that used to name one.
+const firstNameOf = (fullName: string) => {
+	const [first, second] = fullName.split(/\s+/)
+	return isInitial(first) && second ? `${first} ${second}` : first
+}
+
 /**
  * The participant a row's avatar stands for: the first person in the thread who isn't the user,
  * falling back to the user themselves for a thread only they have written in.
@@ -104,7 +115,7 @@ export const formatThreadParticipants = (participants: ThreadParticipant[]) => {
 		if (is_self) return __('me')
 		const fullName = name.trim()
 		if (!fullName) return email
-		return firstNameOnly ? fullName.split(/\s+/)[0] : fullName
+		return firstNameOnly ? firstNameOf(fullName) : fullName
 	}
 
 	// "me" is a word standing in for a name, so it reads lowercase inside the line ("Figma, me")

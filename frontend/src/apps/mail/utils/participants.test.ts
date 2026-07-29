@@ -161,6 +161,27 @@ describe('formatThreadParticipants', () => {
 		expect(formatThreadParticipants(thread)).toBe('Brittany … Courtney, me')
 	})
 
+	it('keeps what follows an initial, which names nobody on its own', () => {
+		const thread = [
+			participant('Jay1987', 'noreply@discuss.frappe.io'),
+			participant('M Umair Sayed', 'noreply@discuss.frappe.io'),
+		]
+		expect(formatThreadParticipants(thread)).toBe('Jay1987, M Umair')
+		expect(
+			formatThreadParticipants([
+				participant('A. Sarfaraz Shaikh', 'sarfaraz@frappe.io'),
+				participant('Vibhav Katre', 'vibhav@frappe.io', true),
+			]),
+		).toBe('A. Sarfaraz, me')
+		// A lone initial is still all there is to go by.
+		expect(
+			formatThreadParticipants([
+				participant('M', 'noreply@discuss.frappe.io'),
+				participant('Jay1987', 'noreply@discuss.frappe.io'),
+			]),
+		).toBe('M, Jay1987')
+	})
+
 	it('falls back to the address of a sender who goes by no name', () => {
 		expect(formatThreadParticipants([participant('', 'noreply@frappe.io')])).toBe(
 			'noreply@frappe.io',
