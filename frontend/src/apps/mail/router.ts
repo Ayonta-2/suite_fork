@@ -85,8 +85,10 @@ function installMailGuard(r: Router) {
 		resolveAccount(user?.accounts, to.params.accountId as string | undefined)
 		const accountId = userStore().accountId
 
-		// Wait for mailbox list.
-		await mailboxes.promise
+		// Wait for mailbox list. The fetch rejects when the mail server is temporarily down;
+		// swallow that so navigation still completes — otherwise the initial navigation aborts,
+		// the app never mounts and the user gets a blank page instead of the unavailable banner.
+		await mailboxes.promise?.catch(() => {})
 		const defaultRoute = buildDefaultRoute(accountId, mailboxes)
 
 		// Validate mailbox param for mailbox routes.
@@ -98,8 +100,11 @@ function installMailGuard(r: Router) {
 			if (screenerId && to.params.mailbox === screenerId)
 				return { name: 'mail-screener', params: { accountId } }
 
+			// With no mailbox list (fetch failed above) the param can't be validated — keep the
+			// requested route rather than bouncing the user off the URL they asked for.
 			const mailboxExists =
-				mailboxes.data?.some((m: { id: string }) => m.id === to.params.mailbox) ||
+				!mailboxes.data ||
+				mailboxes.data.some((m: { id: string }) => m.id === to.params.mailbox) ||
 				['starred', 'search'].includes(to.params.mailbox as string)
 			if (!mailboxExists) return defaultRoute
 		}

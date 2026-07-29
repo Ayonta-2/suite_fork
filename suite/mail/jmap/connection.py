@@ -5,6 +5,24 @@ from urllib.parse import urljoin
 
 import requests
 
+# Gateway statuses a reverse proxy returns when the JMAP server behind it is down or overloaded.
+UNAVAILABLE_STATUS_CODES = (502, 503, 504)
+
+
+class MailServerUnavailableError(Exception):
+	"""The JMAP server could not be reached (connection refused, DNS failure, timeout) or an
+	upstream gateway reported it down.
+
+	``http_status_code`` makes Frappe respond with 503 instead of a generic 500, so clients can
+	distinguish "the mail server is temporarily down" from an application bug and show a friendly
+	message. The original ``requests`` exception is always chained for diagnosis.
+	"""
+
+	http_status_code = 503
+
+	def __init__(self, message: str = "The mail server is temporarily unavailable.") -> None:
+		super().__init__(message)
+
 
 @dataclass
 class JMAPConnectionInfo:
@@ -95,9 +113,12 @@ class JMAPConnection:
 		"""Performs session discovery by sending a GET request to the JMAP server's well-known URL and storing the session information."""
 
 		url = urljoin(self.__info.url, "/.well-known/jmap")
-		response = self.__session.get(
-			url, headers={"Accept": "application/json"}, timeout=self.__info.timeout
-		)
+		try:
+			response = self.__session.get(
+				url, headers={"Accept": "application/json"}, timeout=self.__info.timeout
+			)
+		except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+			raise MailServerUnavailableError() from e
 		raise_for_status(response)
 
 		self.session = response.json()
@@ -170,16 +191,19 @@ class JMAPConnection:
 		"""Sends a request to the JMAP server with the specified parameters, and returns the response."""
 
 		headers = headers or {}
-		response = self.__session.request(
-			method=method,
-			url=url,
-			headers=headers,
-			json=json,
-			data=data,
-			params=params,
-			timeout=timeout or self.__info.timeout,
-			**kwargs,
-		)
+		try:
+			response = self.__session.request(
+				method=method,
+				url=url,
+				headers=headers,
+				json=json,
+				data=data,
+				params=params,
+				timeout=timeout or self.__info.timeout,
+				**kwargs,
+			)
+		except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+			raise MailServerUnavailableError() from e
 
 		raise_for_status(response)
 
@@ -190,7 +214,16 @@ class JMAPConnection:
 
 
 def raise_for_status(response: requests.Response) -> None:
-	"""Raises an HTTPError if the response status code indicates an error."""
+	"""Raises an HTTPError if the response status code indicates an error.
+
+	Gateway errors (502/503/504) mean the JMAP server behind a reverse proxy is down, not that
+	the request itself was bad, so they surface as MailServerUnavailableError instead.
+	"""
+
+	if response.status_code in UNAVAILABLE_STATUS_CODES:
+		raise MailServerUnavailableError() from requests.exceptions.HTTPError(
+			f"Request failed with status {response.status_code}: {response.text}", response=response
+		)
 
 	if not response.ok:
 		raise requests.exceptions.HTTPError(
