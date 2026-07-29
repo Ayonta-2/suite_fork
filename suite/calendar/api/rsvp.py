@@ -16,11 +16,12 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import escape_html, now_datetime
+from frappe.utils import escape_html
 
 from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
 from suite.utils import log_error
+from suite.utils.dt import get_utc_now
 
 # response key -> (JSCalendar participationStatus, human label)
 RESPONSES: dict[str, tuple[str, str]] = {
@@ -218,8 +219,11 @@ def _verify(token: str) -> dict | None:
 
 	# Every token must carry an expiry. Reject a missing one outright so a link can never replay
 	# indefinitely (older links minted without an expiry are invalidated by this too).
+	# Compare in real UTC. now_datetime() is naive in the *site* timezone, and .timestamp() on a
+	# naive value resolves it against the *OS* timezone - so when the two differ the expiry was off
+	# by their offset, cutting links short or leaving them valid past the intended window.
 	expires_at = payload.get("x")
-	if not expires_at or now_datetime().timestamp() > expires_at:
+	if not expires_at or get_utc_now().timestamp() > expires_at:
 		return None
 
 	return payload
