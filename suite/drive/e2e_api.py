@@ -63,6 +63,26 @@ def _delete_user_drive_data(email: str) -> None:
 			frappe.db.delete("Writer Version", {"doc": document})
 			frappe.db.delete("Writer Document", {"name": document})
 
+		sheets = frappe.get_all(
+			"File",
+			filters={"name": ["in", files], "content_doctype": "Sheet"},
+			pluck="content_docname",
+		)
+		for sheet in set(filter(None, sheets)):
+			# Sheet Op Log and Sheet Snapshot both carry a User link (actor) that
+			# blocks the User delete below.
+			frappe.db.delete("Sheet Op Log", {"sheet": sheet})
+			frappe.db.delete("Sheet Snapshot", {"sheet": sheet})
+			frappe.db.delete("Sheet", {"name": sheet})
+
+		presentations = frappe.get_all(
+			"File",
+			filters={"name": ["in", files], "content_doctype": "Presentation"},
+			pluck="content_docname",
+		)
+		for presentation in set(filter(None, presentations)):
+			frappe.db.delete("Presentation", {"name": presentation})
+
 		for doctype, field in (
 			("Drive Permission", "entity"),
 			("Drive Favourite", "entity"),

@@ -14,7 +14,7 @@ export interface DriveEntityPermissions extends DriveEntity {
 	share: boolean | number;
 }
 
-async function driveEntities(
+export async function driveEntities(
 	request: APIRequestContext,
 	parent?: string,
 ): Promise<DriveEntity[]> {
@@ -22,6 +22,21 @@ async function driveEntities(
 		params: parent ? { entity_name: parent } : undefined,
 	});
 	return frappeData<DriveEntity[]>(response);
+}
+
+/** Poll until `fileName` is no longer present in the (active) listing of `parent`. */
+export async function expectDriveEntityAbsent(
+	request: APIRequestContext,
+	fileName: string,
+	parent?: string,
+): Promise<void> {
+	await expect
+		.poll(async () =>
+			(await driveEntities(request, parent)).some(
+				(candidate) => candidate.file_name === fileName,
+			),
+		)
+		.toBe(false);
 }
 
 export async function waitForDriveEntity(

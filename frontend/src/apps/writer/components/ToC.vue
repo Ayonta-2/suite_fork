@@ -33,16 +33,18 @@
           </div>
           <component v-else :is="tab.id === activeTabId ? ContextMenu : 'div'" :options="tabActions">
             <Button variant="ghost" class="w-full !text-ink-gray-5 !justify-start cursor-grab active:cursor-grabbing"
-              :class="tab.id === activeTabId && 'font-medium !text-ink-gray-8'" :label="tab.label"
-              :icon-left="h(LucideFileText, { class: 'size-4 shrink-0' })" @click="
+              :class="tab.id === activeTabId && 'font-medium !text-ink-gray-8'" :label="tab.label" @click="
                 tab.id !== activeTabId && editor.commands.changeTab(tab.id)
                 " :draggable="editor.isEditable" @dragstart="onDragStart($event, tab, index)"
               @dragend.prevent="onDragEnd">
-              <template #suffix v-if="tab.id === activeTabId"><Button @click="showHeadings = !showHeadings"
-                  class="ml-auto" variant="ghost" :icon="h(showHeadings ? LucideMinus : LucidePlus, {
-                    class: 'size-4',
-                  })
-                    " /></template>
+              <template #prefix>
+                <span v-if="tab.id === activeTabId && currentTabAnchors.length" role="button"
+                  class="shrink-0 cursor-pointer" @click.stop="showHeadings = !showHeadings">
+                  <LucideChevronRight class="size-4 transition-transform duration-200"
+                    :class="showHeadings && 'rotate-90'" />
+                </span>
+                <LucideFileText v-else class="size-4 shrink-0" />
+              </template>
             </Button>
           </component>
           <template v-if="tab.id === activeTabId && currentTabAnchors.length">
@@ -93,7 +95,7 @@ import { nextTick } from 'vue'
 
 import { TextSelection } from '@tiptap/pm/state'
 import LucidePlus from '~icons/lucide/plus'
-import LucideMinus from '~icons/lucide/minus'
+import LucideChevronRight from '~icons/lucide/chevron-right'
 import LucidePanelLeftClose from '~icons/lucide/panel-left-close'
 import LucideFileText from '~icons/lucide/file-text'
 import LucideTableOfContents from '~icons/lucide/table-of-contents'

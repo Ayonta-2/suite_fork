@@ -5,48 +5,59 @@
   >
     <div class="flex overflow-x-auto px-2 py-2 gap-1">
       <TabButtons
-        v-model="activeTabId"
-        :options="
-          tabs.map((k) => ({
-            label: k.label,
-            value: k.id,
-            onClick: () =>
-              k.id !== activeTabId && editor.commands.changeTab(k.id),
-          }))
-        "
+        :model-value="activeTabId"
+        :options="tabs.map((k) => ({ label: k.label, value: k.id }))"
+        @update:model-value="selectTab"
       />
     </div>
   </div>
 </template>
 <script setup>
-import { computed, onMounted, onBeforeUnmount } from 'vue'
-
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { TabButtons } from 'frappe-ui'
 
-const activeTabId = ref()
-onMounted(() => {
-  const handleTabChange = (e) => {
-    activeTabId.value = e.detail.tabId
-  }
-
-  props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
-})
-
-// onBeforeUnmount(() => {
-//   props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
-// })
 const props = defineProps({
   editor: Object,
 })
-// Get all tabs from the document
-const tabs = computed(() => {
-  const t = []
+
+// `editor.state.doc` is a ProseMirror object, not a Vue-reactive source, so a
+// computed over it never recomputes — a newly-added (or renamed) tab would
+// never appear in the bar. Mirror the desktop ToC: keep a ref and re-derive it
+// on every editor update.
+const tabs = ref([])
+const updateTabs = () => {
+  const collected = []
   props.editor.state.doc.descendants((node) => {
     if (node.type.name === 'tab') {
-      t.push({ id: node.attrs.id, label: node.attrs.label })
+      collected.push({ id: node.attrs.id, label: node.attrs.label })
     }
   })
-  return t
+  tabs.value = collected
+}
+
+// Seed from storage in case the initial changeTab fired before this mounted,
+// then track it via the tab-changed event.
+const activeTabId = ref(props.editor.storage.tab?.activeTabId ?? null)
+const handleTabChange = (e) => {
+  activeTabId.value = e.detail.tabId
+}
+
+// Switch through the editor command: it repaints the panels and re-emits
+// `tab-changed` (which updates activeTabId). Mutating the model directly instead
+// would move the bar highlight but leave the content on the old tab.
+const selectTab = (id) => {
+  if (id && id !== activeTabId.value) props.editor.commands.changeTab(id)
+}
+
+onMounted(() => {
+  updateTabs()
+  activeTabId.value = props.editor.storage.tab?.activeTabId ?? activeTabId.value
+  props.editor.on('update', updateTabs)
+  props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
+})
+
+onBeforeUnmount(() => {
+  props.editor.off('update', updateTabs)
+  props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
 })
 </script>
