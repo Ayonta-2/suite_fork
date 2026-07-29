@@ -1816,6 +1816,9 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     scroll.x = 0
     scroll.y = 0
     _clampScroll()
+    // Freezing resets the scroll origin, shifting every cell; repin the open
+    // editor so it tracks its cell instead of stranding at the old offset.
+    _positionEditor()
     render()
   }
 
