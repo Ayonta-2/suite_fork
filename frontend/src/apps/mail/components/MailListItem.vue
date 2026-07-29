@@ -219,20 +219,29 @@ const attachments = computed(
 	() => mail.attachments.filter((m) => m.filename && m.disposition === 'attachment') || [],
 )
 
-const header = computed(() => {
-	// Sent and Drafts are about who the mail is going to, so those rows name the recipients.
-	// Everywhere else the row names the thread's participants — search results are single
-	// messages with no thread behind them, so those fall back to the sender.
-	//
-	// It is the VIEW that decides this, not whether the thread happens to hold a sent message:
-	// a thread you have answered carries a sent copy wherever it sits, so testing the row's
-	// mailboxes named recipients all over Inbox and Archive. Worse, those mailboxes come from
-	// the thread's message in the current mailbox while `recipients` comes from its latest
-	// message anywhere — on an archived thread whose newest mail is an incoming reply, the row
-	// took "outgoing" from your own sent copy and then named that reply's recipient: you.
-	const isOutgoing = mailbox === mailboxIds.sent || mailbox === mailboxIds.drafts
+// Sent and Drafts are about who the mail is going to, so those rows name the recipients. Everywhere
+// else the row names the thread's participants.
+//
+// In a mailbox it is the VIEW that decides this, not whether the thread happens to hold a sent
+// message: a thread you have answered carries a sent copy wherever it sits, so testing the row's
+// mailboxes named recipients all over Inbox and Archive. Worse, those mailboxes come from the
+// thread's message in the current mailbox while `recipients` comes from its latest message anywhere
+// — on an archived thread whose newest mail is an incoming reply, the row took "outgoing" from its
+// own sent copy and then named that reply's recipient: you.
+//
+// Search results are the exception: they are single messages with no thread behind them and no
+// participants to name, so there the message's own mailboxes still answer it — otherwise a mail you
+// sent, found in search, would go by your own name rather than by who you sent it to.
+const isOutgoing = computed(() => {
+	if (mailbox === 'search')
+		return mail.mailboxes.some(
+			(m) => m.mailbox_id === mailboxIds.sent || m.mailbox_id === mailboxIds.drafts,
+		)
+	return mailbox === mailboxIds.sent || mailbox === mailboxIds.drafts
+})
 
-	if (isOutgoing) return getFormattedRecipients(mail.recipients) || __('To:')
+const header = computed(() => {
+	if (isOutgoing.value) return getFormattedRecipients(mail.recipients) || __('To:')
 	return formatThreadParticipants(mail.participants ?? []) || mail.from_name || mail.from_email
 })
 
