@@ -2,6 +2,7 @@ import { ref, computed, watch } from 'vue'
 import { computePivotModel, computePivotModelAsync, pivotDrillDown, writePivotToSheet } from '../../engine/pivot.js'
 import { colLabel, cellId, parseCellId } from '../../utils/cells.js'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
+import { overlayRectStyle } from '../../utils/overlay-rect.js'
 
 // Styling applied to the pivot's column header row (row 0) and Grand Total
 // row (last row). Matches the Google Sheets look the user asked for.
@@ -153,19 +154,12 @@ export function usePivotIntegration({
     const br = grid.getCellRect?.(ext.r1, ext.c1)
     if (!tl || !br) return null
     const zoom    = grid.getZoom?.() ?? 1
-    const headerY = COL_HEADER_H * zoom
-    const headerX = ROW_HEADER_W * zoom
-    const right   = br.x + br.width
-    const bottom  = br.y + br.height
-    if (bottom <= headerY || right <= headerX) return null
-    const top  = Math.max(tl.y, headerY)
-    const left = Math.max(tl.x, headerX)
-    return {
-      top:    top  + 'px',
-      left:   left + 'px',
-      width:  (right  - left) + 'px',
-      height: (bottom - top)  + 'px',
-    }
+    const { w: viewW, h: viewH } = grid.getViewportSize?.() ?? { w: Infinity, h: Infinity }
+    return overlayRectStyle(tl, br, {
+      headerX: ROW_HEADER_W * zoom,
+      headerY: COL_HEADER_H * zoom,
+      viewW, viewH,
+    })
   })
 
   const pivotBannerMenuOptions = [
