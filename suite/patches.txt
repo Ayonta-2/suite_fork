@@ -67,6 +67,7 @@ suite.mail.patches.create_suite_user_role
 suite.mail.patches.rename_mail_admin_to_suite_admin
 suite.mail.patches.migrate_cache_to_mail_namespace
 suite.mail.patches.migrate_search_index_to_mail_namespace
+suite.mail.patches.rebuild_automation_sieve_scripts
 execute:frappe.db.set_single_value("Mail Settings", "verify_ssl", 1)
 execute:frappe.db.set_single_value("Mail Settings", "show_mail_client_config", 1)
 execute:frappe.db.set_single_value("Mail Settings", "custom_event_invites", 1)
