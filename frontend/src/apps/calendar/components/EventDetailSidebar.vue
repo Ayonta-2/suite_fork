@@ -22,6 +22,7 @@ import DOMPurify from 'dompurify'
 import meetLogo from '@/assets/app-logos/meet.png'
 
 import { getMeetUrl, getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
+import { fromEventZone, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
@@ -64,10 +65,13 @@ const handleSetResponse = (response: string) => {
 // --- Date / time label ---
 
 const dateLabel = computed(() => {
-	const start = dayjs(calendarEvent.start)
+	// Full-day detection reads the stored wall clock (midnight in the event's own zone);
+	// timed events are then shown in the viewer's zone.
+	const rawStart = dayjs(calendarEvent.start)
 	const duration = dayjs.duration(calendarEvent.duration)
+	const isFullDay = duration.asHours() % 24 === 0 && rawStart.isSame(rawStart.startOf('day'))
+	const start = isFullDay ? rawStart : fromEventZone(calendarEvent.start, calendarEvent.time_zone)
 	const end = start.add(duration)
-	const isFullDay = duration.asHours() % 24 === 0 && start.isSame(start.startOf('day'))
 	const isSameDay =
 		start.isSame(end, 'day') || (isFullDay && start.isSame(end.subtract(1, 'ms'), 'day'))
 
@@ -140,7 +144,7 @@ const mailParticipantsUrl = computed(() => {
 // --- Alerts ---
 
 const formatAlert = (a: any) => {
-	if (a.type === 'AbsoluteTrigger') return dayjs.utc(a.when).format('D MMM, h:mm a')
+	if (a.type === 'AbsoluteTrigger') return inUserTimeZone(a.when).format('D MMM, h:mm a')
 
 	const d = dayjs.duration(a.offset).$d
 	const units = {

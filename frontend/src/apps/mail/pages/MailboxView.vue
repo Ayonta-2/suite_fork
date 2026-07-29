@@ -569,6 +569,7 @@ import {
 	startResizing,
 	stripShortcutHint,
 } from '@/apps/mail/utils'
+import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
 import {
 	useMobileSelection,
 	useScreenSize,
@@ -1273,12 +1274,21 @@ const hasSearchQuery = computed(() => Object.keys(route.query).some((k) => k !==
 // searchResults transform below, reset in resetThreads). Guards the title against a stale or zero count.
 const searchTotal = ref<number | null>(null)
 
+// The search dialog stores bare `YYYY-MM-DD` days in the route; the API listens UTC, so the
+// day's bounds are resolved in the user's zone here at the request boundary (the URL stays clean).
+const searchFilter = () => {
+	const filter: Record<string, any> = { ...route.query }
+	if (typeof filter.after === 'string' && filter.after) filter.after = utcDayStart(filter.after)
+	if (typeof filter.before === 'string' && filter.before) filter.before = utcDayEnd(filter.before)
+	return filter
+}
+
 // Reset resource for search: always the first window, over-fetching one row to drive `hasMore`.
 const searchResults = createResource({
 	url: 'suite.mail.api.mail.search_mails',
 	makeParams: () => ({
 		account: store.accountId,
-		filter: route.query,
+		filter: searchFilter(),
 		limit: PAGE_LENGTH + 1,
 		start: 0,
 		all_accounts: isAllAccountsSearch.value,
@@ -1393,7 +1403,7 @@ const loadMoreSearch = createResource({
 	url: 'suite.mail.api.mail.search_mails',
 	makeParams: () => ({
 		account: store.accountId,
-		filter: route.query,
+		filter: searchFilter(),
 		limit: PAGE_LENGTH + 1,
 		start: threadsResource.value.data.length,
 		all_accounts: isAllAccountsSearch.value,

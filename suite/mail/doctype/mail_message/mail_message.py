@@ -18,8 +18,6 @@ from frappe.utils import (
 	add_to_date,
 	cint,
 	escape_html,
-	get_datetime,
-	now,
 	random_string,
 	time_diff_in_seconds,
 )
@@ -35,11 +33,12 @@ from suite.mail.utils import (
 	get_config,
 	log_mail_error,
 )
+from suite.mail.utils.dt import normalize_utc_z, to_user_timezone
 from suite.mail.utils.email_parser import EmailParser
 from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
 from suite.utils import clean_text, convert_html_to_text, enqueue_job, parse_filters, user_context
-from suite.utils.dt import convert_to_utc, parse_iso_datetime, to_iso8601_z
+from suite.utils.dt import convert_to_utc, get_utc_now
 from suite.utils.lock import acquire_lock, release_lock
 
 PREVIEW_MAX_LENGTH = 256
@@ -240,7 +239,7 @@ class MailMessage(Document):
 	def db_insert(self, *args, **kwargs) -> None:
 		raise NotImplementedError
 
-	def load_from_db(self) -> "MailMessage":
+	def load_from_db(self) -> MailMessage:
 		account, id = self.name.split("|")
 		if messages := get_messages(account, ids=[id]):
 			return super(Document, self).__init__(messages[0])
@@ -295,9 +294,10 @@ class MailMessage(Document):
 			if filters.get("has_attachment"):
 				filter["hasAttachment"] = True
 
+			# The API listens UTC: a naive filter value is read as UTC, not system time.
 			for field in ("before", "after"):
 				if value := filters.get(field):
-					filter[field] = to_iso8601_z(convert_to_utc(value))
+					filter[field] = normalize_utc_z(value)
 
 			limit = cint(kwargs.get("start")) + page_length
 			messages, total = fetch_messages(account, filter, limit=limit)
@@ -351,13 +351,13 @@ class MailMessage(Document):
 			)
 
 	@frappe.whitelist()
-	def save_draft(self) -> "MailQueue":
+	def save_draft(self) -> MailQueue:
 		"""Save the Mail Message as a draft."""
 
 		return self._update_or_submit_draft(save_as_draft=True)
 
 	@frappe.whitelist()
-	def submit(self) -> "MailQueue":
+	def submit(self) -> MailQueue:
 		"""Submit the draft Mail Message."""
 
 		return self._update_or_submit_draft(save_as_draft=False)
@@ -401,7 +401,7 @@ class MailMessage(Document):
 		self.reload()
 
 	@frappe.whitelist()
-	def reply(self) -> "MailQueue":
+	def reply(self) -> MailQueue:
 		"""Reply to the Mail Message."""
 
 		recipients = []
@@ -426,7 +426,7 @@ class MailMessage(Document):
 		return self._reply(recipients)
 
 	@frappe.whitelist()
-	def reply_all(self) -> "MailQueue":
+	def reply_all(self) -> MailQueue:
 		"""Reply to all recipients of the Mail Message."""
 
 		recipients = []
@@ -458,12 +458,12 @@ class MailMessage(Document):
 		return self._reply(recipients)
 
 	@frappe.whitelist()
-	def forward(self) -> "MailQueue":
+	def forward(self) -> MailQueue:
 		"""Forward the Mail Message."""
 
 		self.validate_draft()
 
-		formatted_sent_at = get_datetime(self.sent_at).strftime("%a, %B %-d, %Y at %-I:%M %p")
+		formatted_sent_at = to_user_timezone(self.sent_at).strftime("%a, %B %-d, %Y at %-I:%M %p")
 		forward_html_body = (
 			"<p>---------- Forwarded message ---------</p>"
 			'<table border="0" cellpadding="0" cellspacing="10">'
@@ -583,7 +583,7 @@ class MailMessage(Document):
 		]:
 			self.__dict__.pop(property, None)
 
-	def _update_or_submit_draft(self, save_as_draft: bool = True) -> "MailQueue":
+	def _update_or_submit_draft(self, save_as_draft: bool = True) -> MailQueue:
 		"""Update or submit the draft Mail Message."""
 
 		if not self.draft:
@@ -625,7 +625,7 @@ class MailMessage(Document):
 			delivery_mode="Immediate",
 		)
 
-	def _reply(self, recipients: list[dict]) -> "MailQueue":
+	def _reply(self, recipients: list[dict]) -> MailQueue:
 		"""Returns a unsaved MailQueue object for replying to the Mail Message."""
 
 		self.validate_draft()
@@ -676,7 +676,7 @@ def bulk_delete(names: str | list[str]) -> None:
 
 
 @frappe.whitelist()
-def reply(source_name: str, target_doc=None) -> "MailQueue":
+def reply(source_name: str, target_doc=None) -> MailQueue:
 	"""Reply to the Mail Message."""
 
 	source_doc = frappe.get_doc("Mail Message", source_name)
@@ -684,7 +684,7 @@ def reply(source_name: str, target_doc=None) -> "MailQueue":
 
 
 @frappe.whitelist()
-def reply_all(source_name: str, target_doc=None) -> "MailQueue":
+def reply_all(source_name: str, target_doc=None) -> MailQueue:
 	"""Reply to all recipients of the Mail Message."""
 
 	source_doc = frappe.get_doc("Mail Message", source_name)
@@ -692,7 +692,7 @@ def reply_all(source_name: str, target_doc=None) -> "MailQueue":
 
 
 @frappe.whitelist()
-def forward(source_name: str, target_doc=None) -> "MailQueue":
+def forward(source_name: str, target_doc=None) -> MailQueue:
 	"""Forward the Mail Message."""
 
 	source_doc = frappe.get_doc("Mail Message", source_name)
@@ -1137,17 +1137,20 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
 
 		return str(soup)
 
+	# Served in UTC ``...Z`` — Stalwart's offset form (e.g. ``-05:00``) is normalized here.
 	# Ref: https://github.com/stalwartlabs/stalwart/discussions/2891
 	try:
-		received_at = parse_iso_datetime(message["receivedAt"])
+		received_at = normalize_utc_z(message["receivedAt"])
 	except Exception:
-		message["receivedAt"] = message["sentAt"] or to_iso8601_z(get_datetime())
-		received_at = parse_iso_datetime(message["receivedAt"])
+		received_at = None
+	if not received_at:
+		message["receivedAt"] = message["sentAt"] or normalize_utc_z(get_utc_now())
+		received_at = normalize_utc_z(message["receivedAt"])
 
 	if not message["sentAt"]:
 		message["sentAt"] = message["receivedAt"]
 
-	sent_at = parse_iso_datetime(message["sentAt"])
+	sent_at = normalize_utc_z(message["sentAt"])
 	formatted_message = {
 		"account": account,
 		"sent_at": sent_at,
@@ -1510,7 +1513,7 @@ def schedule_fetch_changes() -> None:
 	USER = frappe.qb.DocType("User")
 	USER_SETTINGS = frappe.qb.DocType("User Settings")
 
-	threshold = get_datetime(add_to_date(now(), hours=-3))
+	threshold = add_to_date(get_utc_now(), hours=-3)
 
 	users = (
 		frappe.qb.from_(USER_SETTINGS)
@@ -1538,7 +1541,9 @@ def schedule_fetch_changes() -> None:
 		for account in accounts:
 			store = get_data_store(account)
 			last_update = store.get(Entity.STATE, "email_state_last_update")
-			if not last_update or get_datetime(last_update) < threshold:
+			# convert_to_utc reads new aware ``...Z`` stamps directly and legacy naive
+			# system-time stamps as system time, so both compare correctly.
+			if not last_update or convert_to_utc(last_update) < threshold:
 				selected_user_accounts.append((user, account))
 
 	if not selected_user_accounts:

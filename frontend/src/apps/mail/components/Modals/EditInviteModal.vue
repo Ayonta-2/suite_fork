@@ -59,7 +59,7 @@
 					disabled
 				/>
 				<FormControl
-					v-model="accountRequest.doc.expires_at"
+					v-model="inviteExpiresAt"
 					type="datetime-local"
 					:label="__('Expires At')"
 					:disabled="!isEditableInvite"
@@ -99,7 +99,9 @@
 import { computed, ref, watch } from 'vue'
 import { Dialog, FormControl, Switch, createDocumentResource, createResource } from 'frappe-ui'
 
+import dayjs from '@/apps/mail/utils/dayjs'
 import { raiseToast } from '@/apps/mail/utils'
+import { formatSystemDateTime, systemTimeZone, toSystemDateTime } from '@/apps/mail/utils/datetime'
 
 const show = defineModel<boolean>()
 
@@ -153,10 +155,23 @@ const isEditableInvite = computed(() => {
 	return !doc.is_verified
 })
 
+// `expires_at` is a naive system-zone DB field saved straight through the doc resource; the
+// input edits it as a wall clock in the user's zone, converting on both sides. This also feeds
+// the `datetime-local` input the `YYYY-MM-DDTHH:mm` shape it demands — the raw DB string
+// (space-separated) would render an empty box.
+const inviteExpiresAt = computed<string>({
+	get: () => formatSystemDateTime(accountRequest.value?.doc?.expires_at, 'YYYY-MM-DDTHH:mm'),
+	set: (value) => {
+		if (!accountRequest.value?.doc) return
+		accountRequest.value.doc.expires_at = toSystemDateTime(value)
+	},
+})
+
 // Expiry is read off the local doc so extending it lights the send action up only once saved.
+// The stored value is system-zone; compare instants, not the browser's reading of the string.
 const isExpired = computed(() => {
 	const expiresAt = accountRequest.value?.doc?.expires_at
-	return Boolean(expiresAt) && new Date(expiresAt as string) < new Date()
+	return Boolean(expiresAt) && dayjs.tz(expiresAt as string, systemTimeZone()).isBefore(dayjs())
 })
 
 // The server sends the link with whatever is stored, so pending edits have to be saved first.

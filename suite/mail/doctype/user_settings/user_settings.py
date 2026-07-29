@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import json
+from datetime import UTC, datetime
 from functools import cached_property
 from uuid import uuid7
 
@@ -13,7 +14,7 @@ from suite.mail.doctype.jmap_account.jmap_account import sync_jmap_accounts
 from suite.mail.jmap import get_jmap_session_manager
 from suite.mail.jmap.connection import JMAPConnection, JMAPConnectionInfo
 from suite.mail.utils import get_config
-from suite.utils.dt import timestamp_to_datetime
+from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.permissions import OwnerFromUser
 
 
@@ -57,11 +58,11 @@ class UserSettings(OwnerFromUser, Document):
 
 	@property
 	def session_last_update(self) -> str | None:
-		"""Returns the last update timestamp of the JMAP session for the user in the user's timezone."""
+		"""Returns the last update timestamp of the JMAP session for the user, in UTC ``...Z``."""
 
 		timestamp = self.session.get("timestamp")
 		if timestamp:
-			return timestamp_to_datetime(timestamp, as_str=True)
+			return normalize_utc_z(datetime.fromtimestamp(timestamp, tz=UTC))
 
 	@property
 	def jmap_session(self) -> str:

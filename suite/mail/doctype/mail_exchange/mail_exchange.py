@@ -46,6 +46,7 @@ from suite.mail.utils import (
 	get_mail_import_directory,
 	get_mbox_files,
 )
+from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.logger import ExchangeLogger, get_exchange_logger
 from suite.mail.utils.user import clear_sync_state, get_user_email_address, is_jmap_configured
 from suite.mail.utils.validation import (
@@ -436,7 +437,9 @@ class ExportWriter:
 			"""Generates the From line for MBOX format."""
 
 			addr = sender.get("email", "unknown")
-			return f"From {addr} {received_at.ctime()}\n".encode()
+			# mbox convention stamps From_ lines in UTC; Stalwart's offset form would
+			# otherwise leak through ctime() and vary within one export.
+			return f"From {addr} {received_at.astimezone(UTC).ctime()}\n".encode()
 
 		for e in emails:
 			line = from_line(e.sender, e.received_at)
@@ -975,7 +978,7 @@ class MailExchange(OwnerFromUser, Document):
 					"blobId": resp["blobId"],
 					"mailboxIds": {staging_mailbox_id: True},
 					"keywords": {k: True for k in meta.keywords or []},
-					"receivedAt": meta.received_at.isoformat(),
+					"receivedAt": normalize_utc_z(meta.received_at),
 				}
 				targets[f"e{i}"] = {mid: True for mid in meta.mailbox_ids}
 

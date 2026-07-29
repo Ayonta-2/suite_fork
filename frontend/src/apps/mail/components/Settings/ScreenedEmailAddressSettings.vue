@@ -136,6 +136,7 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 
 import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
+import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 import { userStore } from '@/apps/mail/stores/user'
 import AddScreenedSenderModal from '@/apps/mail/components/Modals/AddScreenedSenderModal.vue'
 
@@ -259,7 +260,9 @@ const rows = computed(() => {
 		.map((a: ScreenedAddress) => ({
 			email: a.email,
 			action: ACTION_LABELS[a.action] ?? a.action,
-			modified: getFormattedDate(a.modified),
+			// `modified` is a naive system-zone DB timestamp; move it into the user's zone
+			// before the Today/Yesterday labels are applied. Blank (optimistic rows) stays blank.
+			modified: a.modified ? getFormattedDate(formatSystemDateTime(a.modified, 'YYYY-MM-DDTHH:mm:ss')) : '',
 		}))
 })
 

@@ -149,7 +149,7 @@ def _fetch_event(service: CalendarEventService, event_id: str) -> dict | None:
 
 
 def _format_event_when(event: dict) -> str:
-	"""Compact event start for the confirmation card, e.g. 'Tue, 14 Jul · 10:00 AM'."""
+	"""Compact event start for the confirmation card, e.g. 'Tue, 14 Jul · 10:00 AM (Asia/Kolkata)'."""
 
 	from suite.calendar.doctype.calendar_exchange.calendar_exchange import _parse_local_datetime
 
@@ -163,7 +163,14 @@ def _format_event_when(event: dict) -> str:
 
 	hour = start.hour % 12 or 12
 	meridiem = "AM" if start.hour < 12 else "PM"
-	return f"{day} · {hour}:{start.minute:02d} {meridiem}"
+	when = f"{day} · {hour}:{start.minute:02d} {meridiem}"
+
+	# The guest has no session, so the time stays in the event's zone - but say which zone,
+	# or a reader elsewhere has no way to tell.
+	if time_zone := event.get("timeZone"):
+		when = f"{when} ({time_zone})"
+
+	return when
 
 
 def _guest_calendar_service(account: str) -> CalendarEventService:

@@ -1,9 +1,6 @@
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
-import frappe
-import isodate
-from frappe import _
 from frappe.utils import get_datetime, get_datetime_str, get_system_timezone
 
 
@@ -14,15 +11,15 @@ def get_utc_now(naive: bool = False) -> datetime:
 	return now.replace(tzinfo=None) if naive else now
 
 
-def utcnow() -> "str":
-	"""Returns current UTC time in ISO format."""
+def utcnow() -> str:
+	"""Returns the current UTC time in the canonical ``...Z`` wire format (second precision)."""
 
-	return get_utc_now().isoformat().replace("+00:00", "Z")
+	return get_utc_now().replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def convert_to_utc(
 	date_time: datetime | str, from_timezone: str | None = None, naive: bool = False
-) -> "datetime":
+) -> datetime:
 	"""Converts the given datetime to UTC timezone."""
 
 	dt = get_datetime(date_time)
@@ -42,23 +39,15 @@ def parse_iso_datetime(
 	if not to_timezone:
 		to_timezone = get_system_timezone()
 
-	dt = datetime.fromisoformat(datetime_str.replace("Z", "+00:00")).astimezone(ZoneInfo(to_timezone))
+	dt = datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
+	if dt.tzinfo is None:
+		# A naive wire value is UTC — the format the APIs listen in. Without this,
+		# .astimezone() would read it in the OS process zone.
+		dt = dt.replace(tzinfo=UTC)
+
+	dt = dt.astimezone(ZoneInfo(to_timezone))
 
 	return get_datetime_str(dt) if as_str else dt
-
-
-def add_or_update_tzinfo(date_time: datetime | str, time_zone: str | None = None) -> str:
-	"""Adds or updates timezone to the datetime."""
-
-	date_time = get_datetime(date_time)
-	target_tz = ZoneInfo(time_zone or get_system_timezone())
-
-	if date_time.tzinfo is None:
-		date_time = date_time.replace(tzinfo=target_tz)
-	else:
-		date_time = date_time.astimezone(target_tz)
-
-	return str(date_time)
 
 
 def to_iso8601_z(dt: datetime) -> str:
@@ -79,34 +68,3 @@ def to_iso8601_z(dt: datetime) -> str:
 		dt = dt.astimezone(UTC)
 
 	return dt.isoformat().replace("+00:00", "Z")
-
-
-def add_iso_duration(
-	start_dt: str,
-	duration: str,
-	time_zone: str,
-) -> datetime:
-	"""
-	Add ISO-8601 duration to an ISO datetime string using timezone-aware math,
-	but return a naive datetime (no offset) in the same local timezone.
-	"""
-
-	tz = ZoneInfo(time_zone)
-	start = datetime.fromisoformat(start_dt).replace(tzinfo=tz)
-	delta = isodate.parse_duration(duration)
-	end = start + delta
-
-	return end.replace(tzinfo=None)
-
-
-def timestamp_to_datetime(
-	timestamp: float, to_timezone: str | None = None, as_str: bool = True
-) -> str | datetime:
-	"""Converts a timestamp to a datetime object in the given timezone."""
-
-	if not to_timezone:
-		to_timezone = get_system_timezone()
-
-	dt = datetime.fromtimestamp(timestamp, tz=UTC).astimezone(ZoneInfo(to_timezone))
-
-	return get_datetime_str(dt) if as_str else dt

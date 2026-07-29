@@ -7,15 +7,16 @@ from uuid import uuid7
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, today
+from frappe.utils import cint
 
 from suite.mail.doctype.address_book.address_book import validate_address_book_name_format
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_contact_card_service
 from suite.mail.store import Entity, get_data_store, get_email_address_index
 from suite.mail.utils import log_mail_error
+from suite.mail.utils.dt import normalize_utc_z
 from suite.utils import parse_filters
-from suite.utils.dt import parse_iso_datetime
+from suite.utils.dt import utcnow
 
 
 class ContactCard(Document):
@@ -130,7 +131,7 @@ class ContactCard(Document):
 		)
 		self.name = f"{self.account}|{self.id}"
 
-	def load_from_db(self) -> "ContactCard":
+	def load_from_db(self) -> ContactCard:
 		account, id = parse_contact_card_name(self.name)
 		if contact_cards := get_contact_cards(account, [id]):
 			return super(Document, self).__init__(contact_cards[0])
@@ -613,11 +614,8 @@ def format_contact_card(account: str, address_book_map: dict, contact_card: dict
 			}
 		)
 
-	creation = modified = None
-	if contact_card.get("created"):
-		creation = parse_iso_datetime(contact_card["created"], as_str=True)
-	if contact_card.get("updated"):
-		modified = parse_iso_datetime(contact_card["updated"], as_str=True)
+	creation = normalize_utc_z(contact_card.get("created"))
+	modified = normalize_utc_z(contact_card.get("updated"))
 
 	return {
 		"name": f"{account}|{contact_card['id']}",
@@ -631,14 +629,16 @@ def format_contact_card(account: str, address_book_map: dict, contact_card: dict
 		"emails": emails,
 		"phones": phones,
 		"addresses": addresses,
-		"created_at": contact_card.get("created"),
-		"updated_at": contact_card.get("updated"),
-		"creation": creation or modified or today(),
-		"modified": modified or creation or today(),
+		"created_at": creation,
+		"updated_at": modified,
+		# Fallback stays in the ``...Z`` shape so the field parses with one rule whether or
+		# not the server supplied real timestamps.
+		"creation": creation or modified or utcnow(),
+		"modified": modified or creation or utcnow(),
 	}
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 	if doc.doctype != "Contact Card":
 		return False
 

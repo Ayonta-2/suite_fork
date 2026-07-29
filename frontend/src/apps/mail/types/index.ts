@@ -38,7 +38,8 @@ export interface ScreeningSender {
 	from_name: string
 	subject: string
 	preview: string
-	received_at: number
+	// UTC "...Z" wire timestamp, not an epoch.
+	received_at: string
 	count: number
 	unread: number
 }
@@ -54,6 +55,8 @@ export interface User {
 	api_key: string | null
 	// The zone every timestamp is shown in and typed in; see utils/datetime.ts.
 	time_zone: string
+	// The site's zone — what plain DB datetime fields are stored in; see formatSystemDateTime.
+	system_time_zone: string
 	user_settings?: string
 	color_scheme?: COLOR_SCHEME
 	group_messages_by?: 'None' | 'Day' | 'Month'

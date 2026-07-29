@@ -881,6 +881,10 @@ class CalendarExportWriter:
 				for component in _build_components(event, categories):
 					cal.add_component(component)
 
+			# RFC 5545 requires a VTIMEZONE for every TZID referenced, or importers read the
+			# wall clock in their own zone.
+			cal.add_missing_timezones()
+
 			file_name = safe_name(calendar_name)
 			candidate = file_name
 			suffix = 1
@@ -941,7 +945,7 @@ def _parse_duration(value: str | None, start: datetime | None) -> timedelta | No
 		return None
 
 
-def _build_recurrence_rule(rule: dict) -> dict | None:
+def _build_recurrence_rule(rule: dict, time_zone: str | None = None, all_day: bool = False) -> dict | None:
 	"""Converts a JSCalendar RecurrenceRule object into an iCalendar RRULE value dict."""
 
 	if not rule:
@@ -956,8 +960,15 @@ def _build_recurrence_rule(rule: dict) -> dict | None:
 	if count := rule.get("count"):
 		recur["COUNT"] = [cint(count)]
 	if until := rule.get("until"):
-		parsed = _parse_local_datetime(until, None)
+		# RFC 5545 wants UNTIL's value type to match DTSTART's: a DATE for all-day series
+		# (whose DTSTART is a DATE), else UTC whenever DTSTART carries a TZID. A zoneless
+		# timed event keeps a floating UNTIL to match its floating DTSTART.
+		parsed = _parse_local_datetime(until, time_zone)
 		if parsed:
+			if all_day:
+				parsed = parsed.date()
+			elif parsed.tzinfo is not None:
+				parsed = parsed.astimezone(UTC)
 			recur["UNTIL"] = [parsed]
 	if first_day := rule.get("firstDayOfWeek"):
 		if mapped := WEEKDAY_MAP.get(first_day.lower()):
@@ -1043,6 +1054,11 @@ def _add_alarms(component, alerts: dict) -> None:
 		if trigger_type == "AbsoluteTrigger" and trigger.get("when"):
 			when = _parse_local_datetime(trigger["when"], None)
 			if when:
+				# JSCalendar AbsoluteTrigger.when is a UTCDateTime; a zoneless value that
+				# slipped in via another client would otherwise export a floating TRIGGER,
+				# which RFC 5545 forbids.
+				if when.tzinfo is None:
+					when = when.replace(tzinfo=UTC)
 				alarm.add("trigger", when)
 		else:
 			offset = _parse_duration(trigger.get("offset", "-PT10M"), None)
@@ -1131,7 +1147,9 @@ def jscalendar_to_vevent(event: dict, categories: list[str] | None = None):
 	recurrence_rule = event.get("recurrenceRule")
 	if isinstance(recurrence_rule, list):
 		recurrence_rule = recurrence_rule[0] if recurrence_rule else None
-	if recur := _build_recurrence_rule(recurrence_rule):
+	if recur := _build_recurrence_rule(
+		recurrence_rule, event.get("timeZone"), all_day=bool(event.get("showWithoutTime"))
+	):
 		component.add("rrule", recur)
 
 	created = _parse_local_datetime(event.get("created"), None)

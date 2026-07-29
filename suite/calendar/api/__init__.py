@@ -12,6 +12,7 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
 	get_calendar_events as get_calendar_events_by_ids,
 )
 from suite.mail.jmap import get_calendar_event_service
+from suite.mail.utils.dt import normalize_utc_z
 
 
 @frappe.whitelist()
@@ -27,9 +28,10 @@ def get_calendars(account: str) -> list[dict[str, str]]:
 def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
 	"""Fetches calendar events between from_date and to_date for the specified account."""
 
+	# The API listens UTC: a naive range value is read as UTC, not system time.
 	events = fetch_calendar_events(
 		account,
-		{"after": from_date, "before": to_date},
+		{"after": normalize_utc_z(from_date), "before": normalize_utc_z(to_date)},
 		limit=999,
 		time_zone=time_zone,
 		expand_recurrences=True,
@@ -53,15 +55,12 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
 	if not events:
 		return
 
-	base_ids = get_calendar_event_service(account).get_base_event_ids(
-		[event["id"] for event in events]
-	)
+	base_ids = get_calendar_event_service(account).get_base_event_ids([event["id"] for event in events])
 	if not base_ids:
 		return
 
 	masters = {
-		master["id"]: master
-		for master in get_calendar_events_by_ids(account, sorted(set(base_ids.values())))
+		master["id"]: master for master in get_calendar_events_by_ids(account, sorted(set(base_ids.values())))
 	}
 
 	for event in events:
@@ -119,8 +118,7 @@ def _with_name(items: list[dict] | None) -> list[dict] | None:
 		return items
 
 	return [
-		{**item, "name": item["_name"]} if "name" not in item and "_name" in item else item
-		for item in items
+		{**item, "name": item["_name"]} if "name" not in item and "_name" in item else item for item in items
 	]
 
 

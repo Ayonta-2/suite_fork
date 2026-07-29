@@ -38,7 +38,9 @@ const parseRRule = () => {
 
 	if (rRule.until) {
 		end = 'On Date'
-		until = dayjs(rRule.until).format('YYYY-MM-DD')
+		// `until` is a local date-time; strip the `Z` older events carry so the picked
+		// date survives instead of shifting a day in zones east of UTC.
+		until = dayjs(rRule.until.replace(/Z$/, '')).format('YYYY-MM-DD')
 	} else if (rRule.count) {
 		end = 'After Occurrences'
 		count = rRule.count
@@ -134,7 +136,8 @@ const recurrenceRule = computed(() => {
 		else rule.byMonthDay = monthlyByMonthDay[repeat.repeatOn]
 	}
 
-	if (repeat.end === 'On Date') rule.until = `${repeat.until}T23:59:59Z`
+	// JSCalendar `until` is a LocalDateTime in the event's zone (RFC 8984) — no `Z`.
+	if (repeat.end === 'On Date') rule.until = `${repeat.until}T23:59:59`
 	else if (repeat.end === 'After Occurrences') rule.count = repeat.count
 
 	return rule

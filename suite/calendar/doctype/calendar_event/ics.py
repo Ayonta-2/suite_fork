@@ -45,6 +45,11 @@ def build_event_ics(event: dict, method: str = "REQUEST", recurrence_id: str | N
 			_stamp_outgoing(component, method)
 			cal.add_component(component)
 
+	# RFC 5545 requires a VTIMEZONE for every TZID referenced; without it a receiving client
+	# can't resolve the zone and reads the wall clock in its own (e.g. a 10:00 IST meeting
+	# lands at 10:00 EST in Outlook).
+	cal.add_missing_timezones()
+
 	return cal.to_ical().decode("utf-8")
 
 
@@ -72,6 +77,8 @@ def _instance_component(event: dict, recurrence_id: str, method: str):
 	"""Builds a single-occurrence VEVENT carrying RECURRENCE-ID (no RRULE/overrides)."""
 
 	base = {k: v for k, v in event.items() if k not in ("recurrenceRule", "recurrenceOverrides")}
+	# RFC 5545: an instance component's DTSTART is that occurrence's start, not the series'.
+	base["start"] = recurrence_id
 	component = jscalendar_to_vevent(base)
 
 	instance_dt = _parse_local_datetime(recurrence_id, event.get("timeZone"))

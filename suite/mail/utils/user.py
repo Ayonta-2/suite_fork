@@ -6,6 +6,7 @@ from frappe.utils.caching import request_cache
 
 from suite.mail.store import Entity, get_data_store
 from suite.utils import reconnect_on_failure
+from suite.utils.dt import utcnow
 from suite.utils.user import is_system_manager
 
 
@@ -107,7 +108,7 @@ def update_sync_state(account: str, type: Literal["email"], state: str) -> None:
 		{
 			f"{type}_previous_state": current_state,
 			f"{type}_current_state": state,
-			f"{type}_state_last_update": frappe.utils.now(),
+			f"{type}_state_last_update": utcnow(),
 		},
 	)
 

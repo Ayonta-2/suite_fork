@@ -16,10 +16,11 @@ from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr, formatdate, make_msgid
+from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, get_datetime, strip_html_tags
+from frappe.utils import add_to_date, get_datetime, get_system_timezone, strip_html_tags
 
 from suite.calendar.doctype.calendar_event.ics import build_event_ics
 from suite.calendar.doctype.calendar_event.invite_templates import (
@@ -128,9 +129,7 @@ def notify_participants(
 			log_error("Calendar", title=_("Failed to send event {0} email to {1}").format(kind, email))
 
 
-def notify_organizer_of_response(
-	account: str, event_id: str, participant_email: str, status: str
-) -> None:
+def notify_organizer_of_response(account: str, event_id: str, participant_email: str, status: str) -> None:
 	"""Emails the organizer that a guest responded to their invitation.
 
 	Guests RSVP through signed links, so their answer is written straight to the organizer's
@@ -333,7 +332,8 @@ def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> s
 	root["Subject"] = subject
 	root["From"] = formataddr((from_name, organizer)) if from_name else organizer
 	root["To"] = to_email
-	root["Date"] = formatdate(localtime=True)
+	# usegmt keeps the header independent of the container's OS zone.
+	root["Date"] = formatdate(usegmt=True)
 	root["Message-ID"] = make_msgid()
 
 	alternative = MIMEMultipart("alternative")
@@ -460,7 +460,12 @@ def _rsvp_expiry(event: dict) -> int:
 	expires is a standing replay of participation-status changes on the organizer's calendar.
 	"""
 
-	start = _parse_local_datetime(event.get("start"), event.get("timeZone"))
+	# An event with a start but a blank/invalid timeZone would parse naive, and .timestamp()
+	# below would resolve it against the OS zone - fall back to the site's zone instead.
+	start = _parse_local_datetime(event.get("start"), event.get("timeZone") or get_system_timezone())
+	if start and start.tzinfo is None:
+		start = start.replace(tzinfo=ZoneInfo(get_system_timezone()))
+
 	expiry = (
 		add_to_date(start, days=RSVP_GRACE_DAYS)
 		if start

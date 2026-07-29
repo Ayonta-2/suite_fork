@@ -1,9 +1,15 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime as parsedate
+from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
-from frappe.utils import convert_utc_to_system_timezone, get_datetime_str
+from frappe.utils import (
+	convert_utc_to_system_timezone,
+	get_datetime,
+	get_datetime_str,
+	get_system_timezone,
+)
 
 from suite.utils.dt import convert_to_utc, parse_iso_datetime
 
@@ -11,7 +17,7 @@ from suite.utils.dt import convert_to_utc, parse_iso_datetime
 UTC_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 
-def to_utc_z(value: "datetime | str | None") -> str | None:
+def to_utc_z(value: datetime | str | None) -> str | None:
 	"""Formats a value as the ``2026-07-28T09:02:30Z`` UTC timestamp the mail APIs return.
 
 	Aware values (Stalwart's timestamps, or the ``...Z`` an API was called with) are converted;
@@ -39,7 +45,44 @@ def from_utc_z(value: str | None) -> str | None:
 	return get_datetime_str(parse_iso_datetime(value, as_str=False))
 
 
-def parsedate_to_datetime(date_header: str) -> "datetime":
+def normalize_utc_z(value: datetime | str | None) -> str | None:
+	"""Normalizes a wire timestamp to the ``...Z`` UTC format the mail APIs speak.
+
+	For values that are already on the wire: Stalwart's ``2026-03-23T20:03:40-05:00`` offset form,
+	its ``...Z`` form, or a ``...Z`` value an API was called with. Naive values are read as UTC —
+	unlike ``to_utc_z``, which reads a naive value as system time (a Frappe DB field).
+	"""
+
+	if not value:
+		return None
+
+	dt = get_datetime(value)
+	if dt.tzinfo is None:
+		dt = dt.replace(tzinfo=UTC)
+
+	return dt.astimezone(UTC).strftime(UTC_DATETIME_FORMAT)
+
+
+def to_user_timezone(value: datetime | str) -> datetime:
+	"""Converts a UTC wire timestamp to the session user's time zone for server-rendered text.
+
+	Only for strings baked into content (quoted-reply headers, digests) where the browser can't
+	do the conversion; API responses stay UTC. Falls back to the system time zone when the user
+	hasn't set one.
+	"""
+
+	dt = get_datetime(value)
+	if dt.tzinfo is None:
+		dt = dt.replace(tzinfo=UTC)
+
+	time_zone = None
+	if frappe.session.user:
+		time_zone = frappe.db.get_value("User", frappe.session.user, "time_zone")
+
+	return dt.astimezone(ZoneInfo(time_zone or get_system_timezone()))
+
+
+def parsedate_to_datetime(date_header: str) -> datetime:
 	"""Returns datetime object from parsed date header."""
 
 	# email.utils.parsedate_to_datetime raises ValueError on an unparsable header rather than
