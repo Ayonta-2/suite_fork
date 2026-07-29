@@ -87,6 +87,7 @@ import MediaDownload from '@/apps/writer/extensions/media-download'
 import OldCommentExtension from '@/apps/writer/extensions/old-comment'
 import { TabsExtension } from '@/apps/writer/extensions/tabs'
 import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
+import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
 import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
 
 
@@ -232,6 +233,7 @@ const editorExtensions = [
   }),
   TabsExtension,
   TabTrailingNode,
+  JoinAdjacentLists,
   OldCommentExtension.configure({ onCommentActivated }),
   TableOfContents.configure({
     onUpdate: (val) => (anchors.value = val),

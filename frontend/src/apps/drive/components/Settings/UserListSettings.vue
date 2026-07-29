@@ -102,7 +102,7 @@
             class="flex items-center justify-start pr-4 gap-x-3 py-2"
           >
             <Avatar :image="user.user_image" :label="user.full_name" size="lg" />
-            <div class="flex flex-col">
+            <div class="flex flex-col gap-0.5">
               <span class="text-base text-ink-gray-8">{{ user.full_name }}</span>
               <span class="text-xs text-ink-gray-6">{{ user.email }}</span>
             </div>

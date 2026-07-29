@@ -259,6 +259,10 @@ onKeyDown('Escape', (e) => {
     e.target.tagName === 'TEXTAREA'
   )
     return
+  // A dialog is open — let its own Escape-to-close handler take this
+  // keystroke instead of eating it via preventDefault (which blocks Reka's
+  // dismissable-layer check for unhandled Escape).
+  if (document.querySelector('[role="dialog"]')) return
   container.value.selections.clear()
   e.preventDefault()
 })

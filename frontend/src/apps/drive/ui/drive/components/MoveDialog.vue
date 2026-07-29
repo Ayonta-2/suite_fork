@@ -95,12 +95,18 @@
                 <span v-if="breadcrumbs.length > 1 && index > 0" class="text-ink-gray-5 mx-0.5">
                   {{ '/' }}
                 </span>
-                <button class="text-base cursor-pointer truncate max-w-20" :title="crumb.file_name" :class="index === slicedBreadcrumbs.length - 1
-                    ? 'text-ink-gray-9 text-base font-medium p-1'
-                    : 'text-ink-gray-5 text-base rounded-[6px] hover:bg-surface-gray-2 p-1'
-                  " @click="closeEntity(crumb.name)">
-                  {{ crumb.file_name }}
-                </button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :label="crumb.file_name"
+                  :title="crumb.file_name"
+                  class="truncate max-w-20"
+                  :class="index === slicedBreadcrumbs.length - 1
+                    ? 'text-ink-gray-9 font-medium'
+                    : 'text-ink-gray-5'
+                  "
+                  @click="closeEntity(crumb.name)"
+                />
               </div>
             </div>
           </div>
