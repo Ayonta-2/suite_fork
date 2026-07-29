@@ -77,6 +77,33 @@ def check_admin_permission(action: str, target: Any = None) -> str:
 	return user
 
 
+def check_member_target(member_id: str) -> str:
+	"""Ensure ``member_id`` is a mail member the session user may act on, returning it.
+
+	The member endpoints save the target User with ``ignore_permissions=True``, which bypasses the
+	framework's own guard against editing Administrator and other standard users. Without this check
+	a Suite Admin - a role ordinary members get when created with ``is_admin`` - could name any User
+	at all and, via change_member_password, take over the Administrator account.
+
+	So the target must be a real mail member (the same predicate get_members lists on), never a
+	standard user, and never a System Manager unless the caller is one too.
+	"""
+
+	if not member_id or member_id in frappe.STANDARD_USERS:
+		frappe.throw(_("{0} is not a mail member.").format(frappe.bold(member_id)), frappe.PermissionError)
+
+	if not frappe.db.exists("User Settings", {"user": member_id, "username": ["is", "set"]}):
+		frappe.throw(_("{0} is not a mail member.").format(frappe.bold(member_id)), frappe.PermissionError)
+
+	if is_system_manager(member_id) and not is_system_manager(frappe.session.user):
+		frappe.throw(
+			_("You do not have permission to act on {0}.").format(frappe.bold(member_id)),
+			frappe.PermissionError,
+		)
+
+	return member_id
+
+
 def _get_stalwart_domain(domain_id: str) -> dict:
 	"""Helper function to get a domain by ID from Stalwart, throwing a DoesNotExistError if not found."""
 
@@ -600,6 +627,7 @@ def delete_members(names: list) -> None:
 		frappe.throw(_("You cannot delete your own account."))
 
 	for name in names:
+		check_member_target(name)
 		frappe.delete_doc("User", name)
 
 
@@ -613,6 +641,7 @@ def disable_members(names: list) -> None:
 		frappe.throw(_("You cannot disable your own account."))
 
 	for name in names:
+		check_member_target(name)
 		member = frappe.get_doc("User", name)
 		if not member.enabled:
 			continue
@@ -628,6 +657,7 @@ def enable_members(names: list) -> None:
 	check_admin_permission("enable members", names)
 
 	for name in names:
+		check_member_target(name)
 		member = frappe.get_doc("User", name)
 		if member.enabled:
 			continue
@@ -646,6 +676,7 @@ def change_member_password(member_id: str, new_password: str) -> None:
 	"""
 
 	check_admin_permission("change member password", member_id)
+	check_member_target(member_id)
 
 	if not new_password:
 		frappe.throw(_("New password is required."))
@@ -747,6 +778,7 @@ def update_member(
 	"""Updates a member's role, display name, quota, locale and time zone on Frappe and Stalwart."""
 
 	check_admin_permission("update members", member_id)
+	check_member_target(member_id)
 
 	member = frappe.get_doc("User", member_id)
 
