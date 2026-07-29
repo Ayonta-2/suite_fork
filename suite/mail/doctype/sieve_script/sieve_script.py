@@ -539,8 +539,11 @@ def get_mailbox_automation_rules(account: str, mailbox_id: str) -> dict | None:
 def get_mailbox_path(account: str, mailbox_name: str, raise_exception: bool = False) -> str | None:
 	"""Returns the mailbox path for the given mailbox name in the given account."""
 
-	mailboxes = {mailbox["_name"]: mailbox for mailbox in get_mailboxes(account)}
-	if mailbox_name not in mailboxes:
+	mailboxes = get_mailboxes(account)
+	by_id = {mailbox["id"]: mailbox for mailbox in mailboxes}
+	by_name = {mailbox["_name"]: mailbox for mailbox in mailboxes}
+
+	if mailbox_name not in by_name:
 		if raise_exception:
 			frappe.throw(
 				_("Mailbox '{0}' not found in account '{1}'.").format(
@@ -551,16 +554,31 @@ def get_mailbox_path(account: str, mailbox_name: str, raise_exception: bool = Fa
 		return None
 
 	path_parts = []
-	current = mailboxes[mailbox_name]
+	current = by_name[mailbox_name]
+	# Walk by id, not by name: JMAP only requires a name to be unique among siblings, so resolving
+	# the parent by name picked the wrong mailbox when two share a leaf name - and looped forever
+	# when a mailbox sat under a same-named parent. `seen` also guards a malformed parent chain.
+	seen = set()
 
 	while current:
+		if current["id"] in seen:
+			if raise_exception:
+				frappe.throw(
+					_("Mailbox '{0}' in account '{1}' has a circular parent chain.").format(
+						frappe.bold(mailbox_name), frappe.bold(account)
+					),
+					title=_("Invalid Mailbox Hierarchy"),
+				)
+			return None
+
+		seen.add(current["id"])
 		path_parts.append(current["_name"])
+
 		parent_id = current.get("parent_id")
 		if not parent_id:
 			break
 
-		parent_name = get_mailbox_name_by_id(account, parent_id)
-		current = mailboxes.get(parent_name)
+		current = by_id.get(parent_id)
 
 		if current is None:
 			if raise_exception:
