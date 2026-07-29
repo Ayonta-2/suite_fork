@@ -213,9 +213,19 @@ class DataStore(BaseStore):
 			fn(txn)
 
 	def _serialize(self, value: Any) -> bytes:
-		"""Serialize a value to bytes using msgpack."""
+		"""Serialize a value to bytes using msgpack.
 
-		return msgpack.packb(value, use_bin_type=True)
+		The size cap is enforced here and not only on the way back out: an oversized value used to
+		commit successfully and then fail every subsequent read, which also took down any ``scan``
+		covering it. Refusing the write keeps the store readable.
+		"""
+
+		packed = msgpack.packb(value, use_bin_type=True)
+
+		if len(packed) > self.MAX_MSGPACK_BYTES:
+			raise ValueError("Serialized value exceeds allowed size limit")
+
+		return packed
 
 	def _deserialize(self, value: bytes) -> Any:
 		"""Deserialize bytes back to a Python object using msgpack."""
@@ -226,6 +236,9 @@ class DataStore(BaseStore):
 		return msgpack.unpackb(
 			value,
 			raw=False,
+			# packb happily writes non-string map keys, so refusing them here would make a value
+			# that was accepted on write unreadable for good.
+			strict_map_key=False,
 			max_bin_len=self.MAX_MSGPACK_BYTES,
 			max_str_len=self.MAX_MSGPACK_BYTES,
 			max_ext_len=self.MAX_MSGPACK_BYTES,
