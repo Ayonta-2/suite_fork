@@ -225,7 +225,13 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
 
 	conversations = fetch_threads(account, filter, start, limit)
 
-	sent_mailbox = get_mailbox_id_by_role(account, "sent")
+	trash_mailbox = get_mailbox_id_by_role(account, "trash")
+	junk_mailbox = get_mailbox_id_by_role(account, "junk")
+	# Sent and Drafts are about the message you wrote, so their rows follow the latest message in the
+	# folder itself; every other view follows the conversation's most recent activity.
+	outgoing_mailboxes = {
+		mb for mb in (get_mailbox_id_by_role(account, "sent"), get_mailbox_id_by_role(account, "drafts")) if mb
+	}
 	user_emails = {e.lower() for e in get_account_emails(account)}
 
 	threads = []
@@ -233,22 +239,50 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
 		if not conversation:
 			continue
 
+		visible = visible_in_mailbox(conversation, mailbox, trash_mailbox, junk_mailbox)
+
 		# The summary row is derived from the thread's messages in the current mailbox (falling back
 		# to the whole conversation for cross-mailbox views like "starred").
 		in_mailbox = [
-			m for m in conversation if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
-		] or conversation
+			m for m in visible if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
+		] or visible
 
-		# The preview/date reflect the latest message in the whole conversation (the most recent
-		# activity) everywhere except Sent, where the latest sent message is shown.
-		latest = in_mailbox[-1] if mailbox == sent_mailbox else conversation[-1]
-		threads.append(serialize_thread(in_mailbox, conversation, latest, user_emails))
+		# The preview/date reflect the latest message in the conversation (the most recent activity)
+		# everywhere except Sent and Drafts, which show the latest message in the folder itself: a
+		# draft reply must keep its own recipients and its "Draft" badge when the thread it answers
+		# receives a newer mail.
+		latest = in_mailbox[-1] if mailbox in outgoing_mailboxes else visible[-1]
+		threads.append(serialize_thread(in_mailbox, visible, latest, user_emails, first=conversation[0]))
 
 	# Avatars for the list-view summary rows, and for each message in the nested threads.
 	add_user_images_to_emails(account, threads, is_thread=False)
 	add_user_images_to_emails(account, [m for thread in threads for m in thread["messages"]], is_thread=True)
 
 	return threads, mailbox
+
+
+def visible_in_mailbox(messages: list[dict], mailbox: str, trash: str | None, junk: str | None) -> list[dict]:
+	"""The thread's messages a mailbox view is allowed to show, oldest to newest.
+
+	Mirrors the thread pane's `filterRelevantMails`: junked and trashed messages appear only in their
+	own folders. The summary row is derived from this rather than from the whole conversation so that
+	it describes the thread the way opening it would — a spam reply was adding a stranger to a row's
+	participants, raising its message count, and lending it its preview and date, all for a message
+	the pane then refused to render.
+
+	Falls back to the whole conversation rather than to nothing, so a thread is never a blank row.
+	"""
+
+	def is_trashed(message: dict) -> bool:
+		return any(mb["mailbox_id"] == trash for mb in message["mailboxes"])
+
+	if trash and mailbox == trash:
+		return [m for m in messages if is_trashed(m)] or messages
+
+	if junk and mailbox == junk:
+		return [m for m in messages if m.get("junk")] or messages
+
+	return [m for m in messages if not is_trashed(m) and not m.get("junk")] or messages
 
 
 def get_user_jmap_accounts() -> list[dict]:
@@ -367,20 +401,23 @@ def serialize_thread(
 	thread_messages: list[dict],
 	latest: dict | None = None,
 	user_emails: set[str] | None = None,
+	first: dict | None = None,
 ) -> dict:
 	"""Serializes a thread for response.
 
-	Both `messages` (the thread's messages within the current mailbox) and `thread_messages` (the full
-	conversation across all mailboxes) are expected ordered oldest to newest. The list-view summary
-	fields are derived from `latest` (defaulting to the latest of `messages`), except `subject` which
-	comes from the conversation's first message (the thread's original subject); the full conversation
-	is serialized under `messages` so the whole thread can be rendered without a separate fetch.
+	Both `messages` (the thread's messages within the current mailbox) and `thread_messages` (the
+	conversation this view can show — see `visible_in_mailbox`) are expected ordered oldest to newest.
+	The list-view summary fields are derived from `latest` (defaulting to the latest of `messages`),
+	except `subject` which comes from `first`, the conversation's opening message (the thread's
+	original subject, without the "Re:" its replies carry — it defaults to the earliest message given,
+	which is only the true first when nothing has been filtered out). The conversation is serialized
+	under `messages` so the whole thread can be rendered without a separate fetch.
 
 	`user_emails` is the set of the account's own addresses (lowercased), used to flag which of the
 	thread's senders is the user themselves.
 	"""
 
-	first = thread_messages[0]
+	first = first or thread_messages[0]
 	latest = latest or messages[-1]
 	# The row's identity + state come from the thread's representative message in the CURRENT mailbox
 	# (`messages` is scoped to it), so its folder tags and junk/flag/seen reflect THIS view — not a
