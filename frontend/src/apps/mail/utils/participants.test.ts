@@ -40,6 +40,42 @@ describe('threadParticipants', () => {
 		expect(threadParticipants(thread, own).map((p) => p.is_self)).toEqual([false, true])
 	})
 
+	it('keeps everyone writing from one relay address', () => {
+		// Discourse sends every poster through noreply@, carrying the poster in the display name.
+		const thread = [
+			message('Jay1987', 'noreply@discuss.frappe.io'),
+			message('M Umair Sayed', 'noreply@discuss.frappe.io'),
+			message('Jay1987', 'noreply@discuss.frappe.io'),
+		]
+		expect(names(thread)).toEqual(['Jay1987', 'M Umair Sayed'])
+	})
+
+	it('treats one name written two ways as one writer', () => {
+		const thread = [
+			message('Jay1987', 'noreply@discuss.frappe.io'),
+			message('  jay1987 ', '  NoReply@Discuss.Frappe.io '),
+		]
+		expect(names(thread)).toEqual(['Jay1987'])
+	})
+
+	it('does not take a nameless message for a second writer', () => {
+		// It would be shown as the bare address, sat next to the names from that same address.
+		const thread = [
+			message('Jay1987', 'noreply@discuss.frappe.io'),
+			message('', 'noreply@discuss.frappe.io'),
+		]
+		expect(names(thread)).toEqual(['Jay1987'])
+	})
+
+	it('lets the first name adopt a nameless entry', () => {
+		const thread = [
+			message('', 'noreply@discuss.frappe.io'),
+			message('M Umair Sayed', 'noreply@discuss.frappe.io'),
+			message('Jay1987', 'noreply@discuss.frappe.io'),
+		]
+		expect(names(thread)).toEqual(['M Umair Sayed', 'Jay1987'])
+	})
+
 	it('keeps a nameless sender named after their address', () => {
 		const thread = [message('', 'noreply@frappe.io'), message('', 'alerts@uptimerobot.com')]
 		expect(threadParticipants(thread, own).map((p) => p.email)).toEqual([

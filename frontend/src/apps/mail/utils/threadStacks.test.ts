@@ -6,6 +6,11 @@ import type { Mail, Thread } from '@/apps/mail/types'
 
 const message = (from_email: string, from_name = '') => ({ from_email, from_name }) as Mail
 
+// A relay (Discourse, GitHub, Jira) gives every poster the same address and its own display name, so
+// one notification thread names as many people as it had posters.
+const post = (from_name: string, from_email = 'notifications@github.com') =>
+	message(from_email, from_name)
+
 const thread = (overrides: Partial<Thread> = {}): Thread =>
 	({
 		name: 'm1',
@@ -62,11 +67,23 @@ describe('stackKeyOf', () => {
 		)
 	})
 
-	it('returns null once a second person has written, so the thread never stacks', () => {
+	it('returns null once a second address has written, so the thread never stacks', () => {
 		// A thread with an answer in it is correspondence, not a flood — whoever wrote the answer.
 		expect(stackKeyOf(answered())).toBeNull()
 		const two = [message('alerts@uptimerobot.com'), message('neha@frappe.io')]
 		expect(stackKeyOf(thread({ messages: two }))).toBeNull()
+	})
+
+	it('counts addresses rather than people, so a relay thread still stacks', () => {
+		// Three posters, one envelope address: a notification, not correspondence.
+		const posted = thread({
+			messages: [post('Sarfaraz Shaikh'), post('M Umair Sayed'), post('Jay1987')],
+		})
+		expect(stackKeyOf(posted)).toBe(stackKeyOf(thread({ messages: [post('Neha Sankhe')] })))
+		// Your own reply is a second address, and takes the thread out of the pile as it always did.
+		expect(
+			stackKeyOf(thread({ messages: [post('Jay1987'), message('vibhav@frappe.io', 'Vibhav')] })),
+		).toBeNull()
 	})
 
 	it('is case- and whitespace-insensitive about the sender', () => {
@@ -129,7 +146,7 @@ describe('buildListRows', () => {
 		expect(rows.map((r) => r.key)).toEqual(['m0', 'm1', 'other', 'm2', 'm3'])
 	})
 
-	it('never stacks threads more than one person has written in, however alike they are', () => {
+	it('never stacks threads more than one address has written in, however alike they are', () => {
 		// Same two people, same day, three in a row — still three conversations, never a pile.
 		const conversations = run(3, {
 			messages: [message('neha@frappe.io'), message('vibhav@frappe.io', 'Vibhav')],
@@ -139,6 +156,15 @@ describe('buildListRows', () => {
 			'thread',
 			'thread',
 		])
+	})
+
+	it('collapses a run of relay threads however many posted in each', () => {
+		const notifications = run(3, {
+			messages: [post('Sarfaraz Shaikh'), post('M Umair Sayed')],
+		})
+		const rows = buildListRows(notifications, rowOptions)
+		expect(rows).toHaveLength(1)
+		expect(rows[0].type === 'stack' && rows[0].threads).toHaveLength(3)
 	})
 
 	it('breaks a run where the user has replied to one of its threads', () => {

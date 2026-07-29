@@ -7,8 +7,14 @@ import type { Thread } from '@/apps/mail/types'
 // single stack row. Two in a row is normal correspondence, not a flood — hence three.
 const MIN_STACK_SIZE = 3
 
-// The thread's lone sender, or null when more than one person has written in it. Search results are
+// The thread's lone sending address, or null when more than one has written in it. Search results are
 // single messages with no conversation behind them, so their sender is all there is to go on.
+//
+// Distinct ADDRESSES, not the names the row goes by: a relay (Discourse, GitHub, Jira) gives every
+// writer the same address and its own display name, so one notification thread names as many people
+// as it had posters. Those are exactly the floods stacking exists to bury, and counting people here
+// would unstack them the moment a second one posted. What names the row and what identifies a flood
+// are different questions — the row wants people, the stack wants the machine sending them.
 const loneSenderOf = (thread: Thread): string | null => {
 	const emails = new Set(
 		(thread.messages ?? []).map((m) => (m.from_email ?? '').trim().toLowerCase()).filter(Boolean),
@@ -31,7 +37,7 @@ const loneSenderOf = (thread: Thread): string | null => {
  * loose enough to catch the real floods admits everything from a sender anyway, which is this rule with
  * extra machinery. So: one sender, nobody else in the thread, one day, three in a row.
  *
- * The moment a second person writes — you replying included — the thread is correspondence rather than
+ * The moment a second address writes — you replying included — the thread is correspondence rather than
  * a flood, and correspondence is never worth burying: it has an answer in it, and the row names a cast
  * a stack headed by one sender cannot stand for. Keying on the latest sender instead used to pile such
  * threads together under your own name, since the latest sender of anything you have answered is you.
