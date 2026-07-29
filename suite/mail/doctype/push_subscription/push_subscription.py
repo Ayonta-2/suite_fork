@@ -554,3 +554,7 @@ def has_permission_for_user(user: str, raise_exception: bool = True) -> bool:
 				),
 				frappe.PermissionError,
 			)
+
+		return False
+
+	return True
