@@ -44,9 +44,6 @@ import videoIcon from '../../../../../suite/public/drive/images/icons/video.svg'
 import applicationIcon from '../../../../../suite/public/drive/images/icons/application.svg'
 import archiveIcon from '../../../../../suite/public/drive/images/icons/archive.svg'
 import unknownIcon from '../../../../../suite/public/drive/images/icons/unknown.svg'
-// Native sheets get the Frappe Sheets brand logo rather than the generic
-// spreadsheet icon (which is shared with uploaded .xlsx/.csv).
-import sheetsLogo from '@/assets/app-logos/sheets.svg'
 
 const FILE_ICONS = {
   Folder: folderIcon,
@@ -298,18 +295,9 @@ export function getIconUrl(file_type) {
   return FILE_ICONS[file_type] ?? unknownIcon
 }
 
-// Entity-aware icon: native sheets show the Frappe Sheets brand logo; everything
-// else falls back to the generic file-type icon.
-export function getEntityIcon(entity) {
-  return isSheet(entity) ? sheetsLogo : getIconUrl(entity?.file_type)
-}
-
 // `src` is the thumbnail (images/videos/PDFs) or the icon; `fallback` is the icon.
-export function getThumbnailUrl(
-  { name, file_type, thumbnail, external, content_doctype },
-  view = 'list'
-) {
-  const fallback = getEntityIcon({ file_type: file_type ?? 'Presentation', content_doctype })
+export function getThumbnailUrl({ name, file_type, thumbnail, external }, view = 'list') {
+  const fallback = getIconUrl(file_type ?? 'Presentation')
   let src = ''
   if (external) src = view !== 'list' ? thumbnail : ''
   else if (['Image', 'Video', 'PDF'].includes(file_type))

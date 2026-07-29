@@ -219,12 +219,12 @@ doc_events = {
 		"on_trash": ["suite.drive.overrides.file.sync_content_file"],
 	},
 	"Sheet": {
-		# Remove the backing Drive File when a sheet is hard-deleted (the nightly
-		# purge / "delete forever" calls frappe.delete_doc). Title-sync is NOT an
-		# on_update handler here: a sheet's title is written via db.set_value
-		# (save_sheet / rename_sheet), which never fires on_update — so those
-		# paths call sync_content_file_title explicitly instead. Soft-trash is
-		# likewise a status flag, handled in the trash API.
+		# Same content-app wiring as Presentation: on_update mirrors title +
+		# soft-trash onto the backing Drive File, on_trash removes it on hard
+		# delete. Sheets routes its rename and trash/restore through doc.save so
+		# these fire; the high-frequency cell-data autosave stays on db.set_value
+		# (Drive doesn't track cell data) and deliberately fires nothing.
+		"on_update": ["suite.drive.overrides.file.sync_content_file"],
 		"on_trash": ["suite.drive.overrides.file.sync_content_file"],
 	},
 	"User": {

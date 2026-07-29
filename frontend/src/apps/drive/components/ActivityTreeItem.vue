@@ -28,7 +28,7 @@
       v-else-if="!strikeThrough"
       loading="lazy"
       class="h-full"
-      :src="getEntityIcon(entity)"
+      :src="getIconUrl(entity.file_type)"
       :draggable="false"
     />
     <span
@@ -39,7 +39,7 @@
   </div>
 </template>
 <script setup>
-import { getEntityIcon } from '@/apps/drive/utils/files'
+import { getIconUrl } from '@/apps/drive/utils/files'
 
 defineProps({
   title: {
