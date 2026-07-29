@@ -332,6 +332,11 @@ def fetch_contact_cards(
 def get_contact_cards(account: str, ids: list[str]) -> list[dict]:
 	"""Returns a list of contact cards for the provided IDs in the same order as ids."""
 
+	# Ownership has to be settled before the cache is read, not just before the fetch: the only
+	# check used to sit inside the "ids_to_fetch" branch, so a request whose ids were all cached
+	# returned another account's contacts without ever being authorized.
+	get_user_for_jmap_account(account, raise_exception=True)
+
 	cached_contact_cards = _get_cached_contact_cards(account, ids)
 
 	contact_cards = {}

@@ -303,6 +303,24 @@ def bulk_delete(names: str | list[str]) -> None:
 		accounts_map.setdefault(account, []).append(id)
 
 	for account, ids in accounts_map.items():
+		# SieveScript.delete() refuses to remove the active script, and validate() protects the
+		# read-only ones. Going straight to _delete_sieve_scripts skipped both, so one bulk call
+		# could drop the account's active script and silently disable all of its filtering.
+		for script in SieveScript._get_sieve_scripts(account, ids):
+			if script.get("active"):
+				frappe.throw(
+					_("Cannot delete the active sieve script {0}. Please deactivate it first.").format(
+						frappe.bold(script.get("_name") or script["id"])
+					)
+				)
+			if script.get("read_only"):
+				frappe.throw(
+					_("The '{0}' sieve script cannot be deleted.").format(
+						frappe.bold(script.get("_name") or script["id"])
+					),
+					title=_("Read-Only Sieve Script"),
+				)
+
 		SieveScript._delete_sieve_scripts(account, ids)
 
 	frappe.msgprint(_("Sieve Scripts deleted successfully."), alert=True)
@@ -521,8 +539,11 @@ def get_mailbox_automation_rules(account: str, mailbox_id: str) -> dict | None:
 def get_mailbox_path(account: str, mailbox_name: str, raise_exception: bool = False) -> str | None:
 	"""Returns the mailbox path for the given mailbox name in the given account."""
 
-	mailboxes = {mailbox["_name"]: mailbox for mailbox in get_mailboxes(account)}
-	if mailbox_name not in mailboxes:
+	mailboxes = get_mailboxes(account)
+	by_id = {mailbox["id"]: mailbox for mailbox in mailboxes}
+	by_name = {mailbox["_name"]: mailbox for mailbox in mailboxes}
+
+	if mailbox_name not in by_name:
 		if raise_exception:
 			frappe.throw(
 				_("Mailbox '{0}' not found in account '{1}'.").format(
@@ -533,16 +554,31 @@ def get_mailbox_path(account: str, mailbox_name: str, raise_exception: bool = Fa
 		return None
 
 	path_parts = []
-	current = mailboxes[mailbox_name]
+	current = by_name[mailbox_name]
+	# Walk by id, not by name: JMAP only requires a name to be unique among siblings, so resolving
+	# the parent by name picked the wrong mailbox when two share a leaf name - and looped forever
+	# when a mailbox sat under a same-named parent. `seen` also guards a malformed parent chain.
+	seen = set()
 
 	while current:
+		if current["id"] in seen:
+			if raise_exception:
+				frappe.throw(
+					_("Mailbox '{0}' in account '{1}' has a circular parent chain.").format(
+						frappe.bold(mailbox_name), frappe.bold(account)
+					),
+					title=_("Invalid Mailbox Hierarchy"),
+				)
+			return None
+
+		seen.add(current["id"])
 		path_parts.append(current["_name"])
+
 		parent_id = current.get("parent_id")
 		if not parent_id:
 			break
 
-		parent_name = get_mailbox_name_by_id(account, parent_id)
-		current = mailboxes.get(parent_name)
+		current = by_id.get(parent_id)
 
 		if current is None:
 			if raise_exception:
@@ -589,11 +625,11 @@ def rule_object_to_sieve(automation: dict, mailbox_path: str) -> str:
 	conditions = []
 
 	if emails_from:
-		email_list = ", ".join(f'"{email}"' for email in emails_from)
+		email_list = ", ".join(f'"{_escape_sieve_string(email)}"' for email in emails_from)
 		conditions.append(f'address :matches "from" [{email_list}]')
 
 	if subject_contains:
-		keyword_list = ", ".join(f'"{keyword}"' for keyword in subject_contains)
+		keyword_list = ", ".join(f'"{_escape_sieve_string(keyword)}"' for keyword in subject_contains)
 		conditions.append(f'header :contains "subject" [{keyword_list}]')
 
 	match_if = automation.get("match_if", "any")
@@ -706,8 +742,13 @@ def remove_sieve_block(script: str, block_name: str) -> str:
 
 
 def _escape_sieve_string(value: str) -> str:
-	"""Escape a value for embedding in a Sieve quoted string (RFC 5228): backslash then double-quote."""
+	"""Escape a value for embedding in a Sieve quoted string (RFC 5228): backslash then double-quote.
 
+	Line breaks are dropped as well, so a value carrying a newline cannot terminate the statement it
+	is embedded in.
+	"""
+
+	value = value.replace("\r", "").replace("\n", "")
 	return value.replace("\\", "\\\\").replace('"', '\\"')
 
 

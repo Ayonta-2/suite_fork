@@ -91,6 +91,7 @@ def user_context(user: str) -> Generator[None, None, None]:
 	session_user = frappe.session.user
 	session_sid = frappe.session.sid
 	session_data = frappe.session.data.copy()
+	form_dict = frappe.local.form_dict
 
 	if session_user == user:
 		yield
@@ -100,11 +101,14 @@ def user_context(user: str) -> Generator[None, None, None]:
 		frappe.set_user(user)
 		yield
 	finally:
-		# frappe.set_user() overwrites session.sid with the username and wipes session.data,
-		# so restore both alongside the user to avoid corrupting the original session.
+		# frappe.set_user() overwrites session.sid with the username and wipes session.data and
+		# form_dict, so restore all three alongside the user to avoid corrupting the original
+		# session. form_dict matters beyond tidiness: rate limiting keys its counter off
+		# form_dict.cmd, so leaving it emptied silently unlimits the rest of the request.
 		frappe.set_user(session_user)
 		frappe.session.sid = session_sid
 		frappe.session.data = session_data
+		frappe.local.form_dict = form_dict
 
 
 def snake_to_camel(input) -> str:

@@ -25,6 +25,7 @@ from frappe.utils import (
 	create_batch,
 	get_bench_path,
 	get_datetime,
+	get_files_path,
 	get_url,
 	now,
 	random_string,
@@ -52,7 +53,7 @@ from suite.mail.utils.validation import (
 	validate_maildir_or_maildirpp,
 	validate_nested_maildir_tree,
 )
-from suite.utils import reconnect_on_failure
+from suite.utils import log_error, reconnect_on_failure
 from suite.utils.dt import parse_iso_datetime
 from suite.utils.file import compress_directory, extract_compressed_file
 from suite.utils.permissions import OwnerFromUser
@@ -72,6 +73,25 @@ class ImportEmailMeta:
 	mailbox_ids: set[str]
 	keywords: set[str]
 	received_at: datetime
+
+
+def _safe_blob_id(blob_id: str) -> str:
+	"""Returns ``blob_id`` if it names a file directly inside ``blobs/``, else throws.
+
+	The id comes from the ``emails.json`` inside the uploaded archive, and the importer joins it onto
+	the extraction directory before opening it. A value like ``../../../../etc/passwd`` would
+	otherwise escape that directory and be imported as an email, so only bare filenames are allowed.
+	"""
+
+	if (
+		not blob_id
+		or blob_id in (".", "..")
+		or os.path.isabs(blob_id)
+		or os.path.basename(blob_id) != blob_id
+	):
+		frappe.throw(_("Invalid blobId {0} in the import metadata.").format(frappe.bold(str(blob_id))))
+
+	return blob_id
 
 
 @dataclass(slots=True)
@@ -171,7 +191,7 @@ class ImportMetadataLoader:
 		for meta in cls._load_json_metadata(base_dir):
 			result.append(
 				ImportEmailMeta(
-					blob_path=os.path.join("blobs", meta["blobId"]),
+					blob_path=os.path.join("blobs", _safe_blob_id(meta["blobId"])),
 					mailbox_ids=set(meta["mailboxIds"].keys()),
 					keywords=set(meta.get("keywords", {}).keys() or []),
 					received_at=parse_iso_datetime(meta["receivedAt"], as_str=False),
@@ -602,12 +622,35 @@ class MailExchange(OwnerFromUser, Document):
 				)
 			)
 
+		self._resolve_import_file()
+
 		if self.import_format in ("eml", "mbox", "maildir"):
 			meta = self.import_metadata_dict
 			if not meta.get("mailboxIds"):
 				frappe.throw(_("mailboxIds are required in Metadata for EML, MBOX, and Maildir formats."))
 		else:
 			self.import_metadata = json.dumps({})
+
+	def _resolve_import_file(self) -> str:
+		"""Resolves ``import_file`` to an absolute path, refusing anything outside the site's files
+		directories.
+
+		``import_file`` is an ``Attach`` URL (e.g. ``/private/files/mail.zip``) that the worker joins
+		onto the site path before copying/extracting it. Without this guard a crafted value such as
+		``/private/files/../../../etc/passwd`` would let the job read a file anywhere on the
+		filesystem, so we canonicalize the path and confirm it stays within the uploads area."""
+
+		path = os.path.realpath(
+			os.path.join(get_bench_path(), f"sites/{frappe.local.site}{self.import_file}")
+		)
+		allowed_roots = (
+			os.path.realpath(get_files_path(is_private=1)),
+			os.path.realpath(get_files_path(is_private=0)),
+		)
+		if not any(path == root or path.startswith(root + os.sep) for root in allowed_roots):
+			frappe.throw(_("Invalid import file path."))
+
+		return path
 
 	def validate_export(self) -> None:
 		"""Validate the export parameters."""
@@ -725,7 +768,7 @@ class MailExchange(OwnerFromUser, Document):
 		self._mark_started()
 		self._log_output(_("Starting import from the uploaded {0} file.").format(self.import_format.upper()))
 
-		import_file = os.path.join(get_bench_path(), f"sites/{frappe.local.site}{self.import_file}")
+		import_file = self._resolve_import_file()
 		base_dir = os.path.join(get_mail_import_directory(), self.name)
 		os.makedirs(base_dir, exist_ok=True)
 
@@ -825,7 +868,9 @@ class MailExchange(OwnerFromUser, Document):
 				fetched = len(emails)
 				unique_emails = {}
 				for e in emails:
-					key = e["messageId"][0]
+					# messageId is String[]|null - mail with no Message-ID header comes back null.
+					# Fall back to the email id so those are not all collapsed into one bucket.
+					key = (e.get("messageId") or [e["id"]])[0]
 					if key not in unique_emails:
 						unique_emails[key] = e
 				emails = list(unique_emails.values())
@@ -1043,7 +1088,7 @@ class MailExchange(OwnerFromUser, Document):
 						blob_id=e["blobId"],
 						keywords=set(e["keywords"].keys()),
 						mailbox_ids=set(e["mailboxIds"].keys()),
-						message_id=e.get("messageId", [""])[0],
+						message_id=(e.get("messageId") or [""])[0],
 						received_at=datetime.fromisoformat(e["receivedAt"]),
 						raw=data[e["blobId"]],
 					)
@@ -1210,8 +1255,19 @@ def retry_stuck_mail_exchanges() -> None:
 		.orderby(ME.queued_at, order=Order.asc)
 	).run(pluck="name")
 
+	# retry() throws for a document that no longer qualifies, and a scheduler job has no
+	# caller to surface that to - so isolate each one, or the first bad document silently
+	# strands every exchange queued behind it, run after run.
 	for exchange in exchanges:
-		frappe.get_doc("Mail Exchange", exchange).retry()
+		try:
+			frappe.get_doc("Mail Exchange", exchange).retry()
+		except Exception:
+			frappe.db.rollback()
+			log_error(
+				module="Mail",
+				title=f"Failed to retry stuck Mail Exchange {exchange}",
+				message=frappe.get_traceback(),
+			)
 
 
 def clean_import_export_directories() -> None:

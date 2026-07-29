@@ -70,7 +70,14 @@ class StoreEntry(Document):
 			record = _row(store, namespace, entity, key, entry["size"], value=_pretty(entry["value"]))
 		elif store == SEARCH_STORE:
 			entity, key = _split_search_key(namespace, key_part)
-			entry = _search_index(namespace, entity).read(key)
+			# A hand-crafted name can carry an entity the browser refuses; that is a missing
+			# record, not a server error.
+			try:
+				index = _search_index(namespace, entity)
+			except ValueError:
+				_not_found(self.name)
+
+			entry = index.read(key)
 			if entry is None:
 				_not_found(self.name)
 

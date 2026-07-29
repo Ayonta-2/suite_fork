@@ -62,7 +62,16 @@ def signup(
 		frappe.throw(_("Domain {0} is not allowed for signup.").format(domain))
 
 	with user_context("Administrator"):
-		add_member(username, domain, ["User"], False, email, first_name, last_name, password)
+		add_member(
+			username=username,
+			domain=domain,
+			is_admin=False,
+			send_invite=False,
+			backup_email=email,
+			first_name=first_name,
+			last_name=last_name,
+			password=password,
+		)
 
 
 @frappe.whitelist(allow_guest=True)

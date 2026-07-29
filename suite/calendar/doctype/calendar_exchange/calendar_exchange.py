@@ -20,6 +20,7 @@ from frappe.utils import (
 	create_batch,
 	get_bench_path,
 	get_datetime,
+	get_files_path,
 	get_url,
 	now,
 	random_string,
@@ -44,7 +45,7 @@ from suite.mail.utils.user import (
 	get_user_email_address,
 	is_jmap_configured,
 )
-from suite.utils import reconnect_on_failure
+from suite.utils import log_error, reconnect_on_failure
 from suite.utils.file import compress_directory, extract_compressed_file
 from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
@@ -248,11 +249,34 @@ class CalendarExchange(OwnerFromUser, Document):
 				)
 			)
 
+		self._resolve_import_file()
+
 		if self.import_metadata:
 			try:
 				self.import_metadata = json.dumps(json.loads(self.import_metadata), indent=4)
 			except json.JSONDecodeError:
 				frappe.throw(_("Metadata must be valid JSON."))
+
+	def _resolve_import_file(self) -> str:
+		"""Resolves ``import_file`` to an absolute path, refusing anything outside the site's files
+		directories.
+
+		``import_file`` is an ``Attach`` URL (e.g. ``/private/files/calendar.ics``) that the worker
+		joins onto the site path before copying/extracting it. Without this guard a crafted value
+		such as ``/private/files/../../../etc/passwd`` would let the job read a file anywhere on the
+		filesystem, so we canonicalize the path and confirm it stays within the uploads area."""
+
+		path = os.path.realpath(
+			os.path.join(get_bench_path(), f"sites/{frappe.local.site}{self.import_file}")
+		)
+		allowed_roots = (
+			os.path.realpath(get_files_path(is_private=1)),
+			os.path.realpath(get_files_path(is_private=0)),
+		)
+		if not any(path == root or path.startswith(root + os.sep) for root in allowed_roots):
+			frappe.throw(_("Invalid import file path."))
+
+		return path
 
 	def validate_export(self) -> None:
 		"""Validate the export parameters."""
@@ -370,7 +394,7 @@ class CalendarExchange(OwnerFromUser, Document):
 		self._mark_started()
 		self._log_output(_("Starting import from the uploaded {0} file.").format(self.import_format.upper()))
 
-		import_file = os.path.join(get_bench_path(), f"sites/{frappe.local.site}{self.import_file}")
+		import_file = self._resolve_import_file()
 		base_dir = os.path.join(get_calendar_import_directory(), self.name)
 		os.makedirs(base_dir, exist_ok=True)
 
@@ -1180,8 +1204,19 @@ def retry_stuck_calendar_exchanges() -> None:
 		.orderby(CE.queued_at, order=Order.asc)
 	).run(pluck="name")
 
+	# retry() throws for a document that no longer qualifies, and a scheduler job has no
+	# caller to surface that to - so isolate each one, or the first bad document silently
+	# strands every exchange queued behind it, run after run.
 	for exchange in exchanges:
-		frappe.get_doc("Calendar Exchange", exchange).retry()
+		try:
+			frappe.get_doc("Calendar Exchange", exchange).retry()
+		except Exception:
+			frappe.db.rollback()
+			log_error(
+				module="Calendar",
+				title=f"Failed to retry stuck Calendar Exchange {exchange}",
+				message=frappe.get_traceback(),
+			)
 
 
 def clean_calendar_import_export_directories() -> None:

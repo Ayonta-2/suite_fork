@@ -69,12 +69,42 @@ def check_admin_permission(action: str, target: Any = None) -> str:
 
 	user = frappe.session.user
 	if (not is_suite_admin(user) and not is_system_manager(user)) or not is_user_enabled(user):
-		frappe.throw(_("User {0} does not have permission to {1}.").format(frappe.bold(user), action))
+		frappe.throw(
+			_("User {0} does not have permission to {1}.").format(frappe.bold(user), action),
+			frappe.PermissionError,
+		)
 
 	if not action.startswith("view "):
 		log_admin_action(action, target)
 
 	return user
+
+
+def check_member_target(member_id: str) -> str:
+	"""Ensure ``member_id`` is a mail member the session user may act on, returning it.
+
+	The member endpoints save the target User with ``ignore_permissions=True``, which bypasses the
+	framework's own guard against editing Administrator and other standard users. Without this check
+	a Suite Admin - a role ordinary members get when created with ``is_admin`` - could name any User
+	at all and, via change_member_password, take over the Administrator account.
+
+	So the target must be a real mail member (the same predicate get_members lists on), never a
+	standard user, and never a System Manager unless the caller is one too.
+	"""
+
+	if not member_id or member_id in frappe.STANDARD_USERS:
+		frappe.throw(_("{0} is not a mail member.").format(frappe.bold(member_id)), frappe.PermissionError)
+
+	if not frappe.db.exists("User Settings", {"user": member_id, "username": ["is", "set"]}):
+		frappe.throw(_("{0} is not a mail member.").format(frappe.bold(member_id)), frappe.PermissionError)
+
+	if is_system_manager(member_id) and not is_system_manager(frappe.session.user):
+		frappe.throw(
+			_("You do not have permission to act on {0}.").format(frappe.bold(member_id)),
+			frappe.PermissionError,
+		)
+
+	return member_id
 
 
 def _get_stalwart_domain(domain_id: str) -> dict:
@@ -147,6 +177,8 @@ def get_domains(txt: str | None = None, is_enabled: bool | None = None) -> list[
 @frappe.whitelist()
 def get_domain(domain_id: str) -> dict:
 	"""Returns the details of a domain, including its DNS records parsed from the zone file"""
+
+	check_admin_permission("view domains")
 
 	def infer_category(record: dict) -> str:
 		"""Infers the category of the DNS record based on its type and name."""
@@ -243,6 +275,8 @@ def delete_domain(domain_id: str) -> None:
 def get_enabled_domains() -> list[str]:
 	"""Returns the list of enabled domains"""
 
+	check_admin_permission("view domains")
+
 	try:
 		return list(set([d["name"] for d in get_stalwart_domains() if d["isEnabled"]]))
 	except Exception:
@@ -253,6 +287,8 @@ def get_enabled_domains() -> list[str]:
 def get_domain_dns_zone(domain_id: str) -> str:
 	"""Returns the DNS zone file of the domain"""
 
+	check_admin_permission("view domains")
+
 	domain = _get_stalwart_domain(domain_id)
 	return domain["dnsZoneFile"]
 
@@ -260,6 +296,8 @@ def get_domain_dns_zone(domain_id: str) -> str:
 @frappe.whitelist()
 def get_domain_dns_csv(domain_id: str) -> str:
 	"""Returns the DNS records of the domain as a CSV string"""
+
+	check_admin_permission("view domains")
 
 	domain = _get_stalwart_domain(domain_id)
 	dns_records = parse_dns_zone_file(domain["dnsZoneFile"])
@@ -279,6 +317,8 @@ def get_domain_dns_csv(domain_id: str) -> str:
 @frappe.whitelist()
 def get_domain_dns_json(domain_id: str) -> str:
 	"""Returns the DNS records of the domain as a JSON object"""
+
+	check_admin_permission("view domains")
 
 	domain = _get_stalwart_domain(domain_id)
 	dns_records = parse_dns_zone_file(domain["dnsZoneFile"])
@@ -600,6 +640,7 @@ def delete_members(names: list) -> None:
 		frappe.throw(_("You cannot delete your own account."))
 
 	for name in names:
+		check_member_target(name)
 		frappe.delete_doc("User", name)
 
 
@@ -613,6 +654,7 @@ def disable_members(names: list) -> None:
 		frappe.throw(_("You cannot disable your own account."))
 
 	for name in names:
+		check_member_target(name)
 		member = frappe.get_doc("User", name)
 		if not member.enabled:
 			continue
@@ -628,6 +670,7 @@ def enable_members(names: list) -> None:
 	check_admin_permission("enable members", names)
 
 	for name in names:
+		check_member_target(name)
 		member = frappe.get_doc("User", name)
 		if member.enabled:
 			continue
@@ -646,6 +689,7 @@ def change_member_password(member_id: str, new_password: str) -> None:
 	"""
 
 	check_admin_permission("change member password", member_id)
+	check_member_target(member_id)
 
 	if not new_password:
 		frappe.throw(_("New password is required."))
@@ -747,6 +791,7 @@ def update_member(
 	"""Updates a member's role, display name, quota, locale and time zone on Frappe and Stalwart."""
 
 	check_admin_permission("update members", member_id)
+	check_member_target(member_id)
 
 	member = frappe.get_doc("User", member_id)
 
@@ -1850,7 +1895,6 @@ def get_queued_messages(
 	return {"messages": [_queue_row(m) for m in result["items"]], "total": result["total"]}
 
 
-@frappe.whitelist()
 def _recipient_detail(email: str, recipient: dict) -> dict:
 	"""Flattens a queued recipient (status/expiry unions included) into an editable row shape."""
 

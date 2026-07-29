@@ -19,7 +19,7 @@ from email.utils import formataddr, formatdate, make_msgid
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, get_datetime, now_datetime, strip_html_tags
+from frappe.utils import add_to_date, get_datetime, strip_html_tags
 
 from suite.calendar.doctype.calendar_event.ics import build_event_ics
 from suite.calendar.doctype.calendar_event.invite_templates import (
@@ -35,6 +35,7 @@ from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_event_service, get_identities
 from suite.utils import log_error
+from suite.utils.dt import get_utc_now
 
 # RSVP links stay valid until this long after the event starts.
 RSVP_GRACE_DAYS = 1
@@ -463,7 +464,10 @@ def _rsvp_expiry(event: dict) -> int:
 	expiry = (
 		add_to_date(start, days=RSVP_GRACE_DAYS)
 		if start
-		else add_to_date(now_datetime(), days=RSVP_FALLBACK_DAYS)
+		# get_utc_now() is offset-aware, so the timestamp below is a true UTC epoch - matching the
+		# start-derived branch, which is aware too. A naive now_datetime() would be resolved
+		# against the OS timezone instead of the site's.
+		else add_to_date(get_utc_now(), days=RSVP_FALLBACK_DAYS)
 	)
 
 	return int(get_datetime(expiry).timestamp())

@@ -107,6 +107,8 @@ class MailboxService(MailService):
 			if raise_exception:
 				raise ValueError(f"No mailbox found with role '{role}'")
 
+			return None
+
 		creation_id = str(uuid7())
 		mailbox = {
 			"creation_id": creation_id,
