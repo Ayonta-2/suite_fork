@@ -34,7 +34,7 @@ class PushSubscription(Document):
 		return types
 
 	def db_insert(self, *args, **kwargs) -> None:
-		self.id = add_push_subscription(
+		self.id = _add_push_subscription(
 			self.user,
 			self.device_client_id,
 			self.url,
@@ -137,9 +137,26 @@ def add_push_subscription(
 	device_client_id: str | None = None,
 	url: str | None = None,
 	types: list[str] | None = None,
-	ignore_permissions: bool = False,
 ) -> str:
 	"""Adds a push subscription subscription for the given user and returns the subscription ID."""
+
+	return _add_push_subscription(user, device_client_id, url, types)
+
+
+def _add_push_subscription(
+	user: str,
+	device_client_id: str | None = None,
+	url: str | None = None,
+	types: list[str] | None = None,
+	ignore_permissions: bool = False,
+) -> str:
+	"""Internal worker for :func:`add_push_subscription`.
+
+	``ignore_permissions`` is deliberately kept off the whitelisted wrapper: frappe binds request
+	parameters onto a whitelisted function's named arguments, so exposing it would let any caller
+	turn off the ownership check and register an attacker-controlled callback URL against another
+	user's account.
+	"""
 
 	if not ignore_permissions:
 		has_permission_for_user(user, raise_exception=True)
