@@ -225,13 +225,16 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
 
 	conversations = fetch_threads(account, filter, start, limit)
 
-	trash_mailbox = get_mailbox_id_by_role(account, "trash")
-	junk_mailbox = get_mailbox_id_by_role(account, "junk")
+	# Four roles are needed below, so they come off one cached mailbox list rather than a lookup each:
+	# every `get_mailbox_id_by_role` resolves the account's user and connection again on the way in.
+	ids_by_role = {
+		(m.get("role") or "").lower(): m["id"] for m in get_mailbox_service(account).mailboxes
+	}
+	trash_mailbox = ids_by_role.get("trash")
+	junk_mailbox = ids_by_role.get("junk")
 	# Sent and Drafts are about the message you wrote, so their rows follow the latest message in the
 	# folder itself; every other view follows the conversation's most recent activity.
-	outgoing_mailboxes = {
-		mb for mb in (get_mailbox_id_by_role(account, "sent"), get_mailbox_id_by_role(account, "drafts")) if mb
-	}
+	outgoing_mailboxes = {ids_by_role[role] for role in ("sent", "drafts") if role in ids_by_role}
 	user_emails = {e.lower() for e in get_account_emails(account)}
 
 	threads = []
