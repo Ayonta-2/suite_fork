@@ -560,9 +560,13 @@
 
         <!-- Filter by values -->
         <template v-if="filterPanel.mode === 'values'">
+          <!-- When a search is active these act on the *shown* matches only
+               (Google-Sheets behaviour). Relabel so it's obvious — otherwise
+               "Clear" during a search reads as "clear everything" and silently
+               leaves the hidden values checked. -->
           <div class="sn-fp-vlinks">
-            <Button variant="ghost" size="sm" label="Select all" @click="selectAllFilterValues" />
-            <Button variant="ghost" size="sm" label="Clear" @click="clearAllFilterValues" />
+            <Button variant="ghost" size="sm" :label="valueSearchActive ? 'Select shown' : 'Select all'" @click="selectAllFilterValues" />
+            <Button variant="ghost" size="sm" :label="valueSearchActive ? 'Clear shown'  : 'Clear'"      @click="clearAllFilterValues" />
             <span class="sn-fp-count">Displaying {{ filterPanel.valueSet.size }}</span>
           </div>
           <FormControl
@@ -1233,6 +1237,7 @@ import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
 import { autoCloseKey } from '../../utils/formula-autoclose.js'
+import { overlayRectStyle } from '../../utils/overlay-rect.js'
 import { isCanvasClipboardTarget } from '../../utils/clipboard-target.js'
 import { computeFillDown, computeFillRight } from '../../engine/fill-series.js'
 import { detectSeries }                       from '../../engine/patterns/index.js'
@@ -2019,6 +2024,10 @@ const filteredFilterValues = computed(() => {
   return filterPanel.allValues.filter(v => String(v).toLowerCase().includes(q))
 })
 
+// True while the value search box narrows the list — Select all / Clear then
+// act on the shown subset, so their labels change to say so.
+const valueSearchActive = computed(() => filterPanel.valueSearch.trim() !== '')
+
 function toggleFilterValue(v) {
   if (filterPanel.valueSet.has(v)) filterPanel.valueSet.delete(v)
   else                             filterPanel.valueSet.add(v)
@@ -2710,23 +2719,16 @@ const filterHighlightStyle = computed(() => {
   const br = grid.getCellRect?.(r1, c1)
   if (!tl || !br) return null
   const zoom    = grid.getZoom?.() ?? 1
-  const headerY = COL_HEADER_H * zoom
-  const headerX = ROW_HEADER_W * zoom
-  const right   = br.x + br.width
-  const bottom  = br.y + br.height
-  // No viewport clamp: when the range runs past the viewport the far borders
-  // sit off-screen and the grid-wrap's overflow:hidden clips them (no frame at
-  // the edge); the opaque scrollbar (z-index 16) covers any border landing in
-  // its gutter while it's visible.
-  if (bottom <= headerY || right <= headerX) return null
-  const top  = Math.max(tl.y, headerY)
-  const left = Math.max(tl.x, headerX)
-  return {
-    top:    top  + 'px',
-    left:   left + 'px',
-    width:  (right  - left) + 'px',
-    height: (bottom - top)  + 'px',
-  }
+  // `|| Infinity` treats a 0/undefined viewport (before the first layout) as
+  // "unclamped" — a 0 would otherwise collapse the overlay to nothing.
+  const vp    = grid.getViewportSize?.()
+  const viewW = vp?.w || Infinity
+  const viewH = vp?.h || Infinity
+  return overlayRectStyle(tl, br, {
+    headerX: ROW_HEADER_W * zoom,
+    headerY: COL_HEADER_H * zoom,
+    viewW, viewH,
+  })
 })
 
 // Per-sub-sheet peer dots — small colored circles next to each tab label
@@ -3280,6 +3282,13 @@ function _setupGridInstance() {
   grid.onRender(() => { renderVersion.value++ })
 }
 
+function _pinGridWrapScroll() {
+  const wrap = gridWrapRef.value
+  if (!wrap) return
+  if (wrap.scrollTop)  wrap.scrollTop = 0
+  if (wrap.scrollLeft) wrap.scrollLeft = 0
+}
+
 function _setupEventListeners() {
   canvasRef.value.addEventListener('contextmenu', _onCanvasContextMenu)
   // computeSelectionStats fires from the grid's onSelect callback on every
@@ -3291,6 +3300,12 @@ function _setupEventListeners() {
     grid.resize(width, height)
   })
   ro.observe(gridWrapRef.value)
+  // Safety net: the grid-wrap must never scroll natively — all scrolling flows
+  // through the canvas + custom scrollbars, so its scrollTop/Left are meant to
+  // stay 0. An overlay taller/wider than the viewport can still give it
+  // scrollable overflow, and a stray focus/scrollIntoView then scrolls it,
+  // dragging the canvas off-position. Pin it back the instant that happens.
+  gridWrapRef.value.addEventListener('scroll', _pinGridWrapScroll, { passive: true })
   window.addEventListener('keydown',      onGlobalKey)
   window.addEventListener('beforeunload', onBeforeUnloadGuard)
   document.addEventListener('paste',     onDocPaste)
@@ -3380,6 +3395,7 @@ onBeforeUnmount(() => {
     saveExisting(props.id, currentTitle.value, { keepalive: true })
   }
   window.removeEventListener('beforeunload', onBeforeUnloadGuard)
+  gridWrapRef.value?.removeEventListener('scroll', _pinGridWrapScroll)
   ro?.disconnect()
   grid?.destroy()
   window.removeEventListener('keydown', onGlobalKey)
