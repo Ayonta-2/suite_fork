@@ -16,7 +16,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import escape_html, now_datetime
 
 from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
@@ -89,7 +89,10 @@ def resolve_rsvp(token: str) -> dict:
 		"state": state,
 		"title": heading,
 		"message": sub,
-		"event_title": (event or {}).get("title") or "",
+		# The title is organizer-supplied and lands in the guest RSVP page, which frappe renders
+		# through a Jinja environment built without autoescaping - so escape it here rather than
+		# relying on the template.
+		"event_title": escape_html((event or {}).get("title") or ""),
 		"event_when": _format_event_when(event) if event else "",
 	}
 
