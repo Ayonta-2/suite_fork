@@ -69,7 +69,10 @@ def check_admin_permission(action: str, target: Any = None) -> str:
 
 	user = frappe.session.user
 	if (not is_suite_admin(user) and not is_system_manager(user)) or not is_user_enabled(user):
-		frappe.throw(_("User {0} does not have permission to {1}.").format(frappe.bold(user), action))
+		frappe.throw(
+			_("User {0} does not have permission to {1}.").format(frappe.bold(user), action),
+			frappe.PermissionError,
+		)
 
 	if not action.startswith("view "):
 		log_admin_action(action, target)
