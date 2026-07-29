@@ -668,7 +668,7 @@ def get_mime_message(name: str) -> dict:
 
 	result = {
 		"message": doc.message or doc.get_mime_message(),
-		"message_id": {"label": _("Message ID"), "value": doc.message_id},
+		"message_id": {"label": _("Message ID"), "value": f"<{doc.message_id}>"},
 		"created_at": {
 			"label": _("Created at"),
 			"value": _("{0} (Delivered after {1} seconds)").format(
@@ -687,11 +687,20 @@ def get_mime_message(name: str) -> dict:
 		result["spf"] = {
 			"label": _("SPF"),
 			"value": _("{0} with IP {1}").format(pass_or_fail[doc.spf_pass], doc.from_ip),
+			"description": doc.spf_description,
 		}
 	if doc.dkim_description:
-		result["dkim"] = {"label": _("DKIM"), "value": pass_or_fail[doc.dkim_pass]}
+		result["dkim"] = {
+			"label": _("DKIM"),
+			"value": pass_or_fail[doc.dkim_pass],
+			"description": doc.dkim_description,
+		}
 	if doc.dmarc_description:
-		result["dmarc"] = {"label": _("DMARC"), "value": pass_or_fail[doc.dmarc_pass]}
+		result["dmarc"] = {
+			"label": _("DMARC"),
+			"value": pass_or_fail[doc.dmarc_pass],
+			"description": doc.dmarc_description,
+		}
 
 	return result
 
