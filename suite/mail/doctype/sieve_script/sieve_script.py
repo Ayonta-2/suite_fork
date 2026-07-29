@@ -303,6 +303,24 @@ def bulk_delete(names: str | list[str]) -> None:
 		accounts_map.setdefault(account, []).append(id)
 
 	for account, ids in accounts_map.items():
+		# SieveScript.delete() refuses to remove the active script, and validate() protects the
+		# read-only ones. Going straight to _delete_sieve_scripts skipped both, so one bulk call
+		# could drop the account's active script and silently disable all of its filtering.
+		for script in SieveScript._get_sieve_scripts(account, ids):
+			if script.get("active"):
+				frappe.throw(
+					_("Cannot delete the active sieve script {0}. Please deactivate it first.").format(
+						frappe.bold(script.get("_name") or script["id"])
+					)
+				)
+			if script.get("read_only"):
+				frappe.throw(
+					_("The '{0}' sieve script cannot be deleted.").format(
+						frappe.bold(script.get("_name") or script["id"])
+					),
+					title=_("Read-Only Sieve Script"),
+				)
+
 		SieveScript._delete_sieve_scripts(account, ids)
 
 	frappe.msgprint(_("Sieve Scripts deleted successfully."), alert=True)
