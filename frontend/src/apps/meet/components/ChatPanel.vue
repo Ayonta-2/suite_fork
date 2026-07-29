@@ -28,7 +28,7 @@
 					</div>
 				</div>
 
-				<div ref="listEl" class="flex-1 overflow-y-auto px-3 py-7" data-testid="chat-messages">
+				<div ref="listEl" class="flex-1 overflow-y-auto px-3 py-7">
 					<div class="flex flex-col gap-5">
 						<template v-for="item in chatItems" :key="item.key">
 							<div
@@ -115,7 +115,6 @@
 					<template v-if="canSendMessages">
 						<div
 							class="chat-composer relative flex cursor-text items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-2.5 py-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-outline-gray-3 focus-within:shadow-[0_0_0_1px_var(--outline-gray-3)]"
-							data-testid="chat-input-wrapper"
 							@click="focusInput"
 						>
 							<div
@@ -156,7 +155,6 @@
 								rows="1"
 								placeholder="Type a message"
 								class="chat-composer-input min-w-0 flex-1 resize-none border-0 bg-transparent py-0 text-sm leading-5 text-ink-gray-8 tracking-[0.28px] shadow-none outline-none ring-0 placeholder:text-ink-gray-5 focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
-								data-testid="chat-input"
 								@input="onInput"
 								@keydown="onKeydown"
 							/>
@@ -165,8 +163,7 @@
 								variant="subtle"
 								theme="gray"
 								class="!h-7 !w-7 shrink-0 !rounded-md p-0"
-								aria-label="Send message"
-								data-testid="chat-send"
+								label="Send message"
 							>
 								<template #icon>
 									<lucide-send class="h-4 w-4" />

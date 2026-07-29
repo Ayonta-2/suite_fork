@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { resolve } from "node:path";
 
 const baseURL = process.env.BASE_URL ?? "http://localhost:8098";
 const isCI = !!process.env.CI;
@@ -8,6 +9,7 @@ export default defineConfig({
 	// Calls share a local SFU, so run serially; CI shards jobs independently.
 	fullyParallel: !isCI,
 	forbidOnly: isCI,
+	outputDir: resolve(__dirname, "test-results"),
 	retries: isCI ? 2 : 0,
 	workers: 1,
 	maxFailures: isCI ? 3 : undefined,
@@ -19,10 +21,13 @@ export default defineConfig({
 		? [
 				["list"],
 				["github"],
-				["html", { open: "never" }],
-				["junit", { outputFile: "results.xml" }],
+				["html", { open: "never", outputFolder: resolve(__dirname, "playwright-report") }],
+				["junit", { outputFile: resolve(__dirname, "results.xml") }],
 			]
-		: [["list"], ["html", { open: "never" }]],
+		: [
+				["list"],
+				["html", { open: "never", outputFolder: resolve(__dirname, "playwright-report") }],
+			],
 	use: {
 		baseURL,
 		trace: "on-first-retry",

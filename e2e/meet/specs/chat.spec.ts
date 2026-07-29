@@ -17,15 +17,15 @@ test.describe("Chat", () => {
 			`Guest Chat ${test.info().parallelIndex}`,
 		);
 
-		await hostPage.getByTestId("toolbar-chat").click();
-		await hostPage.getByTestId("chat-input-wrapper").click();
-		const hostChatInput = hostPage.getByTestId("chat-input");
+		await hostPage.getByRole("button", { name: "Show Chat" }).click();
+		const hostChatInput = hostPage.getByPlaceholder("Type a message");
+		await hostChatInput.click();
 		await expect(hostChatInput).toBeFocused();
 		await hostChatInput.fill(message);
-		await hostPage.getByTestId("chat-send").click();
+		await hostPage.getByRole("button", { name: "Send message" }).click();
 
-		await guest.page.getByTestId("toolbar-chat").click();
-		await expect(guest.page.getByTestId("chat-messages")).toContainText(message);
+		await guest.page.getByRole("button", { name: "Show Chat" }).click();
+		await expect(guest.page.getByText(message, { exact: true })).toBeVisible();
 	});
 
 	test("unread badge appears when chat is closed and clears when opened", async ({
@@ -44,19 +44,19 @@ test.describe("Chat", () => {
 			`Guest Unread ${test.info().parallelIndex}`,
 		);
 
-		const chatButton = hostPage.getByTestId("toolbar-chat");
+		const chatButton = hostPage.getByRole("button", { name: "Show Chat" });
 		const unreadBadge = hostPage.getByTestId("toolbar-chat-unread");
 
 		await expect(unreadBadge).toHaveCount(0);
 
-		await guest.page.getByTestId("toolbar-chat").click();
-		await guest.page.getByTestId("chat-input").fill(message);
-		await guest.page.getByTestId("chat-send").click();
+		await guest.page.getByRole("button", { name: "Show Chat" }).click();
+		await guest.page.getByPlaceholder("Type a message").fill(message);
+		await guest.page.getByRole("button", { name: "Send message" }).click();
 
 		await expect(unreadBadge).toHaveCount(1);
 
 		await chatButton.click();
-		await expect(hostPage.getByTestId("chat-messages")).toContainText(message);
+		await expect(hostPage.getByText(message, { exact: true })).toBeVisible();
 		await expect(unreadBadge).toHaveCount(0);
 	});
 });

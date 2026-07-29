@@ -86,6 +86,7 @@
         :button="{
           variant: 'ghost',
           icon: LucideMoreHorizontal,
+          label: 'Document actions',
         }"
       />
     </div>

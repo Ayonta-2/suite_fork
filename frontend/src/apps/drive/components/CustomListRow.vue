@@ -2,6 +2,7 @@
   <template v-for="row in rows" :key="row.name">
     <ListRow
       :row="row"
+      :data-testid="`drive-entity-${row.name}`"
       class="group"
       :class="[
         row.name === selectedName || selections.has(row.name)

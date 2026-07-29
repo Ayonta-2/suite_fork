@@ -151,6 +151,7 @@ onMounted(() => {
       }
     },
   })
+  dropzone.value.hiddenFileInput.dataset.testid = 'drive-file-input'
 
   dropzone.value.on('addedfile', function (file) {
     file.parent = currentFolder.value.name

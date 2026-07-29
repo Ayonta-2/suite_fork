@@ -17,7 +17,6 @@
 				<ToolbarButton
 					:variant="isMicOn ? 'default' : 'muted'"
 					:title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
-					test-id="preview-toolbar-microphone"
 					@click="$emit('toggle-microphone')"
 				>
 					<MeetMicIcon v-if="isMicOn" />
@@ -28,7 +27,6 @@
 				<ToolbarButton
 					:variant="isCameraOn ? 'default' : 'muted'"
 					:title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
-					test-id="preview-toolbar-camera"
 					@click="$emit('toggle-camera')"
 				>
 					<MeetCameraIcon v-if="isCameraOn" />
@@ -39,7 +37,6 @@
 				<ToolbarButton
 					v-if="cameraPermissionGranted || microphonePermissionGranted"
 					title="Settings"
-					test-id="preview-toolbar-settings"
 					@click="showSettingsDialog = true"
 				>
 					<MeetSettingsIcon />

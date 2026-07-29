@@ -6,7 +6,7 @@ import {
 	type Page,
 } from "@playwright/test";
 import { STUB_MEDIA_SCRIPT } from "./media";
-import { loginViaApi } from "../helpers/auth";
+import { loginViaApi } from "../../shared/auth";
 import {
 	clearMeetingCreateRateLimit,
 	createMeetingViaApi,
@@ -48,14 +48,14 @@ async function waitForMeetingReady(page: Page): Promise<void> {
 		state: "visible",
 		timeout: meetingReadyTimeout,
 	});
-	await expect(page.getByTestId("meeting-toolbar")).toBeVisible();
-	await expect(page.getByTestId("toolbar-end-call")).toBeVisible();
+	await expect(page.getByRole("toolbar", { name: "Meeting controls" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "End Call" })).toBeVisible();
 }
 
 async function joinFromPreview(page: Page): Promise<void> {
-	const preview = page.getByTestId("meeting-preview");
+	const preview = page.getByRole("heading", { name: "Ready to join?" });
 	const meetingLayout = page.getByTestId("meeting-layout");
-	const joinButton = page.getByTestId("join-meeting-preview-button");
+	const joinButton = page.getByRole("button", { name: "Join Meeting" });
 
 	await expect(preview.or(meetingLayout)).toBeVisible({ timeout: previewTimeout });
 
@@ -101,7 +101,10 @@ async function createMeetingViaUi(
 	page: Page,
 	meetingType: MeetingType = "open",
 ): Promise<string> {
-	await page.getByTestId("home-page").waitFor({ state: "visible", timeout: 20_000 });
+	await page.getByRole("button", { name: "Instant meet" }).waitFor({
+		state: "visible",
+		timeout: 20_000,
+	});
 
 	if (meetingType === "open") {
 		await page.getByRole("button", { name: "Instant meet" }).click();
@@ -134,13 +137,13 @@ async function buildParticipant(browser: Browser): Promise<Participant> {
 		},
 		async joinAsGuest(meetingId: string, guestName: string) {
 			await page.goto(appUrl(`/meet/${meetingId}`));
-			await expect(page.getByTestId("meeting-preview")).toBeVisible({
+			await expect(page.getByRole("heading", { name: "Ready to join?" })).toBeVisible({
 				timeout: previewTimeout,
 			});
 			const guestNameInput = page.getByPlaceholder("John Doe");
 			await guestNameInput.fill(guestName);
 			await expect(guestNameInput).toHaveValue(guestName);
-			await expect(page.getByTestId("join-meeting-preview-button")).toBeEnabled({
+			await expect(page.getByRole("button", { name: "Join Meeting" })).toBeEnabled({
 				timeout: previewTimeout,
 			});
 			await joinFromPreview(page);
@@ -152,7 +155,7 @@ async function buildParticipant(browser: Browser): Promise<Participant> {
 			await joinFromPreview(page);
 		},
 		async endCall() {
-			await page.getByTestId("toolbar-end-call").click();
+			await page.getByRole("button", { name: "End Call" }).click();
 			await page.waitForURL(/\/meet\/?$/);
 		},
 	};

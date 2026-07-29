@@ -16,16 +16,16 @@ test.describe("Reactions and raise hand", () => {
 			`Guest Engage ${test.info().parallelIndex}`,
 		);
 
-		await guest.page.getByTestId("toolbar-reactions").click();
+		await guest.page.getByRole("button", { name: "Reactions" }).click();
 		await guest.page.getByLabel("Send 👍 reaction").click();
 
 		await expect(hostPage.locator("[aria-label^='Reaction 👍']")).toBeVisible();
 
-		await guest.page.getByTestId("toolbar-reactions").click();
-		await guest.page.getByTestId("toolbar-raise-hand").click();
+		await guest.page.getByRole("button", { name: "Reactions" }).click();
+		await guest.page.getByRole("button", { name: "Raise Hand" }).click();
 
 		await expect(hostPage.locator("[aria-label*='has raised their hand']")).toBeVisible();
-		await hostPage.getByTestId("toolbar-people").click();
+		await hostPage.getByRole("button", { name: "Show Participants" }).click();
 		await expect(
 			hostPage.getByTestId("people-panel").locator("[title*='has raised their hand']"),
 		).toBeVisible();

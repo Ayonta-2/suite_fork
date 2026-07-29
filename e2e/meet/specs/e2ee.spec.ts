@@ -27,7 +27,7 @@ async function expectParticipantsAndVideo(
 }
 
 async function openMeetingAccessSettings(page: Page): Promise<void> {
-	await page.getByTestId("toolbar-more").click();
+	await page.getByRole("button", { name: "More options" }).click();
 	await page.getByRole("menuitem", { name: "Settings" }).click();
 	// Tab renamed to "Controls"; SettingsNavItem is role=tab (frappe-ui TabsTrigger)
 	await page.getByRole("tab", { name: "Controls" }).click();
@@ -48,7 +48,7 @@ async function enableE2EEInSettings(page: Page): Promise<void> {
 }
 
 async function openMeetingInformation(page: Page): Promise<void> {
-	await page.getByTestId("toolbar-more").click();
+	await page.getByRole("button", { name: "More options" }).click();
 	await page.getByRole("menuitem", { name: "Meeting information" }).click();
 }
 
@@ -70,7 +70,7 @@ async function expectScreenShareReceiving(page: Page): Promise<void> {
 
 async function clickScreenShare(page: Page): Promise<void> {
 	await page
-		.getByTestId("toolbar-screen-share")
+		.getByRole("button", { name: "Toggle Screen Share" })
 		.evaluate((button) => (button as HTMLButtonElement).click());
 }
 
@@ -211,7 +211,9 @@ test.describe("E2EE", () => {
 		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(1, {
 			timeout: 30_000,
 		});
-		await expect(guest.page.getByTestId("meeting-toolbar")).toBeVisible();
+		await expect(
+			guest.page.getByRole("toolbar", { name: "Meeting controls" }),
+		).toBeVisible();
 
 		const hostErrors = capturePageErrors(hostPage, ["request_consumer_keyframe"]);
 		const guestErrors = capturePageErrors(guest.page, ["request_consumer_keyframe"]);

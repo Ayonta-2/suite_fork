@@ -15,11 +15,11 @@ test.describe("Host controls", () => {
 			.locator("[data-testid^='participant-tile-guest_']")
 			.first();
 		if ((await guestSelfTile.getAttribute("data-audio-enabled")) === "false") {
-			await guest.page.getByTestId("toolbar-microphone").click();
+			await guest.page.getByRole("button", { name: /Toggle Audio/ }).click();
 			await expect(guestSelfTile).toHaveAttribute("data-audio-enabled", "true");
 		}
 
-		await hostPage.getByTestId("toolbar-people").click();
+		await hostPage.getByRole("button", { name: "Show Participants" }).click();
 		await expect(hostPage.getByTestId("people-panel")).toBeVisible();
 
 		const guestRow = hostPage
@@ -57,7 +57,7 @@ test.describe("Host controls", () => {
 
 		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
-		await hostPage.getByTestId("toolbar-people").click();
+		await hostPage.getByRole("button", { name: "Show Participants" }).click();
 		await expect(hostPage.getByTestId("people-panel")).toBeVisible();
 
 		const guestRow = hostPage

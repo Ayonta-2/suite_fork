@@ -83,6 +83,9 @@ def create_drive_settings_and_team(user, method: str | None = None) -> None:
 	"""Create Drive Settings and a personal team for a newly created User."""
 	from suite.drive.api.product import create_team
 
+	if user.flags.get("skip_drive_setup"):
+		return
+
 	user_name = user.name
 
 	if not user_name or user_name in ("Guest", "Administrator"):
