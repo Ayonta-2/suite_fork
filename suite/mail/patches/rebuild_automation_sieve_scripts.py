@@ -51,6 +51,10 @@ def _rebuild_automation_sieve_scripts(accounts: list[str]) -> None:
 	"""Rebuild each account's automation script inline, isolating per-account failures."""
 
 	for account in accounts:
+		# The job runs async after the fan-out committed, so an account can vanish in between.
+		if not account or not frappe.db.exists("JMAP Account", account):
+			continue
+
 		try:
 			# activate=False on purpose: this refreshes the script's content only. Activating here
 			# would override an account whose active script is the vacation auto-responder or one
@@ -72,12 +76,19 @@ def get_accounts_with_automation_rules() -> list[str]:
 	account has none, so rebuilding indiscriminately would conjure an empty script onto every
 	account on the site. Only mailboxes carrying a sender or subject condition contribute generated
 	content, and those are exactly the accounts either bug could have affected.
+
+	Joined to JMAP Account because Mailbox Settings carries stale rows from before the
+	shared-per-account reshape — account values in the legacy ``user@domain:accountid`` format, or
+	empty — and rebuilding those fails with "JMAP account does not exist".
 	"""
 
 	MAILBOX_SETTINGS = frappe.qb.DocType("Mailbox Settings")
+	JMAP_ACCOUNT = frappe.qb.DocType("JMAP Account")
 
 	return (
 		frappe.qb.from_(MAILBOX_SETTINGS)
+		.inner_join(JMAP_ACCOUNT)
+		.on(MAILBOX_SETTINGS.account == JMAP_ACCOUNT.name)
 		.where(
 			(MAILBOX_SETTINGS.emails_from.isnotnull() & (MAILBOX_SETTINGS.emails_from != ""))
 			| (MAILBOX_SETTINGS.subject_contains.isnotnull() & (MAILBOX_SETTINGS.subject_contains != ""))
