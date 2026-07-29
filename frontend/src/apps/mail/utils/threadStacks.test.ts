@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import { buildListRows, stackKeyOf } from './threadStacks'
 
-import type { Thread } from '@/apps/mail/types'
+import type { Mail, Thread } from '@/apps/mail/types'
 
-const participant = (email: string, is_self = false) => ({ name: '', email, is_self })
+const message = (from_email: string, from_name = '') => ({ from_email, from_name }) as Mail
 
 const thread = (overrides: Partial<Thread> = {}): Thread =>
 	({
@@ -13,7 +13,7 @@ const thread = (overrides: Partial<Thread> = {}): Thread =>
 		thread_id: 't1',
 		from_email: 'alerts@uptimerobot.com',
 		from_name: 'UptimeRobot',
-		participants: [participant('alerts@uptimerobot.com')],
+		messages: [message('alerts@uptimerobot.com', 'UptimeRobot')],
 		subject: 'Monitor is UP: preview.frappe.cloud/',
 		received_at: '2026-07-16 10:00:00',
 		seen: 0,
@@ -25,7 +25,7 @@ const answered = (overrides: Partial<Thread> = {}) =>
 	thread({
 		from_email: 'vibhav@frappe.io',
 		from_name: 'Vibhav Katre',
-		participants: [participant('alerts@uptimerobot.com'), participant('vibhav@frappe.io', true)],
+		messages: [message('alerts@uptimerobot.com'), message('vibhav@frappe.io', 'Vibhav Katre')],
 		...overrides,
 	})
 
@@ -57,34 +57,34 @@ describe('stackKeyOf', () => {
 	})
 
 	it('separates different senders', () => {
-		expect(stackKeyOf(thread({ participants: [participant('a@x.com')] }))).not.toBe(
-			stackKeyOf(thread({ participants: [participant('b@x.com')] })),
+		expect(stackKeyOf(thread({ messages: [message('a@x.com')] }))).not.toBe(
+			stackKeyOf(thread({ messages: [message('b@x.com')] })),
 		)
 	})
 
 	it('returns null once a second person has written, so the thread never stacks', () => {
 		// A thread with an answer in it is correspondence, not a flood — whoever wrote the answer.
 		expect(stackKeyOf(answered())).toBeNull()
-		const two = [participant('alerts@uptimerobot.com'), participant('neha@frappe.io')]
-		expect(stackKeyOf(thread({ participants: two }))).toBeNull()
+		const two = [message('alerts@uptimerobot.com'), message('neha@frappe.io')]
+		expect(stackKeyOf(thread({ messages: two }))).toBeNull()
 	})
 
 	it('is case- and whitespace-insensitive about the sender', () => {
-		expect(stackKeyOf(thread({ participants: [participant('  Alerts@UptimeRobot.com ')] }))).toBe(
-			stackKeyOf(thread({ participants: [participant('alerts@uptimerobot.com')] })),
+		expect(stackKeyOf(thread({ messages: [message('  Alerts@UptimeRobot.com ')] }))).toBe(
+			stackKeyOf(thread({ messages: [message('alerts@uptimerobot.com')] })),
 		)
 	})
 
 	it('falls back to the sender for rows with no thread behind them', () => {
-		// Search results are single messages: no participant list, so the sender is all there is to key on.
-		expect(stackKeyOf(thread({ participants: undefined, from_email: 'a@x.com' }))).not.toBe(
-			stackKeyOf(thread({ participants: undefined, from_email: 'b@x.com' })),
+		// Search results are single messages: no conversation, so the sender is all there is to key on.
+		expect(stackKeyOf(thread({ messages: undefined, from_email: 'a@x.com' }))).not.toBe(
+			stackKeyOf(thread({ messages: undefined, from_email: 'b@x.com' })),
 		)
-		expect(stackKeyOf(thread({ participants: undefined }))).toBe(stackKeyOf(thread()))
+		expect(stackKeyOf(thread({ messages: undefined }))).toBe(stackKeyOf(thread()))
 	})
 
 	it('returns null without a sender, so such threads never stack', () => {
-		expect(stackKeyOf(thread({ participants: [], from_email: '' }))).toBeNull()
+		expect(stackKeyOf(thread({ messages: [], from_email: '' }))).toBeNull()
 	})
 
 	it('separates the same sender across accounts', () => {
@@ -123,7 +123,7 @@ describe('buildListRows', () => {
 
 	it('breaks a run at a different sender and preserves order', () => {
 		const [a, b, c, d] = run(4)
-		const other = thread({ name: 'other', participants: [participant('hey@posthog.com')] })
+		const other = thread({ name: 'other', messages: [message('hey@posthog.com')] })
 		const rows = buildListRows([a, b, other, c, d], rowOptions)
 		expect(rows.map((r) => r.type)).toEqual(['thread', 'thread', 'thread', 'thread', 'thread'])
 		expect(rows.map((r) => r.key)).toEqual(['m0', 'm1', 'other', 'm2', 'm3'])
@@ -132,7 +132,7 @@ describe('buildListRows', () => {
 	it('never stacks threads more than one person has written in, however alike they are', () => {
 		// Same two people, same day, three in a row — still three conversations, never a pile.
 		const conversations = run(3, {
-			participants: [participant('neha@frappe.io'), participant('vibhav@frappe.io', true)],
+			messages: [message('neha@frappe.io'), message('vibhav@frappe.io', 'Vibhav')],
 		})
 		expect(buildListRows(conversations, rowOptions).map((r) => r.type)).toEqual([
 			'thread',
@@ -157,7 +157,7 @@ describe('buildListRows', () => {
 	})
 
 	it('never merges senderless threads with each other', () => {
-		const rows = buildListRows(run(3, { participants: [], from_email: '' }), rowOptions)
+		const rows = buildListRows(run(3, { messages: [], from_email: '' }), rowOptions)
 		expect(rows.map((r) => r.type)).toEqual(['thread', 'thread', 'thread'])
 	})
 
@@ -181,7 +181,7 @@ describe('buildListRows', () => {
 	})
 
 	it('detects runs that sit at either end of the list', () => {
-		const other = thread({ name: 'other', participants: [participant('hey@posthog.com')] })
+		const other = thread({ name: 'other', messages: [message('hey@posthog.com')] })
 		expect(buildListRows([...run(3), other], rowOptions).map((r) => r.type)).toEqual([
 			'stack',
 			'thread',

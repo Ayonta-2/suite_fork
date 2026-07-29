@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { formatThreadParticipants } from './participants'
+import { formatThreadParticipants, threadParticipants } from './participants'
 
-import type { ThreadParticipant } from '@/apps/mail/types'
+import type { Mail, ThreadParticipant } from '@/apps/mail/types'
 
 // `__` is installed on window by the translation plugin at app boot; the util calls it at format time,
 // so standing it up before the first test is enough.
@@ -14,6 +14,50 @@ const participant = (name: string, email: string, is_self = false): ThreadPartic
 	name,
 	email,
 	is_self,
+})
+
+const message = (from_name: string, from_email: string) => ({ from_name, from_email }) as Mail
+
+const own = new Set(['vibhav@frappe.io'])
+
+describe('threadParticipants', () => {
+	const names = (messages: Mail[]) => threadParticipants(messages, own).map((p) => p.name)
+
+	it('lists senders in the order they first wrote', () => {
+		const thread = [
+			message('Sarfaraz Shaikh', 'sarfaraz@frappe.io'),
+			message('Vibhav Katre', 'vibhav@frappe.io'),
+			message('Sarfaraz Shaikh', 'sarfaraz@frappe.io'),
+		]
+		expect(names(thread)).toEqual(['Sarfaraz Shaikh', 'Vibhav Katre'])
+	})
+
+	it("flags the account's own addresses, however they are cased", () => {
+		const thread = [
+			message('Sarfaraz Shaikh', 'sarfaraz@frappe.io'),
+			message('Vibhav Katre', 'Vibhav@Frappe.io'),
+		]
+		expect(threadParticipants(thread, own).map((p) => p.is_self)).toEqual([false, true])
+	})
+
+	it('keeps a nameless sender named after their address', () => {
+		const thread = [message('', 'noreply@frappe.io'), message('', 'alerts@uptimerobot.com')]
+		expect(threadParticipants(thread, own).map((p) => p.email)).toEqual([
+			'noreply@frappe.io',
+			'alerts@uptimerobot.com',
+		])
+	})
+
+	it('skips messages with no sender', () => {
+		expect(names([message('Nobody', ''), message('Sarfaraz Shaikh', 'sarfaraz@frappe.io')])).toEqual(
+			['Sarfaraz Shaikh'],
+		)
+	})
+
+	it('has nothing to name for a row with no conversation behind it', () => {
+		// Search results are single messages; their rows fall back to the sender they carry.
+		expect(threadParticipants(undefined, own)).toEqual([])
+	})
 })
 
 describe('formatThreadParticipants', () => {

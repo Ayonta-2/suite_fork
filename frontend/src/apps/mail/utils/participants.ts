@@ -1,8 +1,47 @@
-import type { ThreadParticipant } from '@/apps/mail/types'
+import type { Mail, ThreadParticipant } from '@/apps/mail/types'
 
 // Past this many names the middle of the list is dropped for an ellipsis, keeping the
 // thread's first sender and its two most recent — the ends identify a conversation.
 const MAX_PARTICIPANTS_SHOWN = 3
+
+/**
+ * Everyone who has written in a thread, in the order they first wrote, de-duplicated by address.
+ * This is what the list row names, in place of the latest message's sender alone: a thread you have
+ * replied to led with your own name, which read as though you had started it.
+ *
+ * It is derived here rather than served alongside the row because a row already carries its whole
+ * conversation (see serialize_thread) — the names are in hand, and a second copy of them could only
+ * disagree. Should the list payload ever be trimmed to one message per row, this moves back to the
+ * server, which is the only thing that would still know the cast.
+ *
+ * `ownEmails` is the account's own addresses, lowercased; the entries it matches are the ones the row
+ * says "me" for. Search results are single messages with no conversation behind them, and name their
+ * own sender rather than anyone here.
+ */
+export const threadParticipants = (
+	messages: Mail[] | undefined,
+	ownEmails: Set<string>,
+): ThreadParticipant[] => {
+	const participants: ThreadParticipant[] = []
+	const seen = new Set<string>()
+
+	for (const message of messages ?? []) {
+		const email = (message.from_email ?? '').trim()
+		if (!email) continue
+
+		const address = email.toLowerCase()
+		if (seen.has(address)) continue
+
+		seen.add(address)
+		participants.push({
+			name: (message.from_name ?? '').trim(),
+			email,
+			is_self: ownEmails.has(address),
+		})
+	}
+
+	return participants
+}
 
 const capitalizeFirst = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
 

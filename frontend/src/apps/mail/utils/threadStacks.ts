@@ -8,16 +8,16 @@ import type { Thread } from '@/apps/mail/types'
 const MIN_STACK_SIZE = 3
 
 // The thread's lone sender, or null when more than one person has written in it. Search results are
-// single messages with no thread behind them and carry no participant list, so their sender is all
-// there is to go on.
+// single messages with no conversation behind them, so their sender is all there is to go on.
 const loneSenderOf = (thread: Thread): string | null => {
-	const emails = (thread.participants ?? [])
-		.map((p) => (p.email ?? '').trim().toLowerCase())
-		.filter(Boolean)
+	const emails = new Set(
+		(thread.messages ?? []).map((m) => (m.from_email ?? '').trim().toLowerCase()).filter(Boolean),
+	)
 
-	if (emails.length > 1) return null
+	if (emails.size > 1) return null
 
-	return emails[0] || (thread.from_email ?? '').trim().toLowerCase() || null
+	const [only] = emails
+	return only || (thread.from_email ?? '').trim().toLowerCase() || null
 }
 
 /**

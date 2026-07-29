@@ -156,7 +156,8 @@ import { Badge, Popover, Tooltip } from 'frappe-ui'
 
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients, getSenderInitial } from '@/apps/mail/utils'
-import { formatThreadParticipants, primaryParticipant } from '@/apps/mail/utils/participants'
+import { formatThreadParticipants, primaryParticipant, threadParticipants } from '@/apps/mail/utils/participants'
+import { useOwnEmails } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
@@ -202,6 +203,7 @@ const emit = defineEmits([
 
 const route = useRoute()
 const { mailboxIds } = userStore()
+const ownEmails = useOwnEmails()
 
 const to = computed(() => ({
 	name: 'mail-mail',
@@ -240,9 +242,12 @@ const isOutgoing = computed(() => {
 	return mailbox === mailboxIds.sent || mailbox === mailboxIds.drafts
 })
 
+// Read off the conversation the row already carries; empty for a search result, which has none.
+const participants = computed(() => threadParticipants(mail.messages, ownEmails.value))
+
 const header = computed(() => {
 	if (isOutgoing.value) return getFormattedRecipients(mail.recipients) || __('To:')
-	return formatThreadParticipants(mail.participants ?? []) || mail.from_name || mail.from_email
+	return formatThreadParticipants(participants.value) || mail.from_name || mail.from_email
 })
 
 // Gmail-style count of how many messages the conversation holds, shown once there's more than one.
@@ -250,7 +255,7 @@ const messageCount = computed(() => mail.messages?.length ?? 0)
 
 // The letter behind the avatar, for a contact with no picture: whoever the picture itself would be of.
 const avatarLabel = computed(() => {
-	const primary = primaryParticipant(mail.participants ?? [])
+	const primary = primaryParticipant(participants.value)
 	if (!primary) return getSenderInitial(mail)
 	return getSenderInitial({ from_name: primary.name, from_email: primary.email })
 })
