@@ -2,11 +2,12 @@
   <nav v-if="breadcrumbItems?.length" id="navbar" ondragstart="return false;" ondrop="return false;"
     class="bg-surface-base border-b px-5 py-2.5 h-12 flex justify-between">
     <slot name="breadcrumbs">
-      <Breadcrumbs :items="breadcrumbItems" class="select-none truncate max-w-[80%]">
-        <template #prefix="{ item, index }">
+      <EditableBreadcrumbs :items="breadcrumbItems" :entity="rootEntity || null"
+        class="select-none truncate max-w-[80%]">
+        <template #prefix="{ item }">
           <Skeleton v-if="item.loading" class="h-4 w-16 rounded" />
         </template>
-      </Breadcrumbs>
+      </EditableBreadcrumbs>
     </slot>
 
     <div class="flex gap-2">
@@ -45,7 +46,7 @@
         label="Create" variant="solid" :icon-left="h(LucidePlus, { class: 'size-4' })"
         @click="newExternal($route.name === 'drive-Documents' ? 'Document' : 'Presentation')" />
       <Button v-if="button" :disabled="!button.entities.data?.length" :theme="button.theme || 'gray'"
-        @click="openListDialog('cta-' + $route.name.replace('drive-', '').toLowerCase())">
+        @click="button.onClick">
         <template #prefix>
           <component :is="button.icon" class="size-4" />
         </template>
@@ -57,9 +58,11 @@
 </template>
 <script setup>
 import EntityDialogs from '@/apps/drive/components/EntityDialogs.vue'
-import { Button, Breadcrumbs, Skeleton, Dropdown } from 'frappe-ui'
+import { Button, Skeleton, Dropdown } from 'frappe-ui'
+import EditableBreadcrumbs from '@/apps/drive/components/EditableBreadcrumbs.vue'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { isHomeContext, pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
+import { startRename } from '@/apps/drive/data/selection'
 const { systemUser } = useCurrentUser()
 import emitter from '@/apps/drive/emitter'
 import { ref, computed, inject, h } from 'vue'
@@ -74,8 +77,15 @@ import {
   isAttachmentRef,
   isSiteFile,
   isVirtual,
+  openEntity,
 } from '@/apps/drive/utils/files'
 import { getFileLink } from '@/apps/drive/ui/drive/js/utils'
+import {
+  confirmRemove,
+  confirmClearRecents,
+  confirmClearFavourites,
+  confirmClearTrash,
+} from '@/apps/drive/utils/confirmActions'
 
 import LucideClock from '~icons/lucide/clock'
 import LucideHome from '~icons/lucide/home'
@@ -125,6 +135,9 @@ const breadcrumbItems = computed(
 
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const listDialog = inject('listDialog', null)
+// Set by GenericPage when Navbar is mounted inside a list context; absent on
+// standalone entity pages (e.g. File.vue), where removal just navigates away.
+const removeFromList = inject('removeFromList', null)
 const entityDialog = ref('')
 const rootEntity = computed(() => props.rootResource?.data?.file_name && props.rootResource?.data)
 const dialogEntities = computed(() =>
@@ -144,9 +157,31 @@ function routeDialog(type) {
   else openEntityDialog(type)
 }
 
+function removeCurrentEntities() {
+  const entities = dialogEntities.value
+  confirmRemove(entities, {
+    onSuccess: () => {
+      removeFromList?.(entities)
+      const rootDeleted = entities.some((e) => e.name === rootEntity.value?.name)
+      if (rootDeleted) {
+        openEntity({
+          is_folder: 1,
+          name: rootEntity.value.folder,
+          breadcrumbs: rootEntity.value.breadcrumbs?.slice(0, -1) ?? [],
+        })
+      }
+    },
+  })
+}
+
 emitter.on('share', () => routeDialog('s'))
-emitter.on('rename', () => routeDialog('rn'))
-emitter.on('remove', () => routeDialog('remove'))
+// Rename is inline everywhere: a list row in list/grid views, the last
+// breadcrumb on an entity page.
+emitter.on('rename', () => {
+  const target = dialogEntities.value[0]
+  if (target) startRename(target.name)
+})
+emitter.on('remove', removeCurrentEntities)
 emitter.on('move', () => routeDialog('m'))
 emitter.on('newFolder', () => openListDialog('f'))
 emitter.on('newLink', () => openListDialog('l'))
@@ -213,7 +248,7 @@ const defaultActions = computed(() => {
         {
           label: __('Rename'),
           icon: LucideSquarePen,
-          onClick: () => openEntityDialog('rn'),
+          onClick: () => startRename(rootEntity.value.name),
           isEnabled: () => rootEntity.value.write && isManaged(rootEntity.value),
         },
         {
@@ -254,7 +289,7 @@ const defaultActions = computed(() => {
         {
           label: __('Delete'),
           icon: LucideTrash,
-          onClick: () => openEntityDialog('remove'),
+          onClick: removeCurrentEntities,
           isEnabled: () => rootEntity.value.write,
           theme: 'red',
         },
@@ -276,12 +311,14 @@ const possibleButtons = [
     label: __('Clear'),
     icon: LucideStar,
     entities: getFavourites,
+    onClick: confirmClearFavourites,
   },
   {
     route: 'drive-Recents',
     label: __('Clear'),
     icon: LucideClock,
     entities: getRecents,
+    onClick: confirmClearRecents,
   },
   {
     route: 'drive-Trash',
@@ -289,6 +326,7 @@ const possibleButtons = [
     icon: LucideTrash,
     entities: getTrash,
     theme: 'red',
+    onClick: confirmClearTrash,
   },
 ]
 const button = computed(() => possibleButtons.find((k) => k.route == route.name))

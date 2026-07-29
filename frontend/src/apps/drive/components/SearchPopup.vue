@@ -1,6 +1,6 @@
 <template>
-  <Dialog v-model:open="open" size="xl" position="top">
-    <template #body>
+  <Dialog v-model:open="open" size="xl" position="top" bare>
+    <template #default>
       <div class="flex px-4 py-3 gap-1 items-center border-b">
         <LucideSearch class="w-4 mr-1 h-auto" name="search" />
         <input

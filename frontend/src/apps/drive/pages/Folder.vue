@@ -39,6 +39,7 @@ const getFolderContents = createResource({
   }),
   cache: ['folder', props.entityName],
 })
+getFolderContents.paginated = true
 setCache(getFolderContents, ['folder', props.entityName])
 
 const onSuccess = (entity) => {

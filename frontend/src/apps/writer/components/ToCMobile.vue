@@ -1,6 +1,7 @@
 <template>
   <div
     v-if="editor && tabs.length > 0 && activeTabId"
+    ref="bar"
     class="md:hidden fixed bottom-0 w-screen z-10 border-t border-outline-gray-2 bg-surface-base"
   >
     <div class="flex overflow-x-auto px-2 py-2 gap-1">
@@ -13,9 +14,46 @@
   </div>
 </template>
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, onMounted, onBeforeUnmount, watchEffect } from 'vue'
+
+import { ref } from 'vue'
 import { TabButtons } from 'frappe-ui'
 
+const activeTabId = ref()
+const bar = ref(null)
+onMounted(() => {
+  const handleTabChange = (e) => {
+    activeTabId.value = e.detail.tabId
+  }
+
+  props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
+})
+
+// Anything else pinned to the bottom on mobile (comment cards) needs to clear the bar.
+const setBarHeight = (height) =>
+  document.documentElement.style.setProperty(
+    '--writer-tab-bar-height',
+    `${height}px`,
+  )
+
+let observer
+watchEffect(() => {
+  observer?.disconnect()
+  if (!bar.value) return setBarHeight(0)
+  observer = new ResizeObserver(([entry]) =>
+    setBarHeight(entry.contentRect.height),
+  )
+  observer.observe(bar.value)
+})
+
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  setBarHeight(0)
+})
+
+// onBeforeUnmount(() => {
+//   props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
+// })
 const props = defineProps({
   editor: Object,
 })

@@ -4,15 +4,16 @@
 
   <ErrorPage v-if="verify?.error || getEntities.error" :error="verify?.error || getEntities.error" />
 
-  <div v-else id="drop-area" ref="container" class="flex flex-col overflow-auto min-h-full bg-surface-base">
+  <div v-else id="drop-area" ref="container" class="flex flex-col flex-1 min-h-0 overflow-hidden bg-surface-base"
+    @dragover="onDragOverScroll" @drop="stopAutoScroll" @dragend="stopAutoScroll">
     <DriveToolBar v-model:sort-order="sortOrder" v-model:search="search" v-model:filters="filters" v-model:team="team"
       :action-items="actionItems" :selections="selectedEntitities" :get-entities="getEntities || { data: [] }" />
 
     <DriveListSkeleton v-if="!props.getEntities.data" />
     <NoFilesSection v-else-if="!props.getEntities.data?.length" v-bind="empty" />
-    <ListView v-else-if="view === 'list'" v-model="selections" :folder-contents="rows && grouper(rows)"
-      :action-items="actionItems" :root-entity="verify?.data" @dropped="onDrop" />
-    <GridView v-else v-model="selections" :folder-contents="rows" :action-items="actionItems" @dropped="onDrop" />
+    <ListView v-else-if="view === 'list'" ref="viewEl" v-model="selections" v-model:sort-order="sortOrder" :folder-contents="rows && grouper(rows)"
+      :action-items="actionItems" :root-entity="verify?.data" :loading-more="loadingMore" @dropped="onDrop" />
+    <GridView v-else ref="viewEl" v-model="selections" :folder-contents="rows" :action-items="actionItems" @dropped="onDrop" />
   </div>
   <p class="hidden absolute text-center top-1/2 left-[calc(50%-4rem)] w-32 z-10 font-bold">
     Drop to upload
@@ -46,13 +47,15 @@ import {
   isAttachmentRef,
   isSiteFile,
 } from '@/apps/drive/utils/files'
-import { toggleFav, clearRecent } from '@/apps/drive/resources/files'
+import { toggleFav, clearRecent, PAGE_SIZE } from '@/apps/drive/resources/files'
+import { confirmRestore, confirmRemove, confirmDeleteForever } from '@/apps/drive/utils/confirmActions'
 import { entitiesDownload } from '@/apps/drive/utils/download'
-import { ref, computed, watch, watchEffect, provide, inject } from 'vue'
+import { ref, computed, watch, watchEffect, provide, inject, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { useEventListener } from '@vueuse/core'
+import { useEventListener, useInfiniteScroll } from '@vueuse/core'
+import { request } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
-import { activeEntity } from '@/apps/drive/data/selection'
+import { activeEntity, startRename } from '@/apps/drive/data/selection'
 import { uploads } from '@/apps/drive/data/uploads'
 const { systemUser } = useCurrentUser()
 import { pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
@@ -125,7 +128,20 @@ const sortOrder = ref(getSortOrder(sortId.value) || DEFAULT_SORT)
 const search = ref('')
 const filters = ref([])
 
-const rows = ref(props.getEntities.data)
+const rows = computed(() => {
+  let out = props.getEntities.data ?? []
+  out = sortEntities([...out], sortOrder.value)
+  if (filters.value.length) {
+    const file_types = filters.value.map((k) => k.name)
+    const isFolder = file_types.includes('Folder')
+    out = out.filter(
+      ({ file_type, is_folder }) =>
+        file_types.includes(file_type) || (isFolder && is_folder)
+    )
+  }
+  return out
+})
+
 watch(sortId, (id) => {
   const saved = getSortOrder(id)
   if (saved) sortOrder.value = saved
@@ -134,44 +150,18 @@ watch(sortId, (id) => {
 watch(
   sortOrder,
   (order) => {
-    rows.value = sortEntities([...rows.value], order)
-    props.getEntities.setData(rows.value)
-    if (sortId.value) {
-      setSortOrder(sortId.value, order)
-    }
+    if (sortId.value) setSortOrder(sortId.value, order)
+    refreshData()
   },
   { deep: true }
 )
-
-watch(search, (val) => {
-  const search = new RegExp(val, 'i')
-  rows.value = props.getEntities.data.filter((k) => search.test(k.file_name))
-})
+watch(search, () => refreshData())
 
 watch(
-  () => filters.value,
+  rows,
   (val) => {
-    if (!val.length) {
-      rows.value = props.getEntities.data
-      return
-    }
-    const file_types = val.map((k) => k.name)
-    const isFolder = file_types.find((k) => k === 'Folder')
-    rows.value = props.getEntities.data.filter(
-      ({ file_type, is_folder }) =>
-        file_types.includes(file_type) || (isFolder && is_folder)
-    )
-  },
-  { deep: true }
-)
-
-watch(
-  () => props.getEntities.data,
-  (val) => {
-    if (!val) return
-    rows.value = sortEntities([...val], sortOrder.value)
     setCurrentFolder({
-      entities: rows.value.filter?.((k) => k.file_name?.[0] !== '.'),
+      entities: val.filter?.((k) => k.file_name?.[0] !== '.'),
     })
   },
   { immediate: true, deep: true }
@@ -190,14 +180,91 @@ watchEffect(() => {
   if (verifyAccess.value?.write) useEventListener('paste', pasteObj)
 })
 
+const pageStart = ref(0)
+const hasNextPage = ref(false)
+const loadingMore = ref(false)
+
 const refreshData = () => {
+  const res = props.getEntities
   const params = { team: team.value === 'home' ? '' : team.value || '' }
   if (sortOrder.value) {
     params.order_by = sortOrder.value.field
     params.ascending = sortOrder.value.ascending
   }
-  props.getEntities.fetch({ ...props.getEntities.params, ...params })
+  params.search = search.value || ''
+  pageStart.value = 0
+  hasNextPage.value = false
+  if (res.paginated) {
+    params.start = 0
+    params.limit = PAGE_SIZE
+  }
+  res.fetch(
+    { ...res.params, ...params },
+    res.paginated
+      ? {
+          onSuccess: (data) => {
+            hasNextPage.value = (data?.length || 0) >= PAGE_SIZE
+          },
+        }
+      : {}
+  )
 }
+
+async function loadMore() {
+  const res = props.getEntities
+  if (!res?.paginated || res.loading || loadingMore.value || !hasNextPage.value)
+    return
+  loadingMore.value = true
+  const next = pageStart.value + PAGE_SIZE
+  try {
+    const path = res.url.startsWith('/') ? res.url : `/api/method/${res.url}`
+    const resp = await request({
+      url: path,
+      method: 'GET',
+      params: { ...res.params, start: next, limit: PAGE_SIZE },
+      credentials: 'include',
+    })
+    const page = Array.isArray(resp) ? resp : resp?.message ?? []
+    pageStart.value = next
+    hasNextPage.value = page.length >= PAGE_SIZE
+    if (page.length) res.setData([...(res.data || []), ...page])
+  } catch {
+    hasNextPage.value = false
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+const viewEl = ref(null)
+const scrollHost = ref(null)
+const resolveScrollHost = () => {
+  let el = viewEl.value?.scrollEl
+  let outermost = null
+  while (el && el !== document.body) {
+    const { overflowY } = getComputedStyle(el)
+    if (/(auto|scroll)/.test(overflowY)) {
+      if (el.scrollHeight > el.clientHeight) {
+        scrollHost.value = el
+        return
+      }
+      outermost = el
+    }
+    el = el.parentElement
+  }
+  scrollHost.value = outermost
+}
+watch([() => props.getEntities.data, view], () => nextTick(resolveScrollHost), {
+  immediate: true,
+})
+useEventListener(window, 'resize', resolveScrollHost)
+useInfiniteScroll(scrollHost, () => loadMore(), {
+  distance: 200,
+  canLoadMore: () =>
+    !!props.getEntities?.paginated &&
+    hasNextPage.value &&
+    !loadingMore.value &&
+    !props.getEntities.loading,
+})
 
 watch(
   [verifyAccess, team, () => props.getEntities],
@@ -208,10 +275,23 @@ watch(
   { immediate: true, deep: false }
 )
 emitter.on('refresh', refreshData)
+
+// Removes entities from the currently rendered list once a confirm-dialog
+// write (remove/restore/delete forever) succeeds server-side. Provided so
+// Navbar can update the list from its own remove/restore triggers.
+function removeFromList(entities) {
+  const names = entities.map((e) => e.name)
+  props.getEntities.setData(
+    props.getEntities.data.filter(({ name }) => !names.includes(name))
+  )
+}
+provide('removeFromList', removeFromList)
+
 emitter.on('remove-file', (item) => {
-  selections.value.clear()
-  selections.value.add(item)
-  listDialog.value = 'remove'
+  const names = Array.isArray(item) ? item : [item]
+  const entities = props.getEntities.data.filter((e) => names.includes(e.name))
+  if (!entities.length) return
+  confirmRemove(entities, { onSuccess: () => removeFromList(entities) })
 })
 
 if (!settings.fetched && useSessionStore().isLoggedIn) settings.fetch()
@@ -221,19 +301,68 @@ const removeFile = (file, target) => {
   const removedIndex = props.getEntities.data.findIndex((k) => k.name === file)
   props.getEntities.data.splice(removedIndex, 1)
   const targetRow = props.getEntities.data.find((k) => k.name === target)
-  if (targetRow) targetRow.children += 1
+  if (targetRow) targetRow.child_count = (targetRow.child_count || 0) + 1
   props.getEntities.setData(props.getEntities.data)
 }
 const onDrop = (targetFile, draggedItem) => {
-  if (!targetFile.is_folder || draggedItem === targetFile.name || !draggedItem)
-    return
+  if (!targetFile.is_folder || !draggedItem) return
+  // If the dragged item is part of the current selection, move the whole
+  // selection; otherwise just move the dragged item.
+  const names = selections.value.has(draggedItem)
+    ? [...selections.value]
+    : [draggedItem]
+  const toMove = names.filter((name) => name !== targetFile.name)
+  if (!toMove.length) return
   move.submit({
-    entity_names: [draggedItem],
+    entity_names: toMove,
     new_parent: targetFile.name,
   })
-  removeFile(draggedItem, targetFile.name)
+  toMove.forEach((name) => removeFile(name, targetFile.name))
+  selections.value = new Set()
 }
 emitter.on('remove-file-ui', removeFile)
+
+// Auto-scroll the file area while dragging near its top/bottom edge, so files
+// can be dropped into folders that aren't currently in view.
+let scrollRAF = null
+let scrollTarget = null
+let scrollSpeed = 0
+function getScrollableParent(el) {
+  while (el && el !== document.body) {
+    const { overflowY } = getComputedStyle(el)
+    if (/(auto|scroll)/.test(overflowY) && el.scrollHeight > el.clientHeight)
+      return el
+    el = el.parentElement
+  }
+  return null
+}
+function autoScrollTick() {
+  if (!scrollTarget || !scrollSpeed) return stopAutoScroll()
+  scrollTarget.scrollTop += scrollSpeed
+  scrollRAF = requestAnimationFrame(autoScrollTick)
+}
+function stopAutoScroll() {
+  if (scrollRAF) cancelAnimationFrame(scrollRAF)
+  scrollRAF = null
+  scrollTarget = null
+  scrollSpeed = 0
+}
+function onDragOverScroll(e) {
+  const target = getScrollableParent(e.target)
+  if (!target) return stopAutoScroll()
+  const rect = target.getBoundingClientRect()
+  const edge = 60
+  const maxSpeed = 18
+  let speed = 0
+  if (e.clientY < rect.top + edge)
+    speed = -maxSpeed * Math.min(1, (rect.top + edge - e.clientY) / edge)
+  else if (e.clientY > rect.bottom - edge)
+    speed = maxSpeed * Math.min(1, (e.clientY - (rect.bottom - edge)) / edge)
+  scrollSpeed = speed
+  scrollTarget = target
+  if (speed && !scrollRAF) autoScrollTick()
+  else if (!speed) stopAutoScroll()
+}
 
 // Action Items
 const actionItems = computed(() => {
@@ -242,14 +371,14 @@ const actionItems = computed(() => {
       {
         label: 'Restore',
         icon: LucideRotateCcw,
-        action: () => (listDialog.value = 'restore'),
+        action: (entities) => confirmRestore(entities, { onSuccess: () => removeFromList(entities) }),
         multi: true,
         important: true,
       },
       {
         label: 'Delete forever',
         icon: LucideTrash,
-        action: () => (listDialog.value = 'd'),
+        action: (entities) => confirmDeleteForever(entities, { onSuccess: () => removeFromList(entities) }),
         isEnabled: () => route.name === 'drive-Trash',
         multi: true,
         danger: true,
@@ -329,7 +458,7 @@ const actionItems = computed(() => {
       {
         label: __('Rename'),
         icon: LucideSquarePen,
-        action: () => (listDialog.value = 'rn'),
+        action: ([entity]) => startRename(entity.name),
         isEnabled: (e) => isManaged(e) && e.write,
       },
       {
@@ -382,7 +511,7 @@ const actionItems = computed(() => {
       {
         label: __('Delete'),
         icon: LucideTrash,
-        action: () => (listDialog.value = 'remove'),
+        action: (entities) => confirmRemove(entities, { onSuccess: () => removeFromList(entities) }),
         isEnabled: (e) => e.write,
         important: true,
         multi: true,
@@ -400,17 +529,14 @@ async function newLink() {
     localStorage.setItem('prevClip', text)
     const url = new URL(text)
     if (url.host)
-      toast({
-        title: 'Link detected',
-        text,
-        buttons: [
-          {
-            label: 'Add',
-            onClick: () => {
-              listDialog.value = 'l'
-            },
+      toast('Link detected', {
+        description: text,
+        action: {
+          label: 'Add',
+          onClick: () => {
+            listDialog.value = 'l'
           },
-        ],
+        },
       })
   } catch { }
 }

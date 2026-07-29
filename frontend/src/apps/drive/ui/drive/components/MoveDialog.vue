@@ -1,7 +1,7 @@
 <template>
   <Dialog v-model:open="open" size="lg" @close="dialogType = ''">
-    <template #body-main>
-      <div class="px-4 pt-5 pb-6 sm:px-6">
+    <template #default>
+      <div>
         <div class="text-2xl-semibold flex text-nowrap overflow-hidden pr-8 mb-4">
           <template v-if="props.entities.length > 1">
             Moving {{ props.entities.length }} items
@@ -169,6 +169,22 @@ const open = ref(true)
 const route = useRoute()
 const tabIndex = ref(route.name == 'drive-Home' ? 0 : 1)
 const chosenTeam = ref(route.params.team || '')
+
+// Reopen at the folder the user last moved into this session, so repeated moves
+// to the same place don't start from root each time. Only restore it when it
+// belongs to the team we're currently browsing — the dialog always respects the
+// current team context.
+const LAST_MOVE_KEY = 'drive:last-move-dest'
+const lastMoveParent = (() => {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(LAST_MOVE_KEY) || 'null')
+    if (!saved || typeof saved !== 'object') return ''
+    if ((saved.team || '') !== chosenTeam.value) return ''
+    return saved.parent || ''
+  } catch {
+    return ''
+  }
+})()
 const tree = reactive({
   name: '',
   label: 'Home',
@@ -249,6 +265,18 @@ const selectedPerms = createResource({
     ]
     breadcrumbs.value = first.concat(data.breadcrumbs.slice(1))
   },
+  onError: () => {
+    // Remembered folder is gone or inaccessible — fall back to the root.
+    selected.value = ''
+    breadcrumbs.value = [
+      {
+        name: '',
+        file_name: chosenTeam.value
+          ? getTeams.data?.[chosenTeam.value]?.title || 'Team'
+          : 'Home',
+      },
+    ]
+  },
 })
 
 watch(
@@ -281,6 +309,13 @@ watch(
   },
   { immediate: true },
 )
+
+// Preselect the last move destination (the immediate watch above resets to root
+// first). Breadcrumbs are filled in by selectedPerms.onSuccess.
+if (lastMoveParent) {
+  selected.value = lastMoveParent
+  selectedPerms.fetch({ entity_name: lastMoveParent })
+}
 
 // Breadcrumb logic
 const slicedBreadcrumbs = computed(() => {
@@ -363,6 +398,14 @@ const moveFile = async () => {
     new_parent: selected.value,
     team: chosenTeam.value,
   })
+  try {
+    sessionStorage.setItem(
+      LAST_MOVE_KEY,
+      JSON.stringify({ team: chosenTeam.value, parent: selected.value }),
+    )
+  } catch {
+    // sessionStorage unavailable — non-fatal.
+  }
   open.value = false
   emit('complete')
 }

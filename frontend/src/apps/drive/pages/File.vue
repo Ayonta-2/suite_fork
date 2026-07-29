@@ -18,7 +18,7 @@
         <Button
           :disabled="!prevEntity?.name"
           :variant="'ghost'"
-          icon="arrow-left"
+          icon="lucide-arrow-left"
           @click="scrollEntity(true)"
         />
         <Button :variant="'ghost'" @click="enterFullScreen">
@@ -27,7 +27,7 @@
         <Button
           :disabled="!nextEntity?.name"
           :variant="'ghost'"
-          icon="arrow-right"
+          icon="lucide-arrow-right"
           @click="scrollEntity()"
         />
       </div>

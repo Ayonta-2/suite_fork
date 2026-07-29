@@ -471,12 +471,18 @@ const copyToClipboard = (str) => {
 export async function updateURLSlug(file_name) {
   const route = router.currentRoute.value
   await nextTick()
+  // Only the folder/file pages carry a `:slug` segment. Guard against callers
+  // firing on other pages (e.g. rename from a list view), where appending a
+  // slug would produce a bogus path like `/drive/<slug>` that matches no route.
+  if (!['drive-Folder', 'drive-File'].includes(route.name)) return
   const slug = slugger(file_name)
   if (route.params.slug !== slug) {
-    // Hacky, but we only want to update the URL - triggering a reload breaks a lot
+    // Hacky, but we only want to update the URL - triggering a reload breaks a lot.
+    // Preserve the existing history state so vue-router's back/forward tracking
+    // isn't wiped.
     const base = window.location.pathname.split('/').slice(0, 4).join('/')
     const new_path = base + (base.endsWith('/') ? '' : '/') + slug
-    history.replaceState({}, null, new_path)
+    history.replaceState(history.state, '', new_path)
   }
 }
 
@@ -500,20 +506,15 @@ export function getLink(entity, copy = true, withDomain = true) {
       (entity.content_docname || entity.name)
   } else {
     link = `${
-      withDomain ? window.location.origin + '/drive' : ''
-    }/${getLinkStem(entity)}`
+      withDomain ? window.location.origin : ''
+    }/drive/${getLinkStem(entity)}`
   }
   if (!copy) return link
   try {
     copyToClipboard(link).then(() => toast('Copied to your clipboard.'))
   } catch (err) {
     if (err.name === 'NotAllowedError') {
-      toast({
-        icon: 'alert-triangle',
-        iconClasses: 'text-ink-red-6',
-        title: 'Clipboard permission denied',
-        position: 'bottom-right',
-      })
+      toast('Clipboard permission denied')
     } else {
       console.error('Failed to copy link:', err)
     }

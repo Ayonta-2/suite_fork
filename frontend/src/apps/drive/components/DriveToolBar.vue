@@ -51,7 +51,7 @@
             icon: LucideFilter,
             tooltip: 'Filter',
           }" :disabled placement="right" />
-        <SortControl v-if="$route.name !== 'Recents'" v-model="sortOrder" :options="columnHeaders" :menu-items="sortMenuItems" :disabled />
+        <SortControl v-if="$route.name !== 'Recents' && view !== 'list'" v-model="sortOrder" :options="columnHeaders" :menu-items="sortMenuItems" :disabled />
 
         <TabButtons v-model="view" :options="[
           {

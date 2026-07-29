@@ -4,10 +4,16 @@ import { openEntity, setTitle } from '@/apps/drive/utils/files'
 import { activeEntity } from '@/apps/drive/data/selection'
 import { updateLastBreadcrumbLabel } from '@/apps/drive/data/breadcrumbs'
 import { getSortOrder } from '@/apps/drive/data/prefs'
-import { prettyData, setCache } from '@/apps/drive/utils/files'
+import {
+  prettyData,
+  setCache,
+  PRESENTATION_CONTENT_DOCTYPE,
+} from '@/apps/drive/utils/files'
 import { updateURLSlug } from '@/apps/drive/utils/files'
 
 // GETTERS
+export const PAGE_SIZE = 50
+
 export const COMMON_OPTIONS = {
   method: 'GET',
   debounce: 500,
@@ -107,6 +113,9 @@ export const getSlides = createResource({
   transform(data) {
     data = data.map((k) => ({
       ...k,
+      // Presentations carry `title`; the list/grid views key off `file_name`.
+      file_name: k.title,
+      content_doctype: PRESENTATION_CONTENT_DOCTYPE,
       mime_type: 'frappe/slides',
       file_type: 'Presentation',
       path: k.name,
@@ -135,6 +144,18 @@ export const getTrash = createResource({
     return { ...params }
   },
 })
+
+;[
+  getTeam,
+  getFiles,
+  getPersonal,
+  getSiteFiles,
+  getRecents,
+  getFavourites,
+  getDocuments,
+  getShared,
+  getTrash,
+].forEach((r) => (r.paginated = true))
 
 // SETTERS
 export const LISTS = [
@@ -232,10 +253,7 @@ export const clearRecent = createResource({
     }
   },
   onError: () => {
-    toast({
-      message: 'There was an error while clearing recents.',
-      type: 'error',
-    })
+    toast.error('There was an error while clearing recents.')
   },
 })
 
@@ -256,10 +274,7 @@ export const clearTrash = createResource({
     )
   },
   onError(error) {
-    toast({
-      text: JSON.stringify(error),
-      error: true,
-    })
+    toast.error(JSON.stringify(error))
   },
 })
 
@@ -284,12 +299,7 @@ export const rename = createResource({
     updateURLSlug(rename.params.new_title)
   },
   onError(error) {
-    toast({
-      title: error.messages[error.messages.length - 1],
-      position: 'bottom-right',
-      type: 'error',
-      timeout: 2,
-    })
+    toast.error(error.messages[error.messages.length - 1], { duration: 2000 })
   },
 })
 
@@ -309,25 +319,18 @@ export const createSheet = createResource({
 export const move = createResource({
   url: 'suite.drive.api.files.move',
   onSuccess(data) {
-    toast({
-      title: 'Moved to ' + data.file_name,
-      buttons: [
-        {
-          label: 'Go',
-          onClick: () =>
-            openEntity({
-              name: data.name,
-              is_folder: true,
-            }),
-        },
-      ],
+    toast('Moved to ' + data.file_name, {
+      action: {
+        label: 'Go',
+        onClick: () => openEntity({ name: data.name, is_folder: true }),
+      },
     })
 
     // Update moved-into folder
     updateMoved(data.team, data.name)
   },
   onError() {
-    toast({ title: 'There was an error.', type: 'error' })
+    toast.error('There was an error.')
   },
 })
 
