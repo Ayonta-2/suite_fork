@@ -378,6 +378,13 @@ class SearchIndexBrowser:
 	KEY_FIELD: ClassVar[str] = "id"
 
 	def __init__(self, namespace: Namespace, entity: str) -> None:
+		# Unlike SearchStore, which joins its own ENTITY constant, the entity here comes from a
+		# Store Entry record name and can be anything. resolve_namespace_path already keeps the
+		# namespace inside the base path; the entity has to be held to one component too, or a
+		# value like "../../.." would walk out of the site's own index directory.
+		if not entity or entity in (".", "..") or "/" in entity or os.sep in entity:
+			raise ValueError(f"invalid index entity: {entity!r}")
+
 		namespace_path = resolve_namespace_path(get_search_base_path(), namespace)
 		self.path = os.path.join(namespace_path, entity)
 
