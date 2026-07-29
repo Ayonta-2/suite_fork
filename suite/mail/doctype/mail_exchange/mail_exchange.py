@@ -53,7 +53,7 @@ from suite.mail.utils.validation import (
 	validate_maildir_or_maildirpp,
 	validate_nested_maildir_tree,
 )
-from suite.utils import reconnect_on_failure
+from suite.utils import log_error, reconnect_on_failure
 from suite.utils.dt import parse_iso_datetime
 from suite.utils.file import compress_directory, extract_compressed_file
 from suite.utils.permissions import OwnerFromUser
@@ -1255,8 +1255,19 @@ def retry_stuck_mail_exchanges() -> None:
 		.orderby(ME.queued_at, order=Order.asc)
 	).run(pluck="name")
 
+	# retry() throws for a document that no longer qualifies, and a scheduler job has no
+	# caller to surface that to - so isolate each one, or the first bad document silently
+	# strands every exchange queued behind it, run after run.
 	for exchange in exchanges:
-		frappe.get_doc("Mail Exchange", exchange).retry()
+		try:
+			frappe.get_doc("Mail Exchange", exchange).retry()
+		except Exception:
+			frappe.db.rollback()
+			log_error(
+				module="Mail",
+				title=f"Failed to retry stuck Mail Exchange {exchange}",
+				message=frappe.get_traceback(),
+			)
 
 
 def clean_import_export_directories() -> None:

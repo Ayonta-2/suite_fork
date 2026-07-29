@@ -45,7 +45,7 @@ from suite.mail.utils.user import (
 	get_user_email_address,
 	is_jmap_configured,
 )
-from suite.utils import reconnect_on_failure
+from suite.utils import log_error, reconnect_on_failure
 from suite.utils.file import compress_directory, extract_compressed_file
 from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
@@ -1204,8 +1204,19 @@ def retry_stuck_calendar_exchanges() -> None:
 		.orderby(CE.queued_at, order=Order.asc)
 	).run(pluck="name")
 
+	# retry() throws for a document that no longer qualifies, and a scheduler job has no
+	# caller to surface that to - so isolate each one, or the first bad document silently
+	# strands every exchange queued behind it, run after run.
 	for exchange in exchanges:
-		frappe.get_doc("Calendar Exchange", exchange).retry()
+		try:
+			frappe.get_doc("Calendar Exchange", exchange).retry()
+		except Exception:
+			frappe.db.rollback()
+			log_error(
+				module="Calendar",
+				title=f"Failed to retry stuck Calendar Exchange {exchange}",
+				message=frappe.get_traceback(),
+			)
 
 
 def clean_calendar_import_export_directories() -> None:
