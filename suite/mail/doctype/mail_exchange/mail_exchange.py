@@ -25,6 +25,7 @@ from frappe.utils import (
 	create_batch,
 	get_bench_path,
 	get_datetime,
+	get_files_path,
 	get_url,
 	now,
 	random_string,
@@ -602,12 +603,35 @@ class MailExchange(OwnerFromUser, Document):
 				)
 			)
 
+		self._resolve_import_file()
+
 		if self.import_format in ("eml", "mbox", "maildir"):
 			meta = self.import_metadata_dict
 			if not meta.get("mailboxIds"):
 				frappe.throw(_("mailboxIds are required in Metadata for EML, MBOX, and Maildir formats."))
 		else:
 			self.import_metadata = json.dumps({})
+
+	def _resolve_import_file(self) -> str:
+		"""Resolves ``import_file`` to an absolute path, refusing anything outside the site's files
+		directories.
+
+		``import_file`` is an ``Attach`` URL (e.g. ``/private/files/mail.zip``) that the worker joins
+		onto the site path before copying/extracting it. Without this guard a crafted value such as
+		``/private/files/../../../etc/passwd`` would let the job read a file anywhere on the
+		filesystem, so we canonicalize the path and confirm it stays within the uploads area."""
+
+		path = os.path.realpath(
+			os.path.join(get_bench_path(), f"sites/{frappe.local.site}{self.import_file}")
+		)
+		allowed_roots = (
+			os.path.realpath(get_files_path(is_private=1)),
+			os.path.realpath(get_files_path(is_private=0)),
+		)
+		if not any(path == root or path.startswith(root + os.sep) for root in allowed_roots):
+			frappe.throw(_("Invalid import file path."))
+
+		return path
 
 	def validate_export(self) -> None:
 		"""Validate the export parameters."""
@@ -725,7 +749,7 @@ class MailExchange(OwnerFromUser, Document):
 		self._mark_started()
 		self._log_output(_("Starting import from the uploaded {0} file.").format(self.import_format.upper()))
 
-		import_file = os.path.join(get_bench_path(), f"sites/{frappe.local.site}{self.import_file}")
+		import_file = self._resolve_import_file()
 		base_dir = os.path.join(get_mail_import_directory(), self.name)
 		os.makedirs(base_dir, exist_ok=True)
 
