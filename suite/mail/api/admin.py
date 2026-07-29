@@ -175,6 +175,8 @@ def get_domains(txt: str | None = None, is_enabled: bool | None = None) -> list[
 def get_domain(domain_id: str) -> dict:
 	"""Returns the details of a domain, including its DNS records parsed from the zone file"""
 
+	check_admin_permission("view domains")
+
 	def infer_category(record: dict) -> str:
 		"""Infers the category of the DNS record based on its type and name."""
 
@@ -270,6 +272,8 @@ def delete_domain(domain_id: str) -> None:
 def get_enabled_domains() -> list[str]:
 	"""Returns the list of enabled domains"""
 
+	check_admin_permission("view domains")
+
 	try:
 		return list(set([d["name"] for d in get_stalwart_domains() if d["isEnabled"]]))
 	except Exception:
@@ -280,6 +284,8 @@ def get_enabled_domains() -> list[str]:
 def get_domain_dns_zone(domain_id: str) -> str:
 	"""Returns the DNS zone file of the domain"""
 
+	check_admin_permission("view domains")
+
 	domain = _get_stalwart_domain(domain_id)
 	return domain["dnsZoneFile"]
 
@@ -287,6 +293,8 @@ def get_domain_dns_zone(domain_id: str) -> str:
 @frappe.whitelist()
 def get_domain_dns_csv(domain_id: str) -> str:
 	"""Returns the DNS records of the domain as a CSV string"""
+
+	check_admin_permission("view domains")
 
 	domain = _get_stalwart_domain(domain_id)
 	dns_records = parse_dns_zone_file(domain["dnsZoneFile"])
@@ -306,6 +314,8 @@ def get_domain_dns_csv(domain_id: str) -> str:
 @frappe.whitelist()
 def get_domain_dns_json(domain_id: str) -> str:
 	"""Returns the DNS records of the domain as a JSON object"""
+
+	check_admin_permission("view domains")
 
 	domain = _get_stalwart_domain(domain_id)
 	dns_records = parse_dns_zone_file(domain["dnsZoneFile"])
@@ -1882,7 +1892,6 @@ def get_queued_messages(
 	return {"messages": [_queue_row(m) for m in result["items"]], "total": result["total"]}
 
 
-@frappe.whitelist()
 def _recipient_detail(email: str, recipient: dict) -> dict:
 	"""Flattens a queued recipient (status/expiry unions included) into an editable row shape."""
 
