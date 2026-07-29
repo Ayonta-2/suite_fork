@@ -3,19 +3,36 @@ import dayjs from '@/apps/mail/utils/dayjs'
 import type { Thread } from '@/apps/mail/types'
 
 // Chatty automated senders (uptime alerts, CI, ticket systems) post runs of threads that bury
-// everything around them. A run of this many adjacent threads from one sender collapses into a single
-// stack row. Two in a row is normal correspondence, not a flood — hence three.
+// everything around them. A run of this many adjacent threads with the same participants collapses
+// into a single stack row. Two in a row is normal correspondence, not a flood — hence three.
 const MIN_STACK_SIZE = 3
+
+// Everyone who has written in the thread, in the order they first wrote. Threads stack only when these
+// match exactly, so any difference in who is involved keeps them apart. Search results are single
+// messages with no thread behind them and carry no participant list, so their sender is all there is.
+const participantsOf = (thread: Thread) => {
+	const emails = (thread.participants ?? [])
+		.map((p) => (p.email ?? '').trim().toLowerCase())
+		.filter(Boolean)
+
+	return emails.length ? emails.join(',') : (thread.from_email ?? '').trim().toLowerCase()
+}
 
 /**
  * The stack identity of a thread, or null when it must never stack.
  *
- * Stacking keys on the SENDER, not the subject. Matching subjects too was tried and measured against a
- * real 300-thread inbox, and the two classes turned out not to be separable: "Outbound IP Change — KSA
- * Region" vs "… Johannesburg Region" (one template, must stack) scored 0.71 similarity, while "Your CRM
- * trial just expired" vs "Your Learning trial just expired" (distinct notices, must not stack) scored
- * 0.74 — higher. Any threshold loose enough to catch the real floods admits everything from a sender
- * anyway, which is this rule with extra machinery. So: one sender, one day, three in a row.
+ * Stacking keys on WHO HAS WRITTEN in the thread, not on the subject. Matching subjects too was tried
+ * and measured against a real 300-thread inbox, and the two classes turned out not to be separable:
+ * "Outbound IP Change — KSA Region" vs "… Johannesburg Region" (one template, must stack) scored 0.71
+ * similarity, while "Your CRM trial just expired" vs "Your Learning trial just expired" (distinct
+ * notices, must not stack) scored 0.74 — higher. Any threshold loose enough to catch the real floods
+ * admits everything from a sender anyway, which is this rule with extra machinery. So: one cast of
+ * participants, one day, three in a row.
+ *
+ * The whole cast is keyed rather than the latest sender alone, because the latest sender of a thread
+ * you have answered is you: keying on it piled together conversations whose only common feature was
+ * your own reply, under your own name. A thread you have written in is correspondence, not a flood, so
+ * the moment the participants differ the run breaks.
  *
  * `account` is part of the key because the merged all-accounts search view can place two accounts' rows
  * adjacent: the same sender writing to two of my accounts is two piles, not one.
@@ -26,11 +43,11 @@ const MIN_STACK_SIZE = 3
  * adjacent threads from different days simply get different keys and the run flushes at midnight.
  */
 export const stackKeyOf = (thread: Thread): string | null => {
-	const from = (thread.from_email ?? '').trim().toLowerCase()
-	if (!from) return null
+	const participants = participantsOf(thread)
+	if (!participants) return null
 
 	const day = dayjs(thread.received_at).format('YYYY-MM-DD')
-	return `${thread.account ?? ''}|${day}|${from}`
+	return `${thread.account ?? ''}|${day}|${participants}`
 }
 
 interface ThreadRow {

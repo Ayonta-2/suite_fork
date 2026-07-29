@@ -88,6 +88,15 @@ export interface Recipient {
 	display_name: string | null
 }
 
+// Everyone who has written in a thread, in the order they first wrote (see serialize_participants).
+// `is_self` is resolved server-side against the addresses of the account the thread belongs to —
+// not always the active one, since All Inboxes merges rows from every account the user owns.
+export interface ThreadParticipant {
+	name: string
+	email: string
+	is_self: boolean
+}
+
 export interface Mailbox {
 	mailbox: string
 	mailbox_id: string
@@ -169,6 +178,7 @@ export interface Thread {
 	thread_id: string
 	from_name: string
 	from_email: string
+	participants?: ThreadParticipant[]
 	subject: string | null
 	preview: string | null
 	has_attachment: 0 | 1

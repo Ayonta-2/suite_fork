@@ -6,7 +6,7 @@
 		:selection-mode
 		:unread="!mail.seen"
 		:hide-sender
-		:avatar-label="getSenderInitial(mail)"
+		:avatar-label="avatarLabel"
 		:avatar-image="mail.user_image"
 		:datetime="mail.received_at"
 		:subject-italic="!mail.subject"
@@ -16,6 +16,14 @@
 		<template #sender><span v-html="highlight(header)" /></template>
 
 		<template #badges>
+			<!-- How many messages the thread holds — only worth saying once it holds more than one. -->
+			<span
+				v-if="messageCount > 1"
+				class="text-ink-gray-5 shrink-0 text-xs"
+				:aria-label="__('{0} messages', [messageCount])"
+			>
+				{{ messageCount }}
+			</span>
 			<!-- All Inboxes: which account received this mail. -->
 			<div v-if="accountLabel" class="text-ink-gray-4 flex shrink-0 items-center gap-1 text-xs">
 				<span aria-hidden="true">·</span>
@@ -148,6 +156,7 @@ import { Badge, Popover, Tooltip } from 'frappe-ui'
 
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients, getSenderInitial } from '@/apps/mail/utils'
+import { formatThreadParticipants, primaryParticipant } from '@/apps/mail/utils/participants'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
@@ -216,9 +225,21 @@ const header = computed(() => {
 	const isOutgoing =
 		mailboxes.value.includes(mailboxIds.sent) || mailboxes.value.includes(mailboxIds.drafts)
 
-	return isOutgoing
-		? getFormattedRecipients(mail.recipients) || __('To:')
-		: mail.from_name || mail.from_email
+	// Sent and Drafts are about who the mail is going to, so those rows name the recipients.
+	// Everywhere else the row names the thread's participants — search results are single
+	// messages with no thread behind them, so those fall back to the sender.
+	if (isOutgoing) return getFormattedRecipients(mail.recipients) || __('To:')
+	return formatThreadParticipants(mail.participants ?? []) || mail.from_name || mail.from_email
+})
+
+// Gmail-style count of how many messages the conversation holds, shown once there's more than one.
+const messageCount = computed(() => mail.messages?.length ?? 0)
+
+// The letter behind the avatar, for a contact with no picture: whoever the picture itself would be of.
+const avatarLabel = computed(() => {
+	const primary = primaryParticipant(mail.participants ?? [])
+	if (!primary) return getSenderInitial(mail)
+	return getSenderInitial({ from_name: primary.name, from_email: primary.email })
 })
 
 // In search results, highlight the matched query term. Escape the text first (so any markup in the

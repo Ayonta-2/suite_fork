@@ -226,6 +226,7 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
 	conversations = fetch_threads(account, filter, start, limit)
 
 	sent_mailbox = get_mailbox_id_by_role(account, "sent")
+	user_emails = {e.lower() for e in get_account_emails(account)}
 
 	threads = []
 	for conversation in conversations.values():
@@ -241,7 +242,7 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
 		# The preview/date reflect the latest message in the whole conversation (the most recent
 		# activity) everywhere except Sent, where the latest sent message is shown.
 		latest = in_mailbox[-1] if mailbox == sent_mailbox else conversation[-1]
-		threads.append(serialize_thread(in_mailbox, conversation, latest))
+		threads.append(serialize_thread(in_mailbox, conversation, latest, user_emails))
 
 	# Avatars for the list-view summary rows, and for each message in the nested threads.
 	add_user_images_to_emails(account, threads, is_thread=False)
@@ -361,7 +362,12 @@ def get_attachment(account: str, blob_id: str, filename: str | None = None) -> N
 	frappe.local.response.type = "download"
 
 
-def serialize_thread(messages: list[dict], thread_messages: list[dict], latest: dict | None = None) -> dict:
+def serialize_thread(
+	messages: list[dict],
+	thread_messages: list[dict],
+	latest: dict | None = None,
+	user_emails: set[str] | None = None,
+) -> dict:
 	"""Serializes a thread for response.
 
 	Both `messages` (the thread's messages within the current mailbox) and `thread_messages` (the full
@@ -369,6 +375,9 @@ def serialize_thread(messages: list[dict], thread_messages: list[dict], latest: 
 	fields are derived from `latest` (defaulting to the latest of `messages`), except `subject` which
 	comes from the conversation's first message (the thread's original subject); the full conversation
 	is serialized under `messages` so the whole thread can be rendered without a separate fetch.
+
+	`user_emails` is the set of the account's own addresses (lowercased), used to flag which of the
+	thread's senders is the user themselves.
 	"""
 
 	first = thread_messages[0]
@@ -396,9 +405,38 @@ def serialize_thread(messages: list[dict], thread_messages: list[dict], latest: 
 		**{field: current[field] for field in current_fields},
 		**{field: latest[field] for field in activity_fields},
 		"subject": first["subject"],
+		"participants": serialize_participants(thread_messages, user_emails or set()),
 		"attachments": serialize_attachments(latest.get("attachments", [])),
 		"messages": [serialize_mail(message) for message in thread_messages],
 	}
+
+
+def serialize_participants(thread_messages: list[dict], user_emails: set[str]) -> list[dict]:
+	"""The thread's senders, in the order they first wrote, de-duplicated by address.
+
+	This is what the list row names, in place of the latest message's sender alone: a thread you have
+	replied to led with your own name, which read as though you had started it. Each entry carries
+	`is_self` when the sender is one of the account's own addresses, so a row merged in from another
+	account (All Inboxes, cross-account search) is still resolved against the account that owns it.
+	"""
+
+	participants: list[dict] = []
+	seen: set[str] = set()
+	for message in thread_messages:
+		email = message.get("from_email") or ""
+		if not email or email.lower() in seen:
+			continue
+
+		seen.add(email.lower())
+		participants.append(
+			{
+				"name": message.get("from_name") or "",
+				"email": email,
+				"is_self": email.lower() in user_emails,
+			}
+		)
+
+	return participants
 
 
 def serialize_mail(mail: dict) -> dict:
