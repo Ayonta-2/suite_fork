@@ -75,6 +75,25 @@ class ImportEmailMeta:
 	received_at: datetime
 
 
+def _safe_blob_id(blob_id: str) -> str:
+	"""Returns ``blob_id`` if it names a file directly inside ``blobs/``, else throws.
+
+	The id comes from the ``emails.json`` inside the uploaded archive, and the importer joins it onto
+	the extraction directory before opening it. A value like ``../../../../etc/passwd`` would
+	otherwise escape that directory and be imported as an email, so only bare filenames are allowed.
+	"""
+
+	if (
+		not blob_id
+		or blob_id in (".", "..")
+		or os.path.isabs(blob_id)
+		or os.path.basename(blob_id) != blob_id
+	):
+		frappe.throw(_("Invalid blobId {0} in the import metadata.").format(frappe.bold(str(blob_id))))
+
+	return blob_id
+
+
 @dataclass(slots=True)
 class ExportEmail:
 	id: str
@@ -172,7 +191,7 @@ class ImportMetadataLoader:
 		for meta in cls._load_json_metadata(base_dir):
 			result.append(
 				ImportEmailMeta(
-					blob_path=os.path.join("blobs", meta["blobId"]),
+					blob_path=os.path.join("blobs", _safe_blob_id(meta["blobId"])),
 					mailbox_ids=set(meta["mailboxIds"].keys()),
 					keywords=set(meta.get("keywords", {}).keys() or []),
 					received_at=parse_iso_datetime(meta["receivedAt"], as_str=False),
