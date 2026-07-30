@@ -515,7 +515,9 @@ const sidebarItems = computed(() => {
 			label: __('All Inboxes'),
 			icon: Mails,
 			to: { name: 'mail-all-inboxes' },
-			activeFor: ['mail-all-inboxes'],
+			// A thread opened from the merged list is its own route (it carries the
+			// thread's real account/mailbox params) but still belongs to this item.
+			activeFor: ['mail-all-inboxes', 'mail-all-inboxes-mail'],
 			suffix: allInboxesUnread.data ? String(allInboxesUnread.data) : '',
 		})
 	if (screenerItem && screeningEnabled.value) pinnedItems.push(screenerItem)

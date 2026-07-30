@@ -200,7 +200,8 @@ import {
 } from 'lucide-vue-next'
 import { Breadcrumbs, Button, Dropdown, Tooltip, call, createResource, usePageMeta } from 'frappe-ui'
 
-import { getFormattedDate, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
+import { getFormattedDate, raiseOptimisticToast, raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
+import { isNavigationKey, navigationOffset, stepFrom } from '@/apps/mail/utils/listNavigation'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
@@ -407,8 +408,24 @@ const openRow = computed(() =>
 const openThreadIDs = computed(() => (threads.data ?? []).map((t: Thread) => t.thread_id))
 
 const stepOpenThread = (offset: number) => {
-	const ids = openThreadIDs.value
-	const next = ids[ids.indexOf(threadID!) + offset]
+	const next = stepFrom(openThreadIDs.value, threadID, offset)
+	if (next) openThread(next)
+}
+
+// Up/down/j/k walk the list, or the open thread when one is showing. The merged list is flat —
+// no stacks, no day headers, no selection — so a step is just the neighbouring row.
+const handleKeyDown = (e: KeyboardEvent) => {
+	const key = e.key.toLowerCase()
+	if (!isNavigationKey(key) || shouldIgnoreKeypress(e)) return
+
+	e.preventDefault()
+	const offset = navigationOffset(key)
+
+	if (threadID) return stepOpenThread(offset)
+
+	// With no thread open the keys still move through the list, opening as they go, which is what
+	// Split View makes useful: the pane follows the cursor.
+	const next = stepFrom(openThreadIDs.value, threadID, offset)
 	if (next) openThread(next)
 }
 
@@ -576,11 +593,13 @@ const onNewMail = () => refreshThreads()
 onMounted(() => {
 	reloadInterval.value = setInterval(onNewMail, 30000)
 	socket.on('new_mail_created', onNewMail)
+	window.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
 	socket.off('new_mail_created', onNewMail)
+	window.removeEventListener('keydown', handleKeyDown)
 })
 </script>
 

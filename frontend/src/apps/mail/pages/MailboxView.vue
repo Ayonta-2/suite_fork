@@ -570,6 +570,12 @@ import {
 	stripShortcutHint,
 } from '@/apps/mail/utils'
 import {
+	hasCursor,
+	isNavigationKey,
+	navigationOffset,
+	stepFromKey,
+} from '@/apps/mail/utils/listNavigation'
+import {
 	useMobileSelection,
 	useScreenSize,
 	useSwipeNav,
@@ -1011,12 +1017,11 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
 }
 
 const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
-	const navigationKeys = ['arrowup', 'arrowdown', 'j', 'k']
-	if (!navigationKeys.includes(key)) return
+	if (!isNavigationKey(key)) return
 
 	e.preventDefault()
 
-	const offset = ['arrowup', 'k'].includes(key) ? -1 : 1
+	const offset = navigationOffset(key)
 	const prevIDs = focusedRow.value ? rowThreadIDs(focusedRow.value) : []
 
 	let newIDs: string[] = []
@@ -1032,14 +1037,12 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 		if (next) newIDs = [next]
 	} else {
 		const rows = navigableRows.value
-		// A cursor whose row is gone — folded away, or removed by a mutation — restarts at the top.
-		const index = rows.findIndex((row) => row.key === focusedRowKey.value)
-		const next = index === -1 ? rows[0] : rows[index + offset]
+		const next = stepFromKey(rows, focusedRowKey.value, offset)
 
 		if (next) {
 			focusRow(next)
 			newIDs = rowThreadIDs(next)
-		} else if (index !== -1) loadMoreThenOpenEdge(offset, 'focus')
+		} else if (hasCursor(rows, focusedRowKey.value)) loadMoreThenOpenEdge(offset, 'focus')
 	}
 
 	// Handle shift+arrow selection. A row carries every thread it stands for, so shifting onto a stack
