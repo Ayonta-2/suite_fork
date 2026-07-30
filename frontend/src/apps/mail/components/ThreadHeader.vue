@@ -13,7 +13,7 @@
 		</Button>
 		<template v-if="thread?.length">
 			<Tooltip v-if="!isMobile" :text="thread?.[0]?.subject">
-				<h2 class="mr-2 select-none truncate font-semibold leading-5">
+				<h2 class="mr-2 truncate font-semibold leading-5">
 					{{ thread?.[0]?.subject || __('[No subject]') }}
 				</h2>
 			</Tooltip>
@@ -116,7 +116,7 @@ import {
 } from 'lucide-vue-next'
 import { Button, Tooltip } from 'frappe-ui'
 
-import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
+import { FLAGGED_STAR_STYLE, FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
@@ -191,7 +191,7 @@ const threadActions = computed((): Action[] => [
 				thread.map((m) => m.id),
 				false,
 			),
-		icon: h(Star, { style: 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' }),
+		icon: h(Star, { style: FLAGGED_STAR_STYLE }),
 		condition: () => thread.every((m) => m.flagged),
 	},
 	{
