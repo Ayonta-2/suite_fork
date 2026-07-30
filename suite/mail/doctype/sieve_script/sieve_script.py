@@ -440,7 +440,16 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
 	Activation is skipped while the vacation sieve script is active, so rebuilding the automation
 	script (e.g. from a Mailbox Settings / Screened Email Address change) never disables the
 	vacation auto-responder. The vacation flow reactivates the last active script once vacation ends.
+
+	Accounts whose resolved user is disabled or gone are skipped: the JMAP connection is made as
+	that user, so the rebuild cannot work (e.g. the personal account of a deactivated employee) and
+	would only produce an error log. The script is rebuilt on the next change once the user is
+	enabled again.
 	"""
+
+	user = get_user_for_jmap_account(account, raise_exception=False)
+	if not user or not frappe.get_cached_value("User", user, "enabled"):
+		return
 
 	def _build_automation_sieve(account: str, activate: bool = False) -> None:
 		doc = frappe.get_doc("Sieve Script", get_automation_script_name(account))
