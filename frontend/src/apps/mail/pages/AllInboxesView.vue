@@ -565,6 +565,7 @@ const moveOpenThread = (mailboxId: string) => {
 	raiseOptimisticToast(
 		moveThreadOut(row, mailboxId, restore),
 		folder ? __('Thread moved to {0}.', [folder]) : __('Thread moved.'),
+		withUndo(row, restore),
 	)
 }
 
@@ -663,7 +664,20 @@ const handleAddToMailbox = (mailboxId: string) => {
 	const thread = openRow.value
 	if (!thread) return
 	const folder = folderName(mailboxId)
+	const snapshot = threadSnapshot(thread)
 	syncFolderTag(mailboxId, true)
+
+	// Undo replays the exact membership rather than the inverse call: a mail that was already in
+	// the folder before an "add" must stay in it afterwards.
+	const undoAction = () => {
+		syncFolderTag(mailboxId, false)
+		raiseOptimisticToast(
+			restoreMails(thread.account, snapshot),
+			folder ? __('Removed from {0}.', [folder]) : __('Folder change undone.'),
+		)
+	}
+	setUndoAction(undoAction)
+
 	raiseOptimisticToast(
 		paneCall('add_mails_to_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }).catch(
 			(error) => {
@@ -672,6 +686,7 @@ const handleAddToMailbox = (mailboxId: string) => {
 			},
 		),
 		folder ? __('Thread added to {0}.', [folder]) : __('Thread added to folder.'),
+		undoAction,
 	)
 }
 
@@ -679,7 +694,20 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
 	const thread = openRow.value
 	if (!thread) return
 	const folder = folderName(mailboxId)
+	const snapshot = threadSnapshot(thread)
 	syncFolderTag(mailboxId, false)
+
+	// Undo replays the exact membership rather than the inverse call: a mail that was already in
+	// the folder before an "add" must stay in it afterwards.
+	const undoAction = () => {
+		syncFolderTag(mailboxId, true)
+		raiseOptimisticToast(
+			restoreMails(thread.account, snapshot),
+			folder ? __('Added back to {0}.', [folder]) : __('Folder change undone.'),
+		)
+	}
+	setUndoAction(undoAction)
+
 	raiseOptimisticToast(
 		paneCall('remove_mails_from_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }).catch(
 			(error) => {
@@ -688,6 +716,7 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
 			},
 		),
 		folder ? __('Thread removed from {0}.', [folder]) : __('Thread removed from folder.'),
+		undoAction,
 	)
 }
 
