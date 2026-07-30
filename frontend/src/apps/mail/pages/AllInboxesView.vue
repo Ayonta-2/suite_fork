@@ -587,8 +587,7 @@ const toggleStack = (row: StackRow) => {
 
 	ids.forEach((id) => expandedStacks.value.delete(id))
 	// Don't leave the reading pane pointing at a row we just hid.
-	if (threadID && ids.includes(threadID))
-		router.push({ name: 'mail-all-inboxes', query: route.query })
+	if (threadID && ids.includes(threadID)) closeThread()
 }
 
 // What the cursor can land on, in render order: each day's header, then that day's rows — a
@@ -711,8 +710,7 @@ const toggleGroupCollapse = (key: string) => {
 
 	collapsedGroups.value.push(key)
 	// Don't leave the reading pane pointing at a row we just hid.
-	if (groupedThreads.value[key]?.some((t: Thread) => t.thread_id === threadID))
-		router.push({ name: 'mail-all-inboxes', query: route.query })
+	if (groupedThreads.value[key]?.some((t: Thread) => t.thread_id === threadID)) closeThread()
 }
 
 watch(groupMessagesBy, () => (collapsedGroups.value = []))
