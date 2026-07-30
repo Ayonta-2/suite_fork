@@ -18,7 +18,7 @@ import { useRoute } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 
 import { mailServerUnavailable } from '@/boot/config'
-import { useRouter } from 'vue-router'
+import { type RouteLocationRaw, useRouter } from 'vue-router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
 import { useScreenSize, useTheme } from '@/apps/mail/utils/composables'
@@ -61,14 +61,24 @@ const gPrefix = useGPrefix()
 // `g` is also the prefix each list uses for its own g g / G jump to the ends. Both listeners
 // see the key and keep their own prefix state; this one only ever acts on a following letter,
 // so a `g g` falls through to the list untouched.
-const MAILBOX_KEYS: Record<string, () => string> = {
-	i: () => mailboxIds.inbox,
-	f: () => 'starred',
-	s: () => mailboxIds.sent,
-	d: () => mailboxIds.drafts,
-	j: () => mailboxIds.junk,
-	a: () => mailboxIds.archive,
-	t: () => mailboxIds.trash,
+// `g` then a letter. Beyond the account's own folders this reaches the two views that are not
+// folders at all — the merged list and the Screener — so the map holds routes, not mailbox ids.
+//
+// `a` is All Inboxes (as in Gmail's All Mail), which pushes Archive to `e` — the letter that
+// already archives a thread, so one letter means archive throughout. The Screener takes `r` for
+// review: `s` is Sent, and `c` would collide with Contacts if that ever gets a jump.
+const mailboxRoute = (mailbox: string) => ({ name: 'mail-mailbox', params: { accountId, mailbox } })
+
+const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
+	a: () => ({ name: 'mail-all-inboxes' }),
+	r: () => ({ name: 'mail-screener', params: { accountId } }),
+	i: () => mailboxRoute(mailboxIds.inbox),
+	f: () => mailboxRoute('starred'),
+	s: () => mailboxRoute(mailboxIds.sent),
+	d: () => mailboxRoute(mailboxIds.drafts),
+	j: () => mailboxRoute(mailboxIds.junk),
+	e: () => mailboxRoute(mailboxIds.archive),
+	t: () => mailboxRoute(mailboxIds.trash),
 }
 
 const handleGlobalShortcuts = (e: KeyboardEvent) => {
@@ -82,11 +92,11 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
 	}
 
 	if (gPrefix.armed.value) {
-		const mailbox = MAILBOX_KEYS[key]?.()
+		const destination = GO_TO_KEYS[key]?.()
 		gPrefix.disarm()
-		if (!mailbox) return
+		if (!destination) return
 		e.preventDefault()
-		router.push({ name: 'mail-mailbox', params: { accountId, mailbox } })
+		router.push(destination)
 		return
 	}
 
