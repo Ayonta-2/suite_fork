@@ -403,7 +403,9 @@ class File(FrappeFile):
 				new_child_url = get_s3_url(new_child_url)
 			elif child.file_url.startswith("/"):
 				new_child_url = "/" + new_child_url
-			if manager.s3_enabled:
+			# a trashed child's blob is in the trash, not at its file_url — that url is
+			# only where a restore would put it back, so repoint it and move nothing
+			if manager.s3_enabled and child.status != STATUS_TRASHED:
 				manager.move(child, new_child_url)
 			child.recursive_path_move(child.file_url, new_child_url)
 		self.save()
