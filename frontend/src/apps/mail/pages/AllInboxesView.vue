@@ -77,7 +77,7 @@
 
 				<!-- Mail list -->
 				<div ref="mailList" class="h-full overflow-y-auto overscroll-contain max-sm:pb-20">
-					<div v-for="(group, key) in groupedThreads" :key="key">
+					<div v-for="(rows, key) in groupedRows" :key="key">
 						<Tooltip
 							v-if="groupMessagesBy !== 'None' && !isMobile"
 							:text="
@@ -106,28 +106,50 @@
 							</div>
 						</Tooltip>
 						<template v-if="isMobile || !collapsedGroups.includes(key)">
-							<MailListItem
-								v-for="mail in group"
-								:key="`${mail.account}:${mail.thread_id}`"
-								:mailbox="mail.inbox || ''"
-								:account-id="mail.account"
-								:account-label="mail.account_name || undefined"
-								:mail
-								:is-selected="false"
-								:selectable="false"
-								thread-route-name="mail-all-inboxes-mail"
-								:hide-avatar="!isMobile"
-								class="border-l-transparent sm:border-l"
-								:class="{
-									'!bg-surface-blue-1': mail.thread_id === threadID && !isMobile,
-									'!border-l-outline-blue-5': focusedRowKey === mail.thread_id,
-								}"
-								:data-row-key="mail.thread_id"
-								@set-seen="(seen: boolean) => handleSetSeen(mail, seen)"
-								@archive-thread="handleArchive(mail)"
-								@trash-thread="handleTrash(mail)"
-								@set-flagged="(flagged: boolean) => handleSetFlagged(mail, flagged)"
-							/>
+							<!-- A stack row stands in for a run of look-alike threads; when expanded, its
+							     members follow it as ordinary (indented) rows — the same model as the
+							     mailbox list. No delete handler: Delete only shows once every member is
+							     already in Trash, which the merged inbox list can't reach. -->
+							<template v-for="row in rows" :key="row.key">
+								<StackListItem
+									v-if="row.type === 'stack'"
+									:threads="row.threads"
+									:expanded="row.expanded"
+									:is-selected="false"
+									:selectable="false"
+									:hide-avatar="!isMobile"
+									class="border-l-transparent sm:border-l"
+									:class="{ '!border-l-outline-blue-5': focusedRowKey === row.key }"
+									:data-row-key="row.key"
+									@toggle="toggleStack(row)"
+									@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
+									@archive-threads="stackArchive(row.threads)"
+									@trash-threads="stackTrash(row.threads)"
+								/>
+								<MailListItem
+									v-else
+									:mailbox="row.thread.inbox || ''"
+									:account-id="row.thread.account"
+									:account-label="row.thread.account_name || undefined"
+									:mail="row.thread"
+									:is-selected="false"
+									:selectable="false"
+									thread-route-name="mail-all-inboxes-mail"
+									:hide-avatar="!isMobile"
+									:hide-sender="row.inStack"
+									class="border-l-transparent sm:border-l"
+									:class="{
+										'!bg-surface-blue-1': row.thread.thread_id === threadID && !isMobile,
+										'!border-l-outline-blue-5': focusedRowKey === row.key,
+										'!pl-10 sm:!pl-12': row.inStack,
+									}"
+									:data-row-key="row.key"
+									@set-seen="(seen: boolean) => handleSetSeen(row.thread, seen)"
+									@archive-thread="handleArchive(row.thread)"
+									@trash-thread="handleTrash(row.thread)"
+									@set-flagged="(flagged: boolean) => handleSetFlagged(row.thread, flagged)"
+								/>
+							</template>
 						</template>
 					</div>
 					<!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
@@ -219,6 +241,7 @@ import {
 	useGPrefix,
 	useRowScroll,
 } from '@/apps/mail/utils/listNavigation'
+import { buildListRows, type ListRow, type StackRow } from '@/apps/mail/utils/threadStacks'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
@@ -228,6 +251,7 @@ import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import StackListItem from '@/apps/mail/components/StackListItem.vue'
 
 import type { Thread, UserResource } from '@/apps/mail/types'
 
@@ -386,9 +410,11 @@ const refreshCounts = () => store.mailboxes.reload()
 const resetThreads = () => {
 	refreshMode.value = false
 	epoch.value++
-	// A reset replaces the list with a fresh first window, so any prior collapse no longer maps to what's
-	// shown — clear it (else a group collapsed under one filter stays collapsed and hides its threads).
+	// A reset replaces the list with a fresh first window, so any prior collapse or stack expansion no
+	// longer maps to what's shown — clear them (else a group collapsed under one filter stays collapsed
+	// and hides its threads).
 	collapsedGroups.value = []
+	expandedStacks.value = new Set()
 	threads.reload()
 	refreshCounts()
 }
@@ -472,21 +498,47 @@ const handleKeyDown = (e: KeyboardEvent) => {
 	focusRow(stepFromKey(navigableRows.value, focusedRowKey.value, offset))
 }
 
-// What the cursor can land on, in render order: each day's header, then that day's threads unless
-// it is collapsed. Walking the loaded threads instead skipped the headers and — worse — stepped
-// onto threads hidden inside a collapsed day, where the marker simply vanished.
-type NavEntry =
-	| { type: 'group'; key: string; dateKey: string }
-	| { type: 'thread'; key: string; threadID: string }
+// Chatty senders collapse into stacks exactly as in the mailbox list — buildListRows keys runs by
+// account + day + sender, so a run never mixes accounts even here. Expansion is tracked by member
+// id (see MailboxView) so a run keeps its state as infinite scroll grows it.
+const expandedStacks = ref(new Set<string>())
+
+const isRunExpanded = (run: Thread[]) => run.some((t) => expandedStacks.value.has(t.thread_id))
+
+const groupedRows = computed<Record<string, ListRow[]>>(() =>
+	Object.fromEntries(
+		Object.entries(groupedThreads.value).map(([key, group]) => [
+			key,
+			buildListRows(group, { rowKey: (t: Thread) => t.thread_id, isExpanded: isRunExpanded }),
+		]),
+	),
+)
+
+const toggleStack = (row: StackRow) => {
+	// The cursor follows the click, and the fold: the stack row now stands for its hidden members.
+	focusedRowKey.value = row.key
+	const ids = row.threads.map((t) => t.thread_id)
+	if (!row.expanded) return ids.forEach((id) => expandedStacks.value.add(id))
+
+	ids.forEach((id) => expandedStacks.value.delete(id))
+	// Don't leave the reading pane pointing at a row we just hid.
+	if (threadID && ids.includes(threadID))
+		router.push({ name: 'mail-all-inboxes', query: route.query })
+}
+
+// What the cursor can land on, in render order: each day's header, then that day's rows — a
+// collapsed stack is a single stop (its members aren't rendered) — unless the day is collapsed.
+// Walking the loaded threads instead skipped the headers and — worse — stepped onto threads
+// hidden inside a collapsed day or stack, where the marker simply vanished.
+type NavEntry = { type: 'group'; key: string; dateKey: string } | ListRow
 
 const navigableRows = computed<NavEntry[]>(() => {
 	const rows: NavEntry[] = []
-	for (const [dateKey, group] of Object.entries(groupedThreads.value)) {
+	for (const [dateKey, groupRows] of Object.entries(groupedRows.value)) {
 		if (groupMessagesBy.value !== 'None' && !isMobile.value)
 			rows.push({ type: 'group', key: `group:${dateKey}`, dateKey })
 		if (!isMobile.value && collapsedGroups.value.includes(dateKey)) continue
-		for (const thread of group)
-			rows.push({ type: 'thread', key: thread.thread_id, threadID: thread.thread_id })
+		rows.push(...groupRows)
 	}
 	return rows
 })
@@ -505,21 +557,35 @@ const focusRow = (row?: NavEntry) => {
 	if (row) focusRowKey(row.key)
 }
 
-// Enter opens a thread, or folds the day the marker is sitting on.
+// Enter opens a thread, toggles the stack, or folds the day the marker is sitting on.
 const activateFocusedRow = () => {
 	const row = navigableRows.value.find((r) => r.key === focusedRowKey.value)
 	if (!row) return
-	if (row.type === 'thread') return openThread(row.threadID)
+	if (row.type === 'thread') return openThread(row.thread.thread_id)
+	if (row.type === 'stack') return toggleStack(row)
 	if (!isLastGroup(row.dateKey)) toggleGroupCollapse(row.dateKey)
 }
 
 // The open thread keeps its row in view, as the mailbox list does: stepping
 // prev/next or deep-linking scrolls the merged list along, and the cursor
-// follows so keyboard navigation resumes from it.
+// follows so keyboard navigation resumes from it. A step can land inside a
+// collapsed stack or a folded day — surface it, as the mailbox list does: an
+// opened thread is always visible in the list.
 watch(
 	() => threadID,
 	(val) => {
-		if (val) setTimeout(() => focusRowKey(val))
+		if (!val) return
+		expandedStacks.value.add(val)
+		// Deferred: the immediate run fires mid-setup, before collapsedGroups below exists.
+		setTimeout(() => {
+			for (const group of collapsedGroups.value) {
+				if (groupedThreads.value[group]?.some((t: Thread) => t.thread_id === val)) {
+					collapsedGroups.value = collapsedGroups.value.filter((d) => d !== group)
+					break
+				}
+			}
+			focusRowKey(val)
+		})
 	},
 	{ immediate: true },
 )
@@ -656,6 +722,56 @@ const handleTrash = (thread: Thread) => {
 	const restore = removeFromList(thread)
 	raiseOptimisticToast(moveThreadOut(thread, thread.trash!, restore), __('Thread moved to Trash.'))
 }
+
+// Stack actions. A stack's members share one account (it is part of the stack key), so a single
+// batched call covers the run — mirroring the mailbox's bulk handlers rather than firing one
+// request per member.
+const stackSetSeen = (threads: Thread[], seen: boolean) => {
+	const changed = threads.filter((t) => t.seen !== (seen ? 1 : 0))
+	if (!changed.length) return
+	const applySeen = (value: 0 | 1) =>
+		changed.forEach((t) => {
+			t.seen = value
+			t.messages?.forEach((m) => (m.seen = value))
+		})
+	applySeen(seen ? 1 : 0)
+	call('suite.mail.api.mail.set_mails_seen', {
+		account: threads[0].account,
+		ids: changed.flatMap(messageIds),
+		seen,
+	})
+		.then(refreshCounts)
+		.catch((error) => {
+			applySeen(seen ? 0 : 1) // revert the optimistic update
+			raiseToast(error?.messages?.[0] || error?.message, 'error')
+		})
+}
+
+// Restores run in reverse so each row splices back at the index captured when it was removed.
+const stackMoveOut = (threads: Thread[], mailboxId: string | undefined, done: string) => {
+	if (!mailboxId) return raiseToast(__('No such folder for this account.'), 'error')
+	const restores = threads.map(removeFromList)
+	const promise = call('suite.mail.api.mail.move_mails', {
+		account: threads[0].account,
+		ids: threads.flatMap(messageIds),
+		mailbox: mailboxId,
+		clear_junk: true,
+	}).then(refreshCounts, (error) => {
+		restores.reverse().forEach((restore) => restore())
+		throw error
+	})
+	raiseOptimisticToast(promise, done)
+}
+
+const stackArchive = (threads: Thread[]) =>
+	stackMoveOut(threads, threads[0].archive, __('{0} threads archived.', [String(threads.length)]))
+
+const stackTrash = (threads: Thread[]) =>
+	stackMoveOut(
+		threads,
+		threads[0].trash,
+		__('{0} threads moved to Trash.', [String(threads.length)]),
+	)
 
 // Filter
 const FILTER_OPTIONS = [
