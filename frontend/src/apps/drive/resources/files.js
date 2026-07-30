@@ -113,7 +113,6 @@ export const getSlides = createResource({
   transform(data) {
     data = data.map((k) => ({
       ...k,
-      // Presentations carry `title`; the list/grid views key off `file_name`.
       file_name: k.title,
       content_doctype: PRESENTATION_CONTENT_DOCTYPE,
       mime_type: 'frappe/slides',

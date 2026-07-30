@@ -24,11 +24,23 @@ function baseNameLength(entity) {
 const now = () =>
   typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()
 
+// Window after opening during which any focus loss is treated as a transient
+// steal to be reclaimed rather than a commit. Comfortably covers the tick or two
+// it takes the trigger (a removed breadcrumb button, a closing menu) to settle.
+const OPEN_GRACE_MS = 600
+
 export function useInlineRename(source) {
   const entity = () => (typeof source === 'function' ? source() : source)
   const draft = ref('')
   const input = ref(null)
   let openedAt = 0
+
+  function selectBaseName() {
+    const e = entity()
+    const el = input.value
+    if (!e || !el) return
+    el.setSelectionRange(0, baseNameLength(e))
+  }
 
   function focusAndSelect(e) {
     const el = input.value
@@ -51,18 +63,19 @@ export function useInlineRename(source) {
     }
   }
 
-  // Blur handler: a breadcrumb rename is triggered by clicking the crumb, whose
-  // button is then removed from the DOM — that briefly drops focus to <body>
-  // (blur with no relatedTarget) right after we focus the input. Committing on
-  // that transient blur would exit edit mode instantly. So within a short grace
-  // window, an aimless focus loss reclaims focus instead of committing; a real
-  // click-away (focus moved to another element, or after the field settles)
+  // A breadcrumb rename is triggered by clicking the crumb, whose button is then
+  // removed from the DOM — that drops focus (to <body>, or wherever the app's
+  // focus management sends it) right after we focus the input. Committing on
+  // that transient blur would exit edit mode instantly ("selects then instantly
+  // deselects"). So within the grace window right after opening, ANY focus loss
+  // reclaims focus instead of committing; after it settles, a real click-away
   // still commits.
-  function blur(event) {
+  function blur() {
     const e = entity()
     if (!e || renamingEntity.value !== e.name) return
-    if (!event?.relatedTarget && now() - openedAt < 300) {
-      focusAndSelect(e)
+    if (now() - openedAt < OPEN_GRACE_MS) {
+      // Reclaim on the next tick so the browser finishes moving focus first.
+      nextTick(() => focusAndSelect(e))
       return
     }
     submit()
@@ -74,9 +87,13 @@ export function useInlineRename(source) {
     const title = draft.value.trim()
     stopRename()
     if (!title || title === e.file_name) return
+    const previous = e.file_name
     e.file_name = title
-    rename.submit({ entity_name: e.name, new_title: title })
+    rename.submit(
+      { entity_name: e.name, new_title: title },
+      { onError: () => (e.file_name = previous) }
+    )
   }
 
-  return { draft, input, start, submit, blur, cancel: stopRename }
+  return { draft, input, start, submit, blur, selectBaseName, cancel: stopRename }
 }

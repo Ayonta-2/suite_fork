@@ -3,7 +3,7 @@
   <div
     v-if="rows?.length"
     ref="scrollContainer"
-    class="grid-container gap-5 p-5 pb-[60px] overflow-auto select-none flex-1 min-h-0"
+    class="grid-container content-start gap-5 p-5 pb-[60px] overflow-auto select-none flex-1 min-h-0"
   >
     <div
       v-for="file in rows"
@@ -87,14 +87,12 @@
 <script setup>
 import GridItem from '@/apps/drive/components/GridItem.vue'
 import ContextMenu from '@/apps/drive/components/ContextMenu.vue'
-import emitter from '@/apps/drive/emitter'
 import { Button, Checkbox } from 'frappe-ui'
 import { ref, computed } from 'vue'
 import { openEntity } from '@/apps/drive/utils/files'
 import { useRoute } from 'vue-router'
 import { setActiveEntity, renamingEntity } from '@/apps/drive/data/selection'
 import { settings } from '@/apps/drive/resources/permissions'
-import { onKeyDown } from '@vueuse/core'
 import { onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
 
 const props = defineProps({
@@ -177,50 +175,6 @@ const onDragStart = (e, file) => {
   requestAnimationFrame(() => ghost.remove())
 }
 
-onKeyDown('a', (e) => {
-  if (
-    e.target.classList.contains('ProseMirror') ||
-    e.target.tagName === 'INPUT' ||
-    e.target.tagName === 'TEXTAREA'
-  )
-    return
-  if (e.metaKey) {
-    selections.value = new Set(props.folderContents.map((k) => k.name))
-    e.preventDefault()
-  }
-})
-onKeyDown('Backspace', (e) => {
-  if (
-    e.target.classList.contains('ProseMirror') ||
-    e.target.tagName === 'INPUT' ||
-    e.target.tagName === 'TEXTAREA'
-  )
-    return
-  if (e.metaKey) emitter.emit('remove')
-})
-onKeyDown('m', (e) => {
-  if (
-    e.target.classList.contains('ProseMirror') ||
-    e.target.tagName === 'INPUT' ||
-    e.target.tagName === 'TEXTAREA'
-  )
-    return
-  if (e.ctrlKey) emitter.emit('move')
-})
-onKeyDown('Escape', (e) => {
-  if (
-    e.target.classList.contains('ProseMirror') ||
-    e.target.tagName === 'INPUT' ||
-    e.target.tagName === 'TEXTAREA'
-  )
-    return
-  // A dialog is open — let its own Escape-to-close handler take this
-  // keystroke instead of eating it via preventDefault (which blocks Reka's
-  // dismissable-layer check for unhandled Escape).
-  if (document.querySelector('.dialog-content[data-state="open"]')) return
-  selections.value = new Set()
-  e.preventDefault()
-})
 </script>
 <style scoped>
 .grid-container {

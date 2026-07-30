@@ -91,12 +91,9 @@ def _get_children_count(files):
 
 def _get_slide_counts(rows):
 	"""
-	Returns a dict mapping presentation docnames to their slide count, for the
-	presentation rows among `rows`. Drive stores these as files pointing at a
-	Presentation doc, so the count has to come from the Slides side.
+	Returns a dict mapping presentation docnames to their slide count.
 	"""
-	# Imported lazily: suite.slides imports from suite.drive, so a module-level
-	# import here would be circular.
+	# Imported here as suite.slides imports from suite.drive.
 	from suite.slides.doctype.presentation.presentation import get_slide_counts
 
 	return get_slide_counts(

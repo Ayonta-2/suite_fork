@@ -1,56 +1,62 @@
 <template>
   <List
-    class="relative select-none px-5 pt-5 flex flex-col flex-1 min-h-0 list-row-px-3"
+    class="relative select-none pt-3 flex flex-col flex-1 min-h-0 list-row-px-3"
     :columns="columnTracks"
     :row-height="40"
+    divider="inset"
   >
-    <ListHeader>
-      <ListHeaderCellSort :direction="directionFor('file_name')" @click="toggleSort('file_name', __('Name'))">
-        <template #prefix>
+    <!-- Header is inside the scroll container so it shares the rows' width -->
+    <div
+      ref="scrollContainer"
+      class="flex-1 min-h-0 overflow-y-auto px-2 isolate [scrollbar-gutter:stable]"
+    >
+      <ListHeader class="group sticky top-0 z-10 bg-surface-base">
+        <ListHeaderCell>
           <Checkbox
-            class="shrink-0 mr-1"
-            :class="selectAllState.some ? '' : 'invisible'"
+            class="shrink-0"
+            :class="selectAllState.some ? '' : 'invisible group-hover:visible'"
             :model-value="selectAllState.all"
             :indeterminate="selectAllState.some && !selectAllState.all"
             @click.stop="toggleSelectAll"
           />
-        </template>
-        {{ __('Name') }}
-        <template #suffix="{ direction }">
-          <span class="block size-3.5" :class="sortIcon(direction)" />
-        </template>
-      </ListHeaderCellSort>
-      <ListHeaderCellSort :direction="directionFor('owner')" @click="toggleSort('owner', __('Owner'))">
-        {{ __('Owner') }}
-        <template #suffix="{ direction }">
-          <span class="block size-3.5" :class="sortIcon(direction)" />
-        </template>
-      </ListHeaderCellSort>
-      <ListHeaderCellSort :direction="directionFor('modified')" @click="toggleSort('modified', __('Last Modified'), false)">
-        {{ __('Last Modified') }}
-        <template #suffix="{ direction }">
-          <span class="block size-3.5" :class="sortIcon(direction)" />
-        </template>
-      </ListHeaderCellSort>
-      <ListHeaderCellSort :direction="directionFor('file_size')" @click="toggleSort('file_size', __('Size'))">
-        {{ __('Size') }}
-        <template #suffix="{ direction }">
-          <span class="block size-3.5" :class="sortIcon(direction)" />
-        </template>
-      </ListHeaderCellSort>
-      <ListHeaderCell />
-    </ListHeader>
-    <DriveListSkeleton v-if="!folderContents" />
-    <template v-else>
-      <div ref="scrollContainer" class="flex-1 min-h-0 overflow-y-auto pt-px [scrollbar-gutter:stable]">
+        </ListHeaderCell>
+        <ListHeaderCellSort :direction="directionFor('file_name')" @click="toggleSort('file_name', __('Name'))">
+          {{ __('Name') }}
+          <template #suffix="{ direction }">
+            <span class="block size-3.5" :class="sortIcon(direction)" />
+          </template>
+        </ListHeaderCellSort>
+        <ListHeaderCellSort :direction="directionFor('owner')" @click="toggleSort('owner', __('Owner'))">
+          {{ __('Owner') }}
+          <template #suffix="{ direction }">
+            <span class="block size-3.5" :class="sortIcon(direction)" />
+          </template>
+        </ListHeaderCellSort>
+        <ListHeaderCellSort :direction="directionFor('modified')" @click="toggleSort('modified', __('Last Modified'), false)">
+          {{ __('Last Modified') }}
+          <template #suffix="{ direction }">
+            <span class="block size-3.5" :class="sortIcon(direction)" />
+          </template>
+        </ListHeaderCellSort>
+        <ListHeaderCellSort :direction="directionFor('file_size')" @click="toggleSort('file_size', __('Size'))">
+          {{ __('Size') }}
+          <template #suffix="{ direction }">
+            <span class="block size-3.5" :class="sortIcon(direction)" />
+          </template>
+        </ListHeaderCellSort>
+        <ListHeaderCell />
+      </ListHeader>
+      <DriveListSkeleton v-if="!folderContents" />
+      <template v-else>
         <NoFilesSection v-if="!formattedRows.length" description="Nothing found - try something else?" />
         <template v-else-if="formattedRows[0]?.group">
           <ListGroup v-for="group in formattedRows" :key="group.group" :label="group.group" class="mt-3 first:mt-0">
             <DriveListRow
-              :rows="group.rows"
+              :items="flattenRows(group.rows)"
               :context-menu="contextMenu"
               :selections
               :toggle-selection="toggleSelection"
+              :toggle-folder="toggleFolderRow"
               :root-entity="rootEntity"
               @dropped="emit('dropped')"
             />
@@ -58,17 +64,18 @@
         </template>
         <div v-else>
           <DriveListRow
-            :rows="formattedRows"
+            :items="visibleItems"
             :context-menu="contextMenu"
             :selections
             :toggle-selection="toggleSelection"
+            :toggle-folder="toggleFolderRow"
             :root-entity="rootEntity"
             @dropped="(...p) => $emit('dropped', ...p)"
           />
         </div>
         <ListRow v-if="loadingMore" class="pointer-events-none">
+          <ListCell />
           <ListCell>
-            <Checkbox class="shrink-0 mr-1 -mt-px invisible" :model-value="false" />
             <div class="h-[16px] w-[16px] shrink-0 mr-2">
               <Skeleton class="h-[16px] w-[16px] rounded-sm" />
             </div>
@@ -82,8 +89,8 @@
           <ListCell><Skeleton class="h-3 w-12 rounded" /></ListCell>
           <ListCell />
         </ListRow>
-      </div>
-    </template>
+      </template>
+    </div>
   </List>
   <ContextMenu v-if="rowEvent && selectedRow" :key="selectedRow.name" v-on-outside-click="() => (rowEvent = false)"
     :close="() => (rowEvent = false)" :action-items="dropdownActionItems(selectedRow)" :event="rowEvent" />
@@ -99,9 +106,12 @@ import DriveListRow from './DriveListRow.vue'
 import DriveListSkeleton from './DriveListSkeleton.vue'
 import NoFilesSection from './NoFilesSection.vue'
 import { openEntity, isModKey } from '@/apps/drive/utils/files'
+import {
+  flattenRows,
+  toggleFolder,
+  refreshExpanded,
+} from '@/apps/drive/data/folderTree'
 
-import { onKeyDown } from '@vueuse/core'
-import emitter from '@/apps/drive/emitter'
 
 const route = useRoute()
 const props = defineProps({
@@ -162,6 +172,7 @@ const formattedRows = computed(() => {
 // since it compared route.name to bare labels that never match the
 // `drive-`-prefixed route names).
 const columnTracks = computed(() => [
+  '16px',
   'minmax(0,1fr)',
   '10%',
   '15%',
@@ -169,15 +180,30 @@ const columnTracks = computed(() => [
   '5%',
 ])
 
+const visibleItems = computed(() => flattenRows(formattedRows.value))
+// Collapsing hides rows that may be selected — drop them from the selection so
+// the toolbar can't act on rows nobody can see.
+const toggleFolderRow = (row) => {
+  const collapsed = toggleFolder(row, sortOrder.value)
+  if (!collapsed.length) return
+  const next = new Set(selections.value)
+  collapsed.forEach((name) => next.delete(name))
+  selections.value = next
+}
+watch(sortOrder, () => refreshExpanded(sortOrder.value), { deep: true })
+
 // Shift-click range select: extends from the last row clicked (whichever
 // way — checkbox or plain click) through the clicked row, in on-screen
-// order. `flatRows` collapses grouped views into one sequence so a range can
-// span group boundaries, matching the legacy list view's behavior.
+// order. `flatRows` collapses grouped views and expanded subtrees into one
+// sequence so a range can span those boundaries.
 const lastSelectedName = ref(null)
 const flatRows = computed(() =>
-  formattedRows.value[0]?.group
-    ? formattedRows.value.flatMap((g) => g.rows)
-    : formattedRows.value
+  (formattedRows.value[0]?.group
+    ? formattedRows.value.flatMap((g) => flattenRows(g.rows))
+    : visibleItems.value
+  )
+    .filter((i) => i.row)
+    .map((i) => i.row)
 )
 function toggleSelection(row, event) {
   if (event?.shiftKey && lastSelectedName.value) {
@@ -243,49 +269,10 @@ const contextMenu = (event, row) => {
   event.preventDefault()
 }
 
-// Add keyboard shortcuts here as selections is Drive's own Set-based model.
-onKeyDown('a', (e) => {
-  if (
-    e.target.classList.contains('ProseMirror') ||
-    e.target.tagName === 'INPUT' ||
-    e.target.tagName === 'TEXTAREA'
-  )
-    return
-  if (e.metaKey) {
-    selections.value = new Set(props.folderContents.map((k) => k.name))
-    e.preventDefault()
-  }
-})
-onKeyDown('Backspace', (e) => {
-  if (
-    e.target.classList.contains('ProseMirror') ||
-    e.target.tagName === 'INPUT' ||
-    e.target.tagName === 'TEXTAREA'
-  )
-    return
-  if (e.metaKey) emitter.emit('remove')
-})
-onKeyDown('m', (e) => {
-  if (
-    e.target.classList.contains('ProseMirror') ||
-    e.target.tagName === 'INPUT' ||
-    e.target.tagName === 'TEXTAREA'
-  )
-    return
-  if (e.ctrlKey) emitter.emit('move')
-})
-onKeyDown('Escape', (e) => {
-  if (
-    e.target.classList.contains('ProseMirror') ||
-    e.target.tagName === 'INPUT' ||
-    e.target.tagName === 'TEXTAREA'
-  )
-    return
-  // A dialog is open — let its own Escape-to-close handler take this
-  // keystroke instead of eating it via preventDefault (which blocks Reka's
-  // dismissable-layer check for unhandled Escape).
-  if (document.querySelector('.dialog-content[data-state="open"]')) return
-  selections.value = new Set()
-  e.preventDefault()
-})
 </script>
+<style>
+/* Match the inset row dividers — frappe-ui always spans this 1 / -1 */
+[data-slot='list-header-border'] {
+  grid-column: 2 / -1;
+}
+</style>

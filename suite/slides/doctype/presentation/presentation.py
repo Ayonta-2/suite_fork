@@ -216,7 +216,7 @@ def get_presentations() -> list[dict]:
 
 
 def get_slide_counts(presentation_names: list[str]) -> dict[str, int]:
-	"""Slide count per presentation, as one grouped query rather than a COUNT each."""
+	"""Returns a dict mapping presentation names to their slide count."""
 	if not presentation_names:
 		return {}
 

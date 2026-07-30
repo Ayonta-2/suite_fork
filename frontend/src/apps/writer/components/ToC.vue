@@ -5,9 +5,9 @@
     <div v-if="!show" class="flex justify-center">
       <Button variant="ghost" :icon="LucideTableOfContents" tooltip="Table of Contents" @click="show = !show" />
     </div>
-    <div v-if="show" class="grow flex flex-col gap-0.5">
+    <div v-if="show" class="grow flex flex-col gap-0.5 w-52">
       <div v-if="hasContent" class="flex justify-between items-center ps-2 pr-1 pb-1">
-        <span class="text-base-medium text-ink-gray-8 select-none">Table of Contents</span>
+        <span class="text-base-medium text-ink-gray-8 select-none whitespace-nowrap">Table of Contents</span>
         <Button :icon="LucideLeftClose" variant="ghost" @click="show = !show" tooltip="Hide" />
       </div>
       <div v-if="tabs.length > 0" class="flex flex-col gap-0.5 mb-2" @drop.prevent="onDrop">

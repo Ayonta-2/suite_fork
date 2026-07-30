@@ -1,5 +1,5 @@
 <template>
-  <div class="p-5 space-y-0.5">
+  <div class="py-5 space-y-0.5">
     <div v-for="i in 10" :key="i" class="flex items-center gap-3 px-3 py-2">
       <Skeleton class="size-5 shrink-0 rounded" />
       <Skeleton class="h-3.5 rounded" :style="{ width: nameWidths[i % nameWidths.length] }" />

@@ -52,7 +52,7 @@ import { confirmRestore, confirmRemove, confirmDeleteForever } from '@/apps/driv
 import { entitiesDownload } from '@/apps/drive/utils/download'
 import { ref, computed, watch, watchEffect, provide, inject, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { useEventListener, useInfiniteScroll } from '@vueuse/core'
+import { onKeyDown, useEventListener, useInfiniteScroll } from '@vueuse/core'
 import { request } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { activeEntity, startRename } from '@/apps/drive/data/selection'
@@ -61,6 +61,13 @@ const { systemUser } = useCurrentUser()
 import { pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
 import { view, getSortOrder, setSortOrder } from '@/apps/drive/data/prefs'
 import { setCurrentFolder } from '@/apps/drive/data/currentFolder'
+import {
+  expandedFolders,
+  loadedChildRows,
+  refreshFolder,
+  removeFromTree,
+  resetTree,
+} from '@/apps/drive/data/folderTree'
 import { toast } from '@/apps/drive/utils/toasts'
 import { move } from '@/apps/drive/resources/files'
 import DriveListSkeleton from '@/apps/drive/components/DriveListSkeleton.vue'
@@ -142,10 +149,15 @@ const rows = computed(() => {
   return out
 })
 
-watch(sortId, (id) => {
-  const saved = getSortOrder(id)
-  if (saved) sortOrder.value = saved
-})
+watch(
+  sortId,
+  (id) => {
+    resetTree()
+    const saved = getSortOrder(id)
+    if (saved) sortOrder.value = saved
+  },
+  { immediate: true }
+)
 
 watch(
   sortOrder,
@@ -168,12 +180,42 @@ watch(
 )
 
 const selections = ref(new Set())
-const selectedEntitities = computed(
-  () =>
-    props.getEntities.data?.filter?.(({ name }) =>
-      selections.value.has(name)
-    ) || []
+const allRows = computed(() => [
+  ...(props.getEntities.data ?? []),
+  ...loadedChildRows.value,
+])
+const selectedEntitities = computed(() =>
+  allRows.value.filter(({ name }) => selections.value.has(name))
 )
+
+// Shared by both views, as selections is Drive's own Set-based model.
+const isTyping = (e) =>
+  e.target.classList.contains('ProseMirror') ||
+  e.target.tagName === 'INPUT' ||
+  e.target.tagName === 'TEXTAREA'
+
+onKeyDown('a', (e) => {
+  if (isTyping(e)) return
+  if (e.metaKey) {
+    selections.value = new Set(rows.value.map((k) => k.name))
+    e.preventDefault()
+  }
+})
+onKeyDown('Backspace', (e) => {
+  if (isTyping(e)) return
+  if (e.metaKey) emitter.emit('remove')
+})
+onKeyDown('m', (e) => {
+  if (isTyping(e)) return
+  if (e.ctrlKey) emitter.emit('move')
+})
+onKeyDown('Escape', (e) => {
+  if (isTyping(e)) return
+  // Let an open dialog handle its own Escape.
+  if (document.querySelector('.dialog-content[data-state="open"]')) return
+  selections.value = new Set()
+  e.preventDefault()
+})
 
 const verifyAccess = computed(() => props.verify?.data || !props.verify)
 watchEffect(() => {
@@ -224,7 +266,9 @@ async function loadMore() {
       params: { ...res.params, start: next, limit: PAGE_SIZE },
       credentials: 'include',
     })
-    const page = Array.isArray(resp) ? resp : resp?.message ?? []
+    // request() is a raw fetch that skips the resource's transform, so the page
+    // rows arrive unformatted — run prettyData before appending.
+    const page = prettyData(Array.isArray(resp) ? resp : resp?.message ?? [])
     pageStart.value = next
     hasNextPage.value = page.length >= PAGE_SIZE
     if (page.length) res.setData([...(res.data || []), ...page])
@@ -284,12 +328,13 @@ function removeFromList(entities) {
   props.getEntities.setData(
     props.getEntities.data.filter(({ name }) => !names.includes(name))
   )
+  removeFromTree(names)
 }
 provide('removeFromList', removeFromList)
 
 emitter.on('remove-file', (item) => {
   const names = Array.isArray(item) ? item : [item]
-  const entities = props.getEntities.data.filter((e) => names.includes(e.name))
+  const entities = allRows.value.filter((e) => names.includes(e.name))
   if (!entities.length) return
   confirmRemove(entities, { onSuccess: () => removeFromList(entities) })
 })
@@ -299,8 +344,9 @@ if (!settings.fetched && useSessionStore().isLoggedIn) settings.fetch()
 // Drag and drop
 const removeFile = (file, target) => {
   const removedIndex = props.getEntities.data.findIndex((k) => k.name === file)
-  props.getEntities.data.splice(removedIndex, 1)
-  const targetRow = props.getEntities.data.find((k) => k.name === target)
+  if (removedIndex !== -1) props.getEntities.data.splice(removedIndex, 1)
+  else removeFromTree([file])
+  const targetRow = allRows.value.find((k) => k.name === target)
   if (targetRow) targetRow.child_count = (targetRow.child_count || 0) + 1
   props.getEntities.setData(props.getEntities.data)
 }
@@ -318,6 +364,8 @@ const onDrop = (targetFile, draggedItem) => {
     new_parent: targetFile.name,
   })
   toMove.forEach((name) => removeFile(name, targetFile.name))
+  if (expandedFolders.value.has(targetFile.name))
+    refreshFolder(targetFile.name, sortOrder.value)
   selections.value = new Set()
 }
 emitter.on('remove-file-ui', removeFile)

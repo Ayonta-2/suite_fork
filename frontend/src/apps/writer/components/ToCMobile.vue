@@ -14,20 +14,14 @@
   </div>
 </template>
 <script setup>
-import { computed, onMounted, onBeforeUnmount, watchEffect } from 'vue'
-
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watchEffect } from 'vue'
 import { TabButtons } from 'frappe-ui'
 
-const activeTabId = ref()
-const bar = ref(null)
-onMounted(() => {
-  const handleTabChange = (e) => {
-    activeTabId.value = e.detail.tabId
-  }
-
-  props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
+const props = defineProps({
+  editor: Object,
 })
+
+const bar = ref(null)
 
 // Anything else pinned to the bottom on mobile (comment cards) needs to clear the bar.
 const setBarHeight = (height) =>
@@ -44,18 +38,6 @@ watchEffect(() => {
     setBarHeight(entry.contentRect.height),
   )
   observer.observe(bar.value)
-})
-
-onBeforeUnmount(() => {
-  observer?.disconnect()
-  setBarHeight(0)
-})
-
-// onBeforeUnmount(() => {
-//   props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
-// })
-const props = defineProps({
-  editor: Object,
 })
 
 // `editor.state.doc` is a ProseMirror object, not a Vue-reactive source, so a
@@ -95,6 +77,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  observer?.disconnect()
+  setBarHeight(0)
   props.editor.off('update', updateTabs)
   props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
 })

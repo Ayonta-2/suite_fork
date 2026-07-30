@@ -37,6 +37,19 @@ html.theme-switching * {
   background: #ebeef0;
 }
 
+[data-theme='dark'] *::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+}
+
+[data-theme='dark'] *::-webkit-scrollbar-track,
+[data-theme='dark'] *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+[data-theme='dark'] * {
+  scrollbar-color: #4a4a4a transparent;
+}
+
 *::-webkit-scrollbar {
   width: 6px;
   height: 6px;

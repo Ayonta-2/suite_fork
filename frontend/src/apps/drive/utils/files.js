@@ -254,10 +254,22 @@ export const sortEntities = (rows, order) => {
   // Mutates directly
   const field = order.field
   const asc = order.ascending ? 1 : -1
+  // Nullish sorts last either way — `>` is false in both directions against it
+  const compare = (x, y) => {
+    if (x == null || y == null) return x == y ? 0 : x == null ? 1 : -1
+    return x === y ? 0 : x > y ? 1 : -1
+  }
   rows.sort((a, b) => {
-    return a[field] == b[field] ? 0 : a[field] > b[field] ? asc : -asc
+    // Folders have no byte size, so they sink below files and sort by count
+    if (field === 'file_size' && a.is_folder !== b.is_folder)
+      return a.is_folder ? 1 : -1
+    const sortField =
+      field === 'file_size' && a.is_folder ? 'child_count' : field
+    const primary = compare(a[sortField], b[sortField])
+    if (primary) return primary * asc
+    return compare(a.file_name, b.file_name) * asc
   })
-  if (order.smart) {
+  if (order.smart && field === 'file_name') {
     rows.sort((a, b) => {
       const [endA, endB] = trimCommonPrefix(a.file_name, b.file_name)
       if (!endA) return 0

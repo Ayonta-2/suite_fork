@@ -1,114 +1,170 @@
 <template>
-  <ListRow
-    v-for="row in rows"
-    :key="row.name"
-    class="group"
-    :class="[
-      row.name === selectedName || selections.has(row.name)
-        ? 'bg-surface-gray-2 hover:!bg-surface-gray-3'
-        : 'bg-surface-base',
-      draggingNames.has(row.name) ? 'opacity-60 hover:shadow-none' : '',
-      dragOverItem === row.name ? '!bg-surface-gray-3' : '',
-    ]"
-    :draggable="renamingEntity !== row.name"
-    :to="routeFor(row)"
-    :data-selected="selections.has(row.name) || undefined"
-    @contextmenu="(e) => !selections.size && contextMenu(e, row)"
-    @click="!isModKey($event) && !selections.size && open(row)"
-    @dragstart="onDragStart($event, row)"
-    @dragend="draggedItem = null"
-    @dragover="
-      (e) => {
-        if (row.is_folder) {
-          e.preventDefault()
-          dragOverItem = row.name
-        }
-      }
-    "
-    @dragleave="dragOverItem = null"
-    @drop="
-      $emit(
-        'dropped',
-        row,
-        $event.dataTransfer.getData('application/x-filename')
-      )
-    "
-  >
-    <ListCell>
-      <Checkbox
-        class="shrink-0 mr-1 -mt-px"
-        :class="selections.size > 0 || selections.has(row.name) ? '' : 'invisible group-hover:visible'"
-        :model-value="selections.has(row.name)"
-        @click.stop="props.toggleSelection(row, $event)"
-      />
-      <div class="relative h-[16px] w-[16px] shrink-0 mr-2">
-        <img
-          v-if="!loadedThumbnails.has(row.name)"
-          loading="lazy"
-          class="absolute inset-0 h-[16px] w-[16px] rounded-sm"
-          :src="thumbnail(row).fallback"
-          :draggable="false"
-        />
-        <img
-          loading="lazy"
-          decoding="async"
-          class="absolute inset-0 h-[16px] w-[16px] object-cover rounded-sm"
-          :class="loadedThumbnails.has(row.name) ? 'opacity-100' : 'opacity-0'"
-          :src="thumbnail(row).src"
-          :draggable="false"
-          @load="loadedThumbnails.add(row.name)"
-        />
-      </div>
-      <InlineRenameInput :entity="row">
-        <Tooltip :text="nameTooltip(row)" :disabled="!nameTooltip(row)">
-          <div class="truncate text-base">{{ displayName(row) }}</div>
-        </Tooltip>
-      </InlineRenameInput>
-      <div class="flex flex-row grow justify-end gap-2 w-[20px]">
-        <LucideStar
-          v-if="row.is_favourite && $route.name !== 'Favourites'"
-          width="16"
-          height="16"
-          class="my-auto text-ink-amber-6 stroke-current fill-current"
-        />
-        <Tooltip v-if="shareIcon(row)" :text="shareIcon(row).tooltip">
-          <component :is="shareIcon(row).icon" class="size-4" />
-        </Tooltip>
-      </div>
-    </ListCell>
-    <ListCell>
-      <Avatar
-        v-if="row.owner"
-        shape="circle"
-        :image="row.owner_image"
-        :label="row.owner_full_name || row.owner"
-        size="sm"
-        class="mr-2 shrink-0"
-      />
-      <span class="truncate text-base">{{ ownerLabel(row) }}</span>
-    </ListCell>
-    <ListCell>
-      <Tooltip :text="formatDate(row.modified)">
-        <span class="truncate text-base">{{ row.relativeModified }}</span>
-      </Tooltip>
-    </ListCell>
-    <ListCell>
-      <span class="truncate text-base">{{ sizeLabel(row) }}</span>
-    </ListCell>
-    <ListCell class="justify-end">
-      <Button
-        v-if="!selections.size"
-        class="!bg-inherit"
-        @click="(e) => contextMenu(e, row)"
+  <template v-for="item in items" :key="item.key">
+    <ListRow v-if="item.placeholder === 'loading'" class="pointer-events-none">
+      <ListCell />
+      <ListCell>
+        <div class="flex items-center" :style="indent(item.depth)">
+          <Skeleton class="h-[16px] w-[16px] shrink-0 mr-2 rounded-sm" />
+          <Skeleton class="h-3.5 w-40 rounded" />
+        </div>
+      </ListCell>
+      <ListCell>
+        <Skeleton class="size-5 shrink-0 mr-2 rounded-full" />
+        <Skeleton class="h-3 w-16 rounded" />
+      </ListCell>
+      <ListCell><Skeleton class="h-3 w-20 rounded" /></ListCell>
+      <ListCell><Skeleton class="h-3 w-12 rounded" /></ListCell>
+      <ListCell />
+    </ListRow>
+    <ListRow v-else-if="item.placeholder" class="pointer-events-none">
+      <ListCell />
+      <ListCell>
+        <span class="text-base text-ink-gray-5" :style="indent(item.depth, 24)">
+          {{ __('Empty folder') }}
+        </span>
+      </ListCell>
+      <ListCell />
+      <ListCell />
+      <ListCell />
+      <ListCell />
+    </ListRow>
+    <template v-else>
+      <ListRow
+        v-for="row in [item.row]"
+        :key="item.key"
+        class="group"
+        :class="[
+          row.name === selectedName || selections.has(row.name)
+            ? 'bg-surface-gray-2 hover:!bg-surface-gray-3'
+            : 'bg-surface-base',
+          draggingNames.has(row.name) ? 'opacity-60 hover:shadow-none' : '',
+          dragOverItem === row.name ? '!bg-surface-gray-3' : '',
+        ]"
+        :draggable="renamingEntity !== row.name"
+        :to="routeFor(row)"
+        :data-selected="selections.has(row.name) || undefined"
+        @contextmenu="(e) => !selections.size && contextMenu(e, row)"
+        @click="!isModKey($event) && !selections.size && open(row)"
+        @dragstart="onDragStart($event, row)"
+        @dragend="draggedItem = null"
+        @dragover="
+          (e) => {
+            if (row.is_folder) {
+              e.preventDefault()
+              dragOverItem = row.name
+            }
+          }
+        "
+        @dragleave="dragOverItem = null"
+        @drop="
+          $emit(
+            'dropped',
+            row,
+            $event.dataTransfer.getData('application/x-filename')
+          )
+        "
       >
-        <LucideMoreHorizontal class="size-4" />
-      </Button>
-    </ListCell>
-  </ListRow>
+        <ListCell>
+          <Checkbox
+            class="shrink-0"
+            :class="selections.size > 0 || selections.has(row.name) ? '' : 'invisible group-hover:visible'"
+            :model-value="selections.has(row.name)"
+            @click.stop="props.toggleSelection(row, $event)"
+          />
+        </ListCell>
+        <ListCell>
+          <div
+            class="relative h-[16px] w-[16px] shrink-0 mr-2"
+            :class="canExpand(row) ? 'cursor-pointer' : ''"
+            :style="indent(item.depth)"
+            @click.stop.prevent="canExpand(row) && toggleFolder(row)"
+          >
+            <div
+              class="absolute inset-0"
+              :class="
+                canExpand(row)
+                  ? isExpanded(row)
+                    ? 'opacity-0'
+                    : 'group-hover:opacity-0'
+                  : ''
+              "
+            >
+              <img
+                v-if="!loadedThumbnails.has(row.name)"
+                loading="lazy"
+                class="absolute inset-0 h-[16px] w-[16px] rounded-sm"
+                :src="thumbnail(row).fallback"
+                :draggable="false"
+              />
+              <img
+                loading="lazy"
+                decoding="async"
+                class="absolute inset-0 h-[16px] w-[16px] object-cover rounded-sm"
+                :class="loadedThumbnails.has(row.name) ? 'opacity-100' : 'opacity-0'"
+                :src="thumbnail(row).src"
+                :draggable="false"
+                @load="loadedThumbnails.add(row.name)"
+              />
+            </div>
+            <LucideChevronRight
+              v-if="canExpand(row)"
+              class="absolute inset-0 size-4 text-ink-gray-7 transition-transform duration-150"
+              :class="isExpanded(row) ? '' : 'opacity-0 group-hover:opacity-100'"
+              :style="{ transform: `rotate(${isExpanded(row) ? 90 : 0}deg)` }"
+            />
+          </div>
+          <InlineRenameInput :entity="row">
+            <Tooltip :text="nameTooltip(row)" :disabled="!nameTooltip(row)">
+              <div class="truncate text-base">{{ displayName(row) }}</div>
+            </Tooltip>
+          </InlineRenameInput>
+          <div class="flex flex-row grow justify-end gap-2 w-[20px]">
+            <LucideStar
+              v-if="row.is_favourite && $route.name !== 'Favourites'"
+              width="16"
+              height="16"
+              class="my-auto text-ink-amber-6 stroke-current fill-current"
+            />
+            <Tooltip v-if="shareIcon(row)" :text="shareIcon(row).tooltip">
+              <component :is="shareIcon(row).icon" class="size-4" />
+            </Tooltip>
+          </div>
+        </ListCell>
+        <ListCell>
+          <Avatar
+            v-if="row.owner"
+            shape="circle"
+            :image="row.owner_image"
+            :label="row.owner_full_name || row.owner"
+            size="sm"
+            class="mr-2 shrink-0"
+          />
+          <span class="truncate text-base">{{ ownerLabel(row) }}</span>
+        </ListCell>
+        <ListCell>
+          <Tooltip :text="formatDate(row.modified)">
+            <span class="truncate text-base">{{ row.relativeModified }}</span>
+          </Tooltip>
+        </ListCell>
+        <ListCell>
+          <span class="truncate text-base">{{ sizeLabel(row) }}</span>
+        </ListCell>
+        <ListCell class="justify-end">
+          <Button
+            v-if="!selections.size"
+            class="!bg-inherit"
+            @click="(e) => contextMenu(e, row)"
+          >
+            <LucideMoreHorizontal class="size-4" />
+          </Button>
+        </ListCell>
+        </ListRow>
+    </template>
+  </template>
 </template>
 <script setup>
 import { ListRow, ListCell } from 'frappe-ui/list'
-import { Avatar, Button, Checkbox, Tooltip } from 'frappe-ui'
+import { Avatar, Button, Checkbox, Skeleton, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSessionStore } from '@/boot/session'
@@ -116,17 +172,20 @@ import { activeEntity, renamingEntity } from '@/apps/drive/data/selection'
 import InlineRenameInput from './InlineRenameInput.vue'
 import { openEntity, isModKey, getThumbnailUrl, WRITER_CONTENT_DOCTYPE, PRESENTATION_CONTENT_DOCTYPE } from '@/apps/drive/utils/files'
 import { formatDate } from '@/apps/drive/utils/format'
+import { expandedFolders } from '@/apps/drive/data/folderTree'
 import LucideStar from '~icons/lucide/star'
+import LucideChevronRight from '~icons/lucide/chevron-right'
 import LucideMoreHorizontal from '~icons/lucide/more-horizontal'
 import LucideGlobe2 from '~icons/lucide/globe-2'
 import LucideBuilding2 from '~icons/lucide/building-2'
 import LucideUsers from '~icons/lucide/users'
 
 const props = defineProps({
-  rows: Array,
+  items: Array,
   contextMenu: Function,
   selections: Set,
   toggleSelection: Function,
+  toggleFolder: Function,
   rootEntity: Object,
 })
 defineEmits(['dropped'])
@@ -178,6 +237,16 @@ const routeFor = (row) =>
     ? { name: 'drive-Folder', params: { entityName: row.name } }
     : undefined
 
+const canExpand = (row) =>
+  row.is_folder &&
+  !row.external &&
+  row.child_count !== 0 &&
+  route.name !== 'drive-Trash'
+const isExpanded = (row) => expandedFolders.value.has(row.name)
+// 24px = icon width + its gutter, so text lines up with sibling file names
+const indent = (depth, offset = 0) =>
+  depth || offset ? { marginLeft: depth * 20 + offset + 'px' } : null
+
 const loadedThumbnails = ref(new Set())
 function thumbnail(row) {
   return getThumbnailUrl(row)
@@ -221,8 +290,6 @@ function sizeLabel(row) {
     return row.child_count
       ? row.child_count + ' item' + (row.child_count === 1 ? '' : 's')
       : 'empty'
-  // Presentations have no meaningful byte size — slide count is the useful
-  // measure, and reads consistently with a folder's item count.
   if (row.slide_count != null)
     return row.slide_count
       ? row.slide_count + ' slide' + (row.slide_count === 1 ? '' : 's')
