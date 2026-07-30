@@ -13,7 +13,7 @@ from suite.drive.api.permissions import (
 	get_user_access,
 	user_has_permission,
 )
-from suite.drive.api.product import invite_users
+from suite.drive.api.product import create_invites
 from suite.drive.utils import (
 	ATTACHMENT_CONTENT_DOCTYPE,
 	GENERAL_USER,
@@ -164,7 +164,7 @@ class File(FrappeFile):
 		if user in ("", GENERAL_USER):
 			self._clear_general()
 		elif not frappe.db.exists("User", user):
-			invite_users(user, auto=True)
+			create_invites(user, auto=True)
 
 		permission = frappe.db.get_value("Drive Permission", {"entity": self.name, "user": user})
 		if not permission:

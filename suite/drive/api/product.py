@@ -180,8 +180,15 @@ def set_settings(updates: dict[str, int | str]):
 
 
 @frappe.whitelist()
-def invite_users(emails: str, auto: bool = False):
-	# Gated at call sites (sharing with a new user, or an admin inviting).
+def invite_users(emails: str):
+	"""Admin-only. Sharing with an unregistered address goes through
+	`create_invites` instead, already gated by `share` rights on the entity."""
+	if not is_drive_site_admin():
+		frappe.throw(_("You don't have the permissions for this action."), frappe.PermissionError)
+	create_invites(emails)
+
+
+def create_invites(emails: str, auto: bool = False):
 	if not emails:
 		return
 
