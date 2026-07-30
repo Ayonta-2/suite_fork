@@ -26,26 +26,32 @@ export function setTotalCols(n) { TOTAL_COLS = Math.max(1, Math.floor(n)) }
 //
 // Selection accent is intentionally monochrome (Espresso black + neutral grays)
 // rather than blue, to match Frappe Sheets's black-and-grey theme.
-function _isDarkTheme() {
-  return typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'dark'
+// Resolve frappe-ui design tokens (--surface-*, --outline-*, --ink-*).
+// Canvas API cannot read CSS variables directly, so we resolve them dynamically
+// from document.documentElement via getComputedStyle so canvas rendering stays
+// 100% aligned with frappe-ui design tokens in both light and dark modes.
+function _token(name, fallback) {
+  if (typeof document === 'undefined') return fallback
+  const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return val || fallback
 }
 
 export const COLORS = {
-  get white()        { return _isDarkTheme() ? '#171717' : '#FFFFFF' },
-  get gridLine()     { return _isDarkTheme() ? '#2d2d32' : '#E2E2E2' },
-  get headerBg()     { return _isDarkTheme() ? '#1f1f23' : '#F8F8F8' },
-  get headerText()   { return _isDarkTheme() ? '#a3a3a3' : '#7C7C7C' },
-  get cellText()     { return _isDarkTheme() ? '#e5e5e5' : '#171717' },
-  get sparkline()    { return _isDarkTheme() ? '#2DD4BF' : '#0F766E' },
-  get selFill()      { return _isDarkTheme() ? 'rgba(255, 255, 255, 0.08)' : 'rgba(23, 23, 23, 0.06)' },
-  get selBorder()    { return _isDarkTheme() ? '#0891B2' : '#171717' },
-  get selHandle()    { return _isDarkTheme() ? '#0891B2' : '#171717' },
-  get activeHeader() { return _isDarkTheme() ? '#333338' : '#E2E2E2' },
-  get rangeHeader()  { return _isDarkTheme() ? '#2a2a2e' : '#EDEDED' },
-  get freezeLine()   { return _isDarkTheme() ? '#666666' : '#525252' },
-  get pickerFill()   { return _isDarkTheme() ? 'rgba(255, 255, 255, 0.08)' : 'rgba(23, 23, 23, 0.05)' },
-  get pickerBorder() { return _isDarkTheme() ? '#a3a3a3' : '#525252' },
-  get chipFill()     { return _isDarkTheme() ? '#2a2a2e' : '#EDEDED' },
-  get chipCaret()    { return _isDarkTheme() ? '#a3a3a3' : '#525252' },
-  get invalidMark()  { return _isDarkTheme() ? '#F87171' : '#D93025' },
+  get white()        { return _token('--surface-base', '#FFFFFF') },
+  get gridLine()     { return _token('--outline-gray-2', '#E2E2E2') },
+  get headerBg()     { return _token('--surface-sidebar', '#F8F8F8') },
+  get headerText()   { return _token('--ink-gray-5', '#7C7C7C') },
+  get cellText()     { return _token('--ink-gray-9', '#171717') },
+  get sparkline()    { return _token('--ink-teal-7', '#0F766E') },
+  get selFill()      { return _token('--surface-gray-3', 'rgba(23, 23, 23, 0.06)') },
+  get selBorder()    { return _token('--ink-gray-9', '#171717') },
+  get selHandle()    { return _token('--ink-gray-9', '#171717') },
+  get activeHeader() { return _token('--surface-gray-4', '#E2E2E2') },
+  get rangeHeader()  { return _token('--surface-gray-3', '#EDEDED') },
+  get freezeLine()   { return _token('--ink-gray-7', '#525252') },
+  get pickerFill()   { return _token('--surface-gray-2', 'rgba(23, 23, 23, 0.05)') },
+  get pickerBorder() { return _token('--ink-gray-7', '#525252') },
+  get chipFill()     { return _token('--surface-gray-3', '#EDEDED') },
+  get chipCaret()    { return _token('--ink-gray-7', '#525252') },
+  get invalidMark()  { return _token('--ink-red-5', '#D93025') },
 }

@@ -6451,8 +6451,8 @@ body:has(.dialog-overlay) .sn-pivot-highlight { display: none; }
    z-index sits above the filter (14) / pivot (15) range outlines so the opaque
    track paints over any outline border that reaches the scrollbar gutter, but
    below the notes drawer (30) and popovers. */
-.sn-sb          { position:absolute; z-index:16; background:var(--surface-menu-bar, #f8f8f8);
-                  border:0 solid var(--outline-gray-2, #e2e2e2);
+.sn-sb          { position:absolute; z-index:16; background:var(--surface-gray-2, var(--surface-base));
+                  border:0 solid var(--outline-gray-2);
                   opacity:1; transition:opacity .2s ease; }
 /* --sn-sb-thick is published by canvas/scrollbars.js from SCROLLBAR_THICK, the
    single source of truth; the 12px fallback only covers the pre-mount frame. */
@@ -6460,18 +6460,18 @@ body:has(.dialog-overlay) .sn-pivot-highlight { display: none; }
 .sn-sb-h        { left:0; bottom:0; height:var(--sn-sb-thick, 12px); border-top-width:1px; }
 .sn-sb-corner   { position:absolute; z-index:16; right:0; bottom:0;
                   width:var(--sn-sb-thick, 12px); height:var(--sn-sb-thick, 12px);
-                  background:var(--surface-menu-bar, #f8f8f8);
-                  border-left:1px solid var(--outline-gray-2, #e2e2e2);
-                  border-top:1px solid var(--outline-gray-2, #e2e2e2);
+                  background:var(--surface-gray-2, var(--surface-base));
+                  border-left:1px solid var(--outline-gray-2);
+                  border-top:1px solid var(--outline-gray-2);
                   opacity:1; transition:opacity .2s ease; }
 /* Auto-hidden state — faded out and click-through so cells under the gutter
    stay reachable. JS (canvas/scrollbars.js) toggles this on inactivity. */
 .sn-sb--hidden  { opacity:0; pointer-events:none; }
-.sn-sb-thumb    { position:absolute; border-radius:6px; background:var(--ink-gray-4, #b8b8b8);
+.sn-sb-thumb    { position:absolute; border-radius:6px; background:var(--ink-gray-4);
                   transition:background .12s ease; cursor:grab; touch-action:none; }
 .sn-sb-v .sn-sb-thumb { top:0; left:2px; right:2px; }
 .sn-sb-h .sn-sb-thumb { left:0; top:2px; bottom:2px; }
-.sn-sb-thumb:hover           { background:var(--ink-gray-5, #7c7c7c); }
-.sn-sb-dragging .sn-sb-thumb { background:var(--ink-gray-6, #6b6b6b); cursor:grabbing; }
+.sn-sb-thumb:hover           { background:var(--ink-gray-5); }
+.sn-sb-dragging .sn-sb-thumb { background:var(--ink-gray-6); cursor:grabbing; }
 .sn-sb-dragging              { cursor:grabbing; user-select:none; }
 </style>

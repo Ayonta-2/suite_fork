@@ -28,6 +28,7 @@ html.theme-switching * {
 
 * {
   scrollbar-width: thin;
+  scrollbar-color: var(--ink-gray-4) transparent;
 }
 
 body {
