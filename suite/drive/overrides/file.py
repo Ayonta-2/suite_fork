@@ -191,11 +191,11 @@ class File(FrappeFile):
 			if i["owner"] == user:
 				frappe.throw("User owns parent folder", frappe.PermissionError)
 
-		if user == "$GENERAL":
+		if user in ("", GENERAL_USER):
 			self._clear_general()
-			# Restricted means restricted: the root-inherited site read (and any
-			# inherited link access) must be revoked with explicit deny rows —
-			# specific user grants still win over these.
+			# Dropping this file's own general rows is enough unless read is
+			# inherited from a folder above (e.g. anything inside Site); then
+			# restricting still needs an explicit deny to cut the inheritance.
 			if get_user_access(self, "Guest")["read"]:
 				self._insert_deny("")
 			if generate_upward_path(self.name, GENERAL_USER)[-1]["read"]:

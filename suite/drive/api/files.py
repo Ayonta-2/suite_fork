@@ -25,6 +25,7 @@ from suite.drive.utils import (
 	create_drive_file,
 	get_file_type,
 	get_new_file_name,
+	get_site_folder,
 	get_user_folder,
 	update_file_size,
 	validate_filename,
@@ -852,8 +853,8 @@ def get_entity_type(entity_name: str):
 
 @frappe.whitelist()
 def get_root_folder():
-	"""The site root and the caller's private folder."""
-	return {"root": get_site_root().name, "home": get_user_folder().name}
+	"""The shared site folder and the caller's private folder."""
+	return {"root": get_site_folder().name, "home": get_user_folder().name}
 
 
 @frappe.whitelist(allow_guest=True)

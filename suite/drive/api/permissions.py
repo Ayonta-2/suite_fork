@@ -40,11 +40,9 @@ def get_user_access(entity: str | Document | frappe._dict, user: str | None = No
 		return {**dict.fromkeys(PERMISSION_TYPES, 1), "type": "admin"}
 
 	if entity.get("attached_to_doctype") and entity.get("attached_to_name"):
-		# Attachments follow their reference document — the framework contract
-		# content apps (e.g. Slides media) rely on — instead of the tree's
-		# root-inherited read. Explicit Drive rows override it per type, so a
-		# deny revokes rather than falling through to the reference document.
-		path = generate_upward_path(entity.name, user, baseline_read=False)
+		# Attachments follow their reference document; explicit Drive rows
+		# override it per type.
+		path = generate_upward_path(entity.name, user)
 		access = filter_access(path)
 		decided = set(path[-1]["decided"])
 		if decided != set(PERMISSION_TYPES):
@@ -166,9 +164,7 @@ def get_shared_with_list(entity: str):
 
 
 def exceeds_grant_ceiling(entity, requested, user=None):
-	"""Levels in `requested` the user can't hand out because they don't hold
-	them: a user with read+share can't grant write. Admins hold everything
-	implicitly — get_user_access doesn't know that."""
+	"""Levels in `requested` the user doesn't hold, so can't hand out."""
 	user = user or frappe.session.user
 	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
 		return []
@@ -177,13 +173,6 @@ def exceeds_grant_ceiling(entity, requested, user=None):
 
 
 def drive_permission_has_permission(doc, ptype="read", user=None):
-	"""Gate direct Drive Permission access via the generic client API.
-
-	Reads are additionally scoped by `filter_drive_permission`; creating or
-	modifying an ACL row requires `share` rights on the target entity and, since
-	the generic API bypasses share(), the same grant ceiling that method
-	enforces. The share()/unshare() flows save with ignore_permissions.
-	"""
 	user = user or frappe.session.user
 	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
 		return True
@@ -194,14 +183,11 @@ def drive_permission_has_permission(doc, ptype="read", user=None):
 	if not user_has_permission(doc.entity, "share", user):
 		return False
 	if ptype == "delete" or doc.deny:
-		# Removing a row, or writing a deny, revokes rather than grants.
 		return True
 	return not exceeds_grant_ceiling(doc.entity, doc.as_dict(), user)
 
 
 def drive_settings_has_permission(doc, ptype="read", user=None):
-	"""Settings are per-user self-service. `quota` and `user_folder` are
-	server-managed and additionally guarded in the controller."""
 	user = user or frappe.session.user
 	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
 		return True
@@ -213,9 +199,6 @@ def drive_settings_has_permission(doc, ptype="read", user=None):
 
 
 def drive_invitation_has_permission(doc, ptype="read", user=None):
-	"""Only admins issue invitations from the client. Sharing with an
-	unregistered address goes through `create_invites`, which inserts with
-	ignore_permissions once share rights are checked."""
 	user = user or frappe.session.user
 	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
 		return True

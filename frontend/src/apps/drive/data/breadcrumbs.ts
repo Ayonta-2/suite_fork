@@ -132,25 +132,25 @@ export function buildBreadCrumbs(entity: Record<string, unknown>) {
     }
     breadcrumbs = breadcrumbs.slice(-1)
   } else {
-    // The path either runs through the caller's own folder (→ "Home"), starts
-    // at the site root (→ "Site"), or is a shared suffix (→ "Shared").
-    const home = rootInfo.data?.home
-    const homeIdx = breadcrumbs.findIndex((b) => b.name === home)
+    // The path runs through the caller's own folder (→ "Home"), the shared
+    // site folder (→ "Site"), or is a shared suffix (→ "Shared").
+    const homeIdx = breadcrumbs.findIndex((b) => b.name === rootInfo.data?.home)
+    const siteIdx = breadcrumbs.findIndex((b) => b.name === rootInfo.data?.root)
     if (homeIdx > -1) {
       res = [{ label: __('Home'), name: 'drive-Home', route: { name: 'drive-Home' } }]
       breadcrumbs = breadcrumbs.slice(homeIdx + 1)
-    } else if (!breadcrumbs[0].folder) {
+    } else if (siteIdx > -1) {
       res = [
         {
           label: __('Site'),
-          name: breadcrumbs[0].name,
+          name: breadcrumbs[siteIdx].name,
           route: {
             name: 'drive-Folder',
-            params: { entityName: breadcrumbs[0].name },
+            params: { entityName: breadcrumbs[siteIdx].name },
           },
         },
       ]
-      breadcrumbs = breadcrumbs.slice(1)
+      breadcrumbs = breadcrumbs.slice(siteIdx + 1)
     } else if (useSessionStore().isLoggedIn) {
       res = [
         {

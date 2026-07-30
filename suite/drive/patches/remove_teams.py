@@ -5,25 +5,29 @@ from suite.drive.utils import (
 	PERMISSION_TYPES,
 	STATUS_ACTIVE,
 	get_new_file_name,
+	get_previous_teams_folder,
 	get_root_folder,
 	get_user_folder,
 )
-
-FULL_ACCESS = dict.fromkeys(PERMISSION_TYPES, 1)
 
 
 def execute():
 	"""Collapse Drive Teams into the single site tree.
 
-	Personal team roots become private user folders; other team roots become
-	folders under the site root with membership rewritten as Drive Permission
-	rows. Runs while the Drive Team tables still exist (they are dropped by a
-	later patch) and is idempotent: every step is guarded on current state.
+	Personal team roots become private user folders directly under the site
+	root; every other team root moves into "Previous Teams" with its membership
+	rewritten as Drive Permission rows, for an admin to reorganise afterwards.
+	Nothing is readable without a grant, so private areas need no deny rows —
+	only a public team gets an explicit $GENERAL read.
+
+	Runs while the Drive Team tables still exist (they are dropped by a later
+	patch) and is idempotent: every step is guarded on current state.
 	"""
 	if not frappe.db.exists("DocType", "Drive Team"):
 		return
 
 	root = get_root_folder()
+	previous_teams = get_previous_teams_folder()
 
 	teams = frappe.get_all(
 		"Drive Team", fields=["name", "title", "owner", "personal", "public", "quota"]
@@ -42,13 +46,13 @@ def execute():
 		if team.personal and not frappe.db.get_value("Drive Settings", team.owner, "user_folder"):
 			_to_user_folder(root, home, team)
 		else:
-			_to_shared_folder(root, home, team)
-			if not team.public:
-				_deny(home, GENERAL_USER)
+			_to_shared_folder(previous_teams, home, team)
+			if team.public:
+				_grant(home, GENERAL_USER, {"read": 1})
 		_grant_members(home, members)
 
 	_expand_team_rows()
-	_convert_public_revoke_rows()
+	_drop_obsolete_revoke_rows()
 	_tuck_away_stray_root_children(root)
 
 
@@ -59,7 +63,6 @@ def _to_user_folder(root, home, team):
 		{"folder": root.name, "file_name": team.owner, "owner": team.owner},
 		update_modified=False,
 	)
-	_deny(home, GENERAL_USER)
 
 	if not frappe.db.exists("Drive Settings", team.owner):
 		frappe.get_doc({"doctype": "Drive Settings", "user": team.owner}).insert(ignore_permissions=True)
@@ -72,9 +75,6 @@ def _to_user_folder(root, home, team):
 
 
 def _to_shared_folder(root, home, team):
-	# Dedupe against every sibling, not just Folder-typed ones: legacy team
-	# roots often have no file_type, so a type-filtered lookup misses them and
-	# two same-titled teams both keep their name.
 	frappe.db.set_value(
 		"File",
 		home,
@@ -104,22 +104,20 @@ def _grant_members(entity, members):
 		)
 
 
-def _deny(entity, user):
-	if frappe.db.exists("Drive Permission", {"entity": entity, "user": user, "deny": 1}):
+def _grant(entity, user, perms):
+	if frappe.db.exists("Drive Permission", {"entity": entity, "user": user}):
 		return
 	frappe.get_doc(
-		{"doctype": "Drive Permission", "entity": entity, "user": user, "deny": 1, **FULL_ACCESS}
+		{"doctype": "Drive Permission", "entity": entity, "user": user, **perms}
 	).insert(ignore_permissions=True)
 
 
 def _expand_team_rows():
 	"""team=1 rows granted the row's team (stored in `user`) access to an
 	entity; expand them into per-member rows. All-zero team rows were revoke
-	attempts — turn them into $GENERAL denies."""
+	attempts, which nothing grants any more — drop them."""
 	for row in frappe.get_all("Drive Permission", filters={"team": 1}, fields=["*"]):
-		if not any(row.get(t) for t in PERMISSION_TYPES):
-			_deny(row.entity, GENERAL_USER)
-		else:
+		if any(row.get(t) for t in PERMISSION_TYPES):
 			members = frappe.get_all(
 				"Drive Team Member",
 				filters={"parenttype": "Drive Team", "parent": row.user},
@@ -141,22 +139,15 @@ def _expand_team_rows():
 		frappe.delete_doc("Drive Permission", row.name, ignore_permissions=True, force=True)
 
 
-def _convert_public_revoke_rows():
-	"""All-zero `user=''` rows were the old, inert "revoke public access"
-	hack; deny rows are their working equivalent."""
+def _drop_obsolete_revoke_rows():
 	for row in frappe.get_all("Drive Permission", filters={"user": "", "deny": 0}, fields=["*"]):
 		if any(row.get(t) for t in PERMISSION_TYPES):
 			continue
-		frappe.db.set_value("Drive Permission", row.name, {"deny": 1, **FULL_ACCESS}, update_modified=False)
+		frappe.delete_doc("Drive Permission", row.name, ignore_permissions=True, force=True)
 
 
 def _tuck_away_stray_root_children(root):
-	"""Framework files sitting directly under Home were owner-only under
-	framework permissions; root-inherited read would expose them, so move each
-	into its owner's user folder (or the deny-marked attachments folder)."""
 	attachments = frappe.db.exists("File", "Home/Attachments")
-	if attachments:
-		_deny(attachments, GENERAL_USER)
 
 	for f in frappe.get_all(
 		"File",
@@ -167,7 +158,5 @@ def _tuck_away_stray_root_children(root):
 			continue
 		target = frappe.db.get_value("Drive Settings", f.owner, "user_folder")
 		if not target and frappe.db.exists("User", f.owner):
-			# Owner never had a personal team; give them a user folder rather
-			# than leaving the file under the root, where baseline read exposes it.
 			target = get_user_folder(f.owner).name
 		frappe.db.set_value("File", f.name, "folder", target or attachments, update_modified=False)

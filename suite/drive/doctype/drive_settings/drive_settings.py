@@ -4,8 +4,6 @@
 import frappe
 from frappe.model.document import Document
 
-# Server-managed: quota is an admin override, user_folder is set by
-# get_user_folder. Neither may be written through the generic client API.
 PRIVILEGED_FIELDS = ("quota", "user_folder")
 
 

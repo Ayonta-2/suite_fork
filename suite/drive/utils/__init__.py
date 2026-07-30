@@ -32,6 +32,10 @@ KIND_VIRTUAL = "virtual"
 #   ""       — anyone with the link, including guests
 GENERAL_USER = "$GENERAL"
 
+# Well-known folders directly under the site root.
+SITE_FOLDER = "Site"
+PREVIOUS_TEAMS_FOLDER = "Previous Teams"
+
 PERMISSION_TYPES = ["read", "comment", "share", "upload", "write"]
 
 
@@ -187,12 +191,42 @@ def get_root_folder():
 	return root
 
 
-def get_user_folder(user=None):
-	"""The user's private folder under the root; created on first use.
+def _named_root_folder(file_name, grant_general_read):
+	root = get_root_folder()
+	existing = frappe.db.get_value(
+		"File", {"folder": root.name, "file_name": file_name, "is_folder": 1}, ["name", "file_url"], as_dict=1
+	)
+	if existing:
+		return existing
 
-	Private by default: creation writes deny rows revoking the root-inherited
-	read for everyone but the owner.
-	"""
+	from suite.drive.utils.files import FileManager
+
+	manager = FileManager()
+	folder = create_drive_file(file_name, root.name, "Folder", lambda f: manager.create_folder(f, root))
+	if grant_general_read:
+		frappe.get_doc(
+			{
+				"doctype": "Drive Permission",
+				"entity": folder.name,
+				"user": GENERAL_USER,
+				"read": 1,
+			}
+		).insert(ignore_permissions=True)
+	return frappe._dict(name=folder.name, file_url=folder.file_url)
+
+
+def get_site_folder():
+	"""Shared site content; the only folder every logged-in user can read."""
+	return _named_root_folder(SITE_FOLDER, grant_general_read=True)
+
+
+def get_previous_teams_folder():
+	"""Landing area for migrated teams; carries no grant of its own."""
+	return _named_root_folder(PREVIOUS_TEAMS_FOLDER, grant_general_read=False)
+
+
+def get_user_folder(user=None):
+	"""The user's private folder under the root; created on first use."""
 	user = user or frappe.session.user
 	name = frappe.db.get_value("Drive Settings", user, "user_folder")
 	if name:
@@ -206,8 +240,6 @@ def get_user_folder(user=None):
 		except frappe.DuplicateEntryError:
 			pass
 
-	# Serialize concurrent first use: whoever takes the row lock creates the
-	# folder, the loser reads it back instead of creating a second one.
 	name = frappe.db.get_value("Drive Settings", user, "user_folder", for_update=True)
 	if name:
 		folder = frappe.db.get_value("File", name, ["name", "file_url"], as_dict=1)
@@ -225,15 +257,6 @@ def get_user_folder(user=None):
 		lambda f: manager.create_folder(f, root),
 		owner=user,
 	)
-	frappe.get_doc(
-		{
-			"doctype": "Drive Permission",
-			"entity": folder.name,
-			"user": GENERAL_USER,
-			"deny": 1,
-			**dict.fromkeys(PERMISSION_TYPES, 1),
-		}
-	).insert(ignore_permissions=True)
 
 	if not frappe.db.exists("Drive Settings", user):
 		frappe.get_doc({"doctype": "Drive Settings", "user": user}).insert(ignore_permissions=True)
@@ -271,14 +294,10 @@ def get_ancestors_of(entity_name):
 	return flattened_list
 
 
-def dribble_access(path, default_read=0):
-	"""Resolve access at the leaf of `path` (root→leaf, each node carrying its
-	permission rows nearest-first): for each permission type, the nearest row
-	that mentions it decides — grant → 1, deny → 0. Undecided types fall back
-	to 0, except read which inherits the root baseline.
-
-	`decided` lists the types an explicit row settled, so callers can tell a
-	revoked zero from an untouched one."""
+def dribble_access(path):
+	"""Resolve access at the leaf of `path`: per permission type the nearest row
+	decides (grant → 1, deny → 0). Nothing is granted by default. `decided`
+	lists the types an explicit row settled."""
 	decided = {}
 	for node in path[::-1]:
 		for row in node.get("perms", ()):
@@ -286,13 +305,12 @@ def dribble_access(path, default_read=0):
 				if row[t] and t not in decided:
 					decided[t] = 0 if row["deny"] else 1
 	access = dict.fromkeys(PERMISSION_TYPES, 0)
-	access["read"] = default_read
 	access.update(decided)
 	access["decided"] = list(decided)
 	return access
 
 
-def generate_upward_path(entity_name, user=None, baseline_read=True):
+def generate_upward_path(entity_name, user=None):
 	"""
 	Given an ID traverse upwards till the root node
 	Stops when parent_drive_file IS NULL
@@ -367,8 +385,7 @@ def generate_upward_path(entity_name, user=None, baseline_read=True):
 		if row["perm_user"] is not None:
 			nodes[-1]["perms"].append(row)
 
-	default_read = int(baseline_read and not guest)
-	return [{**node, **dribble_access(nodes[: i + 1], default_read)} for i, node in enumerate(nodes)]
+	return [{**node, **dribble_access(nodes[: i + 1])} for i, node in enumerate(nodes)]
 
 
 def get_valid_breadcrumbs(entity_name, user_access):

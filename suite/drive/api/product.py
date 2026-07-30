@@ -181,8 +181,6 @@ def set_settings(updates: dict[str, int | str]):
 
 @frappe.whitelist()
 def invite_users(emails: str):
-	"""Admin-only. Sharing with an unregistered address goes through
-	`create_invites` instead, already gated by `share` rights on the entity."""
 	if not is_drive_site_admin():
 		frappe.throw(_("You don't have the permissions for this action."), frappe.PermissionError)
 	create_invites(emails)
@@ -208,8 +206,6 @@ def create_invites(emails: str, auto: bool = False):
 		invite = frappe.new_doc("Drive User Invitation")
 		invite.email = email
 		invite.status = "Automatic" if auto else "Pending"
-		# Callers are already authorized: admin (invite_users) or share rights
-		# on the entity being shared.
 		invite.insert(ignore_permissions=True)
 
 
