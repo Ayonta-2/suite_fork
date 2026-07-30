@@ -26,26 +26,26 @@ export function setTotalCols(n) { TOTAL_COLS = Math.max(1, Math.floor(n)) }
 //
 // Selection accent is intentionally monochrome (Espresso black + neutral grays)
 // rather than blue, to match Frappe Sheets's black-and-grey theme.
+function _isDarkTheme() {
+  return typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'dark'
+}
+
 export const COLORS = {
-  white:        '#FFFFFF',                  // --surface-base
-  gridLine:     '#E2E2E2',                  // --outline-gray-2
-  headerBg:     '#F8F8F8',                  // --surface-sidebar
-  headerText:   '#7C7C7C',                  // --ink-gray-5
-  cellText:     '#171717',                  // --ink-gray-9
-  sparkline:    '#0F766E',                  // teal-700 — default in-cell chart stroke/fill
-  selFill:      'rgba(23, 23, 23, 0.06)',   // --ink-gray-9 @ 6% — subtle neutral wash
-  selBorder:    '#171717',                  // --ink-gray-9
-  selHandle:    '#171717',                  // --ink-gray-9
-  activeHeader: '#E2E2E2',                  // --surface-gray-4 (selected header)
-  rangeHeader:  '#EDEDED',                  // --surface-gray-3 (range header)
-  freezeLine:   '#525252',                  // --ink-gray-7 — 2px line on freeze boundary
-  // Formula picker — monochrome Espresso. Distinct from the active selection
-  // (solid 2px ink-gray-9) and from marching-ants (animated dashed ink-gray-9)
-  // by being a *static dashed* outline in the softer ink-gray-7.
-  pickerFill:   'rgba(23, 23, 23, 0.05)',   // --ink-gray-9 @ 5% — subtle wash
-  pickerBorder: '#525252',                  // --ink-gray-7 — static dashed outline
-  // Data-validation dropdown chips
-  chipFill:     '#EDEDED',                  // --surface-gray-3 — neutral pill
-  chipCaret:    '#525252',                  // --ink-gray-7 — pill caret
-  invalidMark:  '#D93025',                  // red — value fails its validation rule
+  get white()        { return _isDarkTheme() ? '#171717' : '#FFFFFF' },
+  get gridLine()     { return _isDarkTheme() ? '#2d2d32' : '#E2E2E2' },
+  get headerBg()     { return _isDarkTheme() ? '#1f1f23' : '#F8F8F8' },
+  get headerText()   { return _isDarkTheme() ? '#a3a3a3' : '#7C7C7C' },
+  get cellText()     { return _isDarkTheme() ? '#e5e5e5' : '#171717' },
+  get sparkline()    { return _isDarkTheme() ? '#2DD4BF' : '#0F766E' },
+  get selFill()      { return _isDarkTheme() ? 'rgba(255, 255, 255, 0.08)' : 'rgba(23, 23, 23, 0.06)' },
+  get selBorder()    { return _isDarkTheme() ? '#0891B2' : '#171717' },
+  get selHandle()    { return _isDarkTheme() ? '#0891B2' : '#171717' },
+  get activeHeader() { return _isDarkTheme() ? '#333338' : '#E2E2E2' },
+  get rangeHeader()  { return _isDarkTheme() ? '#2a2a2e' : '#EDEDED' },
+  get freezeLine()   { return _isDarkTheme() ? '#666666' : '#525252' },
+  get pickerFill()   { return _isDarkTheme() ? 'rgba(255, 255, 255, 0.08)' : 'rgba(23, 23, 23, 0.05)' },
+  get pickerBorder() { return _isDarkTheme() ? '#a3a3a3' : '#525252' },
+  get chipFill()     { return _isDarkTheme() ? '#2a2a2e' : '#EDEDED' },
+  get chipCaret()    { return _isDarkTheme() ? '#a3a3a3' : '#525252' },
+  get invalidMark()  { return _isDarkTheme() ? '#F87171' : '#D93025' },
 }
