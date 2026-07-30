@@ -181,7 +181,8 @@
 					@reload-mails="refreshThreads()"
 					@set-seen="(seen: boolean) => handleSetSeen(openRow!, seen)"
 					@set-flagged="
-						(ids: string[], flagged: boolean) => paneSetFlagged(ids, flagged)
+						(ids: string[], flagged: boolean) =>
+							handleSetFlagged(openRow!, flagged, ids)
 					"
 					@move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
 					@delete-thread="handleTrash(openRow!)"
@@ -813,13 +814,6 @@ const mailThread = useTemplateRef<{
 	removeMailFromView: (mailId: string) => { emptied: boolean; rollback: () => void }
 }>('mailThread')
 
-// The row's `flagged` drives the list star; the pane's stars read each message. Update both, or
-// starring from the pane leaves its own star hollow until a refetch.
-const paneSetFlagged = (ids: string[], flagged: boolean) => {
-	if (openRow.value) handleSetFlagged(openRow.value, flagged)
-	mailThread.value?.syncFlagged(ids, flagged)
-}
-
 // Folder membership shows as tags on the row and in the pane. Neither refetches, so both have to be
 // told — mirroring syncListMailboxMembership plus MailThread's own syncMailboxMembership.
 const syncFolderTag = (mailboxId: string, add: boolean) => {
@@ -970,14 +964,33 @@ const handleSetSeen = (thread: Thread, seen: boolean) => {
 		})
 }
 
-const handleSetFlagged = (thread: Thread, flagged: boolean) => {
-	thread.flagged = flagged ? 1 : 0
+// Star/unstar, from a list row (which names no mails, so its own representative one) or from the
+// pane (which names the mails whose star was clicked — the whole thread from the header, one message
+// from its own star). The row's `flagged` drives the list star while the pane's stars read each
+// message, so BOTH have to be told: the pane's star stayed hollow when starring from the list, and
+// the list's star stayed hollow when starring from the pane. Only the ids actually sent to the
+// server are flipped locally, or a refetch would contradict whatever we lit up.
+const handleSetFlagged = (thread: Thread, flagged: boolean, ids: string[] = [thread.id]) => {
+	// The row stands for its representative mail (see serialize_thread), so it takes the star only
+	// when that mail is one of the ones being starred.
+	const rowChanged = ids.includes(thread.id)
+	const applyRow = (value: 0 | 1) => {
+		if (rowChanged) thread.flagged = value
+	}
+	const applyPane = (value: boolean) => {
+		if (threadID === thread.thread_id) mailThread.value?.syncFlagged(ids, value)
+	}
+
+	applyRow(flagged ? 1 : 0)
+	applyPane(flagged)
 	call('suite.mail.api.mail.set_flagged', {
 		account: thread.account,
-		ids: [thread.id],
+		ids,
 		flagged,
 	}).catch((error) => {
-		thread.flagged = flagged ? 0 : 1 // revert the optimistic update
+		// revert the optimistic update
+		applyRow(flagged ? 0 : 1)
+		applyPane(!flagged)
 		raiseToast(error?.messages?.[0] || error?.message, 'error')
 	})
 }
