@@ -123,7 +123,6 @@ export const getTrash = createResource({
 })
 
 ;[
-  getTeam,
   getFiles,
   getPersonal,
   getSiteFiles,
