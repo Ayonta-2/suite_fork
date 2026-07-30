@@ -12,6 +12,7 @@
 		:datetime="mail.received_at"
 		:subject-italic="!mail.subject"
 		:preview-italic="!mail.preview"
+		:account-label="accountLabel"
 		@set-selected="(selected: boolean) => emit('setSelected', selected)"
 	>
 		<template #sender><span v-html="highlight(header)" /></template>
@@ -25,11 +26,6 @@
 			>
 				{{ messageCount }}
 			</span>
-			<!-- All Inboxes: which account received this mail. -->
-			<div v-if="accountLabel" class="text-ink-gray-4 flex shrink-0 items-center gap-1 text-xs">
-				<span aria-hidden="true">·</span>
-				<span>{{ __('in {0}', [accountLabel]) }}</span>
-			</div>
 			<Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
 		</template>
 

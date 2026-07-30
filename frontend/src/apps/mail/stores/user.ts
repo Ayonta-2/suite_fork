@@ -97,6 +97,26 @@ export const userStore = defineStore('mail-user', () => {
 		return ids
 	})
 
+	// Short display labels for the merged views (All Inboxes, all-accounts search), keyed by the
+	// account's full name: the address's local part tells the user's accounts apart in a fraction
+	// of the width, so rows keep the space for the sender. Accounts whose local parts collide
+	// keep the full address.
+	const accountShortNames = computed<Record<string, string>>(() => {
+		const accounts = userResource.data?.accounts ?? []
+		const shortOf = (name: string) => name.split('@')[0] || name
+		const counts: Record<string, number> = {}
+		for (const account of accounts) {
+			const short = shortOf(account._name ?? '')
+			counts[short] = (counts[short] ?? 0) + 1
+		}
+		return Object.fromEntries(
+			accounts.map((account) => {
+				const name = account._name ?? ''
+				return [name, counts[shortOf(name)] > 1 ? name : shortOf(name)]
+			}),
+		)
+	})
+
 	const addressBooks = createResource({
 		url: 'suite.mail.api.contacts.get_address_books',
 		makeParams: () => ({ account: accountId.value }),
@@ -147,6 +167,7 @@ export const userStore = defineStore('mail-user', () => {
 		userResource,
 		mailboxes,
 		mailboxIds,
+		accountShortNames,
 		addressBooks,
 		identities,
 		domains,

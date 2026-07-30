@@ -3,6 +3,7 @@
 		:is-selected
 		:selectable
 		:hide-avatar
+		:account-label="accountLabel"
 		:unread="!!unreadCount"
 		:avatar-label="avatarLabel"
 		:avatar-image="latest.user_image"
@@ -67,7 +68,7 @@ import type { Thread } from '@/apps/mail/types'
 //
 // Its hover actions apply to every member at once, so each one names the count and every move it makes
 // is undoable.
-const { threads, expanded, isSelected, selectable, hideAvatar } = defineProps<{
+const { threads, expanded, isSelected, selectable, hideAvatar, accountLabel } = defineProps<{
 	threads: Thread[]
 	expanded: boolean
 	isSelected: boolean
@@ -75,6 +76,8 @@ const { threads, expanded, isSelected, selectable, hideAvatar } = defineProps<{
 	// column reclaimed (the merged All Inboxes list) — see MailRow's props.
 	selectable?: boolean
 	hideAvatar?: boolean
+	// Which account received the run (merged lists) — a stack never mixes accounts.
+	accountLabel?: string
 }>()
 
 const emit = defineEmits<{

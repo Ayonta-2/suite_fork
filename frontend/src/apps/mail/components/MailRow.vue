@@ -60,6 +60,16 @@
 						<slot name="sender" />
 					</h3>
 					<slot name="badges" />
+					<!-- In the stacked layout the account keeps the sender company; in the wide
+					     layout it moves out to sit by the date (below), so the sender column
+					     isn't spent on it. -->
+					<div
+						v-if="accountLabel && !isFullWidth"
+						class="text-ink-gray-4 flex shrink-0 items-center gap-1 text-xs"
+					>
+						<span aria-hidden="true">·</span>
+						<span>{{ __('in {0}', [accountLabel]) }}</span>
+					</div>
 				</div>
 				<MailDate v-if="!isFullWidth" :datetime :in-list="true" />
 			</div>
@@ -93,6 +103,13 @@
 			</div>
 
 			<slot name="extra" :is-full-width="isFullWidth" />
+		</div>
+
+		<div
+			v-if="isFullWidth && accountLabel"
+			class="text-ink-gray-4 ml-3 max-w-40 shrink-0 self-center truncate text-xs"
+		>
+			{{ __('in {0}', [accountLabel]) }}
 		</div>
 
 		<div v-if="isFullWidth" class="flex w-32 shrink-0 items-center justify-end space-x-4">
@@ -135,6 +152,7 @@ const {
 	previewItalic = false,
 	selectionMode = false,
 	hideAvatar = false,
+	accountLabel,
 } = defineProps<{
 	// Renders the row as a link when set, and as a plain div when not — a thread opens, a stack expands.
 	to?: RouteLocationRaw
@@ -157,6 +175,9 @@ const {
 	// Mobile selection mode (a selection exists): rows swap avatars for checkboxes,
 	// hide trailing actions, and a tap toggles selection instead of navigating.
 	selectionMode?: boolean
+	// Which account received the mail (merged lists). Rendered by the layout because its place
+	// depends on it: beside the sender in the stacked layout, out by the date in the wide one.
+	accountLabel?: string
 }>()
 
 const emit = defineEmits<{ setSelected: [selected: boolean] }>()

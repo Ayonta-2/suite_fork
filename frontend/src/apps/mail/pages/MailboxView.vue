@@ -319,7 +319,7 @@
 									:mail="row.thread"
 									:account-id="isAllAccountsSearch ? row.thread.account : undefined"
 									:account-label="
-										isAllAccountsSearch ? row.thread.account_name : undefined
+										isAllAccountsSearch ? shortAccountLabel(row.thread.account_name) : undefined
 									"
 									:selectable="!isAllAccountsSearch"
 									:selection-mode="mobileSelectionMode"
@@ -1239,6 +1239,10 @@ const onResetSuccess = () => {
 // the query (kept out of the filter conditions on the server). The merged results carry their owning
 // account, so each row opens in — and acts within — its own account (see the row-action wrappers).
 const isAllAccountsSearch = computed(() => mailbox === 'search' && route.query.all_accounts != null)
+
+// The row's account, by its short name (the local part, unless two accounts share one).
+const shortAccountLabel = (name?: string | null) =>
+	name ? (store.accountShortNames[name] ?? name) : undefined
 
 // The mobile Search tab lands on this route with no query yet. There's nothing to fetch —
 // an empty filter would run an unbounded search — so the list area shows a hint instead

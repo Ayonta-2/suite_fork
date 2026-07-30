@@ -118,6 +118,7 @@
 									:is-selected="false"
 									:selectable="false"
 									:hide-avatar="!isMobile"
+									:account-label="shortAccountLabel(row.threads[0].account_name)"
 									class="border-l-transparent sm:border-l"
 									:class="{ '!border-l-outline-blue-5': focusedRowKey === row.key }"
 									:data-row-key="row.key"
@@ -130,7 +131,7 @@
 									v-else
 									:mailbox="row.thread.inbox || ''"
 									:account-id="row.thread.account"
-									:account-label="row.thread.account_name || undefined"
+									:account-label="shortAccountLabel(row.thread.account_name)"
 									:mail="row.thread"
 									:is-selected="false"
 									:selectable="false"
@@ -404,6 +405,10 @@ const isLoading = computed(() => !isLoaded.value && threads.loading)
 // After an action, refresh the sidebar counts: the active account's per-mailbox counts, which via the
 // store's mailboxes.onSuccess hook also refreshes the unified All Inboxes badge.
 const refreshCounts = () => store.mailboxes.reload()
+
+// The row's account, by its short name (the local part, unless two accounts share one).
+const shortAccountLabel = (name?: string | null) =>
+	name ? (store.accountShortNames[name] ?? name) : undefined
 
 // Reset-to-top: refetch only the first window, replacing the loaded list and scrolling to the top (via
 // onResetSuccess). Bumping `epoch` discards any append/refresh still in flight. Used on filter change.
