@@ -28,196 +28,175 @@
 		</div>
 
 		<template v-else-if="threads.data?.length">
-			<div
-				ref="mailSidebar"
-				class="sticky top-16 flex flex-col border-r"
-				:class="!isMobile && showSplitView ? 'w-1/3' : 'w-full'"
+			<ThreadPane
+				:thread-open="!!threadID"
+				@touch-start="onThreadTouchStart"
+				@touch-end="onThreadTouchEnd"
 			>
-				<!-- Toolbar — mobile mirrors the mailbox one (h-12, semibold selector in a
-				     bottom sheet, no refresh: pull the tab or reopen instead). -->
-				<div v-if="isMobile" class="relative flex h-12 items-center border-b px-4">
-					<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
-						<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
-							<span class="truncate">{{ title }}</span>
-							<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
-						</button>
-					</AdaptiveDropdown>
+				<template #list>
+					<!-- Toolbar — mobile mirrors the mailbox one (h-12, semibold selector in a
+					     bottom sheet, no refresh: pull the tab or reopen instead). -->
+					<div v-if="isMobile" class="relative flex h-12 items-center border-b px-4">
+						<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
+							<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
+								<span class="truncate">{{ title }}</span>
+								<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
+							</button>
+						</AdaptiveDropdown>
 
-					<!-- Loading bar -->
-					<LoadingBar v-if="threads.loading" />
-				</div>
-				<div
-					v-else
-					class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
-				>
-					<Dropdown :options="FILTER_OPTIONS">
-						<button
-							class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded px-2 py-1"
-						>
-							<span class="truncate">{{ title }}</span>
-							<ChevronDown class="text-ink-gray-5 icon shrink-0" />
-						</button>
-					</Dropdown>
-					<div class="-mr-1.5 ml-auto flex items-center space-x-1.5 sm:space-x-3">
-						<Button
-							variant="ghost"
-							:tooltip="__('Refresh')"
-							:disabled="threads.loading || loadingMore"
-							@click="refreshThreads()"
-						>
-							<template #icon>
-								<RefreshCw class="icon" />
-							</template>
-						</Button>
+						<!-- Loading bar -->
+						<LoadingBar v-if="threads.loading" />
 					</div>
-
-					<!-- Loading bar -->
-					<LoadingBar v-if="threads.loading" />
-				</div>
-
-				<!-- Mail list -->
-				<div ref="mailList" class="h-full overflow-y-auto overscroll-contain max-sm:pb-20">
-					<div v-for="(rows, key) in groupedRows" :key="key">
-						<Tooltip
-							v-if="groupMessagesBy !== 'None' && !isMobile"
-							:text="
-								isLastGroup(key)
-									? ''
-									: __(collapsedGroups.includes(key) ? 'Expand' : 'Collapse')
-							"
-						>
-							<div
-								class="text-ink-gray-6 flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
-								:class="{
-									'sm:hover:bg-surface-gray-1': !isLastGroup(key),
-									'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
-								}"
-								:data-row-key="`group:${key}`"
-								@click="toggleGroupCollapse(key)"
+					<div
+						v-else
+						class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
+					>
+						<Dropdown :options="FILTER_OPTIONS">
+							<button
+								class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded px-2 py-1"
 							>
-								<span class="select-none pt-[2px]">
-									{{ getFormattedDate(key, groupMessagesBy === 'Month').toUpperCase() }}
-								</span>
-								<component
-									:is="collapsedGroups.includes(key) ? ChevronRight : ChevronDown"
-									v-if="!isLastGroup(key)"
-									class="icon ml-auto"
-								/>
-							</div>
-						</Tooltip>
-						<template v-if="isMobile || !collapsedGroups.includes(key)">
-							<!-- A stack row stands in for a run of look-alike threads; when expanded, its
-							     members follow it as ordinary (indented) rows — the same model as the
-							     mailbox list. No delete handler: Delete only shows once every member is
-							     already in Trash, which the merged inbox list can't reach. -->
-							<template v-for="row in rows" :key="row.key">
-								<StackListItem
-									v-if="row.type === 'stack'"
-									:threads="row.threads"
-									:expanded="row.expanded"
-									:is-selected="false"
-									:selectable="false"
-									:hide-avatar="!isMobile"
-									:account-label="shortAccountLabel(row.threads[0].account_name)"
-									class="border-l-transparent sm:border-l"
-									:class="{ '!border-l-outline-blue-5': focusedRowKey === row.key }"
-									:data-row-key="row.key"
-									@toggle="toggleStack(row)"
-									@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
-									@archive-threads="stackArchive(row.threads)"
-									@trash-threads="stackTrash(row.threads)"
-								/>
-								<MailListItem
-									v-else
-									:mailbox="row.thread.inbox || ''"
-									:account-id="row.thread.account"
-									:account-label="shortAccountLabel(row.thread.account_name)"
-									:mail="row.thread"
-									:is-selected="false"
-									:selectable="false"
-									thread-route-name="mail-all-inboxes-mail"
-									:hide-avatar="!isMobile"
-									:hide-sender="row.inStack"
-									class="border-l-transparent sm:border-l"
+								<span class="truncate">{{ title }}</span>
+								<ChevronDown class="text-ink-gray-5 icon shrink-0" />
+							</button>
+						</Dropdown>
+						<div class="-mr-1.5 ml-auto flex items-center space-x-1.5 sm:space-x-3">
+							<Button
+								variant="ghost"
+								:tooltip="__('Refresh')"
+								:disabled="threads.loading || loadingMore"
+								@click="refreshThreads()"
+							>
+								<template #icon>
+									<RefreshCw class="icon" />
+								</template>
+							</Button>
+						</div>
+
+						<!-- Loading bar -->
+						<LoadingBar v-if="threads.loading" />
+					</div>
+
+					<!-- Mail list -->
+					<div ref="mailList" class="h-full overflow-y-auto overscroll-contain max-sm:pb-20">
+						<div v-for="(rows, key) in groupedRows" :key="key">
+							<Tooltip
+								v-if="groupMessagesBy !== 'None' && !isMobile"
+								:text="
+									isLastGroup(key)
+										? ''
+										: __(collapsedGroups.includes(key) ? 'Expand' : 'Collapse')
+								"
+							>
+								<div
+									class="text-ink-gray-6 flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
 									:class="{
-										'!bg-surface-blue-1': row.thread.thread_id === threadID && !isMobile,
-										'!border-l-outline-blue-5': focusedRowKey === row.key,
-										'!pl-10 sm:!pl-12': row.inStack,
+										'sm:hover:bg-surface-gray-1': !isLastGroup(key),
+										'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
 									}"
-									:data-row-key="row.key"
-									@set-seen="(seen: boolean) => handleSetSeen(row.thread, seen)"
-									@archive-thread="handleArchive(row.thread)"
-									@trash-thread="handleTrash(row.thread)"
-									@set-flagged="(flagged: boolean) => handleSetFlagged(row.thread, flagged)"
-								/>
+									:data-row-key="`group:${key}`"
+									@click="toggleGroupCollapse(key)"
+								>
+									<span class="select-none pt-[2px]">
+										{{ getFormattedDate(key, groupMessagesBy === 'Month').toUpperCase() }}
+									</span>
+									<component
+										:is="collapsedGroups.includes(key) ? ChevronRight : ChevronDown"
+										v-if="!isLastGroup(key)"
+										class="icon ml-auto"
+									/>
+								</div>
+							</Tooltip>
+							<template v-if="isMobile || !collapsedGroups.includes(key)">
+								<!-- A stack row stands in for a run of look-alike threads; when expanded, its
+								     members follow it as ordinary (indented) rows — the same model as the
+								     mailbox list. No delete handler: Delete only shows once every member is
+								     already in Trash, which the merged inbox list can't reach. -->
+								<template v-for="row in rows" :key="row.key">
+									<StackListItem
+										v-if="row.type === 'stack'"
+										:threads="row.threads"
+										:expanded="row.expanded"
+										:is-selected="false"
+										:selectable="false"
+										:hide-avatar="!isMobile"
+										:account-label="shortAccountLabel(row.threads[0].account_name)"
+										class="border-l-transparent sm:border-l"
+										:class="{ '!border-l-outline-blue-5': focusedRowKey === row.key }"
+										:data-row-key="row.key"
+										@toggle="toggleStack(row)"
+										@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
+										@archive-threads="stackArchive(row.threads)"
+										@trash-threads="stackTrash(row.threads)"
+									/>
+									<MailListItem
+										v-else
+										:mailbox="row.thread.inbox || ''"
+										:account-id="row.thread.account"
+										:account-label="shortAccountLabel(row.thread.account_name)"
+										:mail="row.thread"
+										:is-selected="false"
+										:selectable="false"
+										thread-route-name="mail-all-inboxes-mail"
+										:hide-avatar="!isMobile"
+										:hide-sender="row.inStack"
+										class="border-l-transparent sm:border-l"
+										:class="{
+											'!bg-surface-blue-1': row.thread.thread_id === threadID && !isMobile,
+											'!border-l-outline-blue-5': focusedRowKey === row.key,
+											'!pl-10 sm:!pl-12': row.inStack,
+										}"
+										:data-row-key="row.key"
+										@set-seen="(seen: boolean) => handleSetSeen(row.thread, seen)"
+										@archive-thread="handleArchive(row.thread)"
+										@trash-thread="handleTrash(row.thread)"
+										@set-flagged="(flagged: boolean) => handleSetFlagged(row.thread, flagged)"
+									/>
+								</template>
 							</template>
-						</template>
+						</div>
+						<!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
+						     batch (appended, never refetching loaded rows). Sits after all groups. -->
+						<div ref="loadMoreSentinel" class="h-px" />
+						<div v-if="loadingMore" class="flex justify-center py-3">
+							<LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
+						</div>
 					</div>
-					<!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
-					     batch (appended, never refetching loaded rows). Sits after all groups. -->
-					<div ref="loadMoreSentinel" class="h-px" />
-					<div v-if="loadingMore" class="flex justify-center py-3">
-						<LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
-					</div>
-				</div>
-			</div>
-			<!-- The open thread, in place. Same geometry as MailboxView: a third/two-thirds split
-			     on desktop with Split View on, a full-bleed overlay otherwise and on mobile.
-			     Teleported to body on mobile for the same reason MailboxView does it: inside the
-			     layout's isolate stacking context the tab bar paints over the pane, whatever the
-			     pane's own z-index says. -->
-			<Teleport to="body" :disabled="!isMobile">
-			<div
-				class="bg-surface-base"
-				:class="{
-					'overflow-hidden': isMobile,
-					'w-2/3': !isMobile && showSplitView,
-					'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showSplitView,
-					'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
-						isMobile,
-					'invisible translate-x-full': isMobile && !threadID,
-					hidden: !isMobile && !showSplitView && !threadID,
-				}"
-				@touchstart.passive="onThreadTouchStart"
-				@touchend.passive="onThreadTouchEnd"
-			>
-				<div class="h-full overflow-y-auto">
-					<!-- Rendered with no thread open too so its own "Select an email" placeholder
-					     fills the pane, as in MailboxView. A deep link whose row isn't in the
-					     loaded window stays gated: the pane's action handlers act on the row.
-					     The owning account scopes the pane (folder menus, reply identities) —
-					     opening a cross-account thread does NOT switch the active account. -->
-					<MailThread
-						ref="mailThread"
-						v-if="openRow || !threadID"
-						:slide="threadSlide"
-						@slide-done="threadSlide = ''"
-						:account="openRow?.account"
-						:mailbox="openRow?.inbox || ''"
-						:thread-i-d="threadID"
-						:threads="openThreadIDs"
-						:messages="openRow?.messages"
-						@reload-mails="refreshThreads()"
-						@set-seen="(seen: boolean) => handleSetSeen(openRow!, seen)"
-						@set-flagged="
-							(ids: string[], flagged: boolean) => paneSetFlagged(ids, flagged)
-						"
-						@move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
-						@delete-thread="handleTrash(openRow!)"
-						@archive-thread="handleArchive(openRow!)"
-						@sync-unseen="handleSyncUnseen"
-						@add-thread-to-mailbox="handleAddToMailbox"
-						@remove-thread-from-mailbox="handleRemoveFromMailbox"
-						@set-spam-status="handleSetSpamStatus"
-						@move-mail="handleMailMove"
-						@mark-mail-spam="handleMailSpam"
-						@delete-mail="handleMailDelete"
-						@prev-thread="stepOpenThread(-1)"
-						@next-thread="stepOpenThread(1)"
-					/>
-				</div>
-			</div>
-			</Teleport>
+				</template>
+
+				<!-- Rendered with no thread open too so its own "Select an email" placeholder
+				     fills the pane, as in MailboxView. A deep link whose row isn't in the
+				     loaded window stays gated: the pane's action handlers act on the row.
+				     The owning account scopes the pane (folder menus, reply identities) —
+				     opening a cross-account thread does NOT switch the active account. -->
+				<MailThread
+					ref="mailThread"
+					v-if="openRow || !threadID"
+					:slide="threadSlide"
+					@slide-done="threadSlide = ''"
+					:account="openRow?.account"
+					:mailbox="openRow?.inbox || ''"
+					:thread-i-d="threadID"
+					:threads="openThreadIDs"
+					:messages="openRow?.messages"
+					@reload-mails="refreshThreads()"
+					@set-seen="(seen: boolean) => handleSetSeen(openRow!, seen)"
+					@set-flagged="
+						(ids: string[], flagged: boolean) => paneSetFlagged(ids, flagged)
+					"
+					@move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
+					@delete-thread="handleTrash(openRow!)"
+					@archive-thread="handleArchive(openRow!)"
+					@sync-unseen="handleSyncUnseen"
+					@add-thread-to-mailbox="handleAddToMailbox"
+					@remove-thread-from-mailbox="handleRemoveFromMailbox"
+					@set-spam-status="handleSetSpamStatus"
+					@move-mail="handleMailMove"
+					@mark-mail-spam="handleMailSpam"
+					@delete-mail="handleMailDelete"
+					@prev-thread="stepOpenThread(-1)"
+					@next-thread="stepOpenThread(1)"
+				/>
+			</ThreadPane>
 		</template>
 
 		<!-- No mails -->
@@ -281,6 +260,7 @@ import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
+import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 
 import type { Mail, Mailbox, MailboxData, Thread, UserResource } from '@/apps/mail/types'
 
@@ -481,9 +461,6 @@ const refreshThreads = (reloadCounts = true) => {
 // Date grouping with collapsible headers (mirroring the per-mailbox view). The last group never
 // collapses — it's where infinite scroll appends, so hiding it would swallow newly loaded rows.
 const groupMessagesBy = computed(() => user.data.group_messages_by)
-
-// Split View is a user setting; the merged view honours it like the mailbox view does.
-const showSplitView = computed(() => !!user.data?.show_reading_pane)
 
 // The loaded row the open thread belongs to. Every mutation reads its account/archive/trash
 // off the row, so the pane acts on the owning account without consulting the active one.

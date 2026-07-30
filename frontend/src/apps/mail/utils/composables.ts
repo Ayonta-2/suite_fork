@@ -17,6 +17,16 @@ const isMobile = ref(window.innerWidth < 640)
 export const useScreenSize = () => ({ isMobile })
 
 /**
+ * Split View: the reading pane sits beside the list rather than over it. One user setting, read the
+ * same way by every list view and by ThreadPane itself — the two halves of the split are sized from
+ * it, so they must never be able to disagree about it.
+ */
+export const useReadingPane = () => {
+	const { userResource } = userStore()
+	return computed(() => !!userResource.data?.show_reading_pane)
+}
+
+/**
  * Switching accounts stays in place wherever the view allows it — shared by the
  * sidebar's account submenu and the mobile profile sheet. Account-scoped routes
  * swap the accountId param in their own URL. The account-agnostic All Inboxes

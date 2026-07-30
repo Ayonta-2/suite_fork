@@ -64,349 +64,317 @@
 		</div>
 
 		<template v-else-if="threadsResource?.data?.length || filter || mailbox === 'search'">
-			<div
-				ref="mailSidebar"
-				class="sticky top-16 flex flex-col border-r"
-				:class="!isMobile && showReadingPane ? 'w-1/3' : 'w-full'"
+			<ThreadPane
+				:thread-open="!!threadID"
+				@touch-start="onThreadTouchStart"
+				@touch-end="onThreadTouchEnd"
 			>
-				<!-- The search view's own header: the query (click to edit) + removable filter pills, above
-				     the results toolbar. It owns the query surface; the results below just read the route. -->
-				<SearchResultsHeader
-					v-if="mailbox === 'search'"
-					v-model:show-search="showSearchModal"
-					v-model:show-advanced="showSearchAdvanced"
-					v-model:edit-filter="searchEditFilter"
-				/>
-
-				<!-- Mobile header: title row (folders · mailbox + count · search · compose) over
-				     a toolbar row (filter selector on the left, filter/refresh pills on the
-				     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
-				     Search skips both rows (SearchResultsHeader is the header there; the tab
-				     bar carries the "you are in search" cue), keeping only the selection
-				     toolbar and the loading bar — the border goes with the rows it underlines. -->
-				<div
-					v-if="isMobile"
-					class="relative shrink-0"
-					:class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
-				>
-					<MobileTitleHeader
-						v-if="mailbox !== 'search'"
-						with-menu
-						:title="mailboxName"
-						:count="threadCount ? __('{0} threads', [threadCount]) : undefined"
+				<template #list>
+					<!-- The search view's own header: the query (click to edit) + removable filter pills, above
+					     the results toolbar. It owns the query surface; the results below just read the route. -->
+					<SearchResultsHeader
+						v-if="mailbox === 'search'"
+						v-model:show-search="showSearchModal"
+						v-model:show-advanced="showSearchAdvanced"
+						v-model:edit-filter="searchEditFilter"
 					/>
 
-					<!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
-					     the whole header read as chrome on top of the page). Borderless: it
-					     reads as part of the header block, not a boxed-off strip. -->
-					<div v-if="showDeleteBanner && mailbox !== 'search'" class="space-x-1 px-4">
-						<span class="text-ink-gray-5">
-							{{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
-						</span>
-						<Button
-							:label="__('Delete Now')"
-							variant="ghost"
-							@click="showEmptyMailbox = true"
-						/>
-					</div>
-
-					<!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
-					<!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
-					     axis and the count text starts where the title does. -->
-					<div v-if="selections.length" class="flex h-12 items-center gap-1 px-1">
-						<Button variant="ghost" class="!h-10 !w-10 !rounded-full" @click="toggleSelectAll(false)">
-							<template #icon><X class="icon !h-5 !w-5" /></template>
-						</Button>
-						<span class="flex-1 truncate text-base !font-medium">
-							{{ __('{0} selected', [String(selections.length)]) }}
-						</span>
-						<button
-							class="text-ink-gray-8 text-md shrink-0 px-2 !font-medium"
-							@click="toggleSelectAll(!isAllSelected)"
-						>
-							{{ isAllSelected ? __('Unselect All') : __('Select All') }}
-						</button>
-					</div>
-					<div v-else-if="mailbox !== 'search'" class="flex h-12 items-center px-4">
-						<!-- The selector label carries the active filter ("Unread Mails", …);
-						     picking "All" in the sheet clears it, so no dismissal chip needed. -->
-						<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
-							<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
-								<span class="truncate">{{ title }}</span>
-								<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
-							</button>
-						</AdaptiveDropdown>
-					</div>
-
-					<!-- Loading bar -->
-					<LoadingBar v-if="threadsResource?.loading" />
-				</div>
-
-				<!-- Toolbar/Actions -->
-				<div
-					v-else
-					class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
-				>
-					<div v-if="!isAllAccountsSearch" class="mr-5">
-						<Tooltip
-							:text="
-								isAllSelected
-									? __('Clear All (Esc)')
-									: __('Select All ({0}+A)', [modifier])
-							"
-						>
-							<div
-								class="checkbox-hitbox -m-3 cursor-pointer p-3"
-								@click.stop.prevent="toggleSelectAll(!isAllSelected)"
-							>
-								<Checkbox
-									:model-value="isAllSelected"
-									size="md"
-									class="pointer-events-none"
-								/>
-							</div>
-						</Tooltip>
-					</div>
-					<Dropdown
-						v-if="!selections.length && mailbox !== 'search'"
-						:options="FILTER_OPTIONS"
+					<!-- Mobile header: title row (folders · mailbox + count · search · compose) over
+					     a toolbar row (filter selector on the left, filter/refresh pills on the
+					     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
+					     Search skips both rows (SearchResultsHeader is the header there; the tab
+					     bar carries the "you are in search" cue), keeping only the selection
+					     toolbar and the loading bar — the border goes with the rows it underlines. -->
+					<div
+						v-if="isMobile"
+						class="relative shrink-0"
+						:class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
 					>
-						<button
-							class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded px-2 py-1"
+						<MobileTitleHeader
+							v-if="mailbox !== 'search'"
+							with-menu
+							:title="mailboxName"
+							:count="threadCount ? __('{0} threads', [threadCount]) : undefined"
+						/>
+
+						<!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
+						     the whole header read as chrome on top of the page). Borderless: it
+						     reads as part of the header block, not a boxed-off strip. -->
+						<div v-if="showDeleteBanner && mailbox !== 'search'" class="space-x-1 px-4">
+							<span class="text-ink-gray-5">
+								{{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
+							</span>
+							<Button
+								:label="__('Delete Now')"
+								variant="ghost"
+								@click="showEmptyMailbox = true"
+							/>
+						</div>
+
+						<!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
+						<!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
+						     axis and the count text starts where the title does. -->
+						<div v-if="selections.length" class="flex h-12 items-center gap-1 px-1">
+							<Button variant="ghost" class="!h-10 !w-10 !rounded-full" @click="toggleSelectAll(false)">
+								<template #icon><X class="icon !h-5 !w-5" /></template>
+							</Button>
+							<span class="flex-1 truncate text-base !font-medium">
+								{{ __('{0} selected', [String(selections.length)]) }}
+							</span>
+							<button
+								class="text-ink-gray-8 text-md shrink-0 px-2 !font-medium"
+								@click="toggleSelectAll(!isAllSelected)"
+							>
+								{{ isAllSelected ? __('Unselect All') : __('Select All') }}
+							</button>
+						</div>
+						<div v-else-if="mailbox !== 'search'" class="flex h-12 items-center px-4">
+							<!-- The selector label carries the active filter ("Unread Mails", …);
+							     picking "All" in the sheet clears it, so no dismissal chip needed. -->
+							<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
+								<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
+									<span class="truncate">{{ title }}</span>
+									<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
+								</button>
+							</AdaptiveDropdown>
+						</div>
+
+						<!-- Loading bar -->
+						<LoadingBar v-if="threadsResource?.loading" />
+					</div>
+
+					<!-- Toolbar/Actions -->
+					<div
+						v-else
+						class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
+					>
+						<div v-if="!isAllAccountsSearch" class="mr-5">
+							<Tooltip
+								:text="
+									isAllSelected
+										? __('Clear All (Esc)')
+										: __('Select All ({0}+A)', [modifier])
+								"
+							>
+								<div
+									class="checkbox-hitbox -m-3 cursor-pointer p-3"
+									@click.stop.prevent="toggleSelectAll(!isAllSelected)"
+								>
+									<Checkbox
+										:model-value="isAllSelected"
+										size="md"
+										class="pointer-events-none"
+									/>
+								</div>
+							</Tooltip>
+						</div>
+						<Dropdown
+							v-if="!selections.length && mailbox !== 'search'"
+							:options="FILTER_OPTIONS"
 						>
-							<span class="truncate">{{ title }}</span>
-							<ChevronDown class="text-ink-gray-5 icon shrink-0" />
-						</button>
-					</Dropdown>
-					<p v-else class="pb-[2px]">{{ title }}</p>
-					<div class="-mr-1.5 ml-auto flex items-center space-x-1.5 sm:space-x-3">
-						<Button
-							v-if="!selections.length"
-							variant="ghost"
-							:tooltip="__('Refresh')"
-							:disabled="threadsResource?.loading || loadingMore"
-							@click="refreshThreads()"
-						>
-							<template #icon>
-								<RefreshCw class="icon" />
+							<button
+								class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded px-2 py-1"
+							>
+								<span class="truncate">{{ title }}</span>
+								<ChevronDown class="text-ink-gray-5 icon shrink-0" />
+							</button>
+						</Dropdown>
+						<p v-else class="pb-[2px]">{{ title }}</p>
+						<div class="-mr-1.5 ml-auto flex items-center space-x-1.5 sm:space-x-3">
+							<Button
+								v-if="!selections.length"
+								variant="ghost"
+								:tooltip="__('Refresh')"
+								:disabled="threadsResource?.loading || loadingMore"
+								@click="refreshThreads()"
+							>
+								<template #icon>
+									<RefreshCw class="icon" />
+								</template>
+							</Button>
+							<template v-if="selections.length">
+								<Dropdown v-if="showReadingPane" :options="selectActions">
+									<Button variant="ghost" :tooltip="__('Actions')">
+										<template #icon>
+											<Ellipsis class="icon" />
+										</template>
+									</Button>
+								</Dropdown>
+								<template v-else>
+									<Button
+										v-for="action in selectActions.filter((a) => a.condition())"
+										:key="action.label"
+										:tooltip="action.label"
+										variant="ghost"
+										@click="action.onClick"
+									>
+										<template #icon>
+											<component :is="action.icon" class="icon" />
+										</template>
+									</Button>
+								</template>
 							</template>
-						</Button>
-						<template v-if="selections.length">
-							<Dropdown v-if="showReadingPane" :options="selectActions">
-								<Button variant="ghost" :tooltip="__('Actions')">
+
+							<Dropdown
+								v-if="!!selections.length && !['search', 'starred'].includes(mailbox)"
+								:options="moveToOptions"
+							>
+								<Button variant="ghost" :tooltip="__('Move To')">
 									<template #icon>
-										<Ellipsis class="icon" />
+										<component :is="FolderInput" class="icon" />
 									</template>
 								</Button>
 							</Dropdown>
-							<template v-else>
-								<Button
-									v-for="action in selectActions.filter((a) => a.condition())"
-									:key="action.label"
-									:tooltip="action.label"
-									variant="ghost"
-									@click="action.onClick"
-								>
+							<Dropdown v-if="showAddTo" :options="addToOptions">
+								<Button variant="ghost" :tooltip="__('Add To')">
 									<template #icon>
-										<component :is="action.icon" class="icon" />
+										<component :is="FolderPlus" class="icon" />
 									</template>
 								</Button>
-							</template>
-						</template>
-
-						<Dropdown
-							v-if="!!selections.length && !['search', 'starred'].includes(mailbox)"
-							:options="moveToOptions"
-						>
-							<Button variant="ghost" :tooltip="__('Move To')">
-								<template #icon>
-									<component :is="FolderInput" class="icon" />
-								</template>
-							</Button>
-						</Dropdown>
-						<Dropdown v-if="showAddTo" :options="addToOptions">
-							<Button variant="ghost" :tooltip="__('Add To')">
-								<template #icon>
-									<component :is="FolderPlus" class="icon" />
-								</template>
-							</Button>
-						</Dropdown>
-						<Dropdown v-if="showRemoveFrom" :options="removeFromOptions">
-							<Button variant="ghost" :tooltip="__('Remove From')">
-								<template #icon>
-									<component :is="FolderMinus" class="icon" />
-								</template>
-							</Button>
-						</Dropdown>
+							</Dropdown>
+							<Dropdown v-if="showRemoveFrom" :options="removeFromOptions">
+								<Button variant="ghost" :tooltip="__('Remove From')">
+									<template #icon>
+										<component :is="FolderMinus" class="icon" />
+									</template>
+								</Button>
+							</Dropdown>
+						</div>
+						<!-- Subtle loading bar: a segment sliding across the bottom outline (no layout shift) -->
+						<LoadingBar v-if="threadsResource?.loading" />
 					</div>
-					<!-- Subtle loading bar: a segment sliding across the bottom outline (no layout shift) -->
-					<LoadingBar v-if="threadsResource?.loading" />
-				</div>
 
-				<!-- Mail list -->
-				<div
-					v-if="threadsResource?.data?.length"
-					ref="mailList"
-					class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
-				>
-					<div v-for="(group, key) in groupedThreads" :key="key">
-						<div
-							v-if="groupMessagesBy !== 'None' && !isMobile"
-							class="text-ink-gray-6 group flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
-							:class="{
-								'!bg-surface-blue-1': isGroupSelected(key),
-								'sm:hover:bg-surface-gray-1': !isLastGroup(key),
-								'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
-							}"
-							:data-row-key="`group:${key}`"
-							@click="toggleGroupCollapse(key)"
-						>
-							<!-- Mobile: group select ("all of Today") appears only in selection mode. -->
+					<!-- Mail list -->
+					<div
+						v-if="threadsResource?.data?.length"
+						ref="mailList"
+						class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
+					>
+						<div v-for="(group, key) in groupedThreads" :key="key">
 							<div
-								v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
-								class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-3"
-								@click.stop.prevent="
-									toggleSelect(getGroupThreads(key), !isGroupSelected(key))
-								"
+								v-if="groupMessagesBy !== 'None' && !isMobile"
+								class="text-ink-gray-6 group flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
+								:class="{
+									'!bg-surface-blue-1': isGroupSelected(key),
+									'sm:hover:bg-surface-gray-1': !isLastGroup(key),
+									'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
+								}"
+								:data-row-key="`group:${key}`"
+								@click="toggleGroupCollapse(key)"
 							>
-								<Checkbox
-									:model-value="isGroupSelected(key)"
-									size="md"
-									class="pointer-events-none"
+								<!-- Mobile: group select ("all of Today") appears only in selection mode. -->
+								<div
+									v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
+									class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-3"
+									@click.stop.prevent="
+										toggleSelect(getGroupThreads(key), !isGroupSelected(key))
+									"
+								>
+									<Checkbox
+										:model-value="isGroupSelected(key)"
+										size="md"
+										class="pointer-events-none"
+									/>
+								</div>
+
+								<span class="select-none pt-[2px]">
+									{{ getFormattedDate(key, groupMessagesBy === 'Month').toUpperCase() }}
+								</span>
+
+								<component
+									:is="collapsedGroups.includes(key) ? ChevronRight : ChevronDown"
+									v-if="!isLastGroup(key)"
+									class="icon ml-auto"
 								/>
 							</div>
-
-							<span class="select-none pt-[2px]">
-								{{ getFormattedDate(key, groupMessagesBy === 'Month').toUpperCase() }}
-							</span>
-
-							<component
-								:is="collapsedGroups.includes(key) ? ChevronRight : ChevronDown"
-								v-if="!isLastGroup(key)"
-								class="icon ml-auto"
-							/>
-						</div>
-						<template v-if="isMobile || !collapsedGroups.includes(key)">
-							<!-- A stack row stands in for a run of look-alike threads; when expanded, its
-							     members follow it as ordinary (indented) rows. -->
-							<template v-for="row in groupedRows[key]" :key="row.key">
-								<!-- Stacks are disabled in search (see stackingEnabled), so unlike the thread
-								     rows below they never need the all-accounts cross-account handling. -->
-								<StackListItem
-									v-if="row.type === 'stack'"
-									:threads="row.threads"
-									:expanded="row.expanded"
-									:is-selected="isStackSelected(row.threads)"
-									class="border-l-transparent sm:border-l"
-									:class="{ '!border-l-outline-blue-5': row.key === focusedRowKey }"
-									:data-row-key="row.key"
-									@toggle="toggleStack(row)"
-									@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
-									@archive-threads="stackArchive(row.threads)"
-									@trash-threads="stackTrash(row.threads)"
-									@delete-threads="stackDelete(row.threads)"
-									@set-selected="
-										(selected: boolean) =>
-											toggleSelect(
-												row.threads.map((t) => t.thread_id),
-												selected,
-											)
-									"
-								/>
-								<MailListItem
-									v-else
-									:mailbox
-									:mail="row.thread"
-									:account-id="isAllAccountsSearch ? row.thread.account : undefined"
-									:account-label="
-										isAllAccountsSearch ? shortAccountLabel(row.thread.account_name) : undefined
-									"
-									:selectable="!isAllAccountsSearch"
-									:selection-mode="mobileSelectionMode"
-									:is-selected="selections.includes(row.thread.thread_id)"
-									:hide-sender="row.inStack"
-									class="border-l-transparent sm:border-l"
-									:class="{
-										'!bg-surface-blue-1':
-											row.thread.thread_id === threadID && !isMobile,
-										'!border-l-outline-blue-5': row.key === focusedRowKey,
-										'!pl-10 sm:!pl-12': row.inStack,
-									}"
-									:data-row-key="row.key"
-									@set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
-									@archive-thread="rowArchive(row.thread)"
-									@trash-thread="rowTrash(row.thread)"
-									@delete-thread="junkOrDeleteThreads([row.thread.thread_id], false)"
-									@set-flagged="(flagged: boolean) => rowSetFlagged(row.thread, flagged)"
-									@set-selected="
-										(selected: boolean) =>
-											!isAllAccountsSearch &&
-											toggleSelect([row.thread.thread_id], selected)
-									"
-								/>
+							<template v-if="isMobile || !collapsedGroups.includes(key)">
+								<!-- A stack row stands in for a run of look-alike threads; when expanded, its
+								     members follow it as ordinary (indented) rows. -->
+								<template v-for="row in groupedRows[key]" :key="row.key">
+									<!-- Stacks are disabled in search (see stackingEnabled), so unlike the thread
+									     rows below they never need the all-accounts cross-account handling. -->
+									<StackListItem
+										v-if="row.type === 'stack'"
+										:threads="row.threads"
+										:expanded="row.expanded"
+										:is-selected="isStackSelected(row.threads)"
+										class="border-l-transparent sm:border-l"
+										:class="{ '!border-l-outline-blue-5': row.key === focusedRowKey }"
+										:data-row-key="row.key"
+										@toggle="toggleStack(row)"
+										@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
+										@archive-threads="stackArchive(row.threads)"
+										@trash-threads="stackTrash(row.threads)"
+										@delete-threads="stackDelete(row.threads)"
+										@set-selected="
+											(selected: boolean) =>
+												toggleSelect(
+													row.threads.map((t) => t.thread_id),
+													selected,
+												)
+										"
+									/>
+									<MailListItem
+										v-else
+										:mailbox
+										:mail="row.thread"
+										:account-id="isAllAccountsSearch ? row.thread.account : undefined"
+										:account-label="
+											isAllAccountsSearch ? shortAccountLabel(row.thread.account_name) : undefined
+										"
+										:selectable="!isAllAccountsSearch"
+										:selection-mode="mobileSelectionMode"
+										:is-selected="selections.includes(row.thread.thread_id)"
+										:hide-sender="row.inStack"
+										class="border-l-transparent sm:border-l"
+										:class="{
+											'!bg-surface-blue-1':
+												row.thread.thread_id === threadID && !isMobile,
+											'!border-l-outline-blue-5': row.key === focusedRowKey,
+											'!pl-10 sm:!pl-12': row.inStack,
+										}"
+										:data-row-key="row.key"
+										@set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
+										@archive-thread="rowArchive(row.thread)"
+										@trash-thread="rowTrash(row.thread)"
+										@delete-thread="junkOrDeleteThreads([row.thread.thread_id], false)"
+										@set-flagged="(flagged: boolean) => rowSetFlagged(row.thread, flagged)"
+										@set-selected="
+											(selected: boolean) =>
+												!isAllAccountsSearch &&
+												toggleSelect([row.thread.thread_id], selected)
+										"
+									/>
+								</template>
 							</template>
-						</template>
+						</div>
+						<!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
+						     batch (appended, never refetching loaded rows). Sits after all groups so collapsing
+						     a group can't disable it. -->
+						<div ref="loadMoreSentinel" class="h-px" />
+						<div v-if="loadingMore" class="flex justify-center py-3">
+							<LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
+						</div>
 					</div>
-					<!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
-					     batch (appended, never refetching loaded rows). Sits after all groups so collapsing
-					     a group can't disable it. -->
-					<div ref="loadMoreSentinel" class="h-px" />
-					<div v-if="loadingMore" class="flex justify-center py-3">
-						<LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
+					<div v-else class="flex h-full items-center justify-center">
+						<!-- While the (still-mounted) search header's new query loads, this area is the
+						     loading surface — the empty message must not flash first. -->
+						<LoaderCircle
+							v-if="threadsResource?.loading"
+							class="text-ink-gray-5 h-5 w-5 animate-spin"
+						/>
+						<p v-else class="text-ink-gray-5">
+							{{
+								mailbox !== 'search'
+									? __('No mails found for the selected filter.')
+									: hasSearchQuery
+										? __('No results found for the given query.')
+										: __('Search your mail')
+							}}
+						</p>
 					</div>
-				</div>
-				<div v-else class="flex h-full items-center justify-center">
-					<!-- While the (still-mounted) search header's new query loads, this area is the
-					     loading surface — the empty message must not flash first. -->
-					<LoaderCircle
-						v-if="threadsResource?.loading"
-						class="text-ink-gray-5 h-5 w-5 animate-spin"
-					/>
-					<p v-else class="text-ink-gray-5">
-						{{
-							mailbox !== 'search'
-								? __('No mails found for the selected filter.')
-								: hasSearchQuery
-									? __('No results found for the given query.')
-									: __('Search your mail')
-						}}
-					</p>
-				</div>
-			</div>
-			<div class="flex cursor-col-resize justify-center" @mousedown="startResizing">
-				<div
-					ref="resizer"
-					class="group-hover:bg-surface-gray-8 h-full rounded-full transition-all duration-300 ease-in-out"
-				/>
-			</div>
+				</template>
 
-			<!-- Mail thread -->
-			<!-- Mobile opens as a page push (iOS-style slide from the right): the pane
-			     stays mounted and slides via transform, so close animates too.
-			     visibility rides the same transition — it flips only after the
-			     slide-out ends, keeping the offscreen pane out of the focus order.
-			     Teleported to body on mobile (like the selection bar): inside the
-			     layout's isolate stacking context the remounting tab bar would paint
-			     over the pane during the slide-out. -->
-			<Teleport to="body" :disabled="!isMobile">
-			<div
-				class="bg-surface-base"
-				:class="{
-					'overflow-hidden': isMobile,
-					'w-2/3': !isMobile && showReadingPane,
-					'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
-					'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
-						isMobile,
-					'invisible translate-x-full': isMobile && !threadID,
-					hidden: !isMobile && !showReadingPane && !threadID,
-				}"
-				@touchstart.passive="onThreadTouchStart"
-				@touchend.passive="onThreadTouchEnd"
-			>
-				<!-- The swipe slide lives inside MailThread (its toolbar must not move), armed
-				     via `slide` per swipe and cleared on slide-done. The scroll wrapper must be
-				     h-full on desktop too, or the empty state's h-full collapses. -->
-				<div class="h-full overflow-y-auto">
 				<MailThread
 					ref="mailThread"
 					:slide="threadSlide"
@@ -449,9 +417,7 @@
 					@prev-thread="goToThreadByOffset(-1)"
 					@next-thread="goToThreadByOffset(1)"
 				/>
-				</div>
-			</div>
-			</Teleport>
+			</ThreadPane>
 		</template>
 
 		<!-- No mails (the search view keeps its header and shows an inline message instead) -->
@@ -565,7 +531,6 @@ import {
 	raisePromiseToast,
 	raiseToast,
 	shouldIgnoreKeypress,
-	startResizing,
 	stripShortcutHint,
 } from '@/apps/mail/utils'
 import {
@@ -578,6 +543,7 @@ import {
 } from '@/apps/mail/utils/listNavigation'
 import {
 	useMobileSelection,
+	useReadingPane,
 	useScreenSize,
 	useSwipeNav,
 	useUndo,
@@ -595,6 +561,7 @@ import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.v
 import ScreenedEmailAddressModal from '@/apps/mail/components/Modals/ScreenedEmailAddressModal.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
+import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 
 import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
 import type { ListRow, StackRow } from '@/apps/mail/utils/threadStacks'
@@ -625,7 +592,10 @@ const { mailboxes, mailboxIds } = store
 
 // Appearance
 
-const showReadingPane = computed(() => !!user.data?.show_reading_pane)
+// Split View. Shared with ThreadPane, which sizes both halves of the split from it — this view also
+// reads it to decide whether the info banners survive an open thread, and how the toolbar's bulk
+// actions collapse (into a menu with the pane taking two thirds of the row, spelled out without).
+const showReadingPane = useReadingPane()
 const groupMessagesBy = computed(() => user.data.group_messages_by)
 
 // Thread Groups
