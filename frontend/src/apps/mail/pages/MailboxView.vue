@@ -185,7 +185,7 @@
 								v-if="!selections.length"
 								variant="ghost"
 								:tooltip="__('Refresh')"
-								:disabled="threadsResource?.loading || loadingMore"
+								:disabled="isFetching"
 								@click="refreshThreads()"
 							>
 								<template #icon>
@@ -489,9 +489,8 @@
 
 </template>
 <script setup lang="ts">
-import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useIntersectionObserver } from '@vueuse/core'
 import {
 	Archive,
 	ChevronDown,
@@ -549,6 +548,10 @@ import {
 	useUndo,
 } from '@/apps/mail/utils/composables'
 import { buildListRows } from '@/apps/mail/utils/threadStacks'
+import {
+	PAGE_LENGTH,
+	usePaginatedThreads,
+} from '@/apps/mail/composables/usePaginatedThreads'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
@@ -752,7 +755,6 @@ watch(
 // Selection
 
 const mailThreadRef = useTemplateRef('mailThread')
-const mailListRef = useTemplateRef('mailList')
 
 const selections = ref<string[]>([])
 
@@ -1108,29 +1110,35 @@ const selectActions = computed((): SelectAction[] => [
 
 // Search
 
-// Infinite-scroll state (shared by the threads and search resources — only one is active at a time)
-const PAGE_LENGTH = 25
-const hasMore = ref(false) // lookahead: the last fetched window returned an extra row, so more exist
-const loadingMore = ref(false) // an append fetch is in flight (drives the bottom spinner)
+// Infinite scroll (shared by the threads and search resources — only one is active at a time).
+// usePaginatedThreads owns the state between the reset and append fetches: the epochs, the refresh
+// merge, the removal suppression, the sentinel, the edge crossing. See there.
+const {
+	container: mailListRef,
+	hasMore,
+	loadingMore,
+	isFetching,
+	canGoNext,
+	threadIDs,
+	takeResetWindow,
+	beginReset,
+	beginRefresh,
+	onResetSuccess,
+	appendThreads,
+	loadMoreThenOpenEdge,
+	topUpIfShort,
+	suppressRemoved,
+	unsuppressRemoved,
+} = usePaginatedThreads({
+	resource: () => threadsResource.value,
+	fetchMore: () => (mailbox === 'search' ? loadMoreSearch : loadMoreThreads).reload(),
+	openThreadID: () => threadID,
+	onEdgeThread: (id, action) => (action === 'open' ? goToThread(id) : focusOnThread(id)),
+})
+
 // An optimistic removal emptied the list but more threads exist, so a refill is coming once the server
 // mutation lands. Keeps the loading state (not the empty state) during the gap before the refill fetch.
 const refillPending = ref(false)
-// Bumped on every reset-to-top; an in-flight append captures it and discards its result if it changed
-// meanwhile, so a stale window can't land on a freshly reset list.
-const epoch = ref(0)
-let loadEpoch = 0 // epoch captured when the current append was triggered
-// Refresh ("check for new mail") state: merges the newest window into the loaded list, preserving
-// scroll — set while such a reload is in flight so its onSuccess prepends instead of replacing.
-const refreshMode = ref(false)
-let refreshEpoch = 0 // epoch captured when the refresh was triggered (dropped if a reset intervenes)
-// The loaded list to merge the fresh window into. Captured at *response* time (in the resource
-// transform), not refresh-start, so it reflects any optimistic removals/undo-inserts that happened
-// while the refresh was in flight — otherwise a thread archived mid-refresh would reappear.
-let refreshSnapshot: Thread[] = []
-// Thread ids optimistically removed by an action whose request is still in flight. The server still
-// returns these for a moment, so a refresh/append landing in that window would re-insert the row; the
-// merges below skip them. Cleared on rollback (restoreThreadsToList) and after a short timeout.
-const recentlyRemoved = new Set<string>()
 // Current mailbox's record (carries total_threads/unread_threads); used by the periodic poll to
 // detect count changes and by the tab title's unread badge.
 const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
@@ -1169,42 +1177,6 @@ const screenerBanner = computed(() => {
 })
 const goToScreener = () => router.push({ name: 'mail-screener', params: { accountId } })
 
-const scrollListToTop = () => mailListRef.value?.scrollTo({ top: 0 })
-
-// Called when a first-window fetch resolves. Two modes:
-// - refresh: keep the loaded rows, prepend only threads not already loaded (new mail), and hold the
-//   reader's scroll position (re-anchored by the height the prepended rows added).
-// - reset: reveal the fresh first window and scroll to top (mailbox switch, filter, undo, …).
-// Either way, cancel any pending edge navigation.
-const onResetSuccess = () => {
-	pendingEdgeThread = null
-
-	if (refreshMode.value) {
-		refreshMode.value = false
-		// A reset (mailbox switch, filter, undo) raced in and bumped the epoch — drop this stale merge.
-		if (refreshEpoch !== epoch.value) return
-		// Anchor to the current scroll before merging. The window replaced `data` a beat ago but the DOM
-		// hasn't re-rendered yet, so these still reflect the loaded list the reader is looking at.
-		const el = mailListRef.value
-		const prevTop = el?.scrollTop ?? 0
-		const prevHeight = el?.scrollHeight ?? 0
-		const freshWindow = threadsResource.value.data ?? []
-		const existing = new Set(refreshSnapshot.map((t) => t.thread_id))
-		const fresh = freshWindow.filter(
-			(t: Thread) => !existing.has(t.thread_id) && !recentlyRemoved.has(t.thread_id),
-		)
-		threadsResource.value.data = [...fresh, ...refreshSnapshot]
-		// Keep the reader where they were: shift scroll by the height the prepended rows added. If they
-		// were already at the top, leave them there so the new mail is visible.
-		nextTick(() => {
-			if (el && prevTop > 0) el.scrollTop = prevTop + (el.scrollHeight - prevHeight)
-		})
-		return
-	}
-
-	scrollListToTop()
-}
-
 // Cross-account search: when the search dialog's "all accounts" toggle was on, the flag rides along in
 // the query (kept out of the filter conditions on the server). The merged results carry their owning
 // account, so each row opens in — and acts within — its own account (see the row-action wrappers).
@@ -1235,10 +1207,8 @@ const searchResults = createResource({
 		all_accounts: isAllAccountsSearch.value,
 	}),
 	transform: (data: [Thread[], number]) => {
-		if (refreshMode.value) refreshSnapshot = threadsResource.value.data ?? []
-		hasMore.value = data[0].length > PAGE_LENGTH
 		searchTotal.value = data[1] ?? 0
-		return data[0].slice(0, PAGE_LENGTH)
+		return takeResetWindow(data[0])
 	},
 	onSuccess: () => {
 		onResetSuccess()
@@ -1276,14 +1246,7 @@ const threads = createResource({
 		start: 0,
 		filter_by: filter.value,
 	}),
-	transform: (data: [Thread[], string]) => {
-		// In refresh mode, snapshot the live loaded list now — before this window replaces it — so the
-		// merge in onResetSuccess reflects any optimistic removals/undo-inserts made during the fetch.
-		if (refreshMode.value) refreshSnapshot = threadsResource.value.data ?? []
-		const rows = data[0]
-		hasMore.value = rows.length > PAGE_LENGTH
-		return rows.slice(0, PAGE_LENGTH)
-	},
+	transform: (data: [Thread[], string]) => takeResetWindow(data[0]),
 	onSuccess: (data: [Thread[], string]) => {
 		onResetSuccess()
 		if (mailbox === data[1]) isMailboxLoaded.value = true
@@ -1303,29 +1266,10 @@ const showDeleteBanner = computed(
 		(showReadingPane.value || !threadID),
 )
 
-// ── Infinite scroll ─────────────────────────────────────────────────────────────────────────────
-// Two fetch paths that both write `threadsResource.value.data` — the single accumulated list every
-// consumer reads: the reset resources above replace it (start:0); the append resources below push the
-// next window onto it. Kept separate so createResource's replace-on-reload never fights the append.
-
-// Appends the next window onto the loaded list, deduped by thread_id. `start = data.length` stays
-// correct across optimistic removals (the server list shifts left by the same rows we dropped); the
-// only skew is new mail inserted at the front, which the dedupe absorbs and the next reset reconciles.
-const appendThreads = (rows: Thread[]) => {
-	loadingMore.value = false
-	// Discard a stale window that resolved after a reset began (mailbox switch, refresh, undo, …).
-	if (loadEpoch !== epoch.value) return
-	const seen = new Set(threadsResource.value.data.map((t: Thread) => t.thread_id))
-	const fresh = rows
-		.slice(0, PAGE_LENGTH)
-		.filter((t) => !seen.has(t.thread_id) && !recentlyRemoved.has(t.thread_id))
-	// Stop auto-loading if the window added nothing new (offset stuck behind heavy front-inserted mail);
-	// the next reset (poll/refresh/socket) reconciles. Guards against a tight reload loop while the
-	// sentinel stays in view.
-	hasMore.value = rows.length > PAGE_LENGTH && fresh.length > 0
-	threadsResource.value.data = [...threadsResource.value.data, ...fresh]
-	openPendingEdgeThread()
-}
+// ── Append fetches ──────────────────────────────────────────────────────────────────────────────
+// The other half of the two fetch paths that write `threadsResource.value.data`: the reset resources
+// above replace it (start:0), these push the next window onto it (via appendThreads). Kept separate so
+// createResource's replace-on-reload never fights the append.
 
 const loadMoreThreads = createResource({
 	url: 'suite.mail.api.mail.get_threads',
@@ -1353,59 +1297,9 @@ const loadMoreSearch = createResource({
 	onError: () => (loadingMore.value = false),
 })
 
-const loadMore = () => {
-	if (!hasMore.value || loadingMore.value || threadsResource.value.loading) return
-	loadingMore.value = true
-	loadEpoch = epoch.value
-	;(mailbox === 'search' ? loadMoreSearch : loadMoreThreads).reload()
-}
-
-const loadMoreSentinel = useTemplateRef('loadMoreSentinel')
-
-// True while the sentinel is in view.
-const sentinelVisible = ref(false)
-
-// The height the list had reached the last time we topped it up, so a fill that adds nothing can be
-// detected. Reset at the start of each fill episode (see below).
-let lastFillHeight = 0
-
-useIntersectionObserver(
-	loadMoreSentinel,
-	([entry]) => {
-		const entering = !!entry?.isIntersecting && !sentinelVisible.value
-		sentinelVisible.value = !!entry?.isIntersecting
-		if (entering) lastFillHeight = 0
-		if (sentinelVisible.value) loadMore()
-	},
-	{ root: mailListRef },
-)
-
-// Rescues the one case the observer cannot: the rendered list is too short to scroll, so the sentinel
-// can never leave and re-enter the viewport to fire again — infinite scroll would die with nothing left
-// to scroll. A window of 25 threads can collapse to a single stack row, so filling the viewport can take
-// several of them.
-//
-// Both guards are load-bearing. Stop once the list can scroll, because from there the user's own
-// scrolling drives the observer. And stop if a window added no height: its rows landed somewhere they
-// cannot be seen (a collapsed date group), so further windows would be just as invisible — without this,
-// collapsing a large group turns into a stampede that walks the entire mailbox 25 threads at a time.
-watch(groupedRows, () => {
-	if (!sentinelVisible.value || !hasMore.value) return
-
-	nextTick(() => {
-		const el = mailListRef.value
-		if (!el || !sentinelVisible.value) return
-
-		const grew = el.scrollHeight > lastFillHeight
-		lastFillHeight = el.scrollHeight
-		if (el.scrollHeight <= el.clientHeight && grew) loadMore()
-	})
-})
-
-// The reading pane's Next arrow can always advance while more threads remain to load (crossing the
-// last loaded thread triggers an append). The Prev arrow is disabled at the first loaded thread, which
-// is the first thread overall (we always start from the top).
-const canGoNext = computed(() => hasMore.value)
+// Keep infinite scroll alive while the rendered list is too short to scroll (see topUpIfShort). Must
+// stay below groupedRows: `watch` evaluates its source at setup.
+watch(groupedRows, topUpIfShort)
 
 const isLoading = computed(() => {
 	// Search is one page: its header (input + filter chips) mounts immediately and stays put
@@ -1417,10 +1311,6 @@ const isLoading = computed(() => {
 	if (refillPending.value) return true
 	return !threadsResource.value.data.length && threadsResource.value?.loading
 })
-
-const threadIDs = computed(
-	() => threadsResource.value.data?.map((thread: Thread) => thread.thread_id) || [],
-)
 
 // Reset-to-top: refetch only the first window, replacing the loaded list and scrolling to the top
 // (via onResetSuccess). Bumping `epoch` discards any append/refresh still in flight. Used for
@@ -1434,8 +1324,7 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 	// This reload supersedes any pending refill (its own, or an interrupting mailbox switch); from here
 	// the resource's `loading` drives isLoading, so the flag has done its job.
 	refillPending.value = false
-	refreshMode.value = false
-	epoch.value++
+	beginReset()
 	resetSelections()
 	// Clear the previous search's count so the header doesn't show a stale total while the new fetch runs.
 	if (mailbox === 'search') {
@@ -1455,16 +1344,7 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 // threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
 // the Refresh button, the periodic poll, and the new-mail socket. Selections are preserved.
 const refreshThreads = (reloadMailboxes = true) => {
-	if (threadsResource.value.loading || loadingMore.value) return
-
-	refreshMode.value = true
-	// Bump the epoch so an append still in flight is discarded (appendThreads checks it) instead of
-	// landing after the merge and clobbering it. A new append can't start mid-refresh (loadMore bails
-	// while the resource is loading), so this fully closes the refresh/append race. The merge base
-	// (refreshSnapshot) and scroll anchor are captured later, at response time, so they reflect the list
-	// as it actually is when the window arrives — not a stale start-of-refresh copy.
-	epoch.value++
-	refreshEpoch = epoch.value
+	if (!beginRefresh()) return
 	threadsResource.value.reload()
 	if (reloadMailboxes) mailboxes.reload()
 }
@@ -1486,10 +1366,7 @@ const removeThreadsFromList = (thread_ids: string[]): Thread[] => {
 		(thread: Thread) => !thread_ids.includes(thread.thread_id),
 	)
 	// Suppress re-insertion by an in-flight refresh/append until the server-side removal lands.
-	thread_ids.forEach((id) => {
-		recentlyRemoved.add(id)
-		setTimeout(() => recentlyRemoved.delete(id), 15000)
-	})
+	suppressRemoved(thread_ids)
 	// If this emptied the list but more exist, a refill is coming (refillIfEmpty, once the mutation
 	// lands) — flag it so the empty state doesn't flash in the meantime.
 	if (!threadsResource.value.data.length && hasMore.value) refillPending.value = true
@@ -1514,7 +1391,7 @@ const restoreThreadsToList = (restored: Thread[]) => {
 	// Rows are back (removal failed / undo), so no refill is coming — drop the pending-refill hold.
 	refillPending.value = false
 	// A restored thread should be visible again — lift any removal suppression.
-	restored.forEach((t: Thread) => recentlyRemoved.delete(t.thread_id))
+	unsuppressRemoved(restored.map((t: Thread) => t.thread_id))
 	const list = [...(threadsResource.value.data ?? [])]
 	const present = new Set(list.map((t: Thread) => t.thread_id))
 	for (const thread of restored) {
@@ -1595,23 +1472,6 @@ const goToThread = (threadID: string) => {
 		router.push({ name: 'mail-mail', params: { accountId, mailbox, threadID }, query: route.query })
 }
 
-// Stepping past the last loaded thread loads the next window, then opens/focuses the newly appended
-// thread once it arrives (`openPendingEdgeThread`, called from the append's onSuccess). `action`
-// distinguishes the reading view (open) from list keyboard focus (focus). `anchor` is the thread we
-// stepped off (the previously-last loaded), captured so we can resolve its successor after the append.
-// There's no backward case — the first loaded thread is the first thread overall.
-let pendingEdgeThread: { action: 'open' | 'focus'; anchor: string | undefined } | null = null
-
-const loadMoreThenOpenEdge = (offset: number, action: 'open' | 'focus') => {
-	// One crossing at a time: ignore further edge steps until the append resolves, so key auto-repeat
-	// at the bottom of the list can't fire a burst of loads.
-	if (pendingEdgeThread || offset < 0 || !hasMore.value) return
-	// A focus crossing can only happen from the last navigable row, whose last thread is the last loaded
-	// one — so the tail anchors the successor without needing to map a row back to a thread.
-	pendingEdgeThread = { action, anchor: action === 'open' ? threadID : threadIDs.value.at(-1) }
-	loadMore()
-}
-
 const goToThreadByOffset = (offset: number) => {
 	const next = getThreadByOffset(offset)
 	if (next) return goToThread(next)
@@ -1634,17 +1494,6 @@ const { onTouchStart: onThreadTouchStart, onTouchEnd: onThreadTouchEnd } = useSw
 // (and left empty for every other thread change, which should swap instantly).
 const threadSlide = ref('')
 let pendingThreadSlide = ''
-
-const openPendingEdgeThread = () => {
-	if (!pendingEdgeThread) return
-	const { action, anchor } = pendingEdgeThread
-	// The successor of the anchor is now loaded (undefined only if nothing new arrived — then stop).
-	const id = getThreadByOffset(1, anchor)
-	pendingEdgeThread = null
-	if (!id) return
-	if (action === 'open') goToThread(id)
-	else focusOnThread(id)
-}
 
 const goToNextThreadOrMailbox = (excludedThreads: string[] = []) => {
 	const idx = threadIDs.value.indexOf(threadID)
