@@ -43,6 +43,7 @@ export const userStore = defineStore('mail-user', () => {
 		addressBooks.fetch()
 		identities.fetch()
 		screenedAddresses.fetch()
+		globalScreenedAddresses.fetch()
 		sieveScripts.fetch()
 	}
 
@@ -117,6 +118,13 @@ export const userStore = defineStore('mail-user', () => {
 		cache: ['screenedAddresses', accountId.value],
 	})
 
+	// Global screened senders (admin-managed, no account) — overlaid under the account's own rules
+	// when deciding whether a sender is trusted for remote images. Not shown in the settings UI.
+	const globalScreenedAddresses = createResource({
+		url: 'suite.mail.api.mail.get_global_screened_addresses',
+		cache: 'globalScreenedAddresses',
+	})
+
 	const sieveScripts = createResource({
 		url: 'suite.mail.api.sieve.get_sieve_scripts',
 		makeParams: () => ({ account: accountId.value }),
@@ -136,6 +144,7 @@ export const userStore = defineStore('mail-user', () => {
 		addressBooks.reset()
 		identities.reset()
 		screenedAddresses.reset()
+		globalScreenedAddresses.reset()
 		sieveScripts.reset()
 		domains.reset()
 		allInboxesUnread.reset()
@@ -152,6 +161,7 @@ export const userStore = defineStore('mail-user', () => {
 		domains,
 		sieveScripts,
 		screenedAddresses,
+		globalScreenedAddresses,
 		allInboxesUnread,
 		reset,
 	}
