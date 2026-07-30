@@ -31,6 +31,20 @@ export const PAGE_LENGTH = 25
 // until the mutation lands, so a refresh or append in that window would put it back.
 const REMOVAL_SUPPRESSION_MS = 15000
 
+/**
+ * Merges two newest-first runs of threads into one, keeping newest-first order. Both inputs are
+ * already sorted (the server returns them that way), so this is a plain two-pointer merge; ties keep
+ * the fresh row first, matching the prepend this replaced.
+ */
+export const mergeByReceivedAt = (fresh: Thread[], loaded: Thread[]): Thread[] => {
+	const merged: Thread[] = []
+	let f = 0
+	let l = 0
+	while (f < fresh.length && l < loaded.length)
+		merged.push(fresh[f].received_at >= loaded[l].received_at ? fresh[f++] : loaded[l++])
+	return [...merged, ...fresh.slice(f), ...loaded.slice(l)]
+}
+
 /** The shape of a reset resource this reads and writes — createResource satisfies it. */
 export interface ThreadListResource {
 	data?: Thread[]
@@ -162,18 +176,31 @@ export const usePaginatedThreads = ({
 			// DOM hasn't re-rendered yet, so these still reflect the list the reader is looking at.
 			const el = container.value
 			const prevTop = el?.scrollTop ?? 0
-			const prevHeight = el?.scrollHeight ?? 0
+			// Anchor on the row that was at the top of the loaded list. Measuring how far *it* moves
+			// counts only what the merge inserted above the reader; a total-height delta would also
+			// count rows merged in below them and scroll the list out from under them.
+			const anchorKey = refreshSnapshot[0]?.thread_id
+			const anchorTop = () =>
+				anchorKey
+					? ((el?.querySelector(`[data-row-key="${anchorKey}"]`) as HTMLElement | null)
+							?.offsetTop ?? 0)
+					: 0
+			const prevAnchorTop = anchorTop()
 			const freshWindow = list()
 			const existing = new Set(refreshSnapshot.map(threadKey))
 			const fresh = freshWindow.filter(
 				(thread: Thread) =>
 					!existing.has(threadKey(thread)) && !recentlyRemoved.has(threadKey(thread)),
 			)
-			resource().data = [...fresh, ...refreshSnapshot]
-			// Keep the reader where they were: shift scroll by the height the prepended rows added. If
+			// Date-merge rather than blind prepend. A prepend assumes everything in the newest window
+			// that isn't loaded yet is newer than everything that is — true for one account, false for
+			// the merged list, where a second account's newest mail can be older than the first's oldest
+			// loaded row and would otherwise open a stale date group above today's.
+			resource().data = mergeByReceivedAt(fresh, refreshSnapshot)
+			// Keep the reader where they were: shift scroll by the height the merge added above them. If
 			// they were already at the top, leave them there so the new mail is visible.
 			nextTick(() => {
-				if (el && prevTop > 0) el.scrollTop = prevTop + (el.scrollHeight - prevHeight)
+				if (el && prevTop > 0) el.scrollTop = prevTop + (anchorTop() - prevAnchorTop)
 			})
 			return
 		}
