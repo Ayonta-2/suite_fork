@@ -93,7 +93,7 @@ import { Avatar, Button, Dropdown, Sidebar, SidebarItem } from 'frappe-ui'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
-import { useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
+import { useAccountSwitch, useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { userStore } from '@/apps/mail/stores/user'
 import MailLogo from '@/apps/mail/components/Icons/MailLogo.vue'
@@ -135,6 +135,7 @@ import Wrench from '~icons/lucide/wrench'
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
+const { switchAccount } = useAccountSwitch()
 const { isSidebarOpen, closeSidebar } = useSidebar()
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 const { logout, branding } = sessionStore()
@@ -231,17 +232,7 @@ const menuItems = computed(() => [
 						'div',
 						{
 							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
-							onClick: async () => {
-								// Account-scoped routes carry an accountId, so swap it in place to stay in the
-								// same section. Account-agnostic routes (All Inboxes) have no accountId param —
-								// reusing their name would go nowhere, so route through the account shortcut,
-								// which the guard resolves to that account's default mailbox.
-								router.push(
-									route.params.accountId
-										? { name: route.name, params: { ...route.params, accountId: a.id } }
-										: { name: 'mail-account-shortcut', params: { accountId: a.id } },
-								)
-							},
+							onClick: () => switchAccount(a.id),
 						},
 						[
 							h(Avatar, { label: a._name, size: 'md' }),

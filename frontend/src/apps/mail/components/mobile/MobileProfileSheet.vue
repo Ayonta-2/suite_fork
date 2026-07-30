@@ -30,16 +30,13 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { Check, LogOut, Settings } from 'lucide-vue-next'
 import { Avatar, BottomSheet } from 'frappe-ui'
 
-import { useProfileSheet, useSettings } from '@/apps/mail/utils/composables'
+import { useAccountSwitch, useProfileSheet, useSettings } from '@/apps/mail/utils/composables'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { userStore } from '@/apps/mail/stores/user'
 
-const route = useRoute()
-const router = useRouter()
 const store = userStore()
 const { logout } = sessionStore()
 const { isProfileSheetOpen, closeProfileSheet } = useProfileSheet()
@@ -47,16 +44,12 @@ const { openSettings } = useSettings()
 
 const accounts = computed(() => store.userResource?.data?.accounts ?? [])
 
-// Same in-place accountId swap the sidebar's account submenu does; account-agnostic
-// routes (All Inboxes) go through the account shortcut instead.
+// Shared with the sidebar's account submenu — stays in place on account-scoped
+// routes and in All Inboxes (see useAccountSwitch).
+const { switchAccount: doSwitchAccount } = useAccountSwitch()
 const switchAccount = (accountId: string) => {
 	closeProfileSheet()
-	if (accountId === store.accountId) return
-	router.push(
-		route.params.accountId
-			? { name: route.name!, params: { ...route.params, accountId } }
-			: { name: 'mail-account-shortcut', params: { accountId } },
-	)
+	doSwitchAccount(accountId)
 }
 
 const openAppSettings = () => {
