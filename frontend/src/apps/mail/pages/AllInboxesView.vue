@@ -188,6 +188,7 @@
 					     The owning account scopes the pane (folder menus, reply identities) —
 					     opening a cross-account thread does NOT switch the active account. -->
 					<MailThread
+						ref="mailThread"
 						v-if="openRow || !threadID"
 						:slide="threadSlide"
 						@slide-done="threadSlide = ''"
@@ -199,7 +200,7 @@
 						@reload-mails="refreshThreads()"
 						@set-seen="(seen: boolean) => handleSetSeen(openRow!, seen)"
 						@set-flagged="
-							(_ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged)
+							(ids: string[], flagged: boolean) => paneSetFlagged(ids, flagged)
 						"
 						@move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
 						@delete-thread="handleTrash(openRow!)"
@@ -281,7 +282,7 @@ import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 
-import type { Mail, Thread, UserResource } from '@/apps/mail/types'
+import type { Mail, Mailbox, MailboxData, Thread, UserResource } from '@/apps/mail/types'
 
 const { isMobile } = useScreenSize()
 
@@ -825,11 +826,49 @@ const handleSyncUnseen = (ids: string[]) => {
 	refreshCounts()
 }
 
+const mailThread = useTemplateRef<{
+	syncFlagged: (ids: string[], flagged: boolean) => void
+	syncMailboxMembership: (mailboxId: string, add: boolean) => void
+}>('mailThread')
+
+// The row's `flagged` drives the list star; the pane's stars read each message. Update both, or
+// starring from the pane leaves its own star hollow until a refetch.
+const paneSetFlagged = (ids: string[], flagged: boolean) => {
+	if (openRow.value) handleSetFlagged(openRow.value, flagged)
+	mailThread.value?.syncFlagged(ids, flagged)
+}
+
+// Folder membership shows as tags on the row and in the pane. Neither refetches, so both have to be
+// told — mirroring syncListMailboxMembership plus MailThread's own syncMailboxMembership.
+const syncFolderTag = (mailboxId: string, add: boolean) => {
+	const mb = store.mailboxes.data?.find((m: MailboxData) => m.id === mailboxId)
+	const thread = openRow.value
+	if (!mb || !thread) return
+
+	const entry = { mailbox: mb.name, mailbox_id: mb.id, mailbox_name: mb._name }
+	const apply = (item: { mailboxes: Mailbox[] }) => {
+		if (add) {
+			if (!item.mailboxes.some((m) => m.mailbox_id === mailboxId)) item.mailboxes.push({ ...entry })
+		} else if (item.mailboxes.length > 1) {
+			item.mailboxes = item.mailboxes.filter((m) => m.mailbox_id !== mailboxId)
+		}
+	}
+	apply(thread)
+	thread.messages?.forEach(apply)
+	mailThread.value?.syncMailboxMembership(mailboxId, add)
+}
+
 const handleAddToMailbox = (mailboxId: string) => {
 	const thread = openRow.value
 	if (!thread) return
+	syncFolderTag(mailboxId, true)
 	raiseOptimisticToast(
-		paneCall('add_mails_to_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }),
+		paneCall('add_mails_to_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }).catch(
+			(error) => {
+				syncFolderTag(mailboxId, false)
+				throw error
+			},
+		),
 		__('Thread added to folder.'),
 	)
 }
@@ -837,8 +876,14 @@ const handleAddToMailbox = (mailboxId: string) => {
 const handleRemoveFromMailbox = (mailboxId: string) => {
 	const thread = openRow.value
 	if (!thread) return
+	syncFolderTag(mailboxId, false)
 	raiseOptimisticToast(
-		paneCall('remove_mails_from_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }),
+		paneCall('remove_mails_from_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }).catch(
+			(error) => {
+				syncFolderTag(mailboxId, true)
+				throw error
+			},
+		),
 		__('Thread removed from folder.'),
 	)
 }
