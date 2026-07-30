@@ -30,7 +30,6 @@ class TestStorageHelpers(unittest.TestCase):
 	def test_writer_container_follows_rename_trash_and_restore(self):
 		with TemporaryDirectory() as site_folder:
 			manager = object.__new__(FileManager)
-			manager.flat = False
 			manager.s3_enabled = False
 			manager.site_folder = Path(site_folder)
 			entity = frappe._dict(

@@ -30,9 +30,6 @@ from suite.drive.utils import (
 	update_file_size,
 	validate_filename,
 )
-from suite.drive.utils import (
-	get_root_folder as get_site_root,
-)
 from suite.drive.utils.api import prettify_file
 from suite.drive.utils.files import (
 	FileManager,
@@ -108,7 +105,7 @@ def upload_file(
 		file_name,
 		parent,
 		file_type,
-		lambda file: "/" + str(manager.get_disk_path(file, get_site_root(), embed)),
+		lambda file: "/" + str(manager.get_disk_path(file, embed)),
 		mime_type,
 		file_size,
 		int(file_modified) / 1000 if file_modified else None,
@@ -180,8 +177,7 @@ def create_folder(file_name: str, parent: str | None = None):
 				"file_name": file_name,
 				"parent_path": Path(storage_key(parent_doc.file_url or "")),
 			}
-		),
-		get_site_root(),
+		)
 	)
 
 	return create_drive_file(

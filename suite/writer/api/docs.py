@@ -13,7 +13,6 @@ from suite.drive.api.permissions import (
 )
 from suite.drive.utils import (
 	create_drive_file,
-	get_root_folder,
 	get_user_folder,
 )
 from suite.drive.utils.files import FileManager, storage_key
@@ -45,15 +44,13 @@ def create_document(title: str | None = None, parent: str | None = None, templat
 	writer_doc.save()
 
 	manager = FileManager()
-	root = get_root_folder()
 	path = manager.create_folder(
 		frappe._dict(
 			{
 				"file_name": title,
 				"parent_path": Path(storage_key(parent_doc.file_url)),
 			}
-		),
-		root,
+		)
 	)
 	manager.create_folder(
 		frappe._dict(
@@ -61,8 +58,7 @@ def create_document(title: str | None = None, parent: str | None = None, templat
 				"file_name": ".embeds",
 				"parent_path": Path(path) if path else None,
 			}
-		),
-		root,
+		)
 	)
 
 	entity = create_drive_file(

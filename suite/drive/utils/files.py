@@ -26,7 +26,6 @@ class FileManager:
 		settings = frappe.get_single("Drive Disk Settings")
 		self.settings = settings
 		self.s3_enabled = settings.enabled
-		self.flat = settings.flat
 		self.bucket = settings.bucket
 		self.site_folder = Path(frappe.get_site_path())
 
@@ -38,18 +37,6 @@ class FileManager:
 				endpoint_url=(settings.endpoint_url or None),
 				config=Config(signature_version=settings.signature_version),
 			)
-
-	def _not_if_flat(func):
-		"""
-		Decorator to skip the function if flat structure is enabled.
-		"""
-
-		def wrapper(self, *args, **kwargs):
-			if self.flat:
-				return
-			return func(self, *args, **kwargs)
-
-		return wrapper
 
 	def get_prefix(self):
 		return self.settings.root_folder or ""
@@ -139,34 +126,25 @@ class FileManager:
 				except FileNotFoundError:
 					pass
 
-	def get_disk_path(self, entity, root: dict | None = None, embed=False):
+	def get_disk_path(self, entity, embed=False):
 		"""
 		Helper function to get path of a file
 		"""
-		if self.flat:
-			if not root:
-				root = get_root_folder()
-			return Path(storage_key(root["file_url"])) / (
-				Path("embeds") / entity.name if embed else entity.name
-			)
-		else:
-			# perf: stupidly complicated because we use this both with a real entity and a dict
-			parent = (
-				Path(storage_key(frappe.get_value("File", entity.folder, "file_url") or ""))
-				if not hasattr(entity, "parent_path")
-				else Path(entity.parent_path)
-			)
-			if embed:
-				return parent / ".embeds" / entity.file_name
-			return parent / entity.file_name
+		# perf: stupidly complicated because we use this both with a real entity and a dict
+		parent = (
+			Path(storage_key(frappe.get_value("File", entity.folder, "file_url") or ""))
+			if not hasattr(entity, "parent_path")
+			else Path(entity.parent_path)
+		)
+		if embed:
+			return parent / ".embeds" / entity.file_name
+		return parent / entity.file_name
 
-	@_not_if_flat
-	def create_folder(self, entity, root):
+	def create_folder(self, entity):
 		"""
 		Function to create a folder in the S3 bucket or on disk.
-		Only creates if flat structure is disabled.
 		"""
-		path = self.get_disk_path(entity, root)
+		path = self.get_disk_path(entity)
 		if self.s3_enabled:
 			self.conn.put_object(Bucket=self.bucket, Key=str(path) + "/", Body="")
 		else:
@@ -375,14 +353,12 @@ class FileManager:
 		root = get_root_folder()
 		return Path(storage_key(root["file_url"])) / ".trash" / entity.file_name
 
-	@_not_if_flat
 	def rename(self, entity):
 		if not entity.file_url or entity.mime_type == "frappe/slides":
 			return
 		new_path = self.get_disk_path(entity)
 		return self.move(entity, new_path)
 
-	@_not_if_flat
 	def move_to_trash(self, entity):
 		if not entity.file_url or entity.mime_type in ["frappe/slides", "link"]:
 			return
@@ -412,14 +388,12 @@ class FileManager:
 			frappe.log_error(f"Moved {entity.name} to trash without it being on disk")
 			pass
 
-	@_not_if_flat
 	def restore(self, entity):
 		"""
 		Restore a file from the trash.
 		"""
 		self.move(frappe._dict(file_url=self.__get_trash_path(entity)), entity.file_url)
 
-	@_not_if_flat
 	def move(self, entity, new_path: str | Path):
 		"""
 		Move a file on disk

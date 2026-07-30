@@ -288,7 +288,7 @@ class File(FrappeFile):
 			self.file_name = get_new_file_name(self.file_name, new_parent, self.is_folder, self.name)
 
 		# Update all the children's paths
-		if not self.manager.flat and not self._not_in_disk():
+		if not self._not_in_disk():
 			new_path = self.manager.get_disk_path(self)
 			self.manager.move(self, str(new_path))
 			self.recursive_path_move(self.file_url, new_path)

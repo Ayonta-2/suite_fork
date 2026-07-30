@@ -42,8 +42,9 @@ suite.writer.patches.autopopulate_html
 # --- sheets ---
 suite.sheets.patches.v0_1.migrate_blob_to_cells
 # --- drive (remove teams) ---
-suite.drive.patches.remove_teams
+suite.drive.patches.remove_teams #2
 suite.drive.patches.drop_team_doctypes #2
+execute:frappe.db.delete("Singles", {"doctype": "Drive Disk Settings", "field": "flat"})
 suite.drive.patches.dedupe_drive_permissions
 # content-app backfills, rewritten for the single-root world so they must
 # run after remove_teams

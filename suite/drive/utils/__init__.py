@@ -36,6 +36,7 @@ GROUP_PREFIX = "$GROUP:"
 # Well-known folders directly under the site root.
 SITE_FOLDER = "Site"
 PREVIOUS_TEAMS_FOLDER = "Previous Teams"
+USERS_FOLDER = "Users"
 
 PERMISSION_TYPES = ["read", "comment", "share", "upload", "write"]
 
@@ -184,8 +185,6 @@ def get_root_folder():
 	disk_path.mkdir(exist_ok=True, parents=True)
 	(disk_path / ".uploads").mkdir(exist_ok=True)
 	(disk_path / settings.thumbnail_prefix).mkdir(exist_ok=True)
-	if settings.flat:
-		(disk_path / "embeds").mkdir(exist_ok=True)
 
 	root.file_url = get_s3_url(prefix) if settings.enabled else "/private/files/" + prefix
 	frappe.db.set_value("File", root.name, "file_url", root.file_url, update_modified=False)
@@ -203,7 +202,7 @@ def _named_root_folder(file_name, grant_general_read):
 	from suite.drive.utils.files import FileManager
 
 	manager = FileManager()
-	folder = create_drive_file(file_name, root.name, "Folder", lambda f: manager.create_folder(f, root))
+	folder = create_drive_file(file_name, root.name, "Folder", lambda f: manager.create_folder(f))
 	if grant_general_read:
 		frappe.get_doc(
 			{
@@ -219,6 +218,12 @@ def _named_root_folder(file_name, grant_general_read):
 def get_site_folder():
 	"""Shared site content; the only folder every logged-in user can read."""
 	return _named_root_folder(SITE_FOLDER, grant_general_read=True)
+
+
+def get_users_folder():
+	"""Container for private user folders. Carries no grant, so it is unreadable
+	and unlistable except to admins — user folders are never root children."""
+	return _named_root_folder(USERS_FOLDER, grant_general_read=False)
 
 
 def get_previous_teams_folder():
@@ -250,12 +255,12 @@ def get_user_folder(user=None):
 	from suite.drive.utils.files import FileManager
 
 	manager = FileManager()
-	root = get_root_folder()
+	root = get_users_folder()
 	folder = create_drive_file(
 		user,
 		root.name,
 		"Folder",
-		lambda f: manager.create_folder(f, root),
+		lambda f: manager.create_folder(f),
 		owner=user,
 	)
 	grant_owner_access(folder.name, user)

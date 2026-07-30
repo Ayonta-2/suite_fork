@@ -9,7 +9,6 @@
   "preview_size",
   "quota",
   "disk_section",
-  "flat",
   "root_folder",
   "thumbnail_prefix",
   "s3_section",
@@ -64,13 +63,6 @@
    "fieldname": "s3_section",
    "fieldtype": "Section Break",
    "label": "S3"
-  },
-  {
-   "default": "0",
-   "description": "Legacy option.\n<br>\n<br>\nBy default, Drive stores files the way you see it. If this option is checked, the files are store flatly, with randomized names.\n",
-   "fieldname": "flat",
-   "fieldtype": "Check",
-   "label": "Do not mimic folder/file structure"
   },
   {
    "fieldname": "general_section",
