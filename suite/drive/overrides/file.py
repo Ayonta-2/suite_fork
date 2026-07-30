@@ -297,8 +297,9 @@ class File(FrappeFile):
 
 		# Update all the children's paths
 		if not self._not_in_disk():
-			new_path = self.manager.get_disk_path(self)
-			self.manager.move(self, str(new_path))
+			# folder keys carry a trailing slash, the way create_folder writes them
+			new_path = str(self.manager.get_disk_path(self)) + ("/" if self.is_folder else "")
+			self.manager.move(self, new_path)
 			self.recursive_path_move(self.file_url, new_path)
 			self.file_url = new_path
 		self.save()
@@ -379,18 +380,29 @@ class File(FrappeFile):
 		return FileManager()
 
 	def recursive_path_move(self, old, new):
+		"""Repoint this subtree at `new`.
+
+		On disk the parent's own move carried the children with it, so only the
+		urls need rewriting. S3 has no directories — moving the folder moved one
+		marker object and nothing else — so every descendant's blob has to be
+		copied across itself, or the whole subtree becomes unreadable.
+		"""
 		if new:
 			self.file_url = new
+		manager = self.manager
 		for child in self.get_children():
-			if not child._not_in_disk():
-				new_child_url = str(
-					Path(storage_key(new)) / Path(storage_key(child.file_url)).relative_to(storage_key(old))
-				)
-				if child.file_url.startswith(S3_URL_PREFIX):
-					new_child_url = get_s3_url(new_child_url)
-				elif child.file_url.startswith("/"):
-					new_child_url = "/" + new_child_url
-				child.recursive_path_move(child.file_url, new_child_url)
+			if child._not_in_disk():
+				continue
+			new_child_url = str(
+				Path(storage_key(new)) / Path(storage_key(child.file_url)).relative_to(storage_key(old))
+			)
+			if child.file_url.startswith(S3_URL_PREFIX):
+				new_child_url = get_s3_url(new_child_url)
+			elif child.file_url.startswith("/"):
+				new_child_url = "/" + new_child_url
+			if manager.s3_enabled:
+				manager.move(child, new_child_url)
+			child.recursive_path_move(child.file_url, new_child_url)
 		self.save()
 
 	def get_children(self):
