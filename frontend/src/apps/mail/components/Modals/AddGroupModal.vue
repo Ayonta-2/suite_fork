@@ -8,6 +8,7 @@
 					label: __('Add Group'),
 					variant: 'solid',
 					disabled: !(name && domain),
+					loading: addGroup.loading,
 					onClick: addGroup.submit,
 				},
 			],
@@ -20,6 +21,7 @@
 					:label="__('Name')"
 					placeholder="team"
 					autocomplete="off"
+					:description="__('Together with the domain, this forms the group\'s email address.')"
 				/>
 				<FormControl
 					v-model="domain"
@@ -36,7 +38,9 @@
 					<label class="text-ink-gray-5 block text-xs">{{ __('Roles') }}</label>
 					<MultiSelect v-model="roleIds" :options="roleOptions" />
 				</div>
-				<ErrorMessage :message="addGroup.error?.messages?.[0] || addGroup.error?.message" />
+				<ErrorMessage
+					:message="addGroup.error && (addGroup.error?.messages?.[0] || addGroup.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

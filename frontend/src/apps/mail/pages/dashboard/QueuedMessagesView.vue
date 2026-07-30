@@ -2,10 +2,12 @@
 	<DashboardLayout :breadcrumbs="[{ label: __('Queued') }]">
 		<div class="flex items-center justify-between">
 			<div class="flex items-center space-x-3">
-				<FormControl v-model="search" :placeholder="__('Search')" class="w-72">
+				<FormControl v-model="search" :placeholder="__('Search')" class="w-80">
 					<template #prefix><FeatherIcon name="search" class="text-ink-gray-5 w-4" /></template>
 				</FormControl>
-				<FormControl v-model="sender" :placeholder="__('Sender')" class="w-56" />
+				<FormControl v-model="sender" :placeholder="__('Sender')" class="w-56">
+					<template #prefix><FeatherIcon name="user" class="text-ink-gray-5 w-4" /></template>
+				</FormControl>
 			</div>
 			<div class="flex items-center gap-2">
 				<Button :label="__('Retry All')" @click="showRetryAll = true" />
@@ -18,7 +20,7 @@
 			class="flex-1"
 			:columns="LIST_COLUMNS"
 			:rows="rows"
-			:options="LIST_OPTIONS"
+			:options="listOptions"
 			row-key="id"
 		>
 			<ListHeader />
@@ -48,6 +50,7 @@
 				</template>
 			</ListSelectBanner>
 		</ListView>
+		<DashboardListSkeleton v-else :columns="5" />
 		<DashboardPager :page="page" :page-length="PAGE_LENGTH" :total="total" @update:page="(p) => (page = p)" />
 	</DashboardLayout>
 	<Dialog v-model="showRetrySelected" :options="retrySelectedOptions" />
@@ -77,6 +80,7 @@ import {
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import { fromNow as formatFromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 
 type QueueRow = {
@@ -132,12 +136,22 @@ const LIST_COLUMNS = [
 	{ label: __('Size'), key: 'size' },
 ]
 
-const LIST_OPTIONS = {
+const hasActiveFilters = computed(() => !!search.value || !!sender.value)
+
+const listOptions = computed(() => ({
 	showTooltip: false,
 	rowHeight: 50,
-	emptyState: { description: __('No queued messages found.') },
+	emptyState: hasActiveFilters.value
+		? {
+				title: __('No matching messages'),
+				description: __('Try adjusting your search or filters.'),
+			}
+		: {
+				title: __('Queue is empty'),
+				description: __('Messages waiting for delivery will appear here.'),
+			},
 	getRowRoute: (row: QueueRow) => ({ name: 'mail-queued-message', params: { messageId: row.id } }),
-}
+}))
 
 const afterAction = (message: string) => {
 	messages.reload()
@@ -149,21 +163,37 @@ const retrySelected = createResource({
 	url: 'suite.mail.api.admin.retry_queued_messages',
 	makeParams: () => ({ ids: selectedIds() }),
 	onSuccess: () => ((showRetrySelected.value = false), afterAction(__('Messages scheduled for retry.'))),
+	onError: (error: { messages?: string[] }) => {
+		showRetrySelected.value = false
+		raiseToast(error.messages?.[0] || __('Request failed.'), 'error')
+	},
 })
 const cancelSelected = createResource({
 	url: 'suite.mail.api.admin.cancel_queued_messages',
 	makeParams: () => ({ ids: selectedIds() }),
 	onSuccess: () => ((showCancelSelected.value = false), afterAction(__('Messages cancelled.'))),
+	onError: (error: { messages?: string[] }) => {
+		showCancelSelected.value = false
+		raiseToast(error.messages?.[0] || __('Request failed.'), 'error')
+	},
 })
 const retryAll = createResource({
 	url: 'suite.mail.api.admin.retry_all_queued_messages',
 	makeParams: currentFilter,
 	onSuccess: () => ((showRetryAll.value = false), afterAction(__('All matching messages scheduled for retry.'))),
+	onError: (error: { messages?: string[] }) => {
+		showRetryAll.value = false
+		raiseToast(error.messages?.[0] || __('Request failed.'), 'error')
+	},
 })
 const cancelAll = createResource({
 	url: 'suite.mail.api.admin.cancel_all_queued_messages',
 	makeParams: currentFilter,
 	onSuccess: () => ((showCancelAll.value = false), afterAction(__('All matching messages cancelled.'))),
+	onError: (error: { messages?: string[] }) => {
+		showCancelAll.value = false
+		raiseToast(error.messages?.[0] || __('Request failed.'), 'error')
+	},
 })
 
 const retrySelectedOptions = computed(() => ({

@@ -16,7 +16,7 @@
 			class="flex-1"
 			:columns="LIST_COLUMNS"
 			:rows="groups.data"
-			:options="LIST_OPTIONS"
+			:options="listOptions"
 			row-key="id"
 		>
 			<ListHeader />
@@ -37,11 +37,12 @@
 				<ListEmptyState v-else />
 			</ListRows>
 		</ListView>
+		<DashboardListSkeleton v-else :columns="3" />
 	</DashboardLayout>
 	<AddGroupModal v-model="showAddGroup" @reload="groups.reload()" />
 </template>
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import {
 	FeatherIcon,
@@ -58,6 +59,7 @@ import {
 
 import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import AddGroupModal from '@/apps/mail/components/Modals/AddGroupModal.vue'
 
 usePageMeta(() => ({ title: __('Groups') }))
@@ -82,12 +84,27 @@ const LIST_COLUMNS = [
 	{ label: __('Created At'), key: 'created_at' },
 ]
 
-const LIST_OPTIONS = {
+const hasActiveFilters = computed(() => !!search.value)
+
+const listOptions = computed(() => ({
 	selectable: false,
 	showTooltip: false,
-	emptyState: { description: __('No groups found.') },
+	emptyState: hasActiveFilters.value
+		? {
+				title: __('No matching groups'),
+				description: __('Try adjusting your search or filters.'),
+			}
+		: {
+				title: __('No groups yet'),
+				description: __('Create a group to give a team a shared address and mailbox.'),
+				button: {
+					label: __('Add Group'),
+					variant: 'solid',
+					onClick: () => (showAddGroup.value = true),
+				},
+			},
 	getRowRoute: (row: GroupRow) => ({ name: 'mail-group', params: { groupId: row.id } }),
-}
+}))
 
-const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '-'
+const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '—'
 </script>

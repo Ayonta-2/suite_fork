@@ -78,7 +78,7 @@ function installMailGuard(r: Router) {
 		if (!user?.is_jmap_configured) {
 			if (!user?.is_suite_admin) window.location.replace('/desk')
 			if (to.meta.isDashboard) return
-			return { name: 'mail-domains' }
+			return { name: 'mail-overview' }
 		}
 
 		// Resolve active account. The merged All Inboxes thread route carries the thread's

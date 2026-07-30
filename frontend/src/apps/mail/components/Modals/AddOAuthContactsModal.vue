@@ -4,7 +4,13 @@
 		:options="{
 			title: __('Add Contacts'),
 			actions: [
-				{ label: __('Add'), variant: 'solid', disabled: !validContacts.length, onClick: addContacts.submit },
+				{
+					label: __('Add'),
+					variant: 'solid',
+					disabled: !validContacts.length,
+					loading: addContacts.loading,
+					onClick: addContacts.submit,
+				},
 			],
 		}"
 	>
@@ -32,7 +38,9 @@
 						<template #prefix><FeatherIcon name="plus" class="h-4 w-4" /></template>
 					</Button>
 				</div>
-				<ErrorMessage :message="addContacts.error?.messages?.[0] || addContacts.error?.message" />
+				<ErrorMessage
+					:message="addContacts.error && (addContacts.error?.messages?.[0] || addContacts.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

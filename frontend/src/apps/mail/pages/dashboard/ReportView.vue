@@ -1,12 +1,15 @@
 <template>
-	<DashboardLayout v-if="report?.data" :breadcrumbs="breadcrumbs">
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
-		</template>
+	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!report.data">
 		<template #default>
+			<DashboardDetailHeader :title="detailTitle" :meta="[data.domain || data.from, reportId]">
+				<template #icon><FileChartColumn class="h-5 w-5" /></template>
+				<template #actions>
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+				</template>
+			</DashboardDetailHeader>
+
 			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 				<DashboardCard :title="__('Report')">
-					<template #actions><span /></template>
 					<template v-if="direction === 'inbound'">
 						<InformationField :label="__('From')" :value="data.from" />
 						<InformationField :label="__('Subject')" :value="data.subject" />
@@ -26,7 +29,9 @@
 				</DashboardCard>
 
 				<DashboardCard :title="__('Details')">
-					<template #actions><span /></template>
+					<template #actions>
+						<Button variant="ghost" :label="__('Copy')" @click="copyToClipBoard(reportJson)" />
+					</template>
 					<pre
 						class="bg-surface-gray-2 max-h-[60vh] overflow-auto rounded p-4 text-xs whitespace-pre-wrap"
 						>{{ reportJson }}</pre
@@ -40,12 +45,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/mail/utils'
+import FileChartColumn from '~icons/lucide/file-chart-column'
+
+import { copyToClipBoard, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 
 type ReportData = {
@@ -72,6 +80,10 @@ const listTitle = computed(() => {
 	const dir = direction === 'inbound' ? __('Inbound') : __('Outbound')
 	return `${dir} ${KIND_LABELS[kind] || kind} ${__('Reports')}`
 })
+const detailTitle = computed(() => {
+	const dir = direction === 'inbound' ? __('Inbound') : __('Outbound')
+	return `${dir} ${KIND_LABELS[kind] || kind} ${__('Report')}`
+})
 
 usePageMeta(() => ({ title: listTitle.value }))
 
@@ -82,7 +94,10 @@ const report = createResource({
 	auto: true,
 	makeParams: () => ({ kind, direction, report_id: reportId }),
 	cache: ['mailReport', kind, direction, reportId],
-	onError: () => router.replace({ name: listRouteName.value }),
+	onError: (error: { messages?: string[] }) => {
+		raiseToast(error.messages?.[0] || __('Report not found.'), 'error')
+		router.replace({ name: listRouteName.value })
+	},
 })
 
 const data = computed(() => report.data as ReportData)

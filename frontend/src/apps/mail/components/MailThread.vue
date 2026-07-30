@@ -425,6 +425,7 @@ import {
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
 import { provideAccountScope } from '@/apps/mail/utils/accountScope'
+import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
@@ -499,6 +500,9 @@ const user = inject('$user')
 // editors below resolve the same account.
 const scope = provideAccountScope(() => account)
 const { accountId: scopeAccountId, identities, screenedAddresses, mailboxIds } = scope
+// Global screening rules are admin-managed and the same whichever account you are reading, so
+// they come from the store rather than the pane's scope.
+const { globalScreenedAddresses } = userStore()
 
 // A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
 // exact address or by an accepted/blocked '@domain' entry covering them.
@@ -510,9 +514,19 @@ const isSenderBlocked = (email: string) =>
 // Trusted senders — you, or anyone you've accepted — load images normally. For everyone else, the
 // account's "Block Remote Images" setting withholds remote images (read-tracking pixels) until you opt in.
 const blockRemoteImagesEnabled = computed(() => scope.account.value?.block_remote_images ?? true)
+// The screening rules in effect for the account: the admin-managed global rules overlaid with the
+// account's own, the account's rule winning when both screen the same address or domain — mirroring
+// the backend's `get_effective_screened_email_addresses`, which the automation sieve is built from.
+// Read through the pane's scope, so a thread from another account is judged by that account's rules.
+const effectiveScreenedAddresses = computed(() => {
+	const merged = new Map<string, ScreenedAddress>()
+	for (const a of globalScreenedAddresses.data ?? []) merged.set(a.email.toLowerCase(), a)
+	for (const a of screenedAddresses.value.data ?? []) merged.set(a.email.toLowerCase(), a)
+	return [...merged.values()]
+})
 const isScreenedIn = (email: string) =>
 	!!identities.value.data?.some((i: Identity) => i.email === email) ||
-	!!screenedAddresses.value.data?.some(
+	effectiveScreenedAddresses.value.some(
 		(a: ScreenedAddress) => a.action === 'Accepted' && matchesScreenedValue(email, a.email),
 	)
 const shouldBlockImages = (mail: { from_email: string }) =>

@@ -41,7 +41,11 @@
 					/>
 				</template>
 				<ErrorMessage
-					:message="validationError || runAction.error?.messages?.[0] || runAction.error?.message"
+					:message="
+						validationError ||
+						(runAction.error &&
+							(runAction.error?.messages?.[0] || runAction.error?.message || __('Request failed.')))
+					"
 				/>
 				<div v-if="result">
 					<label class="text-ink-gray-5 mb-1 block text-xs">{{ __('Result') }}</label>
@@ -90,7 +94,7 @@ const dialogOptions = computed(() => ({
 	size: '2xl',
 	actions: hasRun.value
 		? [{ label: __('Close'), variant: 'subtle', onClick: () => (show.value = false) }]
-		: [{ label: __('Run'), variant: 'solid', onClick: run }],
+		: [{ label: __('Run'), variant: 'solid', loading: runAction.loading, onClick: run }],
 }))
 
 const emptyValue = (field: ActionField): FieldValue =>

@@ -70,6 +70,29 @@ class IntegrationTestScreenedEmailAddress(IntegrationTestCase):
 		self.assertEqual(actions["@trusted.com"], "Reject")
 		self.assertEqual(actions["spammer@junk.com"], "Reject")
 
+	def test_is_globally_accepted(self):
+		from suite.mail.doctype.screened_email_address.screened_email_address import (
+			get_global_accepted_values,
+			is_globally_accepted,
+		)
+
+		self._insert_global_rule("@Trusted.com", "Accepted")
+		self._insert_global_rule("@blocked.com", "Reject")
+		self._insert_global_rule("someone@accepted.com", "Accepted")
+
+		# Only Accepted rules count (Reject domains don't), lowercased with the '@' prefix kept.
+		self.assertEqual(get_global_accepted_values(), {"@trusted.com", "someone@accepted.com"})
+
+		# Covered: by domain rule (case-insensitively) or by exact address.
+		self.assertTrue(is_globally_accepted("anyone@trusted.com"))
+		self.assertTrue(is_globally_accepted("Anyone@Trusted.COM"))
+		self.assertTrue(is_globally_accepted("Someone@accepted.com"))
+
+		# Not covered: other senders from a domain with only an exact-address rule, or from a
+		# domain screened with Reject.
+		self.assertFalse(is_globally_accepted("other@accepted.com"))
+		self.assertFalse(is_globally_accepted("anyone@blocked.com"))
+
 	def test_duplicate_global_screened_email(self):
 		self._insert_global_rule("dup@example.com", "Reject")
 

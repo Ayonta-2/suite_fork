@@ -37,7 +37,10 @@ from suite.mail.doctype.mailbox_settings.mailbox_settings import (
 	set_mailbox_settings,
 )
 from suite.mail.doctype.screened_email_address.screened_email_address import (
+	get_global_accepted_values,
+	get_global_screened_email_addresses,
 	get_screened_email_addresses,
+	is_globally_accepted,
 )
 from suite.mail.doctype.sieve_script.sieve_script import (
 	SCREENER_MAILBOX_NAME,
@@ -1106,6 +1109,19 @@ def get_screened_addresses(account: str) -> list[dict]:
 
 
 @frappe.whitelist()
+def get_global_screened_addresses() -> list[dict]:
+	"""Returns the global screened email addresses — admin-managed rules applying to every account.
+
+	Read-only: the frontend overlays these under the account's own rules (the account's rule wins)
+	when deciding whether a sender is trusted for remote images, mirroring the merge the automation
+	sieve is built from. The settings UI keeps using `get_screened_addresses`, which stays
+	account-only so users never see or edit the global rules there.
+	"""
+
+	return get_global_screened_email_addresses()
+
+
+@frappe.whitelist()
 def screen_email_address(account: str, email: str, action: str = "Reject") -> None:
 	"""Screens a single email address for the given account with the given action.
 
@@ -1211,6 +1227,11 @@ def auto_accept_recipients(account: str, recipients: list) -> None:
 			return
 
 		emails = list({r.email for r in recipients if getattr(r, "email", None)})
+		if emails:
+			# Recipients a global Accepted rule already covers — their exact address or their
+			# domain — need no account-level rule: the global rule already lets their replies through.
+			accepted_values = get_global_accepted_values()
+			emails = [e for e in emails if not is_globally_accepted(e, accepted_values)]
 		if emails:
 			_screen_email_addresses(account, emails, action="Accepted", override=False)
 	except Exception:

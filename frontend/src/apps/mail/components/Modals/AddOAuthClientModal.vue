@@ -4,17 +4,31 @@
 		:options="{
 			title: __('Add OAuth Client'),
 			actions: [
-				{ label: __('Add OAuth Client'), variant: 'solid', disabled: !clientId, onClick: addClient.submit },
+				{
+					label: __('Add OAuth Client'),
+					variant: 'solid',
+					disabled: !clientId,
+					loading: addClient.loading,
+					onClick: addClient.submit,
+				},
 			],
 		}"
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl v-model="clientId" :label="__('Client ID')" autocomplete="off" />
+				<FormControl
+					v-model="clientId"
+					:label="__('Client ID')"
+					autocomplete="off"
+					:description="__('The unique identifier the application uses to identify itself.')"
+				/>
 				<FormControl v-model="description" :label="__('Description')" type="textarea" />
 
 				<div class="space-y-2">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Contacts') }}</label>
+					<p class="text-ink-gray-4 text-xs">
+						{{ __('Email addresses responsible for this application.') }}
+					</p>
 					<div v-for="(row, index) in contacts" :key="index" class="flex items-center gap-2">
 						<FormControl v-model="row.value" type="email" placeholder="someone@example.com" class="w-full" />
 						<Button v-if="contacts.length > 1" variant="ghost" theme="red" @click="contacts.splice(index, 1)">
@@ -28,6 +42,9 @@
 
 				<div class="space-y-2">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Redirect URIs') }}</label>
+					<p class="text-ink-gray-4 text-xs">
+						{{ __('Sign-ins are only redirected back to one of these URLs.') }}
+					</p>
 					<div v-for="(row, index) in redirectUris" :key="index" class="flex items-center gap-2">
 						<FormControl v-model="row.value" placeholder="https://app.example.com/callback" class="w-full" />
 						<Button v-if="redirectUris.length > 1" variant="ghost" theme="red" @click="redirectUris.splice(index, 1)">
@@ -39,14 +56,26 @@
 					</Button>
 				</div>
 
-				<FormControl v-model="secret" :label="__('Client Secret')" autocomplete="off" />
+				<FormControl
+					v-model="secret"
+					:label="__('Client Secret')"
+					autocomplete="off"
+					:description="__('Optional. Leave blank if the client authenticates without a secret.')"
+				/>
 				<FormControl
 					v-model="logo"
 					:label="__('Logo (URL or base64 encoded)')"
 					type="textarea"
 				/>
-				<FormControl v-model="expiresAt" type="datetime-local" :label="__('Expires At')" />
-				<ErrorMessage :message="addClient.error?.messages?.[0] || addClient.error?.message" />
+				<FormControl
+					v-model="expiresAt"
+					type="datetime-local"
+					:label="__('Expires At')"
+					:description="__('The client can no longer be used after this time.')"
+				/>
+				<ErrorMessage
+					:message="addClient.error && (addClient.error?.messages?.[0] || addClient.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>
