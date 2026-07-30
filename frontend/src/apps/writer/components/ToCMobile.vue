@@ -16,6 +16,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watchEffect } from 'vue'
 import { TabButtons } from 'frappe-ui'
+import { tabsIn } from '@/apps/writer/extensions/tabs'
 
 const props = defineProps({
   editor: Object,
@@ -40,31 +41,20 @@ watchEffect(() => {
   observer.observe(bar.value)
 })
 
-// `editor.state.doc` is a ProseMirror object, not a Vue-reactive source, so a
-// computed over it never recomputes — a newly-added (or renamed) tab would
-// never appear in the bar. Mirror the desktop ToC: keep a ref and re-derive it
-// on every editor update.
+// doc isn't reactive, so re-derive on every update
 const tabs = ref([])
 const updateTabs = () => {
-  const collected = []
-  props.editor.state.doc.descendants((node) => {
-    if (node.type.name === 'tab') {
-      collected.push({ id: node.attrs.id, label: node.attrs.label })
-    }
-  })
-  tabs.value = collected
+  tabs.value = tabsIn(props.editor.state.doc).map(({ node }) => ({
+    id: node.attrs.id,
+    label: node.attrs.label,
+  }))
 }
 
-// Seed from storage in case the initial changeTab fired before this mounted,
-// then track it via the tab-changed event.
 const activeTabId = ref(props.editor.storage.tab?.activeTabId ?? null)
 const handleTabChange = (e) => {
   activeTabId.value = e.detail.tabId
 }
 
-// Switch through the editor command: it repaints the panels and re-emits
-// `tab-changed` (which updates activeTabId). Mutating the model directly instead
-// would move the bar highlight but leave the content on the old tab.
 const selectTab = (id) => {
   if (id && id !== activeTabId.value) props.editor.commands.changeTab(id)
 }

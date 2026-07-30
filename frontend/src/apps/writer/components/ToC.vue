@@ -106,6 +106,7 @@ import LucideLeftClose from '~icons/lucide/panel-left-close'
 import { ref, watch, computed, h, onMounted, onBeforeUnmount } from 'vue'
 import { Button, TextInput, ContextMenu, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
 import { copyToClipboard } from '@/apps/drive/sdk'
+import { tabsIn, findTab } from '@/apps/writer/extensions/tabs'
 
 const props = defineProps({
   editor: Object,
@@ -127,13 +128,10 @@ const showHeadings = ref(true)
 const tabs = ref([])
 
 const updateTabs = () => {
-  const t = []
-  props.editor.state.doc.descendants((node) => {
-    if (node.type.name === 'tab') {
-      t.push({ id: node.attrs.id, label: node.attrs.label })
-    }
-  })
-  tabs.value = t
+  tabs.value = tabsIn(props.editor.state.doc).map(({ node }) => ({
+    id: node.attrs.id,
+    label: node.attrs.label,
+  }))
 }
 
 // Get active tab ID
@@ -159,19 +157,10 @@ const currentTabAnchors = computed(() => {
   if (tabs.value.length === 0) return props.anchors
   if (!activeTabId.value) return props.anchors
 
-  // Find the tab node position in the document
-  let tabStart = null
-  let tabEnd = null
-
-  props.editor.state.doc.descendants((node, pos) => {
-    if (node.type.name === 'tab' && node.attrs.id === activeTabId.value) {
-      tabStart = pos
-      tabEnd = pos + node.nodeSize
-      return false
-    }
-  })
-
-  if (tabStart === null) return []
+  const tab = findTab(props.editor.state.doc, activeTabId.value)
+  if (!tab) return []
+  const tabStart = tab.pos
+  const tabEnd = tab.pos + tab.node.nodeSize
 
   // Filter anchors that are within the active tab's position range
   return props.anchors.filter((anchor) => {
