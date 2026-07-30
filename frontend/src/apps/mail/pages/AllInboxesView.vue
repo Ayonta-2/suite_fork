@@ -912,6 +912,10 @@ const runMailRemoval = (mail: Mail, request: () => Promise<unknown>, success: st
 		rollback: () => {},
 	}
 
+	// The row's count and preview come from its own `messages`, so it has to lose the mail too.
+	const mailIndex = thread?.messages?.findIndex((m: Mail) => m.id === mail.id) ?? -1
+	if (thread && mailIndex !== -1) thread.messages.splice(mailIndex, 1)
+
 	let restoreRow: (() => void) | undefined
 	if (emptied && thread) {
 		restoreRow = removeFromList(thread)
@@ -923,6 +927,7 @@ const runMailRemoval = (mail: Mail, request: () => Promise<unknown>, success: st
 			.then(() => refreshCounts())
 			.catch((error) => {
 				rollback()
+				if (thread && mailIndex !== -1) thread.messages.splice(mailIndex, 0, mail)
 				restoreRow?.()
 				throw error
 			}),

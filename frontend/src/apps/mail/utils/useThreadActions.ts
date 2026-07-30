@@ -941,6 +941,13 @@ export function useThreadActions(deps: {
 			emptied: false,
 			rollback: () => {},
 		}
+		// The row renders its message count and participants from its own `messages`, so dropping the
+		// mail from the pane is not enough — without this a thread of three keeps saying three, and
+		// its preview keeps naming a sender that is no longer in it.
+		const row = threadsResource.value?.data?.find((t: Thread) => t.thread_id === mail.thread_id)
+		const mailIndex = row?.messages?.findIndex((m: Mail) => m.id === mail.id) ?? -1
+		if (row && mailIndex !== -1) row.messages.splice(mailIndex, 1)
+
 		let removed: Thread[] = []
 		if (emptied) {
 			goToNextThreadOrMailbox([mail.thread_id])
@@ -948,6 +955,7 @@ export function useThreadActions(deps: {
 		}
 		const restoreUi = () => {
 			rollback()
+			if (row && mailIndex !== -1) row.messages.splice(mailIndex, 0, mail)
 			if (removed.length) restoreThreadsToList(removed)
 		}
 
