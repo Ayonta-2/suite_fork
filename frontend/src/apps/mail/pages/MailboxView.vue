@@ -521,7 +521,6 @@
 	</div>
 	</Teleport>
 
-	<ShortcutsModal v-model="showShortcuts" />
 </template>
 <script setup lang="ts">
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
@@ -595,7 +594,6 @@ import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import ScreenedEmailAddressModal from '@/apps/mail/components/Modals/ScreenedEmailAddressModal.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
-import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 
 import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
@@ -882,7 +880,6 @@ const isGroupSelected = (key: string) =>
 
 // Shortcuts
 
-const showShortcuts = ref(false)
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
 
@@ -911,10 +908,14 @@ const handleKeyDown = (e: KeyboardEvent) => {
 	if (shouldIgnoreKeypress(e)) return
 
 	if (key === 'g') return handleGKeyPress(e)
-	if (gPrefix.armed.value) return handleGMenuNavigation(e, key)
+	// A letter after `g` is a mailbox jump, which MailLayout owns. Swallow it here so it can't
+	// also fire a thread-action shortcut sharing that letter.
+	if (gPrefix.armed.value) {
+		gPrefix.disarm()
+		return
+	}
 	if (key === 'enter') return handleEnter(e)
 	if (key === 'escape') return handleEscape(e)
-	if (key === '?') return handleShowShortcuts(e)
 
 	const hasSelection = selections.value.length > 0 || threadID
 	if (hasSelection) handleThreadActions(e, key)
@@ -935,31 +936,6 @@ const handleGKeyPress = (e: KeyboardEvent) => {
 		if (threadID) return goToThread(threadIDs.value[0])
 		return focusRow(navigableRows.value[0])
 	}
-}
-
-const handleGMenuNavigation = (e: KeyboardEvent, key: string) => {
-	gPrefix.disarm()
-
-	const navigationMap: Record<string, string> = {
-		i: mailboxIds.inbox,
-		f: 'starred',
-		s: mailboxIds.sent,
-		d: mailboxIds.drafts,
-		j: mailboxIds.junk,
-		a: mailboxIds.archive,
-		t: mailboxIds.trash,
-	}
-
-	const mailboxId = navigationMap[key]
-	if (mailboxId) {
-		e.preventDefault()
-		router.push({ name: 'mail-mailbox', params: { accountId, mailbox: mailboxId } })
-	}
-}
-
-const handleShowShortcuts = (e: KeyboardEvent) => {
-	e.preventDefault()
-	showShortcuts.value = true
 }
 
 // Enter means "act on the row I'm on": open a mail, or fold/unfold a stack or a day.
