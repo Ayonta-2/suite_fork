@@ -199,6 +199,31 @@ def drive_permission_has_permission(doc, ptype="read", user=None):
 	return not exceeds_grant_ceiling(doc.entity, doc.as_dict(), user)
 
 
+def drive_settings_has_permission(doc, ptype="read", user=None):
+	"""Settings are per-user self-service. `quota` and `user_folder` are
+	server-managed and additionally guarded in the controller."""
+	user = user or frappe.session.user
+	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
+		return True
+	if user == "Guest":
+		return False
+	if isinstance(doc, str):
+		doc = frappe.get_doc("Drive Settings", doc)
+	return doc.user == user
+
+
+def drive_invitation_has_permission(doc, ptype="read", user=None):
+	"""Only admins issue invitations from the client. Sharing with an
+	unregistered address goes through `create_invites`, which inserts with
+	ignore_permissions once share rights are checked."""
+	user = user or frappe.session.user
+	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
+		return True
+	if isinstance(doc, str):
+		doc = frappe.get_doc("Drive User Invitation", doc)
+	return ptype in ("read", "select") and doc.email == user
+
+
 def user_has_permission(doc, ptype, user=None):
 	if isinstance(doc, str):
 		doc = frappe.get_doc("File", doc)

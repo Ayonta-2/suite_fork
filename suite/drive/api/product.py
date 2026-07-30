@@ -208,7 +208,9 @@ def create_invites(emails: str, auto: bool = False):
 		invite = frappe.new_doc("Drive User Invitation")
 		invite.email = email
 		invite.status = "Automatic" if auto else "Pending"
-		invite.insert()
+		# Callers are already authorized: admin (invite_users) or share rights
+		# on the entity being shared.
+		invite.insert(ignore_permissions=True)
 
 
 @frappe.whitelist()

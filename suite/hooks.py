@@ -121,6 +121,8 @@ permission_query_conditions = {
 	# drive
 	"File": "suite.drive.utils.overrides.filter_file",
 	"Drive Permission": "suite.drive.utils.overrides.filter_drive_permission",
+	"Drive Settings": "suite.drive.utils.overrides.filter_drive_settings",
+	"Drive User Invitation": "suite.drive.utils.overrides.filter_drive_invitation",
 	"Drive Favourite": "suite.drive.utils.overrides.filter_drive_favourite",
 	"Drive Entity Log": "suite.drive.utils.overrides.filter_drive_recent",
 	"Drive Notification": "suite.drive.utils.overrides.filter_drive_notif",
@@ -149,6 +151,8 @@ has_permission = {
 	# drive
 	"File": "suite.drive.api.permissions.user_has_permission",
 	"Drive Permission": "suite.drive.api.permissions.drive_permission_has_permission",
+	"Drive Settings": "suite.drive.api.permissions.drive_settings_has_permission",
+	"Drive User Invitation": "suite.drive.api.permissions.drive_invitation_has_permission",
 	# slides
 	"Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
 	# writer

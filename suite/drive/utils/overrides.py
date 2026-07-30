@@ -47,6 +47,16 @@ def filter_drive_permission(user):
 
 
 @common_filters
+def filter_drive_settings(user):
+	return f"(`tabDrive Settings`.`user` = {frappe.db.escape(user)})"
+
+
+@common_filters
+def filter_drive_invitation(user):
+	return f"(`tabDrive User Invitation`.`email` = {frappe.db.escape(user)})"
+
+
+@common_filters
 def filter_drive_favourite(user):
 	return f"""(`tabDrive Favourite`.`user` = {frappe.db.escape(user)})"""
 
