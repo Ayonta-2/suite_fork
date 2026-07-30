@@ -107,13 +107,16 @@
 						</template>
 					</div>
 				</div>
-				<div v-if="!mailDetails?.type || isMobile" class="flex items-center gap-2">
+				<label
+					v-if="!mailDetails?.type || isMobile"
+					class="flex cursor-text items-center gap-2"
+				>
 					<span class="text-ink-gray-4 text-sm">{{ __('Subject') }}</span>
 					<input
 						v-model="mail.subject"
-						class="flex-1 border-none bg-inherit text-base focus-visible:!ring-0"
+						class="flex-1 cursor-text border-none bg-inherit text-base focus-visible:!ring-0"
 					/>
-				</div>
+				</label>
 			</div>
 		</template>
 		<template #editor="{ editor }">
@@ -588,8 +591,18 @@ watch(
 const openAttachment = async (blob_id?: string, type?: string) => {
 	if (!blob_id) return
 
-	const url = await getAttachmentUrl(blob_id, type)
-	window.open(url, '_blank')
+	// Opened up front, while the click's user activation is still live: Safari blocks
+	// window.open() once the gesture has expired, which it has by the time the
+	// attachment has been fetched. A null tab means the popup blocker got it —
+	// retrying after the fetch would hit the same block, so just say so.
+	const tab = window.open('', '_blank')
+	if (!tab) return raiseToast(__('Allow popups to open attachments.'), 'error')
+
+	try {
+		tab.location.href = await getAttachmentUrl(blob_id, type)
+	} catch {
+		tab.close()
+	}
 }
 
 // Custom Extensions
