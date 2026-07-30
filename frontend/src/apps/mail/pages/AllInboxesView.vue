@@ -217,7 +217,7 @@ import {
 } from '@/apps/mail/utils/listNavigation'
 import { useStoredFilter } from '@/apps/mail/utils/listFilter'
 import { useAccountScope } from '@/apps/mail/utils/accountScope'
-import { useScreenSize, useSwipeNav } from '@/apps/mail/utils/composables'
+import { useUndo, useScreenSize, useSwipeNav } from '@/apps/mail/utils/composables'
 import { useListRows } from '@/apps/mail/composables/useListRows'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import {
@@ -461,6 +461,12 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
 
 const handleKeyDown = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
+	if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
+		e.preventDefault()
+		gPrefix.disarm()
+		return undo()
+	}
+
 	if (shouldIgnoreKeypress(e)) return
 
 	// Escape backs out of the open thread, then clears the cursor.
@@ -702,6 +708,8 @@ const handleSetSpamStatus = (spam: boolean) => {
 // The merged list is inbox-scoped, so its rows always summarise from the whole conversation — never
 // from a folder, as Sent and Drafts do. No undo yet: the undo requests would have to be scoped to the
 // row's own account rather than the active one.
+const { setUndoAction, undo } = useUndo()
+
 const { runMailRemoval } = useMailRemoval({
 	row: () => openRow.value,
 	mailThreadRef: mailThread,
@@ -717,12 +725,22 @@ const paneScope = useAccountScope(() => openRow.value?.account)
 const folderName = (mailboxId: string) =>
 	paneScope.mailboxes.value.data?.find((m: MailboxData) => m.id === mailboxId)?._name
 
+const undoMail = (mail: Mail) => {
+	const snapshot = mailSnapshot(mail)
+	const account = openRow.value?.account
+	return {
+		undoReq: () => restoreMails(account!, [snapshot]),
+		undoSuccess: __('Mail restored.'),
+	}
+}
+
 const handleMailMove = (mail: Mail, target: string) => {
 	const folder = folderName(target)
 	runMailRemoval(
 		mail,
 		() => paneCall('move_mails', { ids: [mail.id], mailbox: target }),
 		folder ? __('Mail moved to {0}.', [folder]) : __('Mail moved.'),
+		undoMail(mail),
 	)
 }
 
@@ -731,6 +749,7 @@ const handleMailSpam = (mail: Mail, spam: boolean) =>
 		mail,
 		() => paneCall('set_mails_spam_status', { ids: [mail.id], spam }),
 		spam ? __('Mail marked as junk.') : __('Mail marked as not junk.'),
+		undoMail(mail),
 	)
 
 const handleMailDelete = (mail: Mail) =>
@@ -800,6 +819,30 @@ const handleSetFlagged = (thread: Thread, flagged: boolean, ids: string[] = [thr
 // The row is already dropped optimistically by the caller, so move on the server directly. On success just
 // refresh counts (the row and its server row are both gone, so the append offset stays aligned and scroll is
 // preserved). On failure, restore the row in place via the passed closure; rethrow so the toast reports the error.
+// Undo restores each mail's exact mailbox set and junk flag rather than guessing an inverse: a
+// thread that sat in two folders has to come back to both, and un-junking is not the same as moving.
+const mailSnapshot = (mail: Mail) => ({
+	id: mail.id,
+	mailbox_ids: mail.mailboxes.map((m) => m.mailbox_id),
+	junk: mail.junk,
+})
+
+const threadSnapshot = (thread: Thread) => (thread.messages ?? []).map(mailSnapshot)
+
+const restoreMails = (account: string, mails: ReturnType<typeof mailSnapshot>[]) =>
+	call('suite.mail.api.mail.set_mails_mailboxes', { account, mails }).then(refreshCounts)
+
+// Offered on the toast and on Cmd/Ctrl+Z, matching the mailbox list.
+const withUndo = (thread: Thread, restore: () => void) => {
+	const snapshot = threadSnapshot(thread)
+	const undoAction = () => {
+		restore()
+		raiseOptimisticToast(restoreMails(thread.account, snapshot), __('Thread restored.'))
+	}
+	setUndoAction(undoAction)
+	return undoAction
+}
+
 const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) =>
 	call('suite.mail.api.mail.move_mails', {
 		account: thread.account,
@@ -814,13 +857,21 @@ const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) =>
 const handleArchive = (thread: Thread) => {
 	if (!thread.archive) return raiseToast(__('No Archive folder for this account.'), 'error')
 	const restore = removeFromList(thread)
-	raiseOptimisticToast(moveThreadOut(thread, thread.archive!, restore), __('Thread archived.'))
+	raiseOptimisticToast(
+		moveThreadOut(thread, thread.archive!, restore),
+		__('Thread archived.'),
+		withUndo(thread, restore),
+	)
 }
 
 const handleTrash = (thread: Thread) => {
 	if (!thread.trash) return raiseToast(__('No Trash folder for this account.'), 'error')
 	const restore = removeFromList(thread)
-	raiseOptimisticToast(moveThreadOut(thread, thread.trash!, restore), __('Thread moved to Trash.'))
+	raiseOptimisticToast(
+		moveThreadOut(thread, thread.trash!, restore),
+		__('Thread moved to Trash.'),
+		withUndo(thread, restore),
+	)
 }
 
 // Stack actions. A stack's members share one account (it is part of the stack key), so a single

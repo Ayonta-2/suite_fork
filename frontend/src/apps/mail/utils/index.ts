@@ -27,29 +27,6 @@ export const toTitleCase = (str: string) =>
 		})
 		.join(' ') || ''
 
-export function startResizing(event) {
-	const startX = event.clientX
-	const sidebar = document.getElementsByClassName('mailSidebar')[0]
-	const startWidth = sidebar.offsetWidth
-
-	const onMouseMove = (event) => {
-		const diff = event.clientX - startX
-		let newWidth = startWidth + diff
-		if (newWidth < 200) {
-			newWidth = 200
-		}
-		sidebar.style.width = newWidth + 'px'
-	}
-
-	const onMouseUp = () => {
-		document.removeEventListener('mousemove', onMouseMove)
-		document.removeEventListener('mouseup', onMouseUp)
-	}
-
-	document.addEventListener('mousemove', onMouseMove)
-	document.addEventListener('mouseup', onMouseUp)
-}
-
 export const formatBytes = (bytes: number) => {
 	if (!+bytes) return '0 Bytes'
 
