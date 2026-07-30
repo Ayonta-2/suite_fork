@@ -571,7 +571,7 @@ const moveOpenThread = (mailboxId: string) => {
 	raiseOptimisticToast(
 		moveThreadOut(row, mailboxId, restore),
 		folder ? __('Thread moved to {0}.', [folder]) : __('Thread moved.'),
-		withUndo(row, restore),
+		withUndo(row, restore, __('Thread moved back.')),
 	)
 }
 
@@ -683,7 +683,7 @@ const handleAddToMailbox = (mailboxId: string) => {
 		syncFolderTag(mailboxId, false)
 		raiseOptimisticToast(
 			restoreMails(thread.account, snapshot),
-			folder ? __('Removed from {0}.', [folder]) : __('Folder change undone.'),
+			folder ? __('Thread removed from {0}.', [folder]) : __('Thread removed from folder.'),
 		)
 	}
 	setUndoAction(undoAction)
@@ -715,10 +715,7 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
 	// the folder before an "add" must stay in it afterwards.
 	const undoAction = () => {
 		syncFolderTag(mailboxId, true)
-		raiseOptimisticToast(
-			restoreMails(thread.account, snapshot),
-			folder ? __('Added back to {0}.', [folder]) : __('Folder change undone.'),
-		)
+		raiseOptimisticToast(restoreMails(thread.account, snapshot), __('Thread added back.'))
 	}
 	setUndoAction(undoAction)
 
@@ -750,8 +747,9 @@ const handleSetSpamStatus = (spam: boolean, target?: Thread) => {
 				throw error
 			},
 		),
-		spam ? __('Thread marked as junk.') : __('Thread marked as not junk.'),
-		withUndo(thread, restore),
+		__('Thread marked as {0}.', [spam ? __('Junk') : __('Not Junk')]),
+		// Undo flips the junk status back — name the resulting state, like the forward toast does.
+		withUndo(thread, restore, __('Thread marked as {0}.', [spam ? __('Not Junk') : __('Junk')])),
 	)
 }
 
@@ -776,12 +774,9 @@ const paneScope = useAccountScope(() => openRow.value?.account)
 const folderName = (mailboxId: string) =>
 	paneScope.mailboxes.value.data?.find((m: MailboxData) => m.id === mailboxId)?._name
 
-const undoMail = (mail: Mail, account?: string) => {
+const undoMail = (mail: Mail, account: string | undefined, undoSuccess: string) => {
 	const snapshot = mailSnapshot(mail)
-	return {
-		undoReq: () => restoreMails(account!, [snapshot]),
-		undoSuccess: __('Mail restored.'),
-	}
+	return { undoReq: () => restoreMails(account!, [snapshot]), undoSuccess }
 }
 
 const handleMailMove = (mail: Mail, target: string) => {
@@ -791,7 +786,7 @@ const handleMailMove = (mail: Mail, target: string) => {
 		mail,
 		() => paneCall('move_mails', { ids: [mail.id], mailbox: target }, account),
 		folder ? __('Mail moved to {0}.', [folder]) : __('Mail moved.'),
-		undoMail(mail, account),
+		undoMail(mail, account, __('Mail moved back.')),
 	)
 }
 
@@ -800,8 +795,9 @@ const handleMailSpam = (mail: Mail, spam: boolean) => {
 	runMailRemoval(
 		mail,
 		() => paneCall('set_mails_spam_status', { ids: [mail.id], spam }, account),
-		spam ? __('Mail marked as junk.') : __('Mail marked as not junk.'),
-		undoMail(mail, account),
+		spam ? __('Mail marked as Junk.') : __('Mail marked as Not Junk.'),
+		// Undo flips the junk status back — name the resulting state, like the forward toast does.
+		undoMail(mail, account, __('Mail marked as {0}.', [spam ? __('Not Junk') : __('Junk')])),
 	)
 }
 
@@ -826,16 +822,21 @@ const handleSetSeen = (thread: Thread, seen: boolean) => {
 		thread.messages?.forEach((m) => (m.seen = value))
 	}
 	applySeen(seen ? 1 : 0)
-	call('suite.mail.api.mail.set_mails_seen', {
-		account: thread.account,
-		ids: messageIds(thread),
-		seen,
-	})
-		.then(refreshCounts)
-		.catch((error) => {
-			applySeen(seen ? 0 : 1) // revert the optimistic update
-			raiseToast(error?.messages?.[0] || error?.message, 'error')
+	// Every caller here is an explicit user action (row action, pane menu, `u`); the silent
+	// mark-as-read on opening a thread is the pane's own and never reaches this.
+	raiseOptimisticToast(
+		call('suite.mail.api.mail.set_mails_seen', {
+			account: thread.account,
+			ids: messageIds(thread),
+			seen,
 		})
+			.then(refreshCounts)
+			.catch((error) => {
+				applySeen(seen ? 0 : 1) // revert the optimistic update
+				throw error
+			}),
+		__('Thread marked as {0}.', [seen ? __('read') : __('unread')]),
+	)
 }
 
 // Star/unstar, from a list row (which names no mails, so its own representative one) or from the
@@ -896,12 +897,14 @@ const threadSnapshot = (thread: Thread) => (thread.messages ?? []).map(mailSnaps
 const restoreMails = (account: string, mails: ReturnType<typeof mailSnapshot>[]) =>
 	call('suite.mail.api.mail.set_mails_mailboxes', { account, mails }).then(refreshCounts)
 
-// Offered on the toast and on Cmd/Ctrl+Z, matching the mailbox list.
-const withUndo = (thread: Thread, restore: () => void) => {
+// Offered on the toast and on Cmd/Ctrl+Z, matching the mailbox list. `undoSuccess` is the caller's,
+// because the mailbox list names the state the undo lands in ("Thread moved back.", "Thread marked
+// as Not Junk.") rather than confirming it generically.
+const withUndo = (thread: Thread, restore: () => void, undoSuccess: string) => {
 	const snapshot = threadSnapshot(thread)
 	const undoAction = () => {
 		restore()
-		raiseOptimisticToast(restoreMails(thread.account, snapshot), __('Thread restored.'))
+		raiseOptimisticToast(restoreMails(thread.account, snapshot), undoSuccess)
 	}
 	setUndoAction(undoAction)
 	return undoAction
@@ -925,7 +928,7 @@ const handleArchive = (thread: Thread) => {
 	raiseOptimisticToast(
 		moveThreadOut(thread, thread.archive!, restore),
 		__('Thread archived.'),
-		withUndo(thread, restore),
+		withUndo(thread, restore, __('Thread moved back.')),
 	)
 }
 
@@ -936,7 +939,7 @@ const handleTrash = (thread: Thread) => {
 	raiseOptimisticToast(
 		moveThreadOut(thread, thread.trash!, restore),
 		__('Thread moved to Trash.'),
-		withUndo(thread, restore),
+		withUndo(thread, restore, __('Thread moved back.')),
 	)
 }
 
@@ -952,16 +955,19 @@ const stackSetSeen = (threads: Thread[], seen: boolean) => {
 			t.messages?.forEach((m) => (m.seen = value))
 		})
 	applySeen(seen ? 1 : 0)
-	call('suite.mail.api.mail.set_mails_seen', {
-		account: threads[0].account,
-		ids: changed.flatMap(messageIds),
-		seen,
-	})
-		.then(refreshCounts)
-		.catch((error) => {
-			applySeen(seen ? 0 : 1) // revert the optimistic update
-			raiseToast(error?.messages?.[0] || error?.message, 'error')
+	raiseOptimisticToast(
+		call('suite.mail.api.mail.set_mails_seen', {
+			account: threads[0].account,
+			ids: changed.flatMap(messageIds),
+			seen,
 		})
+			.then(refreshCounts)
+			.catch((error) => {
+				applySeen(seen ? 0 : 1) // revert the optimistic update
+				throw error
+			}),
+		__('Threads marked as {0}.', [seen ? __('read') : __('unread')]),
+	)
 }
 
 // Restores run in reverse so each row splices back at the index captured when it was removed.
@@ -980,15 +986,12 @@ const stackMoveOut = (threads: Thread[], mailboxId: string | undefined, done: st
 	raiseOptimisticToast(promise, done)
 }
 
+// Plurals of the single-thread messages, as the mailbox list does — it never prefixes a count.
 const stackArchive = (threads: Thread[]) =>
-	stackMoveOut(threads, threads[0].archive, __('{0} threads archived.', [String(threads.length)]))
+	stackMoveOut(threads, threads[0].archive, __('Threads archived.'))
 
 const stackTrash = (threads: Thread[]) =>
-	stackMoveOut(
-		threads,
-		threads[0].trash,
-		__('{0} threads moved to Trash.', [String(threads.length)]),
-	)
+	stackMoveOut(threads, threads[0].trash, __('Threads moved to Trash.'))
 
 const unreadPrefix = computed(() =>
 	store.allInboxesUnread.data ? `(${store.allInboxesUnread.data})` : '',
