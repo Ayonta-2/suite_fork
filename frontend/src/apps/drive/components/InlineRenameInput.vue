@@ -14,6 +14,8 @@
     @mousedown.stop
     @dblclick.stop
     @keydown.stop
+    @keyup.stop
+    @keyup.space.prevent
     @keydown.enter.prevent="submit"
     @keydown.escape.prevent="cancel"
     @focus="selectBaseName"

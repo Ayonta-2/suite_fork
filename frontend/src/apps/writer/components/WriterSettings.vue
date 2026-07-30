@@ -28,12 +28,14 @@
                     description="Set the font size of the editor (px)."
                   />
                   <FormControl
-                    v-model="settings.line_height"
+                    v-model.number="lineSpacing"
                     type="number"
-                    label="Line height"
+                    label="Line spacing"
                     autocomplete="off"
+                    :min="0.5"
+                    :step="0.05"
                     placeholder="Automatic"
-                    description="Set the line height of the editor."
+                    description="A multiple of single spacing, like 1.15 or 1.5."
                   />
                   <div class="space-y-1.5">
                     <FormLabel label="Paragraph spacing" size="md" />
@@ -160,6 +162,7 @@
 import { computed, ref, reactive, watchEffect } from 'vue'
 import { Button, FormControl, Dialog, Tabs, FormLabel } from 'frappe-ui'
 import { FONT_FAMILIES, dynamicList } from '@/apps/writer/utils/'
+import { toCssLineHeight, toLineSpacing } from '@/apps/writer/utils/typography'
 import Form from '@/apps/writer/components/Form.vue'
 import FontSelect from './FontSelect.vue'
 import LucideFileText from '~icons/lucide/file-text'
@@ -210,6 +213,18 @@ const KEYS = computed(() => [
 ])
 
 const settings = reactive({})
+
+// Stored as a CSS line-height; shown as a Google Docs style multiple of single
+// spacing so the number behaves the way users expect.
+const lineSpacing = computed({
+  get: () =>
+    settings.line_height && settings.line_height !== 'global'
+      ? toLineSpacing(settings.line_height)
+      : '',
+  set: (value) => {
+    settings.line_height = value ? toCssLineHeight(value) : 'global'
+  },
+})
 
 const LOCAL_ONLY = [
   'print_header_left',

@@ -83,6 +83,7 @@ import { bubbleMenuOptions } from './core-editor/bubble-menu'
 import { CoreEditorExtension } from '@/apps/writer/extensions/core-editor'
 import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
 import CleanStyles from '@/apps/writer/extensions/clean-styles'
+import { cssLineHeight } from '@/apps/writer/utils/typography'
 import MediaDownload from '@/apps/writer/extensions/media-download'
 import OldCommentExtension from '@/apps/writer/extensions/old-comment'
 import { TabsExtension } from '@/apps/writer/extensions/tabs'
@@ -285,7 +286,7 @@ const editorStyle = computed(() => ({
   fontFamily:
     props.settings?.font_family && `var(--font-${props.settings.font_family})`,
   '--editor-font-size': `${props.settings?.font_size || 15}px`,
-  '--editor-line-height': props.settings?.line_height || 1.5,
+  '--editor-line-height': cssLineHeight(props.settings?.line_height),
   '--paragraph-spacing-before': `${props.settings?.paragraph_spacing_before || 0}px`,
   '--paragraph-spacing-after': `${props.settings?.paragraph_spacing_after || 0}px`,
 }))
@@ -423,13 +424,5 @@ onBeforeUnmount(() => {
 
 iframe {
   border: 1px solid var(--surface-gray-4) !important;
-}
-
-.prose-v3 p+p {
-  margin-top: var(--paragraph-spacing-before, 0);
-}
-
-.prose-v3 p {
-  margin-bottom: var(--paragraph-spacing-after, 0);
 }
 </style>

@@ -25,6 +25,7 @@ import { FontSize } from '@/apps/writer/extensions/font-size'
 import EmbedExtension from '@/apps/writer/extensions/embed-extension'
 import ExtendedParagraph from '@/apps/writer/extensions/extended-paragraph'
 import FontFamily from '@/apps/writer/extensions/font-family'
+import { cssLineHeight } from '@/apps/writer/utils/typography'
 
 function trimCommonPrefix(a, b) {
   let i = 0
@@ -254,6 +255,15 @@ export function printDoc(html, settings = {}) {
     nunito: 'var(--font-nunito)',
   }
   const fontFamily = fontMap[settings?.font_family]
+  // The print document reuses the editor stylesheet, so it needs the same
+  // custom properties the editor sets — otherwise paragraphs fall back to the
+  // prose defaults and print looser than what is on screen.
+  const editorVars = [
+    `--editor-font-size: ${settings?.font_size || 15}px`,
+    `--editor-line-height: ${cssLineHeight(settings?.line_height)}`,
+    `--paragraph-spacing-before: ${settings?.paragraph_spacing_before || 0}px`,
+    `--paragraph-spacing-after: ${settings?.paragraph_spacing_after || 0}px`,
+  ].join('; ')
   const content = `
             <!DOCTYPE html>
             <html>
@@ -309,7 +319,7 @@ export function printDoc(html, settings = {}) {
               </style>
               </head>
               <body>
-                <div class="ProseMirror prose-sm" style='padding-left: 40px; padding-right: 40px; padding-top: 20px; padding-bottom: 20px; margin: 0;'>
+                <div class="ProseMirror prose prose-sm prose-v3" style='padding-left: 40px; padding-right: 40px; padding-top: 20px; padding-bottom: 20px; margin: 0; ${editorVars}'>
                   ${highlightedHtml}
                 </div>
               </body>

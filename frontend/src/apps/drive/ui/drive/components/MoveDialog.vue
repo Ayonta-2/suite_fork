@@ -169,24 +169,25 @@ const dialogType = defineModel()
 const open = ref(true)
 
 const route = useRoute()
-const tabIndex = ref(route.name == 'drive-Home' ? 0 : 1)
+// Open in the space being browsed — Teams only on a team-scoped route.
 const chosenTeam = ref(route.params.team || '')
+const tabIndex = ref(chosenTeam.value ? 1 : 0)
 
 // Reopen at the folder the user last moved into this session, so repeated moves
 // to the same place don't start from root each time. Only restore it when it
 // belongs to the team we're currently browsing — the dialog always respects the
 // current team context.
 const LAST_MOVE_KEY = 'drive:last-move-dest'
-const lastMoveParent = (() => {
+function lastMoveParent() {
   try {
     const saved = JSON.parse(sessionStorage.getItem(LAST_MOVE_KEY) || 'null')
     if (!saved || typeof saved !== 'object') return ''
-    if ((saved.team || '') !== chosenTeam.value) return ''
+    if ((saved.team || '') !== (chosenTeam.value || '')) return ''
     return saved.parent || ''
   } catch {
     return ''
   }
-})()
+}
 const tree = reactive({
   name: '',
   label: 'Home',
@@ -285,9 +286,13 @@ watch(
   [tabIndex, chosenTeam],
   ([newValue, team], [prev, _]) => {
     selected.value = ''
-    tree.loading = true
-    if ((newValue === 1 && !team) || (newValue === 0 && prev == newValue))
+    if (newValue === 1 && !team) {
+      tree.children = []
+      tree.loading = false
       return
+    }
+    tree.loading = true
+    if (newValue === 0 && prev == newValue) return
     tree.children = []
     switch (newValue) {
       case 0:
@@ -308,16 +313,15 @@ watch(
         })
         break
     }
+    // Re-applied on every tab/team switch, which resets `selected` above.
+    const remembered = lastMoveParent()
+    if (remembered) {
+      selected.value = remembered
+      selectedPerms.fetch()
+    }
   },
   { immediate: true },
 )
-
-// Preselect the last move destination (the immediate watch above resets to root
-// first). Breadcrumbs are filled in by selectedPerms.onSuccess.
-if (lastMoveParent) {
-  selected.value = lastMoveParent
-  selectedPerms.fetch({ entity_name: lastMoveParent })
-}
 
 // Breadcrumb logic
 const slicedBreadcrumbs = computed(() => {

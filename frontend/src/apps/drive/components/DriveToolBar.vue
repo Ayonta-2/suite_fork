@@ -1,5 +1,5 @@
 <template>
-  <div class="flex px-5 pt-3 h-12">
+  <div class="flex items-center px-5 pt-3 h-12">
     <div v-if="selections?.length" class="my-auto w-[40%] text-base text-ink-gray-8">
       {{ selections.length }}
       {{ selections.length === 1 ? __('item') : __('items') }}
