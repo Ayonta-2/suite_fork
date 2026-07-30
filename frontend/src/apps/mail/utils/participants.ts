@@ -67,6 +67,12 @@ export const threadParticipants = (
 	return participants
 }
 
+const getFirstAlphabet = (str?: string) => str?.match(/\p{L}/u)?.[0]
+
+/** The letter on a sender's avatar: their name's first, or their address's when they go by no name. */
+export const getSenderInitial = (sender: { from_name?: string; from_email?: string }) =>
+	getFirstAlphabet(sender.from_name) || getFirstAlphabet(sender.from_email)
+
 const capitalizeFirst = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
 
 // "M", "M." — an initial standing before the name rather than being it.
@@ -129,3 +135,23 @@ export const formatThreadParticipants = (participants: ThreadParticipant[]) => {
 	if (names.length <= MAX_PARTICIPANTS_SHOWN) return names.join(', ')
 	return `${names[0]} … ${names.slice(-2).join(', ')}`
 }
+
+/**
+ * The letter behind a thread row's avatar, for a contact with no picture: the initial of whoever the
+ * picture itself would be of (see primaryParticipant). `fallback` is the row's own sender, for a row
+ * with no conversation behind it to name anybody — a search result.
+ */
+export const threadAvatarLabel = (
+	participants: ThreadParticipant[],
+	fallback: { from_name?: string; from_email?: string },
+) => {
+	const primary = primaryParticipant(participants)
+	if (!primary) return getSenderInitial(fallback)
+	return getSenderInitial({ from_name: primary.name, from_email: primary.email })
+}
+
+/** The name(s) a thread row goes by, falling back to its own sender when it names nobody. */
+export const threadDisplayName = (
+	participants: ThreadParticipant[],
+	fallback: { from_name?: string; from_email?: string },
+) => formatThreadParticipants(participants) || fallback.from_name || fallback.from_email

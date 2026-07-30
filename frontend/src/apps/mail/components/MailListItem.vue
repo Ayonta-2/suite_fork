@@ -154,8 +154,12 @@ import { Download, Loader } from 'lucide-vue-next'
 import { Badge, Popover, Tooltip } from 'frappe-ui'
 
 import { getAttachmentUrl } from '@/apps/mail/resources'
-import { downloadUrlAsFile, getFileIcon, getFormattedRecipients, getSenderInitial } from '@/apps/mail/utils'
-import { formatThreadParticipants, primaryParticipant, threadParticipants } from '@/apps/mail/utils/participants'
+import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
+import {
+	threadAvatarLabel,
+	threadDisplayName,
+	threadParticipants,
+} from '@/apps/mail/utils/participants'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
@@ -253,18 +257,13 @@ const participants = computed(() => threadParticipants(mail.messages, ownEmails.
 
 const header = computed(() => {
 	if (isOutgoing.value) return getFormattedRecipients(mail.recipients) || __('To:')
-	return formatThreadParticipants(participants.value) || mail.from_name || mail.from_email
+	return threadDisplayName(participants.value, mail)
 })
 
 // Gmail-style count of how many messages the conversation holds, shown once there's more than one.
 const messageCount = computed(() => mail.messages?.length ?? 0)
 
-// The letter behind the avatar, for a contact with no picture: whoever the picture itself would be of.
-const avatarLabel = computed(() => {
-	const primary = primaryParticipant(participants.value)
-	if (!primary) return getSenderInitial(mail)
-	return getSenderInitial({ from_name: primary.name, from_email: primary.email })
-})
+const avatarLabel = computed(() => threadAvatarLabel(participants.value, mail))
 
 // In search results, highlight the matched query term. Escape the text first (so any markup in the
 // content is neutralized), then wrap matches in <mark> — the only HTML we inject — for safe v-html.

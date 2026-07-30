@@ -55,8 +55,11 @@ import { computed } from 'vue'
 import { ChevronDown, ChevronRight, Layers2 } from 'lucide-vue-next'
 import { Badge } from 'frappe-ui'
 
-import { getSenderInitial } from '@/apps/mail/utils'
-import { formatThreadParticipants, primaryParticipant, threadParticipants } from '@/apps/mail/utils/participants'
+import {
+	threadAvatarLabel,
+	threadDisplayName,
+	threadParticipants,
+} from '@/apps/mail/utils/participants'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
 import MailRow from '@/apps/mail/components/MailRow.vue'
 import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
@@ -97,19 +100,9 @@ const participants = computed(() => threadParticipants(latest.value.messages, ow
 
 // Only threads with a lone sending address stack (see stackKeyOf), and every member shares it, so the
 // stack is named exactly the way each of its members is — collapsed or expanded, the name holds.
-const sender = computed(
-	() =>
-		formatThreadParticipants(participants.value) ||
-		latest.value.from_name ||
-		latest.value.from_email,
-)
+const sender = computed(() => threadDisplayName(participants.value, latest.value))
 
-// The letter behind the avatar, for a contact with no picture: whoever the picture itself would be of.
-const avatarLabel = computed(() => {
-	const primary = primaryParticipant(participants.value)
-	if (!primary) return getSenderInitial(latest.value)
-	return getSenderInitial({ from_name: primary.name, from_email: primary.email })
-})
+const avatarLabel = computed(() => threadAvatarLabel(participants.value, latest.value))
 
 const unreadCount = computed(() => threads.filter((t) => !t.seen).length)
 </script>

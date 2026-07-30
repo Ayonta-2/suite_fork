@@ -417,12 +417,12 @@ import {
 	getFormattedDate,
 	getFormattedRecipients,
 	getGroupedRecipients,
-	getSenderInitial,
 	hasHtmlContent,
 	matchesScreenedValue,
 	raiseToast,
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
+import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
 import { provideAccountScope } from '@/apps/mail/utils/accountScope'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
