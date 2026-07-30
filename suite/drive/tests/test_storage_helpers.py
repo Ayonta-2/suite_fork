@@ -33,6 +33,7 @@ class TestStorageHelpers(unittest.TestCase):
 			manager.s3_enabled = False
 			manager.site_folder = Path(site_folder)
 			entity = frappe._dict(
+				name="w1a2b3c4d5",
 				file_name="Renamed document",
 				file_url="root/Original document",
 				mime_type="frappe_doc",
