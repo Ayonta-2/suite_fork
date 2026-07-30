@@ -1,21 +1,22 @@
 <template>
-  <div class="flex min-w-0 items-center">
-    <template v-if="isEditing">
+  <div class="flex min-w-0 items-center" data-testid="breadcrumbs">
+    <div v-if="loading" class="flex items-center gap-1.5" data-testid="breadcrumbs-loading">
+      <Skeleton class="h-4 w-16 rounded-sm" />
+      <span class="text-lg-medium text-ink-gray-4" aria-hidden="true">/</span>
+      <Skeleton class="h-4 w-32 rounded-sm" />
+    </div>
+    <template v-else-if="isEditing">
       <template v-if="parentItems.length">
         <Breadcrumbs :items="parentItems" />
         <span class="mx-0.5 text-base text-ink-gray-4" aria-hidden="true">/</span>
       </template>
       <InlineRenameInput :entity="entity" class="text-lg-medium" />
     </template>
-    <Breadcrumbs v-else :items="displayItems">
-      <template #prefix="slotProps">
-        <slot name="prefix" v-bind="slotProps" />
-      </template>
-    </Breadcrumbs>
+    <Breadcrumbs v-else :items="displayItems" />
   </div>
 </template>
 <script setup>
-import { Breadcrumbs } from 'frappe-ui'
+import { Breadcrumbs, Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 import { renamingEntity } from '@/apps/drive/data/selection'
 import InlineRenameInput from './InlineRenameInput.vue'
@@ -25,6 +26,10 @@ const props = defineProps({
   // The entity the last crumb represents; makes that crumb inline-renameable.
   entity: { type: Object, default: null },
 })
+
+const loading = computed(
+  () => !props.items.length || props.items.some((item) => item.loading),
+)
 
 const isEditing = computed(
   () => props.entity && renamingEntity.value === props.entity.name,

@@ -9,8 +9,9 @@ function uniqueName(runId: string, label: string): string {
 
 /** The breadcrumb trail a user can read in the navbar, outermost first. */
 async function trail(page: Page): Promise<string[]> {
-	const crumbs = page.locator("#navbar").locator("div").first();
+	const crumbs = page.getByTestId("breadcrumbs");
 	await expect(crumbs).toBeVisible();
+	await expect(page.getByTestId("breadcrumbs-loading")).toHaveCount(0);
 	return (await crumbs.innerText())
 		.split("/")
 		.map((part: string) => part.trim())
@@ -112,9 +113,12 @@ test("renaming the current folder updates its crumb", async ({ owner, run }) => 
 	await expect.poll(() => trail(page)).toEqual(["Home", original]);
 
 	const renamed = `${original}-renamed`;
-	await page.locator("#navbar").getByText(original, { exact: true }).click();
+	const crumb = page.getByTestId("breadcrumbs").getByText(original, { exact: true });
 	const input = page.locator("#navbar").getByRole("textbox");
-	await expect(input).toBeVisible();
+	await expect(async () => {
+		await crumb.click();
+		await expect(input).toBeVisible({ timeout: 2000 });
+	}).toPass({ timeout: 20000 });
 	await input.fill(renamed);
 	await Promise.all([
 		page.waitForResponse(
