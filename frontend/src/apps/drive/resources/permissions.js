@@ -53,6 +53,20 @@ export const siteUsers = createResource({
   },
 })
 
+export const getUserGroups = createResource({
+  url: 'suite.drive.api.product.get_user_groups',
+  method: 'GET',
+  transform: (data) =>
+    data.map((g) => ({
+      ...g,
+      is_group: 1,
+      value: `$GROUP:${g.name}`,
+      label: g.name,
+      // shown in place of the raw sentinel
+      description: `${g.member_count} ${g.member_count === 1 ? 'person' : 'people'}`,
+    })),
+})
+
 export const getInvites = createResource({
   url: 'suite.drive.api.product.get_my_invites',
 })

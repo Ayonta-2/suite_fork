@@ -229,6 +229,24 @@ def get_users():
 	)
 
 
+@frappe.whitelist()
+def get_user_groups():
+	"""Shareable user groups, with how many people each one carries."""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("You don't have the permissions for this action."), frappe.PermissionError)
+
+	counts = frappe._dict(
+		frappe.db.sql(
+			"""SELECT parent, COUNT(DISTINCT user) FROM `tabUser Group Member`
+			WHERE parenttype = 'User Group' GROUP BY parent"""
+		)
+	)
+	return [
+		{"name": g, "member_count": counts.get(g, 0)}
+		for g in frappe.get_all("User Group", pluck="name", order_by="name")
+	]
+
+
 @frappe.whitelist(allow_guest=True)
 def accept_invite(key: str, redirect: bool | str = True):
 	try:

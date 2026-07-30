@@ -156,10 +156,36 @@ def provision_users(run_id: str, password: str = DEFAULT_PASSWORD, user_count: i
 
 
 @whitelist_for_tests(methods=["POST"])
+def create_user_group(run_id: str, name: str, members: str) -> dict:
+	"""Group named for this run, so cleanup_users can find it again."""
+	group = f"{_validate_run_id(run_id)}-{name}"
+	emails = [e for e in (members or "").split(",") if e]
+	if frappe.db.exists("User Group", group):
+		frappe.delete_doc("User Group", group, ignore_permissions=True, force=True)
+
+	doc = frappe.get_doc({"doctype": "User Group", "__newname": group})
+	for email in emails:
+		doc.append("user_group_members", {"user": email})
+	doc.insert(ignore_permissions=True)
+
+	from suite.drive.utils import clear_user_group_cache
+
+	clear_user_group_cache()
+	frappe.db.commit()
+	return {"name": group, "member_count": len(emails)}
+
+
+@whitelist_for_tests(methods=["POST"])
 def cleanup_users(run_id: str) -> dict:
 	"""Delete only users and personal Drive/Writer data named by this run ID."""
 	emails = _existing_user_emails(run_id)
 	deleted = []
+
+	for group in frappe.get_all(
+		"User Group", filters={"name": ["like", f"{_validate_run_id(run_id)}-%"]}, pluck="name"
+	):
+		frappe.db.delete("Drive Permission", {"user": f"$GROUP:{group}"})
+		frappe.delete_doc("User Group", group, ignore_permissions=True, force=True)
 
 	for email in emails:
 		if not frappe.db.exists("User", email):
