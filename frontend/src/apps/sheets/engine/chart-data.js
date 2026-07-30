@@ -23,14 +23,69 @@ export function buildOption(config, matrix, isDark = false) {
 	if (!matrix?.length) return _emptyOption(config, isDark)
 	const { headerRow, dataRows } = _splitHeader(matrix, config.hasHeader !== false)
 	const encoding = _normaliseEncoding(config.encoding, matrix[0]?.length || 0)
+	// Group-and-aggregate by the X column when the user asks for it. With
+	// aggregation off this is a no-op and each row plots as-is (the original
+	// behaviour); with it on, rows sharing an X value collapse into one, which
+	// is what turns raw transactional data into a chart worth looking at.
+	const rows = _aggregate(dataRows, encoding, config.options?.aggregate)
 
 	switch (config.chartType) {
-		case 'pie':     return _pieOption(config, headerRow, dataRows, encoding, isDark)
-		case 'bar':     return _cartesianOption(config, headerRow, dataRows, encoding, 'bar', isDark)
-		case 'line':    return _cartesianOption(config, headerRow, dataRows, encoding, 'line', isDark)
-		case 'area':    return _cartesianOption(config, headerRow, dataRows, encoding, 'area', isDark)
-		case 'scatter': return _cartesianOption(config, headerRow, dataRows, encoding, 'scatter', isDark)
-		default:        return _cartesianOption(config, headerRow, dataRows, encoding, 'bar', isDark)
+		case 'pie':     return _pieOption(config, headerRow, rows, encoding, isDark)
+		case 'bar':     return _cartesianOption(config, headerRow, rows, encoding, 'bar', isDark)
+		case 'line':    return _cartesianOption(config, headerRow, rows, encoding, 'line', isDark)
+		case 'area':    return _cartesianOption(config, headerRow, rows, encoding, 'area', isDark)
+		case 'scatter': return _cartesianOption(config, headerRow, rows, encoding, 'scatter', isDark)
+		default:        return _cartesianOption(config, headerRow, rows, encoding, 'bar', isDark)
+	}
+}
+
+// ── Aggregation ───────────────────────────────────────────────────────────────
+
+// Collapse rows sharing the same X value into one, applying `aggFn` to each
+// series column. Returns synthetic rows keyed only at the X and Y indices the
+// encoding uses — enough for the option builders, which read nothing else.
+// Group order follows first appearance so the axis stays in data order.
+function _aggregate(dataRows, encoding, aggFn) {
+	if (!aggFn || aggFn === 'none') return dataRows
+	const groups = new Map()   // label → { keyVal, rows: [] }
+	for (const r of dataRows) {
+		const keyVal = r[encoding.x]
+		const key = _toLabel(keyVal)
+		let g = groups.get(key)
+		if (!g) { g = { keyVal, rows: [] }; groups.set(key, g) }
+		g.rows.push(r)
+	}
+	const width = Math.max(encoding.x, ...encoding.y, 0) + 1
+	const out = []
+	for (const g of groups.values()) {
+		const row = new Array(width).fill('')
+		row[encoding.x] = g.keyVal
+		for (const col of encoding.y) row[col] = _applyAgg(aggFn, g.rows, col)
+		out.push(row)
+	}
+	return out
+}
+
+// Apply one aggregation function over a group's values in column `col`.
+// `count` counts non-empty cells; the numeric functions ignore non-numeric
+// cells and fall back to 0 for an all-empty group.
+function _applyAgg(fn, rows, col) {
+	const nums = []
+	let nonEmpty = 0
+	for (const r of rows) {
+		const v = r[col]
+		if (v === '' || v == null) continue
+		nonEmpty++
+		const n = Number(v)
+		if (!isNaN(n)) nums.push(n)
+	}
+	switch (fn) {
+		case 'count': return nonEmpty
+		case 'avg':   return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0
+		case 'min':   return nums.length ? nums.reduce((a, b) => (b < a ? b : a)) : 0
+		case 'max':   return nums.length ? nums.reduce((a, b) => (b > a ? b : a)) : 0
+		case 'sum':
+		default:      return nums.reduce((a, b) => a + b, 0)
 	}
 }
 
