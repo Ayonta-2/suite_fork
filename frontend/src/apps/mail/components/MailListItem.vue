@@ -6,7 +6,7 @@
 		:selection-mode
 		:unread="!mail.seen"
 		:hide-sender
-		:avatar-label="getSenderInitial(mail)"
+		:avatar-label="avatarLabel"
 		:avatar-image="mail.user_image"
 		:datetime="mail.received_at"
 		:subject-italic="!mail.subject"
@@ -16,6 +16,14 @@
 		<template #sender><span v-html="highlight(header)" /></template>
 
 		<template #badges>
+			<!-- How many messages the thread holds — only worth saying once it holds more than one. -->
+			<span
+				v-if="messageCount > 1"
+				class="text-ink-gray-5 shrink-0 text-xs"
+				:aria-label="__('{0} messages', [messageCount])"
+			>
+				{{ messageCount }}
+			</span>
 			<!-- All Inboxes: which account received this mail. -->
 			<div v-if="accountLabel" class="text-ink-gray-4 flex shrink-0 items-center gap-1 text-xs">
 				<span aria-hidden="true">·</span>
@@ -148,6 +156,7 @@ import { Badge, Popover, Tooltip } from 'frappe-ui'
 
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients, getSenderInitial } from '@/apps/mail/utils'
+import { formatThreadParticipants, primaryParticipant } from '@/apps/mail/utils/participants'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
@@ -204,21 +213,46 @@ const to = computed(() => ({
 	query: route.query,
 }))
 
-const mailboxes = computed(() => mail.mailboxes.map((m) => m.mailbox_id))
-
 const mailboxesToShow = computed(() => mail.mailboxes.filter((m) => m.mailbox_id !== mailbox))
 
 const attachments = computed(
 	() => mail.attachments.filter((m) => m.filename && m.disposition === 'attachment') || [],
 )
 
-const header = computed(() => {
-	const isOutgoing =
-		mailboxes.value.includes(mailboxIds.sent) || mailboxes.value.includes(mailboxIds.drafts)
+// Sent and Drafts are about who the mail is going to, so those rows name the recipients. Everywhere
+// else the row names the thread's participants.
+//
+// In a mailbox it is the VIEW that decides this, not whether the thread happens to hold a sent
+// message: a thread you have answered carries a sent copy wherever it sits, so testing the row's
+// mailboxes named recipients all over Inbox and Archive. Worse, those mailboxes come from the
+// thread's message in the current mailbox while `recipients` comes from its latest message anywhere
+// — on an archived thread whose newest mail is an incoming reply, the row took "outgoing" from its
+// own sent copy and then named that reply's recipient: you.
+//
+// Search results are the exception: they are single messages with no thread behind them and no
+// participants to name, so there the message's own mailboxes still answer it — otherwise a mail you
+// sent, found in search, would go by your own name rather than by who you sent it to.
+const isOutgoing = computed(() => {
+	if (mailbox === 'search')
+		return mail.mailboxes.some(
+			(m) => m.mailbox_id === mailboxIds.sent || m.mailbox_id === mailboxIds.drafts,
+		)
+	return mailbox === mailboxIds.sent || mailbox === mailboxIds.drafts
+})
 
-	return isOutgoing
-		? getFormattedRecipients(mail.recipients) || __('To:')
-		: mail.from_name || mail.from_email
+const header = computed(() => {
+	if (isOutgoing.value) return getFormattedRecipients(mail.recipients) || __('To:')
+	return formatThreadParticipants(mail.participants ?? []) || mail.from_name || mail.from_email
+})
+
+// Gmail-style count of how many messages the conversation holds, shown once there's more than one.
+const messageCount = computed(() => mail.messages?.length ?? 0)
+
+// The letter behind the avatar, for a contact with no picture: whoever the picture itself would be of.
+const avatarLabel = computed(() => {
+	const primary = primaryParticipant(mail.participants ?? [])
+	if (!primary) return getSenderInitial(mail)
+	return getSenderInitial({ from_name: primary.name, from_email: primary.email })
 })
 
 // In search results, highlight the matched query term. Escape the text first (so any markup in the
