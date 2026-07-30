@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import time
 from collections import Counter
@@ -6,18 +7,17 @@ from pathlib import Path
 
 import frappe
 
-from suite.drive.overrides.file import FRAMEWORK_FOLDERS
 from suite.drive.utils import (
 	GENERAL_USER,
+	GROUP_PREFIX,
 	PERMISSION_TYPES,
 	STATUS_ACTIVE,
 	STATUS_TRASHED,
 	WRITER_CONTENT_DOCTYPE,
+	_deny_general_read,
 	get_new_file_name,
 	get_previous_teams_folder,
 	get_root_folder,
-	get_site_folder,
-	get_user_folder,
 	get_users_folder,
 	grant_owner_access,
 )
@@ -32,11 +32,11 @@ MAX_DEPTH = 64
 
 
 def execute():
-	"""Collapse Drive Teams into the single site tree, then make storage mirror it.
+	"""Collapse Drive Teams into Drive's tree, then make storage mirror it.
 
 	Both halves are idempotent and guarded on current state; the team half is
-	additionally skipped once the Drive Team tables are gone, so a re-run after
-	a failed relocation still finishes the relocation.
+	skipped once the Drive Team tables are gone, so a re-run after a failed
+	relocation still finishes the relocation.
 	"""
 	if frappe.db.exists("DocType", "Drive Team"):
 		_collapse_teams()
@@ -44,43 +44,129 @@ def execute():
 
 
 def _collapse_teams():
-	"""Personal team roots become private user folders directly under the site
-	root; every other team root moves into "Previous Teams" with its membership
-	rewritten as Drive Permission rows, for an admin to reorganise afterwards.
-	Nothing is readable without a grant, so private areas need no deny rows —
-	only a public team gets an explicit $GENERAL read."""
-	root = get_root_folder()
-	containers = {get_site_folder().name, get_previous_teams_folder().name, get_users_folder().name}
-	previous_teams = get_previous_teams_folder()
+	"""Personal team roots become user folders under `Users`; the rest move into
+	`Drive/Previous Teams`, membership rewritten as Drive Permission rows.
 
-	teams = frappe.get_all(
-		"Drive Team", fields=["name", "title", "owner", "personal", "public", "quota"]
-	)
-	for team in teams:
+	`Users` carries no grant, so user folders are private. `Previous Teams` inherits
+	`Drive`'s $GENERAL read, so each migrated team gets a $GENERAL deny and is
+	reachable only by its old members. A public team keeps $GENERAL read."""
+	previous_teams = get_previous_teams_folder()
+	roots = {get_root_folder().name, previous_teams.name, get_users_folder().name}
+	groups = {}
+
+	teams = frappe.get_all("Drive Team", fields=["name", "title", "owner", "personal", "public", "quota"])
+	print(f"Drive: collapsing {len(teams)} team(s)")
+	for done, team in enumerate(teams, 1):
+		if done % 100 == 0:
+			print(f"  {done}/{len(teams)}")
 		home = frappe.db.get_value("File", {"team": team.name, "folder": ("is", "not set")}, "name")
-		if not home:
+		if not home or home in roots:
 			continue
 		members = frappe.get_all(
 			"Drive Team Member",
 			filters={"parenttype": "Drive Team", "parent": team.name},
 			fields=["user", "access_level"],
 		)
+		# Nothing matches a deleted user, and `Drive Settings.user` is a Link — a user
+		# folder for one aborts the migration.
 		members = [m for m in members if m.user and m.user != team.owner]
+		members = [m for m in members if frappe.db.exists("User", m.user)]
+		owned = bool(team.owner) and frappe.db.exists("User", team.owner)
 
-		if team.personal and not frappe.db.get_value("Drive Settings", team.owner, "user_folder"):
-			_to_user_folder(root, home, team)
+		if team.personal and owned and not frappe.db.get_value("Drive Settings", team.owner, "user_folder"):
+			_to_user_folder(home, team)
+			_grant_members(home, members)
+			continue
+
+		_to_shared_folder(previous_teams, home, team, owned)
+		# own row too, so it stays private if moved out of `Previous Teams`
+		if team.public:
+			_grant(home, GENERAL_USER, {"read": 1})
 		else:
-			_to_shared_folder(previous_teams, home, team)
-			if team.public:
-				_grant(home, GENERAL_USER, {"read": 1})
-		_grant_members(home, members)
+			_deny_general_read(home)
 
-	_expand_team_rows()
+		# A team was a group of people, so it becomes one: members are granted
+		# through a User Group, not fanned out per user. Keeps one row where the
+		# team had one, and later membership changes still apply.
+		team_groups = _user_groups_for(team, members)
+		if team_groups:
+			groups[team.name] = team_groups[0]
+			_grant_group(home, team_groups)
+		else:
+			_grant_members(home, members)
+
+	_expand_team_rows(groups)
 	_drop_obsolete_revoke_rows()
-	_tuck_away_stray_root_children(root, containers)
 
 
-def _to_user_folder(root, home, team):
+LEVEL_LABEL = {0: "", 1: " (Members)", 2: " (Managers)"}
+
+
+def _user_groups_for(team, members):
+	"""`User Group`s mirroring the team: one holding everyone, plus one per higher
+	access level. Returns {access_level: group name}, empty when nobody is left.
+
+	The all-members group is what a `team=1` permission row resolves to, since such
+	a row granted the whole team at its own access level.
+	"""
+	everyone = {m.user for m in members}
+	if team.owner and frappe.db.exists("User", team.owner):
+		everyone.add(team.owner)
+	if not everyone:
+		return {}
+
+	buckets = {0: sorted(everyone)}
+	for level in (1, 2):
+		at_level = sorted(m.user for m in members if (m.access_level or 0) >= level)
+		if at_level:
+			buckets[level] = at_level
+
+	title = team.title or team.name
+	out = {}
+	for level, users in buckets.items():
+		name = get_new_group_name(title + LEVEL_LABEL[level])
+		group = frappe.get_doc({"doctype": "User Group", "__newname": name})
+		for user in users:
+			group.append("user_group_members", {"user": user})
+		group.insert(ignore_permissions=True)
+		out[level] = group.name
+	return out
+
+
+def get_new_group_name(title):
+	"""User Group names are the primary key, so a title collision needs a suffix."""
+	base = (title or "Team").strip()[:100] or "Team"
+	if not frappe.db.exists("User Group", base):
+		return base
+	for n in range(1, 1000):
+		candidate = f"{base} ({n})"
+		if not frappe.db.exists("User Group", candidate):
+			return candidate
+	return f"{base} {frappe.generate_hash(length=6)}"
+
+
+def _grant_group(entity, groups):
+	"""One row per access level, never per member — the Frappe team is 114 people,
+	and a row each would put 114 rows on every entity it can reach.
+
+	Grants at different levels overlap by design: a manager sits in both the
+	all-members group and the managers group, and resolution takes the union of
+	same-tier group rows, so the wider grant wins per permission type.
+	"""
+	for level, group in groups.items():
+		_grant(entity, GROUP_PREFIX + group, _access_for(level))
+
+
+def _access_for(access_level):
+	if not access_level:
+		return {"read": 1}
+	perms = {"read": 1, "comment": 1, "upload": 1}
+	if access_level == 2:
+		perms.update({"write": 1, "share": 1})
+	return perms
+
+
+def _to_user_folder(home, team):
 	frappe.db.set_value(
 		"File",
 		home,
@@ -99,21 +185,19 @@ def _to_user_folder(root, home, team):
 	)
 
 
-def _to_shared_folder(root, home, team):
-	frappe.db.set_value(
-		"File",
-		home,
-		{
-			"folder": root.name,
-			"file_name": get_new_file_name(team.title or team.name, root.name),
-			"owner": team.owner,
-			"is_folder": 1,
-			"file_type": "Folder",
-			"status": STATUS_ACTIVE,
-		},
-		update_modified=False,
-	)
-	grant_owner_access(home, team.owner)
+def _to_shared_folder(root, home, team, owned):
+	values = {
+		"folder": root.name,
+		"file_name": get_new_file_name(team.title or team.name, root.name),
+		"is_folder": 1,
+		"file_type": "Folder",
+		"status": STATUS_ACTIVE,
+	}
+	if owned:
+		values["owner"] = team.owner
+	frappe.db.set_value("File", home, values, update_modified=False)
+	if owned:
+		grant_owner_access(home, team.owner)
 
 
 def _grant_members(entity, members):
@@ -123,7 +207,12 @@ def _grant_members(entity, members):
 		perms = (
 			{"read": 1}
 			if not m.access_level
-			else {"read": 1, "comment": 1, "upload": 1, **({"write": 1, "share": 1} if m.access_level == 2 else {})}
+			else {
+				"read": 1,
+				"comment": 1,
+				"upload": 1,
+				**({"write": 1, "share": 1} if m.access_level == 2 else {}),
+			}
 		)
 		frappe.get_doc({"doctype": "Drive Permission", "entity": entity, "user": m.user, **perms}).insert(
 			ignore_permissions=True
@@ -133,88 +222,69 @@ def _grant_members(entity, members):
 def _grant(entity, user, perms):
 	if frappe.db.exists("Drive Permission", {"entity": entity, "user": user}):
 		return
-	frappe.get_doc(
-		{"doctype": "Drive Permission", "entity": entity, "user": user, **perms}
-	).insert(ignore_permissions=True)
+	frappe.get_doc({"doctype": "Drive Permission", "entity": entity, "user": user, **perms}).insert(
+		ignore_permissions=True
+	)
 
 
-def _expand_team_rows():
-	"""team=1 rows granted the row's team (stored in `user`) access to an
-	entity; expand them into per-member rows. All-zero team rows were revoke
-	attempts, which nothing grants any more — drop them."""
+def _expand_team_rows(groups):
+	"""team=1 rows granted the row's team (stored in `user`) access to an entity.
+	The team now has a User Group, so one group row replaces what would otherwise
+	be a row per member — a 114-member team fanned out to 114 rows per entity.
+	All-zero team rows were revoke attempts, which nothing grants any more."""
 	for row in frappe.get_all("Drive Permission", filters={"team": 1}, fields=["*"]):
-		if any(row.get(t) for t in PERMISSION_TYPES):
-			members = frappe.get_all(
-				"Drive Team Member",
-				filters={"parenttype": "Drive Team", "parent": row.user},
-				fields=["user", "access_level"],
-			)
-			for m in members:
-				if not m.user or frappe.db.exists(
-					"Drive Permission", {"entity": row.entity, "user": m.user, "team": 0}
-				):
-					continue
-				frappe.get_doc(
-					{
-						"doctype": "Drive Permission",
-						"entity": row.entity,
-						"user": m.user,
-						**{t: row.get(t) or 0 for t in PERMISSION_TYPES},
-					}
-				).insert(ignore_permissions=True)
-		frappe.delete_doc("Drive Permission", row.name, ignore_permissions=True, force=True)
+		perms = {t: row.get(t) or 0 for t in PERMISSION_TYPES}
+		if not any(perms.values()):
+			continue
+		group = groups.get(row.user)
+		if group:
+			_grant(row.entity, GROUP_PREFIX + group, perms)
+			continue
+		# a personal team, or one with nobody left in it: no group to grant through
+		for m in frappe.get_all(
+			"Drive Team Member",
+			filters={"parenttype": "Drive Team", "parent": row.user},
+			fields=["user"],
+		):
+			if m.user and frappe.db.exists("User", m.user):
+				_grant(row.entity, m.user, perms)
+	# nothing links to a Drive Permission, and it has no delete-time logic
+	frappe.db.delete("Drive Permission", {"team": 1})
 
 
 def _drop_obsolete_revoke_rows():
-	for row in frappe.get_all("Drive Permission", filters={"user": "", "deny": 0}, fields=["*"]):
-		if any(row.get(t) for t in PERMISSION_TYPES):
-			continue
-		frappe.delete_doc("Drive Permission", row.name, ignore_permissions=True, force=True)
-
-
-def _tuck_away_stray_root_children(root, containers):
-	attachments = frappe.db.exists("File", "Home/Attachments")
-	protected = containers | {attachments}
-
-	for f in frappe.get_all(
-		"File",
-		filters={"folder": root.name, "team": ("is", "not set")},
-		fields=["name", "owner"],
-	):
-		if f.name in protected:
-			continue
-		target = frappe.db.get_value("Drive Settings", f.owner, "user_folder")
-		if not target and frappe.db.exists("User", f.owner):
-			target = get_user_folder(f.owner).name
-		frappe.db.set_value("File", f.name, "folder", target or attachments, update_modified=False)
+	"""Link rows granting nothing were revoke attempts; nothing grants that way now."""
+	frappe.db.delete("Drive Permission", {"user": "", "deny": 0, **dict.fromkeys(PERMISSION_TYPES, 0)})
 
 
 def _mirror_storage_to_tree():
 	"""`flat` is gone, so every blob has to sit where the folder tree says it does.
 
-	Phase 0 surveys the tree entirely in memory and logs what it would do, so
-	quitting during the wait leaves nothing half-done. Phase 1 copies (never
-	moves) each blob to its tree position and commits the new file_url only once
-	the copy verifies, journalling the original's key. Phase 2 deletes those
-	originals, and only runs if phase 1 was flawless — a single failure leaves
-	every original in place for a later re-run.
+	Phase 0 surveys and prints, then waits. Phase 1 copies (never moves), verifies,
+	then commits the new file_url, journalling the original key. Phase 2 deletes
+	those originals, only if phase 1 was flawless.
+
+	So an interrupted run costs duplicated storage, never lost storage, and
+	re-running resumes off the committed file_urls.
 	"""
 	manager = FileManager()
-	root = get_root_folder()
 	plan = frappe._dict(
 		manager=manager,
-		root_key=storage_key(root.file_url).rstrip("/"),
+		# `team` is the only reliable "Drive wrote this blob" test: keys were
+		# prefixed per team, so no single path prefix covers the corpus
+		team_column=frappe.db.has_column("File", "team"),
 		actions=[],
 		problems=[],
 		skipped=Counter(),
 		claimed={},
+		renamed=[],
 	)
-	_survey(plan, root.name, plan.root_key, False, False)
+	for root in (get_root_folder(), get_users_folder()):
+		plan.root_key = storage_key(root.file_url).rstrip("/")
+		_survey(plan, root.name, plan.root_key, False, False)
 
 	_announce(plan)
-	if not _confirmed():
-		print("Drive: quit before any change; storage is untouched and the patch will re-run.")
-		return
+	_confirmed()
 
 	journal = Path(frappe.get_site_path("private", "files")) / JOURNAL
 	journal.parent.mkdir(parents=True, exist_ok=True)
@@ -237,22 +307,24 @@ def _survey(plan, parent, parent_key, in_trash, embeds, depth=0):
 		plan.problems.append({"entity": parent, "reason": "tree deeper than expected"})
 		return
 
-	for child in frappe.get_all(
-		"File",
-		filters={"folder": parent},
-		fields=[
-			"name",
-			"file_name",
-			"file_url",
-			"file_size",
-			"file_type",
-			"is_folder",
-			"is_private",
-			"attached_to_doctype",
-			"status",
-			"content_doctype",
-		],
-	):
+	fields = [
+		"name",
+		"file_name",
+		"file_url",
+		"file_size",
+		"file_type",
+		"is_folder",
+		"is_private",
+		"attached_to_doctype",
+		"status",
+		"content_doctype",
+	]
+	if plan.team_column:
+		fields.append("team")
+
+	# flat storage let siblings share a name; a mirrored tree can't. Oldest keeps it.
+	taken = set()
+	for child in frappe.get_all("File", filters={"folder": parent}, fields=fields, order_by="creation"):
 		writer = child.content_doctype == WRITER_CONTENT_DOCTYPE
 		container = bool(child.is_folder) or writer
 		ignored = (
@@ -260,23 +332,60 @@ def _survey(plan, parent, parent_key, in_trash, embeds, depth=0):
 			if child.file_type == "Link"
 			else "foreign content doctype (no storage of its own)"
 			if child.content_doctype and not writer
-			else "framework folder"
-			if child.name in FRAMEWORK_FOLDERS
 			else None
 		)
 		if ignored:
 			_skip(plan, child, _category(container, writer, embeds), ignored)
 			continue
 
-		target = _target_key(parent_key, child.file_name)
-		if not target:
+		trashed = in_trash or child.status == STATUS_TRASHED
+		name = _claim_name(plan, child, taken, trashed)
+		if not name:
 			plan.problems.append({"entity": child.name, "reason": f"unusable name {child.file_name!r}"})
 			continue
 
-		trashed = in_trash or child.status == STATUS_TRASHED
+		target = _target_key(parent_key, name)
+		if not target:
+			plan.problems.append({"entity": child.name, "reason": f"path too long for {name!r}"})
+			continue
+
 		placed = _decide(plan, child, target, container, writer, trashed, embeds)
 		if container:
 			_survey(plan, child.name, placed + "/.embeds" if writer else placed, trashed, writer, depth + 1)
+
+
+def _claim_name(plan, child, taken, trashed):
+	"""Deduped name, persisted when it changes — `get_disk_path` recomputes paths
+	from file_name on every later rename/move.
+
+	Trashed entities keep theirs: the blob is at `.trash/<file_name>` and restore
+	looks it up by name. They never copy, so a duplicate target is harmless.
+	"""
+	name = _sanitize(child.file_name)
+	if not name:
+		return None
+	if trashed:
+		return name
+
+	stem, ext = os.path.splitext(name)
+	candidate, n = name, 0
+	while candidate.casefold() in taken:
+		n += 1
+		candidate = f"{stem} ({n}){ext}"
+	taken.add(candidate.casefold())
+
+	if candidate != child.file_name:
+		frappe.db.set_value("File", child.name, "file_name", candidate, update_modified=False)
+		plan.renamed.append((child.file_name, candidate))
+	return candidate
+
+
+def _sanitize(file_name):
+	"""A name has to survive as one path component, on disk and as an S3 key."""
+	name = (file_name or "").strip().replace("/", "_").replace("\\", "_").strip(". ")
+	while name and len(name.encode()) > MAX_COMPONENT_BYTES:
+		name = name[:-1]
+	return name or None
 
 
 def _decide(plan, child, target, container, writer, trashed, embed):
@@ -294,7 +403,7 @@ def _decide(plan, child, target, container, writer, trashed, embed):
 				"action": action,
 				"old": current,
 				"new": target,
-				"url": _rewrap(child.file_url, target, container),
+				"url": _rewrap(plan, child.file_url, target, container),
 				"journal": bool(current) and not trashed,
 				**extra,
 			}
@@ -309,12 +418,13 @@ def _decide(plan, child, target, container, writer, trashed, embed):
 			)
 		return target
 
-	excluded = _excluded(child, current, container, embed, plan.root_key)
+	excluded = _excluded(plan, child, current, container)
 	if excluded:
 		_skip(plan, child, kind, excluded, current)
 		return current
 
-	if not container:
+	# names are deduped per parent, so a clash here is a bug, not data
+	if not container and not trashed:
 		claimant = plan.claimed.get(target)
 		if claimant:
 			plan.problems.append({"entity": child.name, "reason": f"{target} is also claimed by {claimant}"})
@@ -361,7 +471,7 @@ def _skip(plan, child, kind, reason, current=""):
 
 def _blob_size(manager, key):
 	try:
-		return _size(manager, key) if manager.s3_enabled else (manager.site_folder / key).stat().st_size
+		return _size(manager, key) if manager.s3_enabled else _local(manager, key).stat().st_size
 	except Exception:
 		return 0
 
@@ -383,6 +493,13 @@ def _announce(plan):
 		print(f"  {count:>12}  left alone — {reason}")
 	for problem in plan.problems:
 		print(f"  BLOCKED  {problem['entity']}: {problem['reason']}")
+
+	if plan.renamed:
+		print(f"\n  {len(plan.renamed)} file(s) renamed so siblings stay unique on disk:")
+		for before, after in plan.renamed[:20]:
+			print(f"    {before!r}  ->  {after!r}")
+		if len(plan.renamed) > 20:
+			print(f"    ... and {len(plan.renamed) - 20} more")
 
 	sample = _sample(plan.actions)
 	if sample:
@@ -406,18 +523,6 @@ def _sample(actions, size=100):
 			if buckets[key] and len(out) < size:
 				out.append(buckets[key].pop(0))
 	return out
-
-
-def _confirmed():
-	try:
-		for left in range(ABORT_WINDOW, 0, -1):
-			print(f"\r  Starting relocation in {left:3}s — Ctrl-C to quit ", end="", flush=True)
-			time.sleep(1)
-		print()
-	except KeyboardInterrupt:
-		print()
-		return False
-	return True
 
 
 # ---------------------------------------------------------------- phase 1
@@ -460,37 +565,34 @@ def _category(container, writer, embed):
 	return "folders" if container else "files"
 
 
-def _excluded(child, current, container, embed, root_key):
+def _excluded(plan, child, current, container):
 	"""Allowlist: only what Drive itself wrote gets repathed. Framework uploads
-	adopted into a user's folder keep their url and privacy — a public one is
+	adopted into a Drive folder keep their url and privacy — a public one is
 	served straight off /files/ by nginx, so relocating it would 404."""
 	if not current:
 		# flat sites left folders off disk; anything else simply has no blob
 		return None if container else "no file_url"
-	if current != root_key and not current.startswith(root_key + "/"):
+	if plan.team_column and not child.team:
+		# a framework upload Drive adopted. Not keyed on attached_to_doctype: legacy
+		# migrations tagged Drive's own Writer embeds with it, and those must move.
+		return "not a Drive file"
+	if not plan.team_column and current != plan.root_key and not current.startswith(plan.root_key + "/"):
 		return "outside the Drive root prefix"
 	# team homes predate is_private, so it only disqualifies leaf files
 	if not container and not child.is_private:
-		return "not private (framework upload)"
-	# legacy migrations tag embeds with attached_to_doctype; real attachments
-	# belong to their reference document and keep framework semantics
-	if child.attached_to_doctype and not embed:
-		return "framework attachment"
+		return "not private (served straight off /files/)"
 	return None
 
 
-def _target_key(parent_key, file_name):
-	name = (file_name or "").strip()
-	if not name or name in (".", "..") or "/" in name or "\\" in name:
-		return None
+def _target_key(parent_key, name):
 	key = f"{parent_key}/{name}"
-	if len(name.encode()) > MAX_COMPONENT_BYTES or len(key.encode()) > MAX_PATH_BYTES:
-		return None
-	return key
+	return key if len(key.encode()) <= MAX_PATH_BYTES else None
 
 
-def _rewrap(old_url, key, container):
-	"""Keep the stored url in whatever form this entity already used."""
+def _rewrap(plan, old_url, key, container):
+	"""Keep the stored url in whatever form this entity already used, and where
+	there is no form to keep — flat sites left folders and writer docs with no
+	file_url at all — take the backend's."""
 	if container:
 		key += "/"
 	old = str(old_url or "")
@@ -498,14 +600,22 @@ def _rewrap(old_url, key, container):
 		return get_s3_url(key)
 	if old.startswith("/"):
 		return "/" + key
+	if not old:
+		return get_s3_url(key) if plan.manager.s3_enabled else "/" + key
 	return key
+
+
+def _local(manager, key):
+	"""Upgraded sites store `?path=/<team>/<id>`, and `base / "/abs"` discards
+	`base` — strip it so a local path can't escape the site folder."""
+	return manager.site_folder / key.lstrip("/")
 
 
 def _make_dir(manager, key):
 	if manager.s3_enabled:
 		manager.conn.put_object(Bucket=manager.bucket, Key=key + "/", Body="")
 	else:
-		(manager.site_folder / key).mkdir(parents=True, exist_ok=True)
+		_local(manager, key).mkdir(parents=True, exist_ok=True)
 
 
 def _copy(manager, src, dest):
@@ -516,8 +626,8 @@ def _copy(manager, src, dest):
 		if _size(manager, dest) != _size(manager, src):
 			raise OSError(f"copy of {src} did not verify")
 	else:
-		src_path = manager.site_folder / src
-		dest_path = manager.site_folder / dest
+		src_path = _local(manager, src)
+		dest_path = _local(manager, dest)
 		dest_path.parent.mkdir(parents=True, exist_ok=True)
 		shutil.copy2(src_path, dest_path)
 		if dest_path.stat().st_size != src_path.stat().st_size:
@@ -537,7 +647,7 @@ def _exists(manager, key, container):
 			return True
 		except Exception:
 			return False
-	return (manager.site_folder / key).exists()
+	return _local(manager, key).exists()
 
 
 # ---------------------------------------------------------------- phase 2
@@ -561,9 +671,9 @@ def _drop_originals(manager, journal):
 					Bucket=manager.bucket, Key=entry["key"] + "/" if entry["dir"] else entry["key"]
 				)
 			elif entry["dir"]:
-				_prune_dir(manager.site_folder / entry["key"])
+				_prune_dir(_local(manager, entry["key"]))
 			else:
-				(manager.site_folder / entry["key"]).unlink()
+				_local(manager, entry["key"]).unlink()
 			removed += 1
 		except OSError:
 			pass
@@ -573,7 +683,7 @@ def _drop_originals(manager, journal):
 		leftovers = {str(Path(e["key"]).parent) for e in entries if not e["dir"]}
 		for parent in sorted(leftovers - live, key=len, reverse=True):
 			try:
-				(manager.site_folder / parent).rmdir()
+				_local(manager, parent).rmdir()
 			except OSError:
 				pass
 
@@ -602,3 +712,16 @@ def _report_failures(problems, journal):
 	for problem in problems[:20]:
 		print(f"  - {problem['entity']}: {problem['reason']}")
 	frappe.log_error("Drive: storage relocation incomplete", json.dumps(problems, indent=1)[:10000])
+
+
+def _confirmed():
+	"""Must not swallow the interrupt: returning normally lets frappe log the patch
+	as done, and the relocation would never be offered again."""
+	try:
+		for left in range(ABORT_WINDOW, 0, -1):
+			print(f"\r  Starting relocation in {left:3}s — Ctrl-C to quit ", end="", flush=True)
+			time.sleep(1)
+		print()
+	except KeyboardInterrupt:
+		print("\nDrive: quit before any change; storage is untouched and the patch will re-run.")
+		raise

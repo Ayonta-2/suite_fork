@@ -25,11 +25,11 @@ from suite.drive.utils import (
 	create_drive_file,
 	get_file_type,
 	get_new_file_name,
-	get_site_folder,
 	get_user_folder,
 	update_file_size,
 	validate_filename,
 )
+from suite.drive.utils import get_root_folder as drive_root
 from suite.drive.utils.api import prettify_file
 from suite.drive.utils.files import (
 	FileManager,
@@ -850,8 +850,8 @@ def get_entity_type(entity_name: str):
 
 @frappe.whitelist()
 def get_root_folder():
-	"""The shared site folder and the caller's private folder."""
-	return {"root": get_site_folder().name, "home": get_user_folder().name}
+	"""The shared Drive tree and the caller's private folder."""
+	return {"root": drive_root().name, "home": get_user_folder().name}
 
 
 @frappe.whitelist(allow_guest=True)

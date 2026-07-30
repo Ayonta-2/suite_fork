@@ -189,7 +189,11 @@ def drive_permission_has_permission(doc, ptype="read", user=None):
 		return doc.owner == user or doc.user == user
 	if not user_has_permission(doc.entity, "share", user):
 		return False
-	if ptype == "delete" or doc.deny:
+	if ptype == "delete":
+		# Ownership is a permission row, so deleting one strips the owner's inherited
+		# access to descendants. `unshare` refuses it; a direct delete must too.
+		return doc.user == user or frappe.db.get_value("File", doc.entity, "owner") != doc.user
+	if doc.deny:
 		return True
 	return not exceeds_grant_ceiling(doc.entity, doc.as_dict(), user)
 

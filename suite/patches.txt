@@ -5,6 +5,9 @@
 suite.meet.patches.rename_sae_meeting_to_meet_room
 suite.meet.patches.rename_sae_settings_to_meet_settings
 # --- drive ---
+# Upgraded sites still point the Drive module at the old standalone app, so its
+# doctypes resolve there. Must precede model sync or the new columns never land.
+execute:frappe.db.set_value("Module Def", "Drive", "app_name", "suite", update_modified=False)
 suite.drive.patches.team_restructure #8
 suite.drive.patches.update_roles
 suite.drive.patches.remove_personal #3
@@ -42,10 +45,13 @@ suite.writer.patches.autopopulate_html
 # --- sheets ---
 suite.sheets.patches.v0_1.migrate_blob_to_cells
 # --- drive (remove teams) ---
+# Indexes first: the collapse does thousands of exists() checks on Drive Permission
+# and one File lookup per team, and core indexes neither. Unindexed it is quadratic.
+suite.drive.patches.index_file_folder
+suite.drive.patches.dedupe_drive_permissions
 suite.drive.patches.remove_teams #2
 suite.drive.patches.drop_team_doctypes #2
 execute:frappe.db.delete("Singles", {"doctype": "Drive Disk Settings", "field": "flat"})
-suite.drive.patches.dedupe_drive_permissions
 # content-app backfills, rewritten for the single-root world so they must
 # run after remove_teams
 suite.slides.doctype.presentation.patches.integrate_with_drive

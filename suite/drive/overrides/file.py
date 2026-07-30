@@ -19,6 +19,7 @@ from suite.drive.utils import (
 	ATTACHMENT_CONTENT_DOCTYPE,
 	GENERAL_USER,
 	GROUP_PREFIX,
+	ROOT_FOLDER,
 	STATUS_ACTIVE,
 	STATUS_REMOVED,
 	STATUS_TRASHED,
@@ -86,6 +87,12 @@ class File(FrappeFile):
 			field_new_value=self.file_name,
 		)
 
+	def on_trash(self):
+		# frappe protects Home and Attachments the same way
+		if self.name == ROOT_FOLDER:
+			frappe.throw("Cannot delete the Drive root folder.", frappe.PermissionError)
+		super().on_trash()
+
 	def after_delete(self):
 		if self.is_folder:
 			for child_name in frappe.get_all("File", filters={"folder": self.name}, pluck="name"):
@@ -148,14 +155,6 @@ class File(FrappeFile):
 		if not user_has_permission(self, "share"):
 			frappe.throw("Not permitted to share", frappe.PermissionError)
 
-		if not deny:
-			requested = {"read": read, "comment": comment, "share": share, "upload": upload, "write": write}
-			for level in exceeds_grant_ceiling(self, requested):
-				frappe.throw(
-					f"You cannot grant '{level}' access that you don't have yourself.",
-					frappe.PermissionError,
-				)
-
 		# General rows ("" = anyone with the link, $GENERAL = site users) are
 		# mutually exclusive — replace wholesale.
 		user = user or ""
@@ -163,7 +162,7 @@ class File(FrappeFile):
 			self._clear_general()
 		elif user.startswith(GROUP_PREFIX):
 			if not frappe.db.exists("User Group", user[len(GROUP_PREFIX) :]):
-				frappe.throw(f"No such group: {user[len(GROUP_PREFIX):]}", frappe.DoesNotExistError)
+				frappe.throw(f"No such group: {user[len(GROUP_PREFIX) :]}", frappe.DoesNotExistError)
 		elif not frappe.db.exists("User", user):
 			create_invites(user, auto=True)
 
@@ -183,6 +182,15 @@ class File(FrappeFile):
 			["write", write],
 		]
 		permission.update({l[0]: l[1] for l in levels if l[1] is not None})
+
+		# Against the resulting row, not just the levels named: clearing `deny` starts
+		# granting whatever bits the row still carries.
+		if not deny:
+			for level in exceeds_grant_ceiling(self, permission.as_dict()):
+				frappe.throw(
+					f"You cannot grant '{level}' access that you don't have yourself.",
+					frappe.PermissionError,
+				)
 
 		permission.save(ignore_permissions=True)
 

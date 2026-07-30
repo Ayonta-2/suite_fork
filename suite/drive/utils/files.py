@@ -444,8 +444,9 @@ class FileManager:
 
 # Utils
 def storage_key(file_url):
-	# file_url -> backend storage key, always relative so `base / key` can't
-	# reset to an absolute path (Path("a") / "/b" == Path("/b")).
+	# file_url -> backend storage key. NOT always relative: upgraded sites stored
+	# `?path=/<team>/<id>` and that slash is part of the S3 key. Callers building a
+	# local path must lstrip("/") — `Path("a") / "/b" == Path("/b")`.
 	file_url = str(file_url)
 	if file_url.startswith(S3_URL_PREFIX):
 		return unquote(file_url[len(S3_URL_PREFIX) :])

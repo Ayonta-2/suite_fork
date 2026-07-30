@@ -33,10 +33,12 @@ KIND_VIRTUAL = "virtual"
 GENERAL_USER = "$GENERAL"
 GROUP_PREFIX = "$GROUP:"
 
-# Well-known folders directly under the site root.
-SITE_FOLDER = "Site"
-PREVIOUS_TEAMS_FOLDER = "Previous Teams"
+# Drive's two roots (folder-less Files, pinned by name), and the well-known
+# folder inside `Drive`. There is no `Site` folder: `Drive` itself is the shared
+# tree the "Site" listing shows.
+ROOT_FOLDER = "Drive"
 USERS_FOLDER = "Users"
+PREVIOUS_TEAMS_FOLDER = "Previous Teams"
 
 PERMISSION_TYPES = ["read", "comment", "share", "upload", "write"]
 
@@ -160,75 +162,109 @@ def hide_storage_key(row):
 
 
 def get_root_folder():
-	"""The single site root folder: the framework's `Home` File (`folder IS NULL`,
-	created by frappe on install). Its file_url and disk dirs are initialized on
-	first use, since the framework leaves them empty."""
-	rows = (
-		frappe.qb.from_(DriveFile)
-		.where(DriveFile.folder.isnull())
-		.select(DriveFile.name, DriveFile.file_url)
-		.orderby(DriveFile.creation)
-		.limit(1)
-		.run(as_dict=True)
-	)
-	if not rows:
-		frappe.throw("Drive has no site root folder. Run `bench migrate`.", frappe.DoesNotExistError)
-	root = rows[0]
-	if root.file_url:
-		return root
+	"""Shared Drive content, the tree the "Site" listing shows. Carries $GENERAL
+	read; `Users` beside it stays private."""
+	root = _pinned_root(ROOT_FOLDER)
+	_ensure_general_read(root.name)
+	return root
 
+
+def _ensure_general_read(entity):
+	if frappe.db.exists("Drive Permission", {"entity": entity, "user": GENERAL_USER}):
+		return
+	frappe.get_doc({"doctype": "Drive Permission", "entity": entity, "user": GENERAL_USER, "read": 1}).insert(
+		ignore_permissions=True
+	)
+
+
+def get_users_folder():
+	"""Private user folders. A root beside `Drive`, not inside it, so nothing granted
+	on the shared tree reaches in. Carries no grant."""
+	return _pinned_root(USERS_FOLDER)
+
+
+def _pinned_root(file_name):
+	"""Folder-less `File`s, siblings of frappe's `Home` rather than children, so no
+	framework node sits on a Drive permission path.
+
+	Pinned by name, never derived: a site upgraded from the old app has one
+	folder-less File per team, so any "find the root" query picks a team folder.
+	"""
+	root = frappe.db.get_value("File", file_name, ["name", "file_url"], as_dict=1)
+	if not root:
+		root = _create_root_folder(file_name)
+	return root if root.file_url else _init_root_storage(root, file_name)
+
+
+def _create_root_folder(file_name):
+	root = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": file_name,
+			"is_folder": 1,
+			"is_private": 1,
+			"file_type": "Folder",
+		}
+	)
+	# `folder` stays unset: `set_folder_name` would reparent under `Home`, but it
+	# only runs on the framework's before_insert path, which file_created skips.
+	root._name = file_name
+	root.flags.file_created = True
+	root.insert(ignore_permissions=True)
+	return frappe._dict(name=root.name, file_url=root.file_url)
+
+
+def _init_root_storage(root, file_name):
+	"""A root's prefix comes from settings, not a parent. Two logical roots, one
+	storage prefix — `Users` is just a directory beside the shared tree."""
 	from suite.drive.utils.files import get_s3_url
 
 	settings = frappe.get_single("Drive Disk Settings")
 	prefix = settings.root_folder or ""
+	if file_name != ROOT_FOLDER:
+		prefix = f"{prefix}/{file_name}" if prefix else file_name
+
 	disk_path = Path(frappe.get_site_path("private/files")) / prefix
 	disk_path.mkdir(exist_ok=True, parents=True)
-	(disk_path / ".uploads").mkdir(exist_ok=True)
-	(disk_path / settings.thumbnail_prefix).mkdir(exist_ok=True)
+	if file_name == ROOT_FOLDER:
+		# scaffolding is shared, and keyed off the Drive root everywhere
+		(disk_path / ".uploads").mkdir(exist_ok=True)
+		(disk_path / settings.thumbnail_prefix).mkdir(exist_ok=True)
 
 	root.file_url = get_s3_url(prefix) if settings.enabled else "/private/files/" + prefix
 	frappe.db.set_value("File", root.name, "file_url", root.file_url, update_modified=False)
 	return root
 
 
-def _named_root_folder(file_name, grant_general_read):
+def get_previous_teams_folder():
+	"""Landing area for migrated teams, inside `Drive`. Teams were private, so this
+	denies the root's inherited $GENERAL read; each team below re-grants to its own
+	members from a nearer node. They reach it via "Shared with me"."""
 	root = get_root_folder()
 	existing = frappe.db.get_value(
-		"File", {"folder": root.name, "file_name": file_name, "is_folder": 1}, ["name", "file_url"], as_dict=1
+		"File",
+		{"folder": root.name, "file_name": PREVIOUS_TEAMS_FOLDER, "is_folder": 1},
+		["name", "file_url"],
+		as_dict=1,
 	)
 	if existing:
+		_deny_general_read(existing.name)
 		return existing
 
 	from suite.drive.utils.files import FileManager
 
 	manager = FileManager()
-	folder = create_drive_file(file_name, root.name, "Folder", lambda f: manager.create_folder(f))
-	if grant_general_read:
-		frappe.get_doc(
-			{
-				"doctype": "Drive Permission",
-				"entity": folder.name,
-				"user": GENERAL_USER,
-				"read": 1,
-			}
-		).insert(ignore_permissions=True)
+	folder = create_drive_file(PREVIOUS_TEAMS_FOLDER, root.name, "Folder", lambda f: manager.create_folder(f))
+	_deny_general_read(folder.name)
 	return frappe._dict(name=folder.name, file_url=folder.file_url)
 
 
-def get_site_folder():
-	"""Shared site content; the only folder every logged-in user can read."""
-	return _named_root_folder(SITE_FOLDER, grant_general_read=True)
-
-
-def get_users_folder():
-	"""Container for private user folders. Carries no grant, so it is unreadable
-	and unlistable except to admins — user folders are never root children."""
-	return _named_root_folder(USERS_FOLDER, grant_general_read=False)
-
-
-def get_previous_teams_folder():
-	"""Landing area for migrated teams; carries no grant of its own."""
-	return _named_root_folder(PREVIOUS_TEAMS_FOLDER, grant_general_read=False)
+def _deny_general_read(entity):
+	if frappe.db.exists("Drive Permission", {"entity": entity, "user": GENERAL_USER}):
+		return
+	frappe.get_doc(
+		{"doctype": "Drive Permission", "entity": entity, "user": GENERAL_USER, "deny": 1, "read": 1}
+	).insert(ignore_permissions=True)
 
 
 def get_user_folder(user=None):
