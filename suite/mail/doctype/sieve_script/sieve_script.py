@@ -10,10 +10,12 @@ from uuid import uuid7
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, today
+from frappe.utils import cint, create_batch, today
 
 from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_settings
-from suite.mail.doctype.screened_email_address.screened_email_address import get_screened_email_addresses
+from suite.mail.doctype.screened_email_address.screened_email_address import (
+	get_effective_screened_email_addresses,
+)
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
 	format_jmap_error,
@@ -24,8 +26,11 @@ from suite.mail.jmap import (
 	get_mailboxes,
 	get_sieve_script_service,
 )
+from suite.mail.utils import log_mail_error
 from suite.mail.utils.user import get_account_emails
-from suite.utils import execute_with_logging, parse_filters
+from suite.utils import enqueue_job, execute_with_logging, parse_filters
+
+_ACCOUNTS_PER_REBUILD_BATCH = 100
 
 
 class SieveScript(Document):
@@ -50,7 +55,7 @@ class SieveScript(Document):
 		self.id = SieveScript._add_sieve_script(self.account, self._name, self.content, bool(self.active))
 		self.name = f"{self.account}|{self.id}"
 
-	def load_from_db(self) -> "SieveScript":
+	def load_from_db(self) -> SieveScript:
 		account, id = parse_sieve_script_name(self.name)
 		if scripts := SieveScript._get_sieve_scripts(account, [id], download_content=True):
 			return super(Document, self).__init__(scripts[0])
@@ -404,7 +409,7 @@ def format_sieve_script(account: str, script: dict) -> dict:
 	}
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 	if doc.doctype != "Sieve Script":
 		return False
 
@@ -435,7 +440,16 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
 	Activation is skipped while the vacation sieve script is active, so rebuilding the automation
 	script (e.g. from a Mailbox Settings / Screened Email Address change) never disables the
 	vacation auto-responder. The vacation flow reactivates the last active script once vacation ends.
+
+	Accounts whose resolved user is disabled or gone are skipped: the JMAP connection is made as
+	that user, so the rebuild cannot work (e.g. the personal account of a deactivated employee) and
+	would only produce an error log. The script is rebuilt on the next change once the user is
+	enabled again.
 	"""
+
+	user = get_user_for_jmap_account(account, raise_exception=False)
+	if not user or not frappe.get_cached_value("User", user, "enabled"):
+		return
 
 	def _build_automation_sieve(account: str, activate: bool = False) -> None:
 		doc = frappe.get_doc("Sieve Script", get_automation_script_name(account))
@@ -459,8 +473,59 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
 	)
 
 
+@frappe.whitelist()
+def rebuild_all_automation_sieves() -> None:
+	"""Enqueue a rebuild of the automation sieve script for every JMAP account.
+
+	Changing a global Screened Email Address (one without an account) deliberately rebuilds nothing —
+	an admin batches their global changes and then triggers this once, from the Screened Email Address
+	list view. The rebuild refreshes script content only (activate=False): activating here would
+	override accounts whose active script is the vacation auto-responder or one the user wrote
+	themselves. Inactive automation scripts still pick the rules up when the account enables
+	screening or touches a rule, which activates the script.
+	"""
+
+	frappe.only_for("System Manager")
+
+	accounts = frappe.db.get_all("JMAP Account", pluck="name")
+	for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):
+		enqueue_job(
+			_rebuild_automation_sieves,
+			job_id=f"rebuild-automation-sieves::{i}",
+			deduplicate=True,
+			queue="long",
+			timeout=3600,
+			enqueue_after_commit=True,
+			accounts=batch,
+		)
+
+	frappe.msgprint(
+		_("Rebuilding the automation sieve scripts for {0} account(s) in the background.").format(
+			len(accounts)
+		),
+		alert=True,
+	)
+
+
+def _rebuild_automation_sieves(accounts: list[str]) -> None:
+	"""Rebuild each account's automation script, isolating per-account failures."""
+
+	for account in accounts:
+		# The job runs async after the fan-out committed, so an account can vanish in between.
+		if not account or not frappe.db.exists("JMAP Account", account):
+			continue
+
+		try:
+			build_automation_sieve(account)
+		except Exception:
+			log_mail_error(
+				"Rebuild Automation Sieves Error",
+				f"Failed to rebuild the automation sieve script for JMAP account {account}",
+			)
+
+
 @contextmanager
-def pause_automation_sieve_build() -> Generator[None, None, None]:
+def pause_automation_sieve_build() -> Generator[None]:
 	"""Suppress the automatic `build_automation_sieve` triggered by Mailbox Settings / Screened Email
 	Address document hooks, so a caller doing several writes rebuilds the script once at the end
 	instead of after every write.
@@ -675,8 +740,9 @@ def _apply_screening_blocks(account: str, content: str) -> str:
 	the catch-all Screening gate at the very bottom. The Screening gate routes accepted senders to the
 	Inbox, screens the rest unless the mail is classified as spam, and otherwise lets the server's
 	default filtering assign the mailbox (see `build_screening_gate`). The final order is
-	Reject → Mailbox → Spam → Screening. A sender has at most one screening rule (uniqueness is on the
-	address), so the blocks never conflict.
+	Reject → Mailbox → Spam → Screening. A sender has at most one screening rule — global rules
+	(Screened Email Address without an account) are overlaid by the account's own rule for the same
+	value — so the blocks never conflict.
 	"""
 
 	content = (content or "").lstrip()
@@ -686,7 +752,7 @@ def _apply_screening_blocks(account: str, content: str) -> str:
 	for name in ("Rejected Emails", "Spam Senders", "Screening", "Blocked Emails", "Junk Senders"):
 		content = remove_sieve_block(content, name)
 
-	screened = get_screened_email_addresses(account)
+	screened = get_effective_screened_email_addresses(account)
 	reject_emails = [s.email for s in screened if s.action == "Reject"]
 	spam_emails = [s.email for s in screened if s.action == "Spam"]
 	accepted_emails = [s.email for s in screened if s.action == "Accepted"]
