@@ -1,7 +1,7 @@
 <template>
   <!-- Mutation dialogs -->
   <ShareDialog v-if="dialog === 's'" v-model="dialog" :add-users="params || []" :file="entity" @success="() => resource.fetch()" />
-  <MoveDialog v-else-if="dialog === 'm'" :entities @complete="refresh" />
+  <MoveDialog v-else-if="dialog === 'm'" v-model="dialog" :entities @complete="refresh" />
   
   <!-- Confirmation dialogs -->
   <RemoveDialog v-if="dialog === 'remove'" v-model="dialog" :entities @success="$router.push({ name: 'writer-home' })" />

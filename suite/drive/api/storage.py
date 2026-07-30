@@ -10,6 +10,7 @@ DriveFile = frappe.qb.DocType("File")
 
 
 @frappe.whitelist()
+@default_team
 def storage_breakdown(team: str, owned_only: bool):
 	if team not in get_teams():
 		frappe.throw(_("You don't have access to this team."), frappe.PermissionError)

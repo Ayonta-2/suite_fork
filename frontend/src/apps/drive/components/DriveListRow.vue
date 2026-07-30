@@ -120,7 +120,7 @@
               <div class="truncate text-base">{{ displayName(row) }}</div>
             </Tooltip>
           </InlineRenameInput>
-          <div class="flex flex-row grow justify-end gap-2 w-[20px]">
+          <div class="flex flex-row grow justify-end gap-2 w-[20px] pr-3">
             <LucideStar
               v-if="row.is_favourite && $route.name !== 'Favourites'"
               width="16"
@@ -233,7 +233,13 @@ const selectedName = computed(() => activeEntity.value?.name)
 // free) — so this only drives non-folder clicks. Suppressed during an active
 // selection so clicking elsewhere in the row doesn't navigate away (matches
 // the existing !selections.size click guard).
-const open = (row) => !row.is_folder && route.name !== 'Trash' && openEntity(row)
+// `!renamingEntity`: the rename input sits inside the row's <button>, so a
+// keystroke there must never activate the row.
+const open = (row) =>
+  !renamingEntity.value &&
+  !row.is_folder &&
+  route.name !== 'Trash' &&
+  openEntity(row)
 const routeFor = (row) =>
   row.is_folder && !props.selections.size
     ? { name: 'drive-Folder', params: { entityName: row.name } }

@@ -145,8 +145,8 @@ export const openEntity = (entity, new_tab = false) => {
       )
     )
       window.open(entity.file_url, '_blank')
-  } else if (entity.file_type === 'Presentation') {
-    window.location.href = '/slides/presentation/' + entity.file_url
+  } else if (isPresentation(entity)) {
+    window.location.href = '/slides/presentation/' + entity.content_docname
   } else if (
     entity.file_type === 'Document' ||
     entity.file_type === 'Markdown'

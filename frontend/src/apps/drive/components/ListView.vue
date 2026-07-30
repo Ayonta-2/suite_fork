@@ -46,8 +46,7 @@
         </ListHeaderCellSort>
         <ListHeaderCell />
       </ListHeader>
-      <DriveListSkeleton v-if="!folderContents" />
-      <template v-else>
+      <template v-if="folderContents">
         <NoFilesSection v-if="!formattedRows.length" description="Nothing found - try something else?" />
         <template v-else-if="formattedRows[0]?.group">
           <ListGroup v-for="group in formattedRows" :key="group.group" :label="group.group" class="mt-3 first:mt-0">
@@ -99,11 +98,9 @@
 import { List, ListHeader, ListHeaderCell, ListHeaderCellSort, ListGroup, ListRow, ListCell } from 'frappe-ui/list'
 import { Checkbox, Skeleton, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
 import { activeEntity, setActiveEntity } from '@/apps/drive/data/selection'
-import { useRoute } from 'vue-router'
 import { computed, ref, watch } from 'vue'
 import ContextMenu from '@/apps/drive/components/ContextMenu.vue'
 import DriveListRow from './DriveListRow.vue'
-import DriveListSkeleton from './DriveListSkeleton.vue'
 import NoFilesSection from './NoFilesSection.vue'
 import { openEntity, isModKey } from '@/apps/drive/utils/files'
 import {
@@ -111,9 +108,9 @@ import {
   toggleFolder,
   refreshExpanded,
 } from '@/apps/drive/data/folderTree'
+import { useListColumns } from '@/apps/drive/data/listColumns'
 
 
-const route = useRoute()
 const props = defineProps({
   folderContents: Object,
   actionItems: Array,
@@ -167,18 +164,7 @@ const formattedRows = computed(() => {
     .filter((g) => g.rows.length)
 })
 
-// Name is flexible; Size widens on Attachments (no Owner/Modified column
-// hiding here — that logic was already dead in the previous implementation,
-// since it compared route.name to bare labels that never match the
-// `drive-`-prefixed route names).
-const columnTracks = computed(() => [
-  '16px',
-  'minmax(0,1fr)',
-  '10%',
-  '15%',
-  route.name === 'drive-Attachments' ? '25%' : '8%',
-  '5%',
-])
+const columnTracks = useListColumns()
 
 const visibleItems = computed(() => flattenRows(formattedRows.value))
 // Collapsing hides rows that may be selected — drop them from the selection so
