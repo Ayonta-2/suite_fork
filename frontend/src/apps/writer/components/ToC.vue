@@ -106,7 +106,7 @@ import LucideLeftClose from '~icons/lucide/panel-left-close'
 import { ref, watch, computed, h, onMounted, onBeforeUnmount } from 'vue'
 import { Button, TextInput, ContextMenu, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
 import { copyToClipboard } from '@/apps/drive/sdk'
-import { tabsIn, findTab } from '@/apps/writer/extensions/tabs'
+import { orderedTabs, findTab } from '@/apps/writer/extensions/tabs'
 
 const props = defineProps({
   editor: Object,
@@ -128,7 +128,7 @@ const showHeadings = ref(true)
 const tabs = ref([])
 
 const updateTabs = () => {
-  tabs.value = tabsIn(props.editor.state.doc).map(({ node }) => ({
+  tabs.value = orderedTabs(props.editor.state.doc).map(({ node }) => ({
     id: node.attrs.id,
     label: node.attrs.label,
   }))

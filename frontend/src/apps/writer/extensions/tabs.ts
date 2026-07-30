@@ -2,7 +2,7 @@ import { Node } from '@tiptap/core'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import TabView from './components/TabView.vue'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
-import { DOMSerializer, Node as PMNode } from '@tiptap/pm/model'
+import { DOMSerializer, Fragment, Node as PMNode } from '@tiptap/pm/model'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { v4 } from 'uuid'
 
@@ -19,6 +19,30 @@ export const tabsIn = (doc: PMNode): TabMatch[] => {
 
 export const findTab = (doc: PMNode, id: string): TabMatch | null =>
   tabsIn(doc).find((tab) => tab.node.attrs.id === id) || null
+
+// Tabs are ordered by attribute, not by position: moving a node is a delete
+// plus an insert, which Yjs cannot merge as a move
+export const orderedTabs = (doc: PMNode): TabMatch[] =>
+  tabsIn(doc)
+    .map((tab, index) => ({ tab, index, order: tab.node.attrs.order ?? index }))
+    .sort((a, b) => a.order - b.order || a.index - b.index)
+    .map(({ tab }) => tab)
+
+// Document order is no longer tab order, so serialise the tab slots in display
+// order
+const orderedHTML = (doc: PMNode): string => {
+  const ordered = orderedTabs(doc)
+  let next = 0
+  const children: PMNode[] = []
+  doc.forEach((node) =>
+    children.push(node.type.name === 'tab' ? ordered[next++].node : node),
+  )
+
+  const serializer = DOMSerializer.fromSchema(doc.type.schema)
+  const wrapper = document.createElement('div')
+  wrapper.appendChild(serializer.serializeFragment(Fragment.fromArray(children)))
+  return wrapper.innerHTML
+}
 
 const duplicateTabIds = (doc: PMNode): string[] => {
   const ids = tabsIn(doc).map(({ node }) => node.attrs.id)
@@ -57,6 +81,15 @@ export const TabsExtension = Node.create({
         parseHTML: (el) => el.getAttribute('data-tab-label'),
         renderHTML: (attrs) => ({ 'data-tab-label': attrs.label }),
       },
+      order: {
+        default: null,
+        parseHTML: (el) => {
+          const order = el.getAttribute('data-tab-order')
+          return order === null ? null : Number(order)
+        },
+        renderHTML: (attrs) =>
+          attrs.order === null ? {} : { 'data-tab-order': attrs.order },
+      },
     }
   },
 
@@ -90,13 +123,19 @@ export const TabsExtension = Node.create({
     ]
   },
 
+  // `create` fires a tick late, so patch the serialiser before anything can
+  // call it
+  onBeforeCreate() {
+    this.editor.getHTML = () => orderedHTML(this.editor.state.doc)
+  },
+
   onCreate() {
     const selectFirstTab = () => {
       if (this.storage.hasInitialized) return
 
       const { doc } = this.editor.state
       let tabToChange = window.location.hash.slice(1)
-      const tabs = tabsIn(doc).map((tab) => tab.node.attrs.id)
+      const tabs = orderedTabs(doc).map((tab) => tab.node.attrs.id)
       if (!tabToChange || !tabs.includes(tabToChange)) tabToChange = tabs[0]
       if (tabToChange) {
         this.storage.hasInitialized = true
@@ -142,31 +181,20 @@ export const TabsExtension = Node.create({
       reorderTab:
         (tabId: string, newIndex: number) =>
         ({ tr, dispatch, state }) => {
-          const tabs = tabsIn(state.doc)
-
-          // Find the tab to move
+          const tabs = orderedTabs(state.doc)
           const tabIndex = tabs.findIndex((t) => t.node.attrs.id === tabId)
-          if (tabIndex === -1) return false
 
-          // Validate new index
-          if (newIndex < 0 || newIndex > tabs.length || newIndex === tabIndex) {
-            return false
-          }
+          if (tabIndex === -1 || tabIndex === newIndex) return false
+          if (newIndex < 0 || newIndex >= tabs.length) return false
+          if (!dispatch) return true
 
-          const { node, pos } = tabs[tabIndex]
-          const size = node.nodeSize
-          tr.delete(pos, pos + size)
-
-          let insertPos = tabsIn(tr.doc)[newIndex]?.pos
-          if (insertPos === undefined) insertPos = tr.doc.content.size
-          tr.insert(insertPos, node)
-
+          tabs.splice(newIndex, 0, tabs.splice(tabIndex, 1)[0])
+          tabs.forEach(({ node, pos }, index) => {
+            if (node.attrs.order !== index) {
+              tr.setNodeMarkup(pos, undefined, { ...node.attrs, order: index })
+            }
+          })
           dispatch(tr)
-
-          // Keep focus on the moved tab
-          setTimeout(() => {
-            this.editor.commands.changeTab(tabId, false)
-          }, 0)
 
           return true
         },
@@ -213,10 +241,11 @@ export const TabsExtension = Node.create({
           return true
         },
       wrapInTab:
-        (attrs: { id?: string; label?: string } = {}) =>
+        (attrs: { id?: string; label?: string; order?: number } = {}) =>
         ({ tr, dispatch }) => {
           if (dispatch) {
             if (!attrs?.id) attrs.id = v4()
+            if (attrs.order === undefined) attrs.order = 0
             const tabType = this.editor.schema.nodes.tab
             tr.replaceWith(
               0,
@@ -230,11 +259,12 @@ export const TabsExtension = Node.create({
           return false
         },
       createTab:
-        (attrs: { id?: string; label?: string } = {}) =>
+        (attrs: { id?: string; label?: string; order?: number } = {}) =>
         ({ tr, dispatch, state }) => {
           if (dispatch) {
             if (!attrs.id) attrs.id = v4()
             if (!attrs.label) attrs.label = 'Untitled'
+            if (attrs.order === undefined) attrs.order = tabsIn(state.doc).length
 
             const paragraphType = this.editor.schema.nodes.paragraph
             const tab = this.editor.schema.nodes.tab.create(

@@ -16,7 +16,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watchEffect } from 'vue'
 import { TabButtons } from 'frappe-ui'
-import { tabsIn } from '@/apps/writer/extensions/tabs'
+import { orderedTabs } from '@/apps/writer/extensions/tabs'
 
 const props = defineProps({
   editor: Object,
@@ -44,7 +44,7 @@ watchEffect(() => {
 // doc isn't reactive, so re-derive on every update
 const tabs = ref([])
 const updateTabs = () => {
-  tabs.value = tabsIn(props.editor.state.doc).map(({ node }) => ({
+  tabs.value = orderedTabs(props.editor.state.doc).map(({ node }) => ({
     id: node.attrs.id,
     label: node.attrs.label,
   }))
