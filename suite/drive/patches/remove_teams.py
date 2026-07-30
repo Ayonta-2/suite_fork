@@ -303,11 +303,13 @@ def _mirror_storage_to_tree(sidecars=None):
 		renamed=[],
 	)
 	drive_root = get_root_folder()
+	plan.trash_root = f"{storage_key(drive_root.file_url).rstrip('/')}/{TRASH_PREFIX}"
 	for root in (drive_root, get_users_folder()):
 		plan.root_key = storage_key(root.file_url).rstrip("/")
 		_survey(plan, root.name, plan.root_key, False, False)
 
 	plan.root_key = storage_key(drive_root.file_url).rstrip("/")
+	plan.trash_root = f"{plan.root_key}/{TRASH_PREFIX}"
 	_survey_sidecars(plan, sidecars or {})
 
 	_announce(plan)
@@ -545,8 +547,31 @@ def _decide(plan, child, target, container, writer, trashed, embed):
 	if container:
 		record("dir")
 	elif trashed:
-		# the blob sits under .trash; only its restore target moves
-		record("repath")
+		# Where the blob is depends on how the site stored it: `move_to_trash` was a
+		# no-op when `flat` was on, so it is still at `current`; otherwise it sits in
+		# the old per-team `.trash`, which _survey_sidecars sweeps. Either way the
+		# file_url becomes the tree position, which is where a restore puts it back.
+		trash_key = f"{plan.trash_root}/{child.name}"
+		if current and current != trash_key and _exists(manager, current, False):
+			if plan.claimed.get(trash_key):
+				plan.problems.append({"entity": child.name, "reason": f"{trash_key} is already claimed"})
+				return current
+			plan.claimed[trash_key] = child.name
+			plan.actions.append(
+				{
+					"entity": child.name,
+					"file_name": child.file_name,
+					"kind": kind,
+					"action": "copy",
+					"old": current,
+					"new": trash_key,
+					"url": _rewrap(plan, child.file_url, target, container),
+					"journal": True,
+					"bytes": _blob_size(manager, current),
+				}
+			)
+		else:
+			record("repath")
 	elif _exists(manager, target, False):
 		if _exists(manager, current, False):
 			plan.problems.append({"entity": child.name, "reason": f"{target} is already taken"})
