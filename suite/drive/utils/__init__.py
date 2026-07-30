@@ -258,6 +258,7 @@ def get_user_folder(user=None):
 		lambda f: manager.create_folder(f, root),
 		owner=user,
 	)
+	grant_owner_access(folder.name, user)
 
 	if not frappe.db.exists("Drive Settings", user):
 		frappe.get_doc({"doctype": "Drive Settings", "user": user}).insert(ignore_permissions=True)
@@ -293,6 +294,21 @@ def get_ancestors_of(entity_name):
 	flattened_list = [item for sublist in result for item in sublist]
 	flattened_list.pop(0)
 	return flattened_list
+
+
+def grant_owner_access(entity, user):
+	"""Ownership of a folder is stored as a row like any other grant, so it
+	inherits down the tree and a deny below can still narrow it."""
+	if frappe.db.exists("Drive Permission", {"entity": entity, "user": user}):
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Drive Permission",
+			"entity": entity,
+			"user": user,
+			**dict.fromkeys(PERMISSION_TYPES, 1),
+		}
+	).insert(ignore_permissions=True)
 
 
 def get_principals(user=None):

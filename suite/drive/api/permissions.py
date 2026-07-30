@@ -50,13 +50,7 @@ def get_user_access(entity: str | Document | frappe._dict, user: str | None = No
 			access = {**_ref_doc_access(entity, user), **{t: access[t] for t in decided}}
 		return {**access, "type": "user" if access["write"] else "guest"}
 
-	path = generate_upward_path(entity.name, user)
-	# Owning a folder carries into everything under it, so a file someone else
-	# put in your folder stays yours to manage.
-	if user != "Guest" and any(node["owner"] == user for node in path):
-		return {**dict.fromkeys(PERMISSION_TYPES, 1), "type": "admin"}
-
-	access = filter_access(path)
+	access = filter_access(generate_upward_path(entity.name, user))
 	return {**access, "type": "user" if access["write"] else "guest"}
 
 

@@ -9,6 +9,7 @@ from suite.drive.utils import (
 	get_root_folder,
 	get_site_folder,
 	get_user_folder,
+	grant_owner_access,
 )
 
 
@@ -65,6 +66,7 @@ def _to_user_folder(root, home, team):
 		{"folder": root.name, "file_name": team.owner, "owner": team.owner},
 		update_modified=False,
 	)
+	grant_owner_access(home, team.owner)
 
 	if not frappe.db.exists("Drive Settings", team.owner):
 		frappe.get_doc({"doctype": "Drive Settings", "user": team.owner}).insert(ignore_permissions=True)
@@ -90,6 +92,7 @@ def _to_shared_folder(root, home, team):
 		},
 		update_modified=False,
 	)
+	grant_owner_access(home, team.owner)
 
 
 def _grant_members(entity, members):
