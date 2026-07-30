@@ -4,7 +4,13 @@
 		:options="{
 			title: __('Add Recipients'),
 			actions: [
-				{ label: __('Add'), variant: 'solid', disabled: !validEmails.length, onClick: addRecipients.submit },
+				{
+					label: __('Add'),
+					variant: 'solid',
+					disabled: !validEmails.length,
+					loading: addRecipients.loading,
+					onClick: addRecipients.submit,
+				},
 			],
 		}"
 	>
@@ -32,7 +38,9 @@
 						<template #prefix><FeatherIcon name="plus" class="h-4 w-4" /></template>
 					</Button>
 				</div>
-				<ErrorMessage :message="addRecipients.error?.messages?.[0] || addRecipients.error?.message" />
+				<ErrorMessage
+					:message="addRecipients.error && (addRecipients.error?.messages?.[0] || addRecipients.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

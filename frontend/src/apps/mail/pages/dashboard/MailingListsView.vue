@@ -16,7 +16,7 @@
 			class="flex-1"
 			:columns="LIST_COLUMNS"
 			:rows="lists.data"
-			:options="LIST_OPTIONS"
+			:options="listOptions"
 			row-key="id"
 		>
 			<ListHeader />
@@ -35,11 +35,12 @@
 				<ListEmptyState v-else />
 			</ListRows>
 		</ListView>
+		<DashboardListSkeleton v-else :columns="3" />
 	</DashboardLayout>
 	<AddMailingListModal v-model="showAdd" @reload="lists.reload()" />
 </template>
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import {
 	FeatherIcon,
@@ -55,6 +56,7 @@ import {
 } from 'frappe-ui'
 
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import AddMailingListModal from '@/apps/mail/components/Modals/AddMailingListModal.vue'
 
 usePageMeta(() => ({ title: __('Mailing Lists') }))
@@ -79,10 +81,25 @@ const LIST_COLUMNS = [
 	{ label: __('Recipients'), key: 'recipient_count' },
 ]
 
-const LIST_OPTIONS = {
+const hasActiveFilters = computed(() => !!search.value)
+
+const listOptions = computed(() => ({
 	selectable: false,
 	showTooltip: false,
-	emptyState: { description: __('No mailing lists found.') },
+	emptyState: hasActiveFilters.value
+		? {
+				title: __('No matching mailing lists'),
+				description: __('Try adjusting your search or filters.'),
+			}
+		: {
+				title: __('No mailing lists yet'),
+				description: __('Create a mailing list to broadcast mail to many recipients at once.'),
+				button: {
+					label: __('Add Mailing List'),
+					variant: 'solid',
+					onClick: () => (showAdd.value = true),
+				},
+			},
 	getRowRoute: (row: ListRowType) => ({ name: 'mail-mailing-list', params: { listId: row.id } }),
-}
+}))
 </script>

@@ -2,7 +2,6 @@
 	<DashboardLayout :breadcrumbs="[{ label: __('Actions') }]">
 		<div v-if="actions?.data" class="flex flex-col gap-5">
 			<DashboardCard v-for="group in groupedActions" :key="group.label" :title="group.label">
-				<template #actions><span /></template>
 				<div class="grid grid-cols-1 sm:grid-cols-2">
 					<div
 						v-for="(action, index) in group.items"
@@ -34,6 +33,7 @@
 				</div>
 			</DashboardCard>
 		</div>
+		<DashboardListSkeleton v-else :columns="2" />
 	</DashboardLayout>
 	<Dialog v-model="showConfirm" :options="confirmOptions" />
 	<RunActionModal v-model="showRun" :action="activeAction" :fields="activeFields" />
@@ -47,6 +47,7 @@ import { getSessionUser } from '@/boot/session'
 import { raiseToast } from '@/apps/mail/utils'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import RunActionModal from '@/apps/mail/components/Modals/RunActionModal.vue'
 
 type ActionOption = { value: string; label: string }
@@ -174,6 +175,10 @@ const runAction = createResource({
 	onSuccess: () => {
 		showConfirm.value = false
 		raiseToast(__('Action completed.'))
+	},
+	onError: (error: { messages?: string[] }) => {
+		showConfirm.value = false
+		raiseToast(error.messages?.[0] || __('Request failed.'), 'error')
 	},
 })
 

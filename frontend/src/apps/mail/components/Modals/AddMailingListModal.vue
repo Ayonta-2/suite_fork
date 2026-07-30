@@ -8,6 +8,7 @@
 					label: __('Add Mailing List'),
 					variant: 'solid',
 					disabled: !(name && domain),
+					loading: addList.loading,
 					onClick: addList.submit,
 				},
 			],
@@ -15,7 +16,13 @@
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl v-model="name" :label="__('Name')" placeholder="announce" autocomplete="off" />
+				<FormControl
+					v-model="name"
+					:label="__('Name')"
+					placeholder="announce"
+					autocomplete="off"
+					:description="__('Together with the domain, this forms the list\'s email address.')"
+				/>
 				<FormControl v-model="domain" type="select" :label="__('Domain')" :options="domainOptions" />
 				<FormControl v-model="description" :label="__('Description')" type="textarea" />
 				<FormControl
@@ -24,7 +31,9 @@
 					type="textarea"
 					:placeholder="__('One email address per line')"
 				/>
-				<ErrorMessage :message="addList.error?.messages?.[0] || addList.error?.message" />
+				<ErrorMessage
+					:message="addList.error && (addList.error?.messages?.[0] || addList.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

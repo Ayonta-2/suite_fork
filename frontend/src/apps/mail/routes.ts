@@ -174,7 +174,8 @@ export const routes: RouteRecordRaw[] = [
 			},
 			{
 				path: 'dashboard',
-				redirect: { name: 'mail-domains' },
+				name: 'mail-overview',
+				component: () => import('@/apps/mail/pages/dashboard/OverviewView.vue'),
 				meta: { isDashboard: true },
 			},
 			{

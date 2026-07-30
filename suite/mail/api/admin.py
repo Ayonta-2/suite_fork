@@ -27,8 +27,8 @@ from suite.mail.stalwart import (
 	get_group_service,
 	get_log_labels,
 	get_log_service,
-	get_management_connection,
 	get_mailing_list_service,
+	get_management_connection,
 	get_oauth_client_service,
 	get_queue_metadata,
 	get_queued_message_service,
@@ -49,9 +49,9 @@ from suite.mail.utils.dns import parse_dns_zone_file
 from suite.mail.utils.dt import from_utc_z, to_utc_z
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
-from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils import execute_with_logging
 from suite.utils.dt import get_utc_now
+from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.user import is_suite_admin, is_system_manager, is_user_enabled
 
 
@@ -515,8 +515,14 @@ def get_member(member_id: str) -> dict:
 		account = get_account_service().get(
 			account_id,
 			properties=[
-				"emailAddress", "aliases", "quotas", "usedDiskQuota", "memberGroupIds", "description",
-				"locale", "timeZone",
+				"emailAddress",
+				"aliases",
+				"quotas",
+				"usedDiskQuota",
+				"memberGroupIds",
+				"description",
+				"locale",
+				"timeZone",
 			],
 		)
 		if not account:
@@ -530,7 +536,12 @@ def get_member(member_id: str) -> dict:
 		email_addresses = []
 		if primary := account.get("emailAddress"):
 			email_addresses.append(
-				{"email": primary, "description": account.get("description"), "is_primary": True, "enabled": True}
+				{
+					"email": primary,
+					"description": account.get("description"),
+					"is_primary": True,
+					"enabled": True,
+				}
 			)
 
 		aliases = account.get("aliases") or {}
@@ -831,7 +842,9 @@ def update_member(
 		execute_with_logging(
 			func=lambda: account_service.update(account_id, {"description": description}),
 			title=_("Failed to update description for {0}").format(member_id),
-			user_message=_("An error occurred while updating the description, check error logs for more details."),
+			user_message=_(
+				"An error occurred while updating the description, check error logs for more details."
+			),
 			with_context=False,
 			module="Mail",
 		)
@@ -875,7 +888,9 @@ def _add_alias(service, resource_id: str, email: str, description: str | None = 
 		return
 
 	aliases = _rebuild_aliases(obj, keep=lambda _e: True)
-	aliases.append(EmailAlias(name=local, domain_id=domain_id, description=(description or "").strip() or None))
+	aliases.append(
+		EmailAlias(name=local, domain_id=domain_id, description=(description or "").strip() or None)
+	)
 
 	execute_with_logging(
 		func=lambda: service.set_aliases(resource_id, aliases),
@@ -1011,7 +1026,10 @@ def remove_member_from_mailing_list(member_id: str, list_id: str) -> None:
 	account_service = get_account_service()
 	account = account_service.get(account_id, properties=["emailAddress", "aliases"])
 	domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
-	member_emails = {(account.get("emailAddress") or "").lower(), *[e.lower() for e in _alias_emails(account, domain_names)]}
+	member_emails = {
+		(account.get("emailAddress") or "").lower(),
+		*[e.lower() for e in _alias_emails(account, domain_names)],
+	}
 
 	service = get_mailing_list_service()
 	recipients = (service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {}
@@ -1100,8 +1118,17 @@ def get_group(group_id: str) -> dict:
 	group = service.get(
 		group_id,
 		properties=[
-			"id", "name", "emailAddress", "description", "createdAt", "roles", "aliases", "quotas",
-			"usedDiskQuota", "locale", "timeZone",
+			"id",
+			"name",
+			"emailAddress",
+			"description",
+			"createdAt",
+			"roles",
+			"aliases",
+			"quotas",
+			"usedDiskQuota",
+			"locale",
+			"timeZone",
 		],
 	)
 	if not group:
@@ -1561,9 +1588,7 @@ def get_oauth_clients(search: str | None = None) -> list[dict]:
 
 	check_admin_permission("view oauth clients")
 
-	clients = get_oauth_client_service().get_all(
-		properties=["id", "clientId", "description", "createdAt"]
-	)
+	clients = get_oauth_client_service().get_all(properties=["id", "clientId", "description", "createdAt"])
 	rows = [
 		{
 			"id": c["id"],
@@ -1799,8 +1824,19 @@ def get_dkim_signature(signature_id: str) -> dict:
 	sig = get_dkim_signature_service().get(
 		signature_id,
 		properties=[
-			"id", "@type", "selector", "domainId", "createdAt", "stage", "nextTransitionAt",
-			"headers", "canonicalization", "expire", "report", "auid", "publicKey",
+			"id",
+			"@type",
+			"selector",
+			"domainId",
+			"createdAt",
+			"stage",
+			"nextTransitionAt",
+			"headers",
+			"canonicalization",
+			"expire",
+			"report",
+			"auid",
+			"publicKey",
 		],
 	)
 	if not sig:
@@ -2069,7 +2105,16 @@ def update_queued_recipient(
 	if notify_count is not None:
 		changed["notifyCount"] = cint(notify_count)
 	status = (
-		_status_object(status_type, error_type, error_message, smtp_command, hostname, response_code, enhanced_code, message)
+		_status_object(
+			status_type,
+			error_type,
+			error_message,
+			smtp_command,
+			hostname,
+			response_code,
+			enhanced_code,
+			message,
+		)
 		if status_type
 		else None
 	)
@@ -2078,7 +2123,9 @@ def update_queued_recipient(
 	new_email = (new_email or "").strip()
 	if new_email and new_email != email:
 		# Rename: rebuild the recipient (minus server-set fields) under the new key.
-		current = ((service.get(message_id, properties=["recipients"]) or {}).get("recipients") or {}).get(email)
+		current = ((service.get(message_id, properties=["recipients"]) or {}).get("recipients") or {}).get(
+			email
+		)
 		if current is None:
 			frappe.throw(_("Recipient not found"), frappe.DoesNotExistError)
 		obj = {k: v for k, v in current.items() if k not in ("flags", "queueName")}
@@ -2446,3 +2493,69 @@ def run_action(action_type: str, params: dict | None = None) -> dict:
 
 	params = {k: dict.fromkeys(v, True) if isinstance(v, list) else v for k, v in (params or {}).items()}
 	return get_action_service().run(action_type, params=params or None)
+
+
+@frappe.whitelist()
+def get_overview() -> dict:
+	"""Aggregate counts and recent activity for the dashboard landing page.
+
+	Each section is gathered independently and degrades to ``None`` (or an empty list) when its
+	backing store is unavailable, so one unreachable subsystem doesn't blank the whole page.
+	"""
+
+	check_admin_permission("view overview")
+
+	overview: dict = {
+		"members": None,
+		"pending_invites": None,
+		"domains": None,
+		"groups": None,
+		"mailing_lists": None,
+		"queued_messages": None,
+		"recent_logs": [],
+	}
+
+	with suppress(Exception):
+		USER = frappe.qb.DocType("User")
+		USER_SETTINGS = frappe.qb.DocType("User Settings")
+		rows = (
+			frappe.qb.from_(USER)
+			.join(USER_SETTINGS)
+			.on(USER.name == USER_SETTINGS.user)
+			.select(USER.enabled)
+			.where(USER_SETTINGS.username.isnotnull())
+		).run(as_dict=True)
+		overview["members"] = {
+			"total": len(rows),
+			"disabled": sum(1 for row in rows if not row.enabled),
+		}
+
+	with suppress(Exception):
+		overview["pending_invites"] = frappe.db.count(
+			"Mail Account Request",
+			{"is_verified": 0, "expires_at": [">", frappe.utils.now()]},
+		)
+
+	with suppress(Exception):
+		domains = get_stalwart_domains()
+		overview["domains"] = {
+			"total": len(domains),
+			"disabled": sum(1 for domain in domains if not domain["isEnabled"]),
+		}
+
+	with suppress(Exception):
+		overview["groups"] = len(get_group_service().get_all_groups(properties=["id"]))
+
+	with suppress(Exception):
+		overview["mailing_lists"] = len(get_mailing_list_service().get_all(properties=["id"]))
+
+	with suppress(Exception):
+		result = get_queued_message_service().list_page(filter=None, position=0, limit=1)
+		overview["queued_messages"] = result["total"]
+
+	with suppress(Exception):
+		result = get_log_service().list_page(filter=None, anchor=None, limit=6)
+		labels = get_log_labels()
+		overview["recent_logs"] = [_log_row(entry, labels) for entry in result["items"]]
+
+	return overview

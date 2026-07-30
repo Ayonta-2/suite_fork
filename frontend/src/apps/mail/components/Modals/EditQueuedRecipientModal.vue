@@ -4,7 +4,14 @@
 		:options="{
 			title: __('Edit Recipient'),
 			size: '3xl',
-			actions: [{ label: __('Save'), variant: 'solid', onClick: updateRecipient.submit }],
+			actions: [
+				{
+					label: __('Save'),
+					variant: 'solid',
+					loading: updateRecipient.loading,
+					onClick: updateRecipient.submit,
+				},
+			],
 		}"
 	>
 		<template #body-content>
@@ -79,7 +86,9 @@
 					</div>
 				</section>
 
-				<ErrorMessage :message="updateRecipient.error?.messages?.[0] || updateRecipient.error?.message" />
+				<ErrorMessage
+					:message="updateRecipient.error && (updateRecipient.error?.messages?.[0] || updateRecipient.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

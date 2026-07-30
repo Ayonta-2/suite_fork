@@ -3,7 +3,15 @@
 		v-model="show"
 		:options="{
 			title: __('Add Redirect URIs'),
-			actions: [{ label: __('Add'), variant: 'solid', disabled: !validUris.length, onClick: addUris.submit }],
+			actions: [
+				{
+					label: __('Add'),
+					variant: 'solid',
+					disabled: !validUris.length,
+					loading: addUris.loading,
+					onClick: addUris.submit,
+				},
+			],
 		}"
 	>
 		<template #body-content>
@@ -24,7 +32,9 @@
 						<template #prefix><FeatherIcon name="plus" class="h-4 w-4" /></template>
 					</Button>
 				</div>
-				<ErrorMessage :message="addUris.error?.messages?.[0] || addUris.error?.message" />
+				<ErrorMessage
+					:message="addUris.error && (addUris.error?.messages?.[0] || addUris.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

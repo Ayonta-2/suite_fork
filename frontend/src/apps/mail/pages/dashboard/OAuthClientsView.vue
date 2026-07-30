@@ -16,7 +16,7 @@
 			class="flex-1"
 			:columns="LIST_COLUMNS"
 			:rows="clients.data"
-			:options="LIST_OPTIONS"
+			:options="listOptions"
 			row-key="id"
 		>
 			<ListHeader />
@@ -37,11 +37,12 @@
 				<ListEmptyState v-else />
 			</ListRows>
 		</ListView>
+		<DashboardListSkeleton v-else :columns="3" />
 	</DashboardLayout>
 	<AddOAuthClientModal v-model="showAdd" @reload="clients.reload()" />
 </template>
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import {
 	FeatherIcon,
@@ -58,6 +59,7 @@ import {
 
 import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import AddOAuthClientModal from '@/apps/mail/components/Modals/AddOAuthClientModal.vue'
 
 usePageMeta(() => ({ title: __('OAuth Clients') }))
@@ -82,12 +84,27 @@ const LIST_COLUMNS = [
 	{ label: __('Created At'), key: 'created_at' },
 ]
 
-const LIST_OPTIONS = {
+const hasActiveFilters = computed(() => !!search.value)
+
+const listOptions = computed(() => ({
 	selectable: false,
 	showTooltip: false,
-	emptyState: { description: __('No OAuth clients found.') },
+	emptyState: hasActiveFilters.value
+		? {
+				title: __('No matching OAuth clients'),
+				description: __('Try adjusting your search or filters.'),
+			}
+		: {
+				title: __('No OAuth clients yet'),
+				description: __('OAuth clients let external apps authenticate with your mail server.'),
+				button: {
+					label: __('Add OAuth Client'),
+					variant: 'solid',
+					onClick: () => (showAdd.value = true),
+				},
+			},
 	getRowRoute: (row: ClientRow) => ({ name: 'mail-oauth-client', params: { clientId: row.id } }),
-}
+}))
 
-const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '-'
+const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '—'
 </script>

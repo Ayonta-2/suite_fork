@@ -7,6 +7,7 @@
 				{
 					label: __(accountRequest.send_invite ? 'Invite Member' : 'Add Member'),
 					variant: 'solid',
+					loading: addMember.loading,
 					onClick: addMember.submit,
 				},
 			],
@@ -68,6 +69,7 @@
 					type="email"
 					:label="__('Backup Email')"
 					placeholder="johndoe@personal.com"
+					:description="__('Password resets and the invitation email are sent to this address.')"
 				/>
 				<FormControl
 					v-model="accountRequest.quota_gb"
@@ -96,6 +98,7 @@
 					v-model="accountRequest.expires_at"
 					:label="__('Expires At')"
 					type="datetime-local"
+					:description="__('The invitation link stops working after this time.')"
 				/>
 				<template v-else>
 					<FormControl
@@ -113,6 +116,7 @@
 						type="password"
 						:label="__('Password')"
 						placeholder="••••••••"
+						:description="__('The member can change this later in their account settings.')"
 					/>
 					<!-- Only set here when the account is created right away; an invited member picks
 					their own on the setup form. -->
@@ -133,7 +137,9 @@
 						/>
 					</div>
 				</template>
-				<ErrorMessage :message="addMember.error?.messages[0]" />
+				<ErrorMessage
+					:message="addMember.error && (addMember.error?.messages?.[0] || addMember.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

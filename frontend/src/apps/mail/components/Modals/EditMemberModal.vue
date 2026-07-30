@@ -3,7 +3,15 @@
 		v-model="show"
 		:options="{
 			title: __('Edit Member'),
-			actions: [{ label: __('Save'), variant: 'solid', disabled: !description, onClick: updateMember.submit }],
+			actions: [
+				{
+					label: __('Save'),
+					variant: 'solid',
+					disabled: !description,
+					loading: updateMember.loading,
+					onClick: updateMember.submit,
+				},
+			],
 		}"
 	>
 		<template #body-content>
@@ -18,7 +26,9 @@
 					<label class="text-ink-gray-5 block text-xs">{{ __('Time Zone') }}</label>
 					<Combobox v-model="timeZone" :options="timeZoneOptions" :placeholder="__('Select a time zone')" />
 				</div>
-				<ErrorMessage :message="updateMember.error?.messages?.[0] || updateMember.error?.message" />
+				<ErrorMessage
+					:message="updateMember.error && (updateMember.error?.messages?.[0] || updateMember.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>
