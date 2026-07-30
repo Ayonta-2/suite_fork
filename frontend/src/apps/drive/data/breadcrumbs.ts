@@ -77,7 +77,9 @@ export const pageBreadcrumbs = computed<DriveBreadcrumb[]>(() => {
   if (ENTITY_ROUTES.includes(routeName)) {
     const entityName = String(route.params.entityName || '')
     const entity = crumbEntity.value
-    return entity && entity.name === entityName
+    // The trail is anchored on the caller's home and the Site folder, so
+    // rendering before rootInfo lands yields a wrong trail, not a late one.
+    return entity && entity.name === entityName && rootInfo.data
       ? buildBreadCrumbs(entity)
       : [{ loading: true, name: entityName }]
   }

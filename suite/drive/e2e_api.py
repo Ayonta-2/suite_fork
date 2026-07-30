@@ -37,21 +37,33 @@ def _existing_user_emails(run_id: str) -> list[str]:
 
 
 def _user_result(email: str, password: str | None = None) -> dict:
-	team = frappe.db.get_value("Drive Team", {"owner": email, "personal": 1}, "name")
 	result = {
 		"email": email,
 		"user": email,
 		"drive_settings": frappe.db.get_value("Drive Settings", {"user": email}, "name"),
-		"personal_team": team,
+		"user_folder": frappe.db.get_value("Drive Settings", email, "user_folder"),
 	}
 	if password is not None:
 		result["password"] = password
 	return result
 
 
+def _user_files(email: str) -> list[str]:
+	"""The user's folder and everything under it, plus anything they own."""
+	folder = frappe.db.get_value("Drive Settings", email, "user_folder")
+	names = frappe.get_all("File", filters={"owner": email}, pluck="name")
+	if folder:
+		names.append(folder)
+		frontier = [folder]
+		while frontier:
+			children = frappe.get_all("File", filters={"folder": ["in", frontier]}, pluck="name")
+			frontier = [c for c in children if c not in names]
+			names.extend(frontier)
+	return list(dict.fromkeys(names))
+
+
 def _delete_user_drive_data(email: str) -> None:
-	teams = frappe.get_all("Drive Team", filters={"owner": email, "personal": 1}, pluck="name")
-	files = frappe.get_all("File", filters={"team": ["in", teams]}, pluck="name") if teams else []
+	files = _user_files(email)
 
 	if files:
 		writer_documents = frappe.get_all(
@@ -99,32 +111,17 @@ def _delete_user_drive_data(email: str) -> None:
 	frappe.db.delete("Drive Notification", {"from_user": email})
 	frappe.db.delete("Drive Notification", {"to_user": email})
 	frappe.db.delete("Drive User Invitation", {"email": email})
-	if teams:
-		frappe.db.delete("Drive User Invitation", {"team": ["in", teams]})
 
-	for team in teams:
-		frappe.delete_doc("Drive Team", team, ignore_permissions=True)
 	if files:
-		# DriveTeam.before_trash normally removes these rows, but its storage
-		# cleanup is best-effort and catches errors. Guarantee fixture metadata is gone.
 		frappe.db.delete("File", {"name": ["in", files]})
 
 	frappe.db.delete("Drive Settings", {"user": email})
 
 
 def _create_user_drive_data(email: str) -> None:
-	frappe.get_doc({"doctype": "Drive Settings", "user": email}).insert(ignore_permissions=True)
-	team = frappe.get_doc(
-		{
-			"doctype": "Drive Team",
-			"title": email,
-			"personal": 1,
-		}
-	).insert(ignore_permissions=True)
-	team.db_set("owner", email, update_modified=False)
-	team.set("users", [{"user": email, "access_level": 2}])
-	team.save(ignore_permissions=True)
-	frappe.db.set_value("File", {"team": team.name}, "owner", email, update_modified=False)
+	from suite.drive.utils import get_user_folder
+
+	get_user_folder(email)
 
 
 @whitelist_for_tests(methods=["POST"])
