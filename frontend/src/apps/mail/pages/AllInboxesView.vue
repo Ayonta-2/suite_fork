@@ -736,6 +736,7 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
 const handleSetSpamStatus = (spam: boolean) => {
 	const thread = openRow.value
 	if (!thread) return
+	goToNextThreadOrClose(thread.thread_id)
 	const restore = removeFromList(thread)
 	raiseOptimisticToast(
 		paneCall('set_mails_spam_status', { ids: messageIdsOf(thread), spam }, thread.account).catch(
@@ -745,6 +746,7 @@ const handleSetSpamStatus = (spam: boolean) => {
 			},
 		),
 		spam ? __('Thread marked as junk.') : __('Thread marked as not junk.'),
+		withUndo(thread, restore),
 	)
 }
 
