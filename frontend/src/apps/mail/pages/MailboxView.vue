@@ -504,8 +504,6 @@ import {
 	LoaderCircle,
 	Mail as MailIcon,
 	MailOpen,
-	Mails,
-	Paperclip,
 	RefreshCw,
 	Star,
 	StarOff,
@@ -546,6 +544,7 @@ import {
 	useSwipeNav,
 	useUndo,
 } from '@/apps/mail/utils/composables'
+import { useStoredFilter } from '@/apps/mail/utils/listFilter'
 import { useListRows } from '@/apps/mail/composables/useListRows'
 import {
 	PAGE_LENGTH,
@@ -1138,9 +1137,15 @@ watch(
 
 // Main data
 
-const filter = ref<string | null>(
-	localStorage.getItem(`user:${user.data.name}:filter:${mailbox}`) || null,
-)
+// The remembered All/Unread/Starred/Has-attachments choice, its menu, and its own title (see
+// useStoredFilter) — all shared with the merged All Inboxes list. Starred is not offered inside
+// Trash, nor inside the Starred list itself, where it would filter a list to itself.
+const { filter, reloadFilter, FILTER_OPTIONS, filterTitle } = useStoredFilter({
+	scope: () => mailbox,
+	onChange: () => resetThreads(false),
+	starrable: () => ![mailboxIds.trash, 'starred'].includes(mailbox),
+})
+
 const isMailboxLoaded = ref(false)
 
 // Reset resource for a mailbox: always the first window. Over-fetches one row (PAGE_LENGTH + 1) to
@@ -1321,7 +1326,7 @@ watch(
 
 		isMailboxLoaded.value = false
 		threadsResource.value.data = []
-		filter.value = localStorage.getItem(`user:${user.data.name}:filter:${mailbox}`) || null
+		reloadFilter()
 		focusedRowKey.value = undefined
 		collapsedGroups.value = []
 		// Stacks re-collapse on a mailbox switch. Note a *filter* change deliberately doesn't clear
@@ -1584,38 +1589,6 @@ const emptyMailboxOptions = computed(() => ({
 	],
 }))
 
-// Filter
-
-const FILTER_OPTIONS = [
-	{
-		label: __('All'),
-		icon: Mails,
-		onClick: () => setFilter(null),
-	},
-	{
-		label: __('Unread'),
-		icon: MailIcon,
-		onClick: () => setFilter('unread'),
-	},
-	{
-		label: __('Starred'),
-		icon: Star,
-		onClick: () => setFilter('starred'),
-		condition: () => ![mailboxIds.trash, 'starred'].includes(mailbox),
-	},
-	{
-		label: __('Has attachments'),
-		icon: Paperclip,
-		onClick: () => setFilter('has_attachments'),
-	},
-]
-
-const setFilter = (value: string | null) => {
-	filter.value = value
-	localStorage.setItem(`user:${user.data.name}:filter:${mailbox}`, value ?? '')
-	resetThreads(false)
-}
-
 // UI formatting
 
 const mailboxName = computed(() => {
@@ -1655,16 +1628,7 @@ const title = computed(() => {
 			: __('{0} results', [String(searchTotal.value)])
 	}
 
-	switch (filter.value) {
-		case 'unread':
-			return __('Unread Mails')
-		case 'starred':
-			return __('Starred Mails')
-		case 'has_attachments':
-			return __('With Attachments')
-		default:
-			return __('All Mails')
-	}
+	return filterTitle.value
 })
 
 // The search modal lives in HeaderActions but is opened from two places — its own button, and the

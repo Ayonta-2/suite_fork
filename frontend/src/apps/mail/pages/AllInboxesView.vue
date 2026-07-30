@@ -223,16 +223,7 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-	ChevronDown,
-	ChevronRight,
-	LoaderCircle,
-	Mail as MailIcon,
-	Mails,
-	Paperclip,
-	RefreshCw,
-	Star,
-} from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-vue-next'
 import { Breadcrumbs, Button, Dropdown, Tooltip, call, createResource, usePageMeta } from 'frappe-ui'
 
 import {
@@ -250,6 +241,7 @@ import {
 	stepFromKey,
 	useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
+import { useStoredFilter } from '@/apps/mail/utils/listFilter'
 import { useScreenSize, useSwipeNav } from '@/apps/mail/utils/composables'
 import { useListRows } from '@/apps/mail/composables/useListRows'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
@@ -320,9 +312,13 @@ const {
 })
 
 const isLoaded = ref(false)
-const filter = ref<string | null>(
-	localStorage.getItem(`user:${user.data.name}:filter:all-inboxes`) || null,
-)
+
+// The remembered All/Unread/Starred/Has-attachments choice, its menu, and its title (see
+// useStoredFilter) — all shared with the mailbox list.
+const { filter, FILTER_OPTIONS, filterTitle: title } = useStoredFilter({
+	scope: () => 'all-inboxes',
+	onChange: () => resetThreads(),
+})
 
 // Reset resource: always the first window, over-fetching one row (PAGE_LENGTH + 1) to detect whether
 // more exist without a total.
@@ -891,33 +887,6 @@ const stackTrash = (threads: Thread[]) =>
 		threads[0].trash,
 		__('{0} threads moved to Trash.', [String(threads.length)]),
 	)
-
-// Filter
-const FILTER_OPTIONS = [
-	{ label: __('All'), icon: Mails, onClick: () => setFilter(null) },
-	{ label: __('Unread'), icon: MailIcon, onClick: () => setFilter('unread') },
-	{ label: __('Starred'), icon: Star, onClick: () => setFilter('starred') },
-	{ label: __('Has attachments'), icon: Paperclip, onClick: () => setFilter('has_attachments') },
-]
-
-const setFilter = (value: string | null) => {
-	filter.value = value
-	localStorage.setItem(`user:${user.data.name}:filter:all-inboxes`, value ?? '')
-	resetThreads()
-}
-
-const title = computed(() => {
-	switch (filter.value) {
-		case 'unread':
-			return __('Unread Mails')
-		case 'starred':
-			return __('Starred Mails')
-		case 'has_attachments':
-			return __('With Attachments')
-		default:
-			return __('All Mails')
-	}
-})
 
 const unreadPrefix = computed(() =>
 	store.allInboxesUnread.data ? `(${store.allInboxesUnread.data})` : '',
