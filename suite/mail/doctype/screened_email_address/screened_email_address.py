@@ -4,6 +4,7 @@
 from uuid import uuid7
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
@@ -23,7 +24,7 @@ class ScreenedEmailAddress(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		account: DF.Link
+		account: DF.Link | None
 		action: DF.Literal["Spam", "Reject", "Accepted"]
 		email: DF.Data
 	# end: auto-generated types
@@ -32,8 +33,24 @@ class ScreenedEmailAddress(Document):
 		self.name = str(uuid7())
 
 	def validate(self) -> None:
+		self.validate_global_rule_permission()
 		self.validate_email()
 		self.validate_duplicate_email()
+
+	def validate_global_rule_permission(self) -> None:
+		"""A rule without an account is global (applies to every account), so only admins may manage it."""
+
+		if self.account:
+			return
+
+		user = frappe.session.user
+		if not (is_system_manager(user) or is_suite_admin(user)):
+			frappe.throw(
+				_(
+					"Only a System Manager or Mail Admin can manage global screened email addresses (without an account)."
+				),
+				frappe.PermissionError,
+			)
 
 	def validate_email(self) -> None:
 		"""Normalise and validate the screened value — a full email address or an '@domain' entry."""
@@ -46,6 +63,12 @@ class ScreenedEmailAddress(Document):
 	def on_update(self) -> None:
 		from suite.mail.doctype.sieve_script.sieve_script import maybe_build_automation_sieve
 
+		# Global rules (no account) affect every account, so no single script can be rebuilt here.
+		# Rebuilds are deliberately not fanned out either — an admin batches their global changes and
+		# then triggers "Rebuild Automation Sieves" from the list view once.
+		if not self.account:
+			return
+
 		# Runs on both insert and save. `email` is set_only_once, so on an edit only the action can
 		# change; regenerate on insert (no prior doc) and whenever the action is changed (e.g. switching
 		# Spam <-> Reject in Desk), since that moves the sender between sieve blocks. Skipped when a
@@ -57,18 +80,31 @@ class ScreenedEmailAddress(Document):
 	def after_delete(self) -> None:
 		from suite.mail.doctype.sieve_script.sieve_script import maybe_build_automation_sieve
 
+		# Removing a global rule does not rebuild anything either — see on_update.
+		if not self.account:
+			return
+
 		maybe_build_automation_sieve(self.account, activate=True)
 
 	def validate_duplicate_email(self) -> None:
-		"""Validates that the same email address is not screened more than once for the same account."""
+		"""Validates that the same email address is not screened more than once for the same account.
 
+		Global rules (no account) are checked against the other global rules. This validation is the
+		only duplicate guard for them: the unique index on (account, email) does not apply because
+		MariaDB allows multiple rows with a NULL in a unique key.
+		"""
+
+		account_filter = self.account or ("is", "not set")
 		if frappe.db.exists(
 			"Screened Email Address",
-			{"account": self.account, "email": self.email, "name": ["!=", self.name]},
+			{"account": account_filter, "email": self.email, "name": ["!=", self.name]},
 		):
-			frappe.throw(
-				frappe._("The email address {0} is already screened for this account.").format(self.email)
-			)
+			if self.account:
+				message = frappe._("The email address {0} is already screened for this account.")
+			else:
+				message = frappe._("The email address {0} is already screened globally.")
+
+			frappe.throw(message.format(self.email))
 
 
 def get_screened_email_addresses(account: str, action: str | None = None) -> list[dict]:
@@ -91,6 +127,32 @@ def get_screened_email_addresses(account: str, action: str | None = None) -> lis
 	)
 
 
+def get_global_screened_email_addresses() -> list[dict]:
+	"""Returns the global screened email addresses — rules without an account, applying to every account."""
+
+	return frappe.db.get_all(
+		"Screened Email Address",
+		filters={"account": ("is", "not set")},
+		fields=["email", "action", "creation", "modified"],
+		order_by="modified desc",
+	)
+
+
+def get_effective_screened_email_addresses(account: str) -> list[dict]:
+	"""Returns the screened email addresses in effect for the account: the global rules overlaid with
+	the account's own, where the account's rule wins when both screen the same email or domain.
+
+	This is what the automation sieve script is built from — `get_screened_email_addresses` stays
+	account-only so the settings UI never shows (or lets a user edit) the admin-managed global rules.
+	Keyed case-insensitively to match the case-insensitive unique index on (account, email).
+	"""
+
+	merged = {row.email.lower(): row for row in get_global_screened_email_addresses()}
+	merged.update({row.email.lower(): row for row in get_screened_email_addresses(account)})
+
+	return list(merged.values())
+
+
 def get_permission_query_condition(user: str | None = None) -> str | None:
 	user = user or frappe.session.user
 	if is_system_manager(user) or is_suite_admin(user):
@@ -103,7 +165,7 @@ def get_permission_query_condition(user: str | None = None) -> str | None:
 	return f"""`tabScreened Email Address`.account in ({", ".join(frappe.db.escape(account) for account in accounts)})"""
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 	if doc.doctype != "Screened Email Address":
 		return False
 
