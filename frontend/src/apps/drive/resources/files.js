@@ -216,8 +216,8 @@ export const toggleFav = createResource({
     const entity_names = data.entities.map(({ name }) => name)
     getFavourites.setData((d) => {
       return data.entities[0].is_favourite
-        ? [...d, ...data.entities]
-        : d.filter(({ name }) => !entity_names.includes(name))
+        ? [...(d ?? []), ...data.entities]
+        : (d ?? []).filter(({ name }) => !entity_names.includes(name))
     })
     mutate(
       data.entities,
@@ -325,8 +325,8 @@ export const move = createResource({
     // Update moved-into folder
     updateMoved(data.team, data.name)
   },
-  onError() {
-    toast.error('There was an error.')
+  onError(error) {
+    toast.error(error?.messages?.at(-1) || 'Could not move this file.')
   },
 })
 

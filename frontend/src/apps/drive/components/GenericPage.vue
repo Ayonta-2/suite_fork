@@ -64,6 +64,7 @@ import { setCurrentFolder } from '@/apps/drive/data/currentFolder'
 import {
   expandedFolders,
   loadedChildRows,
+  refreshExpanded,
   refreshFolder,
   removeFromTree,
   resetTree,
@@ -359,10 +360,16 @@ const onDrop = (targetFile, draggedItem) => {
     : [draggedItem]
   const toMove = names.filter((name) => name !== targetFile.name)
   if (!toMove.length) return
-  move.submit({
-    entity_names: toMove,
-    new_parent: targetFile.name,
-  })
+  move.submit(
+    { entity_names: toMove, new_parent: targetFile.name },
+    {
+      // The rows were removed optimistically — put them back if the server said no.
+      onError: () => {
+        refreshData()
+        refreshExpanded(sortOrder.value)
+      },
+    }
+  )
   toMove.forEach((name) => removeFile(name, targetFile.name))
   if (expandedFolders.value.has(targetFile.name))
     refreshFolder(targetFile.name, sortOrder.value)

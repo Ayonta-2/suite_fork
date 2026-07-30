@@ -42,6 +42,7 @@
         ]"
         :draggable="renamingEntity !== row.name"
         :to="routeFor(row)"
+        :data-testid="`drive-entity-${row.name}`"
         :data-selected="selections.has(row.name) || undefined"
         @contextmenu="(e) => !selections.size && contextMenu(e, row)"
         @click="!isModKey($event) && !selections.size && open(row)"
@@ -76,6 +77,7 @@
           <div
             class="relative h-[16px] w-[16px] shrink-0 mr-2"
             :class="canExpand(row) ? 'cursor-pointer' : ''"
+            :data-testid="canExpand(row) ? `drive-expand-${row.name}` : undefined"
             :style="indent(item.depth)"
             @click.stop.prevent="canExpand(row) && toggleFolder(row)"
           >

@@ -28,7 +28,7 @@ export function confirmRestore(entities, { onSuccess } = {}) {
         entity_names: entityNames(entities),
       })
       const names = entities.map((entity) => entity.name)
-      getTrash.setData((d) => d.filter((k) => !names.includes(k.name)))
+      getTrash.setData((d) => (d ?? []).filter((k) => !names.includes(k.name)))
       toast.success(`Restored ${label}.`)
       onSuccess?.()
     },
@@ -46,16 +46,19 @@ export function confirmRemove(entities, { onSuccess } = {}) {
       await call('suite.drive.api.files.remove_or_restore', {
         entity_names: entityNames(entities),
       })
-      getTrash.setData(
-        sortEntities([
-          ...getTrash.data,
-          ...entities.map((entity) => {
-            entity.modified = Date()
-            entity.relativeModified = useTimeAgo(entity.modified)
-            return entity
-          }),
-        ]),
-      )
+      // Only patch the trash cache if it was ever fetched — `data` is null
+      // until the user opens Trash, and spreading that throws.
+      if (getTrash.data)
+        getTrash.setData(
+          sortEntities([
+            ...getTrash.data,
+            ...entities.map((entity) => {
+              entity.modified = Date()
+              entity.relativeModified = useTimeAgo(entity.modified)
+              return entity
+            }),
+          ]),
+        )
       toast.success(`Moved ${label} to Trash.`)
       onSuccess?.()
     },

@@ -18,6 +18,7 @@ import {
   flattenRows,
   folderChildren,
   loadedChildRows,
+  refreshExpanded,
   refreshFolder,
   removeFromTree,
   resetTree,
@@ -141,6 +142,43 @@ describe('removeFromTree / resetTree', () => {
 
     removeFromTree(['a'])
     expect(folderChildren.parent.rows.map((r) => r.name)).toEqual(['b'])
+  })
+
+  it('moving a subfile out drops it from its old subtree and into the new one', async () => {
+    mocks.request.mockResolvedValueOnce([file('moved'), file('stays')])
+    toggleFolder(folder('source'))
+    await flush()
+    mocks.request.mockResolvedValueOnce([])
+    toggleFolder(folder('destination', 0))
+    await flush()
+
+    removeFromTree(['moved'])
+    expect(folderChildren.source.rows.map((r) => r.name)).toEqual(['stays'])
+
+    mocks.request.mockResolvedValueOnce([file('moved')])
+    refreshFolder('destination')
+    await flush()
+
+    expect(folderChildren.destination.rows.map((r) => r.name)).toEqual(['moved'])
+    expect(loadedChildRows.value.map((r) => r.name).sort()).toEqual([
+      'moved',
+      'stays',
+    ])
+  })
+
+  it('a failed move restores both subtrees from the server', async () => {
+    mocks.request.mockResolvedValueOnce([file('moved')])
+    toggleFolder(folder('source'))
+    await flush()
+
+    removeFromTree(['moved'])
+    expect(folderChildren.source.rows).toEqual([])
+
+    mocks.request.mockResolvedValueOnce([file('moved')])
+    refreshExpanded()
+    await flush()
+
+    expect(folderChildren.source.rows.map((r) => r.name)).toEqual(['moved'])
   })
 
   it('refreshFolder is a no-op for a folder that was never expanded', () => {
