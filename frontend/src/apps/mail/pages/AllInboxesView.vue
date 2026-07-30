@@ -453,8 +453,13 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
 		return true
 	}
 
-	// `!` (mark as junk) is absent on purpose: the merged row carries the account's Archive and
-	// Trash ids but not its Junk one (see Thread in types), so there is nothing to move it to.
+	// Junk needs no mailbox id of its own (set_mails_spam_status takes the account and the mails), so
+	// unlike a move it works from a merged row.
+	if (key === '!') {
+		e.preventDefault()
+		handleSetSpamStatus(true, thread)
+		return true
+	}
 
 	return false
 }
@@ -733,8 +738,8 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
 	)
 }
 
-const handleSetSpamStatus = (spam: boolean) => {
-	const thread = openRow.value
+const handleSetSpamStatus = (spam: boolean, target?: Thread) => {
+	const thread = target ?? openRow.value
 	if (!thread) return
 	goToNextThreadOrClose(thread.thread_id)
 	const restore = removeFromList(thread)
