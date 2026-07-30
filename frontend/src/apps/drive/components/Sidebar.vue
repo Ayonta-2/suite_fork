@@ -191,6 +191,13 @@ const sidebarItems = computed(() => {
           accessKey: 's',
         },
         {
+          label: 'Favourites',
+          to: { name: 'drive-Favourites' },
+          icon: LucideStar,
+          isActive: active('drive-Favourites'),
+          accessKey: 'f',
+        },
+        {
           label: 'Site',
           to: rootInfo.data
             ? {
@@ -213,7 +220,7 @@ const sidebarItems = computed(() => {
       ],
     },
     {
-      label: 'Views',
+      label: 'Browse',
       collapsible: true,
       items: dynamicList([
         {
