@@ -1,9 +1,13 @@
 <template>
 	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!report.data">
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
-		</template>
 		<template #default>
+			<DashboardDetailHeader :title="detailTitle" :meta="[data.domain || data.from, reportId]">
+				<template #icon><FileChartColumn class="h-5 w-5" /></template>
+				<template #actions>
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+				</template>
+			</DashboardDetailHeader>
+
 			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 				<DashboardCard :title="__('Report')">
 					<template v-if="direction === 'inbound'">
@@ -43,10 +47,13 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
+import FileChartColumn from '~icons/lucide/file-chart-column'
+
 import { copyToClipBoard, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 
 type ReportData = {
@@ -72,6 +79,10 @@ const listRouteName = computed(() => `mail-reports-${kind}-${direction}`)
 const listTitle = computed(() => {
 	const dir = direction === 'inbound' ? __('Inbound') : __('Outbound')
 	return `${dir} ${KIND_LABELS[kind] || kind} ${__('Reports')}`
+})
+const detailTitle = computed(() => {
+	const dir = direction === 'inbound' ? __('Inbound') : __('Outbound')
+	return `${dir} ${KIND_LABELS[kind] || kind} ${__('Report')}`
 })
 
 usePageMeta(() => ({ title: listTitle.value }))

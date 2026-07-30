@@ -1,11 +1,19 @@
 <template>
 	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!log.data">
 		<template #default>
+			<DashboardDetailHeader
+				:title="data.event_label || data.event || logId"
+				:meta="[formatDate(data.timestamp), logId]"
+				:badge-label="data.level_label"
+				:badge-theme="levelTheme(data.level)"
+			>
+				<template #icon><ScrollText class="h-5 w-5" /></template>
+			</DashboardDetailHeader>
+
 			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 				<DashboardCard :title="__('Log Entry')">
 					<InformationField :label="__('Timestamp')" :value="formatDate(data.timestamp)" />
 					<InformationField :label="__('Level')" :value="data.level_label" />
-					<InformationField :label="__('Event')" :value="data.event_label" />
 				</DashboardCard>
 				<DashboardCard :title="__('Details')">
 					<template #actions>
@@ -25,10 +33,13 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, createResource, usePageMeta } from 'frappe-ui'
 
+import ScrollText from '~icons/lucide/scroll-text'
+
 import { copyToClipBoard, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 
 type LogData = {
@@ -59,6 +70,16 @@ const log = createResource({
 
 const data = computed(() => log.data as LogData)
 const formatDate = (value?: string) => formatDateTime(value, 'MMM D YYYY, h:mm:ss A') || '—'
+
+// Mirrors the colours the server's TracingLevel enum assigns to each level.
+const LEVEL_THEMES: Record<string, 'red' | 'amber' | 'green' | 'blue' | 'violet'> = {
+	error: 'red',
+	warn: 'amber',
+	info: 'green',
+	debug: 'blue',
+	trace: 'violet',
+}
+const levelTheme = (level?: string) => LEVEL_THEMES[(level || '').toLowerCase()] || 'gray'
 
 const breadcrumbs = computed(() => [
 	{ label: __('Logs'), route: '/mail/dashboard/logs' },

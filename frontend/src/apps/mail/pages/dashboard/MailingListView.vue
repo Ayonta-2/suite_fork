@@ -1,21 +1,17 @@
 <template>
 	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!list.data">
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
-		</template>
+		<DashboardDetailHeader
+			:title="list.data.email || list.data.name || listId"
+			:meta="[list.data.description, recipientCountLabel]"
+		>
+			<template #icon><Megaphone class="h-5 w-5" /></template>
+			<template #actions>
+				<Button :label="__('Edit')" @click="showEdit = true" />
+				<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+			</template>
+		</DashboardDetailHeader>
 
 		<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-			<!-- General Information -->
-			<DashboardCard
-				:title="__('General Information')"
-				:button-label="__('Edit')"
-				@action="showEdit = true"
-			>
-				<div>
-					<InformationField :label="__('Description')" :value="list.data.description" />
-				</div>
-			</DashboardCard>
-
 			<!-- Email Addresses -->
 			<DashboardCard :title="__('Email Addresses')" :button-label="__('Add')" @action="showAddEmail = true">
 				<div class="flex flex-col">
@@ -125,13 +121,15 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 
+import Megaphone from '~icons/lucide/megaphone'
+
 import { raiseToast } from '@/apps/mail/utils'
 import AddMailingListEmailModal from '@/apps/mail/components/Modals/AddMailingListEmailModal.vue'
 import AddMailingListRecipientsModal from '@/apps/mail/components/Modals/AddMailingListRecipientsModal.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import EditMailingListModal from '@/apps/mail/components/Modals/EditMailingListModal.vue'
-import InformationField from '@/apps/mail/components/InformationField.vue'
 
 type ListData = {
 	id: string
@@ -171,6 +169,11 @@ const filteredRecipients = computed(() => {
 	const recipients = data.value?.recipients || []
 	const q = recipientSearch.value.trim().toLowerCase()
 	return q ? recipients.filter((r) => r.toLowerCase().includes(q)) : recipients
+})
+
+const recipientCountLabel = computed(() => {
+	const count = data.value?.recipients.length ?? 0
+	return count === 1 ? __('1 recipient') : __('{0} recipients', [String(count)])
 })
 
 const breadcrumbs = computed(() => [

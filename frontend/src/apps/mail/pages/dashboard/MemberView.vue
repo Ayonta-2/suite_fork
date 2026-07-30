@@ -1,27 +1,25 @@
 <template>
-	<DashboardLayout
-		:breadcrumbs="BREADCRUMBS"
-		:badge-label="badge.label"
-		:badge-theme="badge.theme"
-		:loading="!member.data"
-	>
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
-		</template>
+	<DashboardLayout :breadcrumbs="BREADCRUMBS" :loading="!member.data">
+		<DashboardDetailHeader
+			:title="member.data.description || member.data.name"
+			:badge-label="badge.label"
+			:badge-theme="badge.theme"
+			:meta="[member.data.name, member.data.is_admin ? __('Admin') : __('User')]"
+		>
+			<template #actions>
+				<Button :label="__('Edit')" @click="showEdit = true" />
+				<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+			</template>
+		</DashboardDetailHeader>
 
 		<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 			<!-- General Information -->
-			<DashboardCard
-				:title="__('General Information')"
-				:button-label="__('Edit')"
-				@action="showEdit = true"
-			>
+			<DashboardCard :title="__('General Information')">
 				<div>
 					<InformationField
 						:label="__('Role')"
 						:value="member.data.is_admin ? __('Admin') : __('User')"
 					/>
-					<InformationField :label="__('Full Name')" :value="member.data.description" />
 					<InformationField :label="__('Locale')" :value="localeLabel(member.data.locale)" />
 					<InformationField :label="__('Time Zone')" :value="member.data.time_zone" />
 					<InformationField :label="__('Last Active')" :value="lastActive" />
@@ -195,6 +193,7 @@ import AddMemberGroupsModal from '@/apps/mail/components/Modals/AddMemberGroupsM
 import AddMemberMailingListsModal from '@/apps/mail/components/Modals/AddMemberMailingListsModal.vue'
 import ChangeMemberPasswordModal from '@/apps/mail/components/Modals/ChangeMemberPasswordModal.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import EditMemberModal from '@/apps/mail/components/Modals/EditMemberModal.vue'
 import EditMemberQuotaModal from '@/apps/mail/components/Modals/EditMemberQuotaModal.vue'

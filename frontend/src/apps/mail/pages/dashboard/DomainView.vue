@@ -1,17 +1,25 @@
 <template>
-	<DashboardLayout
-		:breadcrumbs="BREADCRUMBS"
-		:badge-label="badge.label"
-		:badge-theme="badge.theme"
-		:loading="!domain.data"
-	>
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
-		</template>
+	<DashboardLayout :breadcrumbs="BREADCRUMBS" :loading="!domain.data">
 		<template #default>
-			<div class="bg-surface-blue-1 rounded-md border">
-				<div class="space-y-2 p-4">
-					<h3 class="font-medium">{{ BANNER.title }}</h3>
+			<DashboardDetailHeader
+				:title="domain.data.name"
+				:badge-label="badge.label"
+				:badge-theme="badge.theme"
+				:meta="[domain.data.description, addedAgo]"
+			>
+				<template #icon><Globe class="h-5 w-5" /></template>
+				<template #actions>
+					<Dropdown
+						:options="exportOptions"
+						:button="{ label: __('Export DNS'), iconLeft: 'download' }"
+					/>
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+				</template>
+			</DashboardDetailHeader>
+			<div class="bg-surface-blue-1 flex items-start gap-3 rounded-md border p-4">
+				<Info class="text-ink-blue-5 mt-0.5 h-4 w-4 shrink-0" />
+				<div class="space-y-1">
+					<h3 class="text-base font-medium">{{ BANNER.title }}</h3>
 					<p class="text-ink-gray-5 text-sm">{{ BANNER.message }}</p>
 					<p class="text-ink-gray-5 text-sm">{{ BANNER.subtitle }}</p>
 				</div>
@@ -75,8 +83,13 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
+import Globe from '~icons/lucide/globe'
+import Info from '~icons/lucide/info'
+
 import { downloadUrlAsFile, raiseToast } from '@/apps/mail/utils'
+import { fromNow } from '@/apps/mail/utils/datetime'
 import DNSRecords from '@/apps/mail/components/DNSRecords.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 
 type DNSRecord = Record<string, string>
@@ -221,25 +234,26 @@ const confirmDialogOptions = computed(() => {
 	}
 })
 
+const addedAgo = computed(() => {
+	const createdAt = (domain.data as DomainData | undefined)?.created_at
+	return createdAt ? __('Added {0}', [fromNow(createdAt)]) : undefined
+})
+
+const exportOptions = [
+	{
+		group: '',
+		items: [
+			{ label: __('Zone File'), icon: 'file-text', onClick: downloadDNSZone.submit },
+			{ label: __('CSV'), icon: 'file-text', onClick: downloadDNSCsv.submit },
+			{ label: __('JSON'), icon: 'file-text', onClick: downloadDNSJson.submit },
+		],
+	},
+]
+
 const dropdownOptions = computed(() => [
 	{
 		group: '',
 		items: [
-			{
-				label: __('Export Zone File'),
-				icon: 'download',
-				onClick: downloadDNSZone.submit,
-			},
-			{
-				label: __('Export CSV'),
-				icon: 'download',
-				onClick: downloadDNSCsv.submit,
-			},
-			{
-				label: __('Export JSON'),
-				icon: 'download',
-				onClick: downloadDNSJson.submit,
-			},
 			{
 				label: __('Delete Domain'),
 				icon: 'trash-2',

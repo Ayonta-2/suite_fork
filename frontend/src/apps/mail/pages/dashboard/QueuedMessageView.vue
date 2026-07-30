@@ -1,12 +1,15 @@
 <template>
 	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!message.data">
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
-		</template>
 		<template #default>
+			<DashboardDetailHeader :title="data.id || messageId" :meta="[data.sender, queuedAgo]">
+				<template #icon><Mail class="h-5 w-5" /></template>
+				<template #actions>
+					<Button :label="__('Retry Now')" @click="retry.submit()" />
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+				</template>
+			</DashboardDetailHeader>
 			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 				<DashboardCard :title="__('General Information')" :button-label="__('Edit')" @action="showEditMessage = true">
-					<InformationField :label="__('Sender')" :value="data.sender" />
 					<InformationField :label="__('Size')" :value="formatBytes(data.size || 0)" />
 					<InformationField :label="__('Priority')" :value="String(data.priority ?? '—')" />
 					<InformationField :label="__('Envelope ID')" :value="data.env_id" />
@@ -98,10 +101,13 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 
+import Mail from '~icons/lucide/mail'
+
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 import AddQueuedRecipientModal from '@/apps/mail/components/Modals/AddQueuedRecipientModal.vue'
 import EditQueuedRecipientModal from '@/apps/mail/components/Modals/EditQueuedRecipientModal.vue'
@@ -198,6 +204,10 @@ const editRecipient = (r: Recipient) => {
 	showEditRecipient.value = true
 }
 
+const queuedAgo = computed(() =>
+	data.value?.created_at ? __('Queued {0}', [fromNow(data.value.created_at)]) : undefined,
+)
+
 const breadcrumbs = computed(() => [
 	{ label: __('Queued'), route: '/mail/dashboard/queued' },
 	{ label: data.value?.sender || messageId },
@@ -242,7 +252,7 @@ const cancelDialogOptions = computed(() => ({
 }))
 
 const dropdownOptions = computed(() => {
-	const items = [{ label: __('Retry Now'), icon: 'refresh-cw', onClick: retry.submit }]
+	const items: { label: string; icon: string; onClick: () => void }[] = []
 	if (data.value?.has_content) {
 		items.push({
 			label: __('View Source'),

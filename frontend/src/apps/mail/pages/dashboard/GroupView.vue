@@ -1,19 +1,21 @@
 <template>
 	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!member.data">
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
-		</template>
+		<DashboardDetailHeader
+			:title="member.data.email || member.data.name || groupId"
+			:meta="[member.data.description, memberCountLabel]"
+		>
+			<template #icon><Users class="h-5 w-5" /></template>
+			<template #actions>
+				<Button :label="__('Edit')" @click="showEdit = true" />
+				<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+			</template>
+		</DashboardDetailHeader>
 
 		<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 			<!-- General Information -->
-			<DashboardCard
-				:title="__('General Information')"
-				:button-label="__('Edit')"
-				@action="showEdit = true"
-			>
+			<DashboardCard :title="__('General Information')">
 				<div>
 					<InformationField :label="__('Roles')" :value="roleLabels.join(', ')" />
-					<InformationField :label="__('Description')" :value="member.data.description" />
 					<InformationField :label="__('Locale')" :value="localeLabel(member.data.locale)" />
 					<InformationField :label="__('Time Zone')" :value="member.data.time_zone" />
 					<InformationField :label="__('Created At')" :value="createdAt" />
@@ -137,12 +139,15 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 
+import Users from '~icons/lucide/users'
+
 import { raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import AddGroupEmailModal from '@/apps/mail/components/Modals/AddGroupEmailModal.vue'
 import AddGroupMembersModal from '@/apps/mail/components/Modals/AddGroupMembersModal.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import EditGroupModal from '@/apps/mail/components/Modals/EditGroupModal.vue'
 import EditGroupQuotaModal from '@/apps/mail/components/Modals/EditGroupQuotaModal.vue'
@@ -205,6 +210,11 @@ const filteredMembers = computed(() => {
 })
 
 const createdAt = computed(() => formatDateTime(data.value?.created_at))
+
+const memberCountLabel = computed(() => {
+	const count = data.value?.members.length ?? 0
+	return count === 1 ? __('1 member') : __('{0} members', [String(count)])
+})
 
 const breadcrumbs = computed(() => [
 	{ label: __('Groups'), route: '/mail/dashboard/groups' },

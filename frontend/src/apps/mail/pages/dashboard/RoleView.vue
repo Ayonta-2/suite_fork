@@ -1,20 +1,20 @@
 <template>
 	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!role.data">
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
-		</template>
 		<template #default>
-			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-				<DashboardCard
-					:title="__('General Information')"
-					:button-label="__('Edit')"
-					@action="showEdit = true"
-				>
-					<InformationField :label="__('Description')" :value="role.data.description" />
-				</DashboardCard>
+			<DashboardDetailHeader :title="role.data.description || role.data.id" :meta="[role.data.id]">
+				<template #icon><ShieldCheck class="h-5 w-5" /></template>
+				<template #actions>
+					<Button :label="__('Edit')" @click="showEdit = true" />
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+				</template>
+			</DashboardDetailHeader>
 
+			<div class="grid grid-cols-1 gap-5 xl:grid-cols-3">
 				<DashboardCard :title="__('Inherited Roles')">
 					<div class="p-4">
+						<p class="text-ink-gray-5 mb-3 text-sm">
+							{{ __('This role also grants everything the selected roles allow.') }}
+						</p>
 						<MultiSelect
 							:model-value="roleIds"
 							:options="roleOptions"
@@ -25,6 +25,9 @@
 
 				<DashboardCard :title="__('Enabled Permissions')">
 					<div class="p-4">
+						<p class="text-ink-gray-5 mb-3 text-sm">
+							{{ __('Granted to every account that holds this role.') }}
+						</p>
 						<MultiSelect
 							:model-value="enabledPermissions"
 							:options="permissionOptions"
@@ -35,6 +38,9 @@
 
 				<DashboardCard :title="__('Disabled Permissions')">
 					<div class="p-4">
+						<p class="text-ink-gray-5 mb-3 text-sm">
+							{{ __('Explicitly denied, even if an inherited role grants them.') }}
+						</p>
 						<MultiSelect
 							:model-value="disabledPermissions"
 							:options="permissionOptions"
@@ -51,12 +57,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, Dropdown, MultiSelect, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, Dropdown, MultiSelect, createResource, usePageMeta } from 'frappe-ui'
+
+import ShieldCheck from '~icons/lucide/shield-check'
 
 import { raiseToast } from '@/apps/mail/utils'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
-import InformationField from '@/apps/mail/components/InformationField.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import EditRoleModal from '@/apps/mail/components/Modals/EditRoleModal.vue'
 
 type RoleData = {
