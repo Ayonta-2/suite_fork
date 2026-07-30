@@ -1,6 +1,12 @@
 import frappe
 
-from suite.drive.utils import GENERAL_USER, PERMISSION_TYPES, get_new_file_name, get_root_folder
+from suite.drive.utils import (
+	GENERAL_USER,
+	PERMISSION_TYPES,
+	get_new_file_name,
+	get_root_folder,
+	get_user_folder,
+)
 
 FULL_ACCESS = dict.fromkeys(PERMISSION_TYPES, 1)
 
@@ -152,6 +158,9 @@ def _tuck_away_stray_root_children(root):
 	):
 		if f.name == attachments:
 			continue
-		target = frappe.db.get_value("Drive Settings", f.owner, "user_folder") or attachments
-		if target:
-			frappe.db.set_value("File", f.name, "folder", target, update_modified=False)
+		target = frappe.db.get_value("Drive Settings", f.owner, "user_folder")
+		if not target and frappe.db.exists("User", f.owner):
+			# Owner never had a personal team; give them a user folder rather
+			# than leaving the file under the root, where baseline read exposes it.
+			target = get_user_folder(f.owner).name
+		frappe.db.set_value("File", f.name, "folder", target or attachments, update_modified=False)

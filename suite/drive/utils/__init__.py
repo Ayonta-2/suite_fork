@@ -157,14 +157,17 @@ def get_root_folder():
 	"""The single site root folder: the framework's `Home` File (`folder IS NULL`,
 	created by frappe on install). Its file_url and disk dirs are initialized on
 	first use, since the framework leaves them empty."""
-	root = (
+	rows = (
 		frappe.qb.from_(DriveFile)
 		.where(DriveFile.folder.isnull())
 		.select(DriveFile.name, DriveFile.file_url)
 		.orderby(DriveFile.creation)
 		.limit(1)
 		.run(as_dict=True)
-	)[0]
+	)
+	if not rows:
+		frappe.throw("Drive has no site root folder. Run `bench migrate`.", frappe.DoesNotExistError)
+	root = rows[0]
 	if root.file_url:
 		return root
 
@@ -192,6 +195,20 @@ def get_user_folder(user=None):
 	"""
 	user = user or frappe.session.user
 	name = frappe.db.get_value("Drive Settings", user, "user_folder")
+	if name:
+		folder = frappe.db.get_value("File", name, ["name", "file_url"], as_dict=1)
+		if folder:
+			return folder
+
+	if not frappe.db.exists("Drive Settings", user):
+		try:
+			frappe.get_doc({"doctype": "Drive Settings", "user": user}).insert(ignore_permissions=True)
+		except frappe.DuplicateEntryError:
+			pass
+
+	# Serialize concurrent first use: whoever takes the row lock creates the
+	# folder, the loser reads it back instead of creating a second one.
+	name = frappe.db.get_value("Drive Settings", user, "user_folder", for_update=True)
 	if name:
 		folder = frappe.db.get_value("File", name, ["name", "file_url"], as_dict=1)
 		if folder:
