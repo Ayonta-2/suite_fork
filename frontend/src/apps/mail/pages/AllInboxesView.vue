@@ -524,7 +524,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
 	// Escape backs out of the open thread, then clears the cursor.
 	if (key === 'escape') {
 		e.preventDefault()
-		if (threadID) return router.push({ name: 'mail-all-inboxes', query: route.query })
+		if (threadID) return closeThread()
 		focusedRowKey.value = undefined
 		return
 	}
@@ -739,8 +739,14 @@ const removeFromList = (thread: Thread) => {
 // different accounts/threads and can be fired in rapid succession, so every invocation must be a
 // fully independent request. A shared resource carries a single reactive state slot (and one abort
 // controller); call() has no shared state, so concurrent row actions can never clobber one another.
+const closeThread = () => router.push({ name: 'mail-all-inboxes', query: route.query })
+
 const handleSetSeen = (thread: Thread, seen: boolean) => {
 	if (thread.seen === (seen ? 1 : 0)) return
+
+	// Marking the open thread unread means "come back to this later", so leave the pane — staying
+	// in it would just mark it read again. Same exit as useThreadActions does for the mailbox list.
+	if (!seen && threadID === thread.thread_id) closeThread()
 	const applySeen = (value: 0 | 1) => {
 		thread.seen = value
 		thread.messages?.forEach((m) => (m.seen = value))
