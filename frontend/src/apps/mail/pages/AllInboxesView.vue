@@ -829,6 +829,7 @@ const handleSyncUnseen = (ids: string[]) => {
 const mailThread = useTemplateRef<{
 	syncFlagged: (ids: string[], flagged: boolean) => void
 	syncMailboxMembership: (mailboxId: string, add: boolean) => void
+	removeMailFromView: (mailId: string) => { emptied: boolean; rollback: () => void }
 }>('mailThread')
 
 // The row's `flagged` drives the list star; the pane's stars read each message. Update both, or
@@ -901,30 +902,55 @@ const handleSetSpamStatus = (spam: boolean) => {
 	)
 }
 
-// Per-message actions from a message's own menu. The thread stays put; only its contents change,
-// so the list is refreshed rather than optimistically edited.
-const handleMailMove = (mail: Mail, target: string) => {
+// Per-message actions from a message's own menu. The mail leaves the pane at once — waiting for the
+// request meant a click did nothing visible until the round-trip landed. If it was the thread's last
+// mail the row goes too, and the pane closes; a failure puts all of it back.
+const runMailRemoval = (mail: Mail, request: () => Promise<unknown>, success: string) => {
+	const thread = openRow.value
+	const { emptied, rollback } = mailThread.value?.removeMailFromView(mail.id) ?? {
+		emptied: false,
+		rollback: () => {},
+	}
+
+	let restoreRow: (() => void) | undefined
+	if (emptied && thread) {
+		restoreRow = removeFromList(thread)
+		closeThread()
+	}
+
 	raiseOptimisticToast(
-		paneCall('move_mails', { ids: [mail.id], mailbox: target }).then(() => refreshThreads(false)),
+		request()
+			.then(() => refreshCounts())
+			.catch((error) => {
+				rollback()
+				restoreRow?.()
+				throw error
+			}),
+		success,
+	)
+}
+
+const handleMailMove = (mail: Mail, target: string) =>
+	runMailRemoval(
+		mail,
+		() => paneCall('move_mails', { ids: [mail.id], mailbox: target }),
 		__('Mail moved.'),
 	)
-}
 
-const handleMailSpam = (mail: Mail, spam: boolean) => {
-	raiseOptimisticToast(
-		paneCall('set_mails_spam_status', { ids: [mail.id], spam }).then(() => refreshThreads(false)),
+const handleMailSpam = (mail: Mail, spam: boolean) =>
+	runMailRemoval(
+		mail,
+		() => paneCall('set_mails_spam_status', { ids: [mail.id], spam }),
 		spam ? __('Mail marked as junk.') : __('Mail marked as not junk.'),
 	)
-}
 
-const handleMailDelete = (mail: Mail) => {
-	raiseOptimisticToast(
-		call('suite.mail.doctype.mail_message.mail_message.bulk_delete', {
-			names: [mail.name],
-		}).then(() => refreshThreads(false)),
+const handleMailDelete = (mail: Mail) =>
+	runMailRemoval(
+		mail,
+		() =>
+			call('suite.mail.doctype.mail_message.mail_message.bulk_delete', { names: [mail.name] }),
 		__('Mail deleted.'),
 	)
-}
 
 const closeThread = () => router.push({ name: 'mail-all-inboxes', query: route.query })
 
