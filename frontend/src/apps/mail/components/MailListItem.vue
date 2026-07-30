@@ -4,6 +4,7 @@
 		:is-selected
 		:selectable
 		:selection-mode
+		:hide-avatar
 		:unread="!mail.seen"
 		:hide-sender
 		:avatar-label="avatarLabel"
@@ -176,6 +177,7 @@ const {
 	hideSender = false,
 	selectionMode = false,
 	threadRouteName = 'mail-mail',
+	hideAvatar = false,
 } = defineProps<{
 	mailbox: string
 	mail: Thread
@@ -194,6 +196,8 @@ const {
 	// Which route the row links to. All Inboxes points at its own thread route so opening a
 	// mail stays in the merged list instead of navigating into one account's mailbox.
 	threadRouteName?: string
+	// Forwarded to MailRow — see there.
+	hideAvatar?: boolean
 }>()
 
 const emit = defineEmits([

@@ -112,12 +112,13 @@
 								:is-selected="false"
 								:selectable="false"
 								thread-route-name="mail-all-inboxes-mail"
+								:hide-avatar="!isMobile"
 								class="border-l-transparent sm:border-l"
 								:class="{
 									'!bg-surface-blue-1': mail.thread_id === threadID && !isMobile,
 									'!border-l-outline-blue-5': mail.thread_id === focusedThreadID,
 								}"
-								:data-thread-row="mail.thread_id"
+								:data-row-key="mail.thread_id"
 								@set-seen="(seen: boolean) => handleSetSeen(mail, seen)"
 								@archive-thread="handleArchive(mail)"
 								@trash-thread="handleTrash(mail)"
@@ -147,12 +148,15 @@
 				}"
 			>
 				<div class="h-full overflow-y-auto">
+					<!-- Rendered with no thread open too (unlike a deep link whose row hasn't
+					     loaded, where the fallback fetch would hit the wrong account) so its own
+					     "Select an email" placeholder fills the pane, as in MailboxView. -->
 					<MailThread
-						v-if="openRow"
-						:mailbox="openRow.inbox || ''"
+						v-if="openRow || !threadID"
+						:mailbox="openRow?.inbox || ''"
 						:thread-i-d="threadID"
 						:threads="openThreadIDs"
-						:messages="openRow.messages"
+						:messages="openRow?.messages"
 						@reload-mails="refreshThreads()"
 						@set-seen="(seen: boolean) => handleSetSeen(openRow!, seen)"
 						@set-flagged="
@@ -208,6 +212,7 @@ import {
 	navigationOffset,
 	stepFrom,
 	useGPrefix,
+	useRowScroll,
 } from '@/apps/mail/utils/listNavigation'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
@@ -466,14 +471,23 @@ const handleKeyDown = (e: KeyboardEvent) => {
 // The keyboard cursor: a thread id, since the merged list has no stacks or day headers to land on.
 const focusedThreadID = ref<string>()
 
+const scrollThreadIntoView = useRowScroll(mailListRef, isMobile)
+
 const focusThread = (nextThreadID: string) => {
 	focusedThreadID.value = nextThreadID
-	nextTick(() => {
-		document
-			.querySelector(`[data-thread-row="${nextThreadID}"]`)
-			?.scrollIntoView({ block: 'nearest' })
-	})
+	scrollThreadIntoView(nextThreadID)
 }
+
+// The open thread keeps its row in view, as the mailbox list does: stepping
+// prev/next or deep-linking scrolls the merged list along, and the cursor
+// follows so keyboard navigation resumes from it.
+watch(
+	() => threadID,
+	(val) => {
+		if (val) setTimeout(() => focusThread(val))
+	},
+	{ immediate: true },
+)
 
 // `at()` so -1 reads as the last loaded thread. With a thread open the jump opens the edge one;
 // otherwise it just moves the cursor there, mirroring the mailbox list.

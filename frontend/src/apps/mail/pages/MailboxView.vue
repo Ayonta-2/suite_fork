@@ -575,6 +575,7 @@ import {
 	navigationOffset,
 	stepFromKey,
 	useGPrefix,
+	useRowScroll,
 } from '@/apps/mail/utils/listNavigation'
 import {
 	useMobileSelection,
@@ -1729,19 +1730,7 @@ const rowForThread = (threadID?: string): NavRow | undefined => {
 
 const focusOnThread = (threadID?: string) => focusRow(rowForThread(threadID))
 
-const scrollIntoView = (rowKey: string) => {
-	// Centering the focused row is a keyboard-navigation affordance; on mobile it
-	// only made the list visibly jump behind the thread pane's slide-in.
-	if (isMobile.value) return
-
-	// The row may have only just been revealed by its stack or its day opening, so wait for the render
-	// before looking it up. A no-op when nothing changed.
-	nextTick(() => {
-		mailListRef.value
-			?.querySelector(`[data-row-key="${rowKey}"]`)
-			?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-	})
-}
+const scrollIntoView = useRowScroll(mailListRef, isMobile)
 
 // Actions
 

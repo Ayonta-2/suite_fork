@@ -17,6 +17,7 @@
 		<!-- max-sm:justify-start pins the avatar/checkbox to the row's 14px padding
 		     axis; centered, the 40px column left them 2-4px "inside" it. -->
 		<div
+			v-if="showLeading"
 			class="flex shrink-0 items-center justify-center max-sm:w-10 max-sm:justify-start"
 			:class="isFullWidth ? 'h-8' : 'h-10 sm:-mt-1.5'"
 		>
@@ -35,7 +36,7 @@
 				<Check class="text-ink-base m-auto h-5 w-5 stroke-[4px]" />
 			</div>
 			<Avatar
-				v-show="!isSelected && (isMobile || !selectable)"
+				v-show="showAvatar"
 				:label="avatarLabel"
 				:image="avatarImage"
 				size="xl"
@@ -133,6 +134,7 @@ const {
 	subjectItalic = false,
 	previewItalic = false,
 	selectionMode = false,
+	hideAvatar = false,
 } = defineProps<{
 	// Renders the row as a link when set, and as a plain div when not — a thread opens, a stack expands.
 	to?: RouteLocationRaw
@@ -149,6 +151,9 @@ const {
 	datetime: string
 	subjectItalic?: boolean
 	previewItalic?: boolean
+	// Drops the sender avatar, and with it the whole leading column — the merged list is narrow
+	// beside the pane, and the reclaimed width goes to sender and subject. Mobile keeps it.
+	hideAvatar?: boolean
 	// Mobile selection mode (a selection exists): rows swap avatars for checkboxes,
 	// hide trailing actions, and a tap toggles selection instead of navigating.
 	selectionMode?: boolean
@@ -158,6 +163,12 @@ const emit = defineEmits<{ setSelected: [selected: boolean] }>()
 
 const user = inject('$user') as UserResource
 const { isMobile } = useScreenSize()
+
+const showAvatar = computed(() => !isSelected && (isMobile.value || !selectable) && !hideAvatar)
+// With no checkbox, no check circle and no avatar there is nothing left to reserve space for.
+const showLeading = computed(
+	() => (!isMobile.value && selectable) || isSelected || showAvatar.value,
+)
 
 const isHovered = ref(false)
 
