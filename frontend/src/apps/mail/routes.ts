@@ -91,6 +91,18 @@ export const routes: RouteRecordRaw[] = [
 				name: 'mail-all-inboxes',
 				component: () => import('@/apps/mail/pages/AllInboxesView.vue'),
 			},
+			// The merged view with a thread open, so opening a mail keeps you in All Inboxes
+			// instead of navigating into the owning account's mailbox. Same component as the
+			// list-only route above, mirroring how `mail-mail` reuses MailboxView, and the same
+			// three params as `mail-mail` so a row only swaps the route name. accountId is the
+			// row's own account: the merged list spans accounts, so the URL has to say which
+			// one the thread belongs to rather than relying on whichever is active.
+			{
+				path: 'all-inboxes/account/:accountId/mailbox/:mailbox/:threadID',
+				name: 'mail-all-inboxes-mail',
+				component: () => import('@/apps/mail/pages/AllInboxesView.vue'),
+				props: true,
+			},
 			{
 				path: 'account/:accountId/mailbox/:mailbox',
 				name: 'mail-mailbox',

@@ -175,6 +175,7 @@ const {
 	selectable = true,
 	hideSender = false,
 	selectionMode = false,
+	threadRouteName = 'mail-mail',
 } = defineProps<{
 	mailbox: string
 	mail: Thread
@@ -190,6 +191,9 @@ const {
 	hideSender?: boolean
 	// Mobile selection mode — forwarded to MailRow.
 	selectionMode?: boolean
+	// Which route the row links to. All Inboxes points at its own thread route so opening a
+	// mail stays in the merged list instead of navigating into one account's mailbox.
+	threadRouteName?: string
 }>()
 
 const emit = defineEmits([
@@ -206,7 +210,7 @@ const { mailboxIds } = userStore()
 const ownEmails = useOwnEmails()
 
 const to = computed(() => ({
-	name: 'mail-mail',
+	name: threadRouteName,
 	params: {
 		accountId: accountId || route.params.accountId,
 		mailbox,

@@ -28,7 +28,11 @@
 		</div>
 
 		<template v-else-if="threads.data?.length">
-			<div ref="mailSidebar" class="sticky top-16 flex w-full flex-col border-r">
+			<div
+				ref="mailSidebar"
+				class="sticky top-16 flex flex-col border-r"
+				:class="!isMobile && showSplitView ? 'w-1/3' : 'w-full'"
+			>
 				<!-- Toolbar — mobile mirrors the mailbox one (h-12, semibold selector in a
 				     bottom sheet, no refresh: pull the tab or reopen instead). -->
 				<div v-if="isMobile" class="relative flex h-12 items-center border-b px-4">
@@ -107,7 +111,11 @@
 								:mail
 								:is-selected="false"
 								:selectable="false"
+								thread-route-name="mail-all-inboxes-mail"
 								class="border-l-transparent sm:border-l"
+								:class="{
+									'!bg-surface-blue-1': mail.thread_id === threadID && !isMobile,
+								}"
 								@set-seen="(seen: boolean) => handleSetSeen(mail, seen)"
 								@archive-thread="handleArchive(mail)"
 								@trash-thread="handleTrash(mail)"
@@ -121,6 +129,38 @@
 					<div v-if="loadingMore" class="flex justify-center py-3">
 						<LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
 					</div>
+				</div>
+			</div>
+			<!-- The open thread, in place. Same geometry as MailboxView: a third/two-thirds split
+			     on desktop with Split View on, a full-bleed overlay otherwise and on mobile. -->
+			<div
+				class="bg-surface-base"
+				:class="{
+					'overflow-hidden': isMobile,
+					'w-2/3': !isMobile && showSplitView,
+					'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showSplitView,
+					'fixed inset-0 z-20 pt-[env(safe-area-inset-top)]': isMobile,
+					'invisible translate-x-full': isMobile && !threadID,
+					hidden: !isMobile && !showSplitView && !threadID,
+				}"
+			>
+				<div class="h-full overflow-y-auto">
+					<MailThread
+						v-if="openRow"
+						:mailbox="openRow.inbox || ''"
+						:thread-i-d="threadID"
+						:threads="openThreadIDs"
+						:messages="openRow.messages"
+						@reload-mails="refreshThreads()"
+						@set-seen="(seen: boolean) => handleSetSeen(openRow!, seen)"
+						@set-flagged="
+							(_ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged)
+						"
+						@move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
+						@delete-thread="handleTrash(openRow!)"
+						@prev-thread="stepOpenThread(-1)"
+						@next-thread="stepOpenThread(1)"
+					/>
 				</div>
 			</div>
 		</template>
@@ -146,6 +186,7 @@
 
 <script setup lang="ts">
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useIntersectionObserver } from '@vueuse/core'
 import {
 	ChevronDown,
@@ -167,12 +208,23 @@ import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
+import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 
 import type { Thread, UserResource } from '@/apps/mail/types'
 
 const { isMobile } = useScreenSize()
 
+// Set by the `mail-all-inboxes-mail` route when a thread is open. accountId is the thread's
+// owning account, not the active one — the merged list spans accounts.
+const { accountId, mailbox, threadID } = defineProps<{
+	accountId?: string
+	mailbox?: string
+	threadID?: string
+}>()
+
+const route = useRoute()
+const router = useRouter()
 const socket = inject('$socket')
 const user = inject('$user') as UserResource
 const dayjs = inject('$dayjs')
@@ -341,6 +393,44 @@ const refreshThreads = (reloadCounts = true) => {
 // Date grouping with collapsible headers (mirroring the per-mailbox view). The last group never
 // collapses — it's where infinite scroll appends, so hiding it would swallow newly loaded rows.
 const groupMessagesBy = computed(() => user.data.group_messages_by)
+
+// Split View is a user setting; the merged view honours it like the mailbox view does.
+const showSplitView = computed(() => !!user.data?.show_reading_pane)
+
+// The loaded row the open thread belongs to. Every mutation reads its account/archive/trash
+// off the row, so the pane acts on the owning account without consulting the active one.
+const openRow = computed(() =>
+	threadID ? (threads.data ?? []).find((t: Thread) => t.thread_id === threadID) : undefined,
+)
+
+// Prev/next paging within what is currently loaded, in the list's own order.
+const openThreadIDs = computed(() => (threads.data ?? []).map((t: Thread) => t.thread_id))
+
+const stepOpenThread = (offset: number) => {
+	const ids = openThreadIDs.value
+	const next = ids[ids.indexOf(threadID!) + offset]
+	if (next) openThread(next)
+}
+
+const openThread = (nextThreadID: string) => {
+	const row = (threads.data ?? []).find((t: Thread) => t.thread_id === nextThreadID)
+	if (!row) return
+	router.push({
+		name: 'mail-all-inboxes-mail',
+		params: { accountId: row.account, mailbox: row.inbox, threadID: nextThreadID },
+		query: route.query,
+	})
+}
+
+// Archive and Trash already have optimistic list removal; anything else is a plain move.
+const moveOpenThread = (mailboxId: string) => {
+	const row = openRow.value
+	if (!row) return
+	if (mailboxId === row.archive) return handleArchive(row)
+	if (mailboxId === row.trash) return handleTrash(row)
+	const restore = removeFromList(row)
+	raiseOptimisticToast(moveThreadOut(row, mailboxId, restore), __('Thread moved.'))
+}
 
 const groupedThreads = computed<Record<string, Thread[]>>(() =>
 	(threads.data ?? []).reduce((groups: Record<string, Thread[]>, thread: Thread) => {
