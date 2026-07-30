@@ -9,6 +9,7 @@ from frappe.utils import get_files_path, now
 from suite.drive.api.activity import create_new_activity_log
 from suite.drive.api.files import get_file_type
 from suite.drive.api.permissions import (
+	exceeds_grant_ceiling,
 	get_entity_with_permissions,
 	get_user_access,
 	user_has_permission,
@@ -145,18 +146,13 @@ class File(FrappeFile):
 		if not user_has_permission(self, "share"):
 			frappe.throw("Not permitted to share", frappe.PermissionError)
 
-		# You can only hand out access you hold yourself, so a user with (say)
-		# read+share can't grant write/upload they don't have. Admins hold
-		# everything implicitly — get_user_access doesn't know that.
-		if frappe.session.user != "Administrator" and "Suite Admin" not in frappe.get_roles():
-			granter = get_user_access(self, frappe.session.user)
+		if not deny:
 			requested = {"read": read, "comment": comment, "share": share, "upload": upload, "write": write}
-			for level, value in requested.items():
-				if value and not granter.get(level):
-					frappe.throw(
-						f"You cannot grant '{level}' access that you don't have yourself.",
-						frappe.PermissionError,
-					)
+			for level in exceeds_grant_ceiling(self, requested):
+				frappe.throw(
+					f"You cannot grant '{level}' access that you don't have yourself.",
+					frappe.PermissionError,
+				)
 
 		# General rows ("" = anyone with the link, $GENERAL = site users) are
 		# mutually exclusive — replace wholesale.

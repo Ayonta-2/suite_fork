@@ -165,13 +165,24 @@ def get_shared_with_list(entity: str):
 	return permissions
 
 
+def exceeds_grant_ceiling(entity, requested, user=None):
+	"""Levels in `requested` the user can't hand out because they don't hold
+	them: a user with read+share can't grant write. Admins hold everything
+	implicitly — get_user_access doesn't know that."""
+	user = user or frappe.session.user
+	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
+		return []
+	granter = get_user_access(entity, user)
+	return [t for t in PERMISSION_TYPES if requested.get(t) and not granter.get(t)]
+
+
 def drive_permission_has_permission(doc, ptype="read", user=None):
 	"""Gate direct Drive Permission access via the generic client API.
 
 	Reads are additionally scoped by `filter_drive_permission`; creating or
-	modifying an ACL row requires `share` rights on the target entity, so a user
-	can't grant themselves access by inserting permission rows directly. The
-	share()/unshare() flows are unaffected as they save with ignore_permissions.
+	modifying an ACL row requires `share` rights on the target entity and, since
+	the generic API bypasses share(), the same grant ceiling that method
+	enforces. The share()/unshare() flows save with ignore_permissions.
 	"""
 	user = user or frappe.session.user
 	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
@@ -180,7 +191,12 @@ def drive_permission_has_permission(doc, ptype="read", user=None):
 		doc = frappe.get_doc("Drive Permission", doc)
 	if ptype in ("read", "select"):
 		return doc.owner == user or doc.user == user
-	return bool(user_has_permission(doc.entity, "share", user))
+	if not user_has_permission(doc.entity, "share", user):
+		return False
+	if ptype == "delete" or doc.deny:
+		# Removing a row, or writing a deny, revokes rather than grants.
+		return True
+	return not exceeds_grant_ceiling(doc.entity, doc.as_dict(), user)
 
 
 def user_has_permission(doc, ptype, user=None):
