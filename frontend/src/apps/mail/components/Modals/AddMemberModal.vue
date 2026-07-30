@@ -69,6 +69,7 @@
 					type="email"
 					:label="__('Backup Email')"
 					placeholder="johndoe@personal.com"
+					:description="__('Password resets and the invitation email are sent to this address.')"
 				/>
 				<FormControl
 					v-model="accountRequest.quota_gb"
@@ -97,6 +98,7 @@
 					v-model="accountRequest.expires_at"
 					:label="__('Expires At')"
 					type="datetime-local"
+					:description="__('The invitation link stops working after this time.')"
 				/>
 				<template v-else>
 					<FormControl
@@ -114,6 +116,7 @@
 						type="password"
 						:label="__('Password')"
 						placeholder="••••••••"
+						:description="__('The member can change this later in their account settings.')"
 					/>
 					<!-- Only set here when the account is created right away; an invited member picks
 					their own on the setup form. -->

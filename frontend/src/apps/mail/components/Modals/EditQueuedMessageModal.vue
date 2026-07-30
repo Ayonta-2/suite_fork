@@ -15,7 +15,12 @@
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl v-model="nextRetry" :label="__('Next Retry')" type="datetime-local" />
+				<FormControl
+					v-model="nextRetry"
+					:label="__('Next Retry')"
+					type="datetime-local"
+					:description="__('The next delivery attempt is scheduled for this time.')"
+				/>
 				<ErrorMessage
 					:message="updateMessage.error && (updateMessage.error?.messages?.[0] || updateMessage.error?.message || __('Request failed.'))"
 				/>

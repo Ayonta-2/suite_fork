@@ -29,6 +29,9 @@
 						:open-on-click="true"
 					/>
 				</div>
+				<p class="text-ink-gray-4 -mt-2 text-xs">
+					{{ __('Mail sent to this address is delivered to this group.') }}
+				</p>
 				<FormControl
 					v-model="description"
 					:label="__('Description')"

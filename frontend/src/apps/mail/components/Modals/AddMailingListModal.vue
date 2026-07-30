@@ -16,7 +16,13 @@
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl v-model="name" :label="__('Name')" placeholder="announce" autocomplete="off" />
+				<FormControl
+					v-model="name"
+					:label="__('Name')"
+					placeholder="announce"
+					autocomplete="off"
+					:description="__('Together with the domain, this forms the list\'s email address.')"
+				/>
 				<FormControl v-model="domain" type="select" :label="__('Domain')" :options="domainOptions" />
 				<FormControl v-model="description" :label="__('Description')" type="textarea" />
 				<FormControl

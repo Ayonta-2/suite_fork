@@ -16,7 +16,12 @@
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl v-model="description" :label="__('Description')" autocomplete="off" />
+				<FormControl
+					v-model="description"
+					:label="__('Description')"
+					autocomplete="off"
+					:description="__('Shown as the role\'s name across the dashboard.')"
+				/>
 				<div class="space-y-1.5">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Enabled Permissions') }}</label>
 					<MultiSelect v-model="enabledPermissions" :options="permissionOptions" />

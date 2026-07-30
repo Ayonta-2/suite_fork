@@ -28,6 +28,7 @@
 					:label="__('Domain Name')"
 					placeholder="example.com"
 					autocomplete="off"
+					:description="__('After adding, copy the generated DNS records to your DNS provider.')"
 				/>
 				<FormControl
 					v-model="domainDescription"

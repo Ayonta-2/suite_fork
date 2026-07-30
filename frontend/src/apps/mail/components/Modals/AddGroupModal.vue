@@ -21,6 +21,7 @@
 					:label="__('Name')"
 					placeholder="team"
 					autocomplete="off"
+					:description="__('Together with the domain, this forms the group\'s email address.')"
 				/>
 				<FormControl
 					v-model="domain"

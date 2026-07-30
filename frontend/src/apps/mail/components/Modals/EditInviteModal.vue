@@ -63,6 +63,7 @@
 					v-model="accountRequest.doc.expires_at"
 					type="datetime-local"
 					:label="__('Expires At')"
+					:description="__('The invitation link stops working after this time.')"
 					:disabled="!isEditableInvite"
 				/>
 				<hr />

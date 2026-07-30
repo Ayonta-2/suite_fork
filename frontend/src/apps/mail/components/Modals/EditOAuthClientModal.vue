@@ -24,7 +24,12 @@
 					:placeholder="__('Leave blank to keep unchanged')"
 				/>
 				<FormControl v-model="logo" :label="__('Logo (URL or base64 encoded)')" type="textarea" />
-				<FormControl v-model="expiresAt" type="datetime-local" :label="__('Expires At')" />
+				<FormControl
+					v-model="expiresAt"
+					type="datetime-local"
+					:label="__('Expires At')"
+					:description="__('The client can no longer be used after this time.')"
+				/>
 				<ErrorMessage
 					:message="updateClient.error && (updateClient.error?.messages?.[0] || updateClient.error?.message || __('Request failed.'))"
 				/>

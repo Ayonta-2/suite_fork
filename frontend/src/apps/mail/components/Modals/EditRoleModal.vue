@@ -16,7 +16,12 @@
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl v-model="description" :label="__('Description')" autocomplete="off" />
+				<FormControl
+					v-model="description"
+					:label="__('Description')"
+					autocomplete="off"
+					:description="__('Shown as the role\'s name across the dashboard.')"
+				/>
 				<ErrorMessage
 					:message="updateRole.error && (updateRole.error?.messages?.[0] || updateRole.error?.message || __('Request failed.'))"
 				/>
