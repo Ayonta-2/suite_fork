@@ -162,7 +162,11 @@
 				</div>
 			</div>
 			<!-- The open thread, in place. Same geometry as MailboxView: a third/two-thirds split
-			     on desktop with Split View on, a full-bleed overlay otherwise and on mobile. -->
+			     on desktop with Split View on, a full-bleed overlay otherwise and on mobile.
+			     Teleported to body on mobile for the same reason MailboxView does it: inside the
+			     layout's isolate stacking context the tab bar paints over the pane, whatever the
+			     pane's own z-index says. -->
+			<Teleport to="body" :disabled="!isMobile">
 			<div
 				class="bg-surface-base"
 				:class="{
@@ -199,6 +203,7 @@
 					/>
 				</div>
 			</div>
+			</Teleport>
 		</template>
 
 		<!-- No mails -->
@@ -236,7 +241,13 @@ import {
 } from 'lucide-vue-next'
 import { Breadcrumbs, Button, Dropdown, Tooltip, call, createResource, usePageMeta } from 'frappe-ui'
 
-import { getFormattedDate, raiseOptimisticToast, raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
+import {
+	getFormattedDate,
+	isMac,
+	raiseOptimisticToast,
+	raiseToast,
+	shouldIgnoreKeypress,
+} from '@/apps/mail/utils'
 import {
 	isNavigationKey,
 	navigationOffset,
@@ -468,6 +479,44 @@ const stepOpenThread = (offset: number) => {
 // no stacks, no day headers, no selection — so a step is just the neighbouring row.
 const gPrefix = useGPrefix()
 
+// Thread shortcuts, acting on the open thread or — with none open — the row under the cursor.
+// Each one goes through the row handlers, which read the account and its folder ids off the row
+// itself, so a shortcut in the merged list targets the owning account like a click does.
+// Returns true when it consumed the key.
+const actionTarget = computed(() => {
+	const key = threadID ?? focusedRowKey.value
+	return (threads.data ?? []).find((t: Thread) => t.thread_id === key)
+})
+
+const handleThreadActions = (e: KeyboardEvent, key: string) => {
+	const thread = actionTarget.value
+	if (!thread) return false
+
+	// Backspace on Mac, Delete elsewhere.
+	if (key === (isMac ? 'backspace' : 'delete')) {
+		e.preventDefault()
+		handleTrash(thread)
+		return true
+	}
+
+	if (key === 'u') {
+		e.preventDefault()
+		handleSetSeen(thread, e.shiftKey)
+		return true
+	}
+
+	if (key === 'e') {
+		e.preventDefault()
+		handleArchive(thread)
+		return true
+	}
+
+	// `!` (mark as junk) is absent on purpose: the merged row carries the account's Archive and
+	// Trash ids but not its Junk one (see Thread in types), so there is nothing to move it to.
+
+	return false
+}
+
 const handleKeyDown = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
 	if (shouldIgnoreKeypress(e)) return
@@ -500,6 +549,8 @@ const handleKeyDown = (e: KeyboardEvent) => {
 		gPrefix.disarm()
 		return
 	}
+
+	if (handleThreadActions(e, key)) return
 
 	if (!isNavigationKey(key)) return
 	e.preventDefault()
