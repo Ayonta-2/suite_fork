@@ -1,6 +1,8 @@
 <template>
 	<MailRow
 		:is-selected
+		:selectable
+		:hide-avatar
 		:unread="!!unreadCount"
 		:avatar-label="avatarLabel"
 		:avatar-image="latest.user_image"
@@ -65,10 +67,14 @@ import type { Thread } from '@/apps/mail/types'
 //
 // Its hover actions apply to every member at once, so each one names the count and every move it makes
 // is undoable.
-const { threads, expanded, isSelected } = defineProps<{
+const { threads, expanded, isSelected, selectable, hideAvatar } = defineProps<{
 	threads: Thread[]
 	expanded: boolean
 	isSelected: boolean
+	// Forwarded to MailRow, for lists without bulk selection / with the leading
+	// column reclaimed (the merged All Inboxes list) — see MailRow's props.
+	selectable?: boolean
+	hideAvatar?: boolean
 }>()
 
 const emit = defineEmits<{

@@ -88,7 +88,11 @@
 						>
 							<div
 								class="text-ink-gray-6 flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
-								:class="{ 'cursor-pointer': !isLastGroup(key) }"
+								:class="{
+									'cursor-pointer': !isLastGroup(key),
+									'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
+								}"
+								:data-row-key="`group:${key}`"
 								@click="toggleGroupCollapse(key)"
 							>
 								<span class="select-none pt-[2px]">
@@ -116,7 +120,7 @@
 								class="border-l-transparent sm:border-l"
 								:class="{
 									'!bg-surface-blue-1': mail.thread_id === threadID && !isMobile,
-									'!border-l-outline-blue-5': mail.thread_id === focusedThreadID,
+									'!border-l-outline-blue-5': focusedRowKey === mail.thread_id,
 								}"
 								:data-row-key="mail.thread_id"
 								@set-seen="(seen: boolean) => handleSetSeen(mail, seen)"
@@ -211,6 +215,7 @@ import {
 	isNavigationKey,
 	navigationOffset,
 	stepFrom,
+	stepFromKey,
 	useGPrefix,
 	useRowScroll,
 } from '@/apps/mail/utils/listNavigation'
@@ -436,14 +441,14 @@ const handleKeyDown = (e: KeyboardEvent) => {
 	if (key === 'escape') {
 		e.preventDefault()
 		if (threadID) return router.push({ name: 'mail-all-inboxes', query: route.query })
-		focusedThreadID.value = undefined
+		focusedRowKey.value = undefined
 		return
 	}
 
 	if (key === 'enter') {
-		if (!focusedThreadID.value) return
+		if (!focusedRowKey.value) return
 		e.preventDefault()
-		return openThread(focusedThreadID.value)
+		return activateFocusedRow()
 	}
 
 	// `g g` to the top, `G` to the bottom of what is loaded.
@@ -463,19 +468,49 @@ const handleKeyDown = (e: KeyboardEvent) => {
 	if (threadID) return stepOpenThread(offset)
 
 	// With no thread open the keys move the cursor without opening anything, as the mailbox list
-	// does — Enter opens what the marker is on.
-	const next = stepFrom(openThreadIDs.value, focusedThreadID.value, offset)
-	if (next) focusThread(next)
+	// does — Enter opens what the marker is on, or folds the day.
+	focusRow(stepFromKey(navigableRows.value, focusedRowKey.value, offset))
 }
 
-// The keyboard cursor: a thread id, since the merged list has no stacks or day headers to land on.
-const focusedThreadID = ref<string>()
+// What the cursor can land on, in render order: each day's header, then that day's threads unless
+// it is collapsed. Walking the loaded threads instead skipped the headers and — worse — stepped
+// onto threads hidden inside a collapsed day, where the marker simply vanished.
+type NavEntry =
+	| { type: 'group'; key: string; dateKey: string }
+	| { type: 'thread'; key: string; threadID: string }
 
-const scrollThreadIntoView = useRowScroll(mailListRef, isMobile)
+const navigableRows = computed<NavEntry[]>(() => {
+	const rows: NavEntry[] = []
+	for (const [dateKey, group] of Object.entries(groupedThreads.value)) {
+		if (groupMessagesBy.value !== 'None' && !isMobile.value)
+			rows.push({ type: 'group', key: `group:${dateKey}`, dateKey })
+		if (!isMobile.value && collapsedGroups.value.includes(dateKey)) continue
+		for (const thread of group)
+			rows.push({ type: 'thread', key: thread.thread_id, threadID: thread.thread_id })
+	}
+	return rows
+})
 
-const focusThread = (nextThreadID: string) => {
-	focusedThreadID.value = nextThreadID
-	scrollThreadIntoView(nextThreadID)
+// A thread's row key is its id, so the open-thread watcher can keep passing one straight in.
+const focusedRowKey = ref<string>()
+
+const scrollRowIntoView = useRowScroll(mailListRef, isMobile)
+
+const focusRowKey = (key: string) => {
+	focusedRowKey.value = key
+	scrollRowIntoView(key)
+}
+
+const focusRow = (row?: NavEntry) => {
+	if (row) focusRowKey(row.key)
+}
+
+// Enter opens a thread, or folds the day the marker is sitting on.
+const activateFocusedRow = () => {
+	const row = navigableRows.value.find((r) => r.key === focusedRowKey.value)
+	if (!row) return
+	if (row.type === 'thread') return openThread(row.threadID)
+	if (!isLastGroup(row.dateKey)) toggleGroupCollapse(row.dateKey)
 }
 
 // The open thread keeps its row in view, as the mailbox list does: stepping
@@ -484,7 +519,7 @@ const focusThread = (nextThreadID: string) => {
 watch(
 	() => threadID,
 	(val) => {
-		if (val) setTimeout(() => focusThread(val))
+		if (val) setTimeout(() => focusRowKey(val))
 	},
 	{ immediate: true },
 )
@@ -492,10 +527,11 @@ watch(
 // `at()` so -1 reads as the last loaded thread. With a thread open the jump opens the edge one;
 // otherwise it just moves the cursor there, mirroring the mailbox list.
 const goToEdge = (index: number) => {
-	const next = openThreadIDs.value.at(index)
-	if (!next) return
-	if (threadID) return openThread(next)
-	focusThread(next)
+	if (threadID) {
+		const next = openThreadIDs.value.at(index)
+		return next && openThread(next)
+	}
+	focusRow(navigableRows.value.at(index))
 }
 
 const openThread = (nextThreadID: string) => {
