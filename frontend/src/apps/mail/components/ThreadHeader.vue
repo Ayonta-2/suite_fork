@@ -120,7 +120,7 @@ import { FLAGGED_STAR_STYLE, FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { userStore } from '@/apps/mail/stores/user'
+import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 
 import type { Mail, MailboxData } from '@/apps/mail/types'
 
@@ -143,7 +143,9 @@ const emit = defineEmits([
 
 const { isMobile } = useScreenSize()
 const route = useRoute()
-const { mailboxes, mailboxIds } = userStore()
+// Folder menus come from the pane's account scope — the thread's owning account
+// when All Inboxes opened it, the active account otherwise.
+const { mailboxes, mailboxIds } = injectAccountScope()
 
 const user = inject('$user')
 
@@ -208,11 +210,11 @@ const threadActions = computed((): Action[] => [
 		label: __('Archive (E)'),
 		onClick: () =>
 			emit(
-				mailbox.value === mailboxIds.sent ? 'addThreadToMailbox' : 'moveThread',
-				mailboxIds.archive,
+				mailbox.value === mailboxIds.value.sent ? 'addThreadToMailbox' : 'moveThread',
+				mailboxIds.value.archive,
 			),
 		icon: Archive,
-		condition: () => !threadMailboxes.value.includes(mailboxIds.archive),
+		condition: () => !threadMailboxes.value.includes(mailboxIds.value.archive),
 	},
 	{
 		label: __('Mark as Junk (!)'),
@@ -220,26 +222,26 @@ const threadActions = computed((): Action[] => [
 		icon: CircleAlert,
 		condition: () =>
 			!threadMailboxes.value.some((m: string) =>
-				[mailboxIds.junk, mailboxIds.drafts].includes(m),
+				[mailboxIds.value.junk, mailboxIds.value.drafts].includes(m),
 			),
 	},
 	{
 		label: __('Mark as Not Junk'),
 		onClick: () => emit('setSpamStatus', false),
 		icon: CircleCheck,
-		condition: () => threadMailboxes.value.includes(mailboxIds.junk),
+		condition: () => threadMailboxes.value.includes(mailboxIds.value.junk),
 	},
 	{
 		label: __('Move to Trash (Delete)'),
-		onClick: () => emit('moveThread', mailboxIds.trash),
+		onClick: () => emit('moveThread', mailboxIds.value.trash),
 		icon: Trash2,
-		condition: () => !threadMailboxes.value.includes(mailboxIds.trash),
+		condition: () => !threadMailboxes.value.includes(mailboxIds.value.trash),
 	},
 	{
 		label: __('Delete Thread (Shift+Delete)'),
 		onClick: () => emit('deleteThread'),
 		icon: Trash2,
-		condition: () => threadMailboxes.value.includes(mailboxIds.trash),
+		condition: () => threadMailboxes.value.includes(mailboxIds.value.trash),
 	},
 	{
 		label: __('Mark as Unread (U)'),
@@ -250,38 +252,38 @@ const threadActions = computed((): Action[] => [
 ])
 
 const showAddTo = computed(() =>
-	threadMailboxes.value.every((m) => ![mailboxIds.junk, mailboxIds.trash].includes(m)),
+	threadMailboxes.value.every((m) => ![mailboxIds.value.junk, mailboxIds.value.trash].includes(m)),
 )
 
 const addToOptions = computed(() =>
-	mailboxes.data
+	mailboxes.value.data
 		?.filter(
 			(m) =>
 				(!m.role || ['inbox', 'archive'].includes(m.role)) &&
-				m.id !== mailboxIds.screener &&
+				m.id !== mailboxIds.value.screener &&
 				!threadMailboxes.value.includes(m.id),
 		)
 		.map((m) => getMailboxOption(m, 'addThreadToMailbox')),
 )
 
 const removeFromOptions = computed(() =>
-	mailboxes.data
+	mailboxes.value.data
 		?.filter(
 			(m) =>
 				threadMailboxesUnion.value.includes(m.id) &&
-				![mailboxIds.sent, mailboxIds.drafts].includes(m.id),
+				![mailboxIds.value.sent, mailboxIds.value.drafts].includes(m.id),
 		)
 		.map((m) => getMailboxOption(m, 'removeThreadFromMailbox')),
 )
 
 const moveToOptions = computed(() => {
 	const excludedMailboxes = new Set([
-		mailboxIds.sent,
-		mailboxIds.drafts,
-		mailboxIds.screener,
+		mailboxIds.value.sent,
+		mailboxIds.value.drafts,
+		mailboxIds.value.screener,
 		...threadMailboxes.value,
 	])
-	return mailboxes.data
+	return mailboxes.value.data
 		?.filter((m) => !excludedMailboxes.has(m.id))
 		.map((m) => getMailboxOption(m, 'moveThread'))
 })

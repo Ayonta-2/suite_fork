@@ -323,6 +323,7 @@
 												:file-name="attachment.filename"
 												:blob-i-d="attachment.blob_id"
 												:type="attachment.type"
+												:account="scopeAccountId"
 												class="mb-2 mr-2"
 												@click.stop.prevent="
 													openAttachment(
@@ -375,6 +376,7 @@
 			v-model="showAttachmentViewer"
 			:attachments="attachments"
 			:initial-index="attachmentIndex"
+			:account="scopeAccountId"
 		/>
 	</div>
 
@@ -422,7 +424,7 @@ import {
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
 import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
-import { userStore } from '@/apps/mail/stores/user'
+import { provideAccountScope } from '@/apps/mail/utils/accountScope'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
@@ -443,23 +445,30 @@ import type {
 	Identity,
 	Mail,
 	Mailbox,
+	MailboxData,
 	ScreenedAddress,
 } from '@/apps/mail/types'
 
-const { mailbox, threadID, threads, messages, canGoNext, readonly, slide } = defineProps<{
-	mailbox: string
-	threadID?: string
-	threads: string[]
-	messages?: Mail[]
-	canGoNext?: boolean
-	// Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
-	// toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.
-	readonly?: boolean
-	// Transition name for the mobile swipe paging ('page-next' / 'page-prev', styled in
-	// MailLayout); the owner arms it per swipe and clears it on slideDone, so other thread
-	// changes swap instantly.
-	slide?: string
-}>()
+const { mailbox, threadID, threads, messages, canGoNext, readonly, slide, account } =
+	defineProps<{
+		mailbox: string
+		threadID?: string
+		threads: string[]
+		messages?: Mail[]
+		canGoNext?: boolean
+		// The thread's owning account, when it isn't the active one (All Inboxes opens
+		// cross-account threads without switching): the pane and everything inside it —
+		// folder menus, reply identities, screened-sender banners — act as this account
+		// via the provided scope (see utils/accountScope).
+		account?: string
+		// Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
+		// toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.
+		readonly?: boolean
+		// Transition name for the mobile swipe paging ('page-next' / 'page-prev', styled in
+		// MailLayout); the owner arms it per swipe and clears it on slideDone, so other thread
+		// changes swap instantly.
+		slide?: string
+	}>()
 
 const emit = defineEmits([
 	'reloadMails',
@@ -485,26 +494,25 @@ const { openSettings } = useSettings()
 const { filterBySender } = useFilterBySender()
 const dayjs = inject('$dayjs')
 const user = inject('$user')
-const store = userStore()
-const { mailboxes, mailboxIds, identities, screenedAddresses } = store
+// The pane acts as the thread's owning account (the active one unless the `account`
+// prop says otherwise) — provided so ThreadHeader's folder menus and the reply
+// editors below resolve the same account.
+const scope = provideAccountScope(() => account)
+const { accountId: scopeAccountId, identities, screenedAddresses, mailboxIds } = scope
 
 // A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
 // exact address or by an accepted/blocked '@domain' entry covering them.
 const isSenderBlocked = (email: string) =>
-	!!screenedAddresses.data?.some(
+	!!screenedAddresses.value.data?.some(
 		(a: ScreenedAddress) => a.action === 'Reject' && matchesScreenedValue(email, a.email),
 	)
 
 // Trusted senders — you, or anyone you've accepted — load images normally. For everyone else, the
 // account's "Block Remote Images" setting withholds remote images (read-tracking pixels) until you opt in.
-const blockRemoteImagesEnabled = computed(
-	() =>
-		store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)
-			?.block_remote_images ?? true,
-)
+const blockRemoteImagesEnabled = computed(() => scope.account.value?.block_remote_images ?? true)
 const isScreenedIn = (email: string) =>
-	!!identities.data?.some((i: Identity) => i.email === email) ||
-	!!screenedAddresses.data?.some(
+	!!identities.value.data?.some((i: Identity) => i.email === email) ||
+	!!screenedAddresses.value.data?.some(
 		(a: ScreenedAddress) => a.action === 'Accepted' && matchesScreenedValue(email, a.email),
 	)
 const shouldBlockImages = (mail: { from_email: string }) =>
@@ -582,7 +590,7 @@ const thread = ref<Mail[]>([])
 
 const threadFallback = createResource({
 	url: 'suite.mail.api.mail.get_thread',
-	makeParams: () => ({ account: store.accountId, thread_id: threadID }),
+	makeParams: () => ({ account: scopeAccountId.value, thread_id: threadID }),
 	onSuccess: (mails: Mail[]) => {
 		// Thread no longer exists (e.g. deleted) — bail to the mailbox instead of a blank page.
 		if (!mails?.length) {
@@ -729,10 +737,10 @@ const filterRelevantMails = (mail: Mail) => {
 	if (mailbox === 'search') return true
 
 	const mailboxes = mail.mailboxes.map((m) => m.mailbox_id)
-	const trash = mailboxIds.trash
+	const trash = mailboxIds.value.trash
 	if (mailbox === trash) return mailboxes.includes(trash)
 
-	if (mailbox === mailboxIds.junk) return !!mail.junk
+	if (mailbox === mailboxIds.value.junk) return !!mail.junk
 
 	return !mailboxes.includes(trash) && !mail.junk
 }
@@ -777,10 +785,10 @@ onMounted(() => loadThread())
 
 const unblockEmailAddress = createResource({
 	url: 'suite.mail.api.mail.unscreen_email_addresses',
-	makeParams: (email) => ({ account: store.accountId, emails: [email] }),
+	makeParams: (email) => ({ account: scopeAccountId.value, emails: [email] }),
 	onSuccess: () => {
 		raiseToast(__('Sender unblocked.'))
-		screenedAddresses.reload()
+		screenedAddresses.value.reload()
 	},
 })
 
@@ -788,13 +796,13 @@ const unblockEmailAddress = createResource({
 const trustSender = createResource({
 	url: 'suite.mail.api.mail.screen_email_addresses',
 	makeParams: (email: string) => ({
-		account: store.accountId,
+		account: scopeAccountId.value,
 		emails: [email],
 		action: 'Accepted',
 	}),
 	onSuccess: () => {
 		raiseToast(__('Sender marked as trusted.'))
-		screenedAddresses.reload()
+		screenedAddresses.value.reload()
 	},
 })
 
@@ -858,7 +866,7 @@ const downloadAttachmentsAsZip = async (mail: Mail) => {
 
 	downloadingZipMail.value = mail.name
 	try {
-		const url = await getAttachmentsZipUrl(mailAttachments)
+		const url = await getAttachmentsZipUrl(mailAttachments, scopeAccountId.value)
 		downloadUrlAsFile(url, `${mail.subject || 'attachments'}.zip`)
 	} catch {
 		// the resource's onError already raised a toast; just stop spinning
@@ -978,7 +986,7 @@ const syncFlagged = (ids: string[], flagged: boolean) =>
 
 const syncMailboxMembership = (mailboxId: string, add: boolean) => {
 	if (add) {
-		const mb = mailboxes.data?.find((m) => m.id === mailboxId)
+		const mb = scope.mailboxes.value.data?.find((m: MailboxData) => m.id === mailboxId)
 		if (!mb) return
 		const entry: Mailbox = { mailbox: mb.name, mailbox_id: mb.id, mailbox_name: mb._name }
 		thread.value?.forEach((mail: Mail) => {
@@ -1055,7 +1063,7 @@ const getReplyAllRecipients = (mail: Mail) => {
 }
 
 const isUserEmail = (email: string) =>
-	identities.data.map((i: Identity) => i.email).includes(email)
+	identities.value.data?.map((i: Identity) => i.email).includes(email)
 
 const getBodyContent = (mail: Mail) => {
 	if (hasHtmlContent(mail.html_body)) return mail.html_body

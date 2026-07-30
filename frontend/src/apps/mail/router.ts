@@ -81,8 +81,12 @@ function installMailGuard(r: Router) {
 			return { name: 'mail-domains' }
 		}
 
-		// Resolve active account.
-		resolveAccount(user?.accounts, to.params.accountId as string | undefined)
+		// Resolve active account. The merged All Inboxes thread route carries the thread's
+		// owning account purely to scope the pane (see utils/accountScope) — opening a
+		// thread there must not switch the active account out from under the merged list.
+		const routeAccountId =
+			to.name === 'mail-all-inboxes-mail' ? undefined : (to.params.accountId as string | undefined)
+		resolveAccount(user?.accounts, routeAccountId)
 		const accountId = userStore().accountId
 
 		// Wait for mailbox list. The fetch rejects when the mail server is temporarily down;

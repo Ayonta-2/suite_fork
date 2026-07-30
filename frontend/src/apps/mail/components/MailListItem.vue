@@ -66,6 +66,7 @@
 						:file-name="attachment.filename"
 						:blob-i-d="attachment.blob_id"
 						:type="attachment.type"
+						:account="accountId"
 						class="mr-2"
 						:class="isFullWidth ? 'max-w-32' : 'max-w-44 sm:max-w-20'"
 						@click.stop.prevent="openAttachment(idx)"
@@ -141,6 +142,7 @@
 			v-model="showAttachmentViewer"
 			:attachments="mail.attachments"
 			:initial-index="attachmentIndex"
+			:account="accountId"
 		/>
 	</MailRow>
 </template>
@@ -300,7 +302,7 @@ const currentlyDownloading = ref<string[]>([])
 const downloadAttachment = async (attachment: Attachment) => {
 	currentlyDownloading.value.push(attachment.blob_id)
 	try {
-		const url = await getAttachmentUrl(attachment.blob_id, attachment.type)
+		const url = await getAttachmentUrl(attachment.blob_id, attachment.type, accountId)
 		if (url) downloadUrlAsFile(url, attachment.filename || 'attachment')
 	} catch {
 		// the resource's onError already raised a toast; just stop spinning

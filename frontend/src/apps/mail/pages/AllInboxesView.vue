@@ -175,11 +175,14 @@
 				}"
 			>
 				<div class="h-full overflow-y-auto">
-					<!-- Rendered with no thread open too (unlike a deep link whose row hasn't
-					     loaded, where the fallback fetch would hit the wrong account) so its own
-					     "Select an email" placeholder fills the pane, as in MailboxView. -->
+					<!-- Rendered with no thread open too so its own "Select an email" placeholder
+					     fills the pane, as in MailboxView. A deep link whose row isn't in the
+					     loaded window stays gated: the pane's action handlers act on the row.
+					     The owning account scopes the pane (folder menus, reply identities) —
+					     opening a cross-account thread does NOT switch the active account. -->
 					<MailThread
 						v-if="openRow || !threadID"
+						:account="openRow?.account"
 						:mailbox="openRow?.inbox || ''"
 						:thread-i-d="threadID"
 						:threads="openThreadIDs"
@@ -406,7 +409,7 @@ const isLoading = computed(() => !isLoaded.value && threads.loading)
 // store's mailboxes.onSuccess hook also refreshes the unified All Inboxes badge.
 const refreshCounts = () => store.mailboxes.reload()
 
-// The row's account, by its short name: blank for the personal account (the default — only
+// The row's account, by its short name: blank for the currently open account (only
 // the odd ones out get labelled), the local part otherwise, unless two accounts share one.
 const shortAccountLabel = (name?: string | null) =>
 	name ? (store.accountShortNames[name] ?? name) : undefined

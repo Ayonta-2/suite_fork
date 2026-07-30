@@ -177,9 +177,11 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 
 import type { Attachment } from '@/apps/mail/types'
 
-const { attachments, initialIndex } = defineProps<{
+const { attachments, initialIndex, account } = defineProps<{
 	attachments?: Attachment[]
 	initialIndex?: number
+	// The blobs' owning account (merged lists / cross-account panes); active when unset.
+	account?: string
 }>()
 
 const { isMobile } = useScreenSize()
@@ -232,6 +234,7 @@ const loadAttachment = async () => {
 		previewUrl.value = await getAttachmentUrl(
 			currentAttachment.value.blob_id,
 			currentAttachment.value.type,
+			account,
 		)
 	} catch {
 		// the resource's onError already raised a toast; the viewer falls back to
