@@ -606,27 +606,6 @@ const toggleStack = (row: StackRow) => {
 // hidden inside a collapsed day or stack, where the marker simply vanished.
 type NavEntry = { type: 'group'; key: string; dateKey: string } | ListRow
 
-// Rescues the one case the observer cannot: the rendered list is too short to scroll, so the
-// sentinel never leaves and re-enters the viewport to fire again — infinite scroll would die with
-// nothing left to scroll. A window of threads can collapse to a single stack row, so filling the
-// viewport can take several windows. This was unreachable before the merged list stacked.
-//
-// Both guards are load-bearing. Stop once the list can scroll, because from there the user's own
-// scrolling drives the observer. And stop if a window added no height: its rows landed somewhere
-// they cannot be seen (a collapsed day), so further windows would be just as invisible — without
-// this, collapsing a large group walks the whole list a window at a time.
-watch(groupedRows, () => {
-	if (!sentinelVisible.value || !hasMore.value) return
-
-	nextTick(() => {
-		const el = mailListRef.value
-		if (!el || !sentinelVisible.value) return
-
-		const grew = el.scrollHeight > lastFillHeight
-		lastFillHeight = el.scrollHeight
-		if (el.scrollHeight <= el.clientHeight && grew) loadMore()
-	})
-})
 
 const navigableRows = computed<NavEntry[]>(() => {
 	const rows: NavEntry[] = []
@@ -730,6 +709,29 @@ const groupedThreads = computed<Record<string, Thread[]>>(() =>
 const isLastGroup = (key: string) => Object.keys(groupedThreads.value).at(-1) === key
 
 const collapsedGroups = ref<string[]>([])
+
+// Rescues the one case the observer cannot: the rendered list is too short to scroll, so the
+// sentinel never leaves and re-enters the viewport to fire again — infinite scroll would die with
+// nothing left to scroll. A window of threads can collapse to a single stack row, so filling the
+// viewport can take several windows. This was unreachable before the merged list stacked.
+//
+// Both guards are load-bearing. Stop once the list can scroll, because from there the user's own
+// scrolling drives the observer. And stop if a window added no height: its rows landed somewhere
+// they cannot be seen (a collapsed day), so further windows would be just as invisible — without
+// this, collapsing a large group walks the whole list a window at a time.
+watch(groupedRows, () => {
+	if (!sentinelVisible.value || !hasMore.value) return
+
+	nextTick(() => {
+		const el = mailListRef.value
+		if (!el || !sentinelVisible.value) return
+
+		const grew = el.scrollHeight > lastFillHeight
+		lastFillHeight = el.scrollHeight
+		if (el.scrollHeight <= el.clientHeight && grew) loadMore()
+	})
+})
+
 
 const toggleGroupCollapse = (key: string) => {
 	// The cursor follows the click, as it does when you open a mail — above the
