@@ -180,6 +180,22 @@ export const useListRows = ({
 
 	const focusOnThread = (threadID?: string) => focusRow(rowForThread(threadID))
 
+	/**
+	 * What a rendered row looks like in its list, as opposed to in itself: the cursor's left marker,
+	 * the tint on the row whose thread is open beside it, and the indent on a member of an expanded
+	 * stack. Four copies of these three rules — one per row type per list — is three too many.
+	 *
+	 * The open-row tint is desktop-only: on mobile the pane covers the list, so it would only ever be
+	 * seen once the reader had already left the thread it points at.
+	 */
+	const rowClasses = (row: ListRow) => ({
+		'border-l-transparent sm:border-l': true,
+		'!border-l-outline-blue-5': row.key === focusedRowKey.value,
+		'!bg-surface-blue-1':
+			row.type === 'thread' && row.thread.thread_id === openThreadID() && !isMobile.value,
+		'!pl-10 sm:!pl-12': row.type === 'thread' && !!row.inStack,
+	})
+
 	// ── Folding ─────────────────────────────────────────────────────────────────────────────────────
 
 	const toggleStack = (row: StackRow) => {
@@ -248,6 +264,7 @@ export const useListRows = ({
 		focusedRow,
 		focusRow,
 		focusRowKey,
+		rowClasses,
 		rowForThread,
 		focusOnThread,
 		toggleStack,

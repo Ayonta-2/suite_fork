@@ -251,42 +251,33 @@
 						class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
 					>
 						<div v-for="(group, key) in groupedThreads" :key="key">
-							<div
+							<MailGroupHeader
 								v-if="groupMessagesBy !== 'None' && !isMobile"
-								class="text-ink-gray-6 group flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
-								:class="{
-									'!bg-surface-blue-1': isGroupSelected(key),
-									'sm:hover:bg-surface-gray-1': !isLastGroup(key),
-									'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
-								}"
-								:data-row-key="`group:${key}`"
-								@click="toggleGroupCollapse(key)"
+								:date-key="key"
+								:monthly="groupMessagesBy === 'Month'"
+								:collapsed="collapsedGroups.includes(key)"
+								:collapsible="!isLastGroup(key)"
+								:focused="focusedRowKey === `group:${key}`"
+								:selected="isGroupSelected(key)"
+								@toggle="toggleGroupCollapse(key)"
 							>
 								<!-- Mobile: group select ("all of Today") appears only in selection mode. -->
-								<div
-									v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
-									class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-3"
-									@click.stop.prevent="
-										toggleSelect(getGroupThreads(key), !isGroupSelected(key))
-									"
-								>
-									<Checkbox
-										:model-value="isGroupSelected(key)"
-										size="md"
-										class="pointer-events-none"
-									/>
-								</div>
-
-								<span class="select-none pt-[2px]">
-									{{ getFormattedDate(key, groupMessagesBy === 'Month').toUpperCase() }}
-								</span>
-
-								<component
-									:is="collapsedGroups.includes(key) ? ChevronRight : ChevronDown"
-									v-if="!isLastGroup(key)"
-									class="icon ml-auto"
-								/>
-							</div>
+								<template #lead>
+									<div
+										v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
+										class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-3"
+										@click.stop.prevent="
+											toggleSelect(getGroupThreads(key), !isGroupSelected(key))
+										"
+									>
+										<Checkbox
+											:model-value="isGroupSelected(key)"
+											size="md"
+											class="pointer-events-none"
+										/>
+									</div>
+								</template>
+							</MailGroupHeader>
 							<template v-if="isMobile || !collapsedGroups.includes(key)">
 								<!-- A stack row stands in for a run of look-alike threads; when expanded, its
 								     members follow it as ordinary (indented) rows. -->
@@ -298,8 +289,7 @@
 										:threads="row.threads"
 										:expanded="row.expanded"
 										:is-selected="isStackSelected(row.threads)"
-										class="border-l-transparent sm:border-l"
-										:class="{ '!border-l-outline-blue-5': row.key === focusedRowKey }"
+										:class="rowClasses(row)"
 										:data-row-key="row.key"
 										@toggle="toggleStack(row)"
 										@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
@@ -326,13 +316,7 @@
 										:selection-mode="mobileSelectionMode"
 										:is-selected="selections.includes(row.thread.thread_id)"
 										:hide-sender="row.inStack"
-										class="border-l-transparent sm:border-l"
-										:class="{
-											'!bg-surface-blue-1':
-												row.thread.thread_id === threadID && !isMobile,
-											'!border-l-outline-blue-5': row.key === focusedRowKey,
-											'!pl-10 sm:!pl-12': row.inStack,
-										}"
+										:class="rowClasses(row)"
 										:data-row-key="row.key"
 										@set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
 										@archive-thread="rowArchive(row.thread)"
@@ -494,7 +478,6 @@ import { useRoute, useRouter } from 'vue-router'
 import {
 	Archive,
 	ChevronDown,
-	ChevronRight,
 	CircleAlert,
 	CircleCheck,
 	Ellipsis,
@@ -523,7 +506,6 @@ import {
 } from 'frappe-ui'
 
 import {
-	getFormattedDate,
 	isMac,
 	raisePromiseToast,
 	raiseToast,
@@ -556,6 +538,7 @@ import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
+import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
@@ -647,6 +630,7 @@ const {
 	focusedRow,
 	focusRow,
 	focusOnThread,
+	rowClasses,
 	toggleStack,
 	toggleGroupCollapse,
 	revealThread,

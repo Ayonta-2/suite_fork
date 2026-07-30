@@ -79,33 +79,15 @@
 					<!-- Mail list -->
 					<div ref="mailList" class="h-full overflow-y-auto overscroll-contain max-sm:pb-20">
 						<div v-for="(rows, key) in groupedRows" :key="key">
-							<Tooltip
+							<MailGroupHeader
 								v-if="groupMessagesBy !== 'None' && !isMobile"
-								:text="
-									isLastGroup(key)
-										? ''
-										: __(collapsedGroups.includes(key) ? 'Expand' : 'Collapse')
-								"
-							>
-								<div
-									class="text-ink-gray-6 flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
-									:class="{
-										'sm:hover:bg-surface-gray-1': !isLastGroup(key),
-										'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
-									}"
-									:data-row-key="`group:${key}`"
-									@click="toggleGroupCollapse(key)"
-								>
-									<span class="select-none pt-[2px]">
-										{{ getFormattedDate(key, groupMessagesBy === 'Month').toUpperCase() }}
-									</span>
-									<component
-										:is="collapsedGroups.includes(key) ? ChevronRight : ChevronDown"
-										v-if="!isLastGroup(key)"
-										class="icon ml-auto"
-									/>
-								</div>
-							</Tooltip>
+								:date-key="key"
+								:monthly="groupMessagesBy === 'Month'"
+								:collapsed="collapsedGroups.includes(key)"
+								:collapsible="!isLastGroup(key)"
+								:focused="focusedRowKey === `group:${key}`"
+								@toggle="toggleGroupCollapse(key)"
+							/>
 							<template v-if="isMobile || !collapsedGroups.includes(key)">
 								<!-- A stack row stands in for a run of look-alike threads; when expanded, its
 								     members follow it as ordinary (indented) rows — the same model as the
@@ -120,8 +102,7 @@
 										:selectable="false"
 										:hide-avatar="!isMobile"
 										:account-label="shortAccountLabel(row.threads[0].account_name)"
-										class="border-l-transparent sm:border-l"
-										:class="{ '!border-l-outline-blue-5': focusedRowKey === row.key }"
+										:class="rowClasses(row)"
 										:data-row-key="row.key"
 										@toggle="toggleStack(row)"
 										@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
@@ -139,12 +120,7 @@
 										thread-route-name="mail-all-inboxes-mail"
 										:hide-avatar="!isMobile"
 										:hide-sender="row.inStack"
-										class="border-l-transparent sm:border-l"
-										:class="{
-											'!bg-surface-blue-1': row.thread.thread_id === threadID && !isMobile,
-											'!border-l-outline-blue-5': focusedRowKey === row.key,
-											'!pl-10 sm:!pl-12': row.inStack,
-										}"
+										:class="rowClasses(row)"
 										:data-row-key="row.key"
 										@set-seen="(seen: boolean) => handleSetSeen(row.thread, seen)"
 										@archive-thread="handleArchive(row.thread)"
@@ -223,11 +199,10 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronDown, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-vue-next'
-import { Breadcrumbs, Button, Dropdown, Tooltip, call, createResource, usePageMeta } from 'frappe-ui'
+import { ChevronDown, LoaderCircle, RefreshCw } from 'lucide-vue-next'
+import { Breadcrumbs, Button, Dropdown, call, createResource, usePageMeta } from 'frappe-ui'
 
 import {
-	getFormattedDate,
 	isMac,
 	raiseOptimisticToast,
 	raiseToast,
@@ -254,6 +229,7 @@ import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
+import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
@@ -396,6 +372,7 @@ const {
 	focusedRow,
 	focusRow,
 	focusOnThread,
+	rowClasses,
 	toggleStack,
 	toggleGroupCollapse,
 	revealThread,
