@@ -138,15 +138,29 @@ def get_global_screened_email_addresses() -> list[dict]:
 	)
 
 
-def get_global_accepted_domains() -> set[str]:
-	"""Returns the domains (lowercased, without the '@' prefix) covered by a global Accepted
-	'@domain' rule — senders from these domains already reach every account's inbox."""
+def get_global_accepted_values() -> set[str]:
+	"""Returns the values (lowercased) of the global Accepted rules — exact email addresses and
+	'@domain' entries (prefix kept) whose senders already reach every account's inbox."""
 
 	return {
-		row.email[1:].lower()
+		row.email.lower()
 		for row in get_global_screened_email_addresses()
-		if row.action == "Accepted" and row.email.startswith("@")
+		if row.action == "Accepted"
 	}
+
+
+def is_globally_accepted(email: str, accepted_values: set[str] | None = None) -> bool:
+	"""Whether the email is covered by a global Accepted rule — its exact address or its '@domain'.
+
+	Pass `accepted_values` (from `get_global_accepted_values`) when checking a batch, so the rules
+	are fetched once.
+	"""
+
+	if accepted_values is None:
+		accepted_values = get_global_accepted_values()
+
+	email = (email or "").lower()
+	return email in accepted_values or "@" + email.split("@")[-1] in accepted_values
 
 
 def get_effective_screened_email_addresses(account: str) -> list[dict]:
