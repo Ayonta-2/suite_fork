@@ -64,8 +64,8 @@
 						<template v-else-if="column.key === 'last_active'">
 							<span class="text-ink-gray-5 text-sm">
 								{{
-									row.last_active && dayjs
-										? dayjs(row.last_active).fromNow()
+									row.last_active
+										? fromNow(row.last_active)
 										: __('Never')
 								}}
 							</span>
@@ -102,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref, useTemplateRef, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import {
 	Avatar,
@@ -122,8 +122,8 @@ import {
 } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { fromNow } from '@/apps/mail/utils/datetime'
 
-type DayjsFn = (value?: string | Date | null) => { fromNow: () => string }
 type MemberRow = {
 	name: string
 	full_name: string
@@ -133,7 +133,6 @@ type MemberRow = {
 	enabled: boolean
 }
 
-const dayjs = inject<DayjsFn>('$dayjs')
 
 const search = ref('')
 const roleFilter = ref<'all' | 'admin' | 'user'>('all')
@@ -207,6 +206,10 @@ const LIST_OPTIONS = {
 	showTooltip: false,
 	rowHeight: 50,
 	emptyState: { description: __('No members found.') },
+	getRowRoute: (row: MemberRow) => ({
+		name: 'mail-member',
+		params: { memberId: row.name },
+	}),
 }
 
 const enableMembers = createResource({

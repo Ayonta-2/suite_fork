@@ -12,18 +12,11 @@
 		</Button>
 
 		<Dropdown :options="orderByItems" placement="right">
-			<Button class="text-base h-7 rounded-l-none flex-1" :disabled>
-				<div class="grid">
-					<span class="col-start-1 row-start-1 flex items-center gap-2">
-						{{ __(sortOrder.label) }}
-						<LucideSparkles v-if="sortOrder.smart" class="size-3" />
-					</span>
-					<span
-						aria-hidden="true"
-						class="sort-label-sizer col-start-1 row-start-1"
-						:data-width-text="sizingText"
-					/>
-				</div>
+			<Button class="text-base h-7 rounded-l-none" :disabled>
+				<span class="flex items-center gap-2">
+					{{ __(sortOrder.label) }}
+					<LucideSparkles v-if="sortOrder.smart" class="size-3" />
+				</span>
 			</Button>
 		</Dropdown>
 	</div>
@@ -55,8 +48,6 @@ const props = defineProps<{
 	disabled?: boolean
 }>()
 
-const sizingText = computed(() => props.options.map((option) => __(option.label)).join('\n'))
-
 const toggleAscending = () => {
 	sortOrder.value.ascending = !sortOrder.value.ascending
 }
@@ -72,15 +63,3 @@ const orderByItems = computed<DropdownOption[]>(() => [
 	...(props.menuItems ?? []),
 ])
 </script>
-
-<style scoped>
-/* Width-reservation sizer, same pattern as frappe-ui Select's .select-trigger-sizer */
-.sort-label-sizer::after {
-	content: attr(data-width-text);
-	display: block;
-	height: 0;
-	overflow: hidden;
-	white-space: pre;
-	visibility: hidden;
-}
-</style>

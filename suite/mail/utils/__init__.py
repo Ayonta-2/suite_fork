@@ -29,6 +29,9 @@ CONFIG_KEYS = [
 	"stalwart_version",
 	"stalwart_cli_version",
 	# Logs
+	"admin_log_file_count",
+	"admin_log_level",
+	"admin_log_max_file_size",
 	"push_log_file_count",
 	"push_log_level",
 	"push_log_max_file_size",

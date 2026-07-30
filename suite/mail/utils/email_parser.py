@@ -187,18 +187,18 @@ class EmailParser:
 			result[f"{check}_pass"] = 0
 			result[f"{check}_description"] = None
 
+		# Only the topmost header is trusted. Each hop prepends its own, so headers[0] is the one
+		# our receiving server wrote; anything below it came in with the message and is therefore
+		# attacker-controlled. Reading all of them let a sender forge a "dkim=pass" of their own.
 		if headers := self.message.get_all("Authentication-Results"):
-			if len(headers) == 1:
-				headers = headers[0].split(";")
-
-			for header in headers:
-				header = remove_whitespace_characters(header)
-				header_lower = header.lower()
+			for segment in headers[0].split(";"):
+				segment = remove_whitespace_characters(segment)
+				segment_lower = segment.lower()
 
 				for check in checks:
-					if f"{check}=" in header_lower:
-						result[f"{check}_pass"] = 1 if f"{check}=pass" in header_lower else 0
-						result[f"{check}_description"] = header
+					if f"{check}=" in segment_lower:
+						result[f"{check}_pass"] = 1 if f"{check}=pass" in segment_lower else 0
+						result[f"{check}_description"] = segment
 						break
 
 		return result

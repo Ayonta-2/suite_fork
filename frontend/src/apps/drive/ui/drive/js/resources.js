@@ -55,6 +55,6 @@ export const rename = createResource({
     }
   },
   onError(error) {
-    toast.error(error)
+    toast.error(error.messages?.at(-1) || 'Could not rename this file.')
   },
 })

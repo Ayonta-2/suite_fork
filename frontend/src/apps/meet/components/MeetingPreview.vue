@@ -1,7 +1,6 @@
 <template>
 	<div
 		class="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface-base"
-		data-testid="meeting-preview"
 	>
 		<div
 			class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 p-5 text-ink-gray-8 lg:flex-row lg:items-center lg:gap-10 lg:px-6 lg:py-8"
@@ -10,7 +9,6 @@
 			<div class="flex min-w-0 flex-1 items-center justify-center lg:flex-[2]">
 				<div
 					class="relative aspect-video w-full overflow-hidden rounded-xl bg-black shadow-xl lg:aspect-[3/2]"
-					data-testid="preview-video-shell"
 				>
 					<ParticipantTile
 						class="h-full w-full"
@@ -59,6 +57,7 @@
 						v-if="!isGuest"
 						:participants="[...participants]"
 						:error="presenceError"
+						:loading="!hasFetchedParticipants"
 						:maxDisplayed="2"
 						alignment="left"
 					/>
@@ -73,7 +72,6 @@
 							placeholder="John Doe"
 							:maxlength="50"
 							autocomplete="off"
-							data-testid="guest-name-input"
 						/>
 
 						<Button
@@ -84,7 +82,6 @@
 							:loading="isConnecting || joinGuestAPI.loading"
 							:disabled="isGuest && !guestName.trim()"
 							class="w-full"
-							data-testid="join-meeting-preview-button"
 						>
 							<template #prefix>
 								<lucide-video class="h-5 w-5" />
@@ -181,9 +178,11 @@ const previewVideoRef = (el: unknown) => {
 	props.setLocalVideoRef?.(el as HTMLVideoElement | null);
 };
 
-const { participants, error: presenceError } = useMeetingPreviewPresence(
-	props.meetingId,
-);
+const {
+	participants,
+	error: presenceError,
+	hasFetchedParticipants,
+} = useMeetingPreviewPresence(props.meetingId);
 
 watch(guestNameInputRef, (inputRef) => {
 	if (inputRef) {

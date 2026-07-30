@@ -3,7 +3,8 @@ import frappe
 from suite.calendar.doctype.calendar.calendar import fetch_calendars
 from suite.mail.doctype.address_book.address_book import fetch_address_books
 from suite.mail.doctype.mailbox.mailbox import fetch_mailboxes
-from suite.mail.doctype.user_account.user_account import fetch_user_accounts
+from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
+from suite.utils.user import is_system_manager
 
 
 @frappe.whitelist()
@@ -24,13 +25,15 @@ def get_user_accounts(
 	if not user or user in ("Guest", "Administrator"):
 		return []
 
-	result = []
-	if user_accounts := fetch_user_accounts(user):
-		for account in user_accounts:
-			if txt and txt.lower() not in account["name"].lower():
-				continue
+	if user != frappe.session.user and not is_system_manager(frappe.session.user):
+		return []
 
-			result.append([account["name"]])
+	result = []
+	for account in get_user_jmap_accounts(user):
+		if txt and txt.lower() not in account.lower():
+			continue
+
+		result.append([account])
 
 	return result[start : start + page_len]
 

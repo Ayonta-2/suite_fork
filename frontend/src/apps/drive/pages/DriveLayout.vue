@@ -1,6 +1,9 @@
 <template>
   <FrappeUIProvider>
-    <div v-if="isLoggedIn || $route.meta.allowGuest" class="flex flex-col sm:flex-row h-full">
+    <div
+      v-if="isLoggedIn || $route.meta.allowGuest"
+      class="flex flex-col sm:flex-row h-full"
+    >
       <Sidebar v-if="normalView" />
       <div id="dropzone" class="flex flex-col flex-1 overflow-hidden bg-surface-base relative">
         <router-view :key="$route.fullPath" v-slot="{ Component }">
@@ -33,7 +36,6 @@ import { initSocket } from '@/apps/drive/socket'
 import { FrappeUIProvider } from 'frappe-ui'
 import { useRoute } from 'vue-router'
 import { setupTheme } from '@/utils/setupTheme'
-import '@/apps/drive/index.css'
 
 // Provided from the route-group layout since the suite main.ts is shared.
 provide('emitter', emitter)

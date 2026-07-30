@@ -106,9 +106,31 @@ def enrich_participants_with_avatars(events: list[dict]) -> None:
 				participant["user_image"] = user_images[email]
 
 
+def _with_name(items: list[dict] | None) -> list[dict] | None:
+	"""Map the formatter's ``_name`` onto the ``name`` key CalendarEventService reads.
+
+	format_calendar_event emits locations and participants with ``_name`` (the desk field name) and
+	the frontend echoes that shape straight back. The service reads ``name``, so without this every
+	edit rewrote location names as null and replaced each participant's display name with their
+	email address - including on partial patches that never mentioned those fields.
+	"""
+
+	if not items:
+		return items
+
+	return [
+		{**item, "name": item["_name"]} if "name" not in item and "_name" in item else item
+		for item in items
+	]
+
+
 @frappe.whitelist()
 def edit_calendar_event(account: str, id: str, **kwargs) -> None:
-	event = get_calendar_events_by_ids(account, [id])[0]
+	events = get_calendar_events_by_ids(account, [id])
+	if not events:
+		frappe.throw(_("Calendar Event {0} not found.").format(frappe.bold(id)), frappe.DoesNotExistError)
+
+	event = events[0]
 
 	def resolve(key):
 		return kwargs[key] if key in kwargs else event[key]
@@ -136,9 +158,9 @@ def edit_calendar_event(account: str, id: str, **kwargs) -> None:
 		resolve("privacy"),
 		resolve("free_busy_status"),
 		resolve("description"),
-		resolve("locations"),
+		_with_name(resolve("locations")),
 		resolve("links"),
-		resolve("participants"),
+		_with_name(resolve("participants")),
 		resolve("alerts"),
 		resolve("use_default_alerts"),
 		kwargs.get("send_scheduling_messages", False),

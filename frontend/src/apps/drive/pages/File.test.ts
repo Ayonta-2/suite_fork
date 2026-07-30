@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
   trackVisit: vi.fn(),
   setActiveEntity: vi.fn(),
-  setBreadCrumbs: vi.fn(),
+  setCrumbEntity: vi.fn(),
   updateURLSlug: vi.fn(),
 }))
 
@@ -21,11 +21,14 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push: mocks.routerPush }) }))
 vi.mock('@vueuse/core', () => ({ onKeyStroke: vi.fn() }))
 vi.mock('~icons/lucide/scan', () => ({ default: defineComponent({ template: '<span />' }) }))
 vi.mock('@/apps/drive/data/selection', () => ({ setActiveEntity: mocks.setActiveEntity }))
-vi.mock('@/apps/drive/data/breadcrumbs', () => ({ pageBreadcrumbs: [] }))
+vi.mock('@/apps/drive/data/breadcrumbs', () => ({
+  pageBreadcrumbs: [],
+  setCrumbEntity: mocks.setCrumbEntity,
+  clearCrumbEntity: vi.fn(),
+}))
 vi.mock('@/apps/drive/data/currentFolder', () => ({ currentFolder: { value: { entities: [] } } }))
 vi.mock('@/apps/drive/utils/files', () => ({
   prettyData: (entities: unknown[]) => entities,
-  setBreadCrumbs: mocks.setBreadCrumbs,
   enterFullScreen: vi.fn(),
   updateURLSlug: mocks.updateURLSlug,
   isWriterDocument: () => false,

@@ -1,7 +1,7 @@
 <template>
   <Dialog v-model:open="open" size="lg" @close="dialogType = ''">
-    <template #body-main>
-      <div class="px-4 pt-5 pb-6 sm:px-6">
+    <template #default>
+      <div>
         <div class="text-2xl-semibold flex text-nowrap overflow-hidden pr-8 mb-4">
           <template v-if="props.entities.length > 1">
             Moving {{ props.entities.length }} items
@@ -19,8 +19,10 @@
             <div class="px-1 py-1 h-64 overflow-auto flex flex-col">
               <Tree v-if="tree.children.length" :nodes="tree.children" node-key="value" guides="none">
                 <template #item="{ node, expanded, hasChildren, toggle }">
-                  <div class="group grow min-w-0 flex items-center gap-2"
-                    :class="entities[0].folder === node.value ? 'cursor-not-allowed' : 'cursor-pointer'"
+                  <div class="group grow min-w-0 flex items-center gap-2 rounded-md px-1 -mx-1"
+                    :class="entities[0].folder === node.value
+                      ? 'cursor-not-allowed'
+                      : 'cursor-pointer hover:bg-surface-gray-2'"
                     @click.stop="openEntity(node)">
                     <button v-if="hasChildren" class="flex shrink-0 text-ink-gray-5 hover:text-ink-gray-8"
                       @click.stop="
@@ -94,12 +96,18 @@
                 <span v-if="breadcrumbs.length > 1 && index > 0" class="text-ink-gray-5 mx-0.5">
                   {{ '/' }}
                 </span>
-                <button class="text-base cursor-pointer truncate max-w-20" :title="crumb.file_name" :class="index === slicedBreadcrumbs.length - 1
-                    ? 'text-ink-gray-9 text-base font-medium p-1'
-                    : 'text-ink-gray-5 text-base rounded-[6px] hover:bg-surface-gray-2 p-1'
-                  " @click="closeEntity(crumb.name)">
-                  {{ crumb.file_name }}
-                </button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :label="crumb.file_name"
+                  :title="crumb.file_name"
+                  class="truncate max-w-20"
+                  :class="index === slicedBreadcrumbs.length - 1
+                    ? 'text-ink-gray-9 font-medium'
+                    : 'text-ink-gray-5'
+                  "
+                  @click="closeEntity(crumb.name)"
+                />
               </div>
             </div>
           </div>
@@ -158,6 +166,19 @@ const open = ref(true)
 
 const tabIndex = ref(0)
 rootInfo.fetch()
+
+// Reopen at the folder the user last moved into this session, so repeated moves
+// to the same place don't start from root each time.
+const LAST_MOVE_KEY = 'drive:last-move-dest'
+function lastMoveParent() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(LAST_MOVE_KEY) || 'null')
+    if (!saved || typeof saved !== 'object') return ''
+    return saved.parent || ''
+  } catch {
+    return ''
+  }
+}
 const tree = reactive({
   name: '',
   label: 'Home',
@@ -220,6 +241,11 @@ const selectedPerms = createResource({
       file_name: k.name === rootInfo.data?.home ? 'Home' : k.file_name,
     }))
   },
+  onError: () => {
+    // Remembered folder is gone or inaccessible — fall back to the root.
+    selected.value = ''
+    breadcrumbs.value = [{ name: '', file_name: 'Home' }]
+  },
 })
 
 watch(
@@ -234,6 +260,12 @@ watch(
     } else {
       breadcrumbs.value = [{ name: '', file_name: 'Site' }]
       fetchFolderContents(tree, { entity_name: rootInfo.data?.root })
+    }
+    // Re-applied on every tab switch, which resets `selected` above.
+    const remembered = lastMoveParent()
+    if (remembered) {
+      selected.value = remembered
+      selectedPerms.fetch()
     }
   },
   { immediate: true },
@@ -315,6 +347,14 @@ const moveFile = async () => {
     entity_names: props.entities.map((obj) => obj.name),
     new_parent: selected.value,
   })
+  try {
+    sessionStorage.setItem(
+      LAST_MOVE_KEY,
+      JSON.stringify({ parent: selected.value }),
+    )
+  } catch {
+    // sessionStorage unavailable — non-fatal.
+  }
   open.value = false
   emit('complete')
 }

@@ -469,13 +469,13 @@ class MailMessage(Document):
 			'<table border="0" cellpadding="0" cellspacing="10">'
 			f"<tr><td><b>From:</b></td><td>{escape_html(formataddr([self.from_name, self.from_email]))}</td></tr>"
 			f"<tr><td><b>Date:</b></td><td>{formatted_sent_at}</td></tr>"
-			f"<tr><td><b>Subject:</b></td><td>{self.subject}</td></tr>"
+			f"<tr><td><b>Subject:</b></td><td>{escape_html(self.subject or '')}</td></tr>"
 		)
 		forward_text_body = (
 			"---------- Forwarded message ---------\n"
 			f"From: {formataddr([self.from_name, self.from_email])}\n"
 			f"Date: {formatted_sent_at}\n"
-			f"Subject: {self.subject}\n"
+			f"Subject: {self.subject or ''}\n"
 		)
 
 		if to := ", ".join(
@@ -525,10 +525,14 @@ class MailMessage(Document):
 					}
 				)
 
+		subject = None
+		if self.subject:
+			subject = f"Fwd: {self.subject}" if not self.subject.lower().startswith("fwd:") else self.subject
+
 		return MailQueue._create(
 			user=get_user_for_jmap_account(self.account, raise_exception=True),
 			account=self.account,
-			subject=f"Fwd: {self.subject}" if not self.subject.lower().startswith("fwd:") else self.subject,
+			subject=subject,
 			html_body=forward_html_body,
 			text_body=forward_text_body,
 			attachments=attachments,

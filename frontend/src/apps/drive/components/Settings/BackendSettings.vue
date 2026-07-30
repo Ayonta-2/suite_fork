@@ -140,9 +140,7 @@ const updateSettings = createResource({
   makeParams: () => ({ ...generalSettings, ...s3Settings }),
   onSuccess() {
     edited.value = false
-    toast({
-      title: 'S3 settings updated successfully',
-    })
+    toast.success('S3 settings updated successfully')
   },
 })
 </script>

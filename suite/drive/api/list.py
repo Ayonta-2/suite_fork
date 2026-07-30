@@ -86,6 +86,22 @@ def _get_children_count(files):
 	return dict(query.run())
 
 
+def _get_slide_counts(rows):
+	"""
+	Returns a dict mapping presentation docnames to their slide count.
+	"""
+	# Imported here as suite.slides imports from suite.drive.
+	from suite.slides.doctype.presentation.presentation import get_slide_counts
+
+	return get_slide_counts(
+		[
+			r["content_docname"]
+			for r in rows
+			if r.get("content_doctype") == "Presentation" and r.get("content_docname")
+		]
+	)
+
+
 def _get_share_count(names):
 	"""
 	Returns a dict mapping file names to their share count.
@@ -198,6 +214,8 @@ def shared(
 	ascending: bool = True,
 	file_kinds: list[str] | str = [],
 	search: str = None,
+	start: int = 0,
+	limit: int = None,
 ):
 	"""
 	Returns shared files based on shared_type parameter.
@@ -212,6 +230,8 @@ def shared(
 		file_kinds=file_kinds,
 		order_by=order_by,
 		ascending=ascending,
+		start=start,
+		limit=limit,
 	)
 
 
@@ -221,6 +241,8 @@ def favourites(
 	ascending: bool = True,
 	file_kinds: list[str] | str = [],
 	search: str = None,
+	start: int = 0,
+	limit: int = None,
 ):
 	"""
 	Returns all files marked as favourite by the current user.
@@ -233,6 +255,8 @@ def favourites(
 		file_kinds=file_kinds,
 		order_by=order_by,
 		ascending=ascending,
+		start=start,
+		limit=limit,
 	)
 
 
@@ -242,6 +266,8 @@ def recents(
 	ascending: bool = True,
 	file_kinds: list[str] | str = [],
 	search: str = None,
+	start: int = 0,
+	limit: int = None,
 ):
 	"""
 	Returns all files marked recently by the current user.
@@ -254,6 +280,8 @@ def recents(
 		file_kinds=file_kinds,
 		order_by=order_by,
 		ascending=ascending,
+		start=start,
+		limit=limit,
 	)
 
 
@@ -263,6 +291,8 @@ def trash(
 	ascending: bool = True,
 	file_kinds: list[str] | str = [],
 	search: str = None,
+	start: int = 0,
+	limit: int = None,
 ):
 	"""
 	Returns all deleted files (trash) for the current user.
@@ -280,6 +310,8 @@ def trash(
 		file_kinds=file_kinds,
 		order_by=order_by,
 		ascending=ascending,
+		start=start,
+		limit=limit,
 	)
 
 
@@ -373,6 +405,7 @@ def get_query_data(
 	# Get aggregated data, scoped to the files we're returning
 	names = [r["name"] for r in res]
 	children_count = _get_children_count(res)
+	slide_counts = _get_slide_counts(res)
 	share_count = _get_share_count(names)
 	public_files = _get_public_files(names)
 	general_files = _get_general_files(names)
@@ -382,6 +415,8 @@ def get_query_data(
 	for r in res:
 		name = r["name"]
 		r["child_count"] = children_count.get(name, 0)
+		if r.get("content_doctype") == "Presentation":
+			r["slide_count"] = slide_counts.get(r["content_docname"], 0)
 		if name in public_files:
 			r["share_count"] = -2
 		elif default > -1 and name in general_files:

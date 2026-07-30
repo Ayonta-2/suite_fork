@@ -2,7 +2,6 @@ import frappe
 from frappe.core.api.file import create_new_folder
 
 from suite.suite_core.doctype.rate_limit.rate_limit import create_rate_limit
-from suite.mail.stalwart.cli import StalwartCLI
 
 
 def after_install() -> None:
@@ -12,7 +11,7 @@ def after_install() -> None:
 
 
 def after_migrate() -> None:
-	StalwartCLI()._install()
+	pass
 
 
 def add_rate_limits() -> None:
@@ -24,12 +23,17 @@ def add_rate_limits() -> None:
 		{"method_path": "suite.mail.api.account.resend_otp", "limit": 5, "seconds": 60 * 60},
 		{"method_path": "suite.mail.api.account.verify_otp", "limit": 5, "seconds": 60 * 60},
 		{"method_path": "suite.mail.api.account.get_account_request", "limit": 5, "seconds": 60 * 60},
+		{"method_path": "suite.mail.api.account.get_account_setup_options", "limit": 5, "seconds": 60 * 60},
 		{"method_path": "suite.mail.api.account.create_account", "limit": 10, "seconds": 60 * 60},
 		{"method_path": "suite.mail.api.account.send_reset_password_link", "limit": 5, "seconds": 60 * 60},
 		{"method_path": "suite.mail.api.account.validate_email_assigned", "limit": 10, "seconds": 60 * 60},
 		# suite.mail.api.admin
 		{"method_path": "suite.mail.api.admin.add_domain", "limit": 10, "seconds": 24 * 60 * 60},
 		{"method_path": "suite.mail.api.admin.add_member", "limit": 10, "seconds": 60 * 60},
+		{"method_path": "suite.mail.api.admin.add_group", "limit": 20, "seconds": 60 * 60},
+		{"method_path": "suite.mail.api.admin.add_mailing_list", "limit": 20, "seconds": 60 * 60},
+		{"method_path": "suite.mail.api.admin.add_role", "limit": 20, "seconds": 60 * 60},
+		{"method_path": "suite.mail.api.admin.add_oauth_client", "limit": 20, "seconds": 60 * 60},
 		# suite.mail.api.inbound
 		{"method_path": "suite.mail.api.inbound.fetch_blob", "limit": 60, "seconds": 60},
 		{"method_path": "suite.mail.api.inbound.pull", "limit": 10, "seconds": 60},

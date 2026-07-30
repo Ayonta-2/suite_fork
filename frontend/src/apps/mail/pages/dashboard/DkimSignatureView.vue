@@ -1,0 +1,138 @@
+<template>
+	<DashboardLayout v-if="signature.data" :breadcrumbs="breadcrumbs">
+		<template #actions>
+			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+		</template>
+		<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+			<!-- Signature -->
+			<DashboardCard :title="__('Signature')">
+				<template #actions><span /></template>
+				<div>
+					<InformationField :label="__('Signature Type')" :value="signature.data.algorithm" />
+					<InformationField :label="__('Selector')" :value="signature.data.selector" />
+					<InformationField :label="__('Domain')" :value="signature.data.domain" />
+				</div>
+			</DashboardCard>
+
+			<!-- Rotation -->
+			<DashboardCard :title="__('Rotation')">
+				<template #actions><span /></template>
+				<div>
+					<InformationField :label="__('Stage')" :value="stageLabel" />
+					<InformationField :label="__('Created At')" :value="createdAt" />
+					<InformationField :label="__('Next Transition')" :value="nextTransition" />
+				</div>
+			</DashboardCard>
+
+			<!-- Options -->
+			<DashboardCard :title="__('Options')">
+				<template #actions><span /></template>
+				<div>
+					<InformationField :label="__('Signed Headers')" :value="signedHeaders" />
+					<InformationField :label="__('Canonicalization')" :value="signature.data.canonicalization" />
+					<InformationField :label="__('Expiration')" :value="signature.data.expiration" />
+					<InformationField :label="__('Request Reports')" :value="requestReports" />
+					<InformationField :label="__('Agent User ID')" :value="signature.data.auid" />
+				</div>
+			</DashboardCard>
+
+			<!-- Public Key -->
+			<DashboardCard :title="__('Public Key')">
+				<template #actions><span /></template>
+				<div class="p-4">
+					<code class="text-ink-gray-7 block break-all font-mono text-xs">
+						{{ signature.data.public_key || '—' }}
+					</code>
+				</div>
+			</DashboardCard>
+		</div>
+	</DashboardLayout>
+	<Dialog v-model="showDelete" :options="deleteDialogOptions" />
+</template>
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+
+import { raiseToast } from '@/apps/mail/utils'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
+import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import InformationField from '@/apps/mail/components/InformationField.vue'
+
+type DkimData = {
+	id: string
+	algorithm?: string
+	selector?: string
+	domain?: string
+	signed_headers: string[]
+	canonicalization?: string
+	expiration?: string | null
+	request_reports: boolean
+	auid?: string | null
+	public_key?: string
+	stage?: string
+	created_at?: string
+	next_transition?: string | null
+}
+
+const { signatureId } = defineProps<{ signatureId: string }>()
+const router = useRouter()
+
+const showDelete = ref(false)
+
+usePageMeta(() => ({ title: (signature.data as DkimData | undefined)?.selector || signatureId }))
+
+const signature = createResource({
+	url: 'suite.mail.api.admin.get_dkim_signature',
+	auto: true,
+	makeParams: () => ({ signature_id: signatureId }),
+	cache: ['mailDkimSignature', signatureId],
+	onError: () => router.replace({ name: 'mail-dkim-signatures' }),
+})
+
+const data = computed(() => signature.data as DkimData | undefined)
+
+const formatDate = (value?: string | null) => formatDateTime(value)
+
+const stageLabel = computed(() => {
+	const stage = data.value?.stage
+	return stage ? stage.charAt(0).toUpperCase() + stage.slice(1) : ''
+})
+const createdAt = computed(() => formatDate(data.value?.created_at))
+const nextTransition = computed(() => formatDate(data.value?.next_transition))
+const signedHeaders = computed(() => (data.value?.signed_headers || []).join(', '))
+const requestReports = computed(() => (data.value?.request_reports ? __('Yes') : __('No')))
+
+const breadcrumbs = computed(() => [
+	{ label: __('DKIM Signatures'), route: '/mail/dashboard/dkim-signatures' },
+	{ label: data.value?.selector || signatureId },
+])
+
+const deleteSignature = createResource({
+	url: 'suite.mail.api.admin.delete_dkim_signatures',
+	makeParams: () => ({ ids: [signatureId] }),
+	onSuccess: () => {
+		showDelete.value = false
+		raiseToast(__('DKIM signature deleted.'))
+		router.push({ name: 'mail-dkim-signatures' })
+	},
+	onError: (error: { messages?: string[] }) =>
+		raiseToast(error.messages?.[0] || __('Failed to delete DKIM signature.'), 'error'),
+})
+
+const deleteDialogOptions = computed(() => ({
+	title: __('Delete DKIM Signature'),
+	message: __('Are you sure you want to delete this DKIM signature? This action cannot be undone.'),
+	size: 'xl',
+	icon: { name: 'alert-triangle', appearance: 'warning' },
+	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteSignature.submit }],
+}))
+
+const dropdownOptions = computed(() => [
+	{
+		group: '',
+		items: [{ label: __('Delete'), icon: 'trash-2', onClick: () => (showDelete.value = true) }],
+	},
+])
+</script>

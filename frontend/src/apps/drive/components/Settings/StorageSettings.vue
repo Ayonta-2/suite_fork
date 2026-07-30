@@ -91,7 +91,7 @@
       <img :src="getIconUrl(i.file_type)" />
       <span class="text-ink-gray-8 text-sm truncate">{{ i.file_name }}</span>
 
-      <div class="text-ink-gray-8 text-sm ml-auto flex gap-2 h-10 leading-10">
+      <div class="text-ink-gray-8 text-sm ml-auto flex items-center gap-2 h-10">
         <Button
           v-if="hoveredRow === i.name"
           variant="ghost"

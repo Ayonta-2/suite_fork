@@ -350,7 +350,11 @@ class EmailService(MailService):
 			for field in ("from", "to", "cc", "bcc"):
 				for addr in email.get(field) or []:
 					email_address = addr.get("email")
-					if email_address and text.lower() in email_address.lower() not in addresses:
+					if (
+						email_address
+						and text.lower() in email_address.lower()
+						and email_address not in addresses
+					):
 						addresses.append(email_address)
 
 		return addresses[:limit]

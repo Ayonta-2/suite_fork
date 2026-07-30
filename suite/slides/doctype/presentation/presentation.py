@@ -11,6 +11,7 @@ import uuid
 import frappe
 from frappe.core.doctype.file.file import get_local_image
 from frappe.model.document import Document
+from frappe.query_builder.functions import Count
 from frappe.utils.caching import redis_cache
 
 from suite.drive.api.permissions import user_has_permission
@@ -207,10 +208,28 @@ def get_presentations() -> list[dict]:
 		filters=[["owner", "=", frappe.session.user], ["is_template", "=", 0]],
 	)
 
+	counts = get_slide_counts([p["name"] for p in presentations])
 	for presentation in presentations:
-		presentation["slide_count"] = frappe.db.count("Slide", {"parent": presentation["name"]})
+		presentation["slide_count"] = counts.get(presentation["name"], 0)
 
 	return presentations
+
+
+def get_slide_counts(presentation_names: list[str]) -> dict[str, int]:
+	"""Returns a dict mapping presentation names to their slide count."""
+	if not presentation_names:
+		return {}
+
+	Slide = frappe.qb.DocType("Slide")
+	return dict(
+		(
+			frappe.qb.from_(Slide)
+			.select(Slide.parent, Count("*"))
+			.where(Slide.parenttype == "Presentation")
+			.where(Slide.parent.isin(presentation_names))
+			.groupby(Slide.parent)
+		).run()
+	)
 
 
 @frappe.whitelist()

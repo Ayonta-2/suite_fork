@@ -214,7 +214,10 @@ class CalendarEvent(Document):
 	def delete(self) -> None:
 		account, id = parse_calendar_event_name(self.name)
 		if self.get("recurrence_id") and self.get("uid"):
-			delete_calendar_event_instance(account, self.uid, self.recurrence_id)
+			# delete_instance needs the master event's JMAP id. uid is the iCalendar UID, which
+			# the server never resolves, so passing it made every instance delete raise.
+			master_id = get_calendar_event_service(account).get_base_event_ids([id]).get(id, id)
+			delete_calendar_event_instance(account, master_id, self.recurrence_id)
 		else:
 			delete_calendar_events(account, [id])
 
@@ -367,7 +370,7 @@ def add_calendar_event(
 		"organizer": organizer,
 		"calendar_ids": calendar_ids,
 		"status": status.lower(),
-		"draft": draft,
+		"is_draft": draft,
 		"title": title,
 		"start": start,
 		"duration": duration,
@@ -479,7 +482,7 @@ def update_calendar_event(
 		"organizer": organizer,
 		"calendar_ids": calendar_ids,
 		"status": status.lower(),
-		"draft": draft,
+		"is_draft": draft,
 		"title": title,
 		"start": start,
 		"duration": duration,

@@ -16,6 +16,8 @@ from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_set
 from suite.mail.doctype.screened_email_address.screened_email_address import get_screened_email_addresses
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
+	format_jmap_error,
+	get_jmap_set_error_message,
 	get_mailbox_id_by_name,
 	get_mailbox_id_by_role,
 	get_mailbox_name_by_id,
@@ -145,13 +147,13 @@ class SieveScript(Document):
 		}
 		response = service.create([sieve_script])
 
-		title = _("Sieve Script Creation Error")
-		if response.get("created"):
-			return response["created"][creation_id]["id"]
-		elif response.get("notCreated"):
-			frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-		else:
-			frappe.throw(_(response["description"]), title=title)
+		if created := response.get("created"):
+			return created[creation_id]["id"]
+
+		frappe.throw(
+			get_jmap_set_error_message(response, "notCreated", creation_id),
+			title=_("Sieve Script Creation Error"),
+		)
 
 	@classmethod
 	def _fetch_sieve_scripts(
@@ -206,10 +208,7 @@ class SieveScript(Document):
 		response = service.validate(content)
 
 		if error := response.get("error"):
-			frappe.throw(
-				_("{0}: {1}").format(error.get("type"), error.get("description")),
-				title=_("Sieve Script Validation Error"),
-			)
+			frappe.throw(format_jmap_error(error), title=_("Sieve Script Validation Error"))
 
 	@classmethod
 	def _update_sieve_script(
@@ -239,12 +238,11 @@ class SieveScript(Document):
 		sieve_script = {"id": id, "name": name, "content": content, "is_active": bool(active)}
 		response = service.update([sieve_script], deactivate=deactivate)
 
-		title = _("Sieve Script Update Error")
 		if not response.get("updated"):
-			if response.get("notUpdated"):
-				frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-			else:
-				frappe.throw(_(response["description"]), title=title)
+			frappe.throw(
+				get_jmap_set_error_message(response, "notUpdated", id),
+				title=_("Sieve Script Update Error"),
+			)
 
 	@classmethod
 	def _delete_sieve_scripts(cls, account: str, ids: list[str]) -> None:
@@ -253,14 +251,15 @@ class SieveScript(Document):
 		service = get_sieve_script_service(account)
 		response = service.delete(ids)
 
-		if response.get("notDestroyed"):
-			error_messages = []
-			for id, error in response["notDestroyed"].items():
-				error_messages.append(f"{id}: {error['description']}")
+		title = _("Sieve Script Deletion Error")
+		if not_destroyed := response.get("notDestroyed"):
+			error_messages = [f"{id}: {format_jmap_error(error)}" for id, error in not_destroyed.items()]
 			frappe.throw(
 				_("Sieve Script Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-				title=_("Sieve Script Deletion Error"),
+				title=title,
 			)
+		elif error := response.get("error"):
+			frappe.throw(format_jmap_error(error), title=title)
 
 	def validate(self) -> None:
 		if self.read_only:
@@ -304,6 +303,24 @@ def bulk_delete(names: str | list[str]) -> None:
 		accounts_map.setdefault(account, []).append(id)
 
 	for account, ids in accounts_map.items():
+		# SieveScript.delete() refuses to remove the active script, and validate() protects the
+		# read-only ones. Going straight to _delete_sieve_scripts skipped both, so one bulk call
+		# could drop the account's active script and silently disable all of its filtering.
+		for script in SieveScript._get_sieve_scripts(account, ids):
+			if script.get("active"):
+				frappe.throw(
+					_("Cannot delete the active sieve script {0}. Please deactivate it first.").format(
+						frappe.bold(script.get("_name") or script["id"])
+					)
+				)
+			if script.get("read_only"):
+				frappe.throw(
+					_("The '{0}' sieve script cannot be deleted.").format(
+						frappe.bold(script.get("_name") or script["id"])
+					),
+					title=_("Read-Only Sieve Script"),
+				)
+
 		SieveScript._delete_sieve_scripts(account, ids)
 
 	frappe.msgprint(_("Sieve Scripts deleted successfully."), alert=True)
@@ -522,8 +539,11 @@ def get_mailbox_automation_rules(account: str, mailbox_id: str) -> dict | None:
 def get_mailbox_path(account: str, mailbox_name: str, raise_exception: bool = False) -> str | None:
 	"""Returns the mailbox path for the given mailbox name in the given account."""
 
-	mailboxes = {mailbox["_name"]: mailbox for mailbox in get_mailboxes(account)}
-	if mailbox_name not in mailboxes:
+	mailboxes = get_mailboxes(account)
+	by_id = {mailbox["id"]: mailbox for mailbox in mailboxes}
+	by_name = {mailbox["_name"]: mailbox for mailbox in mailboxes}
+
+	if mailbox_name not in by_name:
 		if raise_exception:
 			frappe.throw(
 				_("Mailbox '{0}' not found in account '{1}'.").format(
@@ -534,16 +554,31 @@ def get_mailbox_path(account: str, mailbox_name: str, raise_exception: bool = Fa
 		return None
 
 	path_parts = []
-	current = mailboxes[mailbox_name]
+	current = by_name[mailbox_name]
+	# Walk by id, not by name: JMAP only requires a name to be unique among siblings, so resolving
+	# the parent by name picked the wrong mailbox when two share a leaf name - and looped forever
+	# when a mailbox sat under a same-named parent. `seen` also guards a malformed parent chain.
+	seen = set()
 
 	while current:
+		if current["id"] in seen:
+			if raise_exception:
+				frappe.throw(
+					_("Mailbox '{0}' in account '{1}' has a circular parent chain.").format(
+						frappe.bold(mailbox_name), frappe.bold(account)
+					),
+					title=_("Invalid Mailbox Hierarchy"),
+				)
+			return None
+
+		seen.add(current["id"])
 		path_parts.append(current["_name"])
+
 		parent_id = current.get("parent_id")
 		if not parent_id:
 			break
 
-		parent_name = get_mailbox_name_by_id(account, parent_id)
-		current = mailboxes.get(parent_name)
+		current = by_id.get(parent_id)
 
 		if current is None:
 			if raise_exception:
@@ -590,11 +625,11 @@ def rule_object_to_sieve(automation: dict, mailbox_path: str) -> str:
 	conditions = []
 
 	if emails_from:
-		email_list = ", ".join(f'"{email}"' for email in emails_from)
+		email_list = ", ".join(f'"{_escape_sieve_string(email)}"' for email in emails_from)
 		conditions.append(f'address :matches "from" [{email_list}]')
 
 	if subject_contains:
-		keyword_list = ", ".join(f'"{keyword}"' for keyword in subject_contains)
+		keyword_list = ", ".join(f'"{_escape_sieve_string(keyword)}"' for keyword in subject_contains)
 		conditions.append(f'header :contains "subject" [{keyword_list}]')
 
 	match_if = automation.get("match_if", "any")
@@ -707,8 +742,13 @@ def remove_sieve_block(script: str, block_name: str) -> str:
 
 
 def _escape_sieve_string(value: str) -> str:
-	"""Escape a value for embedding in a Sieve quoted string (RFC 5228): backslash then double-quote."""
+	"""Escape a value for embedding in a Sieve quoted string (RFC 5228): backslash then double-quote.
 
+	Line breaks are dropped as well, so a value carrying a newline cannot terminate the statement it
+	is embedded in.
+	"""
+
+	value = value.replace("\r", "").replace("\n", "")
 	return value.replace("\\", "\\\\").replace('"', '\\"')
 
 

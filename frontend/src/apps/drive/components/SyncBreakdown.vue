@@ -111,27 +111,24 @@ preview.submit()
 const syncFromDisk = createResource({
   url: 'suite.drive.api.scripts.sync_from_disk',
   beforeSubmit: () => {
-    toast({
+    toast('Starting syncing.', {
       icon: LucideFolderSync,
-      title: 'Starting syncing.',
-      text: "We'll give you an update when it's done.",
+      description: "We'll give you an update when it's done.",
     })
   },
   onSuccess: (d) => {
-    toast({
+    toast.success('Successfully synced', {
       icon: LucideCloudCheck,
-      title: 'Successfully synced',
-      text: d.length
+      description: d.length
         ? `Added ${d.length} item${d.length > 1 ? 's' : ''}`
         : 'No new files were added.',
     })
     emitter.emit('refresh')
   },
   onError: () => {
-    toast({
+    toast.error('There was an error.', {
       icon: LucideCloudAlert,
-      title: 'There was an error.',
-      text: 'Is there an issue with your configuration?',
+      description: 'Is there an issue with your configuration?',
     })
   },
 })

@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { createResource, toast } from 'frappe-ui'
 
@@ -7,22 +7,14 @@ import { userStore } from '@/apps/mail/stores/user'
 
 import type { COLOR_SCHEME, Identity, ScreenedAddress } from '@/apps/mail/types'
 
-export const useScreenSize = () => {
-	const size = reactive({ width: window.innerWidth, height: window.innerHeight })
+// Decided once, at load, and deliberately not reactive to resize. Mobile and desktop are
+// separate component trees here, not one tree restyled: crossing 640px mid-session swaps
+// them and unmounts whatever they were holding — a half-written mail vanished this way
+// (#38), and every other open surface has the same exposure. A resized window therefore
+// keeps the layout it started with until the page is reloaded.
+const isMobile = ref(window.innerWidth < 640)
 
-	const isMobile = computed(() => size.width < 640)
-
-	const onResize = () => {
-		size.width = window.innerWidth
-		size.height = window.innerHeight
-	}
-
-	onMounted(() => window.addEventListener('resize', onResize))
-
-	onUnmounted(() => window.removeEventListener('resize', onResize))
-
-	return { size, isMobile }
-}
+export const useScreenSize = () => ({ isMobile })
 
 const isSidebarOpen = ref(false)
 
@@ -198,6 +190,17 @@ export interface BlockableSender {
 
 const showBlockSender = ref(false)
 const sendersToBlock = ref<BlockableSender[]>([])
+
+// The account's own addresses, lowercased — what a thread's senders are matched against to decide
+// which of them the row calls "me" (see utils/participants). Identities are per account, so a row
+// merged in from another account (All Inboxes, cross-account search) is resolved against the active
+// one: the cast it names is right either way, and only the "me" would go by its own name instead.
+export const useOwnEmails = () => {
+	const { identities } = userStore()
+	return computed(
+		() => new Set((identities.data ?? []).map((i: Identity) => i.email.toLowerCase())),
+	)
+}
 
 export const useBlockSender = () => {
 	const store = userStore()

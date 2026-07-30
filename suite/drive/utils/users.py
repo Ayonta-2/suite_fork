@@ -83,6 +83,9 @@ def create_drive_settings(user, method: str | None = None) -> None:
 	"""Create Drive Settings and the private user folder for a newly created User."""
 	from suite.drive.utils import get_user_folder
 
+	if user.flags.get("skip_drive_setup"):
+		return
+
 	if not user.name or user.name in ("Guest", "Administrator"):
 		return
 

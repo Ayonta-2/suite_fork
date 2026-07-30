@@ -158,7 +158,7 @@ const sidebarItems = computed(() => {
           onClick: () => emitter.emit('showSearchPopup', true),
         },
         {
-          label: __('Inbox'),
+          label: __('Notifications'),
           icon: LucideInbox,
           to: { name: 'drive-Inbox' },
           isActive: active('drive-Inbox'),
@@ -168,7 +168,6 @@ const sidebarItems = computed(() => {
       ],
     },
     {
-      label: 'Drive',
       items: [
         {
           label: 'Home',
@@ -225,13 +224,6 @@ const sidebarItems = computed(() => {
           accessKey: 'a',
         },
         {
-          label: 'Favourites',
-          to: { name: 'drive-Favourites' },
-          icon: LucideStar,
-          isActive: active('drive-Favourites'),
-          accessKey: 'f',
-        },
-        {
           label: 'Documents',
           to: { name: 'drive-Documents' },
           icon: LucideFileText,
@@ -253,14 +245,24 @@ const sidebarItems = computed(() => {
 const draggedSpace = ref(null)
 const handleDrop = (e, space) => {
   draggedSpace.value = null
-  const file_name = e.dataTransfer.getData('application/x-filename')
+  // Prefer the multi-selection payload, falling back to the single dragged file.
+  let names = []
+  try {
+    names = JSON.parse(e.dataTransfer.getData('application/x-filenames') || '[]')
+  } catch {
+    names = []
+  }
+  if (!names.length) {
+    const single = e.dataTransfer.getData('application/x-filename')
+    if (single) names = [single]
+  }
+  if (!names.length) return
+  const clearFromList = () =>
+    names.forEach((name) => emitter.emit('remove-file-ui', name))
   if (space.label === 'Trash') {
-    emitter.emit('remove-file', file_name)
+    emitter.emit('remove-file', names)
   } else if (space.label === 'Home') {
-    move.submit(
-      { entity_names: [file_name] },
-      { onSuccess: () => emitter.emit('remove-file-ui', file_name) }
-    )
+    move.submit({ entity_names: names }, { onSuccess: clearFromList })
   }
 }
 </script>

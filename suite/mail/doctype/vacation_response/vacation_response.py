@@ -48,7 +48,7 @@ class VacationResponse(Document):
 			frappe.msgprint(_("Please select an account to view vacation response details."), alert=True)
 			return super(Document, self).__init__({"creation": today(), "modified": today()})
 
-		vr = get_vacation_response(self.account, user=self.get("user"))
+		vr = get_vacation_response(self.account)
 		return super(Document, self).__init__(vr)
 
 	def on_update(self) -> None:
@@ -63,7 +63,6 @@ class VacationResponse(Document):
 			self.subject,
 			self.text_body,
 			self.html_body,
-			user=self.get("user"),
 		)
 		self.reload()
 

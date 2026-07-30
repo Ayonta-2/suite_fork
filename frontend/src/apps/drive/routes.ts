@@ -2,10 +2,6 @@ import type { RouteRecordRaw } from 'vue-router'
 import { createResource } from 'frappe-ui'
 
 import { useSessionStore } from '@/boot/session'
-import {
-  pageBreadcrumbs,
-  setPageBreadcrumbs,
-} from '@/apps/drive/data/breadcrumbs'
 import { translate } from '@/apps/drive/resources/files'
 import { setupTheme } from '@/utils/setupTheme'
 
@@ -26,25 +22,9 @@ import { setupTheme } from '@/utils/setupTheme'
  * Drive-specific guard behaviour (clearing active entity) lives in router.ts.
  */
 
-const manageBreadcrumbs = (to: any) => {
-  if (
-    pageBreadcrumbs.value[pageBreadcrumbs.value.length - 1]?.name !==
-    to.params.entityName
-  ) {
-    setPageBreadcrumbs({ loading: true, name: to.params.entityName })
-  }
-}
-
-const setRootBreadCrumb = (to: any) => {
+const setPageTitle = (to: any) => {
   if (useSessionStore().isLoggedIn) {
     document.title = __(String(to.name).replace(/^drive-/, ''))
-    setPageBreadcrumbs([
-      {
-        label: __(String(to.name).replace(/^drive-/, '')),
-        name: to.name,
-        route: to.path,
-      },
-    ])
   }
 }
 
@@ -66,57 +46,57 @@ export const routes: RouteRecordRaw[] = [
         path: '',
         name: 'drive-Home',
         component: () => import('@/apps/drive/pages/Personal.vue'),
-        beforeEnter: [setRootBreadCrumb],
+        beforeEnter: [setPageTitle],
         props: true,
       },
       {
         path: 'inbox',
         name: 'drive-Inbox',
         component: () => import('@/apps/drive/pages/Notifications.vue'),
-        beforeEnter: [setRootBreadCrumb],
+        beforeEnter: [setPageTitle],
       },
       {
         path: 'recents',
         name: 'drive-Recents',
         component: () => import('@/apps/drive/pages/Recents.vue'),
-        beforeEnter: [setRootBreadCrumb],
+        beforeEnter: [setPageTitle],
       },
       {
         path: 'favourites',
         name: 'drive-Favourites',
         component: () => import('@/apps/drive/pages/Favourites.vue'),
-        beforeEnter: [setRootBreadCrumb],
+        beforeEnter: [setPageTitle],
       },
       {
         path: 'shared',
         name: 'drive-Shared',
         component: () => import('@/apps/drive/pages/Shared.vue'),
-        beforeEnter: [setRootBreadCrumb],
+        beforeEnter: [setPageTitle],
       },
       {
         path: 'attachments/:doctype?/:docname?',
         name: 'drive-Attachments',
         props: true,
         component: () => import('@/apps/drive/pages/Attachments.vue'),
-        beforeEnter: [setRootBreadCrumb],
+        beforeEnter: [setPageTitle],
       },
       {
         path: 'documents',
         name: 'drive-Documents',
         component: () => import('@/apps/drive/pages/Documents.vue'),
-        beforeEnter: [setRootBreadCrumb],
+        beforeEnter: [setPageTitle],
       },
       {
         path: 'presentations',
         name: 'drive-Presentations',
         component: () => import('@/apps/drive/pages/Slides.vue'),
-        beforeEnter: [setRootBreadCrumb],
+        beforeEnter: [setPageTitle],
       },
       {
         path: 'trash',
         name: 'drive-Trash',
         component: () => import('@/apps/drive/pages/Trash.vue'),
-        beforeEnter: [setRootBreadCrumb],
+        beforeEnter: [setPageTitle],
       },
       {
         path: 'g/:entityName/',
@@ -147,7 +127,6 @@ export const routes: RouteRecordRaw[] = [
         name: 'drive-File',
         component: () => import('@/apps/drive/pages/File.vue'),
         meta: { allowGuest: true, filePage: true },
-        beforeEnter: [manageBreadcrumbs],
         props: true,
       },
       {
@@ -155,7 +134,6 @@ export const routes: RouteRecordRaw[] = [
         name: 'drive-Folder',
         component: () => import('@/apps/drive/pages/Folder.vue'),
         meta: { allowGuest: true },
-        beforeEnter: [manageBreadcrumbs],
         props: true,
       },
       {

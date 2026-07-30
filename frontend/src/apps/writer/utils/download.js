@@ -9,37 +9,14 @@ import globalStyle from '@/apps/writer/styles/index.css?inline'
 async function getPdfFromDoc(entity_name, settings = {}) {
   const res = await fetch(`/api/method/suite.drive.api.files.get_file_content?entity_name=${entity_name}`)
   const raw_html = (await res.json()).message
-  const applyWatermark = settings?.apply_watermark || false
-  const watermark = {
-    text: settings?.watermark_text || '',
-    size: settings?.watermark_size || 90,
-    angle: settings?.watermark_angle || -45,
-  }
-  // Show watermark if apply_watermark is true AND text is not empty
-  const shouldShowWatermark = applyWatermark && watermark.text.trim() !== ''
   const content = `
           <!DOCTYPE html>
           <html>
             <head>
               <style>${globalStyle}</style>
               <style>${editorStyle}</style>
-              <style>
-                .watermark {
-                  position: fixed;
-                  top: 50%;
-                  left: 50%;
-                  transform: translate(-50%, -50%) rotate(${watermark.angle}deg);
-                  opacity: 0.12;
-                  font-size: ${watermark.size}px;
-                  color: #999;
-                  pointer-events: none;
-                  z-index: 9999;
-                  white-space: nowrap;
-                }
-              </style>
             </head>
             <body>
-              ${shouldShowWatermark ? `<div class="watermark">${watermark.text}</div>` : ''}
               <div class="ProseMirror prose-sm" style='padding-left: 40px; padding-right: 40px; padding-top: 20px; padding-bottom: 20px; margin: 0;'>
                 ${raw_html}
               </div>

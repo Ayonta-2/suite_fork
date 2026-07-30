@@ -225,29 +225,66 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
 
 	conversations = fetch_threads(account, filter, start, limit)
 
-	sent_mailbox = get_mailbox_id_by_role(account, "sent")
+	# Four roles are needed below, so they come off one cached mailbox list rather than a lookup each:
+	# every `get_mailbox_id_by_role` resolves the account's user and connection again on the way in.
+	ids_by_role = {
+		(m.get("role") or "").lower(): m["id"] for m in get_mailbox_service(account).mailboxes
+	}
+	trash_mailbox = ids_by_role.get("trash")
+	junk_mailbox = ids_by_role.get("junk")
+	# Sent and Drafts are about the message you wrote, so their rows follow the latest message in the
+	# folder itself; every other view follows the conversation's most recent activity.
+	outgoing_mailboxes = {ids_by_role[role] for role in ("sent", "drafts") if role in ids_by_role}
 
 	threads = []
 	for conversation in conversations.values():
 		if not conversation:
 			continue
 
+		visible = visible_in_mailbox(conversation, mailbox, trash_mailbox, junk_mailbox)
+
 		# The summary row is derived from the thread's messages in the current mailbox (falling back
 		# to the whole conversation for cross-mailbox views like "starred").
 		in_mailbox = [
-			m for m in conversation if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
-		] or conversation
+			m for m in visible if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
+		] or visible
 
-		# The preview/date reflect the latest message in the whole conversation (the most recent
-		# activity) everywhere except Sent, where the latest sent message is shown.
-		latest = in_mailbox[-1] if mailbox == sent_mailbox else conversation[-1]
-		threads.append(serialize_thread(in_mailbox, conversation, latest))
+		# The preview/date reflect the latest message in the conversation (the most recent activity)
+		# everywhere except Sent and Drafts, which show the latest message in the folder itself: a
+		# draft reply must keep its own recipients and its "Draft" badge when the thread it answers
+		# receives a newer mail.
+		latest = in_mailbox[-1] if mailbox in outgoing_mailboxes else visible[-1]
+		threads.append(serialize_thread(in_mailbox, visible, latest, first=conversation[0]))
 
 	# Avatars for the list-view summary rows, and for each message in the nested threads.
 	add_user_images_to_emails(account, threads, is_thread=False)
 	add_user_images_to_emails(account, [m for thread in threads for m in thread["messages"]], is_thread=True)
 
 	return threads, mailbox
+
+
+def visible_in_mailbox(messages: list[dict], mailbox: str, trash: str | None, junk: str | None) -> list[dict]:
+	"""The thread's messages a mailbox view is allowed to show, oldest to newest.
+
+	Mirrors the thread pane's `filterRelevantMails`: junked and trashed messages appear only in their
+	own folders. The summary row is derived from this rather than from the whole conversation so that
+	it describes the thread the way opening it would — a spam reply was adding a stranger to a row's
+	participants, raising its message count, and lending it its preview and date, all for a message
+	the pane then refused to render.
+
+	Falls back to the whole conversation rather than to nothing, so a thread is never a blank row.
+	"""
+
+	def is_trashed(message: dict) -> bool:
+		return any(mb["mailbox_id"] == trash for mb in message["mailboxes"])
+
+	if trash and mailbox == trash:
+		return [m for m in messages if is_trashed(m)] or messages
+
+	if junk and mailbox == junk:
+		return [m for m in messages if m.get("junk")] or messages
+
+	return [m for m in messages if not is_trashed(m) and not m.get("junk")] or messages
 
 
 def get_user_jmap_accounts() -> list[dict]:
@@ -361,17 +398,26 @@ def get_attachment(account: str, blob_id: str, filename: str | None = None) -> N
 	frappe.local.response.type = "download"
 
 
-def serialize_thread(messages: list[dict], thread_messages: list[dict], latest: dict | None = None) -> dict:
+def serialize_thread(
+	messages: list[dict],
+	thread_messages: list[dict],
+	latest: dict | None = None,
+	first: dict | None = None,
+) -> dict:
 	"""Serializes a thread for response.
 
-	Both `messages` (the thread's messages within the current mailbox) and `thread_messages` (the full
-	conversation across all mailboxes) are expected ordered oldest to newest. The list-view summary
-	fields are derived from `latest` (defaulting to the latest of `messages`), except `subject` which
-	comes from the conversation's first message (the thread's original subject); the full conversation
-	is serialized under `messages` so the whole thread can be rendered without a separate fetch.
+	Both `messages` (the thread's messages within the current mailbox) and `thread_messages` (the
+	conversation this view can show — see `visible_in_mailbox`) are expected ordered oldest to newest.
+	The list-view summary fields are derived from `latest` (defaulting to the latest of `messages`),
+	except `subject` which comes from `first`, the conversation's opening message (the thread's
+	original subject, without the "Re:" its replies carry — it defaults to the earliest message given,
+	which is only the true first when nothing has been filtered out). The conversation is serialized
+	under `messages` so the whole thread can be rendered without a separate fetch. The row's cast is
+	read off that same list in the frontend (see utils/participants), which is why nothing here names
+	the thread's senders.
 	"""
 
-	first = thread_messages[0]
+	first = first or thread_messages[0]
 	latest = latest or messages[-1]
 	# The row's identity + state come from the thread's representative message in the CURRENT mailbox
 	# (`messages` is scoped to it), so its folder tags and junk/flag/seen reflect THIS view — not a
@@ -525,7 +571,7 @@ def create_mail(
 	"""Creates new mail queue."""
 
 	doc_attachments = []
-	for d in attachments:
+	for d in attachments or []:
 		cid = d.get("cid") or random_string(10)
 		doc_attachments.append(
 			{
@@ -668,7 +714,7 @@ def get_mime_message(name: str) -> dict:
 
 	result = {
 		"message": doc.message or doc.get_mime_message(),
-		"message_id": {"label": _("Message ID"), "value": doc.message_id},
+		"message_id": {"label": _("Message ID"), "value": f"<{doc.message_id}>"},
 		"created_at": {
 			"label": _("Created at"),
 			"value": _("{0} (Delivered after {1} seconds)").format(
@@ -687,11 +733,20 @@ def get_mime_message(name: str) -> dict:
 		result["spf"] = {
 			"label": _("SPF"),
 			"value": _("{0} with IP {1}").format(pass_or_fail[doc.spf_pass], doc.from_ip),
+			"description": doc.spf_description,
 		}
 	if doc.dkim_description:
-		result["dkim"] = {"label": _("DKIM"), "value": pass_or_fail[doc.dkim_pass]}
+		result["dkim"] = {
+			"label": _("DKIM"),
+			"value": pass_or_fail[doc.dkim_pass],
+			"description": doc.dkim_description,
+		}
 	if doc.dmarc_description:
-		result["dmarc"] = {"label": _("DMARC"), "value": pass_or_fail[doc.dmarc_pass]}
+		result["dmarc"] = {
+			"label": _("DMARC"),
+			"value": pass_or_fail[doc.dmarc_pass],
+			"description": doc.dmarc_description,
+		}
 
 	return result
 
@@ -1333,13 +1388,26 @@ def upload_file():
 	if frappe.session.user == "Guest":
 		if frappe.get_system_settings("allow_guests_to_upload_files"):
 			ignore_permissions = True
+			# Kept in step with frappe.handler.upload_file: the file is saved with
+			# ignore_permissions, so this allowlist is the only thing stopping a guest attaching
+			# to an arbitrary doctype on a site that enables guest uploads.
+			if guest_allowed_docs := frappe.get_system_settings("allowed_doctypes_for_guest_uploads"):
+				target_doctype = frappe.form_dict.doctype
+				allowed_docs = [doc.strip() for doc in guest_allowed_docs.splitlines() if doc.strip()]
+				if allowed_docs and target_doctype not in allowed_docs:
+					frappe.throw(
+						_("Guests are not allowed to upload files for {0} Doctype").format(target_doctype),
+						frappe.PermissionError,
+					)
 		else:
 			raise frappe.PermissionError
 	else:
 		ignore_permissions = False
 
 	files = frappe.request.files
-	is_private = frappe.form_dict.is_private
+	# Default to private, as upstream does. Reading the key directly yields None when it is absent,
+	# which cint()s to 0 and would publish mail attachments to the world-readable files tree.
+	is_private = frappe.form_dict.get("is_private", 1)
 	doctype = frappe.form_dict.doctype
 	docname = frappe.form_dict.docname
 	fieldname = frappe.form_dict.fieldname

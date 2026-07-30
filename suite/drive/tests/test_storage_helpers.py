@@ -1,26 +1,78 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from suite.drive.utils.files import storage_key, get_s3_url, get_s3_key
+import frappe
+
+from suite.drive.overrides.file import File
+from suite.drive.utils import WRITER_CONTENT_DOCTYPE
+from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url, storage_key
 
 
 class TestStorageHelpers(unittest.TestCase):
-    def test_s3_url_roundtrip(self):
-        # get_s3_url builds a stored file_url; storage_key must recover the key.
-        for key in [
-            "abc/def.png",
-            "team one/sub folder/file name.pdf",
-            "résumé/spaced key.txt",
-            "a/b+c?d=e&f.bin",
-        ]:
-            self.assertEqual(storage_key(get_s3_url(key)), key)
+	def test_writer_container_is_disk_managed(self):
+		writer = frappe._dict(
+			file_type="Document",
+			file_url="team/writer-document",
+			content_doctype=WRITER_CONTENT_DOCTYPE,
+		)
+		self.assertFalse(File._not_in_disk(writer))
 
-    def test_storage_key_is_always_relative(self):
-        # Never returns a leading slash, so `Path(base) / key` can't reset.
-        for url in ["/private/files/x", "/files/y", "//z", "https://ext/u"]:
-            self.assertFalse(storage_key(url).startswith("/"))
+	def test_other_content_references_are_not_disk_managed(self):
+		reference = frappe._dict(
+			file_type="Document",
+			file_url="team/reference",
+			content_doctype="Presentation",
+		)
+		self.assertTrue(File._not_in_disk(reference))
 
-    def test_get_s3_key_strips_disk_prefix(self):
-        self.assertEqual(get_s3_key("/private/files/a/b.png"), "a/b.png")
-        self.assertEqual(get_s3_key("/files/a/b.png"), "a/b.png")
-        # Already a bare key: unchanged.
-        self.assertEqual(get_s3_key("a/b.png"), "a/b.png")
+	def test_writer_container_follows_rename_trash_and_restore(self):
+		with TemporaryDirectory() as site_folder:
+			manager = object.__new__(FileManager)
+			manager.flat = False
+			manager.s3_enabled = False
+			manager.site_folder = Path(site_folder)
+			entity = frappe._dict(
+				team="team",
+				file_name="Renamed document",
+				file_url="team/Original document",
+				mime_type="frappe_doc",
+				content_doctype=WRITER_CONTENT_DOCTYPE,
+				parent_path=Path("team"),
+			)
+			embed = manager.site_folder / entity.file_url / ".embeds" / "image.png"
+			embed.parent.mkdir(parents=True)
+			embed.write_bytes(b"embed")
+
+			entity.file_url = str(manager.rename(entity))
+			renamed_embed = manager.site_folder / entity.file_url / ".embeds" / "image.png"
+			self.assertEqual(renamed_embed.read_bytes(), b"embed")
+
+			with patch("suite.drive.utils.files.get_home_folder", return_value={"file_url": "team"}):
+				manager.move_to_trash(entity)
+				self.assertFalse(renamed_embed.exists())
+				manager.restore(entity)
+
+			self.assertEqual(renamed_embed.read_bytes(), b"embed")
+
+	def test_s3_url_roundtrip(self):
+		# get_s3_url builds a stored file_url; storage_key must recover the key.
+		for key in [
+			"abc/def.png",
+			"team one/sub folder/file name.pdf",
+			"résumé/spaced key.txt",
+			"a/b+c?d=e&f.bin",
+		]:
+			self.assertEqual(storage_key(get_s3_url(key)), key)
+
+	def test_storage_key_is_always_relative(self):
+		# Never returns a leading slash, so `Path(base) / key` can't reset.
+		for url in ["/private/files/x", "/files/y", "//z", "https://ext/u"]:
+			self.assertFalse(storage_key(url).startswith("/"))
+
+	def test_get_s3_key_strips_disk_prefix(self):
+		self.assertEqual(get_s3_key("/private/files/a/b.png"), "a/b.png")
+		self.assertEqual(get_s3_key("/files/a/b.png"), "a/b.png")
+		# Already a bare key: unchanged.
+		self.assertEqual(get_s3_key("a/b.png"), "a/b.png")

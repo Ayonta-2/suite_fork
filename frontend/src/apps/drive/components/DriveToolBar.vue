@@ -1,5 +1,5 @@
 <template>
-  <div class="flex p-5 pb-0 h-12">
+  <div class="flex items-center px-5 pt-3 h-12">
     <div v-if="selections?.length" class="my-auto w-[40%] text-base text-ink-gray-8">
       {{ selections.length }}
       {{ selections.length === 1 ? __('item') : __('items') }}
@@ -24,6 +24,16 @@
         <LucideSearch class="size-4" />
       </template>
     </TextInput>
+    <Dropdown v-if="!selections?.length" class="ml-2 my-auto" :options="availableFilterTypes.map(({ name, icon }) => ({
+      label: __(name),
+      icon: h('img', { src: icon }),
+      onClick: () => activeFilters.push({ name, icon }),
+      disabled: activeFilters.includes({ name, icon }),
+    }))
+      " :button="{
+        icon: LucideFilter,
+        tooltip: 'Filter',
+      }" :disabled placement="right" />
 
     <div class="flex gap-2 ml-auto my-auto">
       <template v-if="!selections?.length">
@@ -38,17 +48,8 @@
           </div>
         </div>
         <Button v-if="delayedLoading" :loading="true" label="Loading..." />
-        <Dropdown :options="availableFilterTypes.map(({ name, icon }) => ({
-          label: __(name),
-          icon: h('img', { src: icon }),
-          onClick: () => activeFilters.push({ name, icon }),
-          disabled: activeFilters.includes({ name, icon }),
-        }))
-          " :button="{
-            icon: LucideFilter,
-            tooltip: 'Filter',
-          }" :disabled placement="right" />
-        <SortControl v-if="$route.name !== 'Recents'" v-model="sortOrder" :options="columnHeaders" :menu-items="sortMenuItems" :disabled />
+        <SortControl v-if="$route.name !== 'Recents' && view !== 'list'" v-model="sortOrder" :options="columnHeaders"
+          :menu-items="sortMenuItems" :disabled />
 
         <TabButtons v-model="view" :options="[
           {

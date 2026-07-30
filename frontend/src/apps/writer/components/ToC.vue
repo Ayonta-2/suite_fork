@@ -5,9 +5,9 @@
     <div v-if="!show" class="flex justify-center">
       <Button variant="ghost" :icon="LucideTableOfContents" tooltip="Table of Contents" @click="show = !show" />
     </div>
-    <div v-if="show" class="grow flex flex-col gap-0.5">
+    <div v-if="show" class="grow flex flex-col gap-0.5 w-52">
       <div v-if="hasContent" class="flex justify-between items-center ps-2 pr-1 pb-1">
-        <span class="text-base-medium text-ink-gray-8 select-none">Table of Contents</span>
+        <span class="text-base-medium text-ink-gray-8 select-none whitespace-nowrap">Table of Contents</span>
         <Button :icon="LucideLeftClose" variant="ghost" @click="show = !show" tooltip="Hide" />
       </div>
       <div v-if="tabs.length > 0" class="flex flex-col gap-0.5 mb-2" @drop.prevent="onDrop">
@@ -33,16 +33,18 @@
           </div>
           <component v-else :is="tab.id === activeTabId ? ContextMenu : 'div'" :options="tabActions">
             <Button variant="ghost" class="w-full !text-ink-gray-5 !justify-start cursor-grab active:cursor-grabbing"
-              :class="tab.id === activeTabId && 'font-medium !text-ink-gray-8'" :label="tab.label"
-              :icon-left="h(LucideFileText, { class: 'size-4 shrink-0' })" @click="
+              :class="tab.id === activeTabId && 'font-medium !text-ink-gray-8'" :label="tab.label" @click="
                 tab.id !== activeTabId && editor.commands.changeTab(tab.id)
                 " :draggable="editor.isEditable" @dragstart="onDragStart($event, tab, index)"
               @dragend.prevent="onDragEnd">
-              <template #suffix v-if="tab.id === activeTabId"><Button @click="showHeadings = !showHeadings"
-                  class="ml-auto" variant="ghost" :icon="h(showHeadings ? LucideMinus : LucidePlus, {
-                    class: 'size-4',
-                  })
-                    " /></template>
+              <template #prefix>
+                <span v-if="tab.id === activeTabId && currentTabAnchors.length" role="button"
+                  class="shrink-0 cursor-pointer" @click.stop="showHeadings = !showHeadings">
+                  <LucideChevronRight class="size-4 transition-transform duration-200"
+                    :class="showHeadings && 'rotate-90'" />
+                </span>
+                <LucideFileText v-else class="size-4 shrink-0" />
+              </template>
             </Button>
           </component>
           <template v-if="tab.id === activeTabId && currentTabAnchors.length">
@@ -93,7 +95,7 @@ import { nextTick } from 'vue'
 
 import { TextSelection } from '@tiptap/pm/state'
 import LucidePlus from '~icons/lucide/plus'
-import LucideMinus from '~icons/lucide/minus'
+import LucideChevronRight from '~icons/lucide/chevron-right'
 import LucidePanelLeftClose from '~icons/lucide/panel-left-close'
 import LucideFileText from '~icons/lucide/file-text'
 import LucideTableOfContents from '~icons/lucide/table-of-contents'
@@ -104,6 +106,7 @@ import LucideLeftClose from '~icons/lucide/panel-left-close'
 import { ref, watch, computed, h, onMounted, onBeforeUnmount } from 'vue'
 import { Button, TextInput, ContextMenu, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
 import { copyToClipboard } from '@/apps/drive/sdk'
+import { orderedTabs, findTab } from '@/apps/writer/extensions/tabs'
 
 const props = defineProps({
   editor: Object,
@@ -125,13 +128,10 @@ const showHeadings = ref(true)
 const tabs = ref([])
 
 const updateTabs = () => {
-  const t = []
-  props.editor.state.doc.descendants((node) => {
-    if (node.type.name === 'tab') {
-      t.push({ id: node.attrs.id, label: node.attrs.label })
-    }
-  })
-  tabs.value = t
+  tabs.value = orderedTabs(props.editor.state.doc).map(({ node }) => ({
+    id: node.attrs.id,
+    label: node.attrs.label,
+  }))
 }
 
 // Get active tab ID
@@ -157,19 +157,10 @@ const currentTabAnchors = computed(() => {
   if (tabs.value.length === 0) return props.anchors
   if (!activeTabId.value) return props.anchors
 
-  // Find the tab node position in the document
-  let tabStart = null
-  let tabEnd = null
-
-  props.editor.state.doc.descendants((node, pos) => {
-    if (node.type.name === 'tab' && node.attrs.id === activeTabId.value) {
-      tabStart = pos
-      tabEnd = pos + node.nodeSize
-      return false
-    }
-  })
-
-  if (tabStart === null) return []
+  const tab = findTab(props.editor.state.doc, activeTabId.value)
+  if (!tab) return []
+  const tabStart = tab.pos
+  const tabEnd = tab.pos + tab.node.nodeSize
 
   // Filter anchors that are within the active tab's position range
   return props.anchors.filter((anchor) => {

@@ -52,6 +52,8 @@ export interface User {
 	username: string | null
 	user_image: string | null
 	api_key: string | null
+	// The zone every timestamp is shown in and typed in; see utils/datetime.ts.
+	time_zone: string
 	user_settings?: string
 	color_scheme?: COLOR_SCHEME
 	group_messages_by?: 'None' | 'Day' | 'Month'
@@ -84,6 +86,14 @@ export interface Recipient {
 	type: 'To' | 'Cc' | 'Bcc'
 	email: string
 	display_name: string | null
+}
+
+// Everyone who has written in a thread, in the order they first wrote. Derived from the thread's own
+// messages rather than served with it (see utils/participants), `is_self` included.
+export interface ThreadParticipant {
+	name: string
+	email: string
+	is_self: boolean
 }
 
 export interface Mailbox {

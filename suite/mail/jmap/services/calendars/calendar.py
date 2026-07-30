@@ -23,7 +23,8 @@ class CalendarService(CalendarsService):
 					"sortOrder": int(calendar.get("sort_order") or 0),
 					"timeZone": calendar.get("time_zone"),
 					"isSubscribed": bool(calendar.get("is_subscribed") or False),
-					"isVisible": bool(calendar.get("is_visible") or True),
+					"isVisible": bool(calendar.get("is_visible", True)),
+					"includeInAvailability": calendar.get("include_in_availability") or "all",
 				}
 
 				if bool(calendar.get("is_default") or False):
@@ -70,7 +71,8 @@ class CalendarService(CalendarsService):
 					"sortOrder": int(calendar.get("sort_order") or 0),
 					"timeZone": calendar.get("time_zone"),
 					"isSubscribed": bool(calendar.get("is_subscribed") or False),
-					"isVisible": bool(calendar.get("is_visible") or True),
+					"isVisible": bool(calendar.get("is_visible", True)),
+					"includeInAvailability": calendar.get("include_in_availability") or "all",
 				}
 
 				if bool(calendar.get("is_default") or False):

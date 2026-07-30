@@ -24,7 +24,7 @@ async function prepareArchive(entities) {
   try {
     ;({ token } = await call('suite.drive.api.files.download_folder', { entities: names }))
   } catch (error) {
-    toast({ title: error?.message || 'Download failed', type: 'error' })
+    toast.error(error?.message || 'Download failed')
     return
   }
 
