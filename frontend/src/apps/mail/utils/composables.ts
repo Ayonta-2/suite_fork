@@ -1,5 +1,5 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { createResource, toast } from 'frappe-ui'
 
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
@@ -15,6 +15,44 @@ import type { COLOR_SCHEME, Identity, ScreenedAddress } from '@/apps/mail/types'
 const isMobile = ref(window.innerWidth < 640)
 
 export const useScreenSize = () => ({ isMobile })
+
+/**
+ * Split View: the reading pane sits beside the list rather than over it. One user setting, read the
+ * same way by every list view and by ThreadPane itself — the two halves of the split are sized from
+ * it, so they must never be able to disagree about it.
+ */
+export const useReadingPane = () => {
+	const { userResource } = userStore()
+	return computed(() => !!userResource.data?.show_reading_pane)
+}
+
+/**
+ * Switching accounts stays in place wherever the view allows it — shared by the
+ * sidebar's account submenu and the mobile profile sheet. Account-scoped routes
+ * swap the accountId param in their own URL. The account-agnostic All Inboxes
+ * routes just re-resolve the active account (bouncing to the new account's inbox
+ * threw the reader out of the merged list, which spans every account anyway).
+ * Everything else goes through the account shortcut, which the guard resolves to
+ * the new account's default mailbox.
+ */
+export const useAccountSwitch = () => {
+	const route = useRoute()
+	const router = useRouter()
+	const store = userStore()
+
+	const switchAccount = (accountId: string) => {
+		if (accountId === store.accountId) return
+		if ((route.name as string)?.startsWith('mail-all-inboxes'))
+			return store.resolveAccount(store.userResource.data?.accounts, accountId)
+		router.push(
+			route.params.accountId
+				? { name: route.name!, params: { ...route.params, accountId } }
+				: { name: 'mail-account-shortcut', params: { accountId } },
+		)
+	}
+
+	return { switchAccount }
+}
 
 const isSidebarOpen = ref(false)
 

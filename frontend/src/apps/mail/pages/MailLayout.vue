@@ -8,21 +8,25 @@
 			<router-view />
 		</component>
 		<InstallPrompt v-if="isMobile" />
+		<ShortcutsModal v-model="showShortcuts" />
 	</FrappeUIProvider>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, watchEffect } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 
 import { mailServerUnavailable } from '@/boot/config'
+import { type RouteLocationRaw, useRouter } from 'vue-router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
+import { useGPrefix } from '@/apps/mail/utils/listNavigation'
 import { useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { userStore } from '@/apps/mail/stores/user'
+import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import InstallPrompt from '@/apps/mail/components/InstallPrompt.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
@@ -44,7 +48,60 @@ import type { NotificationPayload } from '@/apps/mail/types'
  * Public pre-auth routes (login/signup/...) sit OUTSIDE this layout since they
  * do not need the $user/$dayjs/$socket injects.
  */
-const { userResource } = userStore()
+const { userResource, mailboxIds, accountId } = userStore()
+const router = useRouter()
+
+// `?` and the `g`+letter mailbox jumps belong to the whole non-admin app, not to whichever
+// list happens to be mounted: they were only reachable from a mailbox view before, so they
+// died in All Inboxes, the Screener and the settings pages. The admin dashboard sits under
+// its own layout and never sees these.
+const showShortcuts = ref(false)
+const gPrefix = useGPrefix()
+
+// `g` is also the prefix each list uses for its own g g / G jump to the ends. Both listeners
+// see the key and keep their own prefix state; this one only ever acts on a following letter,
+// so a `g g` falls through to the list untouched.
+// `g` then a letter. Beyond the account's own folders this reaches the two views that are not
+// folders at all — the merged list and the Screener — so the map holds routes, not mailbox ids.
+//
+// `a` is All Inboxes (as in Gmail's All Mail), which pushes Archive to `e` — the letter that
+// already archives a thread, so one letter means archive throughout. The Screener takes `r` for
+// review: `s` is Sent, and `c` would collide with Contacts if that ever gets a jump.
+const mailboxRoute = (mailbox: string) => ({ name: 'mail-mailbox', params: { accountId, mailbox } })
+
+const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
+	a: () => ({ name: 'mail-all-inboxes' }),
+	r: () => ({ name: 'mail-screener', params: { accountId } }),
+	i: () => mailboxRoute(mailboxIds.inbox),
+	f: () => mailboxRoute('starred'),
+	s: () => mailboxRoute(mailboxIds.sent),
+	d: () => mailboxRoute(mailboxIds.drafts),
+	j: () => mailboxRoute(mailboxIds.junk),
+	e: () => mailboxRoute(mailboxIds.archive),
+	t: () => mailboxRoute(mailboxIds.trash),
+}
+
+const handleGlobalShortcuts = (e: KeyboardEvent) => {
+	const key = e.key.toLowerCase()
+	if (shouldIgnoreKeypress(e)) return
+
+	if (e.key === '?') {
+		e.preventDefault()
+		showShortcuts.value = true
+		return
+	}
+
+	if (gPrefix.armed.value) {
+		const destination = GO_TO_KEYS[key]?.()
+		gPrefix.disarm()
+		if (!destination) return
+		e.preventDefault()
+		router.push(destination)
+		return
+	}
+
+	if (key === 'g') gPrefix.press(e.shiftKey)
+}
 const { dataTheme, cycleTheme } = useTheme()
 const { isMobile } = useScreenSize()
 const route = useRoute()
@@ -184,11 +241,13 @@ onMounted(() => {
 		showNotification(payload),
 	)
 	window.addEventListener('keydown', handleThemeShortcut)
+	window.addEventListener('keydown', handleGlobalShortcuts)
 	window.addEventListener('focusout', resetDocumentScroll)
 })
 
 onUnmounted(() => {
 	window.removeEventListener('keydown', handleThemeShortcut)
+	window.removeEventListener('keydown', handleGlobalShortcuts)
 	window.removeEventListener('focusout', resetDocumentScroll)
 })
 </script>

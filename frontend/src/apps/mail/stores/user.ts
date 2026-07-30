@@ -9,6 +9,28 @@ import type { UserAccount, UserResource } from '@/apps/mail/types'
 
 export type MailboxRole = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important'
 
+/** Role → mailbox id map for a mailbox list (plus the named Screener). Shared with
+ * utils/accountScope, which derives the same map for a non-active account's list. */
+export const deriveMailboxIds = (
+	mailboxes?: { role?: MailboxRole; _name?: string; id: string }[],
+): Record<MailboxRole | 'screener', string> => {
+	const ids: Record<MailboxRole | 'screener', string> = {
+		inbox: '',
+		sent: '',
+		drafts: '',
+		trash: '',
+		junk: '',
+		archive: '',
+		important: '',
+		screener: '',
+	}
+	mailboxes?.forEach((m) => {
+		if (m.role) ids[m.role] = m.id
+		else if (m._name === SCREENER_MAILBOX_NAME) ids.screener = m.id
+	})
+	return ids
+}
+
 const ACCOUNT_STORAGE_KEY = 'mail-account-id'
 
 export const userStore = defineStore('mail-user', () => {
@@ -80,22 +102,29 @@ export const userStore = defineStore('mail-user', () => {
 		onSuccess: reloadAllInboxesUnread,
 	})
 
-	const mailboxIds = computed(() => {
-		const ids: Record<MailboxRole | 'screener', string> = {
-			inbox: '',
-			sent: '',
-			drafts: '',
-			trash: '',
-			junk: '',
-			archive: '',
-			important: '',
-			screener: '',
+	const mailboxIds = computed(() => deriveMailboxIds(mailboxes.data))
+
+	// Short display labels for the merged views (All Inboxes, all-accounts search), keyed by the
+	// account's full name. Only the odd ones out get labelled: the currently open account is
+	// where the reader already is, so its rows stay bare ('' here — the row hides an empty
+	// label) and ink scales with how much the reader actually needs it. The rest show the
+	// address's local part — enough to tell the accounts apart in a fraction of the width —
+	// falling back to the full address only when two accounts share a local part.
+	const accountShortNames = computed<Record<string, string>>(() => {
+		const accounts = userResource.data?.accounts ?? []
+		const shortOf = (name: string) => name.split('@')[0] || name
+		const counts: Record<string, number> = {}
+		for (const account of accounts) {
+			const short = shortOf(account._name ?? '')
+			counts[short] = (counts[short] ?? 0) + 1
 		}
-		mailboxes.data?.forEach((m: { role?: MailboxRole; _name?: string; id: string }) => {
-			if (m.role) ids[m.role] = m.id
-			else if (m._name === SCREENER_MAILBOX_NAME) ids.screener = m.id
-		})
-		return ids
+		return Object.fromEntries(
+			accounts.map((account) => {
+				const name = account._name ?? ''
+				if (account.id === accountId.value) return [name, '']
+				return [name, counts[shortOf(name)] > 1 ? name : shortOf(name)]
+			}),
+		)
 	})
 
 	const addressBooks = createResource({
@@ -156,6 +185,7 @@ export const userStore = defineStore('mail-user', () => {
 		userResource,
 		mailboxes,
 		mailboxIds,
+		accountShortNames,
 		addressBooks,
 		identities,
 		domains,
