@@ -32,7 +32,7 @@
    "set_only_once": 1
   },
   {
-   "default": "Reject",
+   "default": "Spam",
    "description": "Accepted lets the sender's mail reach the inbox (used by screening). Spam files incoming mail into the Spam (Junk) folder. Reject discards incoming mail from the sender silently.",
    "fieldname": "action",
    "fieldtype": "Select",
@@ -59,7 +59,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-30 14:42:41.665492",
+ "modified": "2026-07-30 14:46:07.461144",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Screened Email Address",
