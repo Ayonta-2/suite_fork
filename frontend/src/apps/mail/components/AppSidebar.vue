@@ -461,12 +461,18 @@ const sidebarItems = computed(() => {
 	if (route.meta.isDashboard) {
 		// A pinned, unlabelled group at the top of the nav: the exit back to the
 		// inbox (previously buried in the header dropdown) and the Overview home.
+		// Admins without a JMAP account (e.g. System Managers) have no inbox to
+		// go back to, so the exit is omitted for them.
 		const pinned = [
-			{
-				label: __('Back to Mail'),
-				icon: ArrowLeft,
-				onClick: goToMailbox,
-			},
+			...(user.data?.is_jmap_configured
+				? [
+						{
+							label: __('Back to Mail'),
+							icon: ArrowLeft,
+							onClick: goToMailbox,
+						},
+					]
+				: []),
 			{
 				label: __('Overview'),
 				icon: House,
