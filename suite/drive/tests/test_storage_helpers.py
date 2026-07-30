@@ -34,12 +34,11 @@ class TestStorageHelpers(unittest.TestCase):
 			manager.s3_enabled = False
 			manager.site_folder = Path(site_folder)
 			entity = frappe._dict(
-				team="team",
 				file_name="Renamed document",
-				file_url="team/Original document",
+				file_url="root/Original document",
 				mime_type="frappe_doc",
 				content_doctype=WRITER_CONTENT_DOCTYPE,
-				parent_path=Path("team"),
+				parent_path=Path("root"),
 			)
 			embed = manager.site_folder / entity.file_url / ".embeds" / "image.png"
 			embed.parent.mkdir(parents=True)
@@ -49,7 +48,7 @@ class TestStorageHelpers(unittest.TestCase):
 			renamed_embed = manager.site_folder / entity.file_url / ".embeds" / "image.png"
 			self.assertEqual(renamed_embed.read_bytes(), b"embed")
 
-			with patch("suite.drive.utils.files.get_home_folder", return_value={"file_url": "team"}):
+			with patch("suite.drive.utils.files.get_root_folder", return_value={"file_url": "root"}):
 				manager.move_to_trash(entity)
 				self.assertFalse(renamed_embed.exists())
 				manager.restore(entity)

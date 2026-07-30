@@ -11,7 +11,6 @@ import {
 // height (~1.2em), not of the font size — the editor stores CSS but the popover
 // speaks Docs units, so "2" on a 15px paragraph is 2 * 1.2 * 15 = 36px.
 const NATURAL_LINE_HEIGHT = 1.2;
-const FONT_SIZE = 15;
 
 // The popover's three number inputs, in DOM order: line spacing, above, below.
 // Scoped to the popover because the toolbar's font-size stepper (ManageFont) is
@@ -66,12 +65,16 @@ test("line spacing uses Google Docs multiples and leaves paragraph spacing alone
 
 	// Selection stays on the second paragraph, which is what the popover edits.
 	const paragraph = editor.locator("p").nth(1);
+	// Read the rendered font size rather than assuming the 15px default.
+	const fontSize = await computedPx(paragraph, "font-size");
+	const expectedLineHeight = (spacing: number) =>
+		spacing * NATURAL_LINE_HEIGHT * fontSize;
 	await openSpacingPopover(page);
 
 	await spacingInputs(page).first().fill("2");
 	await expect
 		.poll(() => computedPx(paragraph, "line-height"))
-		.toBeCloseTo(2 * NATURAL_LINE_HEIGHT * FONT_SIZE, 1);
+		.toBeCloseTo(expectedLineHeight(2), 1);
 
 	await spacingInputs(page).nth(2).fill("20");
 	await expect.poll(() => computedPx(paragraph, "margin-bottom")).toBe(20);
@@ -81,7 +84,7 @@ test("line spacing uses Google Docs multiples and leaves paragraph spacing alone
 	await spacingInputs(page).first().fill("1.15");
 	await expect
 		.poll(() => computedPx(paragraph, "line-height"))
-		.toBeCloseTo(1.15 * NATURAL_LINE_HEIGHT * FONT_SIZE, 1);
+		.toBeCloseTo(expectedLineHeight(1.15), 1);
 	await expect.poll(() => computedPx(paragraph, "margin-bottom")).toBe(20);
 });
 
