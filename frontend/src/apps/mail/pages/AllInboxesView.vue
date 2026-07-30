@@ -212,7 +212,6 @@ import {
 	hasCursor,
 	isNavigationKey,
 	navigationOffset,
-	stepFrom,
 	stepFromKey,
 	useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
@@ -240,11 +239,13 @@ import type { Mail, Mailbox, MailboxData, Thread, UserResource } from '@/apps/ma
 
 const { isMobile } = useScreenSize()
 
-// Set by the `mail-all-inboxes-mail` route when a thread is open. accountId is the thread's
-// owning account, not the active one — the merged list spans accounts.
-const { accountId, mailbox, threadID } = defineProps<{
-	accountId?: string
-	mailbox?: string
+// The `mail-all-inboxes-mail` route also carries the open thread's owning accountId and mailbox, but
+// nothing here reads them: every row already carries its own account and folder ids, which is what the
+// pane and its actions target. They fall through as plain attributes, which this component (a fragment)
+// cannot inherit — so it inherits nothing.
+defineOptions({ inheritAttrs: false })
+
+const { threadID } = defineProps<{
 	threadID?: string
 }>()
 
@@ -268,6 +269,7 @@ const {
 	isFetching,
 	canGoNext,
 	threadIDs,
+	threadByOffset,
 	takeResetWindow,
 	beginReset,
 	beginRefresh,
@@ -408,7 +410,7 @@ const { onTouchStart: onThreadTouchStart, onTouchEnd: onThreadTouchEnd } = useSw
 )
 
 const stepOpenThread = (offset: number) => {
-	const next = stepFrom(threadIDs.value, threadID, offset)
+	const next = threadByOffset(offset)
 	if (next) return openThread(next)
 	// At the last loaded thread, stepping further loads the next window and opens what arrives.
 	loadMoreThenOpenEdge(offset, 'open')

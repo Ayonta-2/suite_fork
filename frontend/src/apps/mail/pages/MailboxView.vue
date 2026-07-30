@@ -585,6 +585,7 @@ const {
 	isFetching,
 	canGoNext,
 	threadIDs,
+	threadByOffset,
 	takeResetWindow,
 	beginReset,
 	beginRefresh,
@@ -894,7 +895,7 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 	if (threadID) {
 		// The reading pane walks threads rather than rows: opening one always reveals it, so it can
 		// never land on something hidden (see the threadID watcher).
-		const next = getThreadByOffset(offset)
+		const next = threadByOffset(offset)
 		goToThreadByOffset(offset)
 		if (next) newIDs = [next]
 	} else {
@@ -1360,9 +1361,6 @@ onUnmounted(() => {
 const goToMailbox = () =>
 	router.push({ name: 'mail-mailbox', params: { accountId, mailbox }, query: route.query })
 
-const getThreadByOffset = (offset: number, currentThread: string = threadID!) =>
-	threadIDs.value[threadIDs.value.indexOf(currentThread) + offset]
-
 const goToThread = (threadID: string) => {
 	threadSlide.value = pendingThreadSlide
 	if (threadID)
@@ -1370,7 +1368,7 @@ const goToThread = (threadID: string) => {
 }
 
 const goToThreadByOffset = (offset: number) => {
-	const next = getThreadByOffset(offset)
+	const next = threadByOffset(offset)
 	if (next) return goToThread(next)
 	loadMoreThenOpenEdge(offset, 'open')
 }

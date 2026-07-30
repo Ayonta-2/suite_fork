@@ -1,7 +1,6 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, ref, watch, type Ref } from 'vue'
 
 import dayjs from '@/apps/mail/utils/dayjs'
-import { useRowScroll } from '@/apps/mail/utils/listNavigation'
 import { buildListRows, type ListRow, type StackRow } from '@/apps/mail/utils/threadStacks'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
@@ -144,7 +143,20 @@ export const useListRows = ({
 		navigableRows.value.find((row) => row.key === focusedRowKey.value),
 	)
 
-	const scrollRowIntoView = useRowScroll(container)
+	/**
+	 * Scrolls the row marked `data-row-key` into the centre of the list. Skipped on mobile, where the
+	 * thread pane slides over the list and the jump would only show behind it. Waits a tick because
+	 * the row may have only just been revealed (a stack or day group expanding, a route change
+	 * landing); a no-op when nothing changed.
+	 */
+	const scrollRowIntoView = (key: string) => {
+		if (isMobile.value) return
+		nextTick(() => {
+			container.value
+				?.querySelector(`[data-row-key="${key}"]`)
+				?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+		})
+	}
 
 	const focusRowKey = (key: string) => {
 		focusedRowKey.value = key

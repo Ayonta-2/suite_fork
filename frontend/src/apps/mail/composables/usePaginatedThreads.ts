@@ -100,6 +100,15 @@ export const usePaginatedThreads = ({
 	const scrollListToTop = () => container.value?.scrollTo({ top: 0 })
 
 	/**
+	 * The thread `offset` steps from `from` (the open one by default), within what is loaded.
+	 * Undefined at either end, which is how a caller knows to load the next window instead — and for
+	 * a `from` that is no longer loaded, which reads as "the cursor is lost, do nothing" going up and
+	 * as the first thread going down.
+	 */
+	const threadByOffset = (offset: number, from: string | undefined = openThreadID()) =>
+		threadIDs.value[threadIDs.value.indexOf(from as string) + offset]
+
+	/**
 	 * For a reset resource's `transform`: snapshots the merge base (before this window replaces the
 	 * loaded list), reads the lookahead row, and trims it off.
 	 */
@@ -273,7 +282,7 @@ export const usePaginatedThreads = ({
 		if (!pendingEdgeThread) return
 		const { action, anchor } = pendingEdgeThread
 		// The successor of the anchor is now loaded (undefined only if nothing new arrived — then stop).
-		const id = threadIDs.value[threadIDs.value.indexOf(anchor as string) + 1]
+		const id = threadByOffset(1, anchor)
 		pendingEdgeThread = null
 		if (!id) return
 		onEdgeThread(id, action)
@@ -299,6 +308,7 @@ export const usePaginatedThreads = ({
 		isFetching,
 		canGoNext,
 		threadIDs,
+		threadByOffset,
 		scrollListToTop,
 		takeResetWindow,
 		beginReset,
