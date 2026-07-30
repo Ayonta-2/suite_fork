@@ -242,7 +242,7 @@ function _baseOption(config, isDark = false) {
 	const pageIconColor = isDark ? '#a3a3a3' : '#525252'
 
 	return {
-		color: config.options?.colorScheme || ESPRESSO_PALETTE,
+		color: config.options?.colorScheme?.length ? config.options.colorScheme : ESPRESSO_PALETTE,
 		backgroundColor: 'transparent',
 		title: title ? {
 			text: title,
