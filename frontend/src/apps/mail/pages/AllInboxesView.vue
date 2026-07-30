@@ -406,10 +406,20 @@ const loadMore = () => {
 }
 
 const loadMoreSentinel = useTemplateRef('loadMoreSentinel')
+// True while the sentinel is in view.
+const sentinelVisible = ref(false)
+
+// The height the list had reached the last time we topped it up, so a fill that adds nothing can
+// be detected. Reset at the start of each fill episode (see the watcher by groupedRows).
+let lastFillHeight = 0
+
 useIntersectionObserver(
 	loadMoreSentinel,
 	([entry]) => {
-		if (entry?.isIntersecting) loadMore()
+		const entering = !!entry?.isIntersecting && !sentinelVisible.value
+		sentinelVisible.value = !!entry?.isIntersecting
+		if (entering) lastFillHeight = 0
+		if (sentinelVisible.value) loadMore()
 	},
 	{ root: mailListRef },
 )
@@ -595,6 +605,28 @@ const toggleStack = (row: StackRow) => {
 // Walking the loaded threads instead skipped the headers and — worse — stepped onto threads
 // hidden inside a collapsed day or stack, where the marker simply vanished.
 type NavEntry = { type: 'group'; key: string; dateKey: string } | ListRow
+
+// Rescues the one case the observer cannot: the rendered list is too short to scroll, so the
+// sentinel never leaves and re-enters the viewport to fire again — infinite scroll would die with
+// nothing left to scroll. A window of threads can collapse to a single stack row, so filling the
+// viewport can take several windows. This was unreachable before the merged list stacked.
+//
+// Both guards are load-bearing. Stop once the list can scroll, because from there the user's own
+// scrolling drives the observer. And stop if a window added no height: its rows landed somewhere
+// they cannot be seen (a collapsed day), so further windows would be just as invisible — without
+// this, collapsing a large group walks the whole list a window at a time.
+watch(groupedRows, () => {
+	if (!sentinelVisible.value || !hasMore.value) return
+
+	nextTick(() => {
+		const el = mailListRef.value
+		if (!el || !sentinelVisible.value) return
+
+		const grew = el.scrollHeight > lastFillHeight
+		lastFillHeight = el.scrollHeight
+		if (el.scrollHeight <= el.clientHeight && grew) loadMore()
+	})
+})
 
 const navigableRows = computed<NavEntry[]>(() => {
 	const rows: NavEntry[] = []
