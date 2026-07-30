@@ -1,5 +1,7 @@
 import { nextTick, ref, type Ref } from 'vue'
 
+import { useScreenSize } from '@/apps/mail/utils/composables'
+
 // Shared pieces of keyboard list navigation, for the mailbox list and the merged All Inboxes
 // list. Only the parts that are genuinely identical live here: which keys navigate, which
 // direction each means, and how to step a cursor through a list.
@@ -49,9 +51,14 @@ export const hasCursor = <T extends { key: string }>(rows: T[], currentKey: stri
  * where the thread pane slides over the list and the jump would only show behind
  * it. Waits a tick because the row may have only just been revealed (a stack or
  * day group expanding, a route change landing); a no-op when nothing changed.
+ *
+ * Mobile is read here rather than passed in: it is one process-wide value (see
+ * useScreenSize), so every caller was handing over the same singleton.
  */
-export const useRowScroll =
-	(container: Ref<HTMLElement | null>, isMobile: Ref<boolean>) => (rowKey: string) => {
+export const useRowScroll = (container: Ref<HTMLElement | null>) => {
+	const { isMobile } = useScreenSize()
+
+	return (rowKey: string) => {
 		if (isMobile.value) return
 		nextTick(() => {
 			container.value
@@ -59,6 +66,7 @@ export const useRowScroll =
 				?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 		})
 	}
+}
 
 /**
  * The `g` prefix: `g g` jumps to the first entry, `G` to the last. A lone `g` arms for

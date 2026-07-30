@@ -538,7 +538,6 @@ import {
 	navigationOffset,
 	stepFromKey,
 	useGPrefix,
-	useRowScroll,
 } from '@/apps/mail/utils/listNavigation'
 import {
 	useMobileSelection,
@@ -547,7 +546,7 @@ import {
 	useSwipeNav,
 	useUndo,
 } from '@/apps/mail/utils/composables'
-import { buildListRows } from '@/apps/mail/utils/threadStacks'
+import { useListRows } from '@/apps/mail/composables/useListRows'
 import {
 	PAGE_LENGTH,
 	usePaginatedThreads,
@@ -567,12 +566,7 @@ import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 
 import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
-import type { ListRow, StackRow } from '@/apps/mail/utils/threadStacks'
-
-// A date header, the one navigable row the list draws itself rather than getting from buildListRows —
-// which is deliberately date-agnostic, so this type belongs here rather than in threadStacks.
-type GroupRow = { type: 'group'; key: string; dateKey: string }
-type NavRow = ListRow | GroupRow
+import type { NavRow } from '@/apps/mail/composables/useListRows'
 
 const { accountId, mailbox, threadID } = defineProps<{
 	accountId: string
@@ -588,7 +582,6 @@ const { undo, setUndoAction } = useUndo()
 
 const socket = inject('$socket')
 const user = inject('$user') as UserResource
-const dayjs = inject('$dayjs')
 
 const store = userStore()
 const { mailboxes, mailboxIds } = store
@@ -599,51 +592,34 @@ const { mailboxes, mailboxIds } = store
 // reads it to decide whether the info banners survive an open thread, and how the toolbar's bulk
 // actions collapse (into a menu with the pane taking two thirds of the row, spelled out without).
 const showReadingPane = useReadingPane()
-const groupMessagesBy = computed(() => user.data.group_messages_by)
 
-// Thread Groups
+// Infinite scroll (shared by the threads and search resources — only one is active at a time).
+// usePaginatedThreads owns the state between the reset and append fetches: the epochs, the refresh
+// merge, the removal suppression, the sentinel, the edge crossing. See there.
+const {
+	container: mailListRef,
+	hasMore,
+	loadingMore,
+	isFetching,
+	canGoNext,
+	threadIDs,
+	takeResetWindow,
+	beginReset,
+	beginRefresh,
+	onResetSuccess,
+	appendThreads,
+	loadMoreThenOpenEdge,
+	topUpIfShort,
+	suppressRemoved,
+	unsuppressRemoved,
+} = usePaginatedThreads({
+	resource: () => threadsResource.value,
+	fetchMore: () => (mailbox === 'search' ? loadMoreSearch : loadMoreThreads).reload(),
+	openThreadID: () => threadID,
+	onEdgeThread: (id, action) => (action === 'open' ? goToThread(id) : focusOnThread(id)),
+})
 
-const groupedThreads = computed<Record<string, Thread[]>>(() =>
-	threadsResource.value?.data?.reduce((groups: Record<string, Thread[]>, thread: Thread) => {
-		const date = dayjs(thread.received_at).format(
-			groupMessagesBy.value === 'Day' ? 'YYYY-MM-DD' : 'YYYY-MM',
-		)
-		if (!groups[date]) groups[date] = []
-		groups[date].push(thread)
-		return groups
-	}, {}),
-)
-
-const isLastGroup = (key: string) => Object.keys(groupedThreads.value).at(-1) === key
-
-const collapsedGroups = ref<string[]>([])
-
-const toggleGroupCollapse = (key: string) => {
-	// The cursor follows the click, as it does when you open a mail: Enter and a click are the same
-	// gesture on the same row, and Enter can only mean that if the cursor is already there. Above the
-	// last-group guard, so clicking a header that can't fold still takes the cursor.
-	focusedRowKey.value = `group:${key}`
-	if (isLastGroup(key)) return
-
-	if (collapsedGroups.value.includes(key))
-		return (collapsedGroups.value = collapsedGroups.value.filter((d) => d !== key))
-
-	collapsedGroups.value.push(key)
-	// Collapsing keeps the group's selection: "collapse a day, tick it, archive it" is a bulk move
-	// worth having, and the header's own checkbox goes on showing that the day is selected. Only the
-	// reading pane has to move, since it would otherwise point at a row that is no longer rendered.
-	if (groupedThreads.value[key]?.some((thread) => thread.thread_id === threadID)) goToMailbox()
-}
-
-const getGroupThreads = (group: string) => groupedThreads.value[group]?.map((t) => t.thread_id)
-
-watch(groupMessagesBy, () => (collapsedGroups.value = []))
-
-// Thread Stacks
-//
-// A run of adjacent look-alike threads from one sender collapses into a single row, so a chatty
-// notification sender can't bury the rest of the mailbox. This is a display layer over groupedThreads:
-// runs are detected within a date group and never span one.
+// Rows and the cursor
 
 // Stacking earns its place only where mail arrives unasked-for and one sender can drown the rest. It is
 // off wherever the sender is not the signal, or where hiding rows would defeat the list itself:
@@ -657,48 +633,35 @@ const stackingEnabled = computed(
 	() => !['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox),
 )
 
-// The thread_ids of every member of every expanded stack. In-memory only — stacks re-collapse on a
-// mailbox switch. Keyed by member id rather than by stack key so a run keeps its expanded state as it
-// grows in either direction (appended by infinite scroll, prepended by a refresh), and so routing to a
-// thread can expand its stack without having to locate the run first.
-const expandedStacks = ref(new Set<string>())
-
-const isRunExpanded = (run: Thread[]) => run.some((t) => expandedStacks.value.has(t.thread_id))
-
-const rowKeyOf = (mail: Thread) =>
-	isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name
-
-const groupedRows = computed<Record<string, ListRow[]>>(() =>
-	Object.fromEntries(
-		Object.entries(groupedThreads.value ?? {}).map(([key, group]) => [
-			key,
-			buildListRows(group, {
-				rowKey: rowKeyOf,
-				isExpanded: isRunExpanded,
-				enabled: stackingEnabled.value,
-			}),
-		]),
-	),
-)
-
-// The rows the list actually renders, in visual order. The cursor walks these rather than the flat list
-// of loaded threads, so it can never land on a row that isn't on screen: a collapsed stack is a single
-// stop (its members aren't rendered), and a collapsed date group contributes only its header.
-//
-// Headers exist only when the user groups by day or month; with grouping off none are rendered, and
-// collapsedGroups is provably empty there because only a header's own click can fill it.
-const navigableRows = computed<NavRow[]>(() => {
-	const rows: NavRow[] = []
-	for (const [dateKey, groupRows] of Object.entries(groupedRows.value)) {
-		if (groupMessagesBy.value !== 'None')
-			rows.push({ type: 'group', key: `group:${dateKey}`, dateKey })
-		if (collapsedGroups.value.includes(dateKey)) continue
-		rows.push(...groupRows)
-	}
-	return rows
+// The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
+// Inboxes list (see useListRows).
+const {
+	groupMessagesBy,
+	groupedThreads,
+	getGroupThreads,
+	isLastGroup,
+	collapsedGroups,
+	expandedStacks,
+	groupedRows,
+	navigableRows,
+	focusedRowKey,
+	focusedRow,
+	focusRow,
+	focusOnThread,
+	toggleStack,
+	toggleGroupCollapse,
+	revealThread,
+} = useListRows({
+	threads: () => threadsResource.value?.data ?? [],
+	// Rows are keyed by mail name, prefixed with the account in an all-accounts search — where two
+	// accounts' rows sit in one list and a name alone need not be unique.
+	rowKey: (mail: Thread) =>
+		isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name,
+	stackingEnabled: () => stackingEnabled.value,
+	openThreadID: () => threadID,
+	onOpenThreadHidden: () => goToMailbox(),
+	container: mailListRef,
 })
-
-const focusedRow = computed(() => navigableRows.value.find((row) => row.key === focusedRowKey.value))
 
 // Every thread a row stands for: one for a thread row, the whole run for a stack, the whole day for a
 // header — mirroring exactly what each row's own checkbox selects.
@@ -709,46 +672,17 @@ const rowThreadIDs = (row: NavRow): string[] =>
 			? row.threads.map((t) => t.thread_id)
 			: (getGroupThreads(row.dateKey) ?? [])
 
-const toggleStack = (row: StackRow) => {
-	const ids = row.threads.map((t) => t.thread_id)
-	// The cursor follows the click, as it does when you open a mail. This also covers the fold: the
-	// members are about to be hidden, so the stack row that now stands for them is where the cursor
-	// belongs, and Enter-fold-Enter-unfold stays a round trip rather than a way to lose your place.
-	focusedRowKey.value = row.key
-	if (!row.expanded) return ids.forEach((id) => expandedStacks.value.add(id))
-
-	ids.forEach((id) => expandedStacks.value.delete(id))
-	// Don't leave the reading pane pointing at a row we just hid — the same reason toggleGroupCollapse
-	// leaves the thread when its group collapses.
-	if (threadID && ids.includes(threadID)) goToMailbox()
-}
-
 // Derived rather than stored, mirroring isGroupSelected: it can never drift from `selections`, and
 // every existing path that mutates them (Cmd+A, Esc, resetSelections, shift+arrow, a member's own
 // checkbox) keeps the stack checkbox honest for free.
 const isStackSelected = (threads: Thread[]) =>
 	threads.every((t) => selections.value.includes(t.thread_id))
 
-// The keyboard cursor, as a row key (see navigableRows). A row key rather than a thread id because the
-// cursor can sit on a stack row or a date header, neither of which is a thread — and one ref rather
-// than two so the cursor can never be in two places at once.
-const focusedRowKey = ref<string>()
-
+// A deep link or a step to the next thread can land inside a collapsed stack or a folded day — surface
+// it either way, and leave the cursor on it (see revealThread).
 watch(
 	() => threadID,
-	(val) => {
-		if (!val) return
-
-		// A deep link or a step to the next thread can land inside a collapsed stack — surface it, just
-		// as a collapsed date group opens below. An opened thread is always visible in the list.
-		expandedStacks.value.add(val)
-
-		setTimeout(() => focusOnThread(val))
-		for (const group of collapsedGroups.value) {
-			if (getGroupThreads(group).includes(val))
-				return (collapsedGroups.value = collapsedGroups.value.filter((d) => d !== group))
-		}
-	},
+	(val) => val && revealThread(val),
 	{ immediate: true },
 )
 
@@ -1109,32 +1043,6 @@ const selectActions = computed((): SelectAction[] => [
 ])
 
 // Search
-
-// Infinite scroll (shared by the threads and search resources — only one is active at a time).
-// usePaginatedThreads owns the state between the reset and append fetches: the epochs, the refresh
-// merge, the removal suppression, the sentinel, the edge crossing. See there.
-const {
-	container: mailListRef,
-	hasMore,
-	loadingMore,
-	isFetching,
-	canGoNext,
-	threadIDs,
-	takeResetWindow,
-	beginReset,
-	beginRefresh,
-	onResetSuccess,
-	appendThreads,
-	loadMoreThenOpenEdge,
-	topUpIfShort,
-	suppressRemoved,
-	unsuppressRemoved,
-} = usePaginatedThreads({
-	resource: () => threadsResource.value,
-	fetchMore: () => (mailbox === 'search' ? loadMoreSearch : loadMoreThreads).reload(),
-	openThreadID: () => threadID,
-	onEdgeThread: (id, action) => (action === 'open' ? goToThread(id) : focusOnThread(id)),
-})
 
 // An optimistic removal emptied the list but more threads exist, so a refill is coming once the server
 // mutation lands. Keeps the loading state (not the empty state) during the gap before the refill fetch.
@@ -1501,36 +1409,6 @@ const goToNextThreadOrMailbox = (excludedThreads: string[] = []) => {
 	if (next) goToThread(next)
 	else goToMailbox()
 }
-
-const focusRow = (row?: NavRow) => {
-	if (!row) return
-
-	focusedRowKey.value = row.key
-	scrollIntoView(row.key)
-}
-
-// The row that stands for a thread on screen: its own row when rendered, the collapsed stack that hides
-// it, or — when its whole day is folded away — that day's header. Callers name a thread ("go to the
-// first mail", "open the thread that just loaded"); this is how that lands somewhere visible.
-const rowForThread = (threadID?: string): NavRow | undefined => {
-	if (!threadID) return
-
-	const row = navigableRows.value.find(
-		(row) =>
-			(row.type === 'thread' && row.thread.thread_id === threadID) ||
-			// Only a collapsed stack stands in for its members. An expanded one precedes its member rows,
-			// so without this guard every member would resolve to the stack row above it.
-			(row.type === 'stack' && !row.expanded && row.threads.some((t) => t.thread_id === threadID)),
-	)
-	if (row) return row
-
-	const dateKey = collapsedGroups.value.find((key) => getGroupThreads(key)?.includes(threadID))
-	return navigableRows.value.find((row) => row.key === `group:${dateKey}`)
-}
-
-const focusOnThread = (threadID?: string) => focusRow(rowForThread(threadID))
-
-const scrollIntoView = useRowScroll(mailListRef, isMobile)
 
 // Actions
 
