@@ -393,9 +393,12 @@ class File(FrappeFile):
 		for child in self.get_children():
 			if child._not_in_disk():
 				continue
-			new_child_url = str(
-				Path(storage_key(new)) / Path(storage_key(child.file_url)).relative_to(storage_key(old))
-			)
+			child_key = Path(storage_key(child.file_url))
+			if not child_key.is_relative_to(storage_key(old)):
+				# an adopted framework upload, or anything the relocation left where it
+				# was: its blob was never under this folder, so moving us doesn't move it
+				continue
+			new_child_url = str(Path(storage_key(new)) / child_key.relative_to(storage_key(old)))
 			if child.file_url.startswith(S3_URL_PREFIX):
 				new_child_url = get_s3_url(new_child_url)
 			elif child.file_url.startswith("/"):
