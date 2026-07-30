@@ -149,12 +149,10 @@ const getGeneralAccess = createResource({
   }),
   transform: (data) => {
     if (!data || !data.read) {
-      if (getGeneralAccess.params.user === 'Guest')
-        getGeneralAccess.fetch({ user: '$GENERAL' })
-      else
-        return {
-          type: 'restricted',
-        }
+      if (getGeneralAccess.params.user !== 'Guest') return { type: 'restricted' }
+      getGeneralAccess.fetch({ user: '$GENERAL' })
+      // Wait for the $GENERAL answer rather than claiming public meanwhile.
+      return { type: 'restricted' }
     }
     return {
       ...data,

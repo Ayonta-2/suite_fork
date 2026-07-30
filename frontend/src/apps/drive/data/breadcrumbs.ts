@@ -79,7 +79,9 @@ export const pageBreadcrumbs = computed<DriveBreadcrumb[]>(() => {
     const entity = crumbEntity.value
     // The trail is anchored on the caller's home and the Site folder, so
     // rendering before rootInfo lands yields a wrong trail, not a late one.
-    return entity && entity.name === entityName && rootInfo.data
+    // Guests never get rootInfo, so they render the plain trail instead.
+    const anchored = rootInfo.data || !useSessionStore().isLoggedIn
+    return entity && entity.name === entityName && anchored
       ? buildBreadCrumbs(entity)
       : [{ loading: true, name: entityName }]
   }
