@@ -173,10 +173,13 @@
 					'overflow-hidden': isMobile,
 					'w-2/3': !isMobile && showSplitView,
 					'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showSplitView,
-					'fixed inset-0 z-20 pt-[env(safe-area-inset-top)]': isMobile,
+					'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
+						isMobile,
 					'invisible translate-x-full': isMobile && !threadID,
 					hidden: !isMobile && !showSplitView && !threadID,
 				}"
+				@touchstart.passive="onThreadTouchStart"
+				@touchend.passive="onThreadTouchEnd"
 			>
 				<div class="h-full overflow-y-auto">
 					<!-- Rendered with no thread open too so its own "Select an email" placeholder
@@ -186,6 +189,8 @@
 					     opening a cross-account thread does NOT switch the active account. -->
 					<MailThread
 						v-if="openRow || !threadID"
+						:slide="threadSlide"
+						@slide-done="threadSlide = ''"
 						:account="openRow?.account"
 						:mailbox="openRow?.inbox || ''"
 						:thread-i-d="threadID"
@@ -265,7 +270,7 @@ import {
 	useRowScroll,
 } from '@/apps/mail/utils/listNavigation'
 import { buildListRows, type ListRow, type StackRow } from '@/apps/mail/utils/threadStacks'
-import { useScreenSize } from '@/apps/mail/utils/composables'
+import { useScreenSize, useSwipeNav } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
@@ -488,6 +493,22 @@ const openRow = computed(() =>
 // Prev/next paging within what is currently loaded, in the list's own order.
 const openThreadIDs = computed(() => (threads.data ?? []).map((t: Thread) => t.thread_id))
 
+// MailThread's slide name while a swipe navigation renders; cleared on its slide-done, and left
+// empty for every other thread change so taps and arrows keep swapping instantly.
+const threadSlide = ref('')
+let pendingThreadSlide = ''
+
+// Swipe on the open thread (mobile): left → next thread, right → previous.
+const { onTouchStart: onThreadTouchStart, onTouchEnd: onThreadTouchEnd } = useSwipeNav(
+	() => isMobile.value && !!threadID,
+	(offset) => {
+		// Arms the paging animation for this navigation only — openThread consumes it.
+		pendingThreadSlide = offset > 0 ? 'page-next' : 'page-prev'
+		stepOpenThread(offset)
+		pendingThreadSlide = ''
+	},
+)
+
 const stepOpenThread = (offset: number) => {
 	const next = stepFrom(openThreadIDs.value, threadID, offset)
 	if (next) openThread(next)
@@ -684,6 +705,7 @@ const goToEdge = (index: number) => {
 }
 
 const openThread = (nextThreadID: string) => {
+	threadSlide.value = pendingThreadSlide
 	const row = (threads.data ?? []).find((t: Thread) => t.thread_id === nextThreadID)
 	if (!row) return
 	router.push({
