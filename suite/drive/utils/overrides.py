@@ -57,6 +57,17 @@ def filter_drive_invitation(user):
 
 
 @common_filters
+def filter_activity_log(user):
+	escaped = frappe.db.escape(user)
+	return (
+		f"(`tabDrive Entity Activity Log`.`entity` IN ("
+		f"SELECT `name` FROM `tabFile` WHERE `owner` = {escaped}"
+		f" UNION SELECT `entity` FROM `tabDrive Permission`"
+		f" WHERE `user` IN ({principal_list(user)}) AND `read` = 1 AND `deny` = 0))"
+	)
+
+
+@common_filters
 def filter_drive_favourite(user):
 	return f"""(`tabDrive Favourite`.`user` = {frappe.db.escape(user)})"""
 

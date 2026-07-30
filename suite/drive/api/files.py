@@ -238,6 +238,7 @@ def create_link(file_name: str, link: str, parent: str | None = None):
 	drive_file = frappe.get_doc(
 		{
 			"doctype": "File",
+			"is_private": 1,
 			"file_name": file_name,
 			"file_url": link,
 			"file_type": "Link",
@@ -817,7 +818,7 @@ def search(query: str):
             AND COALESCE(`tabFile`.`folder`, '') <> ''
             AND MATCH(`tabFile`.file_name) AGAINST (%(text)s IN BOOLEAN MODE)
         GROUP BY `tabFile`.`name`
-        LIMIT 100
+        LIMIT 500
         """,
 			values={"text": text, "status": STATUS_ACTIVE},
 			as_dict=1,

@@ -14,8 +14,13 @@ const NATURAL_LINE_HEIGHT = 1.2;
 const FONT_SIZE = 15;
 
 // The popover's three number inputs, in DOM order: line spacing, above, below.
+// Scoped to the popover because the toolbar's font-size stepper (ManageFont) is
+// a spinbutton as well, and it comes first in the DOM.
 function spacingInputs(page: Page) {
-	return page.getByRole("spinbutton");
+	return page
+		.locator('[data-slot="content"]')
+		.filter({ has: page.getByText("Paragraph Spacing") })
+		.getByRole("spinbutton");
 }
 
 async function openSpacingPopover(page: Page) {
@@ -32,6 +37,14 @@ function computed(locator: ReturnType<Page["locator"]>, property: string) {
 		(node, prop) => getComputedStyle(node).getPropertyValue(prop),
 		property,
 	);
+}
+
+// Chrome snaps used line-heights to 1/64px, so compare numerically.
+async function computedPx(
+	locator: ReturnType<Page["locator"]>,
+	property: string,
+): Promise<number> {
+	return Number.parseFloat(await computed(locator, property));
 }
 
 test("line spacing uses Google Docs multiples and leaves paragraph spacing alone", async ({
@@ -57,19 +70,19 @@ test("line spacing uses Google Docs multiples and leaves paragraph spacing alone
 
 	await spacingInputs(page).first().fill("2");
 	await expect
-		.poll(() => computed(paragraph, "line-height"))
-		.toBe(`${2 * NATURAL_LINE_HEIGHT * FONT_SIZE}px`);
+		.poll(() => computedPx(paragraph, "line-height"))
+		.toBeCloseTo(2 * NATURAL_LINE_HEIGHT * FONT_SIZE, 1);
 
 	await spacingInputs(page).nth(2).fill("20");
-	await expect.poll(() => computed(paragraph, "margin-bottom")).toBe("20px");
+	await expect.poll(() => computedPx(paragraph, "margin-bottom")).toBe(20);
 
 	// Regression: changing the line spacing used to rewrite the margin
 	// attributes too, dropping the spacing that was just set.
 	await spacingInputs(page).first().fill("1.15");
 	await expect
-		.poll(() => computed(paragraph, "line-height"))
-		.toBe(`${1.15 * NATURAL_LINE_HEIGHT * FONT_SIZE}px`);
-	await expect.poll(() => computed(paragraph, "margin-bottom")).toBe("20px");
+		.poll(() => computedPx(paragraph, "line-height"))
+		.toBeCloseTo(1.15 * NATURAL_LINE_HEIGHT * FONT_SIZE, 1);
+	await expect.poll(() => computedPx(paragraph, "margin-bottom")).toBe(20);
 });
 
 // printDoc() renders into a hidden iframe and then prints it. Keep that iframe

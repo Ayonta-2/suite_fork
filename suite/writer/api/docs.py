@@ -178,7 +178,7 @@ def get_wiki_link(title: str):
 	possible_titles = [title, title + ".md", title + ".txt"]
 	names = (frappe.get_value("File", {"file_name": k, "is_folder": 0}, "name") for k in possible_titles)
 	try:
-		name = next(k for k in names if k)
+		name = next(k for k in names if k and user_has_permission(k, "read"))
 	except StopIteration:
 		frappe.throw("Cannot get this wikilink.", frappe.NotFound)
 

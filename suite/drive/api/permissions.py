@@ -214,6 +214,16 @@ def drive_invitation_has_permission(doc, ptype="read", user=None):
 	return ptype in ("read", "select") and doc.email == user
 
 
+def activity_log_has_permission(doc, ptype="read", user=None):
+	user = user or frappe.session.user
+	if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
+		return True
+	if isinstance(doc, str):
+		doc = frappe.get_doc("Drive Entity Activity Log", doc)
+	# History is as sensitive as the file: never writable from the client.
+	return ptype in ("read", "select") and bool(user_has_permission(doc.entity, "read", user))
+
+
 def user_has_permission(doc, ptype, user=None):
 	if isinstance(doc, str):
 		doc = frappe.get_doc("File", doc)
@@ -225,5 +235,4 @@ def user_has_permission(doc, ptype, user=None):
 		# Should ideally deflect to Framework
 		ptype = "write"
 	access = get_user_access(doc, user)
-	if ptype in access:
-		return bool(access[ptype])
+	return bool(access.get(ptype))

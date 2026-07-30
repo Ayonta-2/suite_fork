@@ -478,6 +478,7 @@ def if_folder_exists(folder_name, parent):
 	values = {
 		"file_name": folder_name,
 		"is_folder": 1,
+		"is_private": 1,
 		"status": STATUS_ACTIVE,
 		"folder": parent,
 	}
