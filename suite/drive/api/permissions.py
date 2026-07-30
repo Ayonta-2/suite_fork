@@ -42,10 +42,13 @@ def get_user_access(entity: str | Document | frappe._dict, user: str | None = No
 	if entity.get("attached_to_doctype") and entity.get("attached_to_name"):
 		# Attachments follow their reference document — the framework contract
 		# content apps (e.g. Slides media) rely on — instead of the tree's
-		# root-inherited read. Explicit Drive rows on the path still apply.
-		access = filter_access(generate_upward_path(entity.name, user, baseline_read=False))
-		if not any(access.values()):
-			access = _ref_doc_access(entity, user)
+		# root-inherited read. Explicit Drive rows override it per type, so a
+		# deny revokes rather than falling through to the reference document.
+		path = generate_upward_path(entity.name, user, baseline_read=False)
+		access = filter_access(path)
+		decided = set(path[-1]["decided"])
+		if decided != set(PERMISSION_TYPES):
+			access = {**_ref_doc_access(entity, user), **{t: access[t] for t in decided}}
 		return {**access, "type": "user" if access["write"] else "guest"}
 
 	access = filter_access(generate_upward_path(entity.name, user))

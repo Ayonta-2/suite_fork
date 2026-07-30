@@ -258,7 +258,10 @@ def dribble_access(path, default_read=0):
 	"""Resolve access at the leaf of `path` (root→leaf, each node carrying its
 	permission rows nearest-first): for each permission type, the nearest row
 	that mentions it decides — grant → 1, deny → 0. Undecided types fall back
-	to 0, except read which inherits the root baseline."""
+	to 0, except read which inherits the root baseline.
+
+	`decided` lists the types an explicit row settled, so callers can tell a
+	revoked zero from an untouched one."""
 	decided = {}
 	for node in path[::-1]:
 		for row in node.get("perms", ()):
@@ -268,6 +271,7 @@ def dribble_access(path, default_read=0):
 	access = dict.fromkeys(PERMISSION_TYPES, 0)
 	access["read"] = default_read
 	access.update(decided)
+	access["decided"] = list(decided)
 	return access
 
 
