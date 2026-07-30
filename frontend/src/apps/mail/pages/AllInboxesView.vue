@@ -216,6 +216,7 @@ import {
 	useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
 import { useStoredFilter } from '@/apps/mail/utils/listFilter'
+import { useAccountScope } from '@/apps/mail/utils/accountScope'
 import { useScreenSize, useSwipeNav } from '@/apps/mail/utils/composables'
 import { useListRows } from '@/apps/mail/composables/useListRows'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
@@ -635,7 +636,7 @@ const mailThread = useTemplateRef<{
 // Folder membership shows as tags on the row and in the pane. Neither refetches, so both have to be
 // told — mirroring syncListMailboxMembership plus MailThread's own syncMailboxMembership.
 const syncFolderTag = (mailboxId: string, add: boolean) => {
-	const mb = store.mailboxes.data?.find((m: MailboxData) => m.id === mailboxId)
+	const mb = paneScope.mailboxes.value.data?.find((m: MailboxData) => m.id === mailboxId)
 	const thread = openRow.value
 	if (!mb || !thread) return
 
@@ -708,8 +709,13 @@ const { runMailRemoval } = useMailRemoval({
 	removeRow: (_mail, thread) => (thread ? removeFromList(thread) : () => {}),
 })
 
+// The pane's folder menus are scoped to the thread's own account, so its ids have to be resolved
+// there too — the active account's list won't contain them for a thread from another account, and
+// the lookup silently failing meant no folder tag appeared until a reload.
+const paneScope = useAccountScope(() => openRow.value?.account)
+
 const folderName = (mailboxId: string) =>
-	store.mailboxes.data?.find((m: MailboxData) => m.id === mailboxId)?._name
+	paneScope.mailboxes.value.data?.find((m: MailboxData) => m.id === mailboxId)?._name
 
 const handleMailMove = (mail: Mail, target: string) => {
 	const folder = folderName(target)
