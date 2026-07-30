@@ -252,6 +252,7 @@ import {
 } from '@/apps/mail/utils/listNavigation'
 import { useScreenSize, useSwipeNav } from '@/apps/mail/utils/composables'
 import { useListRows } from '@/apps/mail/composables/useListRows'
+import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import {
 	PAGE_LENGTH,
 	usePaginatedThreads,
@@ -624,8 +625,14 @@ const removeFromList = (thread: Thread) => {
 // thread route carries accountId so the router has already switched, but passing it explicitly keeps
 // these correct if that ever stops being true. Mailbox ids come from the store, which is the row's
 // account for the same reason.
-const paneCall = (method: string, params: Record<string, unknown>) =>
-	call(`suite.mail.api.mail.${method}`, { account: openRow.value?.account, ...params })
+const paneCall = (method: string, params: Record<string, unknown>) => {
+	const account = openRow.value?.account
+	// Every pane action reads its account off the row, so a deep-linked thread outside the loaded window
+	// has none to act within. Refuse rather than firing `account: undefined` at the server and having it
+	// fail silently — the caller's optimistic update rolls back and the toast says so.
+	if (!account) return Promise.reject(new Error(__('Thread is no longer in the list.')))
+	return call(`suite.mail.api.mail.${method}`, { account, ...params })
+}
 
 const messageIdsOf = (thread: Thread) => thread.messages?.map((m) => m.id) ?? [thread.id]
 
@@ -715,38 +722,16 @@ const handleSetSpamStatus = (spam: boolean) => {
 	)
 }
 
-// Per-message actions from a message's own menu. The mail leaves the pane at once — waiting for the
-// request meant a click did nothing visible until the round-trip landed. If it was the thread's last
-// mail the row goes too, and the pane closes; a failure puts all of it back.
-const runMailRemoval = (mail: Mail, request: () => Promise<unknown>, success: string) => {
-	const thread = openRow.value
-	const { emptied, rollback } = mailThread.value?.removeMailFromView(mail.id) ?? {
-		emptied: false,
-		rollback: () => {},
-	}
-
-	// The row's count and preview come from its own `messages`, so it has to lose the mail too.
-	const mailIndex = thread?.messages?.findIndex((m: Mail) => m.id === mail.id) ?? -1
-	if (thread && mailIndex !== -1) thread.messages.splice(mailIndex, 1)
-
-	let restoreRow: (() => void) | undefined
-	if (emptied && thread) {
-		restoreRow = removeFromList(thread)
-		closeThread()
-	}
-
-	raiseOptimisticToast(
-		request()
-			.then(() => refreshCounts())
-			.catch((error) => {
-				rollback()
-				if (thread && mailIndex !== -1) thread.messages.splice(mailIndex, 0, mail)
-				restoreRow?.()
-				throw error
-			}),
-		success,
-	)
-}
+// Per-message actions from a message's own menu, on the shared orchestration (see useMailRemoval).
+// The merged list is inbox-scoped, so its rows always summarise from the whole conversation — never
+// from a folder, as Sent and Drafts do. No undo yet: the undo requests would have to be scoped to the
+// row's own account rather than the active one.
+const { runMailRemoval } = useMailRemoval({
+	row: () => openRow.value,
+	mailThreadRef: mailThread,
+	onEmptied: () => closeThread(),
+	removeRow: (_mail, thread) => (thread ? removeFromList(thread) : () => {}),
+})
 
 const folderName = (mailboxId: string) =>
 	store.mailboxes.data?.find((m: MailboxData) => m.id === mailboxId)?._name
