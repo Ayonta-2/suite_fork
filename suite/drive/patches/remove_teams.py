@@ -25,6 +25,7 @@ from suite.drive.utils.files import (
 	S3_URL_PREFIX,
 	TRASH_PREFIX,
 	FileManager,
+	escape_component,
 	get_s3_url,
 	storage_key,
 )
@@ -494,9 +495,12 @@ def _claim_name(plan, child, taken, trashed):
 
 
 def _sanitize(file_name):
-	"""A name has to survive as one path component, on disk and as an S3 key."""
-	name = (file_name or "").strip().replace("/", "_").replace("\\", "_").strip(". ")
-	while name and len(name.encode()) > MAX_COMPONENT_BYTES:
+	"""A name has to survive as one path component. `/` and `\\` are escaped at key
+	construction rather than rewritten here, so names are left alone — only a
+	trailing dot or space (which some filesystems drop) and an over-long name are
+	adjusted. Leading dots are kept: `.gitignore` is a real name."""
+	name = (file_name or "").strip().rstrip(". ")
+	while name and len(escape_component(name).encode()) > MAX_COMPONENT_BYTES:
 		name = name[:-1]
 	return name or None
 
@@ -723,7 +727,7 @@ def _excluded(plan, child, current, container):
 
 
 def _target_key(parent_key, name):
-	key = f"{parent_key}/{name}"
+	key = f"{parent_key}/{escape_component(name)}"
 	return key if len(key.encode()) <= MAX_PATH_BYTES else None
 
 

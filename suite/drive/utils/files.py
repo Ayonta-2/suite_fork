@@ -138,9 +138,10 @@ class FileManager:
 			if not hasattr(entity, "parent_path")
 			else Path(entity.parent_path)
 		)
+		name = escape_component(entity.file_name)
 		if embed:
-			return parent / ".embeds" / entity.file_name
-		return parent / entity.file_name
+			return parent / ".embeds" / name
+		return parent / name
 
 	def create_folder(self, entity):
 		"""
@@ -447,6 +448,17 @@ class FileManager:
 
 
 # Utils
+def escape_component(file_name):
+	"""A name is one path component, but `/` is legal in a name and would forge a
+	directory level. Escape it rather than renaming the user's file — `%` first, or
+	a name containing a literal `%2F` would decode back into a separator."""
+	return (file_name or "").replace("%", "%25").replace("/", "%2F").replace("\\", "%5C")
+
+
+def unescape_component(component):
+	return component.replace("%5C", "\\").replace("%2F", "/").replace("%25", "%")
+
+
 def storage_key(file_url):
 	# file_url -> backend storage key. NOT always relative: upgraded sites stored
 	# `?path=/<team>/<id>` and that slash is part of the S3 key. Callers building a
