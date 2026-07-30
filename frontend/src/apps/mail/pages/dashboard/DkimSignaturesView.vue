@@ -26,6 +26,7 @@
 				<ListEmptyState v-else />
 			</ListRows>
 		</ListView>
+		<DashboardListSkeleton v-else />
 	</DashboardLayout>
 </template>
 <script setup lang="ts">
@@ -42,6 +43,7 @@ import {
 
 import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 
 usePageMeta(() => ({ title: __('DKIM Signatures') }))
 
@@ -63,9 +65,12 @@ const LIST_COLUMNS = [
 const LIST_OPTIONS = {
 	selectable: false,
 	showTooltip: false,
-	emptyState: { description: __('No DKIM signatures found.') },
+	emptyState: {
+		title: __('No DKIM signatures yet'),
+		description: __('DKIM signatures are generated automatically when you add a domain.'),
+	},
 	getRowRoute: (row: DkimRow) => ({ name: 'mail-dkim-signature', params: { signatureId: row.id } }),
 }
 
-const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '-'
+const formatCreatedAt = (createdAt?: string) => fromNow(createdAt) || '—'
 </script>

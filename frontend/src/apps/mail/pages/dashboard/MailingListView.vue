@@ -1,5 +1,5 @@
 <template>
-	<DashboardLayout v-if="list.data" :breadcrumbs="breadcrumbs">
+	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!list.data">
 		<template #actions>
 			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
 		</template>
@@ -159,7 +159,10 @@ const list = createResource({
 	auto: true,
 	makeParams: () => ({ list_id: listId }),
 	cache: ['mailMailingList', listId],
-	onError: () => router.replace({ name: 'mail-mailing-lists' }),
+	onError: (error: { messages?: string[] }) => {
+		raiseToast(error.messages?.[0] || __('Mailing list not found.'), 'error')
+		router.replace({ name: 'mail-mailing-lists' })
+	},
 })
 
 const data = computed(() => list.data as ListData | undefined)

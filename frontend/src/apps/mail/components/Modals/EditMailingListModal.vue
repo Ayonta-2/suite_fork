@@ -3,13 +3,22 @@
 		v-model="show"
 		:options="{
 			title: __('Edit Mailing List'),
-			actions: [{ label: __('Save'), variant: 'solid', onClick: updateList.submit }],
+			actions: [
+				{
+					label: __('Save'),
+					variant: 'solid',
+					loading: updateList.loading,
+					onClick: updateList.submit,
+				},
+			],
 		}"
 	>
 		<template #body-content>
 			<div class="space-y-4">
 				<FormControl v-model="description" :label="__('Description')" />
-				<ErrorMessage :message="updateList.error?.messages?.[0] || updateList.error?.message" />
+				<ErrorMessage
+					:message="updateList.error && (updateList.error?.messages?.[0] || updateList.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

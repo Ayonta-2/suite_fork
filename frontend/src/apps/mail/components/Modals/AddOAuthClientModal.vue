@@ -4,7 +4,13 @@
 		:options="{
 			title: __('Add OAuth Client'),
 			actions: [
-				{ label: __('Add OAuth Client'), variant: 'solid', disabled: !clientId, onClick: addClient.submit },
+				{
+					label: __('Add OAuth Client'),
+					variant: 'solid',
+					disabled: !clientId,
+					loading: addClient.loading,
+					onClick: addClient.submit,
+				},
 			],
 		}"
 	>
@@ -46,7 +52,9 @@
 					type="textarea"
 				/>
 				<FormControl v-model="expiresAt" type="datetime-local" :label="__('Expires At')" />
-				<ErrorMessage :message="addClient.error?.messages?.[0] || addClient.error?.message" />
+				<ErrorMessage
+					:message="addClient.error && (addClient.error?.messages?.[0] || addClient.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

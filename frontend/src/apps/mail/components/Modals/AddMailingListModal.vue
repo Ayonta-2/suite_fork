@@ -8,6 +8,7 @@
 					label: __('Add Mailing List'),
 					variant: 'solid',
 					disabled: !(name && domain),
+					loading: addList.loading,
 					onClick: addList.submit,
 				},
 			],
@@ -24,7 +25,9 @@
 					type="textarea"
 					:placeholder="__('One email address per line')"
 				/>
-				<ErrorMessage :message="addList.error?.messages?.[0] || addList.error?.message" />
+				<ErrorMessage
+					:message="addList.error && (addList.error?.messages?.[0] || addList.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

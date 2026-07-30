@@ -4,7 +4,13 @@
 		:options="{
 			title: __('Add Role'),
 			actions: [
-				{ label: __('Add Role'), variant: 'solid', disabled: !description, onClick: addRole.submit },
+				{
+					label: __('Add Role'),
+					variant: 'solid',
+					disabled: !description,
+					loading: addRole.loading,
+					onClick: addRole.submit,
+				},
 			],
 		}"
 	>
@@ -23,7 +29,9 @@
 					<label class="text-ink-gray-5 block text-xs">{{ __('Inherited Roles') }}</label>
 					<MultiSelect v-model="roleIds" :options="roleOptions" />
 				</div>
-				<ErrorMessage :message="addRole.error?.messages?.[0] || addRole.error?.message" />
+				<ErrorMessage
+					:message="addRole.error && (addRole.error?.messages?.[0] || addRole.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

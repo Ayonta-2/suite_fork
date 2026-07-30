@@ -1,12 +1,11 @@
 <template>
-	<DashboardLayout v-if="signature.data" :breadcrumbs="breadcrumbs">
+	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!signature.data">
 		<template #actions>
 			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
 		</template>
 		<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 			<!-- Signature -->
 			<DashboardCard :title="__('Signature')">
-				<template #actions><span /></template>
 				<div>
 					<InformationField :label="__('Signature Type')" :value="signature.data.algorithm" />
 					<InformationField :label="__('Selector')" :value="signature.data.selector" />
@@ -16,7 +15,6 @@
 
 			<!-- Rotation -->
 			<DashboardCard :title="__('Rotation')">
-				<template #actions><span /></template>
 				<div>
 					<InformationField :label="__('Stage')" :value="stageLabel" />
 					<InformationField :label="__('Created At')" :value="createdAt" />
@@ -26,7 +24,6 @@
 
 			<!-- Options -->
 			<DashboardCard :title="__('Options')">
-				<template #actions><span /></template>
 				<div>
 					<InformationField :label="__('Signed Headers')" :value="signedHeaders" />
 					<InformationField :label="__('Canonicalization')" :value="signature.data.canonicalization" />
@@ -38,11 +35,23 @@
 
 			<!-- Public Key -->
 			<DashboardCard :title="__('Public Key')">
-				<template #actions><span /></template>
 				<div class="p-4">
-					<code class="text-ink-gray-7 block break-all font-mono text-xs">
-						{{ signature.data.public_key || '—' }}
-					</code>
+					<Tooltip :text="__('Click to copy')" :disabled="!publicKey">
+						<div
+							class="group/copy flex items-start gap-1.5"
+							:class="{ 'cursor-copy': publicKey }"
+							@click="publicKey && copyToClipBoard(publicKey)"
+						>
+							<code class="text-ink-gray-7 block break-all font-mono text-xs">
+								{{ publicKey || '—' }}
+							</code>
+							<FeatherIcon
+								v-if="publicKey"
+								name="copy"
+								class="text-ink-gray-5 invisible h-3.5 w-3.5 shrink-0 group-hover/copy:visible"
+							/>
+						</div>
+					</Tooltip>
 				</div>
 			</DashboardCard>
 		</div>
@@ -52,9 +61,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+import { Dialog, Dropdown, FeatherIcon, Tooltip, createResource, usePageMeta } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/mail/utils'
+import { copyToClipBoard, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
@@ -88,7 +97,10 @@ const signature = createResource({
 	auto: true,
 	makeParams: () => ({ signature_id: signatureId }),
 	cache: ['mailDkimSignature', signatureId],
-	onError: () => router.replace({ name: 'mail-dkim-signatures' }),
+	onError: (error: { messages?: string[] }) => {
+		raiseToast(error.messages?.[0] || __('DKIM signature not found.'), 'error')
+		router.replace({ name: 'mail-dkim-signatures' })
+	},
 })
 
 const data = computed(() => signature.data as DkimData | undefined)
@@ -102,6 +114,7 @@ const stageLabel = computed(() => {
 const createdAt = computed(() => formatDate(data.value?.created_at))
 const nextTransition = computed(() => formatDate(data.value?.next_transition))
 const signedHeaders = computed(() => (data.value?.signed_headers || []).join(', '))
+const publicKey = computed(() => data.value?.public_key || '')
 const requestReports = computed(() => (data.value?.request_reports ? __('Yes') : __('No')))
 
 const breadcrumbs = computed(() => [

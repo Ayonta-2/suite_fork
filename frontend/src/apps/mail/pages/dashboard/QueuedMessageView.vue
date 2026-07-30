@@ -1,5 +1,5 @@
 <template>
-	<DashboardLayout v-if="message?.data" :breadcrumbs="breadcrumbs">
+	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!message.data">
 		<template #actions>
 			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
 		</template>
@@ -78,14 +78,25 @@
 				class="bg-surface-gray-2 max-h-[70vh] overflow-auto rounded p-4 text-xs whitespace-pre-wrap"
 				>{{ source.data.source }}</pre
 			>
-			<div v-else class="text-ink-gray-5 py-6 text-center text-sm">{{ __('Loading…') }}</div>
+			<div v-else class="flex justify-center py-6">
+				<LoadingIndicator class="text-ink-gray-5 h-4 w-4" />
+			</div>
 		</template>
 	</Dialog>
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Badge, Button, Dialog, Dropdown, FeatherIcon, createResource, usePageMeta } from 'frappe-ui'
+import {
+	Badge,
+	Button,
+	Dialog,
+	Dropdown,
+	FeatherIcon,
+	LoadingIndicator,
+	createResource,
+	usePageMeta,
+} from 'frappe-ui'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
@@ -136,7 +147,10 @@ const message = createResource({
 	auto: true,
 	makeParams: () => ({ message_id: messageId }),
 	cache: ['mailQueuedMessage', messageId],
-	onError: () => router.replace({ name: 'mail-queued-messages' }),
+	onError: (error: { messages?: string[] }) => {
+		raiseToast(error.messages?.[0] || __('Message not found.'), 'error')
+		router.replace({ name: 'mail-queued-messages' })
+	},
 })
 
 const data = computed(() => message.data as MessageData)
@@ -153,6 +167,10 @@ const options = computed(
 const source = createResource({
 	url: 'suite.mail.api.admin.get_queued_message_source',
 	makeParams: () => ({ message_id: messageId }),
+	onError: (error: { messages?: string[] }) => {
+		showSource.value = false
+		raiseToast(error.messages?.[0] || __('Failed to load message source.'), 'error')
+	},
 })
 
 const STATUS_LABELS: Record<string, string> = {
@@ -166,7 +184,7 @@ const statusLabel = (type?: string) => STATUS_LABELS[type || ''] || type || __('
 const statusTheme = (type?: string) => {
 	if (type === 'Completed') return 'green'
 	if (type === 'PermanentFailure') return 'red'
-	if (type === 'TemporaryFailure') return 'orange'
+	if (type === 'TemporaryFailure') return 'amber'
 	return 'gray'
 }
 const recipientSummary = (r: Recipient) => {

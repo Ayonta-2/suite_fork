@@ -4,7 +4,13 @@
 		:options="{
 			title: __('Add Email Address'),
 			actions: [
-				{ label: __('Add'), variant: 'solid', disabled: !(username && domain), onClick: addEmail.submit },
+				{
+					label: __('Add'),
+					variant: 'solid',
+					disabled: !(username && domain),
+					loading: addEmail.loading,
+					onClick: addEmail.submit,
+				},
 			],
 		}"
 	>
@@ -28,7 +34,9 @@
 					:label="__('Full Name')"
 					:placeholder="__('Used as the display name for this address')"
 				/>
-				<ErrorMessage :message="addEmail.error?.messages?.[0] || addEmail.error?.message" />
+				<ErrorMessage
+					:message="addEmail.error && (addEmail.error?.messages?.[0] || addEmail.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

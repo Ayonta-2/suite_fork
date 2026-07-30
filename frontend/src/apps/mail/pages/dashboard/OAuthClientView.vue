@@ -1,5 +1,5 @@
 <template>
-	<DashboardLayout v-if="client?.data" :breadcrumbs="breadcrumbs">
+	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!client.data">
 		<template #actions>
 			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
 		</template>
@@ -109,7 +109,10 @@ const client = createResource({
 	auto: true,
 	makeParams: () => ({ client_id: clientId }),
 	cache: ['mailOAuthClient', clientId],
-	onError: () => router.replace({ name: 'mail-oauth-clients' }),
+	onError: (error: { messages?: string[] }) => {
+		raiseToast(error.messages?.[0] || __('OAuth client not found.'), 'error')
+		router.replace({ name: 'mail-oauth-clients' })
+	},
 })
 
 const formatDate = (value?: string | null) => formatDateTime(value)

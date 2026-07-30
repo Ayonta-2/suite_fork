@@ -1,5 +1,5 @@
 <template>
-	<DashboardLayout v-if="role.data" :breadcrumbs="breadcrumbs">
+	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!role.data">
 		<template #actions>
 			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
 		</template>
@@ -14,7 +14,6 @@
 				</DashboardCard>
 
 				<DashboardCard :title="__('Inherited Roles')">
-					<template #actions><span /></template>
 					<div class="p-4">
 						<MultiSelect
 							:model-value="roleIds"
@@ -25,7 +24,6 @@
 				</DashboardCard>
 
 				<DashboardCard :title="__('Enabled Permissions')">
-					<template #actions><span /></template>
 					<div class="p-4">
 						<MultiSelect
 							:model-value="enabledPermissions"
@@ -36,7 +34,6 @@
 				</DashboardCard>
 
 				<DashboardCard :title="__('Disabled Permissions')">
-					<template #actions><span /></template>
 					<div class="p-4">
 						<MultiSelect
 							:model-value="disabledPermissions"
@@ -87,7 +84,10 @@ const role = createResource({
 	auto: true,
 	makeParams: () => ({ role_id: roleId }),
 	cache: ['mailRole', roleId],
-	onError: () => router.replace({ name: 'mail-roles' }),
+	onError: (error: { messages?: string[] }) => {
+		raiseToast(error.messages?.[0] || __('Role not found.'), 'error')
+		router.replace({ name: 'mail-roles' })
+	},
 })
 
 // Keep the editable chip selections in sync whenever the role (re)loads.
@@ -125,6 +125,7 @@ const save = (field: 'enabled_permissions' | 'disabled_permissions' | 'role_ids'
 	createResource({
 		url: 'suite.mail.api.admin.update_role',
 		makeParams: () => ({ role_id: roleId, [field]: value }),
+		onSuccess: () => raiseToast(__('Role updated.')),
 		onError: (error: { messages?: string[] }) => {
 			role.reload()
 			raiseToast(error.messages?.[0] || __('Request failed.'), 'error')

@@ -1,9 +1,9 @@
 <template>
 	<DashboardLayout
-		v-if="domain?.data"
 		:breadcrumbs="BREADCRUMBS"
 		:badge-label="badge.label"
 		:badge-theme="badge.theme"
+		:loading="!domain.data"
 	>
 		<template #actions>
 			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
@@ -13,10 +13,11 @@
 				<div class="space-y-2 p-4">
 					<h3 class="font-medium">{{ BANNER.title }}</h3>
 					<p class="text-ink-gray-5 text-sm">{{ BANNER.message }}</p>
+					<p class="text-ink-gray-5 text-sm">{{ BANNER.subtitle }}</p>
 				</div>
 			</div>
 			<div class="rounded-md border">
-				<h2 class="p-4">{{ __('DNS Records') }}</h2>
+				<h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
 				<DNSRecords
 					:title="__('Email Deliverability')"
 					:description="
@@ -35,7 +36,7 @@
 					"
 					:records="inboundMailRoutingRecords"
 					:badge-label="__('Recommended')"
-					badge-theme="orange"
+					badge-theme="amber"
 				/>
 				<DNSRecords
 					:title="__('Service Configuration Records')"
@@ -110,7 +111,10 @@ const domain = createResource({
 	auto: true,
 	makeParams: () => ({ domain_id: domainId }),
 	cache: ['mailDomain', domainId],
-	onError: () => router.replace({ name: 'mail-domains' }),
+	onError: (error: { messages?: string[] }) => {
+		raiseToast(error.messages?.[0] || __('Domain not found.'), 'error')
+		router.replace({ name: 'mail-domains' })
+	},
 })
 
 const domainRecords = computed<DNSRecord[]>(
@@ -213,7 +217,7 @@ const confirmDialogOptions = computed(() => {
 		message: config.message,
 		size: 'xl',
 		icon: { name: 'alert-triangle', appearance: 'warning' },
-		actions: [{ label: __('Confirm'), variant: 'solid', onClick: config.action }],
+		actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: config.action }],
 	}
 })
 
@@ -254,15 +258,3 @@ const BANNER = {
 	subtitle: __('DNS changes may take up to 48 hours to propagate globally.'),
 }
 </script>
-
-<style scoped>
-.expand-enter-active,
-.expand-leave-active {
-	@apply max-h-full opacity-100 transition-all duration-700 ease-linear;
-}
-
-.expand-enter-from,
-.expand-leave-to {
-	@apply max-h-0 p-0 opacity-0;
-}
-</style>

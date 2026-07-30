@@ -7,6 +7,7 @@
 				{
 					label: __(accountRequest.send_invite ? 'Invite Member' : 'Add Member'),
 					variant: 'solid',
+					loading: addMember.loading,
 					onClick: addMember.submit,
 				},
 			],
@@ -133,7 +134,9 @@
 						/>
 					</div>
 				</template>
-				<ErrorMessage :message="addMember.error?.messages[0]" />
+				<ErrorMessage
+					:message="addMember.error && (addMember.error?.messages?.[0] || addMember.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

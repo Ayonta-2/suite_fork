@@ -3,7 +3,14 @@
 		v-model="show"
 		:options="{
 			title: __('Edit OAuth Client'),
-			actions: [{ label: __('Save'), variant: 'solid', onClick: updateClient.submit }],
+			actions: [
+				{
+					label: __('Save'),
+					variant: 'solid',
+					loading: updateClient.loading,
+					onClick: updateClient.submit,
+				},
+			],
 		}"
 	>
 		<template #body-content>
@@ -18,7 +25,9 @@
 				/>
 				<FormControl v-model="logo" :label="__('Logo (URL or base64 encoded)')" type="textarea" />
 				<FormControl v-model="expiresAt" type="datetime-local" :label="__('Expires At')" />
-				<ErrorMessage :message="updateClient.error?.messages?.[0] || updateClient.error?.message" />
+				<ErrorMessage
+					:message="updateClient.error && (updateClient.error?.messages?.[0] || updateClient.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

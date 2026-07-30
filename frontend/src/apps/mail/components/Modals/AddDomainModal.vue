@@ -8,6 +8,7 @@
 					label: __('Add Domain'),
 					variant: 'solid',
 					disabled: !domainName,
+					loading: addDomain.loading,
 					onClick: addDomain.submit,
 				},
 			],
@@ -35,7 +36,7 @@
 					type="textarea"
 				/>
 				<ErrorMessage
-					:message="addDomain.error?.messages[0] || addDomain.error?.message"
+					:message="addDomain.error && (addDomain.error?.messages?.[0] || addDomain.error?.message || __('Request failed.'))"
 				/>
 			</div>
 		</template>

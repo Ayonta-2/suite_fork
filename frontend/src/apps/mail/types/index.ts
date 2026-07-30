@@ -216,3 +216,12 @@ export interface NotificationPayload {
 		click_action?: string
 	}
 }
+
+export interface QuotaUsage {
+	total: number
+	used: number
+	available: number
+	used_percentage: number
+	available_percentage: number
+	unlimited: boolean
+}
