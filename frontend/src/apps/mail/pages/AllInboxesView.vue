@@ -198,6 +198,14 @@
 						"
 						@move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
 						@delete-thread="handleTrash(openRow!)"
+						@archive-thread="handleArchive(openRow!)"
+						@sync-unseen="handleSyncUnseen"
+						@add-thread-to-mailbox="handleAddToMailbox"
+						@remove-thread-from-mailbox="handleRemoveFromMailbox"
+						@set-spam-status="handleSetSpamStatus"
+						@move-mail="handleMailMove"
+						@mark-mail-spam="handleMailSpam"
+						@delete-mail="handleMailDelete"
 						@prev-thread="stepOpenThread(-1)"
 						@next-thread="stepOpenThread(1)"
 					/>
@@ -268,7 +276,7 @@ import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 
-import type { Thread, UserResource } from '@/apps/mail/types'
+import type { Mail, Thread, UserResource } from '@/apps/mail/types'
 
 const { isMobile } = useScreenSize()
 
@@ -771,6 +779,86 @@ const removeFromList = (thread: Thread) => {
 // different accounts/threads and can be fired in rapid succession, so every invocation must be a
 // fully independent request. A shared resource carries a single reactive state slot (and one abort
 // controller); call() has no shared state, so concurrent row actions can never clobber one another.
+// The pane's remaining actions. Each names the row's own account rather than the active one — the
+// thread route carries accountId so the router has already switched, but passing it explicitly keeps
+// these correct if that ever stops being true. Mailbox ids come from the store, which is the row's
+// account for the same reason.
+const paneCall = (method: string, params: Record<string, unknown>) =>
+	call(`suite.mail.api.mail.${method}`, { account: openRow.value?.account, ...params })
+
+const messageIdsOf = (thread: Thread) => thread.messages?.map((m) => m.id) ?? [thread.id]
+
+// Marked unread from a message downwards: MailThread reports the ids, we mirror it in the list.
+const handleSyncUnseen = (ids: string[]) => {
+	const thread = openRow.value
+	if (!thread) return
+	let changed = false
+	thread.messages?.forEach((message) => {
+		if (ids.includes(message.id)) {
+			message.seen = 0
+			changed = true
+		}
+	})
+	if (changed) thread.seen = 0
+	refreshCounts()
+}
+
+const handleAddToMailbox = (mailboxId: string) => {
+	const thread = openRow.value
+	if (!thread) return
+	raiseOptimisticToast(
+		paneCall('add_mails_to_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }),
+		__('Thread added to folder.'),
+	)
+}
+
+const handleRemoveFromMailbox = (mailboxId: string) => {
+	const thread = openRow.value
+	if (!thread) return
+	raiseOptimisticToast(
+		paneCall('remove_mails_from_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }),
+		__('Thread removed from folder.'),
+	)
+}
+
+const handleSetSpamStatus = (spam: boolean) => {
+	const thread = openRow.value
+	if (!thread) return
+	const restore = removeFromList(thread)
+	raiseOptimisticToast(
+		paneCall('set_mails_spam_status', { ids: messageIdsOf(thread), spam }).catch((error) => {
+			restore()
+			throw error
+		}),
+		spam ? __('Thread marked as junk.') : __('Thread marked as not junk.'),
+	)
+}
+
+// Per-message actions from a message's own menu. The thread stays put; only its contents change,
+// so the list is refreshed rather than optimistically edited.
+const handleMailMove = (mail: Mail, target: string) => {
+	raiseOptimisticToast(
+		paneCall('move_mails', { ids: [mail.id], mailbox: target }).then(() => refreshThreads(false)),
+		__('Mail moved.'),
+	)
+}
+
+const handleMailSpam = (mail: Mail, spam: boolean) => {
+	raiseOptimisticToast(
+		paneCall('set_mails_spam_status', { ids: [mail.id], spam }).then(() => refreshThreads(false)),
+		spam ? __('Mail marked as junk.') : __('Mail marked as not junk.'),
+	)
+}
+
+const handleMailDelete = (mail: Mail) => {
+	raiseOptimisticToast(
+		call('suite.mail.doctype.mail_message.mail_message.bulk_delete', {
+			names: [mail.name],
+		}).then(() => refreshThreads(false)),
+		__('Mail deleted.'),
+	)
+}
+
 const closeThread = () => router.push({ name: 'mail-all-inboxes', query: route.query })
 
 const handleSetSeen = (thread: Thread, seen: boolean) => {
