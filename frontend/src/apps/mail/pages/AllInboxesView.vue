@@ -406,7 +406,8 @@ const isLoading = computed(() => !isLoaded.value && threads.loading)
 // store's mailboxes.onSuccess hook also refreshes the unified All Inboxes badge.
 const refreshCounts = () => store.mailboxes.reload()
 
-// The row's account, by its short name (the local part, unless two accounts share one).
+// The row's account, by its short name: blank for the personal account (the default — only
+// the odd ones out get labelled), the local part otherwise, unless two accounts share one.
 const shortAccountLabel = (name?: string | null) =>
 	name ? (store.accountShortNames[name] ?? name) : undefined
 
@@ -490,7 +491,12 @@ const handleKeyDown = (e: KeyboardEvent) => {
 		if (intent === 'last') return goToEdge(-1)
 		return
 	}
-	gPrefix.disarm()
+	// A letter after `g` is a mailbox jump, which MailLayout owns. Swallow it so `g j` doesn't
+	// also step the cursor — `j` is the one key in both that map and the navigation keys.
+	if (gPrefix.armed.value) {
+		gPrefix.disarm()
+		return
+	}
 
 	if (!isNavigationKey(key)) return
 	e.preventDefault()
