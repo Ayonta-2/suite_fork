@@ -191,6 +191,17 @@ export interface BlockableSender {
 const showBlockSender = ref(false)
 const sendersToBlock = ref<BlockableSender[]>([])
 
+// The account's own addresses, lowercased — what a thread's senders are matched against to decide
+// which of them the row calls "me" (see utils/participants). Identities are per account, so a row
+// merged in from another account (All Inboxes, cross-account search) is resolved against the active
+// one: the cast it names is right either way, and only the "me" would go by its own name instead.
+export const useOwnEmails = () => {
+	const { identities } = userStore()
+	return computed(
+		() => new Set((identities.data ?? []).map((i: Identity) => i.email.toLowerCase())),
+	)
+}
+
 export const useBlockSender = () => {
 	const store = userStore()
 	const { userResource, identities, screenedAddresses } = store
