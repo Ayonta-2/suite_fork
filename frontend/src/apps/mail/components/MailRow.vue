@@ -69,12 +69,12 @@
 						<slot name="sender" />
 					</h3>
 					<slot name="badges" />
-					<!-- In the stacked layout the account keeps the sender company; in the wide
-					     layout it moves out to sit by the date (below), so the sender column
-					     isn't spent on it. -->
+					<!-- The account keeps the sender company in both layouts. It stays affordable
+					     in the sender column because only the odd accounts out are labelled, and
+					     by their short names. -->
 					<div
-						v-if="accountLabel && !isFullWidth"
-						class="text-ink-gray-4 flex shrink-0 items-center gap-1 text-xs"
+						v-if="accountLabel"
+						class="text-ink-blue-6 flex shrink-0 items-center gap-1 text-xs"
 					>
 						<span aria-hidden="true">·</span>
 						<span>{{ __('in {0}', [accountLabel]) }}</span>
@@ -112,13 +112,6 @@
 			</div>
 
 			<slot name="extra" :is-full-width="isFullWidth" />
-		</div>
-
-		<div
-			v-if="isFullWidth && accountLabel"
-			class="text-ink-gray-4 ml-3 max-w-40 shrink-0 self-center truncate text-xs"
-		>
-			{{ __('in {0}', [accountLabel]) }}
 		</div>
 
 		<div v-if="isFullWidth" class="flex w-32 shrink-0 items-center justify-end space-x-4">
@@ -184,8 +177,7 @@ const {
 	// Mobile selection mode (a selection exists): rows swap avatars for checkboxes,
 	// hide trailing actions, and a tap toggles selection instead of navigating.
 	selectionMode?: boolean
-	// Which account received the mail (merged lists). Rendered by the layout because its place
-	// depends on it: beside the sender in the stacked layout, out by the date in the wide one.
+	// Which account received the mail (merged lists), shown beside the sender.
 	accountLabel?: string
 }>()
 

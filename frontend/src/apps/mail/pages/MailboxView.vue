@@ -1240,7 +1240,8 @@ const onResetSuccess = () => {
 // account, so each row opens in — and acts within — its own account (see the row-action wrappers).
 const isAllAccountsSearch = computed(() => mailbox === 'search' && route.query.all_accounts != null)
 
-// The row's account, by its short name (the local part, unless two accounts share one).
+// The row's account, by its short name: blank for the currently open account (only
+// the odd ones out get labelled), the local part otherwise, unless two accounts share one.
 const shortAccountLabel = (name?: string | null) =>
 	name ? (store.accountShortNames[name] ?? name) : undefined
 
