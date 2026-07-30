@@ -50,9 +50,12 @@ test.describe.serial("Drive critical paths", () => {
 
 		await openEntityActions(page, uploaded.name);
 		await page.getByRole("button", { name: "Rename", exact: true }).click();
-		const renameDialog = page.getByRole("dialog", { name: "Rename" });
-		await renameDialog.getByRole("textbox").fill(renamedLabel);
-		await renameDialog.getByRole("button", { name: "Confirm" }).click();
+		// Renaming is inline in the row, not a dialog.
+		const renameInput = page
+			.getByTestId(`drive-entity-${uploaded.name}`)
+			.getByRole("textbox");
+		await renameInput.fill(renamedLabel);
+		await renameInput.press("Enter");
 		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedLabel);
 
 		await openEntityActions(page, uploaded.name);

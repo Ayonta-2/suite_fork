@@ -254,13 +254,6 @@ export function printDoc(html, settings = {}) {
     nunito: 'var(--font-nunito)',
   }
   const fontFamily = fontMap[settings?.font_family]
-  const applyWatermark = settings?.apply_watermark || false
-  const watermark = {
-    text: settings?.watermark_text || '',
-    size: settings?.watermark_size || 90,
-    angle: settings?.watermark_angle || -45,
-  }
-  const shouldShowWatermark = applyWatermark && watermark.text.trim() !== ''
   const content = `
             <!DOCTYPE html>
             <html>
@@ -312,23 +305,10 @@ export function printDoc(html, settings = {}) {
                 div[data-page-break='true'] {
                   border: none;
                   margin: none;
-                }  
-                .watermark {
-                  position: fixed;
-                  top: 50%;
-                  left: 50%;
-                  transform: translate(-50%, -50%) rotate(${watermark.angle}deg);
-                  opacity: 0.12;
-                  font-size: ${watermark.size}px;
-                  color: #999;
-                  pointer-events: none;
-                  z-index: 9999;
-                  white-space: nowrap;
                 }
               </style>
               </head>
               <body>
-                ${shouldShowWatermark ? `<div class="watermark">${watermark.text}</div>` : ''}
                 <div class="ProseMirror prose-sm" style='padding-left: 40px; padding-right: 40px; padding-top: 20px; padding-bottom: 20px; margin: 0;'>
                   ${highlightedHtml}
                 </div>

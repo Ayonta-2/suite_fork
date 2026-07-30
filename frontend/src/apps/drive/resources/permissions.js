@@ -11,7 +11,7 @@ export const usersWithAccess = createResource({
 export const updateAccess = createResource({
   url: 'suite.drive.api.files.share',
   makeParams: (params) => ({ ...params, method: params.method || 'share' }),
-  onError: (error) => toast({ type: 'error', title: error.messages[0] }),
+  onError: (error) => toast.error(error.messages[0]),
 })
 
 export const notifCount = createResource({
