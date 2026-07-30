@@ -872,7 +872,7 @@ const handleSetFlagged = (thread: Thread, flagged: boolean, ids: string[] = [thr
 // falls back to closing the pane at the end of the list. Mirrors MailboxView.
 const goToNextThreadOrClose = (movedThreadID: string) => {
 	if (threadID !== movedThreadID) return
-	const ids = openThreadIDs.value
+	const ids = threadIDs.value
 	const next = ids.slice(ids.indexOf(movedThreadID) + 1).find((id) => id !== movedThreadID)
 	if (next) openThread(next)
 	else closeThread()
