@@ -21,7 +21,13 @@ from suite.drive.utils import (
 	get_users_folder,
 	grant_owner_access,
 )
-from suite.drive.utils.files import S3_URL_PREFIX, FileManager, get_s3_url, storage_key
+from suite.drive.utils.files import (
+	S3_URL_PREFIX,
+	TRASH_PREFIX,
+	FileManager,
+	get_s3_url,
+	storage_key,
+)
 
 JOURNAL = "drive-relocation.jsonl"
 ABORT_WINDOW = 120
@@ -38,9 +44,26 @@ def execute():
 	skipped once the Drive Team tables are gone, so a re-run after a failed
 	relocation still finishes the relocation.
 	"""
+	# captured before the collapse rewrites the homes: thumbnails and trashed blobs
+	# live in sidecar directories under each team's old prefix, and nothing in the
+	# tree walk can find them afterwards
+	sidecars = _team_prefixes()
 	if frappe.db.exists("DocType", "Drive Team"):
 		_collapse_teams()
-	_mirror_storage_to_tree()
+	_mirror_storage_to_tree(sidecars)
+
+
+def _team_prefixes():
+	"""{team: old storage prefix}, while the team homes are still folder-less."""
+	if not frappe.db.has_column("File", "team"):
+		return {}
+	rows = frappe.get_all(
+		"File",
+		filters={"folder": ("is", "not set"), "team": ("is", "set")},
+		fields=["team", "file_url"],
+		limit_page_length=0,
+	)
+	return {r.team: storage_key(r.file_url).rstrip("/") for r in rows if r.file_url}
 
 
 def _collapse_teams():
@@ -257,7 +280,7 @@ def _drop_obsolete_revoke_rows():
 	frappe.db.delete("Drive Permission", {"user": "", "deny": 0, **dict.fromkeys(PERMISSION_TYPES, 0)})
 
 
-def _mirror_storage_to_tree():
+def _mirror_storage_to_tree(sidecars=None):
 	"""`flat` is gone, so every blob has to sit where the folder tree says it does.
 
 	Phase 0 surveys and prints, then waits. Phase 1 copies (never moves), verifies,
@@ -279,9 +302,13 @@ def _mirror_storage_to_tree():
 		claimed={},
 		renamed=[],
 	)
-	for root in (get_root_folder(), get_users_folder()):
+	drive_root = get_root_folder()
+	for root in (drive_root, get_users_folder()):
 		plan.root_key = storage_key(root.file_url).rstrip("/")
 		_survey(plan, root.name, plan.root_key, False, False)
+
+	plan.root_key = storage_key(drive_root.file_url).rstrip("/")
+	_survey_sidecars(plan, sidecars or {})
 
 	_announce(plan)
 	_confirmed()
@@ -352,6 +379,90 @@ def _survey(plan, parent, parent_key, in_trash, embeds, depth=0):
 		placed = _decide(plan, child, target, container, writer, trashed, embeds)
 		if container:
 			_survey(plan, child.name, placed + "/.embeds" if writer else placed, trashed, writer, depth + 1)
+
+
+def _survey_sidecars(plan, sidecars):
+	"""Thumbnails and trashed blobs sit beside the files, under each team's own
+	prefix, and no tree walk reaches them — the tree has no row for either.
+
+	Thumbnails are named by entity id, so they just move. Trash was keyed by
+	file_name per team; one root means two teams could both hold a `readme.md`,
+	so `__get_trash_path` now keys by id and these move onto that.
+	"""
+	prefix = plan.manager.settings.thumbnail_prefix or "thumbnails"
+	trashed = {}
+	if plan.team_column:
+		for row in frappe.get_all(
+			"File",
+			filters={"status": STATUS_TRASHED},
+			fields=["name", "file_name", "team"],
+			limit_page_length=0,
+		):
+			trashed.setdefault(row.team, {})[row.file_name] = row.name
+
+	for team, base in sidecars.items():
+		if not base:
+			continue
+		for key in _list_prefix(plan.manager, f"{base}/{prefix}/"):
+			name = key.rsplit("/", 1)[-1]
+			if name:
+				_sidecar_action(plan, key, f"{plan.root_key}/{prefix}/{name}", "thumbnails")
+		for key in _list_prefix(plan.manager, f"{base}/{TRASH_PREFIX}/"):
+			name = key.rsplit("/", 1)[-1]
+			entity = trashed.get(team, {}).get(name)
+			if not entity:
+				# nothing in the tree claims it; leave it rather than guess
+				_skip_key(plan, key, "trashed blob with no matching row")
+				continue
+			_sidecar_action(plan, key, f"{plan.root_key}/{TRASH_PREFIX}/{entity}", "trash")
+
+
+def _sidecar_action(plan, current, target, kind):
+	if current == target:
+		plan.actions.append({"entity": current, "kind": kind, "action": "unchanged", "old": current, "new": target})
+		return
+	claimant = plan.claimed.get(target)
+	if claimant:
+		plan.problems.append({"entity": current, "reason": f"{target} is also claimed by {claimant}"})
+		return
+	plan.claimed[target] = current
+	plan.actions.append(
+		{
+			"entity": current,
+			"file_name": current.rsplit("/", 1)[-1],
+			"kind": kind,
+			"action": "copy",
+			"old": current,
+			"new": target,
+			"url": None,  # no File row to point anywhere
+			"journal": True,
+			"bytes": _blob_size(plan.manager, current),
+		}
+	)
+
+
+def _skip_key(plan, key, reason):
+	plan.skipped[reason] += 1
+	plan.actions.append({"entity": key, "kind": "sidecar", "action": "skip", "old": key, "reason": reason})
+
+
+def _list_prefix(manager, prefix):
+	"""Every object directly under `prefix`, both backends."""
+	if manager.s3_enabled:
+		out, token = [], None
+		while True:
+			kwargs = {"Bucket": manager.bucket, "Prefix": prefix}
+			if token:
+				kwargs["ContinuationToken"] = token
+			page = manager.conn.list_objects_v2(**kwargs)
+			out += [o["Key"] for o in page.get("Contents", []) if not o["Key"].endswith("/")]
+			if not page.get("IsTruncated"):
+				return out
+			token = page.get("NextContinuationToken")
+	folder = _local(manager, prefix)
+	if not folder.is_dir():
+		return []
+	return [f"{prefix.rstrip('/')}/{f.name}" for f in folder.iterdir() if f.is_file()]
 
 
 def _claim_name(plan, child, taken, trashed):
@@ -547,7 +658,9 @@ def _apply(plan, log):
 			problems.append({"entity": a["entity"], "reason": f"{type(e).__name__}: {e}"})
 			continue
 
-		frappe.db.set_value("File", a["entity"], "file_url", a["url"], update_modified=False)
+		# sidecars (thumbnails, trash) have no File row — `entity` is their key
+		if a.get("url"):
+			frappe.db.set_value("File", a["entity"], "file_url", a["url"], update_modified=False)
 		if a["journal"] and (a["action"] != "dir" or _exists(manager, a["old"], True)):
 			log.write(
 				json.dumps({"entity": a["entity"], "key": a["old"], "dir": a["action"] == "dir"}) + "\n"

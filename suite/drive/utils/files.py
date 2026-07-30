@@ -19,6 +19,8 @@ from suite.drive.locks.distributed_lock import DistributedLock
 from . import STATUS_ACTIVE, get_root_folder
 
 S3_URL_PREFIX = "/api/method/suite.drive.api.s3.fetch?path="
+# Sidecar directories under the Drive root, beside the mirrored tree.
+TRASH_PREFIX = ".trash"
 
 
 class FileManager:
@@ -350,8 +352,10 @@ class FileManager:
 		return self.get_file(frappe._dict({"file_url": str(self.get_thumbnail_path(name))}), log=False)
 
 	def __get_trash_path(self, entity):
+		"""Keyed by id, not file_name: trash is one flat directory under a single
+		root now, and two teams could each trash a `readme.md`."""
 		root = get_root_folder()
-		return Path(storage_key(root["file_url"])) / ".trash" / entity.file_name
+		return Path(storage_key(root["file_url"])) / TRASH_PREFIX / entity.name
 
 	def rename(self, entity):
 		if not entity.file_url or entity.mime_type == "frappe/slides":
