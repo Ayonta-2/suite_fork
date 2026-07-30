@@ -31,6 +31,7 @@ KIND_VIRTUAL = "virtual"
 #   $GENERAL — any logged-in user
 #   ""       — anyone with the link, including guests
 GENERAL_USER = "$GENERAL"
+GROUP_PREFIX = "$GROUP:"
 
 # Well-known folders directly under the site root.
 SITE_FOLDER = "Site"
@@ -294,6 +295,35 @@ def get_ancestors_of(entity_name):
 	return flattened_list
 
 
+def get_principals(user=None):
+	"""Everything a `Drive Permission.user` row can name the caller by, most
+	specific first: themselves, their user groups, any logged-in user, anyone
+	with the link. Guests are only ever the last."""
+	user = user or frappe.session.user
+	if user == "Guest":
+		return [""]
+
+	groups = frappe.cache().hget("drive_user_groups", user, generator=lambda: _user_groups(user))
+	return [user, *(GROUP_PREFIX + g for g in groups), GENERAL_USER, ""]
+
+
+def _user_groups(user):
+	return frappe.get_all(
+		"User Group Member",
+		filters={"parenttype": "User Group", "user": user},
+		pluck="parent",
+		distinct=True,
+	)
+
+
+def clear_user_group_cache(doc=None, method=None):
+	frappe.cache().delete_key("drive_user_groups")
+
+
+def principal_list(user=None):
+	return ", ".join(frappe.db.escape(p) for p in get_principals(user))
+
+
 def dribble_access(path):
 	"""Resolve access at the leaf of `path`: per permission type the nearest row
 	decides (grant → 1, deny → 0). Nothing is granted by default. `decided`
@@ -317,11 +347,22 @@ def generate_upward_path(entity_name, user=None):
 	"""
 	if user is None:
 		user = frappe.session.user
-	guest = user == "Guest"
+	principals = get_principals(user)
 	user_lit = frappe.db.escape(user)
-	# Guests only see link-access rows; logged-in users also match their own
-	# and $GENERAL rows, most specific first.
-	perm_filter = "p.user = ''" if guest else f"p.user IN ({user_lit}, '{GENERAL_USER}', '')"
+	perm_filter = "p.user IN ({})".format(", ".join(frappe.db.escape(p) for p in principals))
+
+	# Nearest folder wins; within a folder the most specific principal wins, and
+	# among equally specific group rows a deny beats a grant.
+	groups = [p for p in principals if p.startswith(GROUP_PREFIX)]
+	group_when = ""
+	if groups:
+		group_lit = ", ".join(frappe.db.escape(g) for g in groups)
+		group_when = f"WHEN p.user IN ({group_lit}) THEN 1"
+	tier = f"""CASE
+			WHEN p.user = {user_lit} THEN 0
+			{group_when}
+			WHEN p.user = '{GENERAL_USER}' THEN 2
+			ELSE 3 END"""
 
 	result = frappe.db.sql(
 		f"""WITH RECURSIVE
@@ -363,8 +404,7 @@ def generate_upward_path(entity_name, user=None):
             generated_path  as gp
         LEFT JOIN `tabDrive Permission` as p
         ON gp.name = p.entity AND {perm_filter}
-        ORDER BY gp.level DESC,
-            CASE p.user WHEN {user_lit} THEN 0 WHEN '{GENERAL_USER}' THEN 1 ELSE 2 END;
+        ORDER BY gp.level DESC, {tier}, p.deny DESC;
     """,
 		values={"entity_name": entity_name},
 		as_dict=1,

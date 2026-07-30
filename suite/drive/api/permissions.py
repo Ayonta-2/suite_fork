@@ -4,6 +4,7 @@ from frappe.model.document import Document
 from suite.drive.utils import (
 	FILE_FIELDS,
 	GENERAL_USER,
+	GROUP_PREFIX,
 	PERMISSION_TYPES,
 	STATUS_ACTIVE,
 	entity_kind,
@@ -155,6 +156,10 @@ def get_shared_with_list(entity: str):
 		order_by="user",
 		fields=["user", "read", "write", "comment", "upload", "share"],
 	)
+	for p in permissions:
+		if p.user.startswith(GROUP_PREFIX):
+			p.is_group = 1
+			p.full_name = p.user[len(GROUP_PREFIX) :]
 
 	owner = frappe.db.get_value("File", entity, "owner")
 	permissions.insert(
@@ -163,6 +168,8 @@ def get_shared_with_list(entity: str):
 	)
 
 	for p in permissions:
+		if p.get("is_group"):
+			continue
 		user_info = frappe.db.get_value("User", p.user, ["user_image", "full_name", "email"], as_dict=True)
 		if user_info:
 			p.update(user_info)

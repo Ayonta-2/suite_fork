@@ -216,6 +216,10 @@ override_whitelisted_methods = {
 # Document Events (deep-merged; per-doctype/per-event handler lists combined)
 # ============================================================================
 doc_events = {
+	"User Group": {
+		"on_update": "suite.drive.utils.clear_user_group_cache",
+		"on_trash": "suite.drive.utils.clear_user_group_cache",
+	},
 	"Presentation": {
 		"on_update": ["suite.drive.overrides.file.sync_content_file"],
 		"on_trash": ["suite.drive.overrides.file.sync_content_file"],

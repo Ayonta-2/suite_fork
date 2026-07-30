@@ -1,7 +1,7 @@
 import frappe
 from frappe.permissions import SYSTEM_USER_ROLE, get_doctypes_with_read
 
-from suite.drive.utils import GENERAL_USER
+from suite.drive.utils import principal_list
 
 
 def filter_file(user=None):
@@ -20,7 +20,7 @@ def filter_file(user=None):
 		"`tabFile`.`is_private` = 0",
 		f"`tabFile`.`owner` = {escaped}",
 		f"`tabFile`.`name` IN (SELECT `entity` FROM `tabDrive Permission`"
-		f" WHERE `user` IN ({escaped}, '{GENERAL_USER}', '') AND `read` = 1 AND `deny` = 0)",
+		f" WHERE `user` IN ({principal_list(user)}) AND `read` = 1 AND `deny` = 0)",
 		f"`tabFile`.`name` IN (SELECT `share_name` FROM `tabDocShare`"
 		f" WHERE `share_doctype` = 'File' AND `user` = {escaped} AND `read` = 1)",
 	]

@@ -18,6 +18,7 @@ from suite.drive.api.product import create_invites
 from suite.drive.utils import (
 	ATTACHMENT_CONTENT_DOCTYPE,
 	GENERAL_USER,
+	GROUP_PREFIX,
 	STATUS_ACTIVE,
 	STATUS_REMOVED,
 	STATUS_TRASHED,
@@ -25,6 +26,7 @@ from suite.drive.utils import (
 	generate_upward_path,
 	get_new_file_name,
 	get_user_folder,
+	principal_list,
 	update_file_size,
 	validate_filename,
 )
@@ -159,6 +161,9 @@ class File(FrappeFile):
 		user = user or ""
 		if user in ("", GENERAL_USER):
 			self._clear_general()
+		elif user.startswith(GROUP_PREFIX):
+			if not frappe.db.exists("User Group", user[len(GROUP_PREFIX) :]):
+				frappe.throw(f"No such group: {user[len(GROUP_PREFIX):]}", frappe.DoesNotExistError)
 		elif not frappe.db.exists("User", user):
 			create_invites(user, auto=True)
 
@@ -459,7 +464,7 @@ def content_query_conditions(doctype: str, user: str | None, extra: str | None =
 		f"SELECT `tabFile`.content_docname FROM `tabFile` "
 		f"INNER JOIN `tabDrive Permission` ON `tabDrive Permission`.entity = `tabFile`.name "
 		f"WHERE `tabFile`.content_doctype = {frappe.db.escape(doctype)} "
-		f"AND `tabDrive Permission`.user IN ({user_lit}, '{GENERAL_USER}', '') "
+		f"AND `tabDrive Permission`.user IN ({principal_list(user)}) "
 		f"AND `tabDrive Permission`.`read` = 1 AND `tabDrive Permission`.`deny` = 0)",
 	]
 	if extra:
