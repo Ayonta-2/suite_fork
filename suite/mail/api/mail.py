@@ -37,6 +37,7 @@ from suite.mail.doctype.mailbox_settings.mailbox_settings import (
 	set_mailbox_settings,
 )
 from suite.mail.doctype.screened_email_address.screened_email_address import (
+	get_global_screened_email_addresses,
 	get_screened_email_addresses,
 )
 from suite.mail.doctype.sieve_script.sieve_script import (
@@ -1103,6 +1104,19 @@ def get_screened_addresses(account: str) -> list[dict]:
 	is_jmap_account_belongs_to_user(account, raise_exception=True)
 
 	return get_screened_email_addresses(account)
+
+
+@frappe.whitelist()
+def get_global_screened_addresses() -> list[dict]:
+	"""Returns the global screened email addresses — admin-managed rules applying to every account.
+
+	Read-only: the frontend overlays these under the account's own rules (the account's rule wins)
+	when deciding whether a sender is trusted for remote images, mirroring the merge the automation
+	sieve is built from. The settings UI keeps using `get_screened_addresses`, which stays
+	account-only so users never see or edit the global rules there.
+	"""
+
+	return get_global_screened_email_addresses()
 
 
 @frappe.whitelist()

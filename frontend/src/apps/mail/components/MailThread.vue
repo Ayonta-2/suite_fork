@@ -486,7 +486,7 @@ const { filterBySender } = useFilterBySender()
 const dayjs = inject('$dayjs')
 const user = inject('$user')
 const store = userStore()
-const { mailboxes, mailboxIds, identities, screenedAddresses } = store
+const { mailboxes, mailboxIds, identities, screenedAddresses, globalScreenedAddresses } = store
 
 // A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
 // exact address or by an accepted/blocked '@domain' entry covering them.
@@ -502,9 +502,18 @@ const blockRemoteImagesEnabled = computed(
 		store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)
 			?.block_remote_images ?? true,
 )
+// The screening rules in effect for the account: the admin-managed global rules overlaid with the
+// account's own, the account's rule winning when both screen the same address or domain — mirroring
+// the backend's `get_effective_screened_email_addresses`, which the automation sieve is built from.
+const effectiveScreenedAddresses = computed(() => {
+	const merged = new Map<string, ScreenedAddress>()
+	for (const a of globalScreenedAddresses.data ?? []) merged.set(a.email.toLowerCase(), a)
+	for (const a of screenedAddresses.data ?? []) merged.set(a.email.toLowerCase(), a)
+	return [...merged.values()]
+})
 const isScreenedIn = (email: string) =>
 	!!identities.data?.some((i: Identity) => i.email === email) ||
-	!!screenedAddresses.data?.some(
+	effectiveScreenedAddresses.value.some(
 		(a: ScreenedAddress) => a.action === 'Accepted' && matchesScreenedValue(email, a.email),
 	)
 const shouldBlockImages = (mail: { from_email: string }) =>
