@@ -24,11 +24,11 @@ export function useThemeMenuOption() {
 		icon: h(SunMoon, { class: 'stroke-[1.5] !size-3.5' }),
 		onClick: cycleTheme,
 		slots: {
-			label: () => h('div', { class: 'min-w-20 truncate leading-none' }, 'Theme'),
+			label: () => h('div', { class: 'min-w-20 truncate' }, 'Theme'),
 			suffix: () =>
 				h(
 					'span',
-					{ class: 'flex w-16 items-center justify-end gap-2 leading-none text-ink-gray-5' },
+					{ class: 'flex w-16 items-center justify-end gap-2 text-ink-gray-5' },
 					[
 						h('span', activeTheme.value.label),
 						h(activeTheme.value.icon, { class: 'size-3.5 shrink-0 stroke-[1.5]' }),

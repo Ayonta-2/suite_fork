@@ -225,29 +225,67 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
 
 	conversations = fetch_threads(account, filter, start, limit)
 
-	sent_mailbox = get_mailbox_id_by_role(account, "sent")
+	# Four roles are needed below, so they come off one cached mailbox list rather than a lookup each:
+	# every `get_mailbox_id_by_role` resolves the account's user and connection again on the way in.
+	ids_by_role = {
+		(m.get("role") or "").lower(): m["id"] for m in get_mailbox_service(account).mailboxes
+	}
+	trash_mailbox = ids_by_role.get("trash")
+	junk_mailbox = ids_by_role.get("junk")
+	# Sent and Drafts are about the message you wrote, so their rows follow the latest message in the
+	# folder itself; every other view follows the conversation's most recent activity.
+	outgoing_mailboxes = {ids_by_role[role] for role in ("sent", "drafts") if role in ids_by_role}
+	user_emails = {e.lower() for e in get_account_emails(account)}
 
 	threads = []
 	for conversation in conversations.values():
 		if not conversation:
 			continue
 
+		visible = visible_in_mailbox(conversation, mailbox, trash_mailbox, junk_mailbox)
+
 		# The summary row is derived from the thread's messages in the current mailbox (falling back
 		# to the whole conversation for cross-mailbox views like "starred").
 		in_mailbox = [
-			m for m in conversation if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
-		] or conversation
+			m for m in visible if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
+		] or visible
 
-		# The preview/date reflect the latest message in the whole conversation (the most recent
-		# activity) everywhere except Sent, where the latest sent message is shown.
-		latest = in_mailbox[-1] if mailbox == sent_mailbox else conversation[-1]
-		threads.append(serialize_thread(in_mailbox, conversation, latest))
+		# The preview/date reflect the latest message in the conversation (the most recent activity)
+		# everywhere except Sent and Drafts, which show the latest message in the folder itself: a
+		# draft reply must keep its own recipients and its "Draft" badge when the thread it answers
+		# receives a newer mail.
+		latest = in_mailbox[-1] if mailbox in outgoing_mailboxes else visible[-1]
+		threads.append(serialize_thread(in_mailbox, visible, latest, user_emails, first=conversation[0]))
 
 	# Avatars for the list-view summary rows, and for each message in the nested threads.
 	add_user_images_to_emails(account, threads, is_thread=False)
 	add_user_images_to_emails(account, [m for thread in threads for m in thread["messages"]], is_thread=True)
 
 	return threads, mailbox
+
+
+def visible_in_mailbox(messages: list[dict], mailbox: str, trash: str | None, junk: str | None) -> list[dict]:
+	"""The thread's messages a mailbox view is allowed to show, oldest to newest.
+
+	Mirrors the thread pane's `filterRelevantMails`: junked and trashed messages appear only in their
+	own folders. The summary row is derived from this rather than from the whole conversation so that
+	it describes the thread the way opening it would — a spam reply was adding a stranger to a row's
+	participants, raising its message count, and lending it its preview and date, all for a message
+	the pane then refused to render.
+
+	Falls back to the whole conversation rather than to nothing, so a thread is never a blank row.
+	"""
+
+	def is_trashed(message: dict) -> bool:
+		return any(mb["mailbox_id"] == trash for mb in message["mailboxes"])
+
+	if trash and mailbox == trash:
+		return [m for m in messages if is_trashed(m)] or messages
+
+	if junk and mailbox == junk:
+		return [m for m in messages if m.get("junk")] or messages
+
+	return [m for m in messages if not is_trashed(m) and not m.get("junk")] or messages
 
 
 def get_user_jmap_accounts() -> list[dict]:
@@ -361,17 +399,28 @@ def get_attachment(account: str, blob_id: str, filename: str | None = None) -> N
 	frappe.local.response.type = "download"
 
 
-def serialize_thread(messages: list[dict], thread_messages: list[dict], latest: dict | None = None) -> dict:
+def serialize_thread(
+	messages: list[dict],
+	thread_messages: list[dict],
+	latest: dict | None = None,
+	user_emails: set[str] | None = None,
+	first: dict | None = None,
+) -> dict:
 	"""Serializes a thread for response.
 
-	Both `messages` (the thread's messages within the current mailbox) and `thread_messages` (the full
-	conversation across all mailboxes) are expected ordered oldest to newest. The list-view summary
-	fields are derived from `latest` (defaulting to the latest of `messages`), except `subject` which
-	comes from the conversation's first message (the thread's original subject); the full conversation
-	is serialized under `messages` so the whole thread can be rendered without a separate fetch.
+	Both `messages` (the thread's messages within the current mailbox) and `thread_messages` (the
+	conversation this view can show — see `visible_in_mailbox`) are expected ordered oldest to newest.
+	The list-view summary fields are derived from `latest` (defaulting to the latest of `messages`),
+	except `subject` which comes from `first`, the conversation's opening message (the thread's
+	original subject, without the "Re:" its replies carry — it defaults to the earliest message given,
+	which is only the true first when nothing has been filtered out). The conversation is serialized
+	under `messages` so the whole thread can be rendered without a separate fetch.
+
+	`user_emails` is the set of the account's own addresses (lowercased), used to flag which of the
+	thread's senders is the user themselves.
 	"""
 
-	first = thread_messages[0]
+	first = first or thread_messages[0]
 	latest = latest or messages[-1]
 	# The row's identity + state come from the thread's representative message in the CURRENT mailbox
 	# (`messages` is scoped to it), so its folder tags and junk/flag/seen reflect THIS view — not a
@@ -396,9 +445,38 @@ def serialize_thread(messages: list[dict], thread_messages: list[dict], latest: 
 		**{field: current[field] for field in current_fields},
 		**{field: latest[field] for field in activity_fields},
 		"subject": first["subject"],
+		"participants": serialize_participants(thread_messages, user_emails or set()),
 		"attachments": serialize_attachments(latest.get("attachments", [])),
 		"messages": [serialize_mail(message) for message in thread_messages],
 	}
+
+
+def serialize_participants(thread_messages: list[dict], user_emails: set[str]) -> list[dict]:
+	"""The thread's senders, in the order they first wrote, de-duplicated by address.
+
+	This is what the list row names, in place of the latest message's sender alone: a thread you have
+	replied to led with your own name, which read as though you had started it. Each entry carries
+	`is_self` when the sender is one of the account's own addresses, so a row merged in from another
+	account (All Inboxes, cross-account search) is still resolved against the account that owns it.
+	"""
+
+	participants: list[dict] = []
+	seen: set[str] = set()
+	for message in thread_messages:
+		email = message.get("from_email") or ""
+		if not email or email.lower() in seen:
+			continue
+
+		seen.add(email.lower())
+		participants.append(
+			{
+				"name": message.get("from_name") or "",
+				"email": email,
+				"is_self": email.lower() in user_emails,
+			}
+		)
+
+	return participants
 
 
 def serialize_mail(mail: dict) -> dict:
@@ -668,7 +746,7 @@ def get_mime_message(name: str) -> dict:
 
 	result = {
 		"message": doc.message or doc.get_mime_message(),
-		"message_id": {"label": _("Message ID"), "value": doc.message_id},
+		"message_id": {"label": _("Message ID"), "value": f"<{doc.message_id}>"},
 		"created_at": {
 			"label": _("Created at"),
 			"value": _("{0} (Delivered after {1} seconds)").format(
@@ -687,11 +765,20 @@ def get_mime_message(name: str) -> dict:
 		result["spf"] = {
 			"label": _("SPF"),
 			"value": _("{0} with IP {1}").format(pass_or_fail[doc.spf_pass], doc.from_ip),
+			"description": doc.spf_description,
 		}
 	if doc.dkim_description:
-		result["dkim"] = {"label": _("DKIM"), "value": pass_or_fail[doc.dkim_pass]}
+		result["dkim"] = {
+			"label": _("DKIM"),
+			"value": pass_or_fail[doc.dkim_pass],
+			"description": doc.dkim_description,
+		}
 	if doc.dmarc_description:
-		result["dmarc"] = {"label": _("DMARC"), "value": pass_or_fail[doc.dmarc_pass]}
+		result["dmarc"] = {
+			"label": _("DMARC"),
+			"value": pass_or_fail[doc.dmarc_pass],
+			"description": doc.dmarc_description,
+		}
 
 	return result
 

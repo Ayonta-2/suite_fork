@@ -2,7 +2,7 @@
 	<MailRow
 		:is-selected
 		:unread="!!unreadCount"
-		:avatar-label="getSenderInitial(latest)"
+		:avatar-label="avatarLabel"
 		:avatar-image="latest.user_image"
 		:datetime="latest.received_at"
 		:subject-italic="!latest.subject"
@@ -12,10 +12,19 @@
 		@click="emit('toggle')"
 		@set-selected="(selected: boolean) => emit('setSelected', selected)"
 	>
-		<template #sender>{{ latest.from_name || latest.from_email }}</template>
+		<template #sender>{{ sender }}</template>
 
+		<!-- The glyph is what separates a pile of threads from the plain number a single thread wears to
+		     say how many messages it holds — at a glance the two counts were the same small grey digit. -->
 		<template #badges>
-			<Badge size="sm" :label="String(threads.length)" />
+			<Badge size="sm" :aria-label="__('{0} conversations', [threads.length])">
+				<span class="flex items-center gap-1">
+					<!-- Badge's own prefix slot boxes an icon at 10px, where the glyph's strokes close up.
+					     The default slot leaves room for the 12px the design system's icons are drawn at. -->
+					<Layers2 class="h-3 w-3 stroke-[1.5]" />
+					{{ threads.length }}
+				</span>
+			</Badge>
 		</template>
 
 		<template #subject>{{ latest.subject || __('[No subject]') }}</template>
@@ -40,10 +49,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Layers2 } from 'lucide-vue-next'
 import { Badge } from 'frappe-ui'
 
 import { getSenderInitial } from '@/apps/mail/utils'
+import { formatThreadParticipants, primaryParticipant } from '@/apps/mail/utils/participants'
 import MailRow from '@/apps/mail/components/MailRow.vue'
 import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
 
@@ -71,6 +81,22 @@ const emit = defineEmits<{
 
 // The list is newest-first, so the run's first member is its latest — the row this stack stands in for.
 const latest = computed(() => threads[0])
+
+// Only threads with a lone sender stack (see stackKeyOf), and every member shares that sender, so the
+// stack is named exactly the way each of its members is — collapsed or expanded, the name holds.
+const sender = computed(
+	() =>
+		formatThreadParticipants(latest.value.participants ?? []) ||
+		latest.value.from_name ||
+		latest.value.from_email,
+)
+
+// The letter behind the avatar, for a contact with no picture: whoever the picture itself would be of.
+const avatarLabel = computed(() => {
+	const primary = primaryParticipant(latest.value.participants ?? [])
+	if (!primary) return getSenderInitial(latest.value)
+	return getSenderInitial({ from_name: primary.name, from_email: primary.email })
+})
 
 const unreadCount = computed(() => threads.filter((t) => !t.seen).length)
 </script>

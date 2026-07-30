@@ -1,6 +1,10 @@
 <template>
 	<FrappeUIProvider>
-		<component :is="Layout" class="mail-app-root">
+		<!-- Nothing in mail works without the mail server, so an outage replaces the whole
+		     route group (incl. noLayout pages) rather than decorating a UI whose every fetch
+		     would fail. -->
+		<MailServerUnavailableView v-if="mailServerUnavailable" class="mail-app-root" />
+		<component :is="Layout" v-else class="mail-app-root">
 			<router-view />
 		</component>
 		<InstallPrompt v-if="isMobile" />
@@ -12,6 +16,7 @@ import { computed, onMounted, onUnmounted, provide, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 
+import { mailServerUnavailable } from '@/boot/config'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
@@ -20,6 +25,7 @@ import dayjs from '@/apps/mail/utils/dayjs'
 import { userStore } from '@/apps/mail/stores/user'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import InstallPrompt from '@/apps/mail/components/InstallPrompt.vue'
+import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 
 import type { NotificationPayload } from '@/apps/mail/types'
 
@@ -52,7 +58,48 @@ const Layout = computed(() => {
 	return DefaultLayout
 })
 
-watchEffect(() => document.documentElement.setAttribute('data-theme', dataTheme.value))
+// Alongside the html attribute, sync the theme-color meta — it drives the OS
+// status bar / browser chrome in the installed PWA, which otherwise stays white
+// over the dark app. Values mirror surface-base per theme (dark hex matches
+// EmailContent's THEME_CONFIG).
+const THEME_COLOR: Record<string, string> = { light: '#ffffff', dark: '#171717' }
+
+// All three live on the shared shell, not inside mail: data-theme flips every
+// frappe-ui design token (see colorPalette.js, keyed on [data-theme="dark"]),
+// color-scheme flips the browser-drawn surfaces, and theme-color is a single
+// document-wide meta. Drive/sheets/writer/slides set none of them, so whatever
+// mail leaves behind is what they render with. Snapshot the server-rendered
+// state and restore it on unmount, the same contract as the `mail-app` body
+// class below.
+const root = document.documentElement
+const initialDataTheme = root.getAttribute('data-theme')
+const initialColorScheme = root.style.colorScheme
+let themeColorMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+const initialThemeColor = themeColorMeta?.content ?? null
+
+watchEffect(() => {
+	root.setAttribute('data-theme', dataTheme.value)
+	// color-scheme drives the browser-drawn surfaces the page can't paint — on
+	// Android standalone that's the system navigation bar (white over a dark app
+	// otherwise) and the status-bar seam, plus native controls/scrollbars.
+	root.style.colorScheme = dataTheme.value
+	if (!themeColorMeta) {
+		themeColorMeta = document.createElement('meta')
+		themeColorMeta.name = 'theme-color'
+		document.head.appendChild(themeColorMeta)
+	}
+	themeColorMeta.content = THEME_COLOR[dataTheme.value]
+})
+
+onUnmounted(() => {
+	if (initialDataTheme === null) root.removeAttribute('data-theme')
+	else root.setAttribute('data-theme', initialDataTheme)
+	root.style.colorScheme = initialColorScheme
+	// null means the meta was ours, so take it with us rather than leaving an
+	// empty one on the shell.
+	if (initialThemeColor === null) themeColorMeta?.remove()
+	else if (themeColorMeta) themeColorMeta.content = initialThemeColor
+})
 
 // Mark <body> while mail is mounted so the base styles below (see <style>) can reach frappe-ui
 // Dialogs/Dropdowns, which teleport to <body> — OUTSIDE .mail-app-root. Without this, their
@@ -119,15 +166,31 @@ const registerServiceWorker = async () => {
 	}
 }
 
+// iOS standalone scrolls the whole document to reveal a focused input above the
+// keyboard, and can leave that offset behind after dismissal — the entire shell
+// then sits displaced (rows under the clock, tab bar mid-screen, void below).
+// Every scroller in the app is internal, so a document offset is always dirt;
+// sweep it whenever focus leaves a field. rAF: let the keyboard dismissal settle
+// first, and never fight iOS while the field is still focused.
+const resetDocumentScroll = () => {
+	requestAnimationFrame(() => {
+		if (window.scrollY) window.scrollTo(0, 0)
+	})
+}
+
 onMounted(() => {
 	registerServiceWorker()
 	window.frappePushNotification?.onMessage((payload: NotificationPayload) =>
 		showNotification(payload),
 	)
 	window.addEventListener('keydown', handleThemeShortcut)
+	window.addEventListener('focusout', resetDocumentScroll)
 })
 
-onUnmounted(() => window.removeEventListener('keydown', handleThemeShortcut))
+onUnmounted(() => {
+	window.removeEventListener('keydown', handleThemeShortcut)
+	window.removeEventListener('focusout', resetDocumentScroll)
+})
 </script>
 
 <style>
@@ -163,6 +226,20 @@ body.mail-app h1 {
 
 body.mail-app h2 {
 	@apply text-xl !font-medium sm:text-lg;
+}
+
+/* The page behind the app follows the theme: the translucent tab bar blurs over it
+   (over an unthemed white body it read as a pale band in dark mode), and it's what
+   shows in the safe-area strips and iOS rubber-band overscroll. Direct var, not
+   @apply — the surface tokens are frappe-ui CSS-layer classes, not registered
+   Tailwind utilities (see index.css). */
+body.mail-app {
+	background-color: var(--surface-base);
+	/* Every scroller in the app is internal — the document must never scroll.
+	   Belt for the focusout sweep above: without it iOS standalone drags the
+	   whole shell when the keyboard appears. */
+	overflow: hidden;
+	height: 100%;
 }
 
 .icon {

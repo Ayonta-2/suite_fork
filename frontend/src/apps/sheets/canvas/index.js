@@ -1957,6 +1957,10 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     // included here.
     getCellRect: (r, c) => ({ x: geo.colX(c) * _zoom, y: geo.rowY(r) * _zoom,
                               width: geo.cw(c) * _zoom, height: geo.rh(r) * _zoom }),
+    // Physical size of the visible grid viewport (the grid-wrap content box), in
+    // CSS px. Cached in _applyCanvasSize, so reading it is reflow-free — used by
+    // DOM overlays to clamp themselves to what's on screen.
+    getViewportSize: () => ({ w: _viewportW, h: _viewportH }),
     setDiffOverlay, setActiveDiffSheet,
     autoFitCol, autoFitRow, autoGrowRowFor,
     expandRows, getTotalRows, isNearBottom,
