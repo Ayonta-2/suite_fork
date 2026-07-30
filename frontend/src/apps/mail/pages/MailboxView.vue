@@ -574,6 +574,7 @@ import {
 	isNavigationKey,
 	navigationOffset,
 	stepFromKey,
+	useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
 import {
 	useMobileSelection,
@@ -885,8 +886,7 @@ const showShortcuts = ref(false)
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
 
 const isShiftPressed = ref(false)
-const isGPressed = ref(false)
-const gPressTimeout = ref<ReturnType<typeof setTimeout>>()
+const gPrefix = useGPrefix()
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
 
 const handleKeyDown = (e: KeyboardEvent) => {
@@ -896,21 +896,21 @@ const handleKeyDown = (e: KeyboardEvent) => {
 	// Handle Ctrl/Cmd+A (Select All)
 	if ((e.metaKey || e.ctrlKey) && key === 'a' && !shouldIgnoreKeypress(e, true)) {
 		e.preventDefault()
-		isGPressed.value = false
+		gPrefix.disarm()
 		return toggleSelectAll(true)
 	}
 
 	// Handle Ctrl/Cmd+Z (Undo)
 	if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
 		e.preventDefault()
-		isGPressed.value = false
+		gPrefix.disarm()
 		return undo()
 	}
 
 	if (shouldIgnoreKeypress(e)) return
 
 	if (key === 'g') return handleGKeyPress(e)
-	if (isGPressed.value) return handleGMenuNavigation(e, key)
+	if (gPrefix.armed.value) return handleGMenuNavigation(e, key)
 	if (key === 'enter') return handleEnter(e)
 	if (key === 'escape') return handleEscape(e)
 	if (key === '?') return handleShowShortcuts(e)
@@ -921,27 +921,23 @@ const handleKeyDown = (e: KeyboardEvent) => {
 }
 
 const handleGKeyPress = (e: KeyboardEvent) => {
-	clearTimeout(gPressTimeout.value)
-
 	// The reading pane walks threads, so it names one; the list walks rows, so it takes the edge row —
 	// which is the day's header when one sits above the first mail.
-	if (e.shiftKey) {
+	const intent = gPrefix.press(e.shiftKey)
+
+	if (intent === 'last') {
 		if (threadID) return goToThread(threadIDs.value.at(-1))
 		return focusRow(navigableRows.value.at(-1))
 	}
 
-	if (isGPressed.value) {
-		isGPressed.value = false
+	if (intent === 'first') {
 		if (threadID) return goToThread(threadIDs.value[0])
 		return focusRow(navigableRows.value[0])
 	}
-
-	isGPressed.value = true
-	gPressTimeout.value = setTimeout(() => (isGPressed.value = false), 750)
 }
 
 const handleGMenuNavigation = (e: KeyboardEvent, key: string) => {
-	isGPressed.value = false
+	gPrefix.disarm()
 
 	const navigationMap: Record<string, string> = {
 		i: mailboxIds.inbox,

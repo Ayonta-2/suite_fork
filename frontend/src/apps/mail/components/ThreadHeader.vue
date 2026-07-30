@@ -5,7 +5,7 @@
 		<Button
 			variant="ghost"
 			class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8"
-			@click="$router.push({ name: 'mail-mailbox', params: { mailbox }, query: route.query })"
+			@click="$router.push(backRoute)"
 		>
 			<template #icon>
 				<ChevronLeft class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
@@ -149,6 +149,16 @@ const user = inject('$user')
 
 const mailbox = computed(() => route.params.mailbox as string)
 const threadID = computed(() => route.params.threadID as string)
+
+// Back returns to the list the thread was opened from: the merged All Inboxes
+// list on its thread route (whose mailbox param is the thread's real folder —
+// usually an account's Inbox, which is where back used to land), the mailbox
+// list otherwise.
+const backRoute = computed(() =>
+	route.name === 'mail-all-inboxes-mail'
+		? { name: 'mail-all-inboxes', query: route.query }
+		: { name: 'mail-mailbox', params: { mailbox: mailbox.value }, query: route.query },
+)
 
 const threadMailboxes = computed(() => {
 	if (!thread?.length) return []

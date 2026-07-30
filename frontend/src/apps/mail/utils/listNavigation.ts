@@ -1,3 +1,5 @@
+import { ref } from 'vue'
+
 // Shared pieces of keyboard list navigation, for the mailbox list and the merged All Inboxes
 // list. Only the parts that are genuinely identical live here: which keys navigate, which
 // direction each means, and how to step a cursor through a list.
@@ -40,3 +42,41 @@ export const stepFromKey = <T extends { key: string }>(
 /** Whether the cursor is currently on a known row — the ends need distinguishing from "lost". */
 export const hasCursor = <T extends { key: string }>(rows: T[], currentKey: string | undefined) =>
 	rows.some((row) => row.key === currentKey)
+
+/**
+ * The `g` prefix: `g g` jumps to the first entry, `G` to the last. A lone `g` arms for
+ * this long, then forgets — so `g`, pause, `g` is two separate presses, not a jump.
+ */
+export const G_PREFIX_WINDOW_MS = 750
+
+/**
+ * State machine for that prefix. `press` reports the intent and leaves acting on it to the
+ * caller, because "first" means the first row in one list and the first thread in another.
+ */
+export const useGPrefix = () => {
+	const armed = ref(false)
+	let timer: ReturnType<typeof setTimeout> | undefined
+
+	const disarm = () => {
+		clearTimeout(timer)
+		armed.value = false
+	}
+
+	const press = (shiftKey: boolean): 'first' | 'last' | 'armed' => {
+		// Shift+G is a jump in its own right, so it also clears any half-typed `g`.
+		if (shiftKey) {
+			disarm()
+			return 'last'
+		}
+		if (armed.value) {
+			disarm()
+			return 'first'
+		}
+		clearTimeout(timer)
+		armed.value = true
+		timer = setTimeout(() => (armed.value = false), G_PREFIX_WINDOW_MS)
+		return 'armed'
+	}
+
+	return { armed, press, disarm }
+}

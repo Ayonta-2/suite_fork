@@ -566,7 +566,14 @@ const unseenMessage = computed(() =>
 const shouldShowUnseenMarker = (id: string) =>
 	isSomeSeen.value && firstUnseenMail.value && id == firstUnseenMail.value
 
-const goToMailbox = () => router.push({ name: 'mail-mailbox', params: { mailbox }, query: route.query })
+// Bail to the list the thread was opened from — the merged All Inboxes list on
+// its thread route, the mailbox list otherwise.
+const goToMailbox = () =>
+	router.push(
+		route.name === 'mail-all-inboxes-mail'
+			? { name: 'mail-all-inboxes', query: route.query }
+			: { name: 'mail-mailbox', params: { mailbox }, query: route.query },
+	)
 
 // The thread's messages normally arrive from the parent (loaded via `get_threads`). When the open
 // thread isn't in that list (e.g. a search result, or one on another page), fall back to fetching it

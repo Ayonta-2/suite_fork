@@ -115,7 +115,9 @@
 								class="border-l-transparent sm:border-l"
 								:class="{
 									'!bg-surface-blue-1': mail.thread_id === threadID && !isMobile,
+									'!border-l-outline-blue-5': mail.thread_id === focusedThreadID,
 								}"
+								:data-thread-row="mail.thread_id"
 								@set-seen="(seen: boolean) => handleSetSeen(mail, seen)"
 								@archive-thread="handleArchive(mail)"
 								@trash-thread="handleTrash(mail)"
@@ -201,7 +203,12 @@ import {
 import { Breadcrumbs, Button, Dropdown, Tooltip, call, createResource, usePageMeta } from 'frappe-ui'
 
 import { getFormattedDate, raiseOptimisticToast, raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
-import { isNavigationKey, navigationOffset, stepFrom } from '@/apps/mail/utils/listNavigation'
+import {
+	isNavigationKey,
+	navigationOffset,
+	stepFrom,
+	useGPrefix,
+} from '@/apps/mail/utils/listNavigation'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
@@ -414,19 +421,67 @@ const stepOpenThread = (offset: number) => {
 
 // Up/down/j/k walk the list, or the open thread when one is showing. The merged list is flat —
 // no stacks, no day headers, no selection — so a step is just the neighbouring row.
+const gPrefix = useGPrefix()
+
 const handleKeyDown = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
-	if (!isNavigationKey(key) || shouldIgnoreKeypress(e)) return
+	if (shouldIgnoreKeypress(e)) return
 
+	// Escape backs out of the open thread, then clears the cursor.
+	if (key === 'escape') {
+		e.preventDefault()
+		if (threadID) return router.push({ name: 'mail-all-inboxes', query: route.query })
+		focusedThreadID.value = undefined
+		return
+	}
+
+	if (key === 'enter') {
+		if (!focusedThreadID.value) return
+		e.preventDefault()
+		return openThread(focusedThreadID.value)
+	}
+
+	// `g g` to the top, `G` to the bottom of what is loaded.
+	if (key === 'g') {
+		e.preventDefault()
+		const intent = gPrefix.press(e.shiftKey)
+		if (intent === 'first') return goToEdge(0)
+		if (intent === 'last') return goToEdge(-1)
+		return
+	}
+	gPrefix.disarm()
+
+	if (!isNavigationKey(key)) return
 	e.preventDefault()
 	const offset = navigationOffset(key)
 
 	if (threadID) return stepOpenThread(offset)
 
-	// With no thread open the keys still move through the list, opening as they go, which is what
-	// Split View makes useful: the pane follows the cursor.
-	const next = stepFrom(openThreadIDs.value, threadID, offset)
-	if (next) openThread(next)
+	// With no thread open the keys move the cursor without opening anything, as the mailbox list
+	// does — Enter opens what the marker is on.
+	const next = stepFrom(openThreadIDs.value, focusedThreadID.value, offset)
+	if (next) focusThread(next)
+}
+
+// The keyboard cursor: a thread id, since the merged list has no stacks or day headers to land on.
+const focusedThreadID = ref<string>()
+
+const focusThread = (nextThreadID: string) => {
+	focusedThreadID.value = nextThreadID
+	nextTick(() => {
+		document
+			.querySelector(`[data-thread-row="${nextThreadID}"]`)
+			?.scrollIntoView({ block: 'nearest' })
+	})
+}
+
+// `at()` so -1 reads as the last loaded thread. With a thread open the jump opens the edge one;
+// otherwise it just moves the cursor there, mirroring the mailbox list.
+const goToEdge = (index: number) => {
+	const next = openThreadIDs.value.at(index)
+	if (!next) return
+	if (threadID) return openThread(next)
+	focusThread(next)
 }
 
 const openThread = (nextThreadID: string) => {
