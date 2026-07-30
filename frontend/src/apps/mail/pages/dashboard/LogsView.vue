@@ -1,7 +1,7 @@
 <template>
 	<DashboardLayout :breadcrumbs="[{ label: __('Logs') }]">
-		<div class="flex items-center space-x-3">
-			<FormControl v-model="search" :placeholder="__('Search logs')" class="w-80">
+		<div class="flex items-center justify-between gap-3">
+			<FormControl v-model="search" :placeholder="__('Search')" class="w-80">
 				<template #prefix><FeatherIcon name="search" class="text-ink-gray-5 w-4" /></template>
 			</FormControl>
 			<Button :label="__('Refresh')" @click="logs.reload()">
@@ -13,7 +13,7 @@
 			class="flex-1"
 			:columns="LIST_COLUMNS"
 			:rows="rows"
-			:options="LIST_OPTIONS"
+			:options="listOptions"
 			row-key="id"
 		>
 			<ListHeader />
@@ -46,6 +46,7 @@
 				<ListEmptyState v-else />
 			</ListRows>
 		</ListView>
+		<DashboardListSkeleton v-else />
 		<DashboardPager
 			:page="page"
 			:page-length="PAGE_LENGTH"
@@ -75,6 +76,7 @@ import {
 
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 
 type LogRow = {
@@ -145,11 +147,21 @@ const LIST_COLUMNS = [
 	{ label: __('Details'), key: 'details', width: 2 },
 ]
 
-const LIST_OPTIONS = {
+const hasActiveFilters = computed(() => !!search.value)
+
+const listOptions = computed(() => ({
 	selectable: false,
 	showTooltip: false,
 	rowHeight: 44,
-	emptyState: { description: __('No log entries found.') },
+	emptyState: hasActiveFilters.value
+		? {
+				title: __('No matching log entries'),
+				description: __('Try adjusting your search or filters.'),
+			}
+		: {
+				title: __('No log entries'),
+				description: __('Server events will appear here as they happen.'),
+			},
 	getRowRoute: (row: LogRow) => ({ name: 'mail-log', params: { logId: row.id } }),
-}
+}))
 </script>

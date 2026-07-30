@@ -6420,20 +6420,27 @@ function toggleShowFormulas() {
 <!-- Unscoped: frappe-ui's Dropdown teleports its menu to document.body, so
      a scoped rule never reaches it. This caps the menu height (and the
      inner content body Reka renders inside it) so long lists like the
-     number-format picker stay scrollable instead of falling off-screen. -->
+     number-format picker stay scrollable instead of falling off-screen.
+     frappe-ui beta.3 named the teleported menu `.dropdown-content`; beta.25
+     (the version Suite ships) renamed it to `.menu-content` /
+     `[data-reka-menu-content]`, so target every marker or the cap silently
+     stops matching after a frappe-ui bump and the menu clips off-screen. -->
 <style>
 .dropdown-content,
-.dropdown-content [data-slot=content-body] {
+.dropdown-content [data-slot=content-body],
+.menu-content,
+[data-reka-menu-content] {
   max-height: min(60vh, 480px);
   overflow-y: auto;
 }
-/* reka-ui teleports the popover to <body> as `.dropdown-content` (frappe-ui
-   default z-index:50) with no marker we can target, so the slicer's column menu
-   rendered behind the floating slicer (8400) / context menu (9000). Gate the
-   bump on `body:has(.sn-slicer)` — only while a Sheets slicer is floating — so
+/* reka-ui teleports the popover to <body> (frappe-ui default z-index:50) with
+   no marker we can target, so the slicer's column menu rendered behind the
+   floating slicer (8400) / context menu (9000). Gate the bump on
+   `body:has(.sn-slicer)` — only while a Sheets slicer is floating — so
    dropdowns everywhere else in the app (and other Suite products) keep their
    normal stacking. The doubled class still outranks the single-class default. */
-body:has(.sn-slicer) .dropdown-content.dropdown-content { z-index: 9500; }
+body:has(.sn-slicer) .dropdown-content.dropdown-content,
+body:has(.sn-slicer) .menu-content.menu-content { z-index: 9500; }
 
 /* A Frappe UI Dialog draws a translucent (~12% black) scrim over the grid.
    The filter-range outline and pivot-output highlight are full-height dark

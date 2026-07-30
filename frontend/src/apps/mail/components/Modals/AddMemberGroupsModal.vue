@@ -4,7 +4,13 @@
 		:options="{
 			title: __('Add to Groups'),
 			actions: [
-				{ label: __('Add'), variant: 'solid', disabled: !groupIds.length, onClick: addGroups.submit },
+				{
+					label: __('Add'),
+					variant: 'solid',
+					disabled: !groupIds.length,
+					loading: addGroups.loading,
+					onClick: addGroups.submit,
+				},
 			],
 		}"
 	>
@@ -12,7 +18,9 @@
 			<div class="space-y-1.5">
 				<label class="text-ink-gray-5 block text-xs">{{ __('Groups') }}</label>
 				<MultiSelect v-model="groupIds" :options="options" />
-				<ErrorMessage :message="addGroups.error?.messages?.[0] || addGroups.error?.message" />
+				<ErrorMessage
+					:message="addGroups.error && (addGroups.error?.messages?.[0] || addGroups.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

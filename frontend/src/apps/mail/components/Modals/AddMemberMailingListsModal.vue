@@ -4,7 +4,13 @@
 		:options="{
 			title: __('Add to Mailing Lists'),
 			actions: [
-				{ label: __('Add'), variant: 'solid', disabled: !listIds.length, onClick: addLists.submit },
+				{
+					label: __('Add'),
+					variant: 'solid',
+					disabled: !listIds.length,
+					loading: addLists.loading,
+					onClick: addLists.submit,
+				},
 			],
 		}"
 	>
@@ -12,7 +18,9 @@
 			<div class="space-y-1.5">
 				<label class="text-ink-gray-5 block text-xs">{{ __('Mailing Lists') }}</label>
 				<MultiSelect v-model="listIds" :options="options" />
-				<ErrorMessage :message="addLists.error?.messages?.[0] || addLists.error?.message" />
+				<ErrorMessage
+					:message="addLists.error && (addLists.error?.messages?.[0] || addLists.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

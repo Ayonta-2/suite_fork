@@ -3,13 +3,27 @@
 		v-model="show"
 		:options="{
 			title: __('Edit Queued Message'),
-			actions: [{ label: __('Save'), variant: 'solid', onClick: updateMessage.submit }],
+			actions: [
+				{
+					label: __('Save'),
+					variant: 'solid',
+					loading: updateMessage.loading,
+					onClick: updateMessage.submit,
+				},
+			],
 		}"
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl v-model="nextRetry" :label="__('Next Retry')" type="datetime-local" />
-				<ErrorMessage :message="updateMessage.error?.messages?.[0] || updateMessage.error?.message" />
+				<FormControl
+					v-model="nextRetry"
+					:label="__('Next Retry')"
+					type="datetime-local"
+					:description="__('The next delivery attempt is scheduled for this time.')"
+				/>
+				<ErrorMessage
+					:message="updateMessage.error && (updateMessage.error?.messages?.[0] || updateMessage.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

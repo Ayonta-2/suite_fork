@@ -1,27 +1,25 @@
 <template>
-	<DashboardLayout
-		v-if="member.data"
-		:breadcrumbs="BREADCRUMBS"
-		:badge-label="badge.label"
-		:badge-theme="badge.theme"
-	>
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
-		</template>
+	<DashboardLayout :breadcrumbs="BREADCRUMBS" :loading="!member.data">
+		<DashboardDetailHeader
+			:title="member.data.description || member.data.name"
+			:badge-label="badge.label"
+			:badge-theme="badge.theme"
+			:meta="[member.data.name, member.data.is_admin ? __('Admin') : __('User')]"
+		>
+			<template #actions>
+				<Button :label="__('Edit')" @click="showEdit = true" />
+				<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+			</template>
+		</DashboardDetailHeader>
 
 		<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 			<!-- General Information -->
-			<DashboardCard
-				:title="__('General Information')"
-				:button-label="__('Edit')"
-				@action="showEdit = true"
-			>
+			<DashboardCard :title="__('General Information')">
 				<div>
 					<InformationField
 						:label="__('Role')"
 						:value="member.data.is_admin ? __('Admin') : __('User')"
 					/>
-					<InformationField :label="__('Full Name')" :value="member.data.description" />
 					<InformationField :label="__('Locale')" :value="localeLabel(member.data.locale)" />
 					<InformationField :label="__('Time Zone')" :value="member.data.time_zone" />
 					<InformationField :label="__('Last Active')" :value="lastActive" />
@@ -31,53 +29,7 @@
 
 			<!-- Quota Usage -->
 			<DashboardCard :title="__('Quota Usage')" :button-label="__('Edit')" @action="showEditQuota = true">
-				<div class="flex flex-1 items-center justify-center gap-8 p-6">
-					<div class="relative shrink-0">
-						<svg :width="DONUT_SIZE" :height="DONUT_SIZE" class="-rotate-90">
-							<circle
-								:cx="DONUT_SIZE / 2"
-								:cy="DONUT_SIZE / 2"
-								:r="DONUT_RADIUS"
-								fill="none"
-								stroke="var(--surface-gray-4)"
-								:stroke-width="DONUT_STROKE"
-							/>
-							<circle
-								v-if="!member.data.quota.unlimited && usedDashArc > 0"
-								:cx="DONUT_SIZE / 2"
-								:cy="DONUT_SIZE / 2"
-								:r="DONUT_RADIUS"
-								fill="none"
-								stroke="var(--surface-gray-10)"
-								:stroke-width="DONUT_STROKE"
-								stroke-linecap="round"
-								:stroke-dasharray="`${usedDashArc} ${DONUT_CIRCUMFERENCE}`"
-							/>
-						</svg>
-						<div class="absolute inset-0 flex flex-col items-center justify-center text-center">
-							<span class="text-lg font-semibold">{{ totalQuotaLabel }}</span>
-							<span class="text-ink-gray-5 text-xs">
-								{{ member.data.quota.unlimited ? __('Unlimited') : __('Total Quota') }}
-							</span>
-						</div>
-					</div>
-					<div class="space-y-4">
-						<div class="flex items-start gap-2">
-							<span class="bg-surface-gray-10 mt-1 h-3 w-3 shrink-0 rounded-sm" />
-							<div>
-								<p class="text-sm font-medium">{{ usedLabel }}</p>
-								<p class="text-ink-gray-5 text-xs">{{ __('Used') }}</p>
-							</div>
-						</div>
-						<div v-if="!member.data.quota.unlimited" class="flex items-start gap-2">
-							<span class="bg-surface-gray-4 mt-1 h-3 w-3 shrink-0 rounded-sm" />
-							<div>
-								<p class="text-sm font-medium">{{ availableLabel }}</p>
-								<p class="text-ink-gray-5 text-xs">{{ __('Available') }}</p>
-							</div>
-						</div>
-					</div>
-				</div>
+				<QuotaDonut :quota="member.data.quota" />
 			</DashboardCard>
 
 			<!-- Email Addresses -->
@@ -202,21 +154,21 @@
 	<Dialog v-model="showToggleEnabled" :options="TOGGLE_ENABLED_OPTIONS" />
 	<Dialog v-model="showDeleteMember" :options="DELETE_MEMBER_OPTIONS" />
 	<ChangeMemberPasswordModal v-model="showChangePassword" :member-id="memberId" />
-		<EditMemberModal v-if="data" v-model="showEdit" :member="data" @reload="member.reload()" />
-		<EditMemberQuotaModal v-if="data" v-model="showEditQuota" :member="data" @reload="member.reload()" />
-		<AddMemberEmailModal v-model="showAddEmail" :member-id="memberId" @reload="member.reload()" />
-		<AddMemberGroupsModal
-			v-model="showAddGroups"
-			:member-id="memberId"
-			:current-ids="currentGroupIds"
-			@reload="member.reload()"
-		/>
-		<AddMemberMailingListsModal
-			v-model="showAddLists"
-			:member-id="memberId"
-			:current-ids="currentListIds"
-			@reload="member.reload()"
-		/>
+	<EditMemberModal v-if="data" v-model="showEdit" :member="data" @reload="member.reload()" />
+	<EditMemberQuotaModal v-if="data" v-model="showEditQuota" :member="data" @reload="member.reload()" />
+	<AddMemberEmailModal v-model="showAddEmail" :member-id="memberId" @reload="member.reload()" />
+	<AddMemberGroupsModal
+		v-model="showAddGroups"
+		:member-id="memberId"
+		:current-ids="currentGroupIds"
+		@reload="member.reload()"
+	/>
+	<AddMemberMailingListsModal
+		v-model="showAddLists"
+		:member-id="memberId"
+		:current-ids="currentListIds"
+		@reload="member.reload()"
+	/>
 </template>
 
 <script setup lang="ts">
@@ -233,7 +185,7 @@ import {
 	usePageMeta,
 } from 'frappe-ui'
 
-import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import { raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import AddMemberEmailModal from '@/apps/mail/components/Modals/AddMemberEmailModal.vue'
@@ -241,19 +193,15 @@ import AddMemberGroupsModal from '@/apps/mail/components/Modals/AddMemberGroupsM
 import AddMemberMailingListsModal from '@/apps/mail/components/Modals/AddMemberMailingListsModal.vue'
 import ChangeMemberPasswordModal from '@/apps/mail/components/Modals/ChangeMemberPasswordModal.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import EditMemberModal from '@/apps/mail/components/Modals/EditMemberModal.vue'
 import EditMemberQuotaModal from '@/apps/mail/components/Modals/EditMemberQuotaModal.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
+import QuotaDonut from '@/apps/mail/components/QuotaDonut.vue'
 
-type QuotaUsage = {
-	total: number
-	used: number
-	available: number
-	used_percentage: number
-	available_percentage: number
-	unlimited: boolean
-}
+import type { QuotaUsage } from '@/apps/mail/types'
+
 type MemberData = {
 	name: string
 	full_name: string
@@ -290,7 +238,10 @@ const member = createResource({
 	auto: true,
 	makeParams: () => ({ member_id: memberId }),
 	cache: ['mailMember', memberId],
-	onError: () => router.replace({ name: 'mail-members' }),
+	onError: (error: { messages?: string[] }) => {
+		raiseToast(error.messages?.[0] || __('Member not found.'), 'error')
+		router.replace({ name: 'mail-members' })
+	},
 })
 
 const data = computed(() => member.data as MemberData | undefined)
@@ -357,37 +308,6 @@ const formatDate = (value?: string | null) => formatDateTime(value)
 
 const lastActive = computed(() => formatDate(data.value?.last_active) || __('Never'))
 const joinedOn = computed(() => formatDate(data.value?.joined_on))
-
-// Quota donut geometry.
-const DONUT_SIZE = 140
-const DONUT_STROKE = 12
-const DONUT_RADIUS = (DONUT_SIZE - DONUT_STROKE) / 2
-const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS
-
-// Length of the "used" arc. Guarded against sub-pixel arcs (e.g. a few hundred bytes of a
-// multi-GB quota) that a round line cap would otherwise render as a misleading full dot.
-const usedDashArc = computed(() => {
-	const pct = data.value?.quota.used_percentage || 0
-	const arc = DONUT_CIRCUMFERENCE * (pct / 100)
-	return arc >= 1 ? arc : 0
-})
-
-const totalQuotaLabel = computed(() =>
-	data.value?.quota.unlimited ? '∞' : formatBytes(data.value?.quota.total || 0),
-)
-
-const usedLabel = computed(() => {
-	const quota = data.value?.quota
-	if (!quota) return ''
-	if (quota.unlimited) return formatBytes(quota.used)
-	return `${formatBytes(quota.used)} (${quota.used_percentage.toFixed(1)}%)`
-})
-
-const availableLabel = computed(() => {
-	const quota = data.value?.quota
-	if (!quota) return ''
-	return `${formatBytes(quota.available)} (${quota.available_percentage.toFixed(1)}%)`
-})
 
 const BREADCRUMBS = computed(() => [
 	{ label: __('Members'), route: '/mail/dashboard/members' },
@@ -468,7 +388,14 @@ const DELETE_MEMBER_OPTIONS = {
 	message: __('Are you sure you want to delete this member? This action cannot be undone.'),
 	size: 'xl',
 	icon: { name: 'alert-triangle', appearance: 'warning' },
-	actions: [{ label: __('Confirm'), variant: 'solid', onClick: () => deleteMember.submit() }],
+	actions: [
+		{
+			label: __('Confirm'),
+			variant: 'solid',
+			theme: 'red',
+			onClick: () => deleteMember.submit(),
+		},
+	],
 }
 
 const dropdownOptions = computed(() => [

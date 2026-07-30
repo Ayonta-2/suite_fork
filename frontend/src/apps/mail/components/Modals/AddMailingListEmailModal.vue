@@ -4,7 +4,13 @@
 		:options="{
 			title: __('Add Email Address'),
 			actions: [
-				{ label: __('Add'), variant: 'solid', disabled: !(username && domain), onClick: addEmail.submit },
+				{
+					label: __('Add'),
+					variant: 'solid',
+					disabled: !(username && domain),
+					loading: addEmail.loading,
+					onClick: addEmail.submit,
+				},
 			],
 		}"
 	>
@@ -23,12 +29,17 @@
 						:open-on-click="true"
 					/>
 				</div>
+				<p class="text-ink-gray-4 -mt-2 text-xs">
+					{{ __('Mail sent to this address is distributed to the list\'s recipients.') }}
+				</p>
 				<FormControl
 					v-model="description"
 					:label="__('Description')"
 					:placeholder="__('Used as the display name for this address')"
 				/>
-				<ErrorMessage :message="addEmail.error?.messages?.[0] || addEmail.error?.message" />
+				<ErrorMessage
+					:message="addEmail.error && (addEmail.error?.messages?.[0] || addEmail.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

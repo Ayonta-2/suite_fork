@@ -3,13 +3,23 @@
 		v-model="show"
 		:options="{
 			title: __('Add Recipient'),
-			actions: [{ label: __('Add'), variant: 'solid', disabled: !email, onClick: addRecipient.submit }],
+			actions: [
+				{
+					label: __('Add'),
+					variant: 'solid',
+					disabled: !email,
+					loading: addRecipient.loading,
+					onClick: addRecipient.submit,
+				},
+			],
 		}"
 	>
 		<template #body-content>
 			<div class="space-y-4">
 				<FormControl v-model="email" :label="__('Email')" type="email" placeholder="someone@example.com" />
-				<ErrorMessage :message="addRecipient.error?.messages?.[0] || addRecipient.error?.message" />
+				<ErrorMessage
+					:message="addRecipient.error && (addRecipient.error?.messages?.[0] || addRecipient.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>
