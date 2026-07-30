@@ -36,7 +36,6 @@ import { initSocket } from '@/apps/drive/socket'
 import { FrappeUIProvider } from 'frappe-ui'
 import { useRoute } from 'vue-router'
 import { setupTheme } from '@/utils/setupTheme'
-import '@/apps/drive/index.css'
 
 // Provided from the route-group layout since the suite main.ts is shared.
 provide('emitter', emitter)
