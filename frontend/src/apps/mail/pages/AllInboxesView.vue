@@ -723,7 +723,11 @@ const moveOpenThread = (mailboxId: string) => {
 	if (mailboxId === row.archive) return handleArchive(row)
 	if (mailboxId === row.trash) return handleTrash(row)
 	const restore = removeFromList(row)
-	raiseOptimisticToast(moveThreadOut(row, mailboxId, restore), __('Thread moved.'))
+	const folder = folderName(mailboxId)
+	raiseOptimisticToast(
+		moveThreadOut(row, mailboxId, restore),
+		folder ? __('Thread moved to {0}.', [folder]) : __('Thread moved.'),
+	)
 }
 
 const groupedThreads = computed<Record<string, Thread[]>>(() =>
@@ -862,6 +866,7 @@ const syncFolderTag = (mailboxId: string, add: boolean) => {
 const handleAddToMailbox = (mailboxId: string) => {
 	const thread = openRow.value
 	if (!thread) return
+	const folder = folderName(mailboxId)
 	syncFolderTag(mailboxId, true)
 	raiseOptimisticToast(
 		paneCall('add_mails_to_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }).catch(
@@ -870,13 +875,14 @@ const handleAddToMailbox = (mailboxId: string) => {
 				throw error
 			},
 		),
-		__('Thread added to folder.'),
+		folder ? __('Thread added to {0}.', [folder]) : __('Thread added to folder.'),
 	)
 }
 
 const handleRemoveFromMailbox = (mailboxId: string) => {
 	const thread = openRow.value
 	if (!thread) return
+	const folder = folderName(mailboxId)
 	syncFolderTag(mailboxId, false)
 	raiseOptimisticToast(
 		paneCall('remove_mails_from_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }).catch(
@@ -885,7 +891,7 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
 				throw error
 			},
 		),
-		__('Thread removed from folder.'),
+		folder ? __('Thread removed from {0}.', [folder]) : __('Thread removed from folder.'),
 	)
 }
 
@@ -935,12 +941,17 @@ const runMailRemoval = (mail: Mail, request: () => Promise<unknown>, success: st
 	)
 }
 
-const handleMailMove = (mail: Mail, target: string) =>
+const folderName = (mailboxId: string) =>
+	store.mailboxes.data?.find((m: MailboxData) => m.id === mailboxId)?._name
+
+const handleMailMove = (mail: Mail, target: string) => {
+	const folder = folderName(target)
 	runMailRemoval(
 		mail,
 		() => paneCall('move_mails', { ids: [mail.id], mailbox: target }),
-		__('Mail moved.'),
+		folder ? __('Mail moved to {0}.', [folder]) : __('Mail moved.'),
 	)
+}
 
 const handleMailSpam = (mail: Mail, spam: boolean) =>
 	runMailRemoval(
