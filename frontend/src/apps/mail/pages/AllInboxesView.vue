@@ -560,6 +560,7 @@ const moveOpenThread = (mailboxId: string) => {
 	if (!row) return
 	if (mailboxId === row.archive) return handleArchive(row)
 	if (mailboxId === row.trash) return handleTrash(row)
+	goToNextThreadOrClose(row.thread_id)
 	const restore = removeFromList(row)
 	const folder = folderName(mailboxId)
 	raiseOptimisticToast(
@@ -608,13 +609,17 @@ const removeFromList = (thread: Thread) => {
 // thread route carries accountId so the router has already switched, but passing it explicitly keeps
 // these correct if that ever stops being true. Mailbox ids come from the store, which is the row's
 // account for the same reason.
-const paneCall = (method: string, params: Record<string, unknown>) => {
-	const account = openRow.value?.account
-	// Every pane action reads its account off the row, so a deep-linked thread outside the loaded window
-	// has none to act within. Refuse rather than firing `account: undefined` at the server and having it
-	// fail silently — the caller's optimistic update rolls back and the toast says so.
-	if (!account) return Promise.reject(new Error(__('Thread is no longer in the list.')))
-	return call(`suite.mail.api.mail.${method}`, { account, ...params })
+// `account` must be captured by the caller BEFORE its optimistic update, not resolved here: the
+// removals take the row out of the list first, and openRow is derived from that list — so by the
+// time the request fires the row it names is already gone. Falling back to openRow only covers the
+// actions that leave the row in place.
+//
+// A deep-linked thread outside the loaded window has no account to act within either; refuse rather
+// than firing `account: undefined` at the server and having it fail silently.
+const paneCall = (method: string, params: Record<string, unknown>, account?: string) => {
+	const acting = account ?? openRow.value?.account
+	if (!acting) return Promise.reject(new Error(__('Thread is no longer in the list.')))
+	return call(`suite.mail.api.mail.${method}`, { account: acting, ...params })
 }
 
 const messageIdsOf = (thread: Thread) => thread.messages?.map((m) => m.id) ?? [thread.id]
@@ -679,7 +684,11 @@ const handleAddToMailbox = (mailboxId: string) => {
 	setUndoAction(undoAction)
 
 	raiseOptimisticToast(
-		paneCall('add_mails_to_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }).catch(
+		paneCall(
+			'add_mails_to_mailbox',
+			{ ids: messageIdsOf(thread), mailbox_id: mailboxId },
+			thread.account,
+		).catch(
 			(error) => {
 				syncFolderTag(mailboxId, false)
 				throw error
@@ -709,7 +718,11 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
 	setUndoAction(undoAction)
 
 	raiseOptimisticToast(
-		paneCall('remove_mails_from_mailbox', { ids: messageIdsOf(thread), mailbox_id: mailboxId }).catch(
+		paneCall(
+			'remove_mails_from_mailbox',
+			{ ids: messageIdsOf(thread), mailbox_id: mailboxId },
+			thread.account,
+		).catch(
 			(error) => {
 				syncFolderTag(mailboxId, true)
 				throw error
@@ -725,10 +738,12 @@ const handleSetSpamStatus = (spam: boolean) => {
 	if (!thread) return
 	const restore = removeFromList(thread)
 	raiseOptimisticToast(
-		paneCall('set_mails_spam_status', { ids: messageIdsOf(thread), spam }).catch((error) => {
-			restore()
-			throw error
-		}),
+		paneCall('set_mails_spam_status', { ids: messageIdsOf(thread), spam }, thread.account).catch(
+			(error) => {
+				restore()
+				throw error
+			},
+		),
 		spam ? __('Thread marked as junk.') : __('Thread marked as not junk.'),
 	)
 }
@@ -754,9 +769,8 @@ const paneScope = useAccountScope(() => openRow.value?.account)
 const folderName = (mailboxId: string) =>
 	paneScope.mailboxes.value.data?.find((m: MailboxData) => m.id === mailboxId)?._name
 
-const undoMail = (mail: Mail) => {
+const undoMail = (mail: Mail, account?: string) => {
 	const snapshot = mailSnapshot(mail)
-	const account = openRow.value?.account
 	return {
 		undoReq: () => restoreMails(account!, [snapshot]),
 		undoSuccess: __('Mail restored.'),
@@ -764,22 +778,25 @@ const undoMail = (mail: Mail) => {
 }
 
 const handleMailMove = (mail: Mail, target: string) => {
+	const account = openRow.value?.account
 	const folder = folderName(target)
 	runMailRemoval(
 		mail,
-		() => paneCall('move_mails', { ids: [mail.id], mailbox: target }),
+		() => paneCall('move_mails', { ids: [mail.id], mailbox: target }, account),
 		folder ? __('Mail moved to {0}.', [folder]) : __('Mail moved.'),
-		undoMail(mail),
+		undoMail(mail, account),
 	)
 }
 
-const handleMailSpam = (mail: Mail, spam: boolean) =>
+const handleMailSpam = (mail: Mail, spam: boolean) => {
+	const account = openRow.value?.account
 	runMailRemoval(
 		mail,
-		() => paneCall('set_mails_spam_status', { ids: [mail.id], spam }),
+		() => paneCall('set_mails_spam_status', { ids: [mail.id], spam }, account),
 		spam ? __('Mail marked as junk.') : __('Mail marked as not junk.'),
-		undoMail(mail),
+		undoMail(mail, account),
 	)
+}
 
 const handleMailDelete = (mail: Mail) =>
 	runMailRemoval(
@@ -848,6 +865,17 @@ const handleSetFlagged = (thread: Thread, flagged: boolean, ids: string[] = [thr
 // The row is already dropped optimistically by the caller, so move on the server directly. On success just
 // refresh counts (the row and its server row are both gone, so the append offset stays aligned and scroll is
 // preserved). On failure, restore the row in place via the passed closure; rethrow so the toast reports the error.
+// Acting on the open thread from the pane should leave you on the next one, not on a thread that
+// is no longer in the list. Resolved before the row is removed, so the index is still meaningful;
+// falls back to closing the pane at the end of the list. Mirrors MailboxView.
+const goToNextThreadOrClose = (movedThreadID: string) => {
+	if (threadID !== movedThreadID) return
+	const ids = openThreadIDs.value
+	const next = ids.slice(ids.indexOf(movedThreadID) + 1).find((id) => id !== movedThreadID)
+	if (next) openThread(next)
+	else closeThread()
+}
+
 // Undo restores each mail's exact mailbox set and junk flag rather than guessing an inverse: a
 // thread that sat in two folders has to come back to both, and un-junking is not the same as moving.
 const mailSnapshot = (mail: Mail) => ({
@@ -885,6 +913,7 @@ const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) =>
 
 const handleArchive = (thread: Thread) => {
 	if (!thread.archive) return raiseToast(__('No Archive folder for this account.'), 'error')
+	goToNextThreadOrClose(thread.thread_id)
 	const restore = removeFromList(thread)
 	raiseOptimisticToast(
 		moveThreadOut(thread, thread.archive!, restore),
@@ -895,6 +924,7 @@ const handleArchive = (thread: Thread) => {
 
 const handleTrash = (thread: Thread) => {
 	if (!thread.trash) return raiseToast(__('No Trash folder for this account.'), 'error')
+	goToNextThreadOrClose(thread.thread_id)
 	const restore = removeFromList(thread)
 	raiseOptimisticToast(
 		moveThreadOut(thread, thread.trash!, restore),
