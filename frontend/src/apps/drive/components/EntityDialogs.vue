@@ -9,8 +9,7 @@
     v-else-if="dialog === 'm'"
     v-model="dialog"
     :entities="entities"
-    @success="onMoveSuccess"
-    @complete="entityOpen && resource?.fetch?.(resource.params)"
+    @complete="onMoveComplete"
   />
   <InfoDialog
     v-else-if="dialog === 'i'"
@@ -21,7 +20,6 @@
 
 <script setup>
 import { computed } from 'vue'
-import { setPageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
 
 import { ShareDialog, MoveDialog, InfoDialog } from '@/apps/drive/ui/drive'
 
@@ -43,10 +41,8 @@ const entityOpen = computed(
 
 const resetDialog = () => (dialog.value = '')
 
-function onMoveSuccess() {
-  if (entityOpen.value) {
-    setPageBreadcrumbs({ loading: true, name: props.resource.data.name })
-  }
+function onMoveComplete() {
+  if (entityOpen.value) props.resource?.fetch?.(props.resource.params)
   resetDialog()
 }
 </script>

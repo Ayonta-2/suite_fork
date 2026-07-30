@@ -1,8 +1,8 @@
 <template>
-  <nav v-if="breadcrumbItems?.length" id="navbar" ondragstart="return false;" ondrop="return false;"
-    class="bg-surface-base border-b px-5 py-2.5 h-12 flex justify-between">
+  <nav id="navbar" ondragstart="return false;" ondrop="return false;"
+    class="bg-surface-base border-b px-5 py-2.5 h-12 shrink-0 flex justify-between">
     <slot name="breadcrumbs">
-      <EditableBreadcrumbs :items="breadcrumbItems" :entity="rootEntity || null"
+      <EditableBreadcrumbs v-if="breadcrumbItems?.length" :items="breadcrumbItems" :entity="rootEntity || null"
         class="select-none truncate max-w-[80%]">
         <template #prefix="{ item }">
           <Skeleton v-if="item.loading" class="h-4 w-16 rounded" />

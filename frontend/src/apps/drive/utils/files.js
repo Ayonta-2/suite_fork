@@ -1,16 +1,7 @@
 import router from '@/apps/drive/router'
 
-import {
-  appendBreadcrumb,
-  applyBreadCrumbs,
-  isHomeContext,
-} from '@/apps/drive/data/breadcrumbs'
+import { isHomeContext } from '@/apps/drive/data/breadcrumbs'
 import { currentFolder } from '@/apps/drive/data/currentFolder'
-
-export {
-  applyBreadCrumbs as setBreadCrumbs,
-  buildBreadCrumbs,
-} from '@/apps/drive/data/breadcrumbs'
 import { formatSize } from '@/apps/drive/utils/format'
 import { nextTick } from 'vue'
 import { useTimeAgo } from '@vueuse/core'
@@ -135,16 +126,6 @@ export const openEntity = (entity, new_tab = false) => {
   if (new_tab) {
     return window.open(getFileLink(entity, false), '_blank')
   }
-  if (!['Link', 'Presentation'].includes(entity.file_type) && !isSheet(entity)) {
-    if (!entity.breadcrumbs?.length)
-      appendBreadcrumb({
-        label: entity.file_name,
-        name: entity.name,
-        route: null,
-      })
-    else applyBreadCrumbs(entity)
-  }
-
   // hm?
   if (entity.name === '') {
     router.push({

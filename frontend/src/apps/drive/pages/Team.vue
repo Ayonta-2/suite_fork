@@ -19,7 +19,6 @@
 import GenericPage from '@/apps/drive/components/GenericPage.vue'
 import { getTeam, getTeams, getPublicTeams } from '@/apps/drive/resources/files'
 import { useSessionStore } from '@/boot/session'
-import { setPageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
 import { setCurrentFolder } from '@/apps/drive/data/currentFolder'
 import { useRoute } from 'vue-router'
 import LucideBuilding2 from '~icons/lucide/building-2'
@@ -43,18 +42,5 @@ const write = computed(
     teamData.value?.users?.find((k) => k.user === useSessionStore().user)
       ?.access_level > 0
 )
-watch(() => getPublicTeams.data, console.log)
 if (!getPublicTeams.data) getPublicTeams.fetch()
-watch(
-  teamData,
-  (t) =>
-    t &&
-    setPageBreadcrumbs([
-      {
-        label: t.title,
-        name: t.name,
-      },
-    ]),
-  { immediate: true }
-)
 </script>

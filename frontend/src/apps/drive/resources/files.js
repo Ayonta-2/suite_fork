@@ -2,7 +2,7 @@ import { createResource } from 'frappe-ui'
 import { toast } from '@/apps/drive/utils/toasts'
 import { openEntity, setTitle } from '@/apps/drive/utils/files'
 import { activeEntity } from '@/apps/drive/data/selection'
-import { updateLastBreadcrumbLabel } from '@/apps/drive/data/breadcrumbs'
+import { renameCrumbEntity } from '@/apps/drive/data/breadcrumbs'
 import { getSortOrder } from '@/apps/drive/data/prefs'
 import {
   prettyData,
@@ -286,10 +286,7 @@ export const rename = createResource({
     }
   },
   onSuccess: () => {
-    updateLastBreadcrumbLabel(
-      rename.params.new_title,
-      rename.params.entity_name,
-    )
+    renameCrumbEntity(rename.params.entity_name, rename.params.new_title)
     if (activeEntity.value?.name === rename.params.entity_name) {
       activeEntity.value.file_name = rename.params.new_title
       activeEntity.value.modified = new Date()

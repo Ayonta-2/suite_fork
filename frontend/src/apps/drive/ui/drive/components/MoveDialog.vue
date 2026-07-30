@@ -20,8 +20,10 @@
               <TeamSelector v-if="tabIndex === 1" v-model="chosenTeam" class="mb-2" />
               <Tree v-if="tree.children.length" :nodes="tree.children" node-key="value" guides="none">
                 <template #item="{ node, expanded, hasChildren, toggle }">
-                  <div class="group grow min-w-0 flex items-center gap-2"
-                    :class="entities[0].folder === node.value ? 'cursor-not-allowed' : 'cursor-pointer'"
+                  <div class="group grow min-w-0 flex items-center gap-2 rounded-md px-1 -mx-1"
+                    :class="entities[0].folder === node.value
+                      ? 'cursor-not-allowed'
+                      : 'cursor-pointer hover:bg-surface-gray-2'"
                     @click.stop="openEntity(node)">
                     <button v-if="hasChildren" class="flex shrink-0 text-ink-gray-5 hover:text-ink-gray-8"
                       @click.stop="

@@ -37,9 +37,13 @@
 
 <script setup>
 import { setActiveEntity } from '@/apps/drive/data/selection'
-import { pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
+import {
+  pageBreadcrumbs,
+  setCrumbEntity,
+  clearCrumbEntity,
+} from '@/apps/drive/data/breadcrumbs'
 import Navbar from '@/apps/drive/components/Navbar.vue'
-import { ref, computed, onMounted, defineProps } from 'vue'
+import { ref, computed, onMounted, onUnmounted, defineProps } from 'vue'
 import { Button } from 'frappe-ui'
 import FileRender from '@/apps/drive/components/FileRender.vue'
 import FilePreviewSkeleton from '@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue'
@@ -49,7 +53,6 @@ import LucideScan from '~icons/lucide/scan'
 import { onKeyStroke } from '@vueuse/core'
 import {
   prettyData,
-  setBreadCrumbs,
   enterFullScreen,
   updateURLSlug,
   isWriterDocument,
@@ -107,10 +110,12 @@ const onSuccess = async (entity) => {
     window.location.href = '/writer/w/' + entity.name
   }
   document.title = entity.file_name
-  setBreadCrumbs(entity)
+  setCrumbEntity(entity)
   updateURLSlug(entity.file_name)
   trackVisit.submit({ entity_name: entity.name })
 }
+
+onUnmounted(() => clearCrumbEntity(props.entityName))
 
 const trackVisit = createResource({
   url: 'suite.drive.api.files.track_visit',
