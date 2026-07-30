@@ -45,7 +45,16 @@
 			/>
 		</div>
 
-		<div class="grow truncate" :class="isFullWidth ? 'flex items-center space-x-3' : 'space-y-1'">
+		<!-- The leading column set the row's height in the wide layout; without it (hideAvatar)
+		     rows shrank to their text and no longer lined up with the day headers. Hold that
+		     height here so the rhythm survives the column going away. -->
+		<div
+			class="grow truncate"
+			:class="[
+				isFullWidth ? 'flex items-center space-x-3' : 'space-y-1',
+				{ 'min-h-8': isFullWidth && !showLeading },
+			]"
+		>
 			<div
 				v-if="showSender"
 				class="flex items-center"
