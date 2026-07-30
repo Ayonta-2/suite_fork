@@ -3,6 +3,7 @@ import frappe
 from suite.drive.utils import (
 	GENERAL_USER,
 	PERMISSION_TYPES,
+	STATUS_ACTIVE,
 	get_new_file_name,
 	get_root_folder,
 	get_user_folder,
@@ -71,13 +72,19 @@ def _to_user_folder(root, home, team):
 
 
 def _to_shared_folder(root, home, team):
+	# Dedupe against every sibling, not just Folder-typed ones: legacy team
+	# roots often have no file_type, so a type-filtered lookup misses them and
+	# two same-titled teams both keep their name.
 	frappe.db.set_value(
 		"File",
 		home,
 		{
 			"folder": root.name,
-			"file_name": get_new_file_name(team.title or team.name, root.name, "Folder"),
+			"file_name": get_new_file_name(team.title or team.name, root.name),
 			"owner": team.owner,
+			"is_folder": 1,
+			"file_type": "Folder",
+			"status": STATUS_ACTIVE,
 		},
 		update_modified=False,
 	)
