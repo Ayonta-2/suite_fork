@@ -255,9 +255,11 @@ const showAddTo = computed(() =>
 	threadMailboxes.value.every((m) => ![mailboxIds.value.junk, mailboxIds.value.trash].includes(m)),
 )
 
+// Default to [] rather than undefined: in All Inboxes the pane's mailbox resource belongs to the
+// row's account and is still loading on first paint, and AdaptiveDropdown requires an array.
 const addToOptions = computed(() =>
-	mailboxes.value.data
-		?.filter(
+	(mailboxes.value.data ?? [])
+		.filter(
 			(m) =>
 				(!m.role || ['inbox', 'archive'].includes(m.role)) &&
 				m.id !== mailboxIds.value.screener &&
@@ -267,8 +269,8 @@ const addToOptions = computed(() =>
 )
 
 const removeFromOptions = computed(() =>
-	mailboxes.value.data
-		?.filter(
+	(mailboxes.value.data ?? [])
+		.filter(
 			(m) =>
 				threadMailboxesUnion.value.includes(m.id) &&
 				![mailboxIds.value.sent, mailboxIds.value.drafts].includes(m.id),
@@ -283,8 +285,8 @@ const moveToOptions = computed(() => {
 		mailboxIds.value.screener,
 		...threadMailboxes.value,
 	])
-	return mailboxes.value.data
-		?.filter((m) => !excludedMailboxes.has(m.id))
+	return (mailboxes.value.data ?? [])
+		.filter((m) => !excludedMailboxes.has(m.id))
 		.map((m) => getMailboxOption(m, 'moveThread'))
 })
 
