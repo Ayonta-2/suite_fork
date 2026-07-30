@@ -55,11 +55,7 @@ export const getSiteFiles = createResource({
   ...COMMON_OPTIONS,
   url: 'suite.drive.api.list.files',
   cache: 'site-folder-contents',
-  makeParams: (params) => ({ ...params, entity_name: 'Home' }),
-  transform(data) {
-    data = COMMON_OPTIONS.transform(data)
-    return data.filter((k) => k.name !== 'Home/Attachments')
-  },
+  makeParams: (params) => ({ ...params, entity_name: rootInfo.data?.root }),
 })
 
 export const getAttachments = createResource({
