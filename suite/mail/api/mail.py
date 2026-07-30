@@ -37,6 +37,7 @@ from suite.mail.doctype.mailbox_settings.mailbox_settings import (
 	set_mailbox_settings,
 )
 from suite.mail.doctype.screened_email_address.screened_email_address import (
+	get_global_accepted_domains,
 	get_global_screened_email_addresses,
 	get_screened_email_addresses,
 )
@@ -1225,6 +1226,11 @@ def auto_accept_recipients(account: str, recipients: list) -> None:
 			return
 
 		emails = list({r.email for r in recipients if getattr(r, "email", None)})
+		if emails:
+			# Recipients whose domain a global Accepted rule already covers need no account-level
+			# rule — the global rule already lets their replies through.
+			accepted_domains = get_global_accepted_domains()
+			emails = [e for e in emails if e.split("@")[-1].lower() not in accepted_domains]
 		if emails:
 			_screen_email_addresses(account, emails, action="Accepted", override=False)
 	except Exception:

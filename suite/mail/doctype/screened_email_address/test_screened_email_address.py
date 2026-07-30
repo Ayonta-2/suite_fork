@@ -70,6 +70,19 @@ class IntegrationTestScreenedEmailAddress(IntegrationTestCase):
 		self.assertEqual(actions["@trusted.com"], "Reject")
 		self.assertEqual(actions["spammer@junk.com"], "Reject")
 
+	def test_global_accepted_domains(self):
+		from suite.mail.doctype.screened_email_address.screened_email_address import (
+			get_global_accepted_domains,
+		)
+
+		self._insert_global_rule("@Trusted.com", "Accepted")
+		self._insert_global_rule("@blocked.com", "Reject")
+		self._insert_global_rule("someone@accepted.com", "Accepted")
+
+		# Only Accepted '@domain' rules count — Reject domains and exact-address rules don't —
+		# and the domain comes back lowercased without the '@' prefix.
+		self.assertEqual(get_global_accepted_domains(), {"trusted.com"})
+
 	def test_duplicate_global_screened_email(self):
 		self._insert_global_rule("dup@example.com", "Reject")
 

@@ -138,6 +138,17 @@ def get_global_screened_email_addresses() -> list[dict]:
 	)
 
 
+def get_global_accepted_domains() -> set[str]:
+	"""Returns the domains (lowercased, without the '@' prefix) covered by a global Accepted
+	'@domain' rule — senders from these domains already reach every account's inbox."""
+
+	return {
+		row.email[1:].lower()
+		for row in get_global_screened_email_addresses()
+		if row.action == "Accepted" and row.email.startswith("@")
+	}
+
+
 def get_effective_screened_email_addresses(account: str) -> list[dict]:
 	"""Returns the screened email addresses in effect for the account: the global rules overlaid with
 	the account's own, where the account's rule wins when both screen the same email or domain.
