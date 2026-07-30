@@ -7,6 +7,7 @@ from suite.drive.utils import (
 	get_new_file_name,
 	get_previous_teams_folder,
 	get_root_folder,
+	get_site_folder,
 	get_user_folder,
 )
 
@@ -27,6 +28,7 @@ def execute():
 		return
 
 	root = get_root_folder()
+	get_site_folder()
 	previous_teams = get_previous_teams_folder()
 
 	teams = frappe.get_all(
