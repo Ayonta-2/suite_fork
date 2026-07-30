@@ -89,7 +89,7 @@
 							<div
 								class="text-ink-gray-6 flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
 								:class="{
-									'cursor-pointer': !isLastGroup(key),
+									'sm:hover:bg-surface-gray-1': !isLastGroup(key),
 									'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
 								}"
 								:data-row-key="`group:${key}`"
@@ -650,10 +650,18 @@ const isLastGroup = (key: string) => Object.keys(groupedThreads.value).at(-1) ==
 const collapsedGroups = ref<string[]>([])
 
 const toggleGroupCollapse = (key: string) => {
+	// The cursor follows the click, as it does when you open a mail — above the
+	// last-group guard, so clicking a header that can't fold still takes it.
+	focusedRowKey.value = `group:${key}`
 	if (isLastGroup(key)) return
+
 	if (collapsedGroups.value.includes(key))
-		collapsedGroups.value = collapsedGroups.value.filter((d) => d !== key)
-	else collapsedGroups.value.push(key)
+		return (collapsedGroups.value = collapsedGroups.value.filter((d) => d !== key))
+
+	collapsedGroups.value.push(key)
+	// Don't leave the reading pane pointing at a row we just hid.
+	if (groupedThreads.value[key]?.some((t: Thread) => t.thread_id === threadID))
+		router.push({ name: 'mail-all-inboxes', query: route.query })
 }
 
 watch(groupMessagesBy, () => (collapsedGroups.value = []))
