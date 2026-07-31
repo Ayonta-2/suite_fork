@@ -48,6 +48,16 @@ def execute():
 	print(f"Drive: queued the sidecar sweep for {len(sidecars)} old prefix(es)")
 
 
+def _remember_route(team, entity):
+	"""Old links point at /drive/t/<team>, and the team id dies with the doctype.
+	Keep the mapping so those links can still be resolved."""
+	if frappe.db.exists("Drive Legacy Route", team):
+		return
+	frappe.get_doc(
+		{"doctype": "Drive Legacy Route", "old_id": team, "entity": entity}
+	).insert(ignore_permissions=True)
+
+
 def _trashed_by_team():
 	"""{team: {file_name: id}} — trashed blobs were keyed by name, per team."""
 	if not frappe.db.has_column("File", "team"):
@@ -95,6 +105,7 @@ def _collapse_teams():
 		home = frappe.db.get_value("File", {"team": team.name, "folder": ("is", "not set")}, "name")
 		if not home or home in roots:
 			continue
+		_remember_route(team.name, home)
 		members = frappe.get_all(
 			"Drive Team Member",
 			filters={"parenttype": "Drive Team", "parent": team.name},
