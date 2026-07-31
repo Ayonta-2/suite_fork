@@ -13,6 +13,7 @@ from suite.drive.utils import (
 	STATUS_ACTIVE,
 	STATUS_TRASHED,
 	entity_kind,
+	get_principals,
 	get_user_folder,
 	hide_storage_key,
 )
@@ -42,12 +43,16 @@ def _apply_shared_filter(query, shared_type):
 		return query
 
 	user = frappe.session.user if frappe.session.user != "Guest" else ""
-	shared_user = user if shared_type == "with" else ""
-	cond = (
-		(DrivePermission.entity == DriveFile.name)
-		& (DrivePermission.user == shared_user)
-		& (DrivePermission.deny == 0)
-	)
+	if shared_type == "with":
+		# Every principal a share can name them by except the site-wide ones: a
+		# folder shared with a group is shared with them, and would otherwise be
+		# reachable but findable nowhere. $GENERAL and link rows are excluded, or
+		# everything shared site-wide would land here.
+		principals = [p for p in get_principals(user) if p and p != GENERAL_USER]
+		match = DrivePermission.user.isin(principals)
+	else:
+		match = DrivePermission.user == ""
+	cond = (DrivePermission.entity == DriveFile.name) & match & (DrivePermission.deny == 0)
 	return query.right_join(DrivePermission).on(cond)
 
 
