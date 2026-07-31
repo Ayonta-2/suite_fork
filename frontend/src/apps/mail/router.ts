@@ -113,8 +113,10 @@ function installMailGuard(r: Router) {
 			if (!mailboxExists) return defaultRoute
 		}
 
-		// Expand shortcut routes to their full account-scoped equivalents.
-		if (to.meta.shortcut) return resolveShortcut(to.name, to.params, accountId, defaultRoute)
+		// Expand shortcut routes to their full account-scoped equivalents. The
+		// query rides along — it can carry a compose deep link (?compose=1&to=).
+		if (to.meta.shortcut)
+			return { ...resolveShortcut(to.name, to.params, accountId, defaultRoute), query: to.query }
 
 		// Login pages redirect already-authenticated users to their mailbox.
 		if (to.meta.isLogin) return defaultRoute
