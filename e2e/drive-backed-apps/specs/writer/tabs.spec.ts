@@ -73,6 +73,43 @@ test("mobile tab bar reflects added tabs and switches the active panel", async (
 	await expect(page.locator(`[data-tab-id="${ids[1]}"]`)).toBeHidden();
 });
 
+// The tab menu is reachable by right-click, but also from an explicit "..."
+// button on the active tab — the only affordance touch users and anyone who
+// doesn't think to right-click will find.
+test("the tab menu button renames the active tab", async ({ owner, run }) => {
+	const { page } = owner;
+	const file = await createWriterDocument(
+		page.request,
+		uniqueWriterTitle(run.run_id, "tabs-menu"),
+	);
+	await page.addInitScript(() => window.localStorage.setItem("showToc", "true"));
+	await openWriterDocument(page, file.name);
+
+	await addTab(page, "alpha", true);
+	await addTab(page, "bravo");
+	// The menu button only exists on the active tab, which is the one just added.
+	const menuButton = page.getByRole("button", { name: "Tab options" });
+	await expect(menuButton).toHaveCount(1);
+
+	await menuButton.click();
+	await page.getByRole("menuitem", { name: "Rename" }).click();
+
+	const input = page.getByRole("textbox", { name: "Tab name" });
+	await expect(input).toBeVisible();
+	await input.fill("renamed");
+	await input.press("Enter");
+
+	await expect(input).toBeHidden();
+	await expect(tocTabs(page)).toHaveText(["alpha", "renamed"]);
+	// The panel keeps its content and follows the new label.
+	await expect(tabPanel(page, "renamed")).toContainText("bravo");
+
+	// Persisted in the stored document.
+	await page.reload();
+	await expect(writerEditor(page)).toBeVisible();
+	await expect(tocTabs(page)).toHaveText(["alpha", "renamed"]);
+});
+
 // Reordering used to delete the tab node and re-insert a copy, which Yjs cannot
 // merge as a move: the tab could end up duplicated, with its content split
 // across both copies. Order now lives in an attribute and nodes never move.

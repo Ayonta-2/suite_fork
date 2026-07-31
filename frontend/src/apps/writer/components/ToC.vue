@@ -25,27 +25,36 @@
           " class="h-8 my-0.5 border border-dashed rounded-sm mx-2" />
           <div v-if="editingTabId === tab.id && delayedEdit" class="flex items-center">
             <TextInput v-model="editingTabLabel" v-on-outside-click="() => finishRenaming(false)" autofocus
-              @keydown.enter="finishRenaming(false)" @keydown.esc="finishRenaming(true)" class="w-full">
+              aria-label="Tab name" @keydown.enter="finishRenaming(false)" @keydown.esc="finishRenaming(true)"
+              class="w-full">
               <template #prefix>
                 <LucideFileText class="size-4" />
               </template>
             </TextInput>
           </div>
           <component v-else :is="tab.id === activeTabId ? ContextMenu : 'div'" :options="tabActions">
-            <Button variant="ghost" class="w-full !text-ink-gray-5 !justify-start cursor-grab active:cursor-grabbing"
-              :class="tab.id === activeTabId && 'font-medium !text-ink-gray-8'" :label="tab.label" @click="
-                tab.id !== activeTabId && editor.commands.changeTab(tab.id)
-                " :draggable="editor.isEditable" @dragstart="onDragStart($event, tab, index)"
-              @dragend.prevent="onDragEnd">
-              <template #prefix>
-                <span v-if="tab.id === activeTabId && currentTabAnchors.length" role="button"
-                  class="shrink-0 cursor-pointer" @click.stop="showHeadings = !showHeadings">
-                  <LucideChevronRight class="size-4 transition-transform duration-200"
-                    :class="showHeadings && 'rotate-90'" />
-                </span>
-                <LucideFileText v-else class="size-4 shrink-0" />
-              </template>
-            </Button>
+            <div class="relative">
+              <Button variant="ghost" class="w-full !text-ink-gray-5 !justify-start cursor-grab active:cursor-grabbing"
+                :class="[
+                  tab.id === activeTabId && 'font-medium !text-ink-gray-8',
+                  tab.id === activeTabId && editor.isEditable && 'pr-7',
+                ]" :label="tab.label" @click="
+                  tab.id !== activeTabId && editor.commands.changeTab(tab.id)
+                  " :draggable="editor.isEditable" @dragstart="onDragStart($event, tab, index)"
+                @dragend.prevent="onDragEnd">
+                <template #prefix>
+                  <span v-if="tab.id === activeTabId && currentTabAnchors.length" role="button"
+                    class="shrink-0 cursor-pointer" @click.stop="showHeadings = !showHeadings">
+                    <LucideChevronRight class="size-4 transition-transform duration-200"
+                      :class="showHeadings && 'rotate-90'" />
+                  </span>
+                  <LucideFileText v-else class="size-4 shrink-0" />
+                </template>
+              </Button>
+              <Button v-if="tab.id === activeTabId && editor.isEditable" variant="ghost"
+                class="absolute right-0.5 top-1/2 -translate-y-1/2" :icon="LucideEllipsisVertical" label="Tab options"
+                @click.stop="openTabMenu" />
+            </div>
           </component>
           <template v-if="tab.id === activeTabId && currentTabAnchors.length">
             <div v-if="showHeadings" class="table-of-contents flex flex-col gap-0.5 ms-6 my-1">
@@ -103,6 +112,7 @@ import LucidePencil from '~icons/lucide/pencil'
 import LucideLink from '~icons/lucide/link'
 import LucideTrash from '~icons/lucide/trash'
 import LucideLeftClose from '~icons/lucide/panel-left-close'
+import LucideEllipsisVertical from '~icons/lucide/ellipsis-vertical'
 import { ref, watch, computed, h, onMounted, onBeforeUnmount } from 'vue'
 import { Button, TextInput, ContextMenu, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
 import { copyToClipboard } from '@/apps/drive/sdk'
@@ -198,6 +208,21 @@ const onAnchorClick = (id) => {
   editorEl.scrollTo({
     top: element.offsetTop,
   })
+}
+
+// The menu lives on the row's ContextMenu trigger, so the button replays a
+// contextmenu event on it — that way it opens anchored to the button.
+const openTabMenu = (event) => {
+  const trigger = event.currentTarget.parentElement
+  const rect = event.currentTarget.getBoundingClientRect()
+  trigger.dispatchEvent(
+    new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.bottom,
+    }),
+  )
 }
 
 const editingTabId = ref(null)
