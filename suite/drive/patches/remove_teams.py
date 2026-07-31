@@ -125,6 +125,12 @@ def _collapse_teams():
 		if team_groups:
 			groups[team.name] = team_groups[0]
 			_grant_group(home, team_groups)
+			# Also on the container, or the folder is readable but unreachable: the
+			# $GENERAL deny there hides it from the listing, so members would have no
+			# way to browse to their own team. A group row outranks $GENERAL on the
+			# same node, and listing filters children by read, so each person sees
+			# only the teams they were in.
+			_grant(previous_teams.name, GROUP_PREFIX + team_groups[0], {"read": 1})
 		else:
 			_grant_members(home, members)
 
