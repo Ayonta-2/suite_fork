@@ -12,22 +12,22 @@ TEMPLATE_DIR = "templates/emails"
 # action -> template name (file under TEMPLATE_DIR without the .html extension). "response" is
 # the organizer-facing notification sent when a guest RSVPs; the rest go to the guests.
 DEFAULT_TEMPLATES = {
-	"invite": "event_invite",
-	"update": "event_update",
-	"cancel": "event_cancel",
-	"response": "event_response",
+    "invite": "event_invite",
+    "update": "event_update",
+    "cancel": "event_cancel",
+    "response": "event_response",
 }
 
 # action -> email subject (Jinja string rendered with the invite context)
 DEFAULT_SUBJECTS = {
-	"invite": "Invitation: {{ title }}",
-	"update": "Updated: {{ title }}",
-	"cancel": "Cancelled: {{ title }}",
-	"response": '{{ responder_name }} responded "{{ response_label }}": {{ title }}',
+    "invite": "Invitation: {{ title }}",
+    "update": "Updated: {{ title }}",
+    "cancel": "Cancelled: {{ title }}",
+    "response": '{{ responder_name }} responded "{{ response_label }}": {{ title }}',
 }
 
 
 def template_path(name: str) -> str:
-	"""Returns the app-relative Jinja path for an event email template name."""
+    """Returns the app-relative Jinja path for an event email template name."""
 
-	return f"{TEMPLATE_DIR}/{name}.html"
+    return f"{TEMPLATE_DIR}/{name}.html"

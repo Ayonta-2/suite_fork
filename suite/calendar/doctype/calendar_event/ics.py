@@ -14,79 +14,79 @@ from frappe.utils import cint
 from icalendar import Calendar
 
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import (
-	_build_components,
-	_parse_local_datetime,
-	jscalendar_to_vevent,
+    _build_components,
+    _parse_local_datetime,
+    jscalendar_to_vevent,
 )
 
 PRODID = "-//Frappe Mail//Calendar Invite//EN"
 
 
 def build_event_ics(event: dict, method: str = "REQUEST", recurrence_id: str | None = None) -> str:
-	"""Returns the iCalendar text for a JSCalendar event using the given iTIP method.
+    """Returns the iCalendar text for a JSCalendar event using the given iTIP method.
 
-	When `recurrence_id` is set, a single occurrence (tagged with RECURRENCE-ID) is emitted
-	instead of the whole series — used to cancel one instance of a recurring event.
-	"""
+    When `recurrence_id` is set, a single occurrence (tagged with RECURRENCE-ID) is emitted
+    instead of the whole series — used to cancel one instance of a recurring event.
+    """
 
-	cal = Calendar()
-	cal.add("prodid", PRODID)
-	cal.add("version", "2.0")
-	cal.add("method", method)
+    cal = Calendar()
+    cal.add("prodid", PRODID)
+    cal.add("version", "2.0")
+    cal.add("method", method)
 
-	if recurrence_id:
-		component = _instance_component(event, recurrence_id, method)
-		_stamp_outgoing(component, method)
-		cal.add_component(component)
-	else:
-		for component in _build_components(event):
-			if method == "CANCEL":
-				_mark_cancelled(component)
-			_stamp_outgoing(component, method)
-			cal.add_component(component)
+    if recurrence_id:
+        component = _instance_component(event, recurrence_id, method)
+        _stamp_outgoing(component, method)
+        cal.add_component(component)
+    else:
+        for component in _build_components(event):
+            if method == "CANCEL":
+                _mark_cancelled(component)
+            _stamp_outgoing(component, method)
+            cal.add_component(component)
 
-	return cal.to_ical().decode("utf-8")
+    return cal.to_ical().decode("utf-8")
 
 
 def _stamp_outgoing(component, method: str) -> None:
-	"""Stamps an outgoing iTIP component with a send-time DTSTAMP and the right SEQUENCE.
+    """Stamps an outgoing iTIP component with a send-time DTSTAMP and the right SEQUENCE.
 
-	DTSTAMP on a scheduling message marks when the message itself was produced (now), not the
-	event's last-modified time — clients use it to order re-sends. For a CANCEL we force
-	SEQUENCE one past the stored value so it strictly supersedes the REQUEST it cancels; plain
-	REQUESTs keep the sequence the organizer already bumped on the stored event.
-	"""
+    DTSTAMP on a scheduling message marks when the message itself was produced (now), not the
+    event's last-modified time — clients use it to order re-sends. For a CANCEL we force
+    SEQUENCE one past the stored value so it strictly supersedes the REQUEST it cancels; plain
+    REQUESTs keep the sequence the organizer already bumped on the stored event.
+    """
 
-	if "dtstamp" in component:
-		del component["dtstamp"]
-	component.add("dtstamp", datetime.now(UTC))
+    if "dtstamp" in component:
+        del component["dtstamp"]
+    component.add("dtstamp", datetime.now(UTC))
 
-	if method == "CANCEL":
-		bumped = cint(component.get("sequence")) + 1
-		if "sequence" in component:
-			del component["sequence"]
-		component.add("sequence", bumped)
+    if method == "CANCEL":
+        bumped = cint(component.get("sequence")) + 1
+        if "sequence" in component:
+            del component["sequence"]
+        component.add("sequence", bumped)
 
 
 def _instance_component(event: dict, recurrence_id: str, method: str):
-	"""Builds a single-occurrence VEVENT carrying RECURRENCE-ID (no RRULE/overrides)."""
+    """Builds a single-occurrence VEVENT carrying RECURRENCE-ID (no RRULE/overrides)."""
 
-	base = {k: v for k, v in event.items() if k not in ("recurrenceRule", "recurrenceOverrides")}
-	component = jscalendar_to_vevent(base)
+    base = {k: v for k, v in event.items() if k not in ("recurrenceRule", "recurrenceOverrides")}
+    component = jscalendar_to_vevent(base)
 
-	instance_dt = _parse_local_datetime(recurrence_id, event.get("timeZone"))
-	if instance_dt:
-		component.add("recurrence-id", instance_dt.date() if event.get("showWithoutTime") else instance_dt)
+    instance_dt = _parse_local_datetime(recurrence_id, event.get("timeZone"))
+    if instance_dt:
+        component.add("recurrence-id", instance_dt.date() if event.get("showWithoutTime") else instance_dt)
 
-	if method == "CANCEL":
-		_mark_cancelled(component)
+    if method == "CANCEL":
+        _mark_cancelled(component)
 
-	return component
+    return component
 
 
 def _mark_cancelled(component) -> None:
-	"""Forces STATUS:CANCELLED so recipients' clients remove the event on a CANCEL."""
+    """Forces STATUS:CANCELLED so recipients' clients remove the event on a CANCEL."""
 
-	if "status" in component:
-		del component["status"]
-	component.add("status", "CANCELLED")
+    if "status" in component:
+        del component["status"]
+    component.add("status", "CANCELLED")
