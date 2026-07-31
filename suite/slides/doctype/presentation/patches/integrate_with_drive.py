@@ -1,6 +1,6 @@
 import frappe
 
-from suite.drive.utils import create_drive_file, get_home_folder
+from suite.drive.utils import create_drive_file, get_user_folder
 
 
 def execute():
@@ -23,22 +23,9 @@ def execute():
 				"name",
 			)
 			if not file:
-				team = frappe.db.get_value("Drive Team", {"owner": presentation.owner, "personal": 1}, "name")
-				if not team:
-					frappe.log_error(
-						title="Presentation left unbacked by Drive File",
-						message=(
-							f"Presentation {presentation.name} (owner {presentation.owner}) has no personal "
-							f"Drive Team, so no Drive File was created. "
-							f"is_public was {'1' if presentation.name in public else '0'}; "
-							f"public presentations here lose public access and need manual remediation."
-						),
-					)
-					continue
 				file = create_drive_file(
-					team,
 					presentation.title or "Untitled",
-					get_home_folder(team).name,
+					get_user_folder(presentation.owner).name,
 					"Presentation",
 					None,
 					mime_type="frappe/slides",

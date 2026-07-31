@@ -5,7 +5,7 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
 def ensure_custom_fields():
-	"""Create Drive's `File` custom fields (team, status, content_doctype, ...).
+	"""Create Drive's `File` custom fields (status, content_doctype, ...).
 
 	They ship as fixtures, which Frappe syncs only AFTER after_install runs. But
 	inside the suite app Drive overrides the core File class app-wide, so a File

@@ -6,7 +6,7 @@
 
   <div v-else id="drop-area" ref="container" class="flex flex-col flex-1 min-h-0 overflow-hidden bg-surface-base"
     @dragover="onDragOverScroll" @drop="stopAutoScroll" @dragend="stopAutoScroll">
-    <DriveToolBar v-model:sort-order="sortOrder" v-model:search="search" v-model:filters="filters" v-model:team="team"
+    <DriveToolBar v-model:sort-order="sortOrder" v-model:search="search" v-model:filters="filters"
       :action-items="actionItems" :selections="selectedEntitities" :get-entities="getEntities || { data: [] }" />
 
     <DriveListSkeleton v-if="!props.getEntities.data" />
@@ -45,7 +45,6 @@ import {
   isVirtual,
   isManaged,
   isAttachmentRef,
-  isSiteFile,
 } from '@/apps/drive/utils/files'
 import { toggleFav, clearRecent, PAGE_SIZE } from '@/apps/drive/resources/files'
 import { confirmRestore, confirmRemove, confirmDeleteForever } from '@/apps/drive/utils/confirmActions'
@@ -104,22 +103,7 @@ const listDialog = ref('')
 provide('listDialog', listDialog)
 provide('dialog', listDialog)
 
-const team = ref(
-  ['drive-Recents', 'drive-Favourites', 'drive-Trash'].includes(route.name)
-    ? 'all'
-    : route.params.team
-)
-watch(
-  () => route.params.team,
-  (v) => {
-    team.value = v || ''
-  },
-  { immediate: true }
-)
-
-const sortId = computed(
-  () => route.params.entityName || route.params.team || route.name
-)
+const sortId = computed(() => route.params.entityName || route.name)
 const inIframe = inject('inIframe')
 const DEFAULT_SORT = inIframe.value
   ? {
@@ -229,7 +213,7 @@ const loadingMore = ref(false)
 
 const refreshData = () => {
   const res = props.getEntities
-  const params = { team: team.value === 'home' ? '' : team.value || '' }
+  const params = {}
   if (sortOrder.value) {
     params.order_by = sortOrder.value.field
     params.ascending = sortOrder.value.ascending
@@ -312,7 +296,7 @@ useInfiniteScroll(scrollHost, () => loadMore(), {
 })
 
 watch(
-  [verifyAccess, team, () => props.getEntities],
+  [verifyAccess, () => props.getEntities],
   ([data]) => {
     if (!data) return
     refreshData()
@@ -480,8 +464,7 @@ const actionItems = computed(() => {
       },
       {
         divider: true,
-        isEnabled: (e) =>
-          isAttachmentRef(e) || (isSiteFile(e) && systemUser.value),
+        isEnabled: (e) => isAttachmentRef(e) || systemUser.value,
       },
       {
         label: __('Go to original'),
@@ -500,7 +483,7 @@ const actionItems = computed(() => {
         icon: LucideMonitorCog,
         action: ([entity]) =>
           window.open('/desk/file/' + entity.name, '_blank'),
-        isEnabled: (e) => isSiteFile(e) && systemUser.value,
+        isEnabled: () => systemUser.value,
       },
       { divider: true, isEnabled: (e) => !e.external && !isVirtual(e) },
       {

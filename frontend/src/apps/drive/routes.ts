@@ -18,9 +18,8 @@ import { setupTheme } from '@/utils/setupTheme'
  * shortcuts.
  *
  * Auth: the suite router's own `beforeEach` redirects guests to /login unless
- * the route is `meta.allowGuest` (publicly-shared files/folders/teams).
- * Drive-specific guard behaviour (recentTeam, clearing active entity) lives in
- * router.ts.
+ * the route is `meta.allowGuest` (publicly-shared files/folders).
+ * Drive-specific guard behaviour (clearing active entity) lives in router.ts.
  */
 
 const setPageTitle = (to: any) => {
@@ -44,11 +43,6 @@ export const routes: RouteRecordRaw[] = [
         meta: { allowGuest: true },
       },
       {
-        path: 'setup',
-        name: 'drive-Setup',
-        component: () => import('@/apps/drive/pages/Setup.vue'),
-      },
-      {
         path: '',
         name: 'drive-Home',
         component: () => import('@/apps/drive/pages/Personal.vue'),
@@ -59,12 +53,6 @@ export const routes: RouteRecordRaw[] = [
         path: 'inbox',
         name: 'drive-Inbox',
         component: () => import('@/apps/drive/pages/Notifications.vue'),
-        beforeEnter: [setPageTitle],
-      },
-      {
-        path: 'teams',
-        name: 'drive-Teams',
-        component: () => import('@/apps/drive/pages/Teams.vue'),
         beforeEnter: [setPageTitle],
       },
       {
@@ -133,14 +121,6 @@ export const routes: RouteRecordRaw[] = [
             path: `/drive/${letter}/${entity.data.name}`,
           }
         },
-      },
-      {
-        path: 't/:team/',
-        name: 'drive-Team',
-        component: () => import('@/apps/drive/pages/Team.vue'),
-        beforeEnter: [setPageTitle],
-        props: true,
-        meta: { allowGuest: true },
       },
       {
         path: 'f/:entityName/:slug?',
@@ -217,6 +197,12 @@ export const routes: RouteRecordRaw[] = [
             path: `/drive/g/${to.params.entityName}`,
           }
         },
+      },
+      {
+        path: 't/:team/',
+        component: () => import('@/apps/drive/pages/Dummy.vue'),
+        meta: { allowGuest: true },
+        beforeEnter: () => ({ name: 'drive-Home' }),
       },
     ],
   },

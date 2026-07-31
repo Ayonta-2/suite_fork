@@ -19,5 +19,5 @@ import { shareView } from '@/apps/drive/data/prefs'
 import { setCurrentFolder } from '@/apps/drive/data/currentFolder'
 import LucideHome from '~icons/lucide/home'
 
-setCurrentFolder({ name: '', team: '' })
+setCurrentFolder({ name: '' })
 </script>

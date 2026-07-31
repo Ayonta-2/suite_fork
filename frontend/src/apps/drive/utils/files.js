@@ -13,7 +13,6 @@ import {
   createSheet,
   getDocuments,
 } from '@/apps/drive/resources/files'
-import { getTeams, getPublicTeams } from '@/apps/drive/resources/files'
 import { set } from 'idb-keyval'
 import { toast } from '@/apps/drive/utils/toasts.js'
 import { useFileUpload, toast as nToast } from 'frappe-ui'
@@ -86,10 +85,6 @@ export function isReadonly(entity) {
   return entity?.kind === 'readonly'
 }
 
-export function isSiteFile(entity) {
-  return !entity?.team
-}
-
 export function isAttachmentRef(entity) {
   return entity?.content_doctype === ATTACHMENT_CONTENT_DOCTYPE
 }
@@ -128,10 +123,7 @@ export const openEntity = (entity, new_tab = false) => {
   }
   // hm?
   if (entity.name === '') {
-    router.push({
-      name: entity.is_private ? 'drive-Home' : 'drive-Team',
-      params: { team },
-    })
+    router.push({ name: 'drive-Home' })
   } else if (entity.is_folder) {
     router.push({
       name: 'drive-Folder',
@@ -546,11 +538,9 @@ export const pasteObj = (e) => {
       .find((item) => item.type.includes('image'))
       ?.getAsFile()
     const route = router.currentRoute.value
-    if (file && ['drive-Home', 'drive-Folder', 'drive-Team'].includes(route.name)) {
+    if (file && ['drive-Home', 'drive-Folder'].includes(route.name)) {
       const entity = uploadImage(file, {
-        team: route.params.team,
         parent: route.params.entityName || '',
-        personal: isHomeContext() ? 1 : 0,
         total_file_size: file.size,
         file_modified: file.lastModified,
       })
@@ -698,11 +688,10 @@ export function getRandomColor() {
   return color
 }
 export const newExternal = async (type) => {
-  const route = router.currentRoute.value
   if (type === 'Presentation') {
     window.location.href = `/slides/presentation/new?parent=${
       currentFolder.value.name
-    }&team=${route.params.team || ''}`
+    }`
     return
   }
   if (type === 'Spreadsheet') {
@@ -714,7 +703,6 @@ export const newExternal = async (type) => {
     return
   }
   const data = await createDocument.submit({
-    team: route.params.team,
     parent: currentFolder.value.name,
   })
   prettyData([data])

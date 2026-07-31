@@ -22,43 +22,20 @@ export const COMMON_OPTIONS = {
   },
 }
 
-export const getTeam = createResource({
-  ...COMMON_OPTIONS,
-  url: 'suite.drive.api.list.files',
-  makeParams: (params) => {
-    return {
-      ...params,
-      personal: 0,
-    }
-  },
-  cache: 'team-folder-contents',
-})
-
 export const getFiles = createResource({
   ...COMMON_OPTIONS,
   url: 'suite.drive.api.list.files',
   makeParams: (params) => {
     return params
   },
-  cache: 'team-folder-contents',
+  cache: 'folder-contents',
 })
 
-export const getTeams = createResource({
-  url: '/api/method/suite.drive.api.permissions.get_teams',
-  params: {
-    details: 1,
-  },
+// The site root and the current user's private folder
+export const rootInfo = createResource({
+  url: 'suite.drive.api.files.get_root_folder',
   method: 'GET',
-  cache: 'teams',
-})
-
-export const getPublicTeams = createResource({
-  url: 'suite.drive.api.permissions.get_public_teams',
-  method: 'GET',
-  cache: 'public-teams',
-  transform: (d) => {
-    return d.reduce((acc, k) => ({ ...acc, [k.name]: k }), {})
-  },
+  cache: 'root-info',
 })
 
 export const getRecents = createResource({
@@ -78,11 +55,7 @@ export const getSiteFiles = createResource({
   ...COMMON_OPTIONS,
   url: 'suite.drive.api.list.files',
   cache: 'site-folder-contents',
-  makeParams: (params) => ({ ...params, entity_name: 'Home' }),
-  transform(data) {
-    data = COMMON_OPTIONS.transform(data)
-    return data.filter((k) => k.name !== 'Home/Attachments')
-  },
+  makeParams: (params) => ({ ...params, entity_name: rootInfo.data?.root }),
 })
 
 export const getAttachments = createResource({
@@ -146,7 +119,6 @@ export const getTrash = createResource({
 })
 
 ;[
-  getTeam,
   getFiles,
   getPersonal,
   getSiteFiles,
@@ -180,7 +152,7 @@ export const mutate = (entities, func) => {
   )
 }
 
-export const updateMoved = (team, new_parent) => {
+export const updateMoved = (new_parent) => {
   // All details are repetetively provided (check Folder.vue) because if this is run first
   // No further mutation of the resource object can take place
   createResource({
@@ -189,8 +161,6 @@ export const updateMoved = (team, new_parent) => {
     makeParams: (params) => ({
       ...params,
       entity_name: new_parent,
-      personal: -2,
-      team,
     }),
     cache: ['folder', new_parent],
   }).fetch(
@@ -324,7 +294,7 @@ export const move = createResource({
     })
 
     // Update moved-into folder
-    updateMoved(data.team, data.name)
+    updateMoved(data.name)
   },
   onError(error) {
     toast.error(error?.messages?.at(-1) || 'Could not move this file.')

@@ -54,7 +54,7 @@ const shortcutGroups = [
     shortcuts: [
       [getLabel('i'), 'Inbox'],
       [getLabel('h'), 'Home'],
-      [getLabel('t'), 'Team'],
+      [getLabel('t'), 'Site'],
       [getLabel('r'), 'Recents'],
       [getLabel('f'), 'Favourites'],
       [getLabel('s'), 'Shared'],

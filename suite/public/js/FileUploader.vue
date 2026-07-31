@@ -1,22 +1,11 @@
 <template>
   <div class="drive-picker">
-    <!-- Tabs: Home (personal Drive) / Teams (including Site pseudo-team) -->
+    <!-- Tabs: Home (the caller's private folder) / Site (the shared Drive tree) -->
     <div class="tab-bar">
       <button v-for="t in tabs" :key="t.key" class="tab" :class="{ active: tab === t.key }" @click="switchTab(t.key)">
         <span class="tab-icon" v-html="t.icon" />
         {{ t.label }}
       </button>
-    </div>
-
-    <!-- Team selector (Teams tab only; Site is a pseudo-team) -->
-    <div v-if="tab === 'teams'" class="team-select-wrap">
-      <select class="team-select" :value="team" @change="selectTeam($event.target.value)">
-        <option value="" disabled>{{ __('Select a team') }}</option>
-        <option v-for="t in teams" :key="t.name" :value="t.name">
-          {{ t.title }}
-        </option>
-      </select>
-      <span class="team-select-chevron" v-html="selectChevronIcon" />
     </div>
 
     <!-- Search -->
@@ -89,8 +78,6 @@ import { ref, computed, onMounted, watch } from 'vue'
 
 const chevronIcon =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>'
-const selectChevronIcon =
-  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>'
 
 const props = defineProps({
   uploader: { type: Object, required: true },
@@ -99,10 +86,8 @@ const props = defineProps({
 
 const tabs = [
   { key: 'home', label: __('Home'), icon: frappe.utils.icon('home', 'sm') },
-  { key: 'teams', label: __('Teams'), icon: frappe.utils.icon('users', 'sm') },
+  { key: 'site', label: __('Site'), icon: frappe.utils.icon('users', 'sm') },
 ]
-
-const SITE_TEAM = '__site'
 
 const tab = ref('home')
 const rows = ref([])
@@ -114,9 +99,8 @@ const busy = ref(false)
 const fileInput = ref(null)
 const listEl = ref(null)
 
-const teams = ref([])
-const team = ref('')
-let personalTeam = ''
+// Drive's two entry points, resolved once on mount.
+const roots = ref({ home: '', root: '' })
 
 const PAGE = 50
 const start = ref(0)
@@ -130,22 +114,16 @@ const crumbs = ref([{ name: '', label: __('Home') }])
 const here = computed(() => crumbs.value[crumbs.value.length - 1])
 const canUpload = computed(() => true)
 const ready = computed(() => (staged.value ? canUpload.value : !!selected.value))
-const isSiteTeam = computed(() => tab.value === 'teams' && team.value === SITE_TEAM)
-
 onMounted(async () => {
-  const { message } = await frappe.call('drive.api.permissions.get_teams', { details: 1 })
-  teams.value = [{ name: SITE_TEAM, title: __('Site') }, ...Object.values(message || {})]
-  const dt = await frappe.call('drive.utils.get_default_team')
-  personalTeam = dt.message || ''
-  team.value = SITE_TEAM
+  const { message } = await frappe.call('suite.drive.api.files.get_root_folder')
+  roots.value = message || { home: '', root: '' }
   switchTab('home')
 })
 
 function rootCrumb(key) {
-  if (key === 'home') return { name: '', label: __('Home') }
-  if (team.value === SITE_TEAM) return { name: 'Home', label: __('Site') }
-  const t = teams.value.find((x) => x.name === team.value)
-  return { name: '', label: t ? t.title : __('Team') }
+  return key === 'home'
+    ? { name: roots.value.home, label: __('Home') }
+    : { name: roots.value.root, label: __('Site') }
 }
 
 function switchTab(key) {
@@ -154,15 +132,6 @@ function switchTab(key) {
   selected.value = null
   staged.value = null
   crumbs.value = [rootCrumb(key)]
-  reload()
-}
-
-function selectTeam(name) {
-  team.value = name
-  searchText.value = ''
-  selected.value = null
-  staged.value = null
-  crumbs.value = [rootCrumb('teams')]
   reload()
 }
 
@@ -236,28 +205,12 @@ function topUp() {
 const sortRows = (items) =>
   items.slice().sort((a, b) => Number(b.is_folder) - Number(a.is_folder))
 
-// One page of results: { items, more }. Source depends on the tab + search mode.
+// One page of results: { items, more }. Both tabs are Drive listings now; they
+// differ only in which root they start from. A query searches the whole tree.
 async function fetchPage(offset) {
   const q = searchText.value.trim()
-  if (isSiteTeam.value) {
-    if (q) {
-      // Framework's global file search (not paged); only fetch once.
-      if (offset > 0) return { items: [], more: false }
-      const r = await frappe.call('frappe.core.api.file.get_files_by_search_text', { text: q })
-      return { items: r.message || [], more: false }
-    }
-    const r = await frappe.call('frappe.core.api.file.get_files_in_folder', {
-      folder: here.value.name || 'Home',
-      start: offset,
-      page_length: PAGE,
-    })
-    return { items: r.message?.files || [], more: !!r.message?.has_more }
-  }
-  // Drive tabs (Home / Teams). With a query, list.files searches the whole team.
-  const t = tab.value === 'home' ? personalTeam : team.value
-  if (!t) return { items: [], more: false }
-  const r = await frappe.call('drive.api.list.files', {
-    team: t,
+  if (!here.value.name) return { items: [], more: false }
+  const r = await frappe.call('suite.drive.api.list.files', {
     entity_name: here.value.name,
     search: q || undefined,
     start: offset,
@@ -304,13 +257,8 @@ async function submit() {
   busy.value = true
   try {
     if (staged.value) {
-      if (isSiteTeam.value) {
-        await siteUpload(staged.value)
-      } else {
-        const t = tab.value === 'home' ? personalTeam : team.value
-        const driveFile = await driveUpload(staged.value, t, here.value.name)
-        attach(driveFile.name)
-      }
+      const driveFile = await driveUpload(staged.value, here.value.name)
+      attach(driveFile.name)
     } else {
       attach(selected.value.name)
     }
@@ -332,32 +280,13 @@ function attach(libraryFileName) {
   props.uploader.upload_file({ library_file_name: libraryFileName })
 }
 
-async function siteUpload(file) {
+async function driveUpload(file, parent) {
   const form = new FormData()
   form.append('file', file, file.name)
-  form.append('is_private', 1)
-  form.append('folder', here.value.name || 'Home')
-  const res = await fetch('/api/method/upload_file', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'X-Frappe-CSRF-Token': frappe.csrf_token,
-    },
-    body: form,
-  })
-  const data = await res.json()
-  if (!res.ok) throwUploadError(data, __('Could not upload to Site files'))
-  attach(data.message.name)
-}
-
-async function driveUpload(file, t, parent) {
-  const form = new FormData()
-  form.append('file', file, file.name)
-  form.append('team', t)
   if (parent) form.append('parent', parent)
   form.append('total_file_size', file.size)
   form.append('uuid', frappe.utils.get_random(10))
-  const res = await fetch('/api/method/drive.api.files.upload_file', {
+  const res = await fetch('/api/method/suite.drive.api.files.upload_file', {
     method: 'POST',
     headers: { 'X-Frappe-CSRF-Token': frappe.csrf_token },
     body: form,
@@ -422,34 +351,8 @@ defineExpose({ submit })
   height: 14px;
 }
 
-/* Team select */
-.team-select-wrap {
-  position: relative;
-  margin-top: 0.75rem;
-}
 
-.team-select {
-  appearance: none;
-  width: 100%;
-  font-size: var(--text-sm);
-  height: 1.75rem;
-  border: 1px solid var(--outline-gray-2, #e0e0e0);
-  border-radius: var(--border-radius, 8px);
-  background: var(--surface-gray-2);
-  padding: 0 2rem 0 0.5rem;
-}
 
-.team-select-chevron {
-  position: absolute;
-  top: 50%;
-  right: 0.6rem;
-  display: inline-flex;
-  width: 14px;
-  height: 14px;
-  color: var(--ink-gray-7);
-  pointer-events: none;
-  transform: translateY(-50%);
-}
 
 /* Search */
 .search {

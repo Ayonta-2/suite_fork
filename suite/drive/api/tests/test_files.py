@@ -17,14 +17,19 @@ from suite.drive.api.files import (
 	upload_file,
 )
 from suite.drive.api.permissions import get_user_access, user_has_permission
-from suite.drive.api.product import create_team
-from suite.drive.utils import STATUS_ACTIVE, STATUS_TRASHED, create_drive_file, get_home_folder
+from suite.drive.utils import (
+	GENERAL_USER,
+	STATUS_ACTIVE,
+	STATUS_TRASHED,
+	create_drive_file,
+	get_user_folder,
+)
 from suite.drive.utils.files import FileManager
 from suite.tests.utils import ensure_user
 
 OWNER = "drive-files-owner@example.com"
 OTHER_USER = "drive-files-other@example.com"
-TEAM_MEMBER = "drive-files-member@example.com"
+MEMBER = "drive-files-member@example.com"
 
 
 class TestDriveFilesAPI(IntegrationTestCase):
@@ -33,21 +38,15 @@ class TestDriveFilesAPI(IntegrationTestCase):
 		super().setUpClass()
 		ensure_user(OWNER)
 		ensure_user(OTHER_USER)
-		ensure_user(TEAM_MEMBER)
+		ensure_user(MEMBER)
 		with cls.set_user(OWNER):
-			cls.team = create_team(OWNER, "Drive files API tests")
-			team = frappe.get_doc("Drive Team", cls.team)
-			if TEAM_MEMBER not in {member.user for member in team.users}:
-				team.append("users", {"user": TEAM_MEMBER, "access_level": 1})
-				team.save(ignore_permissions=True)
-			cls.home = get_home_folder(cls.team).name
+			cls.home = get_user_folder(OWNER).name
 
 	def setUp(self):
 		frappe.flags.mute_drive_activity_log = True
 		with self.set_user(OWNER):
-			self.folder = create_drive_file(self.team, frappe.generate_hash(8), self.home, "Folder", "")
+			self.folder = create_drive_file(frappe.generate_hash(8), self.home, "Folder", "")
 			self.file = create_drive_file(
-				self.team,
 				f"{frappe.generate_hash(8)}.txt",
 				self.folder.name,
 				"Text",
@@ -86,11 +85,10 @@ class TestDriveFilesAPI(IntegrationTestCase):
 		session = session or frappe.generate_hash(12)
 		with (
 			self.upload_request(content, filename, session, chunk),
-			patch("suite.drive.api.files.get_storage_usage", return_value={"limit": 10_000, "total_size": 0}),
+			patch("suite.drive.api.files.validate_quota"),
 			patch("suite.drive.api.files.frappe.publish_realtime"),
 		):
 			return upload_file(
-				team=self.team,
 				total_file_size=total_size if total_size is not None else len(content),
 				parent=self.folder.name,
 			)
@@ -103,12 +101,20 @@ class TestDriveFilesAPI(IntegrationTestCase):
 			with self.assertRaises(frappe.PermissionError):
 				get_file_content(self.file.name)
 
-	def test_team_member_and_guest_public_access(self):
-		with self.set_user(TEAM_MEMBER):
-			self.assertTrue(user_has_permission(self.file, "read"))
+	def test_site_share_and_guest_public_access(self):
+		# Inside a user folder, other site users are denied by default.
+		with self.set_user(MEMBER):
+			self.assertFalse(user_has_permission(self.file, "read"))
 
+		# A $GENERAL share opens it to site users, but not guests.
+		with self.set_user(OWNER):
+			self.file.share(user=GENERAL_USER, read=True)
+		with self.set_user(MEMBER):
+			self.assertTrue(user_has_permission(self.file, "read"))
 		with self.set_user("Guest"):
 			self.assertFalse(user_has_permission(self.file, "read"))
+
+		# A public share opens it to guests too.
 		with self.set_user(OWNER):
 			self.file.share(read=True)
 		with self.set_user("Guest"):
@@ -125,7 +131,7 @@ class TestDriveFilesAPI(IntegrationTestCase):
 			self.upload_request(b"denied", "denied.txt", frappe.generate_hash(12)),
 		):
 			with self.assertRaises(frappe.PermissionError):
-				upload_file(team=self.team, total_file_size=6, parent=self.folder.name)
+				upload_file(total_file_size=6, parent=self.folder.name)
 
 	def test_ordered_chunks_are_assembled_byte_for_byte(self):
 		session = frappe.generate_hash(12)
@@ -147,7 +153,7 @@ class TestDriveFilesAPI(IntegrationTestCase):
 		manager.conn.get_object.return_value = {"Body": BytesIO(b"storage boundary")}
 		self.assertEqual(manager.get_file(uploaded).read(), b"storage boundary")
 		manager.conn.get_object.assert_called_once_with(
-			Bucket=manager.get_bucket(uploaded.team),
+			Bucket=manager.bucket,
 			Key=uploaded.file_url.lstrip("/"),
 		)
 
@@ -195,7 +201,7 @@ class TestDriveFilesAPI(IntegrationTestCase):
 	def test_trash_and_restore_preserve_status(self):
 		with (
 			self.set_user(OWNER),
-			patch("suite.drive.api.files.get_storage_usage", return_value={"limit": 100, "total_size": 0}),
+			patch("suite.drive.api.files.validate_quota"),
 			patch("suite.drive.api.files.FileManager.move_to_trash") as move_to_trash,
 			patch("suite.drive.api.files.FileManager.restore") as restore,
 		):
@@ -219,7 +225,7 @@ class TestDriveFilesAPI(IntegrationTestCase):
 	def test_owner_can_rename_and_move_uploaded_file(self):
 		with self.set_user(OWNER):
 			uploaded = self.upload(b"move me", "before.txt")
-			destination = create_drive_file(self.team, frappe.generate_hash(8), self.home, "Folder", "")
+			destination = create_drive_file(frappe.generate_hash(8), self.home, "Folder", "")
 
 			rename(uploaded.name, "after.txt")
 			uploaded.reload()
@@ -227,7 +233,7 @@ class TestDriveFilesAPI(IntegrationTestCase):
 			with FileManager().get_file(uploaded) as stored:
 				self.assertEqual(stored.read(), b"move me")
 
-			move([uploaded.name], new_parent=destination.name, team=self.team)
+			move([uploaded.name], new_parent=destination.name)
 			uploaded.reload()
 			self.assertEqual(uploaded.folder, destination.name)
 			with FileManager().get_file(uploaded) as stored:
@@ -235,9 +241,9 @@ class TestDriveFilesAPI(IntegrationTestCase):
 
 	def test_unrelated_user_cannot_rename_or_move_file(self):
 		with self.set_user(OWNER):
-			destination = create_drive_file(self.team, frappe.generate_hash(8), self.home, "Folder", "")
+			destination = create_drive_file(frappe.generate_hash(8), self.home, "Folder", "")
 		with self.set_user(OTHER_USER):
 			with self.assertRaises(frappe.PermissionError):
 				rename(self.file.name, "forbidden.txt")
 			with self.assertRaises(frappe.PermissionError):
-				move([self.file.name], new_parent=destination.name, team=self.team)
+				move([self.file.name], new_parent=destination.name)

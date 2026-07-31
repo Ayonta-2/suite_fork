@@ -120,8 +120,10 @@ ignore_file_permissions = True
 permission_query_conditions = {
 	# drive
 	"File": "suite.drive.utils.overrides.filter_file",
-	"Drive Team": "suite.drive.utils.overrides.filter_drive_team",
 	"Drive Permission": "suite.drive.utils.overrides.filter_drive_permission",
+	"Drive Settings": "suite.drive.utils.overrides.filter_drive_settings",
+	"Drive User Invitation": "suite.drive.utils.overrides.filter_drive_invitation",
+	"Drive Entity Activity Log": "suite.drive.utils.overrides.filter_activity_log",
 	"Drive Favourite": "suite.drive.utils.overrides.filter_drive_favourite",
 	"Drive Entity Log": "suite.drive.utils.overrides.filter_drive_recent",
 	"Drive Notification": "suite.drive.utils.overrides.filter_drive_notif",
@@ -150,7 +152,9 @@ has_permission = {
 	# drive
 	"File": "suite.drive.api.permissions.user_has_permission",
 	"Drive Permission": "suite.drive.api.permissions.drive_permission_has_permission",
-	"Drive Team": "suite.drive.api.permissions.drive_team_has_permission",
+	"Drive Entity Activity Log": "suite.drive.api.permissions.activity_log_has_permission",
+	"Drive Settings": "suite.drive.api.permissions.drive_settings_has_permission",
+	"Drive User Invitation": "suite.drive.api.permissions.drive_invitation_has_permission",
 	# slides
 	"Presentation": "suite.slides.doctype.presentation.presentation.has_permission",
 	# writer
@@ -214,6 +218,10 @@ override_whitelisted_methods = {
 # Document Events (deep-merged; per-doctype/per-event handler lists combined)
 # ============================================================================
 doc_events = {
+	"User Group": {
+		"on_update": "suite.drive.utils.clear_user_group_cache",
+		"on_trash": "suite.drive.utils.clear_user_group_cache",
+	},
 	"Presentation": {
 		"on_update": ["suite.drive.overrides.file.sync_content_file"],
 		"on_trash": ["suite.drive.overrides.file.sync_content_file"],
@@ -235,7 +243,7 @@ doc_events = {
 			"suite.utils.user.assign_suite_role",
 		],
 		"after_insert": [
-			"suite.drive.utils.users.create_drive_settings_and_team",
+			"suite.drive.utils.users.create_drive_settings",
 			"suite.mail.events.create_user_settings",
 		],
 		"on_update": [
@@ -334,7 +342,6 @@ signup_form_template = "templates/signup.html"
 # mail — link integrity on delete
 ignore_links_on_delete = [
 	# drive
-	"Drive Team",
 	"Drive Settings",
 	# mail
 	"Mail Account Request",

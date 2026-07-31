@@ -7,27 +7,23 @@ from pypika import functions as fn
 
 from suite.drive.utils import (
 	FILE_FIELDS,
+	GENERAL_USER,
 	KIND_VIRTUAL,
 	MIME_LIST_MAP,
 	STATUS_ACTIVE,
 	STATUS_TRASHED,
-	default_team,
 	entity_kind,
-	get_home_folder,
+	get_user_folder,
 	hide_storage_key,
-	is_site_file,
-	map_ff_to_drive_type,
 )
 from suite.drive.utils.api import get_default_access
 
-from .permissions import get_teams, get_user_access, user_has_permission
+from .permissions import get_user_access, user_has_permission
 
 DriveUser = frappe.qb.DocType("User")
 UserGroupMember = frappe.qb.DocType("User Group Member")
 DriveFile = frappe.qb.DocType("File")
 DrivePermission = frappe.qb.DocType("Drive Permission")
-Team = frappe.qb.DocType("Drive Team")
-TeamMember = frappe.qb.DocType("Drive Team Member")
 DriveFavourite = frappe.qb.DocType("Drive Favourite")
 Recents = frappe.qb.DocType("Drive Entity Log")
 
@@ -38,20 +34,21 @@ Binary = CustomFunction("BINARY", ["expression"])
 def _apply_shared_filter(query, shared_type):
 	"""
 	Filters query to show shared files based on shared_type parameter.
-	- "with": files shared with current user
+	- "with": files explicitly shared with the current user
 	- "public": publicly shared files
-	- False/None: all files with permission join
+	- False/None: no share join
 	"""
-	user = frappe.session.user if frappe.session.user != "Guest" else ""
-	cond = (DrivePermission.entity == DriveFile.name) & (DrivePermission.user == user)
+	if not shared_type:
+		return query
 
-	if shared_type == "with":
-		return query.right_join(DrivePermission).on(cond)
-	elif shared_type == "public":
-		cond = (DrivePermission.entity == DriveFile.name) & (DrivePermission.user == "")
-		return query.right_join(DrivePermission).on(cond)
-	else:
-		return query.left_join(DrivePermission).on(cond)
+	user = frappe.session.user if frappe.session.user != "Guest" else ""
+	shared_user = user if shared_type == "with" else ""
+	cond = (
+		(DrivePermission.entity == DriveFile.name)
+		& (DrivePermission.user == shared_user)
+		& (DrivePermission.deny == 0)
+	)
+	return query.right_join(DrivePermission).on(cond)
 
 
 def _apply_file_kinds_filter(query, file_kinds):
@@ -108,7 +105,7 @@ def _get_slide_counts(rows):
 def _get_share_count(names):
 	"""
 	Returns a dict mapping file names to their share count.
-	Counts shares with individual users (excludes team and public shares).
+	Counts shares with individual users (excludes general shares and denies).
 	"""
 	if not names:
 		return {}
@@ -118,8 +115,8 @@ def _get_share_count(names):
 		.on(DrivePermission.entity == DriveFile.name)
 		.where(
 			DrivePermission.entity.isin(names)
-			& (DrivePermission.user != "")
-			& (DrivePermission.user != "$TEAM")
+			& (DrivePermission.user.notin(["", GENERAL_USER]))
+			& (DrivePermission.deny == 0)
 		)
 		.select(DriveFile.name, fn.Count("*").as_("share_count"))
 		.groupby(DriveFile.name)
@@ -135,28 +132,33 @@ def _get_public_files(names):
 		return set()
 	query = (
 		frappe.qb.from_(DrivePermission)
-		.where((DrivePermission.entity.isin(names)) & (DrivePermission.user == ""))
+		.where(
+			(DrivePermission.entity.isin(names)) & (DrivePermission.user == "") & (DrivePermission.deny == 0)
+		)
 		.select(DrivePermission.entity)
 	)
 	return set(k[0] for k in query.run())
 
 
-def _get_team_files(names):
+def _get_general_files(names):
 	"""
-	Returns a set of file names shared with team.
+	Returns a set of file names explicitly shared with all site users.
 	"""
 	if not names:
 		return set()
 	query = (
 		frappe.qb.from_(DrivePermission)
-		.where((DrivePermission.entity.isin(names)) & (DrivePermission.team == 1))
+		.where(
+			(DrivePermission.entity.isin(names))
+			& (DrivePermission.user == GENERAL_USER)
+			& (DrivePermission.deny == 0)
+		)
 		.select(DrivePermission.entity)
 	)
 	return set(k[0] for k in query.run())
 
 
 def _get_basic_query(search):
-	# Status defaults to Active for team and Site files alike — no team carve-out.
 	query = frappe.qb.from_(DriveFile).where(DriveFile.status == STATUS_ACTIVE)
 	if search:
 		query = query.where(DriveFile.file_name.like(f"%{search}%"))
@@ -164,9 +166,7 @@ def _get_basic_query(search):
 
 
 @frappe.whitelist(allow_guest=True)
-@default_team
 def files(
-	team: str,
 	entity_name: str | None = None,
 	order_by: str = "modified",
 	ascending: bool = True,
@@ -177,19 +177,13 @@ def files(
 ):
 	"""
 	Returns active files in a folder. Pass `start`/`limit` to page through large
-	folders. When `search` is set, results span the whole team (not just the
+	folders. When `search` is set, results span the whole tree (not just the
 	current folder).
 	"""
-	if team == "all":
-		team = None
 	if not entity_name:
-		if team:
-			entity_name = get_home_folder(team)["name"]
-		else:
-			frappe.throw("You must provide a folder to query", ValueError)
+		entity_name = get_user_folder().name
 
 	entity = frappe.get_doc("File", entity_name)
-	team = entity.team
 
 	if not user_has_permission(entity, "read"):
 		frappe.throw(
@@ -197,35 +191,13 @@ def files(
 			frappe.exceptions.PermissionError,
 		)
 
-	if is_site_file(entity):
-		# Framework folder (e.g. desk "Home"): list via frappe.get_list so the
-		# framework's own File permissions apply. team dropped so get_query_data
-		# skips the Drive-only team filter.
-		ff_filters = {"folder": entity_name}
-		if search:
-			ff_filters["file_name"] = ["like", f"%{search}%"]
-		names = frappe.get_list("File", filters=ff_filters, pluck="name")
-		return get_query_data(
-			frappe.qb.from_(DriveFile).where(DriveFile.name.isin(names or [""])),
-			file_kinds=file_kinds,
-			order_by=order_by,
-			ascending=ascending,
-			start=start,
-			limit=limit,
-		)
-
-	# Folder browse isn't user-scoped, so restrict to team files (Site files use the ff branch).
-	query = _get_basic_query(search).where(DriveFile.team.isnotnull())
-	if search:
-		if not team:
-			query = query.where(DriveFile.team.isin(get_teams() or [""]))
-	else:
-		# Folder browsing; search is team-wide so it skips the folder filter.
+	query = _get_basic_query(search)
+	if not search:
+		# Folder browsing; search is tree-wide so it skips the folder filter.
 		query = query.where(DriveFile.folder == entity_name)
 
 	return get_query_data(
 		query,
-		team=team,
 		file_kinds=file_kinds,
 		entity_name=entity_name,
 		order_by=order_by,
@@ -236,9 +208,7 @@ def files(
 
 
 @frappe.whitelist()
-@default_team
 def shared(
-	team: str,
 	shared_type: str = "with",
 	order_by: str = "modified",
 	ascending: bool = True,
@@ -258,7 +228,6 @@ def shared(
 		query,
 		shared_type=shared_type,
 		file_kinds=file_kinds,
-		team=team,
 		order_by=order_by,
 		ascending=ascending,
 		start=start,
@@ -267,9 +236,7 @@ def shared(
 
 
 @frappe.whitelist()
-@default_team
 def favourites(
-	team: str,
 	order_by: str = "modified",
 	ascending: bool = True,
 	file_kinds: list[str] | str = [],
@@ -286,7 +253,6 @@ def favourites(
 		query,
 		favourites_only=True,
 		file_kinds=file_kinds,
-		team=team,
 		order_by=order_by,
 		ascending=ascending,
 		start=start,
@@ -295,9 +261,7 @@ def favourites(
 
 
 @frappe.whitelist()
-@default_team
 def recents(
-	team: str,
 	order_by: str = "modified",
 	ascending: bool = True,
 	file_kinds: list[str] | str = [],
@@ -314,7 +278,6 @@ def recents(
 		query,
 		recents_only=True,
 		file_kinds=file_kinds,
-		team=team,
 		order_by=order_by,
 		ascending=ascending,
 		start=start,
@@ -323,9 +286,7 @@ def recents(
 
 
 @frappe.whitelist()
-@default_team
 def trash(
-	team: str,
 	order_by: str = "modified",
 	ascending: bool = True,
 	file_kinds: list[str] | str = [],
@@ -339,7 +300,6 @@ def trash(
 	query = (
 		frappe.qb.from_(DriveFile)
 		.where(DriveFile.status == STATUS_TRASHED)
-		.where(DriveFile.team.isnotnull())
 		.where(DriveFile.owner == frappe.session.user)
 	)
 	if search:
@@ -347,7 +307,6 @@ def trash(
 
 	return get_query_data(
 		query,
-		team=team,
 		file_kinds=file_kinds,
 		order_by=order_by,
 		ascending=ascending,
@@ -372,7 +331,6 @@ def get_query_data(
 	favourites_only=False,
 	recents_only=False,
 	file_kinds=[],
-	team=None,
 	entity_name=None,
 	shared_type=None,
 	order_by="modified",
@@ -386,16 +344,9 @@ def get_query_data(
 	if order_by not in ALLOWED_SORT_FIELDS:
 		order_by = "modified"
 
-	# Filter by team
-	if team and team != "all":
-		query = query.where(DriveFile.team == team)
-
 	# Apply shared filter
 	query = _apply_shared_filter(query, shared_type)
-	query = query.select(
-		*FILE_FIELDS,
-		DrivePermission.user.as_("shared_team"),
-	).where(fn.Coalesce(DrivePermission.read, 1).as_("read") == 1)
+	query = query.select(*FILE_FIELDS)
 
 	# Send owner display data with files so the list view doesn't need a separate users fetch
 	query = (
@@ -457,9 +408,10 @@ def get_query_data(
 	slide_counts = _get_slide_counts(res)
 	share_count = _get_share_count(names)
 	public_files = _get_public_files(names)
-	team_files = _get_team_files(names)
+	general_files = _get_general_files(names)
 
-	# Enrich results with aggregated data and permissions
+	# Enrich results with aggregated data and permissions; access is resolved
+	# per row (deny rows can hide a child of a readable folder), so filter on it.
 	for r in res:
 		name = r["name"]
 		r["child_count"] = children_count.get(name, 0)
@@ -467,20 +419,18 @@ def get_query_data(
 			r["slide_count"] = slide_counts.get(r["content_docname"], 0)
 		if name in public_files:
 			r["share_count"] = -2
-		elif default > -1 and name in team_files:
+		elif default > -1 and name in general_files:
 			r["share_count"] = -1
 		elif default == 0:
 			r["share_count"] = share_count.get(name, default)
 		else:
 			r["share_count"] = default
 
-		if is_site_file(r):
-			r["file_type"] = map_ff_to_drive_type(r)
 		r["kind"] = entity_kind(r)
 		hide_storage_key(r)
 		r |= get_user_access(name)
 
-	return res
+	return [r for r in res if r["read"]]
 
 
 @frappe.whitelist()

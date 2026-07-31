@@ -20,9 +20,6 @@
 <script setup>
 import { ref } from 'vue'
 import { Dialog, createResource, FormControl, ErrorMessage } from 'frappe-ui'
-import { useRoute } from 'vue-router'
-
-const route = useRoute()
 
 const props = defineProps({
   parent: String,
@@ -40,7 +37,6 @@ const createLink = createResource({
   makeParams: () => ({
     file_name: file_name.value.trim(),
     link: link.value.trim(),
-    team: route.params.team,
     parent: props.parent,
   }),
   validate(params) {

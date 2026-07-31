@@ -73,14 +73,12 @@ import { notifCount } from '@/apps/drive/resources/permissions'
 import NoFilesSection from '@/apps/drive/components/NoFilesSection.vue'
 import DriveListSkeleton from '@/apps/drive/components/DriveListSkeleton.vue'
 import { formatDate } from '@/apps/drive/utils/format'
-import emitter from '@/apps/drive/emitter'
 import LucideInbox from '~icons/lucide/inbox'
 
 const router = useRouter()
 const onlyUnread = ref(true)
 
 function onRowClick(row) {
-  if (row.type === 'Team') emitter.emit('showSettings', 'teams')
   if (!row.read) {
     row.read = 1
     markAsRead.submit({ name: row.name })

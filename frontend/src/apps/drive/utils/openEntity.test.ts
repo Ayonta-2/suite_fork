@@ -15,8 +15,6 @@ vi.mock('@/apps/drive/resources/files', () => ({
   createDocument: {},
   createSheet: {},
   getDocuments: {},
-  getTeams: { data: {} },
-  getPublicTeams: { data: [] },
 }))
 vi.mock('@/apps/drive/data/breadcrumbs', () => ({ isHomeContext: () => true }))
 vi.mock('@/apps/drive/data/currentFolder', () => ({ currentFolder: { value: null } }))

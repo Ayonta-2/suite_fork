@@ -48,9 +48,6 @@
           </div>
         </div>
         <Button v-if="delayedLoading" :loading="true" label="Loading..." />
-        <TeamSelector :disabled="disabled && team === 'all'" v-if="
-          ['Shared', 'Recents', 'Favourites', 'Trash'].includes($route.name)
-        " v-model="team" :none="true" />
         <SortControl v-if="$route.name !== 'Recents' && view !== 'list'" v-model="sortOrder" :options="columnHeaders"
           :menu-items="sortMenuItems" :disabled />
 
@@ -102,13 +99,11 @@ import { view, shareView } from '@/apps/drive/data/prefs'
 import { onKeyDown } from '@vueuse/core'
 import LucideFilter from '~icons/lucide/filter'
 import SortControl from '@/components/SortControl.vue'
-import TeamSelector from '@/apps/drive/components/TeamSelector.vue'
 
 import LucideX from '~icons/lucide/x'
 
 const sortOrder = defineModel('sortOrder')
 const search = defineModel('search')
-const team = defineModel('team')
 const props = defineProps({
   selections: Array,
   actionItems: Array,

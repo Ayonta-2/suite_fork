@@ -1,6 +1,6 @@
 import frappe
 
-from suite.drive.utils import STATUS_TRASHED, create_drive_file, get_home_folder, get_new_file_name
+from suite.drive.utils import STATUS_TRASHED, create_drive_file, get_new_file_name, get_user_folder
 
 
 def execute():
@@ -20,21 +20,9 @@ def execute():
 			):
 				continue
 
-			team = frappe.db.get_value("Drive Team", {"owner": sheet.owner, "personal": 1}, "name")
-			if not team:
-				frappe.log_error(
-					title="Sheet left unbacked by Drive File",
-					message=(
-						f"Sheet {sheet.name} (owner {sheet.owner}) has no personal Drive Team, "
-						f"so no Drive File was created; it won't appear in Drive until re-saved."
-					),
-				)
-				continue
-
-			home = get_home_folder(team).name
+			home = get_user_folder(sheet.owner).name
 			file = create_drive_file(
-				team,
-				# Dedupe within the home folder so backfilling many like-titled
+				# Dedupe within the user folder so backfilling many like-titled
 				# sheets (e.g. several "Untitled Spreadsheet") doesn't create
 				# ambiguous same-named Drive files.
 				get_new_file_name(sheet.title or "Untitled Spreadsheet", home, "Spreadsheet"),

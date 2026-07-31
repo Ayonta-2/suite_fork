@@ -28,7 +28,7 @@
         label: 'Entity actions',
       }" />
       <Dropdown v-if="
-        ['drive-Folder', 'drive-Home', 'drive-Team'].includes($route.name) &&
+        ['drive-Folder', 'drive-Home'].includes($route.name) &&
         isLoggedIn &&
         // Assume upload to remove flash
         props.rootResource?.data?.upload !== false
@@ -71,7 +71,6 @@ import {
   dynamicList,
   isManaged,
   isAttachmentRef,
-  isSiteFile,
   isVirtual,
   openEntity,
 } from '@/apps/drive/utils/files'
@@ -198,7 +197,7 @@ const defaultActions = computed(() => {
           label: __('Open in Desk'),
           icon: LucideMonitorCog,
           onClick: () => window.open('/desk/file/' + rootEntity.value.name, '_blank'),
-          isEnabled: () => isSiteFile(rootEntity.value) && systemUser.value,
+          isEnabled: () => systemUser.value,
         },
         {
           label: __('Go to original'),

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import emitter from '@/apps/drive/emitter'
 import router from '@/apps/drive/router'
-import { getTeams, getPublicTeams } from '@/apps/drive/resources/files'
+import { rootInfo } from '@/apps/drive/resources/files'
 import { useSessionStore } from '@/boot/session'
 
 export type DriveBreadcrumb = Record<string, unknown>
@@ -38,13 +38,6 @@ function rootCrumb(routeName: string, path: string): DriveBreadcrumb {
   }
 }
 
-function teamCrumbs(team: string): DriveBreadcrumb[] {
-  const data = getTeams.data?.[team] || getPublicTeams.data?.[team]
-  return data
-    ? [{ label: data.title, name: data.name }]
-    : [{ loading: true, name: team }]
-}
-
 function attachmentCrumbs(
   routeName: string,
   path: string,
@@ -74,7 +67,6 @@ export const pageBreadcrumbs = computed<DriveBreadcrumb[]>(() => {
   const routeName = typeof route?.name === 'string' ? route.name : ''
   if (!routeName.startsWith('drive-')) return []
 
-  if (routeName === 'drive-Team') return teamCrumbs(String(route.params.team || ''))
   if (routeName === 'drive-Attachments')
     return attachmentCrumbs(
       routeName,
@@ -85,7 +77,11 @@ export const pageBreadcrumbs = computed<DriveBreadcrumb[]>(() => {
   if (ENTITY_ROUTES.includes(routeName)) {
     const entityName = String(route.params.entityName || '')
     const entity = crumbEntity.value
-    return entity && entity.name === entityName
+    // The trail is anchored on the caller's home and the Site folder, so
+    // rendering before rootInfo lands yields a wrong trail, not a late one.
+    // Guests never get rootInfo, so they render the plain trail instead.
+    const anchored = rootInfo.data || !useSessionStore().isLoggedIn
+    return entity && entity.name === entityName && anchored
       ? buildBreadCrumbs(entity)
       : [{ loading: true, name: entityName }]
   }
@@ -107,11 +103,6 @@ export function buildBreadCrumbs(entity: Record<string, unknown>) {
   ]
   if (!breadcrumbs.length)
     return [{ label: entity.file_name, name: entity.name, route: null }]
-
-  const in_home = entity.in_home
-  const team =
-    getTeams.data?.[breadcrumbs[0].team as string] ||
-    getPublicTeams.data?.[breadcrumbs[0].team as string]
 
   let res: DriveBreadcrumb[] = []
   if (entity.attached_to_doctype) {
@@ -144,35 +135,36 @@ export function buildBreadCrumbs(entity: Record<string, unknown>) {
       })
     }
     breadcrumbs = breadcrumbs.slice(-1)
-  } else if (team || in_home) {
-    res = [
-      {
-        label: in_home ? __('Home') : team.title,
-        name: in_home ? 'drive-Home' : team.name,
-        route: in_home
-          ? { name: 'drive-Home' }
-          : { name: 'drive-Team', params: { team: team.name } },
-      },
-    ]
-  } else if (entity.folder === 'Home/Attachments' || entity.folder === 'Home') {
-    res = [
-      {
-        label: __('Shared'),
-        name: 'drive-Shared',
-        route: '/drive/shared',
-      },
-    ]
-  } else if (useSessionStore().isLoggedIn) {
-    res = [
-      {
-        label: __('Shared'),
-        name: 'drive-Shared',
-        route: '/drive?shared=1',
-      },
-    ]
+  } else {
+    // The path runs through the caller's own folder (→ "Home"), the shared
+    // site folder (→ "Site"), or is a shared suffix (→ "Shared").
+    const homeIdx = breadcrumbs.findIndex((b) => b.name === rootInfo.data?.home)
+    const siteIdx = breadcrumbs.findIndex((b) => b.name === rootInfo.data?.root)
+    if (homeIdx > -1) {
+      res = [{ label: __('Home'), name: 'drive-Home', route: { name: 'drive-Home' } }]
+      breadcrumbs = breadcrumbs.slice(homeIdx + 1)
+    } else if (siteIdx > -1) {
+      res = [
+        {
+          label: __('Site'),
+          name: breadcrumbs[siteIdx].name,
+          route: {
+            name: 'drive-Folder',
+            params: { entityName: breadcrumbs[siteIdx].name },
+          },
+        },
+      ]
+      breadcrumbs = breadcrumbs.slice(siteIdx + 1)
+    } else if (useSessionStore().isLoggedIn) {
+      res = [
+        {
+          label: __('Shared'),
+          name: 'drive-Shared',
+          route: '/drive/shared',
+        },
+      ]
+    }
   }
-
-  if (!breadcrumbs[0].folder) breadcrumbs.splice(0, 1)
 
   breadcrumbs.forEach((folder, idx) => {
     const final = idx === breadcrumbs.length - 1

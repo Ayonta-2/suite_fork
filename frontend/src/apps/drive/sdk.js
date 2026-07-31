@@ -16,8 +16,8 @@ export {
   allUsers,
   usersWithAccess,
   updateAccess,
-  getTeams,
   rename,
+  rootInfo,
 } from '@/apps/drive/ui/drive/js/resources'
 
 /** The Drive File (with the caller's access) backing a content document. */
