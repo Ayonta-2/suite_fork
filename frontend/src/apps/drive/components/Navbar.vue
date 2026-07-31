@@ -9,9 +9,9 @@
     <div class="flex gap-2">
       <div id="navbar-content" class="flex items-center">
         <div class="icon mr-2">
-          <LucideGlobe2 v-if="rootEntity?.share_count === -2" class="size-4" />
-          <LucideBuilding2 v-else-if="rootEntity?.share_count === -1" class="size-4" />
-          <LucideUsers v-else-if="rootEntity?.share_count > 0" class="size-4" />
+          <LucideGlobe2 v-if="generalAccess === -2" class="size-4" />
+          <LucideBuilding2 v-else-if="generalAccess === -1" class="size-4" />
+          <LucideUsers v-else-if="generalAccess > 0" class="size-4" />
         </div>
       </div>
 
@@ -30,6 +30,8 @@
       <Dropdown v-if="
         ['drive-Folder', 'drive-Home'].includes($route.name) &&
         isLoggedIn &&
+        // Nothing of yours to create into on Home's shared tab
+        !($route.name === 'drive-Home' && shareView) &&
         // Assume upload to remove flash
         (!props.rootResource?.data || !!props.rootResource.data.upload)
       " :button="{
@@ -58,12 +60,13 @@ import { Button, Dropdown } from 'frappe-ui'
 import EditableBreadcrumbs from '@/apps/drive/components/EditableBreadcrumbs.vue'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { isHomeContext, pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
+import { shareView } from '@/apps/drive/data/prefs'
 import { startRename } from '@/apps/drive/data/selection'
 const { systemUser } = useCurrentUser()
 import emitter from '@/apps/drive/emitter'
 import { ref, computed, inject, h } from 'vue'
 import { entitiesDownload } from '@/apps/drive/utils/download'
-import { getRecents, getTrash, getFavourites, toggleFav } from '@/apps/drive/resources/files'
+import { getRecents, getTrash, getFavourites, toggleFav, rootInfo } from '@/apps/drive/resources/files'
 import { apps } from '@/apps/drive/resources/permissions'
 import { useRoute } from 'vue-router'
 import {
@@ -135,6 +138,13 @@ const listDialog = inject('listDialog', null)
 const removeFromList = inject('removeFromList', null)
 const entityDialog = ref('')
 const rootEntity = computed(() => props.rootResource?.data?.file_name && props.rootResource?.data)
+// The shared root is readable by everyone by definition, so the marker there
+// says nothing - it's only news on a folder that could have been restricted.
+const generalAccess = computed(() =>
+  rootEntity.value && rootEntity.value.name !== rootInfo.data?.root
+    ? rootEntity.value.share_count
+    : null,
+)
 const dialogEntities = computed(() =>
   props.entities.length ? props.entities : rootEntity.value ? [rootEntity.value] : [],
 )
