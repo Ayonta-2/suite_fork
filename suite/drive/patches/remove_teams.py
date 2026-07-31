@@ -10,6 +10,7 @@ from suite.drive.utils import (
     STATUS_ACTIVE,
     STATUS_TRASHED,
     _deny_general_read,
+    drop_previous_teams_if_empty,
     get_new_file_name,
     get_previous_teams_folder,
     get_root_folder,
@@ -93,8 +94,10 @@ def _collapse_teams():
     `Users` carries no grant, so user folders are private. `Previous Teams` inherits
     `Drive`'s $GENERAL read, so each migrated team gets a $GENERAL deny and is
     reachable only by its old members. A public team keeps $GENERAL read."""
-    previous_teams = get_previous_teams_folder()
-    roots = {get_root_folder().name, previous_teams.name, get_users_folder().name}
+    # Created on the first team that needs it: a site with nothing but personal
+    # teams shouldn't end up with an empty container in everyone's listing.
+    previous_teams = None
+    roots = {get_root_folder().name, get_users_folder().name}
     groups = {}
 
     teams = frappe.get_all("Drive Team", fields=["name", "title", "owner", "personal", "public", "quota"])
@@ -122,6 +125,7 @@ def _collapse_teams():
             _grant_members(home, members)
             continue
 
+        previous_teams = previous_teams or get_previous_teams_folder()
         _to_shared_folder(previous_teams, home, team, owned)
         # own row too, so it stays private if moved out of `Previous Teams`
         if team.public:
@@ -147,6 +151,8 @@ def _collapse_teams():
 
     _expand_team_rows(groups)
     _drop_obsolete_revoke_rows()
+    # A rerun, or an earlier run that made the container before this was lazy
+    drop_previous_teams_if_empty()
 
 
 LEVEL_LABEL = {0: "", 1: " (Members)", 2: " (Managers)"}

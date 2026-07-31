@@ -68,10 +68,9 @@ export const routes: RouteRecordRaw[] = [
         beforeEnter: [setPageTitle],
       },
       {
+        // Shared-with-you is a tab on Home now; old links still land somewhere real.
         path: 'shared',
-        name: 'drive-Shared',
-        component: () => import('@/apps/drive/pages/Shared.vue'),
-        beforeEnter: [setPageTitle],
+        redirect: { name: 'drive-Home' },
       },
       {
         path: 'attachments/:doctype?/:docname?',

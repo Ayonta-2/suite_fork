@@ -341,8 +341,14 @@ signup_form_template = "templates/signup.html"
 
 # mail — link integrity on delete
 ignore_links_on_delete = [
-    # drive
+    # drive — File.after_delete clears all of these itself, but the framework's
+    # link check runs first and would refuse the delete before it gets the chance
     "Drive Settings",
+    "Drive Permission",
+    "Drive Favourite",
+    "Drive Entity Log",
+    "Drive Notification",
+    "Drive Entity Activity Log",
     # mail
     "Mail Account Request",
     "Mail Domain Request",

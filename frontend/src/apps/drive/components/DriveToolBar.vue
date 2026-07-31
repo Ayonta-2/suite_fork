@@ -5,11 +5,11 @@
       {{ selections.length === 1 ? __('item') : __('items') }}
       {{ __('selected') }}
     </div>
-    <div v-if="$route.name === 'drive-Shared'"
+    <div v-if="$route.name === 'drive-Home'"
       class="bg-surface-gray-2 rounded-[10px] space-x-0.5 h-7 flex items-center mr-4 py-1">
       <TabButtons v-model="shareView" :options="[
         {
-          label: __('Site'),
+          label: __('Yours'),
           value: false,
         },
         {

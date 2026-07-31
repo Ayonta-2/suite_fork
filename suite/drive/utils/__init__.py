@@ -261,6 +261,20 @@ def get_previous_teams_folder():
     return frappe._dict(name=folder.name, file_url=folder.file_url)
 
 
+def drop_previous_teams_if_empty():
+    """The container only earns its place once a team lands in it. Empty - nothing
+    migrated, or everything was moved out since - it's a dead end in the listing."""
+    container = frappe.db.get_value(
+        "File", {"folder": ROOT_FOLDER, "file_name": PREVIOUS_TEAMS_FOLDER, "is_folder": 1}, "name"
+    )
+    if not container:
+        return
+    if frappe.db.exists("File", {"folder": container, "status": ("in", [STATUS_ACTIVE, STATUS_TRASHED])}):
+        return
+    # cascades to the removed children and to the $GENERAL deny row
+    frappe.delete_doc("File", container, ignore_permissions=True, force=True)
+
+
 def _deny_general_read(entity):
     if frappe.db.exists("Drive Permission", {"entity": entity, "user": GENERAL_USER}):
         return

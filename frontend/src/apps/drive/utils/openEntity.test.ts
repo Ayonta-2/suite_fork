@@ -23,7 +23,7 @@ vi.mock('@/apps/drive/utils/toasts.js', () => ({ toast: vi.fn() }))
 vi.mock('idb-keyval', () => ({ set: vi.fn() }))
 vi.mock('frappe-ui', () => ({ useFileUpload: () => ({}), toast: vi.fn() }))
 
-import { openEntity } from './files'
+import { openEntity, folderRoute } from './files'
 
 const location = { href: '', origin: 'http://localhost' }
 
@@ -135,9 +135,53 @@ describe('openEntity', () => {
     })
   })
 
+  it('drills into a virtual doctype node that has no document yet', () => {
+    openEntity(entity({ kind: 'virtual', attached_to_doctype: 'ToDo' }))
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      name: 'drive-Attachments',
+      params: { doctype: 'ToDo' },
+    })
+  })
+
   it('opens in a new tab via the shared link builder', () => {
     openEntity(entity({ file_type: 'PDF' }), true)
     expect(mocks.open).toHaveBeenCalledWith('http://localhost/drive/f/abc', '_blank')
     expect(mocks.routerPush).not.toHaveBeenCalled()
+  })
+})
+
+describe('folderRoute', () => {
+  it('routes a real folder to the Drive tree', () => {
+    expect(folderRoute(entity({ name: 'folder-1', is_folder: true }))).toEqual({
+      name: 'drive-Folder',
+      params: { entityName: 'folder-1' },
+    })
+  })
+
+  // A virtual node's `name` is a doctype or a docname, so routing it like a
+  // folder lands on a File that doesn't exist.
+  it('routes a virtual doctype node to its attachments bucket', () => {
+    expect(
+      folderRoute(
+        entity({ name: 'ToDo', is_folder: true, kind: 'virtual', attached_to_doctype: 'ToDo' })
+      )
+    ).toEqual({ name: 'drive-Attachments', params: { doctype: 'ToDo' } })
+  })
+
+  it('routes a virtual document node to that document', () => {
+    expect(
+      folderRoute(
+        entity({
+          name: 'todo-1',
+          is_folder: true,
+          kind: 'virtual',
+          attached_to_doctype: 'ToDo',
+          attached_to_name: 'todo-1',
+        })
+      )
+    ).toEqual({
+      name: 'drive-Attachments',
+      params: { doctype: 'ToDo', docname: 'todo-1' },
+    })
   })
 })

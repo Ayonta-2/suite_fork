@@ -1,7 +1,12 @@
 <template>
   <Popover>
-    <template #trigger="{ togglePopover, isOpen }">
-      <slot v-bind="{ onClick: () => togglePopover(), isActive: isOpen }"></slot>
+    <!-- MenuItems.vue renders the toolbar Button through its #default slot, but
+         that button gets no tooltip (only plain command items do), so we render
+         our own — same as DropdownMenuGroup.vue. It has to stay the direct child
+         of #trigger: PopoverTrigger wires the click onto it via as-child. -->
+    <template #trigger="{ isOpen }">
+      <Button size="xs" variant="ghost" :icon="icon" label="Custom Spacing" tooltip="Custom Spacing"
+        class="aria-pressed:bg-surface-gray-3" :aria-pressed="isOpen" />
     </template>
     <template #default>
       <div class="p-4 flex flex-col gap-4 w-64">
@@ -44,7 +49,7 @@
 
 <script setup>
 import { reactive, computed, watch } from 'vue'
-import { Popover } from 'frappe-ui'
+import { Popover, Button } from 'frappe-ui'
 import { FormControl, FormLabel } from 'frappe-ui'
 import {
   DEFAULT_LINE_HEIGHT,
@@ -55,6 +60,7 @@ import {
 const props = defineProps({
   editor: Object,
   settings: Object,
+  icon: [Object, Function, String],
 })
 
 const current = computed(() => {

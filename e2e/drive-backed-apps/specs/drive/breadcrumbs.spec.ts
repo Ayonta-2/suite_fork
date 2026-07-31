@@ -31,7 +31,7 @@ test("each section shows its own name, and the navbar never vanishes while navig
 	await page.goto("/drive");
 	await expect.poll(() => trail(page)).toEqual(["Home"]);
 
-	for (const section of ["Recents", "Shared", "Favourites", "Trash"]) {
+	for (const section of ["Recents", "Favourites", "Trash"]) {
 		await page.getByRole("link", { name: section, exact: true }).click();
 		await expect(page.locator("#navbar")).toBeVisible();
 		await expect.poll(() => trail(page)).toEqual([section]);

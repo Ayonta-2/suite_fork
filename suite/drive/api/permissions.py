@@ -26,6 +26,11 @@ def filter_access(path):
     return {k: v for k, v in path[-1].items() if k in NO_ACCESS.keys()}
 
 
+def is_drive_admin(user: str | None = None):
+    user = user or frappe.session.user
+    return user == "Administrator" or "Suite Admin" in frappe.get_roles(user)
+
+
 @frappe.whitelist(allow_guest=True)
 def get_user_access(entity: str | Document | frappe._dict, user: str | None = None):
     """
@@ -35,6 +40,11 @@ def get_user_access(entity: str | Document | frappe._dict, user: str | None = No
         entity = frappe.get_cached_doc("File", entity)
     if not user:
         user = frappe.session.user
+
+    # Admins hold everything everywhere - including the shared root, which carries
+    # no grant of its own, so nothing else would let them create there.
+    if is_drive_admin(user):
+        return {**dict.fromkeys(PERMISSION_TYPES, 1), "type": "admin"}
 
     # Owners hold everything, bypassing any deny on the path.
     if user != "Guest" and entity.owner == user:
@@ -173,7 +183,7 @@ def get_shared_with_list(entity: str):
 def exceeds_grant_ceiling(entity, requested, user=None):
     """Levels in `requested` the user doesn't hold, so can't hand out."""
     user = user or frappe.session.user
-    if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
+    if is_drive_admin(user):
         return []
     granter = get_user_access(entity, user)
     return [t for t in PERMISSION_TYPES if requested.get(t) and not granter.get(t)]
@@ -181,7 +191,7 @@ def exceeds_grant_ceiling(entity, requested, user=None):
 
 def drive_permission_has_permission(doc, ptype="read", user=None):
     user = user or frappe.session.user
-    if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
+    if is_drive_admin(user):
         return True
     if isinstance(doc, str):
         doc = frappe.get_doc("Drive Permission", doc)
@@ -200,7 +210,7 @@ def drive_permission_has_permission(doc, ptype="read", user=None):
 
 def drive_settings_has_permission(doc, ptype="read", user=None):
     user = user or frappe.session.user
-    if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
+    if is_drive_admin(user):
         return True
     if user == "Guest":
         return False
@@ -211,7 +221,7 @@ def drive_settings_has_permission(doc, ptype="read", user=None):
 
 def drive_invitation_has_permission(doc, ptype="read", user=None):
     user = user or frappe.session.user
-    if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
+    if is_drive_admin(user):
         return True
     if isinstance(doc, str):
         doc = frappe.get_doc("Drive User Invitation", doc)
@@ -220,7 +230,7 @@ def drive_invitation_has_permission(doc, ptype="read", user=None):
 
 def activity_log_has_permission(doc, ptype="read", user=None):
     user = user or frappe.session.user
-    if user == "Administrator" or "Suite Admin" in frappe.get_roles(user):
+    if is_drive_admin(user):
         return True
     if isinstance(doc, str):
         doc = frappe.get_doc("Drive Entity Activity Log", doc)

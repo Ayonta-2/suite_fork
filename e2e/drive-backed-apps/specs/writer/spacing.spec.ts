@@ -46,6 +46,33 @@ async function computedPx(
 	return Number.parseFloat(await computed(locator, property));
 }
 
+// The toolbar Button that MenuItems.vue renders for a component item carries no
+// tooltip, so SpacingDialog renders its own trigger. Wrapping the slot in a
+// Tooltip instead breaks the popover — PopoverTrigger can't wire as-child
+// through it — so assert both halves together.
+test("the Custom Spacing button has a tooltip and still opens the popover", async ({
+	owner,
+	run,
+}) => {
+	const { page } = owner;
+	const file = await createWriterDocument(
+		page.request,
+		uniqueWriterTitle(run.run_id, "spacing-tooltip"),
+	);
+	await openWriterDocument(page, file.name);
+
+	const button = page.getByRole("button", { name: "Custom Spacing" });
+	await button.hover();
+	// reka's role="tooltip" node is an sr-only, aria-hidden span, so assert on the
+	// visible bubble the popper renders instead.
+	await expect(
+		page.locator("[data-reka-popper-content-wrapper]", { hasText: "Custom Spacing" }),
+	).toBeVisible();
+
+	await button.click();
+	await expect(spacingInputs(page)).toHaveCount(3);
+});
+
 test("line spacing uses Google Docs multiples and leaves paragraph spacing alone", async ({
 	owner,
 	run,

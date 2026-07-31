@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import emitter from '@/apps/drive/emitter'
 import router from '@/apps/drive/router'
 import { rootInfo } from '@/apps/drive/resources/files'
+import { shareView } from '@/apps/drive/data/prefs'
 import { useSessionStore } from '@/boot/session'
 
 export type DriveBreadcrumb = Record<string, unknown>
@@ -40,11 +41,14 @@ function rootCrumb(routeName: string, path: string): DriveBreadcrumb {
 
 function attachmentCrumbs(
   routeName: string,
-  path: string,
   doctype?: string,
   docname?: string,
 ): DriveBreadcrumb[] {
-  const crumbs = [rootCrumb(routeName, path)]
+  // Its own route, not the current path: this crumb is the way back out of a
+  // doctype or document, so it can't point at the page you're already on.
+  const crumbs = [
+    { ...rootCrumb(routeName, ''), route: { name: routeName } },
+  ]
   if (doctype) {
     crumbs.push({
       label: doctype,
@@ -70,7 +74,6 @@ export const pageBreadcrumbs = computed<DriveBreadcrumb[]>(() => {
   if (routeName === 'drive-Attachments')
     return attachmentCrumbs(
       routeName,
-      route.path,
       route.params.doctype as string,
       route.params.docname as string,
     )
@@ -137,7 +140,7 @@ export function buildBreadCrumbs(entity: Record<string, unknown>) {
     breadcrumbs = breadcrumbs.slice(-1)
   } else {
     // The path runs through the caller's own folder (→ "Home"), the shared
-    // site folder (→ "Site"), or is a shared suffix (→ "Shared").
+    // site folder (→ "Everyone"), or is a shared suffix (→ Home's "With you").
     const homeIdx = breadcrumbs.findIndex((b) => b.name === rootInfo.data?.home)
     const siteIdx = breadcrumbs.findIndex((b) => b.name === rootInfo.data?.root)
     if (homeIdx > -1) {
@@ -146,7 +149,7 @@ export function buildBreadCrumbs(entity: Record<string, unknown>) {
     } else if (siteIdx > -1) {
       res = [
         {
-          label: __('Site'),
+          label: __('Everyone'),
           name: breadcrumbs[siteIdx].name,
           route: {
             name: 'drive-Folder',
@@ -158,9 +161,11 @@ export function buildBreadCrumbs(entity: Record<string, unknown>) {
     } else if (useSessionStore().isLoggedIn) {
       res = [
         {
-          label: __('Shared'),
-          name: 'drive-Shared',
-          route: '/drive/shared',
+          label: __('Shared with me'),
+          name: 'drive-Home',
+          route: { name: 'drive-Home' },
+          // Home opens on your own files; this crumb means the other tab.
+          onClick: () => (shareView.value = true),
         },
       ]
     }

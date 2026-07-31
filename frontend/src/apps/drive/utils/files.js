@@ -93,20 +93,25 @@ export function isVirtual(entity) {
   return entity?.kind === 'virtual'
 }
 
+// Where a folder row points. Virtual grouping nodes aren't Files - they're
+// attachment buckets, and their `name` is a doctype or a docname, so routing
+// them like a folder lands on an entity that doesn't exist. A node with an
+// attached_to_name drills into a single document; otherwise into a doctype.
+export const folderRoute = (entity) =>
+  isVirtual(entity)
+    ? {
+        name: 'drive-Attachments',
+        params: entity.attached_to_name
+          ? {
+              doctype: entity.attached_to_doctype,
+              docname: entity.attached_to_name,
+            }
+          : { doctype: entity.attached_to_doctype },
+      }
+    : { name: 'drive-Folder', params: { entityName: entity.name } }
+
 export const openEntity = (entity, new_tab = false) => {
-  // Virtual grouping node: navigate into its attachments bucket. A node with an
-  // attached_to_name drills into a single document; otherwise into a doctype.
-  if (isVirtual(entity)) {
-    return router.push({
-      name: 'drive-Attachments',
-      params: entity.attached_to_name
-        ? {
-            doctype: entity.attached_to_doctype,
-            docname: entity.attached_to_name,
-          }
-        : { doctype: entity.attached_to_doctype },
-    })
-  }
+  if (isVirtual(entity)) return router.push(folderRoute(entity))
 
   if (!entity.is_folder) {
     if (!getRecents.data?.some?.((k) => k.name === entity.name))
