@@ -21,7 +21,11 @@
 			:disable-collapse="isMobile"
 		>
 			<template #footer-items>
-				<!-- Personal mailbox quota is meaningless while administering the server. -->
+				<!-- Personal widgets (events, quota) are meaningless while administering the server. -->
+				<UpcomingEvents
+					v-if="user.data.is_jmap_configured && !route.meta.isDashboard"
+					:is-collapsed="isSidebarCollapsed"
+				/>
 				<QuotaBar
 					v-if="user.data.is_jmap_configured && !route.meta.isDashboard"
 					:is-collapsed="isSidebarCollapsed"
@@ -107,6 +111,7 @@ import SettingsModal from '@/apps/mail/components/Modals/SettingsModal.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import PWASettings from '@/apps/mail/components/PWASettings.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
+import UpcomingEvents from '@/apps/mail/components/UpcomingEvents.vue'
 
 import type { MailboxData } from '@/apps/mail/types'
 
@@ -524,7 +529,7 @@ const sidebarItems = computed(() => {
 	const groups = [
 		{ label: __('Default'), items: defaultItems },
 		{ label: __('Custom'), items: customItems },
-		{ label: __('People'), items: contactsItems },
+		{ label: __('People'), items: contactsItems, collapsible: true },
 	]
 
 	// All Inboxes and Screener share one nameless group pinned above the folders, so they sit at

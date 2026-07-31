@@ -1,5 +1,3 @@
-from __future__ import unicode_literals
-
 import frappe
 
 from suite.drive.api.permissions import user_has_permission
@@ -28,9 +26,7 @@ def get_context():
             file = frappe.get_cached_doc("File", parts[1])
             if user_has_permission(file, "read"):
                 context.title = file.file_name
-                context.description = "By " + frappe.get_cached_value(
-                    "User", file.owner, "full_name"
-                )
+                context.description = "By " + frappe.get_cached_value("User", file.owner, "full_name")
         except:
             pass
 

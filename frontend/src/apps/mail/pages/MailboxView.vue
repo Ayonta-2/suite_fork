@@ -51,8 +51,8 @@
 		class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
 		:class="
 			showDeleteBanner || showScreenerBanner
-				? 'h-[calc(100dvh-6.1rem)]'
-				: 'h-[calc(100dvh-3.05rem)]'
+				? 'h-[calc(100dvh-6.125rem)]'
+				: 'h-[calc(100dvh-3.0625rem)]'
 		"
 	>
 		<!-- Loading -->

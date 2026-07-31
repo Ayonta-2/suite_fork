@@ -8,14 +8,14 @@ PRIVILEGED_FIELDS = ("quota", "user_folder")
 
 
 class DriveSettings(Document):
-	def validate(self):
-		if self.flags.ignore_permissions or frappe.session.user == "Administrator":
-			return
-		if "Suite Admin" in frappe.get_roles():
-			return
+    def validate(self):
+        if self.flags.ignore_permissions or frappe.session.user == "Administrator":
+            return
+        if "Suite Admin" in frappe.get_roles():
+            return
 
-		before = self.get_doc_before_save()
-		for field in PRIVILEGED_FIELDS:
-			previous = before.get(field) if before else None
-			if (self.get(field) or None) != (previous or None):
-				frappe.throw(f"{field} is managed by Drive.", frappe.PermissionError)
+        before = self.get_doc_before_save()
+        for field in PRIVILEGED_FIELDS:
+            previous = before.get(field) if before else None
+            if (self.get(field) or None) != (previous or None):
+                frappe.throw(f"{field} is managed by Drive.", frappe.PermissionError)
