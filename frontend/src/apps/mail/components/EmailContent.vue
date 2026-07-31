@@ -87,8 +87,14 @@ const handleTrust = () => {
 	emit('trust')
 }
 
-// Listen for keyboard events from iframe
+// Listen for keyboard/swipe events from iframe
 const handleMessage = (event: MessageEvent) => {
+	// Horizontal swipes detected inside the iframe, re-broadcast for the thread pane's
+	// swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
+	if (event.data?.type === 'swipe') {
+		window.dispatchEvent(new CustomEvent('email-swipe', { detail: event.data.direction }))
+		return
+	}
 	if (event.data?.type !== 'keyboard') return
 
 	// Create a synthetic keyboard event in the parent
@@ -152,6 +158,22 @@ const srcdoc = computed(() => {
 					line-height: 1.25rem;
 					background-color: ${colors.value.background};
 					margin: 0;
+					/* 'anywhere' (unlike 'break-word') also shrinks min-content width, so an
+					   unbreakable run (nbsp-joined text, long URLs) inside a table cell can't
+					   force the table wider than the viewport. */
+					overflow-wrap: anywhere;
+				}
+
+				/* Emails routinely hardcode widths (width attrs, inline styles); clamp them to the
+				   viewport so the message reflows instead of scrolling sideways. max-width wins over
+				   both the width attribute and inline width, covering every fixed-width variant. */
+				table, td, th, div {
+					max-width: 100% !important;
+				}
+
+				img {
+					max-width: 100% !important;
+					height: auto !important;
 				}
 
 				blockquote {
@@ -192,19 +214,32 @@ const srcdoc = computed(() => {
 					white-space: pre;
 					overflow-x: auto;
 				}
-
-				@media (max-width: 640px) {
-                    /* Only override specific problematic patterns */
-                    table[width="600"], table[width="600px"] {
-                        width: 100% !important;
-                    }
-                }
 			</style>
 			<script> ${iframeResizerChildScript} <\/script>
 		</head>
 		<body>
 			${transformedContent}
 			<script>
+				// The stylesheet's max-width clamp can't reach fixed-width tables nested
+				// inside other tables: during the outer table's intrinsic sizing a
+				// percentage max-width counts as auto, so the inner pixel width still
+				// propagates up and the whole grid overflows. Rewrite any fixed pixel
+				// width wider than the sheet instead. Desktop panes are wider than the
+				// usual 600px email grid, so this effectively only bites on mobile.
+				const normalizeWidths = () => {
+					const limit = document.documentElement.clientWidth;
+					if (!limit) return;
+					document.querySelectorAll('[width], [style*="width"]').forEach((el) => {
+						if (parseInt(el.getAttribute('width'), 10) > limit) el.setAttribute('width', '100%');
+						const style = el.style;
+						if (style.width.endsWith('px') && parseFloat(style.width) > limit) style.width = '100%';
+						if (style.maxWidth.endsWith('px') && parseFloat(style.maxWidth) > limit) style.maxWidth = '100%';
+						if (style.minWidth.endsWith('px') && parseFloat(style.minWidth) > limit) style.minWidth = '0';
+					});
+				};
+				normalizeWidths();
+				window.addEventListener('resize', normalizeWidths);
+
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {
 					document.addEventListener(eventType, (e) => {
@@ -230,6 +265,36 @@ const srcdoc = computed(() => {
 						}
 					}
 				});
+
+				// Forward horizontal swipes to the parent — touches never leave the iframe, so
+				// the thread pane's swipe navigation can't see them otherwise. A gesture that
+				// starts on horizontally scrollable content (incl. an overflowing body) means
+				// scroll, not navigate.
+				const inHorizontalScroller = (el) => {
+					const doc = document.documentElement;
+					if (doc.scrollWidth > doc.clientWidth + 1) return true;
+					for (; el && el.nodeType === 1; el = el.parentElement) {
+						if (el.scrollWidth > el.clientWidth + 1) {
+							const overflowX = getComputedStyle(el).overflowX;
+							if (overflowX === 'auto' || overflowX === 'scroll') return true;
+						}
+					}
+					return false;
+				};
+				let swipeOrigin = null;
+				document.addEventListener('touchstart', (e) => {
+					swipeOrigin = e.touches.length === 1 && !inHorizontalScroller(e.target)
+						? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+						: null;
+				}, { passive: true });
+				document.addEventListener('touchend', (e) => {
+					if (!swipeOrigin) return;
+					const dx = e.changedTouches[0].clientX - swipeOrigin.x;
+					const dy = e.changedTouches[0].clientY - swipeOrigin.y;
+					swipeOrigin = null;
+					if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 2) return;
+					window.parent.postMessage({ type: 'swipe', direction: dx < 0 ? 'left' : 'right' }, '*');
+				}, { passive: true });
 				${colors.value.script}
 			<\/script>
 		</body>

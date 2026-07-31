@@ -218,6 +218,16 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     scroll.y = Math.max(0, Math.min(scroll.y, _maxScrollY()))
   }
 
+  // Pin the open in-cell editor to `sel`'s current on-screen rect. ANY change
+  // to scroll, zoom, or layout that repaints the grid must call this too, or
+  // the <textarea> is left floating at a stale offset while the highlight moves
+  // under it — the "editor shows somewhere else" bug. Cheap no-op when idle.
+  function _positionEditor() {
+    if (!editing) return
+    const fmt = getFormat ? (getFormat(cellId(sel.r, sel.c)) || {}) : {}
+    overlay.position(geo.colX(sel.c) * _zoom, geo.rowY(sel.r) * _zoom, geo.cw(sel.c) * _zoom, geo.rh(sel.r) * _zoom, fmt, _zoom)
+  }
+
   // Single entry point for setting the scroll offset (logical units). Used by
   // the wheel handler and the overlay scrollbars so both keep the in-cell
   // editor pinned to its cell and repaint. Values are clamped to the sheet.
@@ -225,10 +235,7 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     scroll.x = x
     scroll.y = y
     _clampScroll()
-    if (editing) {
-      const fmt = getFormat ? getFormat(cellId(sel.r, sel.c)) : {}
-      overlay.position(geo.colX(sel.c) * _zoom, geo.rowY(sel.r) * _zoom, geo.cw(sel.c) * _zoom, geo.rh(sel.r) * _zoom, fmt, _zoom)
-    }
+    _positionEditor()
     render()
   }
 
@@ -685,6 +692,9 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
       else if (y + h > cssH) scroll.y += y + h - cssH + 8
     }
     _clampScroll()
+    // Picking scrolls the view while the editor stays anchored to the formula
+    // cell; repin it so it tracks that cell instead of hanging in place.
+    _positionEditor()
   }
 
   // Compute the ref text from anchor+head and rewrite the inserted span.
@@ -816,10 +826,13 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     if (isCellEditable && !isCellEditable(sel.r, sel.c)) { onBlockedEdit?.(); return }
     editMode = mode
     selEnd = { r: sel.r, c: sel.c }
-    const fmt = getFormat ? getFormat(cellId(sel.r, sel.c)) : {}
-    overlay.position(geo.colX(sel.c) * _zoom, geo.rowY(sel.r) * _zoom, geo.cw(sel.c) * _zoom, geo.rh(sel.r) * _zoom, fmt, _zoom)
-    overlay.show(initialValue)
+    // Type-to-edit and F2 don't move the selection, so `sel` may have been
+    // scrolled off-screen (wheel/scrollbar leaves the selection put). Bring it
+    // back into view before positioning, or the editor opens off in the void.
+    ensureVisible(sel.r, sel.c)
     editing = true
+    _positionEditor()
+    overlay.show(initialValue)
     onInput?.(cellId(sel.r, sel.c), initialValue)
     render()
   }
@@ -1711,6 +1724,11 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     canvas.style.width  = physW + 'px'
     canvas.style.height = physH + 'px'
     _clampScroll()
+    // A viewport/zoom/extent change can re-clamp scroll and shift every cell;
+    // repin the open editor so it doesn't strand at its pre-resize offset (e.g.
+    // a ResizeObserver firing mid-edit when a side panel opens or the window
+    // resizes).
+    _positionEditor()
   }
 
   function resize(w, h) {
@@ -1798,6 +1816,9 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     scroll.x = 0
     scroll.y = 0
     _clampScroll()
+    // Freezing resets the scroll origin, shifting every cell; repin the open
+    // editor so it tracks its cell instead of stranding at the old offset.
+    _positionEditor()
     render()
   }
 
@@ -1917,6 +1938,10 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     // SheetEditor uses this to keep the editor alive across sheet-tab clicks
     // for cross-sheet range picking.
     isEditingFormula: () => editing && overlay.getValue().startsWith('='),
+    // Whether the in-cell overlay editor is open at all. The host uses this to
+    // hand clipboard ops (copy/cut/paste) to the textarea's native handling
+    // while editing, instead of hijacking them for grid-level cell ops.
+    isEditing: () => editing,
     getSelection: getSelRange,
     setSelection: setSelRange,
     getPreMousedownSel,
@@ -1932,6 +1957,10 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     // included here.
     getCellRect: (r, c) => ({ x: geo.colX(c) * _zoom, y: geo.rowY(r) * _zoom,
                               width: geo.cw(c) * _zoom, height: geo.rh(r) * _zoom }),
+    // Physical size of the visible grid viewport (the grid-wrap content box), in
+    // CSS px. Cached in _applyCanvasSize, so reading it is reflow-free — used by
+    // DOM overlays to clamp themselves to what's on screen.
+    getViewportSize: () => ({ w: _viewportW, h: _viewportH }),
     setDiffOverlay, setActiveDiffSheet,
     autoFitCol, autoFitRow, autoGrowRowFor,
     expandRows, getTotalRows, isNearBottom,

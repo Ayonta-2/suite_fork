@@ -6,16 +6,14 @@
     logo: FrappeDriveLogo,
   }" :sections="sidebarItems">
     <template #footer-items>
-      <StorageBar v-if="teamExists.data" :is-expanded="!sidebarCollapsed" />
+      <StorageBar :is-expanded="!sidebarCollapsed" />
     </template>
     <template #sidebar-item="{ item, isCollapsed }">
       <SidebarItem :class="draggedSpace === item.label &&
         'ring-1 ring-outline-gray-3 !bg-surface-gray-3'
         " :label="item.label" :accessKey="item.accessKey" :icon="item.icon" :suffix="item.suffix" :to="item.to"
         :isActive="item.isActive" :isCollapsed :onClick="item.onClick" @dragover.prevent="
-          ; (['Trash', 'Home'].includes(item.label) ||
-          item.to?.name === 'drive-Team') &&
-          (draggedSpace = item.label)
+          ;['Trash', 'Home'].includes(item.label) && (draggedSpace = item.label)
           " @dragleave="draggedSpace = null" @drop.prevent="handleDrop($event, item)" />
     </template>
   </Sidebar>
@@ -26,19 +24,17 @@
 import FrappeDriveLogo from '@/apps/drive/components/FrappeDriveLogo.vue'
 
 import StorageBar from './StorageBar.vue'
-import { Sidebar, SidebarItem, createResource } from 'frappe-ui'
+import { Sidebar, SidebarItem } from 'frappe-ui'
 import { notifCount, apps } from '@/apps/drive/resources/permissions'
-import { getTeams } from '@/apps/drive/resources/files'
+import { rootInfo } from '@/apps/drive/resources/files'
 import { dynamicList } from '@/apps/drive/utils/files'
 
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 const { fullName: currentUserFullName } = useCurrentUser()
 import { getRootSection } from '@/apps/drive/data/breadcrumbs'
 import { sidebarCollapsed } from '@/apps/drive/data/prefs'
-import icons from '@/apps/drive/utils/icons'
 import LucideClock from '~icons/lucide/clock'
-import LucideUsers from '~icons/lucide/users'
-import LucideFiles from '~icons/lucide/files'
+import LucideBuilding2 from '~icons/lucide/building-2'
 import LucideTrash from '~icons/lucide/trash'
 import LucideHome from '~icons/lucide/home'
 import LucideStar from '~icons/lucide/star'
@@ -51,7 +47,7 @@ import LucideGalleryVerticalEnd from '~icons/lucide/gallery-vertical-end'
 import SettingsDialog from '@/apps/drive/components/Settings/SettingsDialog.vue'
 import ShortcutsDialog from '@/apps/drive/components/ShortcutsDialog.vue'
 import emitter from '@/apps/drive/emitter'
-import { ref, computed, watch, h } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useRouter, useRoute } from 'vue-router'
 import { move } from '@/apps/drive/resources/files'
@@ -69,13 +65,7 @@ defineEmits(['toggleMobileSidebar', 'showSearchPopUp'])
 const router = useRouter()
 const route = useRoute()
 notifCount.fetch()
-getTeams.fetch()
-
-const teamExists = createResource({
-  url: 'suite.drive.utils.get_default_team',
-  auto: true,
-  onSuccess: (d) => !d && router.replace({ name: 'drive-Setup' }),
-})
+rootInfo.fetch()
 
 const showSettings = ref(false)
 const showShortcuts = ref(false)
@@ -167,7 +157,7 @@ const sidebarItems = computed(() => {
           onClick: () => emitter.emit('showSearchPopup', true),
         },
         {
-          label: __('Inbox'),
+          label: __('Notifications'),
           icon: LucideInbox,
           to: { name: 'drive-Inbox' },
           isActive: active('drive-Inbox'),
@@ -177,7 +167,6 @@ const sidebarItems = computed(() => {
       ],
     },
     {
-      label: 'Drive',
       items: [
         {
           label: 'Home',
@@ -194,11 +183,25 @@ const sidebarItems = computed(() => {
           accessKey: 'r',
         },
         {
-          label: 'Shared',
-          to: { name: 'drive-Shared' },
-          icon: LucideUsers,
-          isActive: active('drive-Shared'),
-          accessKey: 's',
+          label: 'Favourites',
+          to: { name: 'drive-Favourites' },
+          icon: LucideStar,
+          isActive: active('drive-Favourites'),
+          accessKey: 'f',
+        },
+        {
+          label: 'Everyone',
+          to: rootInfo.data
+            ? {
+                name: 'drive-Folder',
+                params: { entityName: rootInfo.data.root },
+              }
+            : undefined,
+          icon: LucideBuilding2,
+          isActive:
+            route.params.entityName === rootInfo.data?.root ||
+            first.name === rootInfo.data?.root,
+          accessKey: 'e',
         },
         {
           label: 'Trash',
@@ -209,23 +212,7 @@ const sidebarItems = computed(() => {
       ],
     },
     {
-      label: 'Teams',
-      cond: getTeams.data && Object.keys(getTeams.data).length > 0,
-      collapsible: true,
-      items:
-        getTeams.data &&
-        Object.values(getTeams.data).map((team) => ({
-          label: team.title,
-          to: { name: 'drive-Team', params: { team: team.name } },
-          icon: h(icons[team.icon || 'building']),
-          isActive:
-            (route.name === 'drive-Team' && route.params.team === team.name) ||
-            first.name === team.name,
-          accessKey: 't',
-        })),
-    },
-    {
-      label: 'Views',
+      label: 'Browse',
       collapsible: true,
       items: dynamicList([
         {
@@ -234,13 +221,6 @@ const sidebarItems = computed(() => {
           icon: LucidePaperclip,
           isActive: active('drive-Attachments'),
           accessKey: 'a',
-        },
-        {
-          label: 'Favourites',
-          to: { name: 'drive-Favourites' },
-          icon: LucideStar,
-          isActive: active('drive-Favourites'),
-          accessKey: 'f',
         },
         {
           label: 'Documents',
@@ -264,20 +244,24 @@ const sidebarItems = computed(() => {
 const draggedSpace = ref(null)
 const handleDrop = (e, space) => {
   draggedSpace.value = null
-  const file_name = e.dataTransfer.getData('application/x-filename')
+  // Prefer the multi-selection payload, falling back to the single dragged file.
+  let names = []
+  try {
+    names = JSON.parse(e.dataTransfer.getData('application/x-filenames') || '[]')
+  } catch {
+    names = []
+  }
+  if (!names.length) {
+    const single = e.dataTransfer.getData('application/x-filename')
+    if (single) names = [single]
+  }
+  if (!names.length) return
+  const clearFromList = () =>
+    names.forEach((name) => emitter.emit('remove-file-ui', name))
   if (space.label === 'Trash') {
-    emitter.emit('remove-file', file_name)
+    emitter.emit('remove-file', names)
   } else if (space.label === 'Home') {
-    move.submit(
-      { entity_names: [file_name] },
-      { onSuccess: () => emitter.emit('remove-file-ui', file_name) }
-    )
-  } else if (space.to?.name === 'drive-Team') {
-    const team = space.to.params.team
-    move.submit(
-      { entity_names: [file_name], team },
-      { onSuccess: () => emitter.emit('remove-file-ui', file_name) }
-    )
+    move.submit({ entity_names: names }, { onSuccess: clearFromList })
   }
 }
 </script>

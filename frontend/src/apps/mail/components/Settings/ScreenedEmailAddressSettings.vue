@@ -1,6 +1,6 @@
 <template>
 	<AppSettingsHeader :title="__('Screener')" />
-	<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-[4.4rem] pb-8 pt-6">
+	<div class="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden px-[4.4rem] pb-8 pt-6 max-sm:px-4 max-sm:pt-4">
 		<!-- The Screener's master switch, so this tab shows both the switch and the rules. Saves
 		     immediately (no Save button here) — same JMAP Account flag the Account tab edits. -->
 		<SettingsRow
@@ -16,6 +16,10 @@
 		</SettingsRow>
 
 		<template v-if="screenedAddresses.data?.length">
+			<div class="flex shrink-0 items-center justify-between">
+				<h2 class="text-base-semibold text-ink-gray-8">{{ __('Screened Senders') }}</h2>
+				<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
+			</div>
 			<div class="flex shrink-0 gap-2">
 				<FormControl
 					v-model="search"
@@ -28,20 +32,25 @@
 						<FeatherIcon name="search" class="text-ink-gray-5 w-4" />
 					</template>
 				</FormControl>
-				<Dropdown :options="sortOptions">
+				<!-- Segmented sort control: field picker + direction toggle share a seam
+					(-ml-px collapses the doubled border). -->
+				<div class="flex">
+					<AdaptiveDropdown :options="sortOptions" :title="__('Sort By')">
+						<Button
+							variant="outline"
+							:label="sortLabel"
+							icon-right="lucide-chevron-down"
+							class="!rounded-r-none"
+						/>
+					</AdaptiveDropdown>
 					<Button
 						variant="outline"
-						:label="sortLabel"
-						icon-right="lucide-chevron-down"
+						:icon="sortDir === 'asc' ? 'lucide-arrow-up' : 'lucide-arrow-down'"
+						:tooltip="sortDir === 'asc' ? __('Ascending') : __('Descending')"
+						class="-ml-px !rounded-l-none"
+						@click="toggleSortDir"
 					/>
-				</Dropdown>
-				<Button
-					variant="outline"
-					:icon="sortDir === 'asc' ? 'lucide-arrow-up' : 'lucide-arrow-down'"
-					:tooltip="sortDir === 'asc' ? __('Ascending') : __('Descending')"
-					@click="toggleSortDir"
-				/>
-				<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
+				</div>
 			</div>
 
 			<div v-if="rows.length" class="relative min-h-0 flex-1">
@@ -57,21 +66,30 @@
 					>
 						<ListHeader />
 						<ListRows />
-						<ListSelectBanner>
-							<template #actions>
-								<Dropdown :options="bulkActionOptions">
+						<!-- Default-slot override: drops the banner's built-in "Select all"
+						     (redundant next to the header's master checkbox) and, on mobile,
+						     its min-w-[596px], which is wider than the screen. -->
+						<ListSelectBanner class="max-sm:!min-w-0">
+							<template #default="{ selections, unselectAll }">
+								<span class="text-ink-gray-9 shrink-0">
+									{{ __('{0} selected', [String(selections.size)]) }}
+								</span>
+								<div class="ml-auto flex items-center gap-1">
+									<AdaptiveDropdown :options="bulkActionOptions" :title="__('Change Action')">
+										<Button
+											variant="ghost"
+											:label="__('Change Action')"
+											icon-right="lucide-chevron-down"
+										/>
+									</AdaptiveDropdown>
 									<Button
 										variant="ghost"
-										:label="__('Change Action')"
-										icon-right="lucide-chevron-down"
+										theme="red"
+										:label="__('Remove')"
+										@click="showRemoveModal = true"
 									/>
-								</Dropdown>
-								<Button
-									variant="ghost"
-									theme="red"
-									:label="__('Remove')"
-									@click="showRemoveModal = true"
-								/>
+									<Button icon="lucide-x" variant="ghost" @click="unselectAll" />
+								</div>
 							</template>
 						</ListSelectBanner>
 					</ListView>
@@ -103,7 +121,6 @@ import { computed, ref, useTemplateRef } from 'vue'
 import {
 	Button,
 	Dialog,
-	Dropdown,
 	FeatherIcon,
 	FormControl,
 	ListHeader,
@@ -115,6 +132,8 @@ import {
 	createResource,
 } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+
+import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 
 import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
@@ -214,7 +233,7 @@ const SORT_LABELS: Record<SortField, string> = {
 const sortField = ref<SortField>('modified')
 const sortDir = ref<'asc' | 'desc'>('desc')
 
-const sortLabel = computed(() => __('Sort: {0}', [SORT_LABELS[sortField.value]]))
+const sortLabel = computed(() => SORT_LABELS[sortField.value])
 const sortOptions = computed(() =>
 	(Object.keys(SORT_LABELS) as SortField[]).map((field) => ({
 		label: SORT_LABELS[field],

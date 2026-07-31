@@ -1,11 +1,26 @@
 <template>
 	<div v-if="screeningEnabled" class="flex h-full flex-col">
-		<header class="flex items-center justify-between border-b px-3 py-2.5 sm:px-5">
-			<div class="flex items-center space-x-2">
-				<Button v-if="isMobile" icon="menu" variant="ghost" @click="openSidebar" />
-				<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
-				<Breadcrumbs :items="[{ label: __('Screener') }]" class="-ml-0.5" />
-			</div>
+		<!-- On mobile this is the shared title header (minus the hamburger) and it
+		     absorbs the count bar's actions; desktop keeps breadcrumbs + count bar. -->
+		<header
+			class="flex items-center justify-between border-b px-3 py-2.5 max-sm:p-0 sm:px-5"
+		>
+			<MobileTitleHeader
+				v-if="isMobile"
+				class="min-w-0 flex-1"
+				:title="__('Screener')"
+				:count="senders.data?.length ? waitingLabel : undefined"
+			>
+				<template #actions>
+					<AdaptiveDropdown :options="bulkOptions" placement="bottom-end">
+						<Button variant="ghost" class="!h-10 !w-10 !rounded-full">
+							<template #icon><Ellipsis class="icon" /></template>
+						</Button>
+					</AdaptiveDropdown>
+				</template>
+			</MobileTitleHeader>
+			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
+			<Breadcrumbs v-else :items="[{ label: __('Screener') }]" class="-ml-0.5" />
 			<HeaderActions @reload-mails="senders.reload()" />
 		</header>
 
@@ -30,15 +45,13 @@
 					<!-- nowrap keeps each word+icon parenthetical on one line -->
 					<span class="whitespace-nowrap">
 						{{ __('Allow') }} (<Check
-							class="inline h-3.5 w-3.5 align-[-2.5px]"
-							stroke-width="2"
+							class="inline h-3.5 w-3.5 stroke-2 align-[-2.5px]"
 						/>)
 					</span>
 					{{ __('a sender once and their emails reach your Inbox from then on;') }}
 					<span class="whitespace-nowrap">
 						{{ __('Deny') }} (<X
-							class="inline h-3.5 w-3.5 align-[-2.5px]"
-							stroke-width="2"
+							class="inline h-3.5 w-3.5 stroke-2 align-[-2.5px]"
 						/>)
 					</span>
 					{{ __('sends them to Junk.') }}
@@ -83,7 +96,8 @@
 				>
 					<div class="pb-20">
 						<!-- Count bar — matches the mailbox "All Mails" toolbar height/style. -->
-						<div class="flex min-h-[49px] items-center justify-between border-b px-5">
+						<!-- Desktop-only: on mobile the header above carries these actions. -->
+						<div class="hidden min-h-[49px] items-center justify-between border-b px-5 sm:flex">
 							<div class="flex min-w-0 items-center">
 								<span class="truncate">{{ waitingLabel }}</span>
 								<!-- Redundant while the explainer slab is teaching the same lesson above,
@@ -109,15 +123,13 @@
 												<!-- nowrap keeps each word+icon parenthetical on one line -->
 												<span class="whitespace-nowrap">
 													{{ __('Allow') }} (<Check
-														class="inline h-3.5 w-3.5 align-[-2.5px]"
-														stroke-width="2"
+														class="inline h-3.5 w-3.5 stroke-2 align-[-2.5px]"
 													/>)
 												</span>
 												{{ __('a sender and their emails go to your Inbox — now and in the future.') }}
 												<span class="whitespace-nowrap">
 													{{ __('Deny') }} (<X
-														class="inline h-3.5 w-3.5 align-[-2.5px]"
-														stroke-width="2"
+														class="inline h-3.5 w-3.5 stroke-2 align-[-2.5px]"
 													/>)
 												</span>
 												{{ __('sends them to Junk.') }}
@@ -139,7 +151,6 @@
 										<template #icon><Ellipsis class="icon" /></template>
 									</Button>
 								</Dropdown>
-								<Button :label="__('Allow All')" variant="ghost" @click="allowAll" />
 							</div>
 						</div>
 
@@ -158,7 +169,13 @@
 									<span class="text-ink-gray-8 truncate text-[15px] !font-semibold sm:text-base">
 										{{ sender.from_name || sender.from_email }}
 									</span>
-									<span class="text-ink-gray-5 truncate text-[13px]">{{ sender.from_email }}</span>
+									<span class="text-ink-gray-5 flex-1 truncate text-[13px]">{{ sender.from_email }}</span>
+									<MailDate
+										v-if="isMobile"
+										:datetime="sender.received_at"
+										:in-list="true"
+										class="text-ink-gray-4 shrink-0 whitespace-nowrap text-xs tabular-nums"
+									/>
 								</div>
 								<div class="text-ink-gray-8 truncate text-sm !font-semibold !leading-[1.5]">
 									{{ sender.subject || __('[No subject]') }}
@@ -172,10 +189,30 @@
 										{{ sender.preview ? ' · ' : '' }}{{ __('{0} messages', [String(sender.count)]) }}
 									</span>
 								</div>
+								<!-- Variant E: full-width labeled verdict pills — x/check icons alone
+								     relied on tooltips, which never fire on touch. -->
+								<div v-if="isMobile" class="flex gap-2 pt-1.5">
+									<Button
+										variant="outline"
+										class="!h-8 flex-1"
+										:label="__('Deny')"
+										@click.stop="screenOut([sender.from_email])"
+									>
+										<template #prefix><X class="h-4 w-4" /></template>
+									</Button>
+									<Button
+										variant="outline"
+										class="!h-8 flex-1"
+										:label="__('Allow')"
+										@click.stop="allow([sender.from_email])"
+									>
+										<template #prefix><Check class="h-4 w-4" /></template>
+									</Button>
+								</div>
 							</div>
 
 							<!-- Received time, with Deny / Allow icon buttons -->
-							<div class="flex shrink-0 flex-col items-end justify-between">
+							<div v-if="!isMobile" class="flex shrink-0 flex-col items-end justify-between">
 								<MailDate
 									:datetime="sender.received_at"
 									:in-list="true"
@@ -187,35 +224,43 @@
 										:tooltip="__('Deny')"
 										@click.stop="screenOut([sender.from_email])"
 									>
-										<template #icon><X class="h-4 w-4" stroke-width="1.5" /></template>
+										<template #icon><X class="h-4 w-4" /></template>
 									</Button>
 									<Button
 										variant="outline"
 										:tooltip="__('Allow')"
 										@click.stop="allow([sender.from_email])"
 									>
-										<template #icon><Check class="h-4 w-4" stroke-width="1.5" /></template>
+										<template #icon><Check class="h-4 w-4" /></template>
 									</Button>
 								</div>
 							</div>
 						</div>
+
 					</div>
 				</div>
 
-				<!-- Read-only thread preview — split when the reading pane is on, full-width otherwise -->
+				<!-- Read-only thread preview — split when the reading pane is on, full-width otherwise.
+				     Teleported to body on mobile (like the selection bar): inside the layout's
+				     isolate stacking context the tab bar would paint over the sliding pane. -->
+				<Teleport to="body" :disabled="!isMobile">
 				<div
 					class="bg-surface-base flex flex-col"
 					:class="{
 						'w-2/3': !isMobile && showReadingPane,
 						'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
-						'fixed inset-0': isMobile,
-						hidden: (isMobile || !showReadingPane) && !openSender,
+						'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
+							isMobile,
+						'invisible translate-x-full': isMobile && !openSender,
+						hidden: !isMobile && !showReadingPane && !openSender,
 					}"
+					@touchstart.passive="onPreviewTouchStart"
+					@touchend.passive="onPreviewTouchEnd"
 				>
 					<template v-if="openSender">
 						<!-- Subject + Deny/Allow; back button only when the preview owns the whole pane -->
 						<div
-							class="bg-surface-base sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b p-2.5 sm:px-5"
+							class="bg-surface-base border-b sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 p-2.5 max-sm:border-b-0 sm:px-5"
 						>
 							<div class="flex min-w-0 items-center">
 								<Button
@@ -240,14 +285,14 @@
 										class="!rounded-r-none"
 										@click="screenOut([openSender.from_email])"
 									/>
-									<Dropdown
+									<AdaptiveDropdown
 										:options="domainOptions('screenOut', openSender)"
 										placement="bottom-end"
 									>
 										<Button variant="outline" class="-ml-px !rounded-l-none !px-1.5">
-											<template #icon><ChevronDown class="h-4 w-4" stroke-width="1.5" /></template>
+											<template #icon><ChevronDown class="h-4 w-4" /></template>
 										</Button>
-									</Dropdown>
+									</AdaptiveDropdown>
 								</div>
 								<div class="flex items-center">
 									<Button
@@ -256,7 +301,7 @@
 										class="!rounded-r-none"
 										@click="allow([openSender.from_email])"
 									/>
-									<Dropdown
+									<AdaptiveDropdown
 										:options="domainOptions('allow', openSender)"
 										placement="bottom-end"
 									>
@@ -265,24 +310,31 @@
 											class="!rounded-l-none !px-1.5"
 											style="border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent)"
 										>
-											<template #icon><ChevronDown class="h-4 w-4" stroke-width="1.5" /></template>
+											<template #icon><ChevronDown class="h-4 w-4" /></template>
 										</Button>
-									</Dropdown>
+									</AdaptiveDropdown>
 								</div>
 							</div>
 						</div>
 
-						<MailThreadSkeleton v-if="previewLoading" />
-						<MailThread
-							v-else-if="previewMails?.length"
-							:key="openSender.from_email"
-							class="min-h-0 flex-1"
-							readonly
-							mailbox=""
-							:thread-i-d="openSender.from_email"
-							:threads="[]"
-							:messages="previewMails"
-						/>
+						<!-- Keyed by sender so a swipe pages like the mailbox thread view: the old
+					     preview slides out while the next sender's slides in. -->
+						<div class="relative min-h-0 flex-1 overflow-hidden">
+							<Transition :name="senderSlide" @after-enter="senderSlide = ''">
+								<div :key="senderPaneKey" class="flex h-full flex-col">
+									<MailThreadSkeleton v-if="previewLoading" />
+									<MailThread
+										v-else-if="previewMails?.length"
+										class="min-h-0 flex-1"
+										readonly
+										mailbox=""
+										:thread-i-d="openSender.from_email"
+										:threads="[]"
+										:messages="previewMails"
+									/>
+								</div>
+							</Transition>
+						</div>
 					</template>
 
 					<div v-else class="flex-1 overflow-hidden">
@@ -298,6 +350,7 @@
 						</div>
 					</div>
 				</div>
+				</Teleport>
 			</template>
 		</div>
 
@@ -315,6 +368,7 @@ import {
 	ChevronLeft,
 	CircleHelp,
 	Ellipsis,
+	Inbox,
 	LoaderCircle,
 	X,
 } from 'lucide-vue-next'
@@ -329,12 +383,15 @@ import {
 } from 'frappe-ui'
 
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
-import { useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
+import { isNavigationKey, navigationOffset } from '@/apps/mail/utils/listNavigation'
+import { useScreenSize, useSettings, useSwipeNav } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
+import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
 
 import type { Mail, MailboxData, ScreeningSender } from '@/apps/mail/types'
@@ -342,7 +399,6 @@ import type { Mail, MailboxData, ScreeningSender } from '@/apps/mail/types'
 const store = userStore()
 const router = useRouter()
 const { isMobile } = useScreenSize()
-const { openSidebar } = useSidebar()
 const { openSettings } = useSettings()
 
 const showReadingPane = computed(() => !!store.userResource?.data?.show_reading_pane)
@@ -409,6 +465,34 @@ const senders = createResource({
 	auto: true,
 })
 
+// Swipe on the open preview (mobile): left → next sender, right → previous — the
+// screener counterpart of the mailbox thread swipe.
+const { onTouchStart: onPreviewTouchStart, onTouchEnd: onPreviewTouchEnd } = useSwipeNav(
+	() => isMobile.value && !!openSender.value,
+	(offset) => {
+		const list = senders.data ?? []
+		const idx = list.findIndex(
+			(s: ScreeningSender) => s.from_email === openSender.value!.from_email,
+		)
+		const next = idx === -1 ? undefined : list[idx + offset]
+		if (!next) return
+		// Arms the paging animation for this navigation only — row taps and the allow/deny
+		// auto-advance keep swapping instantly.
+		senderSlide.value = offset > 0 ? 'page-next' : 'page-prev'
+		selectSender(next)
+	},
+)
+
+// The <Transition> name while a swipe navigation renders; cleared after the slide.
+const senderSlide = ref('')
+
+// The preview wrapper's key: follows the open sender but freezes on close, so the pane's
+// slide-out still shows the preview it closed on instead of a remounted blank wrapper.
+const senderPaneKey = ref('none')
+watch(openSender, (sender) => {
+	if (sender) senderPaneKey.value = sender.from_email
+})
+
 // Once a mail is open, ↑/↓ (or k/j) step to the previous/next sender and Esc closes it. Else inert.
 const handleKeydown = (e: KeyboardEvent) => {
 	if (!openSender.value || shouldIgnoreKeypress(e)) return
@@ -420,11 +504,10 @@ const handleKeydown = (e: KeyboardEvent) => {
 		return
 	}
 
-	const offset =
-		key === 'arrowup' || key === 'k' ? -1 : key === 'arrowdown' || key === 'j' ? 1 : 0
-	if (!offset) return
+	if (!isNavigationKey(key)) return
 
 	e.preventDefault()
+	const offset = navigationOffset(key)
 	const list = senders.data ?? []
 	const cur = list.findIndex(
 		(s: ScreeningSender) => s.from_email === openSender.value!.from_email,
@@ -609,6 +692,7 @@ const domainOptions = (action: 'allow' | 'screenOut', sender: ScreeningSender) =
 			action === 'allow'
 				? __('Allow all emails from {0}', [domainOf(sender.from_email)])
 				: __('Deny all emails from {0}', [domainOf(sender.from_email)]),
+		icon: action === 'allow' ? Check : X,
 		onClick: () => runDomainAction(action, sender),
 	},
 ]
@@ -712,7 +796,9 @@ const bulkConfirmOptions = computed(() => {
 })
 
 const bulkOptions = computed(() => [
-	{ label: __('Deny All'), onClick: denyAll },
-	{ label: __('Move All to Inbox'), onClick: () => (showClearAll.value = true) },
+	{ label: __('Allow All'), icon: Check, onClick: allowAll },
+	{ label: __('Deny All'), icon: X, onClick: denyAll },
+	{ label: __('Move All to Inbox'), icon: Inbox, onClick: () => (showClearAll.value = true) },
 ])
 </script>
+

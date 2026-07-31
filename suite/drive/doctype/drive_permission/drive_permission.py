@@ -9,6 +9,10 @@ from suite.drive.api.notifications import notify_share
 
 class DrivePermission(Document):
     def after_insert(self):
+        # `notify_share` runs inline and emails per row; a migration rewriting
+        # historical grants would mail everyone about folders they already had.
+        if frappe.flags.in_install or frappe.flags.in_migrate or frappe.flags.in_patch:
+            return
         if self.user:
             frappe.enqueue(
                 notify_share,

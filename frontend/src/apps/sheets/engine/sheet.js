@@ -239,15 +239,21 @@ export function createSheet({ onCellChanged, onCellsChanged } = {}) {
 		// cached formula result might now reference the wrong cell. Safer
 		// to clear everything than try to remap memo keys.
 		_clearAllMemo()
-		const entries = Object.entries(sh)
-			.map(([id, v]) => ({ id, p: parseCellId(id), v }))
-			.filter(({ p }) => p && pred(p))
-		entries.sort((a, b) => a.p.row !== b.p.row ? b.p.row - a.p.row : b.p.col - a.p.col)
-		for (const { id, p, v } of entries) {
+		// Two-phase move: clear every source id first, then write the targets.
+		// A single-pass delete-then-write breaks whenever the shift is *toward*
+		// existing cells (e.g. deleteRow shifts rows up): a target id can still
+		// hold an unprocessed source, and its later delete would wipe the value
+		// we just moved there. Draining sources up front makes the order — and
+		// the shift direction — irrelevant.
+		const moves = []
+		for (const [id, v] of Object.entries(sh)) {
+			const p = parseCellId(id)
+			if (!p || !pred(p)) continue
 			delete sh[id]
 			const nid = newIdFn(p)
-			if (nid) sh[nid] = v
+			if (nid) moves.push([nid, v])
 		}
+		for (const [nid, v] of moves) sh[nid] = v
 		deps.rebuild(sh, sheet)
 	}
 

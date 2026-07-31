@@ -5,42 +5,42 @@ from suite.www import suite as www
 
 
 class SuiteBoot(unittest.TestCase):
-	def setUp(self):
-		self.frappe = self.enterContext(mock.patch("suite.www.suite.frappe"))
-		self.frappe.session.user = "alice@example.com"
-		self.frappe.local.site = "test.localhost"
-		self.frappe.get_system_settings.return_value = 0
-		self.frappe.conf.get.side_effect = lambda key, default=None: default
-		self.frappe.conf.developer_mode = 0
-		self.frappe._dict.side_effect = lambda d: d
+    def setUp(self):
+        self.frappe = self.enterContext(mock.patch("suite.www.suite.frappe"))
+        self.frappe.session.user = "alice@example.com"
+        self.frappe.local.site = "test.localhost"
+        self.frappe.get_system_settings.return_value = 0
+        self.frappe.conf.get.side_effect = lambda key, default=None: default
+        self.frappe.conf.developer_mode = 0
+        self.frappe._dict.side_effect = lambda d: d
 
-		self.get_setup_state = self.enterContext(
-			mock.patch(
-				"suite.www.suite.get_setup_state",
-				return_value={"setup_complete": True, "can_run_setup": True},
-			)
-		)
-		self.get_workspace = self.enterContext(
-			mock.patch(
-				"suite.www.suite.get_workspace",
-				return_value={"workspace_name": "Acme", "workspace_logo": "/files/logo.png"},
-			)
-		)
+        self.get_setup_state = self.enterContext(
+            mock.patch(
+                "suite.www.suite.get_setup_state",
+                return_value={"setup_complete": True, "can_run_setup": True},
+            )
+        )
+        self.get_workspace = self.enterContext(
+            mock.patch(
+                "suite.www.suite.get_workspace",
+                return_value={"workspace_name": "Acme", "workspace_logo": "/files/logo.png"},
+            )
+        )
 
-	def test_logged_in_boot_shape(self):
-		boot = www.get_boot()
-		self.assertEqual(boot["suite_workspace_name"], "Acme")
-		self.assertEqual(boot["suite_workspace_logo"], "/files/logo.png")
-		self.assertEqual(boot["site_name"], "test.localhost")
-		self.assertEqual(boot["socketio_port"], 9000)
-		self.assertEqual(boot["push_relay_server_url"], "")
+    def test_logged_in_boot_shape(self):
+        boot = www.get_boot()
+        self.assertEqual(boot["suite_workspace_name"], "Acme")
+        self.assertEqual(boot["suite_workspace_logo"], "/files/logo.png")
+        self.assertEqual(boot["site_name"], "test.localhost")
+        self.assertEqual(boot["socketio_port"], 9000)
+        self.assertEqual(boot["push_relay_server_url"], "")
 
-	def test_guest_boot_is_redacted(self):
-		self.frappe.session.user = "Guest"
-		boot = www.get_boot()
-		self.assertIs(boot["suite_setup_complete"], False)
-		self.assertIs(boot["suite_can_run_setup"], False)
-		self.assertEqual(boot["suite_workspace_name"], "")
-		self.assertEqual(boot["suite_workspace_logo"], "")
-		self.get_setup_state.assert_not_called()
-		self.get_workspace.assert_not_called()
+    def test_guest_boot_is_redacted(self):
+        self.frappe.session.user = "Guest"
+        boot = www.get_boot()
+        self.assertIs(boot["suite_setup_complete"], False)
+        self.assertIs(boot["suite_can_run_setup"], False)
+        self.assertEqual(boot["suite_workspace_name"], "")
+        self.assertEqual(boot["suite_workspace_logo"], "")
+        self.get_setup_state.assert_not_called()
+        self.get_workspace.assert_not_called()

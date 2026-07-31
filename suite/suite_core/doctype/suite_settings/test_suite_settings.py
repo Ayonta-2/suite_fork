@@ -12,9 +12,9 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 class IntegrationTestSuiteSettings(IntegrationTestCase):
-	"""
-	Integration tests for SuiteSettings.
-	Use this class for testing interactions between multiple components.
-	"""
+    """
+    Integration tests for SuiteSettings.
+    Use this class for testing interactions between multiple components.
+    """
 
-	pass
+    pass

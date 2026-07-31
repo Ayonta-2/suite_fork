@@ -8,4 +8,4 @@ from suite.utils.permissions import OwnerFromUser
 
 
 class MailSignature(OwnerFromUser, Document):
-	pass
+    pass

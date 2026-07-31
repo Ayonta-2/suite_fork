@@ -206,7 +206,10 @@ export interface ClientToServerEvents {
 	media_control: (data: MediaControlRequest) => void;
 	host_control: (data: HostControlRequest) => void;
 	screen_share: (data: ScreenShareRequest) => void;
-	'chat:send': (data: ChatSendRequest) => void;
+	'chat:send': (
+		data: ChatSendRequest,
+		callback?: (response: SFUResponse & { timestamp?: string }) => void,
+	) => void;
 	'chat:toggle_restriction': (data: { enabled: boolean }) => void;
 	'poll:create': (
 		data: {
@@ -389,6 +392,7 @@ export interface TransportData {
 	roomId: string;
 	peerId: string;
 	transport: WebRtcTransport;
+	direction?: 'send' | 'recv';
 }
 
 export interface ProducerData {
@@ -400,6 +404,7 @@ export interface ProducerData {
 export interface ConsumerData {
 	roomId: string;
 	peerId: string;
+	transportId: string;
 	consumer: Consumer;
 }
 
