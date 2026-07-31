@@ -20,17 +20,17 @@ AUTO_CLOSE_SECONDS = 10
 
 
 def get_context(context):
-	token = frappe.form_dict.get("token")
-	if token:
-		result = resolve_rsvp(token)
-	else:
-		result = {
-			"success": False,
-			"title": _("Invalid Link"),
-			"message": _("This response link is invalid or has expired."),
-		}
+    token = frappe.form_dict.get("token")
+    if token:
+        result = resolve_rsvp(token)
+    else:
+        result = {
+            "success": False,
+            "title": _("Invalid Link"),
+            "message": _("This response link is invalid or has expired."),
+        }
 
-	context.no_cache = 1
-	context.update(result)
-	context.auto_close_seconds = AUTO_CLOSE_SECONDS
-	return context
+    context.no_cache = 1
+    context.update(result)
+    context.auto_close_seconds = AUTO_CLOSE_SECONDS
+    return context

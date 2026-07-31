@@ -6,16 +6,16 @@ from frappe.model.document import Document
 
 
 class MeetSettings(Document):
-	# begin: auto-generated types
-	# This code is auto-generated. Do not modify anything in this block.
+    # begin: auto-generated types
+    # This code is auto-generated. Do not modify anything in this block.
 
-	from typing import TYPE_CHECKING
+    from typing import TYPE_CHECKING
 
-	if TYPE_CHECKING:
-		from frappe.types import DF
+    if TYPE_CHECKING:
+        from frappe.types import DF
 
-		allow_guest: DF.Check
-		codec_strategy: DF.Literal["svc", "simulcast"]
-	# end: auto-generated types
+        allow_guest: DF.Check
+        codec_strategy: DF.Literal["svc", "simulcast"]
+    # end: auto-generated types
 
-	pass
+    pass

@@ -12,18 +12,18 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 class UnitTestRateLimit(UnitTestCase):
-	"""
-	Unit tests for RateLimit.
-	Use this class for testing individual functions and methods.
-	"""
+    """
+    Unit tests for RateLimit.
+    Use this class for testing individual functions and methods.
+    """
 
-	pass
+    pass
 
 
 class IntegrationTestRateLimit(IntegrationTestCase):
-	"""
-	Integration tests for RateLimit.
-	Use this class for testing interactions between multiple components.
-	"""
+    """
+    Integration tests for RateLimit.
+    Use this class for testing interactions between multiple components.
+    """
 
-	pass
+    pass

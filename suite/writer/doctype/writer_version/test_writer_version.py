@@ -12,11 +12,10 @@ EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
-
 class IntegrationTestWriterVersion(IntegrationTestCase):
-	"""
-	Integration tests for WriterVersion.
-	Use this class for testing interactions between multiple components.
-	"""
+    """
+    Integration tests for WriterVersion.
+    Use this class for testing interactions between multiple components.
+    """
 
-	pass
+    pass
