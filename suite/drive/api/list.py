@@ -16,6 +16,7 @@ from suite.drive.utils import (
 	USERS_FOLDER,
 	entity_kind,
 	get_principals,
+	principal_list,
 	get_user_folder,
 	hide_storage_key,
 )
@@ -85,16 +86,38 @@ def _apply_file_kinds_filter(query, file_kinds):
 def _get_children_count(files):
 	"""
 	Returns a dict mapping folder names to their child count.
+
+	Counts what the caller can actually see. Access is inherited, so a child is
+	visible unless a deny row hides it and nothing nearer grants it back —
+	otherwise `Previous Teams` reports all 512 migrated teams to someone who can
+	open three of them.
 	"""
 	if not files:
 		return {}
-	query = (
-		frappe.qb.from_(DriveFile)
-		.where((DriveFile.folder.isin([k["name"] for k in files])) & (DriveFile.status == STATUS_ACTIVE))
-		.groupby(DriveFile.folder)
-		.select(DriveFile.folder, fn.Count("*").as_("child_count"))
+	names = [k["name"] for k in files]
+	principals = principal_list()
+	rows = frappe.db.sql(
+		f"""
+		select f.folder, count(*)
+		from `tabFile` f
+		where f.folder in %(names)s and f.status = %(active)s
+		  and (
+			not exists (
+				select 1 from `tabDrive Permission` d
+				where d.entity = f.name and d.deny = 1 and d.`read` = 1
+				  and d.user in ({principals})
+			)
+			or exists (
+				select 1 from `tabDrive Permission` g
+				where g.entity = f.name and g.deny = 0 and g.`read` = 1
+				  and g.user in ({principals})
+			)
+		  )
+		group by f.folder
+		""",
+		{"names": names, "active": STATUS_ACTIVE},
 	)
-	return dict(query.run())
+	return dict(rows)
 
 
 def _get_slide_counts(rows):
