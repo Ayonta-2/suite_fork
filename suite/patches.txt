@@ -47,11 +47,13 @@ suite.sheets.patches.v0_1.migrate_blob_to_cells
 # --- drive (remove teams) ---
 # Indexes first: the collapse does thousands of exists() checks on Drive Permission
 # and one File lookup per team, and core indexes neither. Unindexed it is quadratic.
+# S3 has no rename, so a mirrored tree makes a folder move copy and delete every
+# object beneath it. Sites on S3 belong on flat storage.
+execute:frappe.db.set_single_value("Drive Disk Settings", "flat", 1) if frappe.db.get_single_value("Drive Disk Settings", "enabled") else None
 suite.drive.patches.index_file_folder
 suite.drive.patches.dedupe_drive_permissions
 suite.drive.patches.remove_teams #2
 suite.drive.patches.drop_team_doctypes #2
-execute:frappe.db.delete("Singles", {"doctype": "Drive Disk Settings", "field": "flat"})
 # content-app backfills, rewritten for the single-root world so they must
 # run after remove_teams
 suite.slides.doctype.presentation.patches.integrate_with_drive

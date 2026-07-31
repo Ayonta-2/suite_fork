@@ -295,8 +295,9 @@ class File(FrappeFile):
 			self.folder = new_parent
 			self.file_name = get_new_file_name(self.file_name, new_parent, self.is_folder, self.name)
 
-		# Update all the children's paths
-		if not self._not_in_disk():
+		# Update all the children's paths. Flat storage keys by id, so nothing on
+		# disk or in any file_url depends on where a file sits in the tree.
+		if not self._not_in_disk() and not self.manager.flat:
 			# folder keys carry a trailing slash, the way create_folder writes them
 			new_path = str(self.manager.get_disk_path(self)) + ("/" if self.is_folder else "")
 			self.manager.move(self, new_path)
@@ -356,9 +357,11 @@ class File(FrappeFile):
 		# Sanctioned rename: this method owns the disk move, so let validate through.
 		self.flags.drive_disk_rename = True
 		self.file_name = new_file_name
-		path = self.manager.rename(self)
-		if self.file_url and not self._not_in_disk():
-			self.recursive_path_move(self.file_url, path)
+		# Flat storage keys by id, so a name has no bearing on any path.
+		if not self.manager.flat:
+			path = self.manager.rename(self)
+			if self.file_url and not self._not_in_disk():
+				self.recursive_path_move(self.file_url, path)
 
 		self.save()
 
@@ -411,8 +414,13 @@ class File(FrappeFile):
 		self.save()
 
 	def get_children(self):
-		"""Returns a generator that yields child Documents."""
-		child_names = frappe.get_list(self.doctype, filters={"folder": self.name}, pluck="name")
+		"""Returns a generator that yields child Documents.
+
+		get_all, not get_list: this is an internal tree walk, authorized at the entry
+		point. Permission-filtering it would silently skip children the caller cannot
+		see — leaving them orphaned on a move, or Active inside a deleted folder.
+		"""
+		child_names = frappe.get_all(self.doctype, filters={"folder": self.name}, pluck="name")
 		for name in child_names:
 			yield frappe.get_doc(self.doctype, name)
 

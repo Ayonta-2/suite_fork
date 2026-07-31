@@ -156,10 +156,10 @@ def get_shared_with_list(entity: str):
 			p.full_name = p.user[len(GROUP_PREFIX) :]
 
 	owner = frappe.db.get_value("File", entity, "owner")
-	permissions.insert(
-		0,
-		frappe.db.get_value("User", owner, ["user_image", "full_name", "name as user"], as_dict=True),
-	)
+	owner_info = frappe.db.get_value("User", owner, ["user_image", "full_name", "name as user"], as_dict=True)
+	if owner_info:
+		# the owner's User row can be gone; the file outlives them
+		permissions.insert(0, owner_info)
 
 	for p in permissions:
 		if p.get("is_group"):

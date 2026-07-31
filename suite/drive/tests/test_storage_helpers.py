@@ -31,6 +31,7 @@ class TestStorageHelpers(unittest.TestCase):
 		with TemporaryDirectory() as site_folder:
 			manager = object.__new__(FileManager)
 			manager.s3_enabled = False
+			manager.flat = False  # this exercises the mirrored-tree path
 			manager.site_folder = Path(site_folder)
 			entity = frappe._dict(
 				name="w1a2b3c4d5",

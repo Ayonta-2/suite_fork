@@ -417,6 +417,10 @@ def stream_file_content(entity_name: str):
 def _iter_folder_files(entity_name, prefix=""):
 	"""Recursively yield (arcname, file) for downloadable files in a folder.
 
+	Read is checked per child, not once at the top: access does not simply cascade
+	— a deny row anywhere below cuts it, and the Drive root is readable by every
+	logged-in user, so a single top-level check would hand out the whole tree.
+
 	Writer documents and links have no underlying blob, so they're skipped.
 	"""
 	children = frappe.get_all(
@@ -425,6 +429,8 @@ def _iter_folder_files(entity_name, prefix=""):
 		fields=["name", "file_name", "is_folder", "file_type", "file_url"],
 	)
 	for child in children:
+		if not user_has_permission(child.name, "read"):
+			continue
 		arcname = f"{prefix}{child.file_name}"
 		if child.is_folder:
 			yield from _iter_folder_files(child.name, prefix=f"{arcname}/")
@@ -435,8 +441,8 @@ def _iter_folder_files(entity_name, prefix=""):
 def _collect_download_files(entity_names):
 	"""Expand the selected top-level entities into (arcname, file) pairs.
 
-	Read permission is checked per top-level entity (Drive's ACL cascades to
-	children); a single folder nests its contents under its own file name.
+	Read is checked here and again per descendant in `_iter_folder_files`; a single
+	folder nests its contents under its own file name.
 	"""
 	for name in entity_names:
 		if not user_has_permission(name, "read"):
@@ -674,6 +680,15 @@ def remove_or_restore(entity_names: list[str] | str):
 			manager.move_to_trash(doc)
 		else:
 			validate_quota(doc.owner, doc.file_size)
+			# A trashed name is free — get_new_file_name only counts Active siblings —
+			# so something may have taken it. Restoring onto it would overwrite the
+			# newcomer's blob, or, for a folder, land inside it.
+			available = get_new_file_name(doc.file_name, doc.folder, doc.file_type, doc.name)
+			if available != doc.file_name:
+				doc.flags.drive_disk_rename = True
+				doc.file_name = available
+				if not manager.flat and not doc._not_in_disk():
+					doc.file_url = str(manager.get_disk_path(doc)) + ("/" if doc.is_folder else "")
 			manager.restore(doc)
 			flag = STATUS_ACTIVE
 
