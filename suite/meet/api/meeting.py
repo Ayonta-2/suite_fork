@@ -5,13 +5,13 @@ import base64
 import binascii
 import secrets
 import time
-from typing import TYPE_CHECKING
 
 import frappe
 import jwt
 from frappe import _
 from frappe.rate_limiter import rate_limit
 
+from suite.meet.doctype.meet_room.meet_room import MeetRoom
 from suite.meet.utils.sfu_config import get_sfu_config
 from suite.meet.utils.user import (
     get_guest_session,
@@ -19,9 +19,6 @@ from suite.meet.utils.user import (
     set_guest_session,
     validate_guest_name,
 )
-
-if TYPE_CHECKING:
-    from suite.meet.doctype.meet_room.meet_room import MeetRoom
 
 
 def _generate_sfu_token(
