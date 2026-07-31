@@ -17,8 +17,8 @@ const { identities } = userStore()
 
 const organizer = computed(() => participants.find((p) => p.isOrganizer)?.email)
 
-const isUserOrganizer = computed(() =>
-	identities.data.some((id) => id.email === organizer.value?.replace('mailto:', '')),
+const isUserOrganizer = computed(
+	() => identities.data?.some((id) => id.email === organizer.value?.replace('mailto:', '')) ?? false,
 )
 
 const showRemoveParticipant = (participant: any) =>
@@ -40,6 +40,8 @@ const getParticipantStatusValues = (status: string) => {
 						<span class="text-ink-gray-8 text-sm-medium">
 							{{ extractNameFromEmail(p._name || p.email) }}
 						</span>
+						<!-- Same ink as the email below it: both are secondary to the name, and
+						     size + position already tell them apart. -->
 						<span v-if="p.email === organizer" class="text-ink-gray-5 text-xs">
 							({{ __('Organizer') }})
 						</span>
@@ -57,7 +59,7 @@ const getParticipantStatusValues = (status: string) => {
 							/>
 						</div>
 					</div>
-					<span class="text-ink-gray-6 text-sm">{{ p.email }}</span>
+					<span class="text-ink-gray-5 text-sm">{{ p.email }}</span>
 				</div>
 			</div>
 

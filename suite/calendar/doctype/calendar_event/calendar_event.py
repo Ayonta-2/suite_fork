@@ -439,7 +439,7 @@ def get_calendar_events(account: str, ids: list[str]) -> list[dict]:
 	"""Returns a list of calendar events for the specified account and IDs."""
 
 	service = get_calendar_event_service(account)
-	calendar_map = {c["id"]: c["name"] for c in service.calendars}
+	calendar_map = {c["id"]: c for c in service.calendars}
 
 	events = {}
 	for event in service.get(ids):
@@ -629,11 +629,13 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
 
 	calendars = []
 	for calendar_id in event["calendarIds"].keys():
+		calendar = calendar_map.get(calendar_id) or {}
 		calendars.append(
 			{
 				"calendar": f"{account}|{calendar_id}",
 				"calendar_id": calendar_id,
-				"calendar_name": calendar_map.get(calendar_id),
+				"calendar_name": calendar.get("name"),
+				"color": calendar.get("color"),
 			}
 		)
 

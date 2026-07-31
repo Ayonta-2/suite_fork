@@ -96,4 +96,13 @@ const updateColorScheme = createResource({
 body.calendar-app .icon {
 	stroke-width: 1.5;
 }
+
+/* Icons imported straight from lucide-vue-next ship stroke-width 2, and menu
+   item icons (frappe-ui Dropdown/Menu) render without the `.icon` class — so
+   default every lucide svg to 1.5, mirroring the mail layout. :where() keeps
+   the rule at zero specificity so an explicit stroke-* utility still wins.
+   Covers teleported menus/dialogs too. */
+:where(body.calendar-app svg.lucide) {
+	stroke-width: 1.5;
+}
 </style>

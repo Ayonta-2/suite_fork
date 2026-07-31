@@ -29,7 +29,7 @@ import LinkifiedText from '@/components/LinkifiedText.vue'
 
 const { calendarEvent } = defineProps<{ calendarEvent: any }>()
 
-const emit = defineEmits(['close', 'edit', 'reloadEvents'])
+const emit = defineEmits(['close', 'edit', 'reloadEvents', 'emailParticipants'])
 
 const dayjs = inject('$dayjs')
 
@@ -39,7 +39,7 @@ const { identities } = store
 // --- User / RSVP ---
 
 const userParticipant = computed(() =>
-	calendarEvent.participants.find((p) => identities.data.some((id) => id.email === p.email)),
+	calendarEvent.participants.find((p) => identities.data?.some((id) => id.email === p.email)),
 )
 const userResponse = computed(() => userParticipant.value?.participation_status)
 
@@ -60,6 +60,25 @@ const handleSetResponse = (response: string) => {
 		error: __('Action failed. Please try again in some time.'),
 	})
 }
+
+// --- Calendar (colour + account) ---
+
+const DEFAULT_EVENT_COLOR = '#30a66d'
+
+const eventCalendar = computed(
+	() => calendarEvent.calendars?.find((c: any) => c.color) ?? calendarEvent.calendars?.[0],
+)
+
+// The organizer beats the viewer's own address (redundant in their own panel);
+// for self-organized events they coincide. Fall back to the account's address
+// (from identities — the calendar id only carries an opaque JMAP account id),
+// then the calendar's display name.
+const calendarOwnerLabel = computed(
+	() =>
+		calendarEvent.organizer?.replace('mailto:', '') ||
+		identities.data?.[0]?.email ||
+		eventCalendar.value?.calendar_name,
+)
 
 // --- Date / time label ---
 
@@ -96,11 +115,11 @@ const responseSummary = computed(() => {
 	const count = (status: string) =>
 		calendarEvent.participants.filter((p) => p.participation_status === status).length
 
+	// No "awaiting": with the total right next to it, pending = total − responses.
 	const parts = [
 		count('ACCEPTED') && __('{0} yes', [count('ACCEPTED')]),
 		count('DECLINED') && __('{0} no', [count('DECLINED')]),
 		count('TENTATIVE') && __('{0} maybe', [count('TENTATIVE')]),
-		count('NEEDS-ACTION') && __('{0} awaiting', [count('NEEDS-ACTION')]),
 	].filter(Boolean)
 
 	return parts.join(', ')
@@ -130,12 +149,13 @@ const visibleParticipants = computed(() =>
 		: orderedParticipants.value.slice(0, VISIBLE_PARTICIPANT_COUNT),
 )
 
-const mailParticipantsUrl = computed(() => {
-	const emails = calendarEvent.participants
+// Everyone except the viewer; the host decides what "email them" means (mail
+// opens its compose window, the calendar app falls back to mailto).
+const participantEmails = computed(() =>
+	calendarEvent.participants
 		.map((p) => p.email)
-		.filter((email) => identities.data.every((id) => id.email !== email))
-	return emails.length ? `mailto:${emails.join(',')}` : ''
-})
+		.filter((email) => email && identities.data?.every((id) => id.email !== email)),
+)
 
 // --- Alerts ---
 
@@ -227,8 +247,11 @@ const joinMeet = () => {
 // --- Actions dropdown (delete) ---
 
 const dropdownOptions = computed(() => {
+	const editOption = { label: __('Edit'), icon: SquarePen, onClick: () => emit('edit') }
+
 	if (calendarEvent.recurrence_id)
 		return [
+			editOption,
 			{
 				label: __('Delete'),
 				icon: Trash2,
@@ -242,7 +265,10 @@ const dropdownOptions = computed(() => {
 				],
 			},
 		]
-	return [{ label: __('Delete'), icon: Trash2, onClick: () => handleDeleteEvent() }]
+	return [
+		editOption,
+		{ label: __('Delete'), icon: Trash2, onClick: () => handleDeleteEvent() },
+	]
 })
 
 // --- Server calls ---
@@ -269,7 +295,7 @@ const isOrganizer = computed(
 )
 const hasParticipantsOtherThanUser = computed(
 	() =>
-		calendarEvent.participants?.some((p) => identities.data.every((i) => i.email !== p.email)) ??
+		calendarEvent.participants?.some((p) => identities.data?.every((i) => i.email !== p.email)) ??
 		false,
 )
 
@@ -358,48 +384,58 @@ const openUrl = (location: string) => {
 		class="bg-surface-white flex h-full w-[352px] shrink-0 flex-col overflow-hidden border-l text-left"
 	>
 		<!-- Header -->
-		<div class="flex items-center gap-3 px-[18px] py-[13px]">
-			<h2 class="text-ink-gray-7 flex-1 truncate text-base font-medium">
-				{{ __('Event detail') }}
-			</h2>
+		<!-- h-12 matches the mail header bar's 48px, so when mail hosts this panel
+		     the two headers read as one row. Instead of a static title, it names
+		     the calendar the event belongs to: its colour dot + the organizer. -->
+		<div class="flex h-12 items-center gap-3 px-4.5">
+			<div class="flex min-w-0 flex-1 items-center gap-2">
+				<span
+					class="size-2.5 shrink-0 rounded-full"
+					:style="{ backgroundColor: eventCalendar?.color || DEFAULT_EVENT_COLOR }"
+				/>
+				<span class="text-ink-gray-6 truncate text-sm">
+					{{ calendarOwnerLabel }}
+				</span>
+			</div>
 			<div class="flex items-center gap-1">
-				<Button variant="ghost" :tooltip="__('Edit')" @click="emit('edit')">
-					<SquarePen class="icon text-ink-gray-7 size-4" />
-				</Button>
 				<Dropdown :options="dropdownOptions">
 					<Button
 						variant="ghost"
 						:disabled="deleteEventInstance.loading || deleteEvent.loading"
 					>
-						<MoreHorizontal class="icon text-ink-gray-7 size-4" />
+						<MoreHorizontal class="icon text-ink-gray-7" />
 					</Button>
 				</Dropdown>
 				<Button variant="ghost" :tooltip="__('Close')" @click="emit('close')">
-					<X class="icon text-ink-gray-7 size-4" />
+					<X class="icon text-ink-gray-7" />
 				</Button>
 			</div>
 		</div>
 
-		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-			<!-- Title and time -->
-			<div class="flex gap-2 px-[18px] pb-3 pt-1">
-				<span class="flex h-[21px] shrink-0 items-center">
-					<span class="size-2.5 rounded-full bg-blue-500" />
-				</span>
-				<div class="min-w-0 space-y-0.5">
-					<h3
-						class="text-ink-gray-8 break-words text-lg font-semibold"
-						:class="{ italic: !calendarEvent.title }"
-					>
-						{{ calendarEvent.title || __('[No title]') }}
+		<!-- -mt-2 eats the header's centering slack so the visual gap above the
+		     title (which also includes the header text's own centering slack and
+		     the title's half-leading) matches the pb below the date; it sits on
+		     the scroll wrapper because a negative margin on the first child of an
+		     overflow-y-auto box would only clip. -->
+		<div class="-mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto">
+			<!-- Title and time. No top padding — what's left of the header's
+			     centering slack is the gap above the title; pb balances it below
+			     the date and keeps breathing room when a long title wraps (the
+			     block just grows). Single-line, -mt + block sum to 49px, so
+			     header (48) + block + divider match the mail header bar +
+			     screener banner (49px each) and the divider lands on the
+			     banner's border when mail hosts the panel. -->
+			<div class="flex flex-col px-4.5 pb-3">
+				<!-- leading-6 keeps wrapped titles readable while leaving the
+				     title–date gap clearly wider than the title's own line gap; the
+				     date keeps text-sm's default 1.15 line-height (14.95px), so
+				     -8 + 24 + 6 + 14.95 + 12 sums to 49 within a subpixel. -->
+				<div class="min-w-0 space-y-1.5">
+					<h3 class="text-ink-gray-8 break-words text-lg font-semibold leading-6">
+						{{ calendarEvent.title || __('Untitled event') }}
 					</h3>
-					<div class="text-ink-gray-6 break-words text-sm">{{ dateLabel }}</div>
-					<div
-						v-if="calendarEvent.recurrence_id"
-						class="text-ink-gray-5 flex items-center gap-1.5 text-sm"
-					>
-						<Repeat class="icon size-3.5 shrink-0" />
-						{{ getRepeatMessage(calendarEvent.recurrence_rule) }}
+					<div class="text-ink-gray-6 break-words text-sm">
+						{{ dateLabel }}
 					</div>
 				</div>
 			</div>
@@ -408,9 +444,20 @@ const openUrl = (location: string) => {
 
 			<!-- Details -->
 			<div class="flex flex-col py-2">
+				<!-- Recurrence -->
+				<div
+					v-if="calendarEvent.recurrence_id"
+					class="flex items-center gap-2.5 px-4.5 py-2"
+				>
+					<Repeat class="icon text-ink-gray-5 size-4 shrink-0" />
+					<span class="text-ink-gray-7 min-w-0 break-words text-sm">
+						{{ getRepeatMessage(calendarEvent.recurrence_rule) }}
+					</span>
+				</div>
+
 				<!-- Meet link -->
 				<template v-if="meetUrl">
-					<div class="flex items-center gap-2.5 px-[18px] py-[7px]">
+					<div class="flex items-center gap-2.5 px-4.5 py-2">
 						<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-7 shrink-0" />
 						<div class="min-w-0 flex-1">
 							<div class="text-ink-gray-8 text-sm font-medium">
@@ -426,7 +473,7 @@ const openUrl = (location: string) => {
 							<Copy class="icon size-4" />
 						</button>
 					</div>
-					<div class="px-[18px] py-[7px]">
+					<div class="px-4.5 py-2">
 						<button
 							class="bg-surface-gray-2 hover:bg-surface-gray-3 text-ink-gray-7 flex w-full items-center justify-center gap-2 rounded py-1.5 text-sm"
 							@click="joinMeet"
@@ -440,7 +487,7 @@ const openUrl = (location: string) => {
 				<div
 					v-for="location in calendarEvent.locations"
 					:key="location.uid"
-					class="flex items-center gap-2.5 px-[18px] py-[7px]"
+					class="flex items-center gap-2.5 px-4.5 py-2"
 				>
 					<component
 						:is="isUrl(location._name) ? Globe : MapPin"
@@ -459,7 +506,7 @@ const openUrl = (location: string) => {
 				<div
 					v-for="(alert, i) in calendarEvent.alerts"
 					:key="i"
-					class="flex items-center gap-2.5 px-[18px] py-[7px]"
+					class="flex items-center gap-2.5 px-4.5 py-2"
 				>
 					<Bell class="icon text-ink-gray-5 size-4 shrink-0" />
 					<span class="text-ink-gray-7 min-w-0 break-words text-sm">
@@ -468,13 +515,13 @@ const openUrl = (location: string) => {
 				</div>
 
 				<!-- Availability -->
-				<div v-if="calendarEvent.free_busy_status" class="flex items-center gap-2.5 px-[18px] py-[7px]">
+				<div v-if="calendarEvent.free_busy_status" class="flex items-center gap-2.5 px-4.5 py-2">
 					<Briefcase class="icon text-ink-gray-5 size-4 shrink-0" />
 					<span class="text-ink-gray-7 text-sm">{{ __(calendarEvent.free_busy_status) }}</span>
 				</div>
 
 				<!-- Visibility -->
-				<div v-if="calendarEvent.privacy" class="flex items-center gap-2.5 px-[18px] py-[7px]">
+				<div v-if="calendarEvent.privacy" class="flex items-center gap-2.5 px-4.5 py-2">
 					<Lock class="icon text-ink-gray-5 size-4 shrink-0" />
 					<span class="text-ink-gray-7 text-sm">{{ __(calendarEvent.privacy) }}</span>
 				</div>
@@ -482,26 +529,34 @@ const openUrl = (location: string) => {
 
 			<div class="border-t" />
 
-			<!-- Participants -->
-			<div class="flex flex-col gap-3 py-2">
-				<div class="flex items-start gap-2.5 px-[18px] py-[7px]">
-					<Users class="icon text-ink-gray-5 mt-0.5 size-4 shrink-0" />
-					<div class="min-w-0 flex-1 space-y-0.5">
-						<div class="text-ink-gray-7 text-sm">{{ participantSummary }}</div>
-						<div v-if="responseSummary" class="text-ink-gray-6 text-sm">
-							{{ responseSummary }}
-						</div>
+			<!-- Participants: the section's own y padding matches the header row's
+			     py-2, so it reads as evenly spaced. Counting the row's padding
+			     towards the top instead left the section 8px/16px — the row's
+			     padding belongs to the row, not to the section. -->
+			<div class="flex flex-col py-2">
+				<div class="flex items-center gap-2.5 px-4.5 py-2">
+					<Users class="icon text-ink-gray-5 size-4 shrink-0" />
+					<div class="text-ink-gray-7 min-w-0 flex-1 truncate text-sm">
+						{{ participantSummary
+						}}<span v-if="responseSummary" class="text-ink-gray-6">
+							({{ responseSummary }})</span
+						>
 					</div>
-					<a
-						v-if="mailParticipantsUrl"
-						:href="mailParticipantsUrl"
-						class="text-ink-gray-5 hover:text-ink-gray-7 shrink-0 pt-0.5"
-						:title="__('Email participants')"
+					<!-- -my keeps the 28px ghost button from inflating the row. -->
+					<Button
+						v-if="participantEmails.length"
+						variant="ghost"
+						class="-my-1.5 shrink-0"
+						:tooltip="__('Email participants')"
+						@click="emit('emailParticipants', participantEmails)"
 					>
-						<Mail class="icon size-4" />
-					</a>
+						<Mail class="icon text-ink-gray-7 size-4" />
+					</Button>
 				</div>
-				<div class="space-y-3 px-[18px]">
+				<!-- Indented to the header row's text axis (gutter + icon + gap): the
+				     list is the "2 people" line's expansion, so they read as one
+				     block with the icon hanging in the gutter. -->
+				<div class="space-y-3 py-2 pl-11 pr-4.5">
 					<EventParticipantList
 						:participants="visibleParticipants"
 						:dont-show-remove="true"
@@ -520,13 +575,11 @@ const openUrl = (location: string) => {
 			<template v-if="calendarEvent.description">
 				<div class="border-t" />
 
-				<!-- Description -->
-				<div class="flex flex-col py-2">
-					<div class="flex items-center gap-2.5 px-[18px] py-[7px]">
-						<Text class="icon text-ink-gray-5 size-4 shrink-0" />
-						<span class="text-ink-gray-7 text-sm">{{ __('Description') }}</span>
-					</div>
-					<div class="text-ink-gray-7 min-w-0 px-[18px] py-[7px] text-sm leading-normal">
+				<!-- Description: no label — the icon in the gutter with the body on
+				     the text axis says it, like the panel's other icon rows. -->
+				<div class="flex items-start gap-2.5 px-4.5 py-4">
+					<Text class="icon text-ink-gray-5 mt-0.5 size-4 shrink-0" />
+					<div class="text-ink-gray-7 min-w-0 flex-1 text-sm leading-normal">
 						<div
 							v-if="isHtmlDescription"
 							class="break-words [&_a]:text-ink-blue-6 [&_a]:hover:underline [&_p]:m-0"
@@ -539,7 +592,7 @@ const openUrl = (location: string) => {
 		</div>
 
 		<!-- RSVP -->
-		<div v-if="userParticipant?.expect_reply" class="flex flex-col gap-2 px-[18px] pb-3 pt-2">
+		<div v-if="userParticipant?.expect_reply" class="flex flex-col gap-2 px-4.5 pb-3 pt-2">
 			<span class="text-ink-gray-6 text-sm">{{ __('Going?') }}</span>
 			<TabButtons
 				class="w-full [&>div>[data-slot=tab-button]]:flex-1 [&>div]:w-full [&_[data-slot=tab-button]>span]:w-full"
