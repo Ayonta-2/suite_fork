@@ -41,7 +41,8 @@
    "label": "Action",
    "no_copy": 1,
    "options": "Spam\nReject\nAccepted",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "description": "The shared JMAP account this screened email belongs to. The screened list is the same for everyone with access to the account. Leave empty to make the rule global: it applies to every account, unless the account screens the same email or domain itself. Only a System Manager can manage global rules.",
@@ -59,7 +60,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-30 14:46:07.461144",
+ "modified": "2026-07-31 11:51:13.368588",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Screened Email Address",
