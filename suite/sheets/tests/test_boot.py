@@ -7,6 +7,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
+# Eagerly imported so `mock.patch` can resolve the attribute (see test_collab.py).
 from suite.sheets import boot as _boot
 
 
