@@ -31,7 +31,7 @@
         ['drive-Folder', 'drive-Home'].includes($route.name) &&
         isLoggedIn &&
         // Assume upload to remove flash
-        props.rootResource?.data?.upload !== false
+        (!props.rootResource?.data || !!props.rootResource.data.upload)
       " :button="{
           variant: 'solid',
           id: 'create-button',
