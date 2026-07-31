@@ -28,7 +28,9 @@ class FileManager:
 		settings = frappe.get_single("Drive Disk Settings")
 		self.settings = settings
 		self.s3_enabled = settings.enabled
-		self.flat = settings.flat
+		# not settings.flat: the Single may predate the field, and the doctype
+		# overrides __getattribute__ so a missing row raises instead of defaulting
+		self.flat = getattr(settings, "flat", 0)
 		self.bucket = settings.bucket
 		self.site_folder = Path(frappe.get_site_path())
 
