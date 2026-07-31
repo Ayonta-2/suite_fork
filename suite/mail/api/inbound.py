@@ -1,6 +1,5 @@
 import base64
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 import frappe
 from frappe import _
@@ -8,16 +7,16 @@ from frappe.utils import cint, convert_utc_to_system_timezone, create_batch, now
 
 from suite.mail.api.auth import validate_user
 from suite.mail.doctype.mail_message.mail_message import fetch_blobs, fetch_messages
-from suite.mail.doctype.mail_sync_history.mail_sync_history import get_mail_sync_history
+from suite.mail.doctype.mail_sync_history.mail_sync_history import (
+    MailSyncHistory,
+    get_mail_sync_history,
+)
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.jmap import get_mailbox_id_by_role
 from suite.mail.utils import get_config
 from suite.mail.utils.logger import get_inbound_logger
 from suite.utils.dt import convert_to_utc
 from suite.utils.rate_limiter import dynamic_rate_limit
-
-if TYPE_CHECKING:
-    from suite.mail.doctype.mail_sync_history.mail_sync_history import MailSyncHistory
 
 
 @frappe.whitelist(methods=["GET"])

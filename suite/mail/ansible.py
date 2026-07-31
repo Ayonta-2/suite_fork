@@ -126,7 +126,7 @@ class Ansible:
 
         return plays[0]
 
-    def run(self, quiet: bool = True) -> ServerAnsiblePlay:
+    def run(self, quiet: bool = True) -> "ServerAnsiblePlay":  # noqa: UP037
         """Run the playbook using ansible-runner and track its progress."""
 
         server = frappe.get_doc("Mail Server", self.server)

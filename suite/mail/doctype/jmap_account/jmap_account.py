@@ -76,7 +76,7 @@ class JMAPAccount(Document):
         return self.flags.get("user") or frappe.session.user
 
     @property
-    def core_service(self) -> CoreService | None:
+    def core_service(self) -> "CoreService | None":  # noqa: UP037
         """Return the JMAP core service for the account, or None if there is an error."""
 
         if self.flags.in_delete or not self.name:
