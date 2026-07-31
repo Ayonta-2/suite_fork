@@ -18,19 +18,15 @@ def get_quota(user: str | None = None):
 
 
 @frappe.whitelist()
-def storage_breakdown(owned_only: bool = True):
-	if not owned_only and "Suite Admin" not in frappe.get_roles() and frappe.session.user != "Administrator":
-		frappe.throw(_("Only admins can view site-wide storage."), frappe.PermissionError)
-
+def storage_breakdown():
 	limit = get_quota()
 	filters = {
 		"is_folder": False,
 		"status": STATUS_ACTIVE,
+		"owner": frappe.session.user,
 	}
 	if limit:
 		filters["file_size"] = [">=", limit / 200]
-	if owned_only:
-		filters["owner"] = frappe.session.user
 
 	entities = frappe.db.get_list(
 		"File",
@@ -42,10 +38,12 @@ def storage_breakdown(owned_only: bool = True):
 	query = (
 		frappe.qb.from_(DriveFile)
 		.select(DriveFile.file_type, fn.Sum(DriveFile.file_size).as_("file_size"))
-		.where((DriveFile.is_folder == 0) & (DriveFile.status == STATUS_ACTIVE))
+		.where(
+			(DriveFile.is_folder == 0)
+			& (DriveFile.status == STATUS_ACTIVE)
+			& (DriveFile.owner == frappe.session.user)
+		)
 	)
-	if owned_only:
-		query = query.where(DriveFile.owner == frappe.session.user)
 
 	return {
 		"limit": limit,
