@@ -24,7 +24,6 @@ from . import snapshots as snap_mod
 from . import state as state_mod
 from . import timeline as timeline_mod
 
-
 # Hard upper bounds on user-supplied `limit` parameters. The underlying
 # modules already gate on read permission, but an authenticated caller
 # could otherwise pass `limit=99_999_999` and force the DB to walk huge

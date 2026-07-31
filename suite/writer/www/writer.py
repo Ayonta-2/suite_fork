@@ -1,5 +1,3 @@
-from __future__ import unicode_literals
-
 import frappe
 
 from suite.drive.api.permissions import user_has_permission

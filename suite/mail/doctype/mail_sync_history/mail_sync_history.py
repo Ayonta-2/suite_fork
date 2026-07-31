@@ -50,7 +50,7 @@ def create_mail_sync_history(
     source: str,
     last_received_at: str | None = None,
     commit: bool = False,
-) -> "MailSyncHistory":
+) -> MailSyncHistory:
     """Create a Mail Sync History."""
 
     doc = frappe.new_doc("Mail Sync History")
@@ -65,7 +65,7 @@ def create_mail_sync_history(
     return doc
 
 
-def get_mail_sync_history(account: str, source: str) -> "MailSyncHistory":
+def get_mail_sync_history(account: str, source: str) -> MailSyncHistory:
     """Returns the Mail Sync History for the given account and source."""
 
     if name := frappe.db.exists("Mail Sync History", {"account": account, "source": source}):
@@ -86,7 +86,7 @@ def get_permission_query_condition(user: str | None = None) -> str | None:
     return f"""`tabMail Sync History`.account in ({", ".join(frappe.db.escape(account) for account in accounts)})"""
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Mail Sync History":
         return False
 

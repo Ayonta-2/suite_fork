@@ -38,7 +38,7 @@ class Quota(Document):
     def db_insert(self, *args, **kwargs) -> None:
         raise NotImplementedError
 
-    def load_from_db(self) -> "Quota":
+    def load_from_db(self) -> Quota:
         account, id = parse_quota_name(self.name)
         quota = get_quota(account, id)
         return super(Document, self).__init__(quota)
@@ -150,7 +150,7 @@ def format_quota(account: str, quota: dict) -> dict:
     }
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Quota":
         return False
 

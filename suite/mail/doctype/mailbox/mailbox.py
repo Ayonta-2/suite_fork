@@ -57,7 +57,7 @@ class Mailbox(Document):
         )
         self.name = f"{self.account}|{self.id}"
 
-    def load_from_db(self) -> "Mailbox":
+    def load_from_db(self) -> Mailbox:
         account, id = parse_mailbox_name(self.name)
         mailbox = get_mailbox(account, id)
         return super(Document, self).__init__(mailbox)
@@ -423,7 +423,7 @@ def get_sort_order(role: str | None = None) -> int:
     return role_order.index(role)
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Mailbox":
         return False
 

@@ -76,7 +76,7 @@ class JMAPAccount(Document):
         return self.flags.get("user") or frappe.session.user
 
     @property
-    def core_service(self) -> "CoreService" | None:
+    def core_service(self) -> CoreService | None:
         """Return the JMAP core service for the account, or None if there is an error."""
 
         if self.flags.in_delete or not self.name:
@@ -413,7 +413,7 @@ def get_permission_query_condition(user: str | None = None) -> str | None:
     return f"""`tabJMAP Account`.name in ({", ".join(frappe.db.escape(account) for account in accounts)})"""
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "JMAP Account":
         return False
 

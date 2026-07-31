@@ -43,7 +43,7 @@ class PushSubscription(Document):
         )
         self.name = f"{self.user}|{self.id}"
 
-    def load_from_db(self) -> "PushSubscription":
+    def load_from_db(self) -> PushSubscription:
         user, id = self.name.split("|")
         subscription = get_push_subscription(user, id)
         return super(Document, self).__init__(subscription)
@@ -536,7 +536,7 @@ def is_jmap_push_notifications_frozen(user: str) -> bool:
     return frappe.cache.hget("frozen_jmap_push_notifications", user) is True
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Push Subscription":
         return False
 

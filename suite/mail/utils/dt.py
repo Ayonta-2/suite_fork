@@ -11,7 +11,7 @@ from suite.utils.dt import convert_to_utc, parse_iso_datetime
 UTC_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 
-def to_utc_z(value: "datetime | str | None") -> str | None:
+def to_utc_z(value: datetime | str | None) -> str | None:
     """Formats a value as the ``2026-07-28T09:02:30Z`` UTC timestamp the mail APIs return.
 
     Aware values (Stalwart's timestamps, or the ``...Z`` an API was called with) are converted;
@@ -39,7 +39,7 @@ def from_utc_z(value: str | None) -> str | None:
     return get_datetime_str(parse_iso_datetime(value, as_str=False))
 
 
-def parsedate_to_datetime(date_header: str) -> "datetime":
+def parsedate_to_datetime(date_header: str) -> datetime:
     """Returns datetime object from parsed date header."""
 
     # email.utils.parsedate_to_datetime raises ValueError on an unparsable header rather than

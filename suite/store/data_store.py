@@ -16,7 +16,7 @@ class _EnvEntry:
 
     __slots__ = ("env", "refcount")
 
-    def __init__(self, env: "lmdb.Environment") -> None:
+    def __init__(self, env: lmdb.Environment) -> None:
         self.env = env
         self.refcount = 0
 
@@ -69,7 +69,7 @@ class DataStore(BaseStore):
         self.logger_context["store"] = "data"
         self.map_size = map_size or self.DEFAULT_MAP_SIZE
 
-    def _open_env(self) -> "lmdb.Environment":
+    def _open_env(self) -> lmdb.Environment:
         """Open the LMDB environment for this store's path."""
 
         self.logger.debug({**self.logger_context, "event": "opening-env", "path": self.path})
@@ -90,7 +90,7 @@ class DataStore(BaseStore):
         self._reader_check(env)
         return env
 
-    def _reader_check(self, env: "lmdb.Environment") -> None:
+    def _reader_check(self, env: lmdb.Environment) -> None:
         """Reclaim stale reader-lock-table slots (from dead processes/threads). Best-effort."""
 
         try:
@@ -189,7 +189,7 @@ class DataStore(BaseStore):
         finally:
             self._release_env()
 
-    def _begin(self, env: "lmdb.Environment", write: bool) -> Any:
+    def _begin(self, env: lmdb.Environment, write: bool) -> Any:
         """Begin a transaction, reclaiming stale reader slots and retrying once on MDB_READERS_FULL."""
 
         try:

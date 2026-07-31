@@ -130,7 +130,7 @@ class ContactCard(Document):
         )
         self.name = f"{self.account}|{self.id}"
 
-    def load_from_db(self) -> "ContactCard":
+    def load_from_db(self) -> ContactCard:
         account, id = parse_contact_card_name(self.name)
         if contact_cards := get_contact_cards(account, [id]):
             return super(Document, self).__init__(contact_cards[0])
@@ -638,7 +638,7 @@ def format_contact_card(account: str, address_book_map: dict, contact_card: dict
     }
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Contact Card":
         return False
 

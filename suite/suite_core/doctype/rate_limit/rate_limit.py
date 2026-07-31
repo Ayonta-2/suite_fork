@@ -89,7 +89,7 @@ def create_rate_limit(
     ip_based: bool = True,
     methods: str = "ALL",
     ignore_in_developer_mode: bool = True,
-) -> "RateLimit":
+) -> RateLimit:
     """Create a Rate Limit document"""
 
     doc = frappe.new_doc("Rate Limit")

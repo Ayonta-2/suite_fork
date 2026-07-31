@@ -19,10 +19,9 @@ import socket
 from urllib.parse import urljoin, urlparse
 
 import certifi
+import frappe
 import urllib3
 from bs4 import BeautifulSoup
-
-import frappe
 from frappe.rate_limiter import rate_limit
 
 MAX_REDIRECTS = 3

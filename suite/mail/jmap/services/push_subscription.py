@@ -11,7 +11,7 @@ class PushSubscriptionService(CoreService):
 
     type: ClassVar[str] = "PushSubscription"
 
-    def __init__(self, connection: "JMAPConnection") -> None:
+    def __init__(self, connection: JMAPConnection) -> None:
         """Initializes the PushSubscriptionService with the provided JMAP connection."""
 
         self.connection = connection

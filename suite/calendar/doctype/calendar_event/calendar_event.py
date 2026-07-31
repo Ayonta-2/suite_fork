@@ -171,7 +171,7 @@ class CalendarEvent(Document):
         self.name = f"{self.account}|{self.id}"
         self.reload()
 
-    def load_from_db(self) -> "CalendarEvent":
+    def load_from_db(self) -> CalendarEvent:
         account, id = parse_calendar_event_name(self.name)
         if events := get_calendar_events(account, [id]):
             return super(Document, self).__init__(events[0])
@@ -799,7 +799,7 @@ def _raise_if_not_destroyed(response: dict) -> None:
     )
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Calendar Event":
         return False
 

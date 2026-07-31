@@ -14,7 +14,7 @@ def get_utc_now(naive: bool = False) -> datetime:
     return now.replace(tzinfo=None) if naive else now
 
 
-def utcnow() -> "str":
+def utcnow() -> str:
     """Returns current UTC time in ISO format."""
 
     return get_utc_now().isoformat().replace("+00:00", "Z")
@@ -22,7 +22,7 @@ def utcnow() -> "str":
 
 def convert_to_utc(
     date_time: datetime | str, from_timezone: str | None = None, naive: bool = False
-) -> "datetime":
+) -> datetime:
     """Converts the given datetime to UTC timezone."""
 
     dt = get_datetime(date_time)

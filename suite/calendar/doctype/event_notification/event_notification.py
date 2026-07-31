@@ -43,7 +43,7 @@ class EventNotification(Document):
             _("Event Notification are only created by the server, users cannot create them directly.")
         )
 
-    def load_from_db(self) -> "EventNotification":
+    def load_from_db(self) -> EventNotification:
         account, id = self.name.split("|")
         if notifications := get_event_notifications(account, [id]):
             return super(Document, self).__init__(notifications[0])
@@ -204,7 +204,7 @@ def format_event_notification(account: str, notification: dict) -> dict:
     }
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Event Notification":
         return False
 

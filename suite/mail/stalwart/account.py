@@ -27,7 +27,7 @@ def _default_password_credential() -> PasswordCredential:
     return PasswordCredential(secret=random_string(20))
 
 
-def _default_credentials() -> list["Credential"]:
+def _default_credentials() -> list[Credential]:
     """Returns the default credential list (a single random password)."""
 
     return [Credential()]

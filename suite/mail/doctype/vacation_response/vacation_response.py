@@ -43,7 +43,7 @@ class VacationResponse(Document):
         raise NotImplementedError
 
     @frappe.whitelist()
-    def load_from_db(self) -> "VacationResponse":
+    def load_from_db(self) -> VacationResponse:
         if not self.get("account"):
             frappe.msgprint(_("Please select an account to view vacation response details."), alert=True)
             return super(Document, self).__init__({"creation": today(), "modified": today()})
@@ -158,7 +158,7 @@ def format_vacation_response(account: str, vr: dict) -> dict:
     }
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Vacation Response" or not doc.get("account"):
         return False
 

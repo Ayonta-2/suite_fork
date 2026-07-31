@@ -18,7 +18,7 @@ from unittest import mock
 # Eagerly import the module under test so `mock.patch("suite.sheets.collab.frappe")`
 # can resolve the attribute — the patcher's lazy import doesn't populate
 # `suite.sheets.collab` on the parent package.
-from suite.sheets import collab as _collab  # noqa: F401
+from suite.sheets import collab as _collab
 
 
 def _patched_frappe():

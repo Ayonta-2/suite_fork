@@ -85,7 +85,7 @@ def execute_with_logging(
 
 
 @contextmanager
-def user_context(user: str) -> Generator[None, None, None]:
+def user_context(user: str) -> Generator[None]:
     """Context manager to temporarily switch the user context."""
 
     session_user = frappe.session.user

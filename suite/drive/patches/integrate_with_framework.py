@@ -5,6 +5,7 @@ Create framework `File` records from legacy `Drive File` rows.
 import json
 
 import frappe
+
 from suite.drive.install import ensure_custom_fields
 from suite.drive.utils import (
     MIME_LIST_MAP,

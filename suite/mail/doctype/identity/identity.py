@@ -66,7 +66,7 @@ class Identity(Document):
         )
         self.name = f"{self.account}|{self.id}"
 
-    def load_from_db(self) -> "Identity":
+    def load_from_db(self) -> Identity:
         account, id = parse_identity_name(self.name)
         identity = get_identity(account, id)
         return super(Document, self).__init__(identity)
@@ -301,7 +301,7 @@ def format_identity(account: str, identity: dict) -> dict:
     }
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Identity":
         return False
 

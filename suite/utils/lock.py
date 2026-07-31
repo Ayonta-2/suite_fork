@@ -73,7 +73,7 @@ def release_lock(lockname: str, identifier: str) -> bool:
 @contextmanager
 def write_lock(
     lockname: str, acquire_timeout: int = DEFAULT_ACQUIRE_TIMEOUT, lock_timeout: int = DEFAULT_LOCK_TIMEOUT
-) -> Generator[None, None, None]:
+) -> Generator[None]:
     """Context manager to acquire a distributed lock for writing."""
 
     identifier = acquire_lock(lockname, acquire_timeout=acquire_timeout, lock_timeout=lock_timeout)

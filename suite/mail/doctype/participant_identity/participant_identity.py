@@ -45,7 +45,7 @@ class ParticipantIdentity(Document):
         )
         self.name = f"{self.account}|{self.id}"
 
-    def load_from_db(self) -> "ParticipantIdentity":
+    def load_from_db(self) -> ParticipantIdentity:
         account, id = self.name.split("|")
         identity = get_participant_identity(account, id)
         return super(Document, self).__init__(identity)
@@ -229,7 +229,7 @@ def format_participant_identity(account: str, identity: dict) -> dict:
     }
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Participant Identity":
         return False
 

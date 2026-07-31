@@ -240,7 +240,7 @@ class MailMessage(Document):
     def db_insert(self, *args, **kwargs) -> None:
         raise NotImplementedError
 
-    def load_from_db(self) -> "MailMessage":
+    def load_from_db(self) -> MailMessage:
         account, id = self.name.split("|")
         if messages := get_messages(account, ids=[id]):
             return super(Document, self).__init__(messages[0])
@@ -351,13 +351,13 @@ class MailMessage(Document):
             )
 
     @frappe.whitelist()
-    def save_draft(self) -> "MailQueue":
+    def save_draft(self) -> MailQueue:
         """Save the Mail Message as a draft."""
 
         return self._update_or_submit_draft(save_as_draft=True)
 
     @frappe.whitelist()
-    def submit(self) -> "MailQueue":
+    def submit(self) -> MailQueue:
         """Submit the draft Mail Message."""
 
         return self._update_or_submit_draft(save_as_draft=False)
@@ -401,7 +401,7 @@ class MailMessage(Document):
         self.reload()
 
     @frappe.whitelist()
-    def reply(self) -> "MailQueue":
+    def reply(self) -> MailQueue:
         """Reply to the Mail Message."""
 
         recipients = []
@@ -426,7 +426,7 @@ class MailMessage(Document):
         return self._reply(recipients)
 
     @frappe.whitelist()
-    def reply_all(self) -> "MailQueue":
+    def reply_all(self) -> MailQueue:
         """Reply to all recipients of the Mail Message."""
 
         recipients = []
@@ -458,7 +458,7 @@ class MailMessage(Document):
         return self._reply(recipients)
 
     @frappe.whitelist()
-    def forward(self) -> "MailQueue":
+    def forward(self) -> MailQueue:
         """Forward the Mail Message."""
 
         self.validate_draft()
@@ -583,7 +583,7 @@ class MailMessage(Document):
         ]:
             self.__dict__.pop(property, None)
 
-    def _update_or_submit_draft(self, save_as_draft: bool = True) -> "MailQueue":
+    def _update_or_submit_draft(self, save_as_draft: bool = True) -> MailQueue:
         """Update or submit the draft Mail Message."""
 
         if not self.draft:
@@ -625,7 +625,7 @@ class MailMessage(Document):
             delivery_mode="Immediate",
         )
 
-    def _reply(self, recipients: list[dict]) -> "MailQueue":
+    def _reply(self, recipients: list[dict]) -> MailQueue:
         """Returns a unsaved MailQueue object for replying to the Mail Message."""
 
         self.validate_draft()
@@ -676,7 +676,7 @@ def bulk_delete(names: str | list[str]) -> None:
 
 
 @frappe.whitelist()
-def reply(source_name: str, target_doc=None) -> "MailQueue":
+def reply(source_name: str, target_doc=None) -> MailQueue:
     """Reply to the Mail Message."""
 
     source_doc = frappe.get_doc("Mail Message", source_name)
@@ -684,7 +684,7 @@ def reply(source_name: str, target_doc=None) -> "MailQueue":
 
 
 @frappe.whitelist()
-def reply_all(source_name: str, target_doc=None) -> "MailQueue":
+def reply_all(source_name: str, target_doc=None) -> MailQueue:
     """Reply to all recipients of the Mail Message."""
 
     source_doc = frappe.get_doc("Mail Message", source_name)
@@ -692,7 +692,7 @@ def reply_all(source_name: str, target_doc=None) -> "MailQueue":
 
 
 @frappe.whitelist()
-def forward(source_name: str, target_doc=None) -> "MailQueue":
+def forward(source_name: str, target_doc=None) -> MailQueue:
     """Forward the Mail Message."""
 
     source_doc = frappe.get_doc("Mail Message", source_name)

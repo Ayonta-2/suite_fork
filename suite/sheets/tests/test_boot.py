@@ -7,7 +7,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from suite.sheets import boot as _boot  # noqa: F401  — see test_collab.py
+from suite.sheets import boot as _boot
 
 
 class ExtendBootinfo(unittest.TestCase):

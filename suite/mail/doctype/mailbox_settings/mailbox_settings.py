@@ -167,7 +167,7 @@ def get_permission_query_condition(user: str | None = None) -> str | None:
     return f"""`tabMailbox Settings`.account in ({", ".join(frappe.db.escape(account) for account in accounts)})"""
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Mailbox Settings":
         return False
 

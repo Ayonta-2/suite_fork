@@ -47,7 +47,7 @@ class AddressBook(Document):
         )
         self.name = f"{self.account}|{self.id}"
 
-    def load_from_db(self) -> "AddressBook":
+    def load_from_db(self) -> AddressBook:
         account, id = parse_address_book_name(self.name)
         address_book = get_address_book(account, id)
         return super(Document, self).__init__(address_book)
@@ -286,7 +286,7 @@ def format_address_book(account: str, address_book: dict) -> dict:
     }
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Address Book":
         return False
 

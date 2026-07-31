@@ -20,7 +20,7 @@ class EmailParser:
         self.cid_and_file_url_map = {}
 
     @staticmethod
-    def get_parsed_message(message: str) -> "Message":
+    def get_parsed_message(message: str) -> Message:
         """Returns parsed email message object from string."""
 
         return message_from_string(message)

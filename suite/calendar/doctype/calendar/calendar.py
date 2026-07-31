@@ -63,7 +63,7 @@ class Calendar(Document):
         )
         self.name = f"{self.account}|{self.id}"
 
-    def load_from_db(self) -> "Calendar":
+    def load_from_db(self) -> Calendar:
         account, id = parse_calendar_name(self.name)
         calendar = get_calendar(account, id)
         return super(Document, self).__init__(calendar)
@@ -336,7 +336,7 @@ def format_calendar(account: str, calendar: dict) -> dict:
     }
 
 
-def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
     if doc.doctype != "Calendar":
         return False
 

@@ -198,7 +198,7 @@ class SearchStore:
             )
             return ([], 0)
 
-    def _build_phrase_prefix_query(self, terms: list[str], fields: list[str]) -> "tantivy.Query":
+    def _build_phrase_prefix_query(self, terms: list[str], fields: list[str]) -> tantivy.Query:
         """Build a phrase-prefix query over `terms`, matching in any one of `fields`."""
 
         if len(fields) == 1:
@@ -253,7 +253,7 @@ class SearchStore:
         with open(version_file, "w") as f:
             f.write(version)
 
-    def _build_schema(self) -> "tantivy.Schema":
+    def _build_schema(self) -> tantivy.Schema:
         """Build the Tantivy schema from FIELDS, mapping each FieldSpec kind to a field type."""
 
         builder = tantivy.SchemaBuilder()
@@ -306,12 +306,12 @@ class SearchStore:
             os.makedirs(self.path, exist_ok=True)
             self._write_version(version_file, current)
 
-    def _open(self) -> "tantivy.Index":
+    def _open(self) -> tantivy.Index:
         """Open (or reuse) the on-disk index for this key."""
 
         return tantivy.Index(self._schema, path=self.path, reuse=True)
 
-    def _to_tantivy_document(self, flat: dict) -> "tantivy.Document":
+    def _to_tantivy_document(self, flat: dict) -> tantivy.Document:
         """Convert a flat field/value dict into a Tantivy document, skipping None values."""
 
         document = tantivy.Document()
@@ -331,7 +331,7 @@ class SearchStore:
 
         return document
 
-    def _to_hit(self, document: "tantivy.Document", score: float) -> dict:
+    def _to_hit(self, document: tantivy.Document, score: float) -> dict:
         """Build a search hit dict from a stored document, adding `_score` and `_id`."""
 
         hit = {name: document.get_first(name) for name in self._stored_fields}
@@ -415,7 +415,7 @@ class SearchIndexBrowser:
 
         return None
 
-    def _searcher(self) -> "tantivy.Searcher | None":
+    def _searcher(self) -> tantivy.Searcher | None:
         """Open the on-disk index with its persisted schema and return a fresh searcher, or None."""
 
         if not tantivy.Index.exists(self.path):

@@ -142,7 +142,7 @@ class MailQueue(OwnerFromUser, Document):
         return file
 
     @staticmethod
-    def _create(do_not_save: bool = False, **kwargs) -> "MailQueue":
+    def _create(do_not_save: bool = False, **kwargs) -> MailQueue:
         """Create a new MailQueue document."""
 
         kwargs = frappe._dict(kwargs)

@@ -2,8 +2,8 @@ import frappe
 from frappe import _
 
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
-from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import get_account_emails, is_jmap_configured
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 
 @frappe.whitelist(methods=["POST"])

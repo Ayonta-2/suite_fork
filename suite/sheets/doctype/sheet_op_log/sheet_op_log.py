@@ -1,7 +1,6 @@
 import frappe
 from frappe.model.document import Document
 
-
 # Stable taxonomy of op_types — keep the list narrow so the UI can render
 # meaningful summaries without a per-op switch statement.  Add to this set
 # rather than inventing new values at the call site.

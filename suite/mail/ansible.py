@@ -31,7 +31,7 @@ class Ansible:
         self._create_play_record()
 
     @classmethod
-    def from_play(cls, play_name: str) -> "Ansible":
+    def from_play(cls, play_name: str) -> Ansible:
         """Create an Ansible instance from an existing Server Ansible Play record."""
 
         pdoc = frappe.get_doc("Server Ansible Play", play_name)
@@ -126,7 +126,7 @@ class Ansible:
 
         return plays[0]
 
-    def run(self, quiet: bool = True) -> "ServerAnsiblePlay":
+    def run(self, quiet: bool = True) -> ServerAnsiblePlay:
         """Run the playbook using ansible-runner and track its progress."""
 
         server = frappe.get_doc("Mail Server", self.server)

@@ -13,8 +13,8 @@ from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_
 from suite.mail.jmap import get_mailbox_id_by_role
 from suite.mail.utils import get_config
 from suite.mail.utils.logger import get_inbound_logger
-from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.dt import convert_to_utc
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 if TYPE_CHECKING:
     from suite.mail.doctype.mail_sync_history.mail_sync_history import MailSyncHistory
@@ -206,7 +206,7 @@ def get_raw_mails(
 
 
 def update_mail_sync_history(
-    sync_history: "MailSyncHistory",
+    sync_history: MailSyncHistory,
     last_received_at: str,
     last_received_mail: str | None = None,
 ) -> None:

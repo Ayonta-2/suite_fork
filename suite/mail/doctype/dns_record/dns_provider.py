@@ -71,7 +71,7 @@ class DNSProvider:
         self.zone_id = zone_id
         self.private_zone = private_zone
 
-    def get_client(self, config: dict) -> "Client":
+    def get_client(self, config: dict) -> Client:
         """Internal helper to return a configured Lexicon client."""
 
         from lexicon.client import Client

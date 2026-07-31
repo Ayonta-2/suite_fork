@@ -71,7 +71,7 @@ def delete_public_attachments(presentation_name):
         try:
             file_doc.delete()
         except Exception as e:
-            frappe.log_error(f"Error deleting file {file_doc.file_url}: {str(e)}")
+            frappe.log_error(f"Error deleting file {file_doc.file_url}: {e!s}")
 
 
 def get_updated_elements(elements, presentation_name):

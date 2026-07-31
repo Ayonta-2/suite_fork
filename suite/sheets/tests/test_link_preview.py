@@ -8,6 +8,7 @@ import unittest
 from unittest import mock
 
 import frappe
+
 from suite.sheets.link_preview import _validate_and_resolve
 
 

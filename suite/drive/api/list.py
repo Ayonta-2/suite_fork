@@ -8,17 +8,17 @@ from pypika import functions as fn
 from suite.drive.utils import (
     FILE_FIELDS,
     GENERAL_USER,
-    ROOT_FOLDER,
     KIND_VIRTUAL,
     MIME_LIST_MAP,
+    ROOT_FOLDER,
     STATUS_ACTIVE,
     STATUS_TRASHED,
     USERS_FOLDER,
     entity_kind,
     get_principals,
-    principal_list,
     get_user_folder,
     hide_storage_key,
+    principal_list,
 )
 from suite.drive.utils.api import get_default_access
 

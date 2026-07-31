@@ -3,7 +3,6 @@ import os
 
 import frappe
 
-
 # Bundle URL resolution ─────────────────────────────────────────────────────
 #
 # Vite emits content-hashed filenames (e.g. `index.abc123.js`) plus a manifest

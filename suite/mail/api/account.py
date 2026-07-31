@@ -15,12 +15,12 @@ from suite.mail.stalwart import get_domains
 from suite.mail.utils import is_stalwart_configured, log_mail_error
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.mail.utils.logger import log_admin_action
-from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import (
     has_user_settings,
     is_jmap_configured,
 )
 from suite.utils import convert_html_to_text, user_context
+from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.user import is_suite_admin, is_system_manager
 
 # SRV service label -> (protocol, connection security). See RFC 6186.

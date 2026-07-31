@@ -142,7 +142,7 @@ def create_or_update_dns_record(
     priority: int | None = None,
     category: str | None = None,
     do_not_enqueue: bool = False,
-) -> "DNSRecord":
+) -> DNSRecord:
     """Creates or updates a DNS Record"""
 
     if do_not_enqueue:
