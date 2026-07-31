@@ -8,9 +8,8 @@
       <template #default="{ openFileSelector }">
         <button
           type="button"
-          class="relative block size-[54px] overflow-hidden rounded-[10px] border border-outline-gray-2 bg-surface-base
-            hover:border-outline-gray-3 hover:shadow-sm
-            focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+          class="relative block size-[52px] overflow-hidden rounded-[10px] border border-[color:var(--outline-gray-2)] bg-surface-base
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3 focus-visible:border-none"
           :class="!logo && 'border-dashed'"
           :aria-label="logo ? __('Replace logo') : __('Upload logo')"
           @click="openFileSelector"
@@ -27,7 +26,7 @@
             v-else
             class="flex size-full items-center justify-center group-hover:bg-surface-gray-2"
           >
-            <LucideImagePlus class="size-5 text-ink-gray-5 group-hover:text-ink-gray-6" />
+            <LucideImagePlus class="size-5 text-ink-gray-5" />
           </span>
         </button>
       </template>

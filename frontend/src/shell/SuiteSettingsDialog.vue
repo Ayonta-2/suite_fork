@@ -1,22 +1,16 @@
 <template>
   <Dialog v-model:open="show" size="sm" :title="__('Workspace settings')">
-    <div class="flex flex-col gap-5">
-      <p class="text-p-base text-ink-gray-7">
-        {{ __('Shown in the launcher and on shared surfaces.') }}
-      </p>
-      <WorkspaceForm ref="form" @saved="show = false" />
-    </div>
+    <WorkspaceForm ref="form" @saved="show = false" />
 
     <template #actions>
-      <div class="flex justify-end">
-        <Button
+      <Button
           variant="solid"
-          :label="__('Save')"
+          class="w-full"
+          :label="__('Update')"
           :loading="form?.saving"
           :disabled="!form?.canSave"
           @click="form?.save()"
         />
-      </div>
     </template>
   </Dialog>
 </template>

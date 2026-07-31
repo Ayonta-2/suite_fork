@@ -1,6 +1,6 @@
 <template>
   <div class="flex items-center gap-2 px-2 py-1.5">
-    <Avatar :image="imageURL" :label="fullName" size="xl" />
+    <Avatar :image="imageURL" :label="fullName" size="xl" class="size-[35px]" />
     <div class="flex min-w-0 flex-col gap-1">
       <div class="truncate text-base text-ink-gray-8">{{ fullName }}</div>
       <div class="truncate text-sm text-ink-gray-5">{{ email }}</div>

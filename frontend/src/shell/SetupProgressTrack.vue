@@ -18,7 +18,7 @@ const props = defineProps<{ total: number; current: number; done?: boolean }>()
 function segmentClass(index: number) {
   return [
     'h-[3px] rounded-full transition-all duration-300 motion-reduce:transition-none',
-    props.done ? 'w-0 opacity-0' : index === props.current ? 'w-7' : 'w-3',
+    props.done ? 'w-0 opacity-0' : index === props.current ? 'w-6' : 'w-2',
     index <= props.current ? 'bg-black dark:bg-white' : 'bg-surface-gray-5',
   ]
 }

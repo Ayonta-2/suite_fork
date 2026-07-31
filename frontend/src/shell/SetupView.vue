@@ -34,7 +34,7 @@
               <p class="text-base text-ink-gray-6">{{ current.subtitle }}</p>
             </div>
 
-            <div class="h-28">
+            <div class="min-h-38">
               <div v-if="step === 'welcome'" class="flex h-full items-start justify-between">
                 <Tooltip v-for="(app, i) in apps" :key="app.id" :text="app.name">
                   <img
@@ -47,11 +47,16 @@
                 </Tooltip>
               </div>
 
-              <WorkspaceForm
-                v-else-if="step === 'workspace'"
-                ref="workspaceForm"
-                @saved="step = 'invite'"
-              />
+              <div v-else-if="step === 'workspace'" class="flex flex-col gap-4">
+                <WorkspaceForm ref="workspaceForm" @saved="step = 'invite'" />
+                <Combobox
+                  v-model="timezone"
+                  :options="timezoneOptions"
+                  variant="outline"
+                  :label="__('Time zone')"
+                  :placeholder="__('Select a time zone')"
+                />
+              </div>
 
               <div v-else-if="step === 'invite'" class="flex flex-col gap-2">
                 <FormControl
@@ -154,8 +159,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, type ComponentPublicInstance, type Ref } from 'vue'
-import { Button, ErrorMessage, FormControl, Tooltip, createResource } from 'frappe-ui'
+import { computed, nextTick, onMounted, onUnmounted, ref, type ComponentPublicInstance, type Ref } from 'vue'
+import { Button, Combobox, ErrorMessage, FormControl, Tooltip, createResource } from 'frappe-ui'
 import LucideMail from '~icons/lucide/mail'
 import LucideUser from '~icons/lucide/user'
 
@@ -175,6 +180,8 @@ const step = ref<Step>('welcome')
 const stepIndex = computed(() => stepOrder.indexOf(step.value))
 const trackIndex = computed(() => stepIndex.value - 1)
 const emails = ref('')
+const timezone = ref(Intl.DateTimeFormat().resolvedOptions().timeZone)
+const timezoneOptions = Intl.supportedValuesOf('timeZone').map((tz) => ({ label: tz, value: tz }))
 const inviteError = ref('')
 const inviteSummary = ref('')
 const getStartedButton = ref<ComponentPublicInstance>()
@@ -203,6 +210,11 @@ function focusStep() {
 onMounted(() => {
   setupTheme()
   focusStep()
+  document.documentElement.style.overscrollBehavior = 'none'
+})
+
+onUnmounted(() => {
+  document.documentElement.style.overscrollBehavior = ''
 })
 
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
@@ -237,7 +249,7 @@ const displayError = computed(() => {
 
 const markComplete = createResource({
   url: 'suite.api.account.mark_setup_complete',
-  makeParams: () => ({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+  makeParams: () => ({ timezone: timezone.value }),
 })
 
 const invite = createResource({
@@ -301,8 +313,10 @@ function toggleTheme() {
 }
 
 async function openSuite() {
+  // Completion already ran on reaching this step; only retry if it's unfinished.
   try {
-    await markComplete.submit()
+    if (markComplete.loading) await markComplete.promise
+    else if (!markComplete.fetched || markComplete.error) await markComplete.submit()
   } catch {
     return
   }

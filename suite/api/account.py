@@ -12,6 +12,8 @@ ALLOWED_LOGO_EXTENSIONS = ("png", "jpg", "jpeg", "webp")
 def get_setup_state() -> dict[str, bool]:
     """Router's dev fallback; production reads these from window globals (www/suite.py)."""
     return {
+        # Suite-owned, not frappe.is_setup_complete(): onboarding visibility must not hinge
+        # on framework/press setup state, which is written outside Suite.
         "setup_complete": bool(frappe.db.get_single_value("Suite Settings", "setup_complete")),
         "can_run_setup": "System Manager" in frappe.get_roles(),
     }
