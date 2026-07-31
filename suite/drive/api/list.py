@@ -8,10 +8,12 @@ from pypika import functions as fn
 from suite.drive.utils import (
 	FILE_FIELDS,
 	GENERAL_USER,
+	ROOT_FOLDER,
 	KIND_VIRTUAL,
 	MIME_LIST_MAP,
 	STATUS_ACTIVE,
 	STATUS_TRASHED,
+	USERS_FOLDER,
 	entity_kind,
 	get_principals,
 	get_user_folder,
@@ -49,10 +51,14 @@ def _apply_shared_filter(query, shared_type):
 		# reachable but findable nowhere. $GENERAL and link rows are excluded, or
 		# everything shared site-wide would land here.
 		principals = [p for p in get_principals(user) if p and p != GENERAL_USER]
-		match = DrivePermission.user.isin(principals)
+		# Ownership is itself a permission row naming you, so without this your own
+		# folder and files come back as things shared with you.
+		match = DrivePermission.user.isin(principals) & (DriveFile.owner != user)
 	else:
 		match = DrivePermission.user == ""
 	cond = (DrivePermission.entity == DriveFile.name) & match & (DrivePermission.deny == 0)
+	# Structural folders are scaffolding, not something anyone shared.
+	cond = cond & DriveFile.name.notin([ROOT_FOLDER, USERS_FOLDER])
 	return query.right_join(DrivePermission).on(cond)
 
 
