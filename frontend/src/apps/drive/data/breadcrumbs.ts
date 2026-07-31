@@ -41,11 +41,14 @@ function rootCrumb(routeName: string, path: string): DriveBreadcrumb {
 
 function attachmentCrumbs(
   routeName: string,
-  path: string,
   doctype?: string,
   docname?: string,
 ): DriveBreadcrumb[] {
-  const crumbs = [rootCrumb(routeName, path)]
+  // Its own route, not the current path: this crumb is the way back out of a
+  // doctype or document, so it can't point at the page you're already on.
+  const crumbs = [
+    { ...rootCrumb(routeName, ''), route: { name: routeName } },
+  ]
   if (doctype) {
     crumbs.push({
       label: doctype,
@@ -71,7 +74,6 @@ export const pageBreadcrumbs = computed<DriveBreadcrumb[]>(() => {
   if (routeName === 'drive-Attachments')
     return attachmentCrumbs(
       routeName,
-      route.path,
       route.params.doctype as string,
       route.params.docname as string,
     )

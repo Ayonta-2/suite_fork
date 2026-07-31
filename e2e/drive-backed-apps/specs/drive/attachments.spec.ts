@@ -7,48 +7,32 @@ import { frappeData } from "../../../shared/frappe";
  * The Attachments section is a three-level tree of virtual nodes - doctype >
  * document > files - that only exists in the listing. The nodes look like
  * folders but aren't Drive entities, so navigating them takes its own path.
+ *
+ * Files attach to the caller's own User record: the one document a Suite User
+ * is always allowed to write, and what the section shows in practice.
  */
 
-interface Attached {
-	todo: string;
-	fileName: string;
-}
+const DOCTYPE = "User";
 
-/** A ToDo owned by the caller, with one file attached to it. */
+/** Attach a file to `docname`, returning its Drive id. */
 async function attachFile(
 	request: APIRequestContext,
+	docname: string,
 	label: string,
-): Promise<Attached> {
-	const created = await request.post("/api/resource/ToDo", {
-		data: { description: label },
-	});
-	const todo = (await frappeData<{ name: string }>(created)).name;
-
-	const fileName = `${label}.txt`;
+): Promise<string> {
 	const uploaded = await request.post("/api/method/upload_file", {
 		multipart: {
-			doctype: "ToDo",
-			docname: todo,
+			doctype: DOCTYPE,
+			docname,
 			is_private: "1",
 			file: {
-				name: fileName,
+				name: `${label}.txt`,
 				mimeType: "text/plain",
 				buffer: Buffer.from(`attachment for ${label}`),
 			},
 		},
 	});
-	if (!uploaded.ok()) {
-		throw new Error(`Attaching the file failed: ${await uploaded.text()}`);
-	}
-	return { todo, fileName };
-}
-
-async function deleteTodo(
-	request: APIRequestContext,
-	todo: string,
-): Promise<void> {
-	// Best effort: leftover test data must never fail the test it belongs to.
-	await request.delete(`/api/resource/ToDo/${todo}`).catch(() => undefined);
+	return (await frappeData<{ name: string }>(uploaded)).name;
 }
 
 /** The breadcrumb trail in the navbar, outermost first. */
@@ -62,45 +46,56 @@ async function trail(page: Page): Promise<string[]> {
 		.filter(Boolean);
 }
 
+const row = (page: Page, name: string) =>
+	page.getByTestId(`drive-entity-${name}`);
+
 async function openRow(page: Page, name: string): Promise<void> {
-	const row = page.getByTestId(`drive-entity-${name}`);
-	await expect(row).toBeVisible();
-	await row.click();
+	await expect(row(page, name)).toBeVisible();
+	await row(page, name).click();
 }
+
+/** Emails carry regex metacharacters, so compare the path itself. */
+async function expectPath(page: Page, path: string): Promise<void> {
+	await expect.poll(() => new URL(page.url()).pathname).toBe(path);
+}
+
+const documentPath = (docname: string) =>
+	`/drive/attachments/${DOCTYPE}/${docname}`;
 
 test("drilling from doctype to document to file, and back up the trail", async ({
 	owner,
 	run,
 }) => {
 	const page = owner.page;
-	const { todo, fileName } = await attachFile(
-		page.request,
-		`attach-${run.run_id}-${Date.now()}`,
-	);
+	const docname = owner.user.email;
+	const file = await attachFile(page.request, docname, `attach-${run.run_id}`);
 
 	await page.goto("/drive/attachments");
 	await expect.poll(() => trail(page)).toEqual(["Attachments"]);
 
-	// The doctype node routes into its own bucket, not to /drive/d/ToDo.
-	await openRow(page, "ToDo");
-	await expect(page).toHaveURL(/\/drive\/attachments\/ToDo$/);
-	await expect.poll(() => trail(page)).toEqual(["Attachments", "ToDo"]);
+	// The doctype node routes into its own bucket, not to /drive/d/User.
+	await openRow(page, DOCTYPE);
+	await expectPath(page, `/drive/attachments/${DOCTYPE}`);
+	await expect.poll(() => trail(page)).toEqual(["Attachments", DOCTYPE]);
 
-	await openRow(page, todo);
-	await expect(page).toHaveURL(new RegExp(`/drive/attachments/ToDo/${todo}$`));
-	await expect.poll(() => trail(page)).toEqual(["Attachments", "ToDo", todo]);
-	await expect(page.getByText(fileName, { exact: true })).toBeVisible();
+	await openRow(page, docname);
+	await expectPath(page, documentPath(docname));
+	await expect
+		.poll(() => trail(page))
+		.toEqual(["Attachments", DOCTYPE, docname]);
+	await expect(row(page, file)).toBeVisible();
 
 	// An ancestor crumb walks back out.
-	await page.locator("#navbar").getByRole("link", { name: "ToDo" }).click();
-	await expect(page).toHaveURL(/\/drive\/attachments\/ToDo$/);
-	await expect(page.getByTestId(`drive-entity-${todo}`)).toBeVisible();
+	await page.locator("#navbar").getByRole("link", { name: DOCTYPE }).click();
+	await expectPath(page, `/drive/attachments/${DOCTYPE}`);
+	await expect(row(page, docname)).toBeVisible();
 
-	await page.locator("#navbar").getByRole("link", { name: "Attachments" }).click();
-	await expect(page).toHaveURL(/\/drive\/attachments$/);
-	await expect(page.getByTestId("drive-entity-ToDo")).toBeVisible();
-
-	await deleteTodo(page.request, todo);
+	await page
+		.locator("#navbar")
+		.getByRole("link", { name: "Attachments" })
+		.click();
+	await expectPath(page, "/drive/attachments");
+	await expect(row(page, DOCTYPE)).toBeVisible();
 });
 
 test("a deep link lands on the document's attachments", async ({
@@ -108,51 +103,42 @@ test("a deep link lands on the document's attachments", async ({
 	run,
 }) => {
 	const page = owner.page;
-	const { todo, fileName } = await attachFile(
-		page.request,
-		`deep-${run.run_id}-${Date.now()}`,
-	);
+	const docname = owner.user.email;
+	const file = await attachFile(page.request, docname, `deep-${run.run_id}`);
 
-	await page.goto(`/drive/attachments/ToDo/${todo}`);
-	await expect(page.getByText(fileName, { exact: true })).toBeVisible();
-	await expect.poll(() => trail(page)).toEqual(["Attachments", "ToDo", todo]);
-
-	await deleteTodo(page.request, todo);
+	await page.goto(documentPath(docname));
+	await expect(row(page, file)).toBeVisible();
+	await expect
+		.poll(() => trail(page))
+		.toEqual(["Attachments", DOCTYPE, docname]);
 });
 
 test("virtual nodes offer no folder tree to expand", async ({ owner, run }) => {
 	const page = owner.page;
-	const { todo } = await attachFile(
-		page.request,
-		`expand-${run.run_id}-${Date.now()}`,
-	);
+	const docname = owner.user.email;
+	await attachFile(page.request, docname, `expand-${run.run_id}`);
 
 	await page.goto("/drive/attachments");
-	await expect(page.getByTestId("drive-entity-ToDo")).toBeVisible();
+	await expect(row(page, DOCTYPE)).toBeVisible();
 	// They have no Drive children to fetch, so they carry no expand control.
-	await expect(page.getByTestId("drive-expand-ToDo")).toHaveCount(0);
+	await expect(page.getByTestId(`drive-expand-${DOCTYPE}`)).toHaveCount(0);
 
-	await page.goto("/drive/attachments/ToDo");
-	await expect(page.getByTestId(`drive-entity-${todo}`)).toBeVisible();
-	await expect(page.getByTestId(`drive-expand-${todo}`)).toHaveCount(0);
-
-	await deleteTodo(page.request, todo);
+	await page.goto(`/drive/attachments/${DOCTYPE}`);
+	await expect(row(page, docname)).toBeVisible();
+	await expect(page.getByTestId(`drive-expand-${docname}`)).toHaveCount(0);
 });
 
 test("the attached file opens from the listing", async ({ owner, run }) => {
 	const page = owner.page;
-	const { todo, fileName } = await attachFile(
-		page.request,
-		`open-${run.run_id}-${Date.now()}`,
-	);
+	const docname = owner.user.email;
+	const file = await attachFile(page.request, docname, `open-${run.run_id}`);
 
-	await page.goto(`/drive/attachments/ToDo/${todo}`);
-	const file = page.getByText(fileName, { exact: true });
-	await expect(file).toBeVisible();
-	await file.click();
-	await expect(page).toHaveURL(/\/drive\/f\//);
-
-	await deleteTodo(page.request, todo);
+	await page.goto(documentPath(docname));
+	await openRow(page, file);
+	// The preview route appends a slug of the file name.
+	await expect
+		.poll(() => new URL(page.url()).pathname.startsWith(`/drive/f/${file}`))
+		.toBe(true);
 });
 
 test("another user's attachments stay out of the listing", async ({
@@ -160,14 +146,14 @@ test("another user's attachments stay out of the listing", async ({
 	collaborator,
 	run,
 }) => {
-	const { todo, fileName } = await attachFile(
+	const docname = owner.user.email;
+	const file = await attachFile(
 		owner.page.request,
-		`private-${run.run_id}-${Date.now()}`,
+		docname,
+		`private-${run.run_id}`,
 	);
 
 	const page = collaborator.page;
-	await page.goto(`/drive/attachments/ToDo/${todo}`);
-	await expect(page.getByText(fileName, { exact: true })).toHaveCount(0);
-
-	await deleteTodo(owner.page.request, todo);
+	await page.goto(documentPath(docname));
+	await expect(row(page, file)).toHaveCount(0);
 });
