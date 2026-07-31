@@ -924,4 +924,4 @@ def resolve_legacy_route(old_id: str):
 	if not user_has_permission(entity, "read"):
 		# don't confirm it exists to someone who cannot open it
 		return None
-	return {"name": row.name, "route": f"/drive/{'d' if row.is_folder else 'f'}/{row.name}"}
+	return {"name": row.name, "is_folder": bool(row.is_folder)}
