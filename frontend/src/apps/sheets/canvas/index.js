@@ -7,7 +7,7 @@ import { cellId, colLabel, parseCellId } from '../utils/cells.js'
 import { AC_FUNS, AC_FUN_KEYS, parseAcToken, parseSignatureContext, describeSignature, shouldSuggestRange, detectAdjacentRange, isNumericText } from '../utils/formula-ac.js'
 import { autoCloseKey } from '../utils/formula-autoclose.js'
 import { isWrapText, getTextWrap, wrapLines, lineHeightFor } from '../utils/text-wrap.js'
-import { CHIP, chipMetrics, chipFont } from './chip-geometry.js'
+import { chipFont } from './chip-geometry.js'
 import { checkboxRect } from './checkbox-geometry.js'
 
 export { colLabel, cellId, parseCellId } from '../utils/cells.js'
@@ -44,6 +44,11 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
   let selEnd = { r: 0, c: 0 }
   let selMode    = 'cell'  // 'cell' | 'col' | 'row'
   let dragging   = false
+  // A plain single-click anywhere in a list-validated cell opens its dropdown.
+  // We record the candidate on mousedown and fire on mouseup, so a click that
+  // turns into a range-drag selects instead of opening, and a double-click
+  // (which edits) is excluded. Set to { hId, rule, r, c, downX, downY, pos }.
+  let _pendingListOpen = null
   let editing    = false
   let resizing   = null  // { col, startX, startW }
   let resizingRow = null  // { row, startY, startH }
@@ -1295,30 +1300,22 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
       }
     }
 
-    // Click on the dropdown caret of a list-validated cell → open dropdown.
-    // The caret zone tracks the chip when one is drawn (list rule + value),
-    // else it's the plain arrow box at the cell's right edge. Only list rules
-    // get a dropdown — number/length rules fall through to normal selection.
-    if (vrule?.type === 'list' && canEdit()) {
-      const x = geo.colX(h.c), y = geo.rowY(h.r)
-      const w = geo.cw(h.c), cellRight = x + w
-      const lx = (e.clientX - rect.left) / _zoom
-      const val = getValue(hId)
-      let caretL = cellRight - 14
-      if (val != null && String(val) !== '') {
-        const { offsetX, chipW } = chipMetrics(ctx, String(val), getFormat?.(hId) || {}, w)
-        caretL = x + offsetX + chipW - CHIP.caretW
-      }
-      if (lx >= caretL && lx <= cellRight) {
-        e.stopPropagation()   // prevent _onDocMouseDown from closing the just-opened panel
-        moveSel(h.r, h.c)
-        const pos = {
+    // A plain single-click anywhere in a list-validated cell opens its dropdown
+    // (not just a caret zone). Record the candidate here and open it on mouseup,
+    // so the click still falls through to select the cell / start a range-drag;
+    // a drag or a double-click (which edits) cancels the open. Modifier-clicks
+    // (shift/ctrl/cmd range ops) and non-list rules never open a dropdown.
+    if (vrule?.type === 'list' && canEdit() && e.detail === 1 &&
+        !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      const x = geo.colX(h.c), y = geo.rowY(h.r), w = geo.cw(h.c)
+      _pendingListOpen = {
+        hId, rule: vrule, r: h.r, c: h.c,
+        downX: e.clientX, downY: e.clientY,
+        pos: {
           x: rect.left + x * _zoom,
           y: rect.top  + (y + geo.rh(h.r)) * _zoom,
           w: w * _zoom,
-        }
-        onDropdownClick?.(hId, vrule, pos)
-        return
+        },
       }
     }
 
@@ -1446,6 +1443,18 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
       const t = picker.target
       picker = null
       t?.focus?.()
+    }
+    // A click that stayed on its origin list cell (no range-drag) opens the
+    // dropdown. A drag past a few px is a selection, so it cancels the open.
+    if (_pendingListOpen) {
+      const p = _pendingListOpen
+      _pendingListOpen = null
+      const moved = Math.hypot(e.clientX - p.downX, e.clientY - p.downY) > 4
+      if (!moved) {
+        const rect = canvas.getBoundingClientRect()
+        const h = geo.hitTest(e.clientX, e.clientY, rect)
+        if (h && h.r === p.r && h.c === p.c) onDropdownClick?.(p.hId, p.rule, p.pos)
+      }
     }
     dragging = false
   })

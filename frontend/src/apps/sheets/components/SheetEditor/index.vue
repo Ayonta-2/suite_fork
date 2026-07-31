@@ -917,12 +917,34 @@
             ]"
           />
 
-          <!-- List -->
-          <FormControl v-if="validationDialog.type === 'list'"
-            v-model="validationDialog.listRaw"
-            label="Items (comma-separated)"
-            placeholder="Yes, No, Maybe"
-          />
+          <!-- List — one row per item: a colour swatch, the label, and remove.
+               Paste a comma/newline list into any field to split it into rows. -->
+          <div v-if="validationDialog.type === 'list'" class="sn-vd-list" ref="vdListEl">
+            <label class="sn-vd-list-label">Items</label>
+            <div v-for="(item, i) in validationDialog.listItems" :key="i" class="sn-vd-item">
+              <ColorPicker
+                :model-value="item.color || ''"
+                allow-default default-label="Automatic colour"
+                :fallback="autoChipColor(i)" title="Label colour"
+                @update:model-value="item.color = $event">
+                <template #trigger="{ toggle, open }">
+                  <button type="button" class="sn-vd-swatch" :class="{ 'is-open': open }"
+                          :style="{ background: item.color || autoChipColor(i) }"
+                          title="Label colour" @click="toggle()" />
+                </template>
+              </ColorPicker>
+              <input class="sn-vd-item-input" v-model="item.label" placeholder="Item"
+                     @keydown.enter.prevent="addListItem(i)"
+                     @paste="onListPaste($event, i)" />
+              <button type="button" class="sn-vd-item-x" title="Remove item"
+                      @click="removeListItem(i)">
+                <FeatherIcon name="x" class="sn-vd-item-xg" />
+              </button>
+            </div>
+            <button type="button" class="sn-vd-add" @click="addListItem()">
+              <FeatherIcon name="plus" class="sn-vd-add-g" /> Add item
+            </button>
+          </div>
 
           <!-- Operator (number / text_length) -->
           <FormControl v-if="['number','text_length'].includes(validationDialog.type)"
@@ -1107,7 +1129,7 @@
            class="sn-dropdown-opt" :class="{ 'is-active': opt === dropdownPanel.value }"
            @mousedown.prevent="pickDropdownOption(opt)">
         <FeatherIcon name="check" class="sn-dropdown-check" :style="{ visibility: opt === dropdownPanel.value ? 'visible' : 'hidden' }" />
-        <span class="sn-dropdown-chip" :style="{ background: chipColor(opt) }">{{ opt }}</span>
+        <span class="sn-dropdown-chip" :style="{ background: chipColor(opt, dropdownPanel.rule) }">{{ opt }}</span>
       </div>
       <div v-if="dropdownPanel.value" class="sn-dropdown-opt sn-dropdown-clear"
            @mousedown.prevent="pickDropdownOption('')">
@@ -1253,7 +1275,7 @@ import { createSlicerEngine }  from '../../engine/slicers.js'
 import { createCommentsEngine }  from '../../engine/comments.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { createProtectionEngine } from '../../engine/protection.js'
-import { chipColor } from '../../canvas/chip-geometry.js'
+import { chipColor, chipPaletteColor } from '../../canvas/chip-geometry.js'
 import { createCondFormatEngine } from '../../engine/cond-format.js'
 import { detectHyperlink, isAutoLinkText } from '../../engine/links.js'
 import { fetchLinkPreview } from '../../services/linkPreview.js'
@@ -1664,14 +1686,15 @@ const commentPanel  = reactive({ open: false, id: '', x: 0, y: 0, thread: [], re
 const notesPanel = reactive({ open: false, rev: 0 })
 
 // ── Dropdown (validation) UI state ────────────────────────────────────────────
-const dropdownPanel    = reactive({ open: false, id: '', options: [], value: '', x: 0, y: 0, w: 120 })
+const dropdownPanel    = reactive({ open: false, id: '', options: [], rule: null, value: '', x: 0, y: 0, w: 120 })
+const vdListEl         = ref(null)
 const validationDialog = reactive({
   open: false,
   type:     'list',      // 'list' | 'number' | 'text_length'
   operator: 'between',   // 'between' | 'not_between' | 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'neq'
   val1:     '',
   val2:     '',
-  listRaw:  '',
+  listItems: [],         // [{ label, color }] — color '' means auto (palette by position)
   message:  '',
   severity: 'reject',   // 'reject' blocks the edit; 'warn' allows it but flags the cell
 })
@@ -4433,10 +4456,47 @@ function openValidationDialog() {
   validationDialog.operator = e?.operator || 'between'
   validationDialog.val1     = String(e?.min ?? '')
   validationDialog.val2     = String(e?.max ?? '')
-  validationDialog.listRaw  = (e?.options || []).join(', ')
+  const opts   = e?.options || []
+  const colors = e?.colors  || {}
+  validationDialog.listItems = opts.length
+    ? opts.map(o => ({ label: o, color: colors[o] || '' }))
+    : [{ label: '', color: '' }]   // start with one empty row to type into
   validationDialog.message  = e?.message  || ''
   validationDialog.severity = e?.severity || 'reject'
   validationDialog.open     = true
+}
+
+// The auto (unset) chip colour for the item at position `i` — matches how the
+// painter slots colours by option order, so the dialog previews the real thing.
+function autoChipColor(i) { return chipPaletteColor(i) }
+
+function addListItem(afterIdx) {
+  const row = { label: '', color: '' }
+  if (afterIdx == null) validationDialog.listItems.push(row)
+  else validationDialog.listItems.splice(afterIdx + 1, 0, row)
+  focusListItem(afterIdx == null ? validationDialog.listItems.length - 1 : afterIdx + 1)
+}
+
+function removeListItem(i) {
+  validationDialog.listItems.splice(i, 1)
+  if (!validationDialog.listItems.length) validationDialog.listItems.push({ label: '', color: '' })
+}
+
+// Paste a comma/newline-separated list into a row → split it across rows, so
+// bulk entry ("Yes, No, Maybe") still works alongside per-item editing.
+function onListPaste(ev, i) {
+  const text = ev.clipboardData?.getData('text') || ''
+  if (!/[,\n]/.test(text)) return   // single value → let the default paste happen
+  ev.preventDefault()
+  const parts = text.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
+  if (!parts.length) return
+  validationDialog.listItems[i].label = parts[0]
+  validationDialog.listItems.splice(i + 1, 0, ...parts.slice(1).map(label => ({ label, color: '' })))
+}
+
+async function focusListItem(i) {
+  await nextTick()
+  vdListEl.value?.querySelectorAll('.sn-vd-item-input')?.[i]?.focus()
 }
 
 function confirmValidation() {
@@ -4451,8 +4511,17 @@ function confirmValidation() {
   if (validationDialog.type === 'checkbox') {
     rule = { type: 'checkbox', message: msg }
   } else if (validationDialog.type === 'list') {
-    const options = validationDialog.listRaw.split(',').map(s => s.trim()).filter(Boolean)
+    // De-dupe by label (first wins), keeping only rows that have a colour set.
+    const options = []
+    const colors  = {}
+    for (const it of validationDialog.listItems) {
+      const label = it.label.trim()
+      if (!label || options.includes(label)) continue
+      options.push(label)
+      if (it.color) colors[label] = it.color
+    }
     rule = { type: 'list', options, message: msg, severity }
+    if (Object.keys(colors).length) rule.colors = colors
   } else {
     const op  = validationDialog.operator
     const v1  = parseFloat(validationDialog.val1)
@@ -4502,6 +4571,7 @@ function openDropdown(id, rule, pos = {}) {
   if (rule?.type !== 'list') return
   dropdownPanel.id      = id
   dropdownPanel.options = rule.options
+  dropdownPanel.rule    = rule
   dropdownPanel.value   = String(sheet.getCell(id, sheet.getCurrentSheet()) ?? '')
   dropdownPanel.x       = pos.x ?? 0
   dropdownPanel.y       = pos.y ?? 0
@@ -6067,6 +6137,21 @@ function toggleShowFormulas() {
 .sn-ac-badge { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-cyan-6, #0891b2); background:var(--surface-cyan-1, #ecfeff); border-radius:3px; padding:1px 5px; }
 /* Validation dialog two-column value row */
 .sn-vd-vals  { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+/* Validation "List of items" per-item editor: swatch · label · remove */
+.sn-vd-list       { display:flex; flex-direction:column; gap:6px; }
+.sn-vd-list-label { font-size:12px; color:var(--ink-gray-5); }
+.sn-vd-item       { display:flex; align-items:center; gap:8px; }
+.sn-vd-swatch     { flex-shrink:0; width:28px; height:28px; border-radius:6px; border:1px solid var(--outline-gray-2); cursor:pointer; padding:0; }
+.sn-vd-swatch:hover, .sn-vd-swatch.is-open { box-shadow:0 0 0 2px var(--surface-base), 0 0 0 3.5px var(--outline-gray-4); }
+.sn-vd-item-input { flex:1; min-width:0; height:28px; padding:0 10px; font-size:13px; border:1px solid var(--outline-gray-2); border-radius:8px; color:var(--ink-gray-9); background:var(--surface-base); outline:none; }
+.sn-vd-item-input:focus { border-color:var(--outline-gray-4); }
+.sn-vd-item-x     { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:6px; border:none; background:transparent; color:var(--ink-gray-5); cursor:pointer; }
+.sn-vd-item-x:hover { background:var(--surface-gray-2); color:var(--ink-gray-8); }
+.sn-vd-item-xg    { width:15px; height:15px; }
+.sn-vd-add        { align-self:flex-start; display:inline-flex; align-items:center; gap:5px; margin-top:2px; padding:4px 8px; font-size:13px; font-weight:500; color:var(--ink-gray-7); background:transparent; border:none; border-radius:6px; cursor:pointer; }
+.sn-vd-add:hover  { background:var(--surface-gray-2); color:var(--ink-gray-9); }
+.sn-vd-add-g      { width:14px; height:14px; }
 
 /* ── Bar 3 · Formatting toolbar ──────────────────────────────────────────── */
 .sn-toolbar { display:flex; align-items:center; gap:2px; height:44px; padding:0 15px; border-bottom:1px solid var(--outline-gray-2); background:var(--surface-base); flex-shrink:0; }
