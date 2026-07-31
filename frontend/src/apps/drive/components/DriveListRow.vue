@@ -50,7 +50,7 @@
         @dragend="draggedItem = null"
         @dragover="
           (e) => {
-            if (row.is_folder) {
+            if (row.is_folder && !isVirtual(row)) {
               e.preventDefault()
               dragOverItem = row.name
             }
@@ -172,7 +172,7 @@ import { useRoute } from 'vue-router'
 import { useSessionStore } from '@/boot/session'
 import { activeEntity, renamingEntity } from '@/apps/drive/data/selection'
 import InlineRenameInput from './InlineRenameInput.vue'
-import { openEntity, isModKey, getThumbnailUrl, WRITER_CONTENT_DOCTYPE, PRESENTATION_CONTENT_DOCTYPE } from '@/apps/drive/utils/files'
+import { openEntity, isModKey, isVirtual, folderRoute, getThumbnailUrl, WRITER_CONTENT_DOCTYPE, PRESENTATION_CONTENT_DOCTYPE } from '@/apps/drive/utils/files'
 import { formatDate } from '@/apps/drive/utils/format'
 import { expandedFolders } from '@/apps/drive/data/folderTree'
 import LucideStar from '~icons/lucide/star'
@@ -241,13 +241,14 @@ const open = (row) =>
   route.name !== 'Trash' &&
   openEntity(row)
 const routeFor = (row) =>
-  row.is_folder && !props.selections.size
-    ? { name: 'drive-Folder', params: { entityName: row.name } }
-    : undefined
+  row.is_folder && !props.selections.size ? folderRoute(row) : undefined
 
+// Virtual nodes have no Drive children to fetch — expanding one would ask for
+// the contents of a File that doesn't exist.
 const canExpand = (row) =>
   row.is_folder &&
   !row.external &&
+  !isVirtual(row) &&
   row.child_count !== 0 &&
   route.name !== 'drive-Trash'
 const isExpanded = (row) => expandedFolders.value.has(row.name)
