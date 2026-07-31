@@ -107,9 +107,19 @@ def clear_deleted_files():
 		filters={"status": STATUS_REMOVED, "modified": ["<", days_before]},
 		fields=["name"],
 	)
+	failed = 0
 	for entity in result:
-		doc = frappe.get_doc("File", entity, ignore_permissions=True)
-		doc.delete()
+		# One undeletable file must not stop the sweep: it ran nightly for weeks
+		# refusing at the first document and reclaiming nothing behind it.
+		try:
+			frappe.get_doc("File", entity, ignore_permissions=True).delete()
+			frappe.db.commit()
+		except Exception:
+			frappe.db.rollback()
+			failed += 1
+			frappe.log_error("Drive: could not purge a removed file", frappe.get_traceback())
+	if failed:
+		print(f"Drive: {failed} of {len(result)} removed file(s) could not be purged")
 
 
 def clear_download_archives():
