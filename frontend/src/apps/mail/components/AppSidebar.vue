@@ -529,7 +529,7 @@ const sidebarItems = computed(() => {
 	const groups = [
 		{ label: __('Default'), items: defaultItems },
 		{ label: __('Custom'), items: customItems },
-		{ label: __('People'), items: contactsItems },
+		{ label: __('People'), items: contactsItems, collapsible: true },
 	]
 
 	// All Inboxes and Screener share one nameless group pinned above the folders, so they sit at
