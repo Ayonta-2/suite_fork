@@ -1,9 +1,21 @@
 <template>
-	<!-- The list column. With Split View on it takes a third of the row and the pane the rest;
-	     otherwise it fills the width and the pane overlays it (or, on mobile, slides in over it). -->
+	<!-- The list column. With Split View on it's a share of the VIEWPORT (vw, not
+	     a fraction of the row: the viewport doesn't change when something else
+	     joins the row, so opening e.g. the event detail sidebar squeezes only
+	     the thread pane) and the pane takes the rest; otherwise it fills the
+	     width and the pane overlays it (or, on mobile, slides in over it). The
+	     min-w floor keeps the list usable on cramped windows; past it the
+	     thread pane shrinks to its own floor, then the row scrolls. -->
+	<!-- border-r only in Split View: full-width mode has nothing of its own to
+	     the right, and anything that does sit there (the event detail sidebar)
+	     brings its own border-l — keeping both would double the hairline. -->
 	<div
-		class="sticky top-16 flex flex-col border-r"
-		:class="!isMobile && showReadingPane ? 'w-1/3' : 'w-full'"
+		class="sticky top-16 flex flex-col"
+		:class="
+			!isMobile && showReadingPane
+				? 'w-[28vw] min-w-64 shrink-0 border-r lg:min-w-80'
+				: 'w-full'
+		"
 	>
 		<slot name="list" />
 	</div>
@@ -21,7 +33,7 @@
 			class="bg-surface-base"
 			:class="{
 				'overflow-hidden': isMobile,
-				'w-2/3': !isMobile && showReadingPane,
+				'min-w-56 flex-1 lg:min-w-64': !isMobile && showReadingPane,
 				'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
 				'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
 					isMobile,
