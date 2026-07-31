@@ -412,24 +412,29 @@ const openUrl = (location: string) => {
 			</div>
 		</div>
 
-		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-			<!-- Title and time. No top padding — the header's centering slack is the
-			     gap above the title; pb balances it below the date and keeps
-			     breathing room when a long title wraps (the block just grows).
-			     Single-line, the block sums to ~49px, so header (48) + block +
-			     divider match the mail header bar + screener banner (49px each)
-			     and the divider lands on the banner's border when mail hosts the
-			     panel. -->
+		<!-- -mt-2 eats the header's centering slack so the visual gap above the
+		     title (which also includes the header text's own centering slack and
+		     the title's half-leading) matches the pb below the date; it sits on
+		     the scroll wrapper because a negative margin on the first child of an
+		     overflow-y-auto box would only clip. -->
+		<div class="-mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto">
+			<!-- Title and time. No top padding — what's left of the header's
+			     centering slack is the gap above the title; pb balances it below
+			     the date and keeps breathing room when a long title wraps (the
+			     block just grows). Single-line, -mt + block sum to 49px, so
+			     header (48) + block + divider match the mail header bar +
+			     screener banner (49px each) and the divider lands on the
+			     banner's border when mail hosts the panel. -->
 			<div class="flex flex-col px-4.5 pb-3">
-				<!-- Whole-pixel leadings: text-lg/text-sm's 1.15 line-height yields
-				     18.4px + 14.95px, drifting the block to 49.35px and the divider
-				     a rounded pixel below the mail banner's line. 18 + 4 + 15 + 12
-				     sums to exactly 49. -->
-				<div class="min-w-0 space-y-1">
-					<h3 class="text-ink-gray-8 break-words text-lg font-semibold leading-[18px]">
+				<!-- leading-6 keeps wrapped titles readable while leaving the
+				     title–date gap clearly wider than the title's own line gap; the
+				     date keeps text-sm's default 1.15 line-height (14.95px), so
+				     -8 + 24 + 6 + 14.95 + 12 sums to 49 within a subpixel. -->
+				<div class="min-w-0 space-y-1.5">
+					<h3 class="text-ink-gray-8 break-words text-lg font-semibold leading-6">
 						{{ calendarEvent.title || __('Untitled event') }}
 					</h3>
-					<div class="text-ink-gray-6 break-words text-sm leading-[15px]">
+					<div class="text-ink-gray-6 break-words text-sm">
 						{{ dateLabel }}
 					</div>
 				</div>
@@ -524,9 +529,11 @@ const openUrl = (location: string) => {
 
 			<div class="border-t" />
 
-			<!-- Participants: pb-4 mirrors the header row's own py-2 stacked on the
-			     section's pt-2, so the section is visually padded evenly. -->
-			<div class="flex flex-col gap-1.5 pb-4 pt-2">
+			<!-- Participants: the section's own y padding matches the header row's
+			     py-2, so it reads as evenly spaced. Counting the row's padding
+			     towards the top instead left the section 8px/16px — the row's
+			     padding belongs to the row, not to the section. -->
+			<div class="flex flex-col py-2">
 				<div class="flex items-center gap-2.5 px-4.5 py-2">
 					<Users class="icon text-ink-gray-5 size-4 shrink-0" />
 					<div class="text-ink-gray-7 min-w-0 flex-1 truncate text-sm">
@@ -549,7 +556,7 @@ const openUrl = (location: string) => {
 				<!-- Indented to the header row's text axis (gutter + icon + gap): the
 				     list is the "2 people" line's expansion, so they read as one
 				     block with the icon hanging in the gutter. -->
-				<div class="space-y-3 pl-11 pr-4.5">
+				<div class="space-y-3 py-2 pl-11 pr-4.5">
 					<EventParticipantList
 						:participants="visibleParticipants"
 						:dont-show-remove="true"
