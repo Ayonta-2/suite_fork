@@ -4,13 +4,24 @@
 		:options="{
 			title: __('Add Role'),
 			actions: [
-				{ label: __('Add Role'), variant: 'solid', disabled: !description, onClick: addRole.submit },
+				{
+					label: __('Add Role'),
+					variant: 'solid',
+					disabled: !description,
+					loading: addRole.loading,
+					onClick: addRole.submit,
+				},
 			],
 		}"
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl v-model="description" :label="__('Description')" autocomplete="off" />
+				<FormControl
+					v-model="description"
+					:label="__('Description')"
+					autocomplete="off"
+					:description="__('Shown as the role\'s name across the dashboard.')"
+				/>
 				<div class="space-y-1.5">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Enabled Permissions') }}</label>
 					<MultiSelect v-model="enabledPermissions" :options="permissionOptions" />
@@ -23,7 +34,9 @@
 					<label class="text-ink-gray-5 block text-xs">{{ __('Inherited Roles') }}</label>
 					<MultiSelect v-model="roleIds" :options="roleOptions" />
 				</div>
-				<ErrorMessage :message="addRole.error?.messages?.[0] || addRole.error?.message" />
+				<ErrorMessage
+					:message="addRole.error && (addRole.error?.messages?.[0] || addRole.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

@@ -3,13 +3,28 @@
 		v-model="show"
 		:options="{
 			title: __('Edit Role'),
-			actions: [{ label: __('Save'), variant: 'solid', disabled: !description, onClick: updateRole.submit }],
+			actions: [
+				{
+					label: __('Save'),
+					variant: 'solid',
+					disabled: !description,
+					loading: updateRole.loading,
+					onClick: updateRole.submit,
+				},
+			],
 		}"
 	>
 		<template #body-content>
 			<div class="space-y-4">
-				<FormControl v-model="description" :label="__('Description')" autocomplete="off" />
-				<ErrorMessage :message="updateRole.error?.messages?.[0] || updateRole.error?.message" />
+				<FormControl
+					v-model="description"
+					:label="__('Description')"
+					autocomplete="off"
+					:description="__('Shown as the role\'s name across the dashboard.')"
+				/>
+				<ErrorMessage
+					:message="updateRole.error && (updateRole.error?.messages?.[0] || updateRole.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

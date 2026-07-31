@@ -6420,20 +6420,27 @@ function toggleShowFormulas() {
 <!-- Unscoped: frappe-ui's Dropdown teleports its menu to document.body, so
      a scoped rule never reaches it. This caps the menu height (and the
      inner content body Reka renders inside it) so long lists like the
-     number-format picker stay scrollable instead of falling off-screen. -->
+     number-format picker stay scrollable instead of falling off-screen.
+     frappe-ui beta.3 named the teleported menu `.dropdown-content`; beta.25
+     (the version Suite ships) renamed it to `.menu-content` /
+     `[data-reka-menu-content]`, so target every marker or the cap silently
+     stops matching after a frappe-ui bump and the menu clips off-screen. -->
 <style>
 .dropdown-content,
-.dropdown-content [data-slot=content-body] {
+.dropdown-content [data-slot=content-body],
+.menu-content,
+[data-reka-menu-content] {
   max-height: min(60vh, 480px);
   overflow-y: auto;
 }
-/* reka-ui teleports the popover to <body> as `.dropdown-content` (frappe-ui
-   default z-index:50) with no marker we can target, so the slicer's column menu
-   rendered behind the floating slicer (8400) / context menu (9000). Gate the
-   bump on `body:has(.sn-slicer)` — only while a Sheets slicer is floating — so
+/* reka-ui teleports the popover to <body> (frappe-ui default z-index:50) with
+   no marker we can target, so the slicer's column menu rendered behind the
+   floating slicer (8400) / context menu (9000). Gate the bump on
+   `body:has(.sn-slicer)` — only while a Sheets slicer is floating — so
    dropdowns everywhere else in the app (and other Suite products) keep their
    normal stacking. The doubled class still outranks the single-class default. */
-body:has(.sn-slicer) .dropdown-content.dropdown-content { z-index: 9500; }
+body:has(.sn-slicer) .dropdown-content.dropdown-content,
+body:has(.sn-slicer) .menu-content.menu-content { z-index: 9500; }
 
 /* A Frappe UI Dialog draws a translucent (~12% black) scrim over the grid.
    The filter-range outline and pivot-output highlight are full-height dark
@@ -6451,8 +6458,8 @@ body:has(.dialog-overlay) .sn-pivot-highlight { display: none; }
    z-index sits above the filter (14) / pivot (15) range outlines so the opaque
    track paints over any outline border that reaches the scrollbar gutter, but
    below the notes drawer (30) and popovers. */
-.sn-sb          { position:absolute; z-index:16; background:var(--surface-menu-bar, #f8f8f8);
-                  border:0 solid var(--outline-gray-2, #e2e2e2);
+.sn-sb          { position:absolute; z-index:16; background:var(--surface-gray-2, var(--surface-base));
+                  border:0 solid var(--outline-gray-2);
                   opacity:1; transition:opacity .2s ease; }
 /* --sn-sb-thick is published by canvas/scrollbars.js from SCROLLBAR_THICK, the
    single source of truth; the 12px fallback only covers the pre-mount frame. */
@@ -6460,18 +6467,18 @@ body:has(.dialog-overlay) .sn-pivot-highlight { display: none; }
 .sn-sb-h        { left:0; bottom:0; height:var(--sn-sb-thick, 12px); border-top-width:1px; }
 .sn-sb-corner   { position:absolute; z-index:16; right:0; bottom:0;
                   width:var(--sn-sb-thick, 12px); height:var(--sn-sb-thick, 12px);
-                  background:var(--surface-menu-bar, #f8f8f8);
-                  border-left:1px solid var(--outline-gray-2, #e2e2e2);
-                  border-top:1px solid var(--outline-gray-2, #e2e2e2);
+                  background:var(--surface-gray-2, var(--surface-base));
+                  border-left:1px solid var(--outline-gray-2);
+                  border-top:1px solid var(--outline-gray-2);
                   opacity:1; transition:opacity .2s ease; }
 /* Auto-hidden state — faded out and click-through so cells under the gutter
    stay reachable. JS (canvas/scrollbars.js) toggles this on inactivity. */
 .sn-sb--hidden  { opacity:0; pointer-events:none; }
-.sn-sb-thumb    { position:absolute; border-radius:6px; background:var(--ink-gray-4, #b8b8b8);
+.sn-sb-thumb    { position:absolute; border-radius:6px; background:var(--ink-gray-4);
                   transition:background .12s ease; cursor:grab; touch-action:none; }
 .sn-sb-v .sn-sb-thumb { top:0; left:2px; right:2px; }
 .sn-sb-h .sn-sb-thumb { left:0; top:2px; bottom:2px; }
-.sn-sb-thumb:hover           { background:var(--ink-gray-5, #7c7c7c); }
-.sn-sb-dragging .sn-sb-thumb { background:var(--ink-gray-6, #6b6b6b); cursor:grabbing; }
+.sn-sb-thumb:hover           { background:var(--ink-gray-5); }
+.sn-sb-dragging .sn-sb-thumb { background:var(--ink-gray-6); cursor:grabbing; }
 .sn-sb-dragging              { cursor:grabbing; user-select:none; }
 </style>

@@ -27,29 +27,6 @@ export const toTitleCase = (str: string) =>
 		})
 		.join(' ') || ''
 
-export function startResizing(event) {
-	const startX = event.clientX
-	const sidebar = document.getElementsByClassName('mailSidebar')[0]
-	const startWidth = sidebar.offsetWidth
-
-	const onMouseMove = (event) => {
-		const diff = event.clientX - startX
-		let newWidth = startWidth + diff
-		if (newWidth < 200) {
-			newWidth = 200
-		}
-		sidebar.style.width = newWidth + 'px'
-	}
-
-	const onMouseUp = () => {
-		document.removeEventListener('mousemove', onMouseMove)
-		document.removeEventListener('mouseup', onMouseUp)
-	}
-
-	document.addEventListener('mousemove', onMouseMove)
-	document.addEventListener('mouseup', onMouseUp)
-}
-
 export const formatBytes = (bytes: number) => {
 	if (!+bytes) return '0 Bytes'
 
@@ -176,12 +153,6 @@ export const getFormattedDate = (date: Date | string, omitDate = false) => {
 	if (dateObj.isYesterday()) return __('Yesterday')
 	return dateObj.format(isCurrentYear ? 'D MMMM' : 'D MMMM YYYY')
 }
-
-export const getFirstAlphabet = (str?: string) => str?.match(/\p{L}/u)?.[0]
-
-// The letter on a sender's avatar: their name's first, or their address's when they go by no name.
-export const getSenderInitial = (sender: { from_name?: string; from_email?: string }) =>
-	getFirstAlphabet(sender.from_name) || getFirstAlphabet(sender.from_email)
 
 export const getTheme = (
 	status: 'Draft' | 'Queued' | 'In Progress' | 'Completed' | 'Failed' | 'Cancelled',

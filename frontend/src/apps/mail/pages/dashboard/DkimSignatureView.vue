@@ -1,62 +1,81 @@
 <template>
-	<DashboardLayout v-if="signature.data" :breadcrumbs="breadcrumbs">
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!signature.data">
+		<template #default>
+			<DashboardDetailHeader
+				:title="signature.data.domain || signatureId"
+				:meta="[signature.data.algorithm, signature.data.selector]"
+			>
+				<template #icon><FileKey2 class="h-5 w-5" /></template>
+				<template #actions>
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+				</template>
+			</DashboardDetailHeader>
+			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+				<!-- Signature -->
+				<DashboardCard :title="__('Signature')">
+					<div>
+						<InformationField :label="__('Signature Type')" :value="signature.data.algorithm" />
+						<InformationField :label="__('Selector')" :value="signature.data.selector" />
+					</div>
+				</DashboardCard>
+
+				<!-- Rotation -->
+				<DashboardCard :title="__('Rotation')">
+					<div>
+						<InformationField :label="__('Stage')" :value="stageLabel" />
+						<InformationField :label="__('Created At')" :value="createdAt" />
+						<InformationField :label="__('Next Transition')" :value="nextTransition" />
+					</div>
+				</DashboardCard>
+
+				<!-- Options -->
+				<DashboardCard :title="__('Options')">
+					<div>
+						<InformationField :label="__('Signed Headers')" :value="signedHeaders" />
+						<InformationField :label="__('Canonicalization')" :value="signature.data.canonicalization" />
+						<InformationField :label="__('Expiration')" :value="signature.data.expiration" />
+						<InformationField :label="__('Request Reports')" :value="requestReports" />
+						<InformationField :label="__('Agent User ID')" :value="signature.data.auid" />
+					</div>
+				</DashboardCard>
+
+				<!-- Public Key -->
+				<DashboardCard :title="__('Public Key')">
+					<div class="p-4">
+						<Tooltip :text="__('Click to copy')" :disabled="!publicKey">
+							<div
+								class="group/copy flex items-start gap-1.5"
+								:class="{ 'cursor-copy': publicKey }"
+								@click="publicKey && copyToClipBoard(publicKey)"
+							>
+								<code class="text-ink-gray-7 block break-all font-mono text-xs">
+									{{ publicKey || '—' }}
+								</code>
+								<FeatherIcon
+									v-if="publicKey"
+									name="copy"
+									class="text-ink-gray-5 invisible h-3.5 w-3.5 shrink-0 group-hover/copy:visible"
+								/>
+							</div>
+						</Tooltip>
+					</div>
+				</DashboardCard>
+			</div>
 		</template>
-		<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-			<!-- Signature -->
-			<DashboardCard :title="__('Signature')">
-				<template #actions><span /></template>
-				<div>
-					<InformationField :label="__('Signature Type')" :value="signature.data.algorithm" />
-					<InformationField :label="__('Selector')" :value="signature.data.selector" />
-					<InformationField :label="__('Domain')" :value="signature.data.domain" />
-				</div>
-			</DashboardCard>
-
-			<!-- Rotation -->
-			<DashboardCard :title="__('Rotation')">
-				<template #actions><span /></template>
-				<div>
-					<InformationField :label="__('Stage')" :value="stageLabel" />
-					<InformationField :label="__('Created At')" :value="createdAt" />
-					<InformationField :label="__('Next Transition')" :value="nextTransition" />
-				</div>
-			</DashboardCard>
-
-			<!-- Options -->
-			<DashboardCard :title="__('Options')">
-				<template #actions><span /></template>
-				<div>
-					<InformationField :label="__('Signed Headers')" :value="signedHeaders" />
-					<InformationField :label="__('Canonicalization')" :value="signature.data.canonicalization" />
-					<InformationField :label="__('Expiration')" :value="signature.data.expiration" />
-					<InformationField :label="__('Request Reports')" :value="requestReports" />
-					<InformationField :label="__('Agent User ID')" :value="signature.data.auid" />
-				</div>
-			</DashboardCard>
-
-			<!-- Public Key -->
-			<DashboardCard :title="__('Public Key')">
-				<template #actions><span /></template>
-				<div class="p-4">
-					<code class="text-ink-gray-7 block break-all font-mono text-xs">
-						{{ signature.data.public_key || '—' }}
-					</code>
-				</div>
-			</DashboardCard>
-		</div>
 	</DashboardLayout>
 	<Dialog v-model="showDelete" :options="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
+import { Dialog, Dropdown, FeatherIcon, Tooltip, createResource, usePageMeta } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/mail/utils'
+import FileKey2 from '~icons/lucide/file-key-2'
+
+import { copyToClipBoard, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 
@@ -88,7 +107,10 @@ const signature = createResource({
 	auto: true,
 	makeParams: () => ({ signature_id: signatureId }),
 	cache: ['mailDkimSignature', signatureId],
-	onError: () => router.replace({ name: 'mail-dkim-signatures' }),
+	onError: (error: { messages?: string[] }) => {
+		raiseToast(error.messages?.[0] || __('DKIM signature not found.'), 'error')
+		router.replace({ name: 'mail-dkim-signatures' })
+	},
 })
 
 const data = computed(() => signature.data as DkimData | undefined)
@@ -102,6 +124,7 @@ const stageLabel = computed(() => {
 const createdAt = computed(() => formatDate(data.value?.created_at))
 const nextTransition = computed(() => formatDate(data.value?.next_transition))
 const signedHeaders = computed(() => (data.value?.signed_headers || []).join(', '))
+const publicKey = computed(() => data.value?.public_key || '')
 const requestReports = computed(() => (data.value?.request_reports ? __('Yes') : __('No')))
 
 const breadcrumbs = computed(() => [

@@ -257,7 +257,7 @@ import {
 } from '@/apps/mail/utils'
 import { useScreenSize, useVisualViewport } from '@/apps/mail/utils/composables'
 import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
-import { userStore } from '@/apps/mail/stores/user'
+import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
 
 import type { Attachment, ComposeMailData, File as FileDoc, Identity, UserResource } from '@/apps/mail/types'
@@ -280,19 +280,20 @@ const {
 const emit = defineEmits(['discardMail', 'reply', 'replyAll', 'forward', 'popOut'])
 
 const router = useRouter()
-const store = userStore()
-// Read store.accountId live in makeParams; destructuring would snapshot the
-// unwrapped value and miss account switches while this editor stays mounted.
-const { identities } = store
+// The editor sends as the enclosing pane's account (the thread's owning account in
+// All Inboxes, the active one everywhere else): identities, the account's default
+// outgoing email and every create/draft call resolve through this scope.
+const scope = injectAccountScope()
+const { accountId: scopeAccountId, identities, mailboxIds } = scope
 
 const viewSentMessage = (threadID: string) =>
 	router.push({
 		name: 'mail-mail',
-		params: { accountId: store.accountId, mailbox: store.mailboxIds.sent, threadID },
+		params: { accountId: scopeAccountId.value, mailbox: mailboxIds.value.sent, threadID },
 	})
 
 const getIdentity = (email: string) =>
-	identities.data?.find((identity: Identity) => identity.email === email)
+	identities.value.data?.find((identity: Identity) => identity.email === email)
 
 // Editor
 
@@ -330,11 +331,9 @@ const editorHeight = useVisualViewport(
 const user = inject('$user') as UserResource
 
 const getDefaultFromEmail = () => {
-	const identityEmails = identities.data?.map((i: Identity) => i.email) ?? []
-	// The default outgoing email is now per-account; pick the active account's.
-	const defaultOutgoingEmail = user.data?.accounts?.find(
-		(a) => a.id === store.accountId,
-	)?.default_outgoing_email
+	const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
+	// The default outgoing email is per-account; pick the scope account's.
+	const defaultOutgoingEmail = scope.account.value?.default_outgoing_email
 
 	return (
 		identityEmails.find((e) => e === mailDetails?.from_email) ??
@@ -458,7 +457,7 @@ const onMailUpdateSuccess = ({
 const createMail = createResource({
 	url: 'suite.mail.api.mail.create_mail',
 	makeParams: ({ save_as_draft }: { save_as_draft: boolean }) => ({
-		account: store.accountId,
+		account: scopeAccountId.value,
 		...mail,
 		...processInlineImages(mail),
 		from_name: getIdentity(mail.from_email!)._name,
@@ -471,7 +470,7 @@ const createMail = createResource({
 const updateDraft = createResource({
 	url: 'suite.mail.api.mail.update_draft_mail',
 	makeParams: ({ submit }: { submit: boolean }) => ({
-		account: store.accountId,
+		account: scopeAccountId.value,
 		...mail,
 		...processInlineImages(mail),
 		from_name: getIdentity(mail.from_email!)._name,
@@ -483,7 +482,7 @@ const updateDraft = createResource({
 
 const deleteMail = createResource({
 	url: 'suite.mail.api.mail.delete_mail',
-	makeParams: () => ({ account: store.accountId, id: mail.id }),
+	makeParams: () => ({ account: scopeAccountId.value, id: mail.id }),
 	onSuccess: () => {
 		reloadMails()
 		raiseToast(__('Draft discarded.'))
@@ -599,7 +598,7 @@ const openAttachment = async (blob_id?: string, type?: string) => {
 	if (!tab) return raiseToast(__('Allow popups to open attachments.'), 'error')
 
 	try {
-		tab.location.href = await getAttachmentUrl(blob_id, type)
+		tab.location.href = await getAttachmentUrl(blob_id, type, scopeAccountId.value)
 	} catch {
 		tab.close()
 	}

@@ -4,6 +4,7 @@
 		:is-selected
 		:selectable
 		:selection-mode
+		:hide-avatar
 		:unread="!mail.seen"
 		:hide-sender
 		:avatar-label="avatarLabel"
@@ -11,6 +12,7 @@
 		:datetime="mail.received_at"
 		:subject-italic="!mail.subject"
 		:preview-italic="!mail.preview"
+		:account-label="accountLabel"
 		@set-selected="(selected: boolean) => emit('setSelected', selected)"
 	>
 		<template #sender><span v-html="highlight(header)" /></template>
@@ -24,11 +26,6 @@
 			>
 				{{ messageCount }}
 			</span>
-			<!-- All Inboxes: which account received this mail. -->
-			<div v-if="accountLabel" class="text-ink-gray-4 flex shrink-0 items-center gap-1 text-xs">
-				<span aria-hidden="true">·</span>
-				<span>{{ __('in {0}', [accountLabel]) }}</span>
-			</div>
 			<Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
 		</template>
 
@@ -69,6 +66,7 @@
 						:file-name="attachment.filename"
 						:blob-i-d="attachment.blob_id"
 						:type="attachment.type"
+						:account="accountId"
 						class="mr-2"
 						:class="isFullWidth ? 'max-w-32' : 'max-w-44 sm:max-w-20'"
 						@click.stop.prevent="openAttachment(idx)"
@@ -144,6 +142,7 @@
 			v-model="showAttachmentViewer"
 			:attachments="mail.attachments"
 			:initial-index="attachmentIndex"
+			:account="accountId"
 		/>
 	</MailRow>
 </template>
@@ -155,8 +154,12 @@ import { Download, Loader } from 'lucide-vue-next'
 import { Badge, Popover, Tooltip } from 'frappe-ui'
 
 import { getAttachmentUrl } from '@/apps/mail/resources'
-import { downloadUrlAsFile, getFileIcon, getFormattedRecipients, getSenderInitial } from '@/apps/mail/utils'
-import { formatThreadParticipants, primaryParticipant, threadParticipants } from '@/apps/mail/utils/participants'
+import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
+import {
+	threadAvatarLabel,
+	threadDisplayName,
+	threadParticipants,
+} from '@/apps/mail/utils/participants'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
@@ -175,6 +178,8 @@ const {
 	selectable = true,
 	hideSender = false,
 	selectionMode = false,
+	threadRouteName = 'mail-mail',
+	hideAvatar = false,
 } = defineProps<{
 	mailbox: string
 	mail: Thread
@@ -190,6 +195,11 @@ const {
 	hideSender?: boolean
 	// Mobile selection mode — forwarded to MailRow.
 	selectionMode?: boolean
+	// Which route the row links to. All Inboxes points at its own thread route so opening a
+	// mail stays in the merged list instead of navigating into one account's mailbox.
+	threadRouteName?: string
+	// Forwarded to MailRow — see there.
+	hideAvatar?: boolean
 }>()
 
 const emit = defineEmits([
@@ -206,7 +216,7 @@ const { mailboxIds } = userStore()
 const ownEmails = useOwnEmails()
 
 const to = computed(() => ({
-	name: 'mail-mail',
+	name: threadRouteName,
 	params: {
 		accountId: accountId || route.params.accountId,
 		mailbox,
@@ -247,18 +257,13 @@ const participants = computed(() => threadParticipants(mail.messages, ownEmails.
 
 const header = computed(() => {
 	if (isOutgoing.value) return getFormattedRecipients(mail.recipients) || __('To:')
-	return formatThreadParticipants(participants.value) || mail.from_name || mail.from_email
+	return threadDisplayName(participants.value, mail)
 })
 
 // Gmail-style count of how many messages the conversation holds, shown once there's more than one.
 const messageCount = computed(() => mail.messages?.length ?? 0)
 
-// The letter behind the avatar, for a contact with no picture: whoever the picture itself would be of.
-const avatarLabel = computed(() => {
-	const primary = primaryParticipant(participants.value)
-	if (!primary) return getSenderInitial(mail)
-	return getSenderInitial({ from_name: primary.name, from_email: primary.email })
-})
+const avatarLabel = computed(() => threadAvatarLabel(participants.value, mail))
 
 // In search results, highlight the matched query term. Escape the text first (so any markup in the
 // content is neutralized), then wrap matches in <mark> — the only HTML we inject — for safe v-html.
@@ -296,7 +301,7 @@ const currentlyDownloading = ref<string[]>([])
 const downloadAttachment = async (attachment: Attachment) => {
 	currentlyDownloading.value.push(attachment.blob_id)
 	try {
-		const url = await getAttachmentUrl(attachment.blob_id, attachment.type)
+		const url = await getAttachmentUrl(attachment.blob_id, attachment.type, accountId)
 		if (url) downloadUrlAsFile(url, attachment.filename || 'attachment')
 	} catch {
 		// the resource's onError already raised a toast; just stop spinning

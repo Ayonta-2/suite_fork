@@ -1,18 +1,20 @@
 <template>
-	<DashboardLayout v-if="client?.data" :breadcrumbs="breadcrumbs">
-		<template #actions>
-			<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
-		</template>
+	<DashboardLayout :breadcrumbs="breadcrumbs" :loading="!client.data">
 		<template #default>
+			<DashboardDetailHeader
+				:title="client.data.description || client.data.client_id || clientId"
+				:meta="[client.data.client_id, redirectUriCountLabel]"
+			>
+				<template #icon><KeyRound class="h-5 w-5" /></template>
+				<template #actions>
+					<Button :label="__('Edit')" @click="showEdit = true" />
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+				</template>
+			</DashboardDetailHeader>
+
 			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 				<!-- General Information -->
-				<DashboardCard
-					:title="__('General Information')"
-					:button-label="__('Edit')"
-					@action="showEdit = true"
-				>
-					<InformationField :label="__('Client ID')" :value="client.data.client_id" />
-					<InformationField :label="__('Description')" :value="client.data.description" />
+				<DashboardCard :title="__('General Information')">
 					<InformationField :label="__('Created At')" :value="createdAt" />
 					<InformationField :label="__('Expires At')" :value="expiresAt" />
 				</DashboardCard>
@@ -85,10 +87,13 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, FeatherIcon, createResource, usePageMeta } from 'frappe-ui'
 
+import KeyRound from '~icons/lucide/key-round'
+
 import { raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 import EditOAuthClientModal from '@/apps/mail/components/Modals/EditOAuthClientModal.vue'
 import AddOAuthContactsModal from '@/apps/mail/components/Modals/AddOAuthContactsModal.vue'
@@ -109,12 +114,20 @@ const client = createResource({
 	auto: true,
 	makeParams: () => ({ client_id: clientId }),
 	cache: ['mailOAuthClient', clientId],
-	onError: () => router.replace({ name: 'mail-oauth-clients' }),
+	onError: (error: { messages?: string[] }) => {
+		raiseToast(error.messages?.[0] || __('OAuth client not found.'), 'error')
+		router.replace({ name: 'mail-oauth-clients' })
+	},
 })
 
 const formatDate = (value?: string | null) => formatDateTime(value)
 const createdAt = computed(() => formatDate(client.data?.created_at))
 const expiresAt = computed(() => formatDate(client.data?.expires_at))
+
+const redirectUriCountLabel = computed(() => {
+	const count = client.data?.redirect_uris?.length ?? 0
+	return count === 1 ? __('1 redirect URI') : __('{0} redirect URIs', [String(count)])
+})
 
 const breadcrumbs = computed(() => [
 	{ label: __('OAuth Clients'), route: '/mail/dashboard/oauth-clients' },
