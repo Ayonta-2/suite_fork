@@ -19,13 +19,17 @@
 		<!-- Four rows tall, then scrolls. -mx/px (and -mb/pb at scroll end) keep
 		     the clip edge off the active row's shadow, same trick as the sidebar
 		     body. -->
-		<div class="-mx-1 -mb-1 flex max-h-49 flex-col gap-1.5 overflow-y-auto px-1 pb-1">
+		<div class="-mx-1 -mb-1 flex max-h-49 flex-col gap-1 overflow-y-auto px-1 pb-1">
 			<button
 				v-for="event in upcoming"
 				:key="event.id + (event.recurrence_id ?? '')"
 				type="button"
-				class="bg-surface-elevation-3 flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left transition-shadow"
-				:class="isOpen(event) && 'shadow-sm ring-1 ring-outline-gray-2'"
+				class="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left transition-shadow"
+				:class="
+					isOpen(event)
+						? 'bg-surface-elevation-3 shadow-sm ring-1 ring-outline-gray-2'
+						: 'hover:bg-surface-gray-2'
+				"
 				@click="handleClick(event)"
 			>
 				<div
