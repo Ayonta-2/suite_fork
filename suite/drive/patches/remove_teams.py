@@ -26,11 +26,41 @@ def execute():
 	working. Only thumbnails and trashed blobs move, because their location is
 	computed from the root rather than stored, and the root has changed.
 	"""
-	# captured before the collapse rewrites the homes
+	# Both are captured before the collapse rewrites the homes and before
+	# drop_team_doctypes discards `team`; the sweep runs later and cannot re-derive
+	# either, so they travel with the job.
 	sidecars = _team_prefixes()
+	trashed = _trashed_by_team()
 	if frappe.db.exists("DocType", "Drive Team"):
 		_collapse_teams()
-	_sweep_sidecars(sidecars)
+
+	if not sidecars:
+		return
+	# Enqueued, not inline: this is thousands of S3 round trips and the tree is
+	# already correct without it — only thumbnails and trashed blobs are waiting.
+	frappe.enqueue(
+		"suite.drive.patches.remove_teams.sweep_sidecars",
+		queue="long",
+		timeout=4 * 60 * 60,
+		sidecars=sidecars,
+		trashed=trashed,
+	)
+	print(f"Drive: queued the sidecar sweep for {len(sidecars)} old prefix(es)")
+
+
+def _trashed_by_team():
+	"""{team: {file_name: id}} — trashed blobs were keyed by name, per team."""
+	if not frappe.db.has_column("File", "team"):
+		return {}
+	out = {}
+	for row in frappe.get_all(
+		"File",
+		filters={"status": STATUS_TRASHED},
+		fields=["name", "file_name", "team"],
+		limit_page_length=0,
+	):
+		out.setdefault(row.team, {})[row.file_name] = row.name
+	return out
 
 
 def _team_prefixes():
@@ -260,43 +290,31 @@ def _drop_obsolete_revoke_rows():
 	frappe.db.delete("Drive Permission", {"user": "", "deny": 0, **dict.fromkeys(PERMISSION_TYPES, 0)})
 
 
-def _sweep_sidecars(sidecars):
-	"""Thumbnails and trashed blobs hang off "the root", which was each team's own
-	prefix and is now Drive's. No File row points at either — both locations are
-	computed — so moving the objects is the whole fix, with no url to rewrite.
+def sweep_sidecars(sidecars=None, trashed=None):
+	"""Move thumbnails and trashed blobs onto the new root.
 
-	Flat sites have no trashed blobs to find (`move_to_trash` is a no-op there), so
-	that half simply finds nothing. Idempotent: re-copying is harmless, and the
-	originals are left alone.
+	Both are located from the root rather than stored — `<root>/thumbnails/<id>` and
+	`<root>/.trash/<id>` — and the root moved from each team's own prefix to Drive's,
+	so the objects have to follow or they are simply not found.
+
+	Runs as a job; safe to re-run by hand if it failed:
+
+	    bench --site <site> execute suite.drive.patches.remove_teams.sweep_sidecars
+
+	With no arguments it re-derives the prefixes, which only works while `team` is
+	still on File. Idempotent either way: anything already at the destination is
+	skipped and the originals are left alone.
 	"""
+	sidecars = sidecars or _team_prefixes()
+	trashed = trashed or _trashed_by_team()
 	if not sidecars:
+		print("Drive: no old prefixes to sweep")
 		return
-	manager = FileManager()
-	root = storage_key(get_root_folder().file_url).rstrip("/")
-	prefix = manager.settings.thumbnail_prefix or "thumbnails"
-
-	trashed = {}
-	if frappe.db.has_column("File", "team"):
-		for row in frappe.get_all(
-			"File",
-			filters={"status": STATUS_TRASHED},
-			fields=["name", "file_name", "team"],
-			limit_page_length=0,
-		):
-			trashed.setdefault(row.team, {})[row.file_name] = row.name
-
-	moved, failed = Counter(), []
-	for team, base in sidecars.items():
-		if not base or base == root:
-			continue
-		for key in _list_prefix(manager, f"{base}/{prefix}/"):
-			name = key.rsplit("/", 1)[-1]
-			if name:
-				_carry(manager, key, f"{root}/{prefix}/{name}", moved, failed)
-		for key in _list_prefix(manager, f"{base}/{TRASH_PREFIX}/"):
-			entity = trashed.get(team, {}).get(key.rsplit("/", 1)[-1])
-			if entity:
-				_carry(manager, key, f"{root}/{TRASH_PREFIX}/{entity}", moved, failed)
+	try:
+		moved, failed = _carry_sidecars(sidecars, trashed)
+	except Exception as e:
+		print(f"Drive: could not reach storage, sidecars not moved ({type(e).__name__}: {e})")
+		raise
 
 	for kind, n in sorted(moved.items()):
 		print(f"Drive: moved {n} {kind}")
@@ -306,9 +324,69 @@ def _sweep_sidecars(sidecars):
 		print(f"Drive: ... and {len(failed) - 20} more")
 
 
+def _carry_sidecars(sidecars, trashed):
+	manager = FileManager()
+	root = storage_key(get_root_folder().file_url).rstrip("/")
+	prefix = manager.settings.thumbnail_prefix or "thumbnails"
+
+	# One listing, not one per prefix and a head_object per object: on S3 that is
+	# ~10 paginated calls instead of thousands of round trips.
+	existing = _all_keys(manager, sidecars, root, prefix)
+
+	moved, failed = Counter(), []
+	for team, base in sidecars.items():
+		if not base or base == root:
+			continue
+		for key in existing.get(f"{base}/{prefix}", ()):
+			name = key.rsplit("/", 1)[-1]
+			dest = f"{root}/{prefix}/{name}"
+			if name and dest not in existing.get(f"{root}/{prefix}", ()):
+				_carry(manager, key, dest, moved, failed)
+		for key in existing.get(f"{base}/{TRASH_PREFIX}", ()):
+			entity = trashed.get(team, {}).get(key.rsplit("/", 1)[-1])
+			dest = f"{root}/{TRASH_PREFIX}/{entity}"
+			if entity and dest not in existing.get(f"{root}/{TRASH_PREFIX}", ()):
+				_carry(manager, key, dest, moved, failed)
+	return moved, failed
+
+
+def _all_keys(manager, sidecars, root, prefix):
+	"""{directory: {keys}} for every sidecar directory we care about."""
+	wanted = {f"{root}/{prefix}", f"{root}/{TRASH_PREFIX}"}
+	for base in sidecars.values():
+		if base:
+			wanted |= {f"{base}/{prefix}", f"{base}/{TRASH_PREFIX}"}
+
+	out = {}
+	if manager.s3_enabled:
+		token = None
+		while True:
+			kwargs = {"Bucket": manager.bucket}
+			if token:
+				kwargs["ContinuationToken"] = token
+			page = manager.conn.list_objects_v2(**kwargs)
+			for o in page.get("Contents", []):
+				key = o["Key"]
+				parent = key.rsplit("/", 1)[0] if "/" in key else ""
+				if parent in wanted:
+					out.setdefault(parent, set()).add(key)
+			if not page.get("IsTruncated"):
+				break
+			token = page.get("NextContinuationToken")
+		return out
+
+	for directory in wanted:
+		folder = _local(manager, directory)
+		if folder.is_dir():
+			out[directory] = {f"{directory}/{f.name}" for f in folder.iterdir() if f.is_file()}
+	return out
+
+
 def _carry(manager, src, dest, moved, failed):
+	"""The caller has already checked the destination against the listing, so this
+	does not probe storage again — that probe was the bulk of the round trips."""
 	kind = "trashed blob(s)" if TRASH_PREFIX in dest else "thumbnail(s)"
-	if src == dest or _exists(manager, dest, False):
+	if src == dest:
 		return
 	try:
 		_copy(manager, src, dest)
@@ -316,25 +394,6 @@ def _carry(manager, src, dest, moved, failed):
 	except Exception as e:
 		failed.append((src, f"{type(e).__name__}: {e}"))
 
-
-
-def _list_prefix(manager, prefix):
-	"""Every object directly under `prefix`, both backends."""
-	if manager.s3_enabled:
-		out, token = [], None
-		while True:
-			kwargs = {"Bucket": manager.bucket, "Prefix": prefix}
-			if token:
-				kwargs["ContinuationToken"] = token
-			page = manager.conn.list_objects_v2(**kwargs)
-			out += [o["Key"] for o in page.get("Contents", []) if not o["Key"].endswith("/")]
-			if not page.get("IsTruncated"):
-				return out
-			token = page.get("NextContinuationToken")
-	folder = _local(manager, prefix)
-	if not folder.is_dir():
-		return []
-	return [f"{prefix.rstrip('/')}/{f.name}" for f in folder.iterdir() if f.is_file()]
 
 
 def _local(manager, key):
@@ -361,22 +420,3 @@ def _copy(manager, src, dest):
 
 def _size(manager, key):
 	return manager.conn.head_object(Bucket=manager.bucket, Key=key)["ContentLength"]
-
-
-def _exists(manager, key, container):
-	if not key:
-		return False
-	if manager.s3_enabled:
-		try:
-			manager.conn.head_object(Bucket=manager.bucket, Key=key + "/" if container else key)
-			return True
-		except Exception:
-			return False
-	return _local(manager, key).exists()
-
-
-def _blob_size(manager, key):
-	try:
-		return _size(manager, key) if manager.s3_enabled else _local(manager, key).stat().st_size
-	except Exception:
-		return 0
