@@ -48,6 +48,16 @@ def execute():
 	print(f"Drive: queued the sidecar sweep for {len(sidecars)} old prefix(es)")
 
 
+def _remember_route(team, entity):
+	"""Old links point at /drive/t/<team>, and the team id dies with the doctype.
+	Keep the mapping so those links can still be resolved."""
+	if frappe.db.exists("Drive Legacy Route", team):
+		return
+	frappe.get_doc(
+		{"doctype": "Drive Legacy Route", "old_id": team, "entity": entity}
+	).insert(ignore_permissions=True)
+
+
 def _trashed_by_team():
 	"""{team: {file_name: id}} — trashed blobs were keyed by name, per team."""
 	if not frappe.db.has_column("File", "team"):
@@ -95,6 +105,7 @@ def _collapse_teams():
 		home = frappe.db.get_value("File", {"team": team.name, "folder": ("is", "not set")}, "name")
 		if not home or home in roots:
 			continue
+		_remember_route(team.name, home)
 		members = frappe.get_all(
 			"Drive Team Member",
 			filters={"parenttype": "Drive Team", "parent": team.name},
@@ -125,6 +136,12 @@ def _collapse_teams():
 		if team_groups:
 			groups[team.name] = team_groups[0]
 			_grant_group(home, team_groups)
+			# Also on the container, or the folder is readable but unreachable: the
+			# $GENERAL deny there hides it from the listing, so members would have no
+			# way to browse to their own team. A group row outranks $GENERAL on the
+			# same node, and listing filters children by read, so each person sees
+			# only the teams they were in.
+			_grant(previous_teams.name, GROUP_PREFIX + team_groups[0], {"read": 1})
 		else:
 			_grant_members(home, members)
 

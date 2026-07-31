@@ -8,11 +8,15 @@ from pypika import functions as fn
 from suite.drive.utils import (
 	FILE_FIELDS,
 	GENERAL_USER,
+	ROOT_FOLDER,
 	KIND_VIRTUAL,
 	MIME_LIST_MAP,
 	STATUS_ACTIVE,
 	STATUS_TRASHED,
+	USERS_FOLDER,
 	entity_kind,
+	get_principals,
+	principal_list,
 	get_user_folder,
 	hide_storage_key,
 )
@@ -42,12 +46,20 @@ def _apply_shared_filter(query, shared_type):
 		return query
 
 	user = frappe.session.user if frappe.session.user != "Guest" else ""
-	shared_user = user if shared_type == "with" else ""
-	cond = (
-		(DrivePermission.entity == DriveFile.name)
-		& (DrivePermission.user == shared_user)
-		& (DrivePermission.deny == 0)
-	)
+	if shared_type == "with":
+		# Every principal a share can name them by except the site-wide ones: a
+		# folder shared with a group is shared with them, and would otherwise be
+		# reachable but findable nowhere. $GENERAL and link rows are excluded, or
+		# everything shared site-wide would land here.
+		principals = [p for p in get_principals(user) if p and p != GENERAL_USER]
+		# Ownership is itself a permission row naming you, so without this your own
+		# folder and files come back as things shared with you.
+		match = DrivePermission.user.isin(principals) & (DriveFile.owner != user)
+	else:
+		match = DrivePermission.user == ""
+	cond = (DrivePermission.entity == DriveFile.name) & match & (DrivePermission.deny == 0)
+	# Structural folders are scaffolding, not something anyone shared.
+	cond = cond & DriveFile.name.notin([ROOT_FOLDER, USERS_FOLDER])
 	return query.right_join(DrivePermission).on(cond)
 
 
@@ -74,16 +86,38 @@ def _apply_file_kinds_filter(query, file_kinds):
 def _get_children_count(files):
 	"""
 	Returns a dict mapping folder names to their child count.
+
+	Counts what the caller can actually see. Access is inherited, so a child is
+	visible unless a deny row hides it and nothing nearer grants it back —
+	otherwise `Previous Teams` reports all 512 migrated teams to someone who can
+	open three of them.
 	"""
 	if not files:
 		return {}
-	query = (
-		frappe.qb.from_(DriveFile)
-		.where((DriveFile.folder.isin([k["name"] for k in files])) & (DriveFile.status == STATUS_ACTIVE))
-		.groupby(DriveFile.folder)
-		.select(DriveFile.folder, fn.Count("*").as_("child_count"))
+	names = [k["name"] for k in files]
+	principals = principal_list()
+	rows = frappe.db.sql(
+		f"""
+		select f.folder, count(*)
+		from `tabFile` f
+		where f.folder in %(names)s and f.status = %(active)s
+		  and (
+			not exists (
+				select 1 from `tabDrive Permission` d
+				where d.entity = f.name and d.deny = 1 and d.`read` = 1
+				  and d.user in ({principals})
+			)
+			or exists (
+				select 1 from `tabDrive Permission` g
+				where g.entity = f.name and g.deny = 0 and g.`read` = 1
+				  and g.user in ({principals})
+			)
+		  )
+		group by f.folder
+		""",
+		{"names": names, "active": STATUS_ACTIVE},
 	)
-	return dict(query.run())
+	return dict(rows)
 
 
 def _get_slide_counts(rows):

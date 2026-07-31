@@ -199,10 +199,24 @@ export const routes: RouteRecordRaw[] = [
         },
       },
       {
+        // Teams became folders. The id in the link belonged to the team, not the
+        // folder it became, so it can only be resolved from what the migration
+        // recorded — falling back to Home when there is nothing to point at, or
+        // when the team was never theirs.
         path: 't/:team/',
         component: () => import('@/apps/drive/pages/Dummy.vue'),
         meta: { allowGuest: true },
-        beforeEnter: () => ({ name: 'drive-Home' }),
+        beforeEnter: async (to) => {
+          const legacy = createResource({
+            url: 'suite.drive.api.files.resolve_legacy_route',
+          })
+          const entity = await legacy.fetch({ old_id: to.params.team })
+          if (!entity) return { name: 'drive-Home' }
+          return {
+            name: entity.is_folder ? 'drive-Folder' : 'drive-File',
+            params: { entityName: entity.name },
+          }
+        },
       },
     ],
   },

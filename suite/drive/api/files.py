@@ -905,3 +905,23 @@ def get_upload_path(file_name):
 	uploads_path = Path(frappe.get_site_path("private/files"), root_folder, ".uploads")
 	uploads_path.mkdir(exist_ok=True)
 	return uploads_path / file_name
+
+
+@frappe.whitelist()
+def resolve_legacy_route(old_id: str):
+	"""Where a pre-migration team link should land now.
+
+	Teams became folders and their ids went with the doctype, so `/drive/t/<team>`
+	can only be answered from the mapping the migration left behind. Returns None
+	when there is nothing to point at, so the caller can 404 normally.
+	"""
+	entity = frappe.db.get_value("Drive Legacy Route", old_id, "entity")
+	if not entity:
+		return None
+	row = frappe.db.get_value("File", entity, ["name", "is_folder", "status"], as_dict=True)
+	if not row or row.status != STATUS_ACTIVE:
+		return None
+	if not user_has_permission(entity, "read"):
+		# don't confirm it exists to someone who cannot open it
+		return None
+	return {"name": row.name, "is_folder": bool(row.is_folder)}

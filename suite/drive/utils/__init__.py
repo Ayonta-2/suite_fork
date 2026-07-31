@@ -39,6 +39,8 @@ GROUP_PREFIX = "$GROUP:"
 ROOT_FOLDER = "Drive"
 USERS_FOLDER = "Users"
 PREVIOUS_TEAMS_FOLDER = "Previous Teams"
+# What a user's own folder is called back to them.
+HOME_LABEL = "Home"
 
 PERMISSION_TYPES = ["read", "comment", "share", "upload", "write"]
 
@@ -491,10 +493,22 @@ def get_valid_breadcrumbs(entity_name, user_access):
 	"""
 	# Admins see the entire path; others get the contiguous readable suffix.
 	path = generate_upward_path(entity_name)
-	if user_access.get("type") in ["admin", "user"]:
+	if user_access.get("type") not in ["admin", "user"]:
+		lose_access = next((i for i, k in enumerate(path[::-1]) if not k["read"]), 0)
+		path = path[-lose_access:]
+	return _name_own_drive(path)
+
+
+def _name_own_drive(path):
+	"""Your own files hang off `Users/<your id>`, which reads back to you as a
+	container you have never seen and your own address as a folder. Show the one
+	crumb you know it by instead."""
+	if len(path) < 2 or path[0]["name"] != USERS_FOLDER:
 		return path
-	lose_access = next((i for i, k in enumerate(path[::-1]) if not k["read"]), 0)
-	return path[-lose_access:]
+	if path[1]["file_name"] != frappe.session.user:
+		# somebody else's drive: leave it spelled out
+		return path
+	return [{**path[1], "file_name": HOME_LABEL}, *path[2:]]
 
 
 def get_file_type(mime_type):
