@@ -17,7 +17,8 @@
     </router-view>
     <SearchPopup v-if="isLoggedIn && showSearchPopup" v-model="showSearchPopup" />
     <button accesskey="u" class="hidden" @click="emitter.emit('uploadFile')" />
-    <FileUploader v-if="normalView && ['drive-Folder', 'drive-Home'].includes($route.name)" />
+    <FileUploader
+      v-if="normalView && ['drive-Folder', 'drive-Home'].includes($route.name) && !($route.name === 'drive-Home' && shareView)" />
     <FDialogs />
   </FrappeUIProvider>
 </template>
@@ -29,7 +30,7 @@ import BottomBar from '@/apps/drive/components/BottomBar.vue'
 import FileUploader from '@/apps/drive/components/FileUploader.vue'
 import { useSessionStore } from '@/boot/session'
 import { ref, computed, onMounted, provide } from 'vue'
-import { sidebarCollapsed } from '@/apps/drive/data/prefs'
+import { sidebarCollapsed, shareView } from '@/apps/drive/data/prefs'
 import { onKeyDown } from '@vueuse/core'
 import emitter from '@/apps/drive/emitter'
 import { initSocket } from '@/apps/drive/socket'

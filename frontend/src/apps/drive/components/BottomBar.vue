@@ -23,8 +23,9 @@
 import LucideClock from '~icons/lucide/clock'
 import LucideHome from '~icons/lucide/home'
 import LucideStar from '~icons/lucide/star'
-import LucideUsers from '~icons/lucide/users'
+import LucideBuilding2 from '~icons/lucide/building-2'
 import { getRootSection } from '@/apps/drive/data/breadcrumbs'
+import { rootInfo } from '@/apps/drive/resources/files'
 
 export default {
   name: 'BottomBar',
@@ -45,10 +46,12 @@ export default {
           highlight: () => first.name === 'drive-Recents',
         },
         {
-          label: 'Shared',
-          route: { name: 'drive-Shared' },
-          icon: LucideUsers,
-          highlight: () => first.name === 'drive-Shared',
+          label: 'Everyone',
+          route: rootInfo.data
+            ? { name: 'drive-Folder', params: { entityName: rootInfo.data.root } }
+            : { name: 'drive-Home' },
+          icon: LucideBuilding2,
+          highlight: () => first.name === rootInfo.data?.root,
         },
         {
           label: 'Favourites',

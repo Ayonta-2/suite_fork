@@ -51,13 +51,6 @@ export const getPersonal = createResource({
   makeParams: (params) => params,
 })
 
-export const getSiteFiles = createResource({
-  ...COMMON_OPTIONS,
-  url: 'suite.drive.api.list.files',
-  cache: 'site-folder-contents',
-  makeParams: (params) => ({ ...params, entity_name: rootInfo.data?.root }),
-})
-
 export const getAttachments = createResource({
   url: 'suite.drive.api.list.get_attachments',
   makeParams: (params) => params,
@@ -121,7 +114,6 @@ export const getTrash = createResource({
 ;[
   getFiles,
   getPersonal,
-  getSiteFiles,
   getRecents,
   getFavourites,
   getDocuments,

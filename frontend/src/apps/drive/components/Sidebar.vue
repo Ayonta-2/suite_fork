@@ -34,8 +34,7 @@ const { fullName: currentUserFullName } = useCurrentUser()
 import { getRootSection } from '@/apps/drive/data/breadcrumbs'
 import { sidebarCollapsed } from '@/apps/drive/data/prefs'
 import LucideClock from '~icons/lucide/clock'
-import LucideUsers from '~icons/lucide/users'
-import LucideFiles from '~icons/lucide/files'
+import LucideBuilding2 from '~icons/lucide/building-2'
 import LucideTrash from '~icons/lucide/trash'
 import LucideHome from '~icons/lucide/home'
 import LucideStar from '~icons/lucide/star'
@@ -184,13 +183,6 @@ const sidebarItems = computed(() => {
           accessKey: 'r',
         },
         {
-          label: 'Shared',
-          to: { name: 'drive-Shared' },
-          icon: LucideUsers,
-          isActive: active('drive-Shared'),
-          accessKey: 's',
-        },
-        {
           label: 'Favourites',
           to: { name: 'drive-Favourites' },
           icon: LucideStar,
@@ -198,18 +190,18 @@ const sidebarItems = computed(() => {
           accessKey: 'f',
         },
         {
-          label: 'Site',
+          label: 'Everyone',
           to: rootInfo.data
             ? {
                 name: 'drive-Folder',
                 params: { entityName: rootInfo.data.root },
               }
             : undefined,
-          icon: LucideFiles,
+          icon: LucideBuilding2,
           isActive:
             route.params.entityName === rootInfo.data?.root ||
             first.name === rootInfo.data?.root,
-          accessKey: 't',
+          accessKey: 'e',
         },
         {
           label: 'Trash',
