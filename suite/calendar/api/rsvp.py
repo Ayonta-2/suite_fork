@@ -7,6 +7,11 @@ An invitation email carries three signed links (Yes / Maybe / No) that point at 
 `event_rsvp` web page. `resolve_rsvp` verifies the token and writes the participant's
 response to the organizer's copy of the event via JMAP. Recipients may be on any mail
 server, so we never require a login — the signed token is the only authorization.
+
+Participants hosted on this site each hold their own copy of the event (created when the
+invite email was delivered), so after the organizer's copy is updated a background job
+propagates the response to those copies too — otherwise everyone but the organizer keeps
+seeing the stale status.
 """
 
 import base64
@@ -18,6 +23,7 @@ import frappe
 from frappe import _
 from frappe.utils import escape_html
 
+from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
 from suite.utils import log_error
@@ -67,6 +73,7 @@ def resolve_rsvp(token: str) -> dict:
         result = service.set_participation_status(payload["e"], payload["u"], status)
         if not result.get("notUpdated"):
             _notify_organizer(payload, status)
+            _sync_participant_calendars(payload, status)
         frappe.db.commit()
     except Exception:
         log_error("Calendar", title=_("Calendar RSVP failed"))
@@ -114,6 +121,110 @@ def _notify_organizer(payload: dict, status: str) -> None:
         participant_email=payload["m"],
         status=status,
     )
+
+
+def _sync_participant_calendars(payload: dict, status: str) -> None:
+    """Enqueues the job that mirrors a just-recorded RSVP onto local participants' copies.
+
+    Runs after the response commits and off the request, so a slow or failing sync never
+    delays or breaks the guest's confirmation page.
+    """
+
+    frappe.enqueue(
+        "suite.calendar.api.rsvp.sync_response_to_participant_calendars",
+        queue="short",
+        enqueue_after_commit=True,
+        account=payload["a"],
+        event_id=payload["e"],
+        participant_email=payload["m"],
+        status=status,
+    )
+
+
+def sync_response_to_participant_calendars(
+    account: str, event_id: str, participant_email: str, status: str
+) -> None:
+    """Propagates a recorded RSVP to every local participant's copy of the event (best-effort).
+
+    The RSVP link writes the response to the organizer's copy only; no scheduling messages
+    are sent in the custom-invite flow, so the copies that other participants on this site
+    received via the invite email still show the old status. For each participant whose
+    address resolves to a local JMAP account, this finds that account's copy by the event's
+    uid and patches the responder's participationStatus there too. External participants
+    have no reachable calendar and are skipped.
+    """
+
+    organizer_service = _guest_calendar_service(account)
+    events = organizer_service.get([event_id])
+    if not events:
+        return
+
+    event = events[0]
+    uid = event.get("uid")
+    if not uid:
+        return
+
+    for email in _participant_emails(event):
+        try:
+            # Resolve the address through the mail server's account registry (JMAP Account
+            # _name is the principal address) rather than the User doctype: a participant
+            # address can be an alias or a group, where a User.email lookup could match the
+            # wrong local mailbox or none at all.
+            participant_account = frappe.db.get_value("JMAP Account", {"_name": email})
+            if not participant_account or participant_account == account:
+                continue
+
+            user = get_user_for_jmap_account(participant_account, ignore_permissions=True)
+            if not user:
+                continue
+
+            service = CalendarEventService(
+                participant_account, get_jmap_connection(user, ignore_permissions=True)
+            )
+            copy_ids = service.get_master_ids([uid])
+            if not copy_ids:
+                continue
+
+            copies = service.get([copy_ids[0]])
+            if not copies:
+                continue
+
+            # Participant keys are per-copy (each server generates its own), so locate the
+            # responder in this copy by address rather than by the organizer-side uid.
+            responder_uid = _find_participant_uid(copies[0], participant_email)
+            if not responder_uid:
+                continue
+
+            service.set_participation_status(copy_ids[0], responder_uid, status)
+        except Exception:
+            log_error(
+                "Calendar",
+                title=_("Failed to sync RSVP for event {0} to {1}'s calendar").format(event_id, email),
+            )
+
+
+def _participant_emails(event: dict) -> set[str]:
+    """Returns the lowercase addresses of every participant on the event."""
+
+    emails = set()
+    for participant in (event.get("participants") or {}).values():
+        email = (participant.get("calendarAddress") or participant.get("email") or "").lower()
+        if email := email.replace("mailto:", ""):
+            emails.add(email)
+
+    return emails
+
+
+def _find_participant_uid(event: dict, email: str) -> str | None:
+    """Returns the participant key in this copy of the event matching the given address."""
+
+    email = email.lower()
+    for uid, participant in (event.get("participants") or {}).items():
+        address = (participant.get("calendarAddress") or participant.get("email") or "").lower()
+        if address.replace("mailto:", "") == email:
+            return uid
+
+    return None
 
 
 def _confirmation_copy(response_key: str) -> tuple[str, str, str]:
@@ -176,11 +287,11 @@ def _format_event_when(event: dict) -> str:
 def _guest_calendar_service(account: str) -> CalendarEventService:
     """Builds a CalendarEventService for the organizer's account without a logged-in user."""
 
-    users = frappe.db.get_all("User Account", {"account": account}, pluck="user")
-    if not users:
+    user = get_user_for_jmap_account(account, ignore_permissions=True)
+    if not user:
         frappe.throw(_("Calendar account not found."))
 
-    connection = get_jmap_connection(users[0], ignore_permissions=True)
+    connection = get_jmap_connection(user, ignore_permissions=True)
     return CalendarEventService(account, connection)
 
 
