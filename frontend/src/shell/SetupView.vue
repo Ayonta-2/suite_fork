@@ -92,7 +92,7 @@
             :label="__('Continue')"
             icon-right="lucide-chevron-right"
             :loading="workspaceForm?.saving"
-            :disabled="!workspaceForm?.canSave"
+            :disabled="!workspaceForm?.canSave || !timezone"
             @click="workspaceForm?.save()"
           />
 
