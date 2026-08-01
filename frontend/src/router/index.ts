@@ -7,7 +7,7 @@ import {
 import { createResource } from 'frappe-ui'
 
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
-import { useSessionStore } from '@/boot/session'
+import { hasServerBoot, useSessionStore } from '@/boot/session'
 import APPLE_SPLASH_DEVICES from './pwa-splash-devices.json'
 
 declare module 'vue-router' {
@@ -97,31 +97,30 @@ const router = createRouter({
 // Apps whose real route groups have already been registered.
 const registeredApps = new Set<string>()
 
-// First-run setup state. Production reads it synchronously from window globals
-// (www/suite.py); the Vite dev server has no Jinja boot, so fall back to a fetch.
-type SetupState = { complete: boolean; canRunSetup: boolean }
+// First-run onboarding state: boot globals in prod, fetch in dev.
+type OnboardingState = { isOnboarded: boolean; canOnboard: boolean }
 
-const setupStateResource = createResource({ url: 'suite.api.account.get_setup_state' })
-let setupStatePromise: Promise<SetupState> | undefined
+const onboardingStateResource = createResource({ url: 'suite.api.account.get_onboarding_state' })
+let onboardingStatePromise: Promise<OnboardingState> | undefined
 
-function ensureSetupState(): SetupState | Promise<SetupState> {
-  if (typeof window.suite_setup_complete !== 'undefined') {
-    return { complete: !!window.suite_setup_complete, canRunSetup: !!window.suite_can_run_setup }
+function ensureOnboardingState(): OnboardingState | Promise<OnboardingState> {
+  if (hasServerBoot) {
+    return { isOnboarded: !!window.suite_is_onboarded, canOnboard: !!window.suite_can_onboard }
   }
-  if (!setupStatePromise) {
-    setupStatePromise = setupStateResource
+  if (!onboardingStatePromise) {
+    onboardingStatePromise = onboardingStateResource
       .fetch()
       .then(() => ({
-        complete: !!setupStateResource.data?.setup_complete,
-        canRunSetup: !!setupStateResource.data?.can_run_setup,
+        isOnboarded: !!onboardingStateResource.data?.is_onboarded,
+        canOnboard: !!onboardingStateResource.data?.can_onboard,
       }))
       .catch(() => {
         // Fail open: a failing check must not strand anyone on the setup screen.
-        setupStatePromise = undefined
-        return { complete: true, canRunSetup: false }
+        onboardingStatePromise = undefined
+        return { isOnboarded: true, canOnboard: false }
       })
   }
-  return setupStatePromise
+  return onboardingStatePromise
 }
 
 /**
@@ -170,11 +169,11 @@ router.beforeEach(async (to) => {
     return false
   }
 
-  // 3. First-run setup gate. Only System Managers are sent to /suite/setup — they
-  // alone can complete it; everyone else uses the site as-is.
-  const setup = await ensureSetupState()
+  // 3. First-run onboarding gate. Only System Managers are sent to /suite/setup —
+  // they alone can complete it; everyone else uses the site as-is.
+  const onboarding = await ensureOnboardingState()
   const onSetupPage = to.path === '/suite/setup'
-  if (setup.canRunSetup && !setup.complete) {
+  if (onboarding.canOnboard && !onboarding.isOnboarded) {
     if (!onSetupPage) return '/suite/setup'
   } else if (onSetupPage) {
     return '/suite'

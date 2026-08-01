@@ -6,6 +6,8 @@
       @success="(file) => (logo = file.file_url)"
     >
       <template #default="{ openFileSelector }">
+        <!-- Arbitrary-value border color: the border-outline-gray-2 token is
+        cascade-layered and loses here, painting the wrong color. Keep as-is. -->
         <button
           type="button"
           class="relative block size-[52px] overflow-hidden rounded-[10px] border border-[color:var(--outline-gray-2)] bg-surface-base

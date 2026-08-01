@@ -2,6 +2,10 @@ import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { createResource } from 'frappe-ui'
 
+// True when Jinja served the boot globals (window.suite_*); false in the Vite
+// dev server, where callers fetch instead.
+export const hasServerBoot = typeof window.suite_is_onboarded !== 'undefined'
+
 export const getSessionUser = (): string | null => {
   const cookies = new URLSearchParams(document.cookie.split('; ').join('&'))
   let user = cookies.get('user_id')

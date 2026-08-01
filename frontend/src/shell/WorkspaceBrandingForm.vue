@@ -1,6 +1,6 @@
 <template>
   <div class="flex items-start gap-4">
-    <WorkspaceLogoInput v-model="logo" />
+    <WorkspaceLogoUploader v-model="logo" />
     <div class="flex flex-1 flex-col gap-2">
       <FormControl
         v-model="name"
@@ -20,7 +20,7 @@ import { computed, ref } from 'vue'
 import { ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
 import { useWorkspace } from '@/shell/useWorkspace'
-import WorkspaceLogoInput from '@/shell/WorkspaceLogoInput.vue'
+import WorkspaceLogoUploader from '@/shell/WorkspaceLogoUploader.vue'
 
 const emit = defineEmits<{ saved: [] }>()
 

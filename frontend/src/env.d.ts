@@ -14,9 +14,9 @@ declare global {
     sentry_dsn?: string
     sentry_environment?: string
     sentry_release?: string
-    /** First-run setup gate flags (served by www/suite.py). */
-    suite_setup_complete?: boolean
-    suite_can_run_setup?: boolean
+    /** First-run onboarding gate flags (served by www/suite.py). */
+    suite_is_onboarded?: boolean
+    suite_can_onboard?: boolean
     /** Workspace branding for the launcher navbar (served by www/suite.py). */
     suite_workspace_name?: string
     suite_workspace_logo?: string

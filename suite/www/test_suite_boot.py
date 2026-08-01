@@ -14,10 +14,10 @@ class SuiteBoot(unittest.TestCase):
         self.frappe.conf.developer_mode = 0
         self.frappe._dict.side_effect = lambda d: d
 
-        self.get_setup_state = self.enterContext(
+        self.get_onboarding_state = self.enterContext(
             mock.patch(
-                "suite.www.suite.get_setup_state",
-                return_value={"setup_complete": True, "can_run_setup": True},
+                "suite.www.suite.get_onboarding_state",
+                return_value={"is_onboarded": True, "can_onboard": True},
             )
         )
         self.get_workspace = self.enterContext(
@@ -38,9 +38,9 @@ class SuiteBoot(unittest.TestCase):
     def test_guest_boot_is_redacted(self):
         self.frappe.session.user = "Guest"
         boot = www.get_boot()
-        self.assertIs(boot["suite_setup_complete"], False)
-        self.assertIs(boot["suite_can_run_setup"], False)
+        self.assertIs(boot["suite_is_onboarded"], False)
+        self.assertIs(boot["suite_can_onboard"], False)
         self.assertEqual(boot["suite_workspace_name"], "")
         self.assertEqual(boot["suite_workspace_logo"], "")
-        self.get_setup_state.assert_not_called()
+        self.get_onboarding_state.assert_not_called()
         self.get_workspace.assert_not_called()

@@ -20,9 +20,9 @@
         />
         <SetupProgressTrack
           v-if="step !== 'welcome'"
-          :total="stepOrder.length - 1"
-          :current="trackIndex"
-          :done="step === 'done'"
+          :total-steps="stepOrder.length - 1"
+          :current-step="trackIndex"
+          :is-complete="step === 'ready'"
         />
       </div>
 
@@ -48,7 +48,7 @@
               </div>
 
               <div v-else-if="step === 'workspace'" class="flex flex-col gap-4">
-                <WorkspaceForm ref="workspaceForm" @saved="step = 'invite'" />
+                <WorkspaceBrandingForm ref="workspaceForm" @saved="step = 'invite'" />
                 <Combobox
                   v-model="timezone"
                   :options="timezoneOptions"
@@ -58,20 +58,7 @@
                 />
               </div>
 
-              <div v-else-if="step === 'invite'" class="flex flex-col gap-2">
-                <FormControl
-                  ref="emailInput"
-                  v-model="emails"
-                  type="textarea"
-                  variant="outline"
-                  :rows="3"
-                  class="resize-none"
-                  :placeholder="__('name@company.com, another@company.com')"
-                  :disabled="invite.loading"
-                  @keydown.enter="sendOnEnter"
-                />
-                <ErrorMessage :message="displayError" />
-              </div>
+              <InviteStep v-else-if="step === 'invite'" ref="inviteStep" @sent="onInvitesSent" />
 
               <div v-else class="flex justify-center">
                 <div class="flex w-full items-center gap-3 rounded-lg bg-surface-gray-2 p-4">
@@ -80,7 +67,7 @@
                     class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5"
                   />
                   <div class="flex flex-col gap-1">
-                    <p class="text-base text-ink-gray-8">{{ doneTitle }}</p>
+                    <p class="text-base text-ink-gray-8">{{ inviteSummaryLabel }}</p>
                     <p class="text-sm text-ink-gray-5">{{ __('Invite anyone later from Settings.') }}</p>
                   </div>
                 </div>
@@ -114,19 +101,19 @@
               variant="subtle"
               icon="lucide-chevron-left"
               :label="__('Back')"
-              :disabled="invite.loading"
-              @click="back"
+              :disabled="inviteStep?.loading"
+              @click="goBack"
             />
             <div class="flex items-center gap-2">
-              <Button variant="subtle" :label="__('Skip')" :disabled="invite.loading" @click="finish" />
+              <Button variant="subtle" :label="__('Skip')" :disabled="inviteStep?.loading" @click="finish" />
               <Button
                 variant="solid"
                 class="!gap-1"
                 :label="__('Send invites')"
                 icon-right="lucide-chevron-right"
-                :loading="invite.loading"
-                :disabled="!hasValidEmail"
-                @click="sendInvites"
+                :loading="inviteStep?.loading"
+                :disabled="!inviteStep?.canSubmit"
+                @click="inviteStep?.submit()"
               />
             </div>
           </div>
@@ -137,8 +124,8 @@
                 variant="subtle"
                 icon="lucide-chevron-left"
                 :label="__('Back')"
-                :disabled="markComplete.loading"
-                @click="back"
+                :disabled="markOnboarded.loading"
+                @click="goBack"
               />
               <Button
                 ref="openSuiteButton"
@@ -146,11 +133,11 @@
                 class="!gap-1"
                 :label="__('Open Suite')"
                 icon-right="lucide-chevron-right"
-                :loading="markComplete.loading"
+                :loading="markOnboarded.loading"
                 @click="openSuite"
               />
             </div>
-            <ErrorMessage :message="markComplete.error" />
+            <ErrorMessage :message="markOnboarded.error" />
           </div>
         </div>
       </Transition>
@@ -160,40 +147,39 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, type ComponentPublicInstance, type Ref } from 'vue'
-import { Button, Combobox, ErrorMessage, FormControl, Tooltip, createResource } from 'frappe-ui'
+import { Button, Combobox, ErrorMessage, Tooltip, createResource } from 'frappe-ui'
 import LucideMail from '~icons/lucide/mail'
 import LucideUser from '~icons/lucide/user'
 
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
 import { setupTheme, switchTheme, systemDark, themeMode } from '@/utils/setupTheme'
 import SetupProgressTrack from '@/shell/SetupProgressTrack.vue'
-import WorkspaceForm from '@/shell/WorkspaceForm.vue'
+import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
+import InviteStep from '@/shell/InviteStep.vue'
 
 const apps = SUITE_APPS
 const suiteLogo = SUITE_LOGO
 
-type Step = 'welcome' | 'workspace' | 'invite' | 'done'
+type Step = 'welcome' | 'workspace' | 'invite' | 'ready'
 
-const stepOrder: Step[] = ['welcome', 'workspace', 'invite', 'done']
+const stepOrder: Step[] = ['welcome', 'workspace', 'invite', 'ready']
 
 const step = ref<Step>('welcome')
 const stepIndex = computed(() => stepOrder.indexOf(step.value))
 const trackIndex = computed(() => stepIndex.value - 1)
-const emails = ref('')
 const timezone = ref(Intl.DateTimeFormat().resolvedOptions().timeZone)
 const timezoneOptions = Intl.supportedValuesOf('timeZone').map((tz) => ({ label: tz, value: tz }))
-const inviteError = ref('')
 const inviteSummary = ref('')
 const getStartedButton = ref<ComponentPublicInstance>()
-const workspaceForm = ref<InstanceType<typeof WorkspaceForm>>()
-const emailInput = ref<ComponentPublicInstance>()
+const workspaceForm = ref<InstanceType<typeof WorkspaceBrandingForm>>()
+const inviteStep = ref<InstanceType<typeof InviteStep>>()
 const openSuiteButton = ref<ComponentPublicInstance>()
 
 const stepFocus: Record<Step, Ref<ComponentPublicInstance | undefined>> = {
   welcome: getStartedButton,
   workspace: workspaceForm,
-  invite: emailInput,
-  done: openSuiteButton,
+  invite: inviteStep,
+  ready: openSuiteButton,
 }
 
 function focusStep() {
@@ -217,88 +203,41 @@ onUnmounted(() => {
   document.documentElement.style.overscrollBehavior = ''
 })
 
-const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
-
-const splitEmails = (s: string) =>
-  s
-    .split(/[\n,]+/)
-    .map((e) => e.trim())
-    .filter(Boolean)
-
-const hasValidEmail = computed(() => splitEmails(emails.value).some(isEmail))
-
 const copy: Record<Step, { title: string; subtitle: string }> = {
   welcome: { title: __('Welcome to Frappe Suite'), subtitle: __('Everything your team needs, all in one place.') },
   workspace: { title: __('Set up your workspace'), subtitle: __('Make it yours with a name and logo.') },
   invite: { title: __("Let's invite your team"), subtitle: __('Add teammates and explore Suite together.') },
-  done: { title: __("You're all set!"), subtitle: __('Your workspace is ready. Time to dive in.') },
+  ready: { title: __("You're all set!"), subtitle: __('Your workspace is ready. Time to dive in.') },
 }
 const current = computed(() => copy[step.value])
 
-const doneTitle = computed(() => inviteSummary.value || __('Working solo for now'))
+const inviteSummaryLabel = computed(() => inviteSummary.value || __('Working solo for now'))
 
-const displayError = computed(() => {
-  if (inviteError.value) return inviteError.value
-  const err = invite.error as { exc_type?: string; messages?: string[] } | null
-  if (!err) return ''
-  if (err.exc_type === 'OutgoingEmailError') {
-    return __('Outgoing email account not set up.')
-  }
-  return err.messages?.join(' ') || __('Failed to send invites.')
-})
-
-const markComplete = createResource({
-  url: 'suite.api.account.mark_setup_complete',
+const markOnboarded = createResource({
+  url: 'suite.api.account.mark_onboarded',
   makeParams: () => ({ timezone: timezone.value }),
-})
-
-const invite = createResource({
-  url: 'suite.api.account.invite_users',
-  onSuccess: () => {
-    const count = new Set(splitEmails(emails.value)).size
-    inviteSummary.value =
-      count === 1 ? __("We'll send 1 invite") : __("We'll send {0} invites", [count])
-    emails.value = ''
-    finish()
-  },
 })
 
 function getStarted() {
   step.value = 'workspace'
 }
 
-function back() {
+function onInvitesSent(summary: string) {
+  inviteSummary.value = summary
+  finish()
+}
+
+function goBack() {
   step.value = stepOrder[stepIndex.value - 1]
-}
-
-function sendOnEnter(e: KeyboardEvent) {
-  if (!e.metaKey && !e.ctrlKey) return
-  e.preventDefault()
-  sendInvites()
-}
-
-function sendInvites() {
-  if (!hasValidEmail.value || invite.loading) return
-  inviteError.value = ''
-  const cleaned = splitEmails(emails.value)
-  const invalid = cleaned.filter((e) => !isEmail(e))
-  if (invalid.length) {
-    inviteError.value =
-      invalid.length === 1
-        ? __('"{0}" doesn\'t look like a valid email address.', [invalid[0]])
-        : __("These don't look like valid email addresses: {0}", [invalid.join(', ')])
-    return
-  }
-  invite.submit({ emails: cleaned.join(', ') })
 }
 
 // Setup is done once the last step is reached, not once the button is clicked,
 // so closing the tab here doesn't send the user back through the wizard.
 function finish() {
-  step.value = 'done'
+  step.value = 'ready'
   // The button is natively disabled while the request is in flight, so the
   // step-change focus no-ops; focus again once it settles.
-  markComplete
+  markOnboarded
     .submit()
     .catch(() => {})
     .finally(() => nextTick(focusStep))
@@ -315,8 +254,8 @@ function toggleTheme() {
 async function openSuite() {
   // Completion already ran on reaching this step; only retry if it's unfinished.
   try {
-    if (markComplete.loading) await markComplete.promise
-    else if (!markComplete.fetched || markComplete.error) await markComplete.submit()
+    if (markOnboarded.loading) await markOnboarded.promise
+    else if (!markOnboarded.fetched || markOnboarded.error) await markOnboarded.submit()
   } catch {
     return
   }

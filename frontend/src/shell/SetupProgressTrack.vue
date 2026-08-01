@@ -1,25 +1,25 @@
 <template>
   <div
     class="relative flex h-5 items-center transition-all duration-300 motion-reduce:transition-none"
-    :class="done ? 'gap-0' : 'gap-1.5'"
+    :class="isComplete ? 'gap-0' : 'gap-1.5'"
     aria-hidden="true"
   >
-    <span v-for="step in total" :key="step" :class="segmentClass(step - 1)" />
+    <span v-for="step in totalSteps" :key="step" :class="segmentClass(step - 1)" />
     <LucideCheck
-      v-if="done"
+      v-if="isComplete"
       class="tick absolute top-0 right-0 size-5 stroke-[1.5] text-black dark:text-white"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-const props = defineProps<{ total: number; current: number; done?: boolean }>()
+const props = defineProps<{ totalSteps: number; currentStep: number; isComplete?: boolean }>()
 
 function segmentClass(index: number) {
   return [
     'h-[3px] rounded-full transition-all duration-300 motion-reduce:transition-none',
-    props.done ? 'w-0 opacity-0' : index === props.current ? 'w-6' : 'w-2',
-    index <= props.current ? 'bg-black dark:bg-white' : 'bg-surface-gray-5',
+    props.isComplete ? 'w-0 opacity-0' : index === props.currentStep ? 'w-6' : 'w-2',
+    index <= props.currentStep ? 'bg-black dark:bg-white' : 'bg-surface-gray-5',
   ]
 }
 </script>

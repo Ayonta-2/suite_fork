@@ -89,5 +89,5 @@ execute:frappe.db.set_single_value("Mail Settings", "custom_event_invites", 1)
 # --- calendar ---
 # (no patches)
 # --- suite_core ---
-# Sites that predate Suite's onboarding should not be sent through it.
-execute:frappe.db.set_single_value("Suite Settings", "setup_complete", 1)
+# Existing, already-set-up sites shouldn't be sent through Suite's onboarding.
+execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frappe.is_setup_complete() else None

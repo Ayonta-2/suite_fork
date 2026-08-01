@@ -3,7 +3,7 @@ import os
 import frappe
 
 from suite import __version__
-from suite.api.account import get_setup_state, get_workspace
+from suite.api.account import get_onboarding_state, get_workspace
 
 no_cache = 1
 
@@ -39,12 +39,12 @@ def get_boot():
         sentry_dsn = os.getenv("SUITE_FRONTEND_SENTRY_DSN")
 
     # Guests get neutral values: the SPA redirects them to login, so the
-    # router never needs the real setup state or workspace branding.
+    # router never needs the real onboarding state or workspace branding.
     if frappe.session.user == "Guest":
-        setup_state = {"setup_complete": False, "can_run_setup": False}
+        onboarding_state = {"is_onboarded": False, "can_onboard": False}
         workspace = {"workspace_name": "", "workspace_logo": ""}
     else:
-        setup_state = get_setup_state()
+        onboarding_state = get_onboarding_state()
         workspace = get_workspace()
 
     return frappe._dict(
@@ -58,10 +58,10 @@ def get_boot():
             # (frappe-push-notification.ts / PWASettings.vue). Mirrors the old
             # standalone www/mail.py boot, which the suite shell replaced.
             "push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
-            # Setup gate, read synchronously by the router (extend_bootinfo does
-            # not reach this shell, so the flags live in its own boot).
-            "suite_setup_complete": setup_state["setup_complete"],
-            "suite_can_run_setup": setup_state["can_run_setup"],
+            # Onboarding gate, read synchronously by the router (extend_bootinfo
+            # does not reach this shell, so the flags live in its own boot).
+            "suite_is_onboarded": onboarding_state["is_onboarded"],
+            "suite_can_onboard": onboarding_state["can_onboard"],
             # Workspace branding for the launcher navbar.
             "suite_workspace_name": workspace["workspace_name"],
             "suite_workspace_logo": workspace["workspace_logo"],

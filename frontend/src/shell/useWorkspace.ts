@@ -1,6 +1,8 @@
 import { ref } from 'vue'
 import { createResource } from 'frappe-ui'
 
+import { hasServerBoot } from '@/boot/session'
+
 export interface WorkspaceInfo {
   workspace_name: string
   workspace_logo: string
@@ -14,15 +16,16 @@ function setWorkspace(data: WorkspaceInfo) {
   workspaceLogo.value = data.workspace_logo
 }
 
-// The Vite dev server serves no Jinja boot data, so fall back to a fetch there.
-if (typeof window.suite_workspace_name === 'undefined') {
-  createResource({
-    url: 'suite.api.account.get_workspace',
-    auto: true,
-    onSuccess: setWorkspace,
-  })
+let devFetchStarted = false
+
+function ensureWorkspaceLoaded() {
+  // Prod seeds the refs from boot globals; only dev fetches.
+  if (hasServerBoot || devFetchStarted) return
+  devFetchStarted = true
+  createResource({ url: 'suite.api.account.get_workspace', auto: true, onSuccess: setWorkspace })
 }
 
 export function useWorkspace() {
+  ensureWorkspaceLoaded()
   return { workspaceName, workspaceLogo, setWorkspace }
 }

@@ -11,7 +11,7 @@ class AccountTestBase(unittest.TestCase):
         self.enterContext(mock.patch("suite.api.account._", side_effect=lambda s: s))
 
 
-class MarkSetupComplete(AccountTestBase):
+class MarkOnboarded(AccountTestBase):
     def setUp(self):
         super().setUp()
         self.engine = self.enterContext(
@@ -26,22 +26,22 @@ class MarkSetupComplete(AccountTestBase):
     def test_denies_non_system_manager_before_any_write(self):
         self.frappe.only_for.side_effect = RuntimeError("not allowed")
         with self.assertRaises(RuntimeError):
-            account.mark_setup_complete()
+            account.mark_onboarded()
         self.engine.assert_not_called()
         self.frappe.db.set_single_value.assert_not_called()
 
     def test_runs_engine_when_suite_is_the_wizard_and_setup_is_open(self):
-        account.mark_setup_complete(timezone="Asia/Kolkata")
+        account.mark_onboarded(timezone="Asia/Kolkata")
         self.frappe.only_for.assert_called_with("System Manager")
         self.engine.assert_called_once_with(country="India")
-        self.frappe.db.set_single_value.assert_called_once_with("Suite Settings", "setup_complete", 1)
+        self.frappe.db.set_single_value.assert_called_once_with("Suite Settings", "is_onboarded", 1)
 
     def test_skips_engine_unless_suite_wizard_and_setup_open(self):
         for suite_wizard, site_setup_complete in ((True, True), (False, False)):
             with self.subTest(suite_wizard=suite_wizard, site_setup_complete=site_setup_complete):
                 self.suite_wizard.return_value = suite_wizard
                 self.frappe.is_setup_complete.return_value = site_setup_complete
-                account.mark_setup_complete(timezone="Asia/Kolkata")
+                account.mark_onboarded(timezone="Asia/Kolkata")
                 self.engine.assert_not_called()
 
 

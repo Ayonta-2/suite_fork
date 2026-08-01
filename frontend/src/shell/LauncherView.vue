@@ -29,13 +29,7 @@
             :label="app.name"
           />
 
-          <LauncherTile
-            v-if="systemUser"
-            :logo="settingsLogo"
-            :label="__('Settings')"
-            @click="showSettings = true"
-          />
-          <LauncherTile v-else :logo="settingsLogo" :label="__('Settings')" href="/app/user-settings" />
+          <LauncherTile :logo="settingsLogo" :label="__('Settings')" v-bind="settingsTile" />
         </div>
       </div>
     </div>
@@ -45,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { h, onMounted, onUnmounted, ref } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref } from 'vue'
 import { Avatar, Dropdown } from 'frappe-ui'
 import { LogOut } from 'lucide-vue-next'
 
@@ -68,6 +62,13 @@ const { fullName, imageURL, systemUser } = useCurrentUser()
 const sessionStore = useSessionStore()
 
 const showSettings = ref(false)
+
+// System Managers get the branding dialog; others go to Frappe user settings.
+const settingsTile = computed(() =>
+  systemUser.value
+    ? { onClick: () => (showSettings.value = true) }
+    : { href: '/app/user-settings' },
+)
 
 const userMenuOptions = [
   {

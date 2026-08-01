@@ -6,7 +6,7 @@
  "field_order": [
   "workspace_name",
   "workspace_logo",
-  "setup_complete"
+  "is_onboarded"
  ],
  "fields": [
   {
@@ -21,9 +21,9 @@
   },
   {
    "default": "0",
-   "fieldname": "setup_complete",
+   "fieldname": "is_onboarded",
    "fieldtype": "Check",
-   "label": "Setup Complete",
+   "label": "Onboarded",
    "read_only": 1
   }
  ],

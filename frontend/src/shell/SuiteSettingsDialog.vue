@@ -1,16 +1,16 @@
 <template>
   <Dialog v-model:open="show" size="sm" :title="__('Workspace settings')">
-    <WorkspaceForm ref="form" @saved="show = false" />
+    <WorkspaceBrandingForm ref="form" @saved="show = false" />
 
     <template #actions>
       <Button
-          variant="solid"
-          class="w-full"
-          :label="__('Update')"
-          :loading="form?.saving"
-          :disabled="!form?.canSave"
-          @click="form?.save()"
-        />
+        variant="solid"
+        class="w-full"
+        :label="__('Update')"
+        :loading="form?.saving"
+        :disabled="!form?.canSave"
+        @click="form?.save()"
+      />
     </template>
   </Dialog>
 </template>
@@ -19,7 +19,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { Button, Dialog } from 'frappe-ui'
 
-import WorkspaceForm from '@/shell/WorkspaceForm.vue'
+import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
 
 const show = defineModel<boolean>({ required: true })
 
