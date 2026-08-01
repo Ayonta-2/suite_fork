@@ -33,9 +33,17 @@ class UserAccount(OwnerFromUser, Document):
 
 @request_cache
 def get_user_for_jmap_account(
-    account: str, allow_system_manager: bool = True, raise_exception: bool = False
+    account: str,
+    allow_system_manager: bool = True,
+    raise_exception: bool = False,
+    ignore_permissions: bool = False,
 ) -> str | None:
-    """Returns the user for the given JMAP account ID. If no user is found, it returns None. If raise_exception is True, it raises an exception if the account does not belong to any user."""
+    """Returns the user for the given JMAP account ID. If no user is found, it returns None. If raise_exception is True, it raises an exception if the account does not belong to any user.
+
+    Pass ignore_permissions=True to resolve a linked user regardless of the session user's
+    role — for background jobs and unauthenticated flows (e.g. Guest RSVP requests) that
+    act on an account they don't own.
+    """
 
     if frappe.db.exists("JMAP Account", account):
         account_users = frappe.db.get_all("User Account", {"account": account}, pluck="user")
@@ -46,7 +54,11 @@ def get_user_for_jmap_account(
             if user in account_users:
                 return user
 
-            elif is_administrator(user) or (allow_system_manager and is_system_manager(user)):
+            elif (
+                ignore_permissions
+                or is_administrator(user)
+                or (allow_system_manager and is_system_manager(user))
+            ):
                 return account_users[0]
 
             elif raise_exception:

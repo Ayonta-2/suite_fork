@@ -23,6 +23,7 @@ import frappe
 from frappe import _
 from frappe.utils import escape_html
 
+from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
 from suite.utils import log_error
@@ -173,7 +174,7 @@ def sync_response_to_participant_calendars(
             if not participant_account or participant_account == account:
                 continue
 
-            user = frappe.db.get_value("User Account", {"account": participant_account}, "user")
+            user = get_user_for_jmap_account(participant_account, ignore_permissions=True)
             if not user:
                 continue
 
@@ -286,11 +287,11 @@ def _format_event_when(event: dict) -> str:
 def _guest_calendar_service(account: str) -> CalendarEventService:
     """Builds a CalendarEventService for the organizer's account without a logged-in user."""
 
-    users = frappe.db.get_all("User Account", {"account": account}, pluck="user")
-    if not users:
+    user = get_user_for_jmap_account(account, ignore_permissions=True)
+    if not user:
         frappe.throw(_("Calendar account not found."))
 
-    connection = get_jmap_connection(users[0], ignore_permissions=True)
+    connection = get_jmap_connection(user, ignore_permissions=True)
     return CalendarEventService(account, connection)
 
 

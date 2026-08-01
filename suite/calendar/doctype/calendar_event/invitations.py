@@ -145,9 +145,9 @@ def notify_organizer_of_response(account: str, event_id: str, participant_email:
     if not display:
         return
 
-    # The RSVP request is unauthenticated (Guest), so resolve the account owner straight from the
-    # DB — get_user_for_jmap_account would reject Guest — then act as them to read the event.
-    owner = frappe.db.get_value("User Account", {"account": account}, "user")
+    # The RSVP request is unauthenticated (Guest), so resolve the account owner while ignoring
+    # permissions — a plain lookup would reject Guest — then act as them to read the event.
+    owner = get_user_for_jmap_account(account, ignore_permissions=True)
     if not owner:
         return
 
