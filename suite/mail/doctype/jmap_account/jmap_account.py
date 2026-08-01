@@ -11,6 +11,7 @@ from frappe.utils import cint
 from suite.mail.jmap import (
     get_core_service,
     get_mailbox_id_by_role,
+    get_mailbox_service,
     invalidate_jmap_identities_cache,
     invalidate_jmap_mailboxes_cache,
 )
@@ -32,6 +33,15 @@ from suite.mail.utils.user import get_account_emails
 from suite.utils import execute_with_logging, user_context
 from suite.utils.lock import acquire_lock, release_lock
 from suite.utils.user import is_suite_admin, is_system_manager
+
+
+DEFAULT_MAILBOX_RENAMES = {
+    "inbox": ("Inbox", "Inbox"),
+    "sent": ("Sent Items", "Sent"),
+    "drafts": ("Drafts", "Drafts"),
+    "junk": ("Junk Mail", "Spam"),
+    "trash": ("Deleted Items", "Trash"),
+}
 
 
 class JMAPAccount(Document):
@@ -301,6 +311,7 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
         with user_context(user):
             for account in new_accounts:
                 create_archive_mailbox(account)
+                rename_default_mailboxes(account)
                 build_automation_sieve(account, activate=True)
     finally:
         release_lock(lockname, identifier)
@@ -399,6 +410,55 @@ def create_archive_mailbox(account: str) -> None:
         with_context=False,
         module="Mail",
     )
+
+
+def rename_default_mailboxes(account: str) -> int:
+    """Rename the account's default mailboxes from their server-assigned names.
+
+    Returns the number of mailboxes renamed."""
+
+    return execute_with_logging(
+        lambda: _rename_default_mailboxes(account),
+        title=_("Default Mailbox Rename Error"),
+        user_message=_("Failed to rename default mailboxes for account {0}").format(frappe.bold(account)),
+        with_context=False,
+        module="Mail",
+    )
+
+
+def _rename_default_mailboxes(account: str) -> int:
+    service = get_mailbox_service(account)
+
+    updates = []
+    for mailbox in service.mailboxes:
+        current_name, new_name = DEFAULT_MAILBOX_RENAMES.get(
+            (mailbox.get("role") or "").lower(), (None, None)
+        )
+        if current_name is None or mailbox["name"] != current_name or current_name == new_name:
+            continue
+
+        updates.append(
+            {
+                "id": mailbox["id"],
+                "name": new_name,
+                "role": mailbox["role"],
+                "parent_id": mailbox["parentId"],
+                "sort_order": mailbox["sortOrder"],
+                "is_subscribed": mailbox["isSubscribed"],
+            }
+        )
+
+    if not updates:
+        return 0
+
+    response = service.update(updates)
+    service.invalidate_cache(service.account, key="mailboxes")
+
+    if not_updated := response.get("notUpdated"):
+        errors = ", ".join(f"{id}: {error.get('description')}" for id, error in not_updated.items())
+        raise ValueError(f"Failed to rename mailbox(es): {errors}")
+
+    return len(updates)
 
 
 def get_permission_query_condition(user: str | None = None) -> str | None:
