@@ -59,9 +59,11 @@ def get_account_user(account: str, user: str | None = None) -> str:
     if user:
         return user
 
+    from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+
     user = frappe.session.user
     if is_system_manager(user):
-        if linked := frappe.db.get_value("User Account", {"account": account}, "user"):
+        if linked := get_user_for_jmap_account(account, ignore_permissions=True):
             return linked
 
     return user
