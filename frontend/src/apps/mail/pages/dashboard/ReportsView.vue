@@ -1,7 +1,7 @@
 <template>
 	<DashboardLayout :breadcrumbs="[{ label: title }]">
 		<div v-if="supportsSearch" class="flex items-center space-x-3">
-			<FormControl v-model="search" :placeholder="searchPlaceholder" class="w-72">
+			<FormControl v-model="search" :placeholder="__('Search')" class="w-80">
 				<template #prefix><FeatherIcon name="search" class="text-ink-gray-5 w-4" /></template>
 			</FormControl>
 		</div>
@@ -39,6 +39,7 @@
 				</template>
 			</ListSelectBanner>
 		</ListView>
+		<DashboardListSkeleton v-else :columns="3" />
 		<DashboardPager :page="page" :page-length="PAGE_LENGTH" :total="total" @update:page="(p) => (page = p)" />
 	</DashboardLayout>
 	<Dialog v-model="showDelete" :options="deleteOptions" />
@@ -65,6 +66,7 @@ import {
 import { raiseToast } from '@/apps/mail/utils'
 import { fromNow as formatFromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
+import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 
 type ReportRow = { id: string; [key: string]: string | undefined }
@@ -80,9 +82,6 @@ const listView = useTemplateRef<{ selections?: Set<string>; toggleAllRows?: () =
 const KIND_LABELS: Record<string, string> = { dmarc: 'DMARC', tls: 'TLS', arf: 'ARF' }
 // Only DMARC reports are searchable: a free-text match on the received ones, a domain match on ours.
 const supportsSearch = computed(() => kind === 'dmarc')
-const searchPlaceholder = computed(() =>
-	direction === 'inbound' ? __('Search by sender, recipient or domain') : __('Filter by domain'),
-)
 const title = computed(() => {
 	const dir = direction === 'inbound' ? __('Inbound') : __('Outbound')
 	return `${dir} ${KIND_LABELS[kind] || kind} ${__('Reports')}`
@@ -121,10 +120,20 @@ const columns = computed(() =>
 			],
 )
 
+const hasActiveFilters = computed(() => !!search.value)
+
 const listOptions = computed(() => ({
 	showTooltip: false,
 	rowHeight: 50,
-	emptyState: { description: __('No reports found.') },
+	emptyState: hasActiveFilters.value
+		? {
+				title: __('No matching reports'),
+				description: __('Try adjusting your search or filters.'),
+			}
+		: {
+				title: __('No reports yet'),
+				description: __('Reports received for your domains will appear here.'),
+			},
 	getRowRoute: (row: ReportRow) => ({ name: 'mail-report', params: { direction, kind, reportId: row.id } }),
 }))
 
@@ -136,6 +145,10 @@ const deleteReports = createResource({
 		reports.reload()
 		listView.value?.toggleAllRows?.()
 		raiseToast(__('Reports deleted.'))
+	},
+	onError: (error: { messages?: string[] }) => {
+		showDelete.value = false
+		raiseToast(error.messages?.[0] || __('Request failed.'), 'error')
 	},
 })
 

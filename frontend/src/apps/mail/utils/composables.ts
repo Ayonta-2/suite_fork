@@ -1,5 +1,5 @@
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { createResource, toast } from 'frappe-ui'
 
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
@@ -7,21 +7,51 @@ import { userStore } from '@/apps/mail/stores/user'
 
 import type { COLOR_SCHEME, Identity, ScreenedAddress } from '@/apps/mail/types'
 
-export const useScreenSize = () => {
-	const size = reactive({ width: window.innerWidth, height: window.innerHeight })
+// Decided once, at load, and deliberately not reactive to resize. Mobile and desktop are
+// separate component trees here, not one tree restyled: crossing 640px mid-session swaps
+// them and unmounts whatever they were holding — a half-written mail vanished this way
+// (#38), and every other open surface has the same exposure. A resized window therefore
+// keeps the layout it started with until the page is reloaded.
+const isMobile = ref(window.innerWidth < 640)
 
-	const isMobile = computed(() => size.width < 640)
+export const useScreenSize = () => ({ isMobile })
 
-	const onResize = () => {
-		size.width = window.innerWidth
-		size.height = window.innerHeight
+/**
+ * Split View: the reading pane sits beside the list rather than over it. One user setting, read the
+ * same way by every list view and by ThreadPane itself — the two halves of the split are sized from
+ * it, so they must never be able to disagree about it.
+ */
+export const useReadingPane = () => {
+	const { userResource } = userStore()
+	return computed(() => !!userResource.data?.show_reading_pane)
+}
+
+/**
+ * Switching accounts stays in place wherever the view allows it — shared by the
+ * sidebar's account submenu and the mobile profile sheet. Account-scoped routes
+ * swap the accountId param in their own URL. The account-agnostic All Inboxes
+ * routes just re-resolve the active account (bouncing to the new account's inbox
+ * threw the reader out of the merged list, which spans every account anyway).
+ * Everything else goes through the account shortcut, which the guard resolves to
+ * the new account's default mailbox.
+ */
+export const useAccountSwitch = () => {
+	const route = useRoute()
+	const router = useRouter()
+	const store = userStore()
+
+	const switchAccount = (accountId: string) => {
+		if (accountId === store.accountId) return
+		if ((route.name as string)?.startsWith('mail-all-inboxes'))
+			return store.resolveAccount(store.userResource.data?.accounts, accountId)
+		router.push(
+			route.params.accountId
+				? { name: route.name!, params: { ...route.params, accountId } }
+				: { name: 'mail-account-shortcut', params: { accountId } },
+		)
 	}
 
-	onMounted(() => window.addEventListener('resize', onResize))
-
-	onUnmounted(() => window.removeEventListener('resize', onResize))
-
-	return { size, isMobile }
+	return { switchAccount }
 }
 
 const isSidebarOpen = ref(false)
@@ -198,6 +228,17 @@ export interface BlockableSender {
 
 const showBlockSender = ref(false)
 const sendersToBlock = ref<BlockableSender[]>([])
+
+// The account's own addresses, lowercased — what a thread's senders are matched against to decide
+// which of them the row calls "me" (see utils/participants). Identities are per account, so a row
+// merged in from another account (All Inboxes, cross-account search) is resolved against the active
+// one: the cast it names is right either way, and only the "me" would go by its own name instead.
+export const useOwnEmails = () => {
+	const { identities } = userStore()
+	return computed(
+		() => new Set((identities.data ?? []).map((i: Identity) => i.email.toLowerCase())),
+	)
+}
 
 export const useBlockSender = () => {
 	const store = userStore()

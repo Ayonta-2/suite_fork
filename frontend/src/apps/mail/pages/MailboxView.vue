@@ -51,8 +51,8 @@
 		class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
 		:class="
 			showDeleteBanner || showScreenerBanner
-				? 'h-[calc(100dvh-6.1rem)]'
-				: 'h-[calc(100dvh-3.05rem)]'
+				? 'h-[calc(100dvh-6.125rem)]'
+				: 'h-[calc(100dvh-3.0625rem)]'
 		"
 	>
 		<!-- Loading -->
@@ -64,349 +64,301 @@
 		</div>
 
 		<template v-else-if="threadsResource?.data?.length || filter || mailbox === 'search'">
-			<div
-				ref="mailSidebar"
-				class="sticky top-16 flex flex-col border-r"
-				:class="!isMobile && showReadingPane ? 'w-1/3' : 'w-full'"
+			<ThreadPane
+				:thread-open="!!threadID"
+				@touch-start="onThreadTouchStart"
+				@touch-end="onThreadTouchEnd"
 			>
-				<!-- The search view's own header: the query (click to edit) + removable filter pills, above
-				     the results toolbar. It owns the query surface; the results below just read the route. -->
-				<SearchResultsHeader
-					v-if="mailbox === 'search'"
-					v-model:show-search="showSearchModal"
-					v-model:show-advanced="showSearchAdvanced"
-					v-model:edit-filter="searchEditFilter"
-				/>
-
-				<!-- Mobile header: title row (folders · mailbox + count · search · compose) over
-				     a toolbar row (filter selector on the left, filter/refresh pills on the
-				     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
-				     Search skips both rows (SearchResultsHeader is the header there; the tab
-				     bar carries the "you are in search" cue), keeping only the selection
-				     toolbar and the loading bar — the border goes with the rows it underlines. -->
-				<div
-					v-if="isMobile"
-					class="relative shrink-0"
-					:class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
-				>
-					<MobileTitleHeader
-						v-if="mailbox !== 'search'"
-						with-menu
-						:title="mailboxName"
-						:count="threadCount ? __('{0} threads', [threadCount]) : undefined"
+				<template #list>
+					<!-- The search view's own header: the query (click to edit) + removable filter pills, above
+					     the results toolbar. It owns the query surface; the results below just read the route. -->
+					<SearchResultsHeader
+						v-if="mailbox === 'search'"
+						v-model:show-search="showSearchModal"
+						v-model:show-advanced="showSearchAdvanced"
+						v-model:edit-filter="searchEditFilter"
 					/>
 
-					<!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
-					     the whole header read as chrome on top of the page). Borderless: it
-					     reads as part of the header block, not a boxed-off strip. -->
-					<div v-if="showDeleteBanner && mailbox !== 'search'" class="space-x-1 px-4">
-						<span class="text-ink-gray-5">
-							{{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
-						</span>
-						<Button
-							:label="__('Delete Now')"
-							variant="ghost"
-							@click="showEmptyMailbox = true"
-						/>
-					</div>
-
-					<!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
-					<!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
-					     axis and the count text starts where the title does. -->
-					<div v-if="selections.length" class="flex h-12 items-center gap-1 px-1">
-						<Button variant="ghost" class="!h-10 !w-10 !rounded-full" @click="toggleSelectAll(false)">
-							<template #icon><X class="icon !h-5 !w-5" /></template>
-						</Button>
-						<span class="flex-1 truncate text-base !font-medium">
-							{{ __('{0} selected', [String(selections.length)]) }}
-						</span>
-						<button
-							class="text-ink-gray-8 text-md shrink-0 px-2 !font-medium"
-							@click="toggleSelectAll(!isAllSelected)"
-						>
-							{{ isAllSelected ? __('Unselect All') : __('Select All') }}
-						</button>
-					</div>
-					<div v-else-if="mailbox !== 'search'" class="flex h-12 items-center px-4">
-						<!-- The selector label carries the active filter ("Unread Mails", …);
-						     picking "All" in the sheet clears it, so no dismissal chip needed. -->
-						<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
-							<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
-								<span class="truncate">{{ title }}</span>
-								<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
-							</button>
-						</AdaptiveDropdown>
-					</div>
-
-					<!-- Loading bar -->
-					<LoadingBar v-if="threadsResource?.loading" />
-				</div>
-
-				<!-- Toolbar/Actions -->
-				<div
-					v-else
-					class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
-				>
-					<div v-if="!isAllAccountsSearch" class="mr-5">
-						<Tooltip
-							:text="
-								isAllSelected
-									? __('Clear All (Esc)')
-									: __('Select All ({0}+A)', [modifier])
-							"
-						>
-							<div
-								class="checkbox-hitbox -m-3 cursor-pointer p-3"
-								@click.stop.prevent="toggleSelectAll(!isAllSelected)"
-							>
-								<Checkbox
-									:model-value="isAllSelected"
-									size="md"
-									class="pointer-events-none"
-								/>
-							</div>
-						</Tooltip>
-					</div>
-					<Dropdown
-						v-if="!selections.length && mailbox !== 'search'"
-						:options="FILTER_OPTIONS"
+					<!-- Mobile header: title row (folders · mailbox + count · search · compose) over
+					     a toolbar row (filter selector on the left, filter/refresh pills on the
+					     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
+					     Search skips both rows (SearchResultsHeader is the header there; the tab
+					     bar carries the "you are in search" cue), keeping only the selection
+					     toolbar and the loading bar — the border goes with the rows it underlines. -->
+					<div
+						v-if="isMobile"
+						class="relative shrink-0"
+						:class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
 					>
-						<button
-							class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded px-2 py-1"
+						<MobileTitleHeader
+							v-if="mailbox !== 'search'"
+							with-menu
+							:title="mailboxName"
+							:count="threadCount ? __('{0} threads', [threadCount]) : undefined"
+						/>
+
+						<!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
+						     the whole header read as chrome on top of the page). Borderless: it
+						     reads as part of the header block, not a boxed-off strip. -->
+						<div v-if="showDeleteBanner && mailbox !== 'search'" class="space-x-1 px-4">
+							<span class="text-ink-gray-5">
+								{{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
+							</span>
+							<Button
+								:label="__('Delete Now')"
+								variant="ghost"
+								@click="showEmptyMailbox = true"
+							/>
+						</div>
+
+						<!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
+						<!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
+						     axis and the count text starts where the title does. -->
+						<div v-if="selections.length" class="flex h-12 items-center gap-1 px-1">
+							<Button variant="ghost" class="!h-10 !w-10 !rounded-full" @click="toggleSelectAll(false)">
+								<template #icon><X class="icon !h-5 !w-5" /></template>
+							</Button>
+							<span class="flex-1 truncate text-base !font-medium">
+								{{ __('{0} selected', [String(selections.length)]) }}
+							</span>
+							<button
+								class="text-ink-gray-8 text-md shrink-0 px-2 !font-medium"
+								@click="toggleSelectAll(!isAllSelected)"
+							>
+								{{ isAllSelected ? __('Unselect All') : __('Select All') }}
+							</button>
+						</div>
+						<div v-else-if="mailbox !== 'search'" class="flex h-12 items-center px-4">
+							<!-- The selector label carries the active filter ("Unread Mails", …);
+							     picking "All" in the sheet clears it, so no dismissal chip needed. -->
+							<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
+								<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
+									<span class="truncate">{{ title }}</span>
+									<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
+								</button>
+							</AdaptiveDropdown>
+						</div>
+
+						<!-- Loading bar -->
+						<LoadingBar v-if="threadsResource?.loading" />
+					</div>
+
+					<!-- Toolbar/Actions -->
+					<div
+						v-else
+						class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
+					>
+						<div v-if="!isAllAccountsSearch" class="mr-5">
+							<Tooltip
+								:text="
+									isAllSelected
+										? __('Clear All (Esc)')
+										: __('Select All ({0}+A)', [modifier])
+								"
+							>
+								<div
+									class="checkbox-hitbox -m-3 cursor-pointer p-3"
+									@click.stop.prevent="toggleSelectAll(!isAllSelected)"
+								>
+									<Checkbox
+										:model-value="isAllSelected"
+										size="md"
+										class="pointer-events-none"
+									/>
+								</div>
+							</Tooltip>
+						</div>
+						<Dropdown
+							v-if="!selections.length && mailbox !== 'search'"
+							:options="FILTER_OPTIONS"
 						>
-							<span class="truncate">{{ title }}</span>
-							<ChevronDown class="text-ink-gray-5 icon shrink-0" />
-						</button>
-					</Dropdown>
-					<p v-else class="pb-[2px]">{{ title }}</p>
-					<div class="-mr-1.5 ml-auto flex items-center space-x-1.5 sm:space-x-3">
-						<Button
-							v-if="!selections.length"
-							variant="ghost"
-							:tooltip="__('Refresh')"
-							:disabled="threadsResource?.loading || loadingMore"
-							@click="refreshThreads()"
-						>
-							<template #icon>
-								<RefreshCw class="icon" />
+							<button
+								class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded px-2 py-1"
+							>
+								<span class="truncate">{{ title }}</span>
+								<ChevronDown class="text-ink-gray-5 icon shrink-0" />
+							</button>
+						</Dropdown>
+						<p v-else class="pb-[2px]">{{ title }}</p>
+						<div class="-mr-1.5 ml-auto flex items-center space-x-1.5 sm:space-x-3">
+							<Button
+								v-if="!selections.length"
+								variant="ghost"
+								:tooltip="__('Refresh')"
+								:disabled="isFetching"
+								@click="refreshThreads()"
+							>
+								<template #icon>
+									<RefreshCw class="icon" />
+								</template>
+							</Button>
+							<template v-if="selections.length">
+								<Dropdown v-if="showReadingPane" :options="selectActions">
+									<Button variant="ghost" :tooltip="__('Actions')">
+										<template #icon>
+											<Ellipsis class="icon" />
+										</template>
+									</Button>
+								</Dropdown>
+								<template v-else>
+									<Button
+										v-for="action in selectActions.filter((a) => a.condition())"
+										:key="action.label"
+										:tooltip="action.label"
+										variant="ghost"
+										@click="action.onClick"
+									>
+										<template #icon>
+											<component :is="action.icon" class="icon" />
+										</template>
+									</Button>
+								</template>
 							</template>
-						</Button>
-						<template v-if="selections.length">
-							<Dropdown v-if="showReadingPane" :options="selectActions">
-								<Button variant="ghost" :tooltip="__('Actions')">
+
+							<Dropdown
+								v-if="!!selections.length && !['search', 'starred'].includes(mailbox)"
+								:options="moveToOptions"
+							>
+								<Button variant="ghost" :tooltip="__('Move To')">
 									<template #icon>
-										<Ellipsis class="icon" />
+										<component :is="FolderInput" class="icon" />
 									</template>
 								</Button>
 							</Dropdown>
-							<template v-else>
-								<Button
-									v-for="action in selectActions.filter((a) => a.condition())"
-									:key="action.label"
-									:tooltip="action.label"
-									variant="ghost"
-									@click="action.onClick"
-								>
+							<Dropdown v-if="showAddTo" :options="addToOptions">
+								<Button variant="ghost" :tooltip="__('Add To')">
 									<template #icon>
-										<component :is="action.icon" class="icon" />
+										<component :is="FolderPlus" class="icon" />
 									</template>
 								</Button>
-							</template>
-						</template>
-
-						<Dropdown
-							v-if="!!selections.length && !['search', 'starred'].includes(mailbox)"
-							:options="moveToOptions"
-						>
-							<Button variant="ghost" :tooltip="__('Move To')">
-								<template #icon>
-									<component :is="FolderInput" class="icon" />
-								</template>
-							</Button>
-						</Dropdown>
-						<Dropdown v-if="showAddTo" :options="addToOptions">
-							<Button variant="ghost" :tooltip="__('Add To')">
-								<template #icon>
-									<component :is="FolderPlus" class="icon" />
-								</template>
-							</Button>
-						</Dropdown>
-						<Dropdown v-if="showRemoveFrom" :options="removeFromOptions">
-							<Button variant="ghost" :tooltip="__('Remove From')">
-								<template #icon>
-									<component :is="FolderMinus" class="icon" />
-								</template>
-							</Button>
-						</Dropdown>
-					</div>
-					<!-- Subtle loading bar: a segment sliding across the bottom outline (no layout shift) -->
-					<LoadingBar v-if="threadsResource?.loading" />
-				</div>
-
-				<!-- Mail list -->
-				<div
-					v-if="threadsResource?.data?.length"
-					ref="mailList"
-					class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
-				>
-					<div v-for="(group, key) in groupedThreads" :key="key">
-						<div
-							v-if="groupMessagesBy !== 'None' && !isMobile"
-							class="text-ink-gray-6 group flex items-center border-b border-l-transparent p-3.5 text-xs-semibold sm:border-l sm:px-5"
-							:class="{
-								'!bg-surface-blue-1': isGroupSelected(key),
-								'sm:hover:bg-surface-gray-1': !isLastGroup(key),
-								'!border-l-outline-blue-5': focusedRowKey === `group:${key}`,
-							}"
-							:data-row-key="`group:${key}`"
-							@click="toggleGroupCollapse(key)"
-						>
-							<!-- Mobile: group select ("all of Today") appears only in selection mode. -->
-							<div
-								v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
-								class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-3"
-								@click.stop.prevent="
-									toggleSelect(getGroupThreads(key), !isGroupSelected(key))
-								"
-							>
-								<Checkbox
-									:model-value="isGroupSelected(key)"
-									size="md"
-									class="pointer-events-none"
-								/>
-							</div>
-
-							<span class="select-none pt-[2px]">
-								{{ getFormattedDate(key, groupMessagesBy === 'Month').toUpperCase() }}
-							</span>
-
-							<component
-								:is="collapsedGroups.includes(key) ? ChevronRight : ChevronDown"
-								v-if="!isLastGroup(key)"
-								class="icon ml-auto"
-							/>
+							</Dropdown>
+							<Dropdown v-if="showRemoveFrom" :options="removeFromOptions">
+								<Button variant="ghost" :tooltip="__('Remove From')">
+									<template #icon>
+										<component :is="FolderMinus" class="icon" />
+									</template>
+								</Button>
+							</Dropdown>
 						</div>
-						<template v-if="isMobile || !collapsedGroups.includes(key)">
-							<!-- A stack row stands in for a run of look-alike threads; when expanded, its
-							     members follow it as ordinary (indented) rows. -->
-							<template v-for="row in groupedRows[key]" :key="row.key">
-								<!-- Stacks are disabled in search (see stackingEnabled), so unlike the thread
-								     rows below they never need the all-accounts cross-account handling. -->
-								<StackListItem
-									v-if="row.type === 'stack'"
-									:threads="row.threads"
-									:expanded="row.expanded"
-									:is-selected="isStackSelected(row.threads)"
-									class="border-l-transparent sm:border-l"
-									:class="{ '!border-l-outline-blue-5': row.key === focusedRowKey }"
-									:data-row-key="row.key"
-									@toggle="toggleStack(row)"
-									@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
-									@archive-threads="stackArchive(row.threads)"
-									@trash-threads="stackTrash(row.threads)"
-									@delete-threads="stackDelete(row.threads)"
-									@set-selected="
-										(selected: boolean) =>
-											toggleSelect(
-												row.threads.map((t) => t.thread_id),
-												selected,
-											)
-									"
-								/>
-								<MailListItem
-									v-else
-									:mailbox
-									:mail="row.thread"
-									:account-id="isAllAccountsSearch ? row.thread.account : undefined"
-									:account-label="
-										isAllAccountsSearch ? row.thread.account_name : undefined
-									"
-									:selectable="!isAllAccountsSearch"
-									:selection-mode="mobileSelectionMode"
-									:is-selected="selections.includes(row.thread.thread_id)"
-									:hide-sender="row.inStack"
-									class="border-l-transparent sm:border-l"
-									:class="{
-										'!bg-surface-blue-1':
-											row.thread.thread_id === threadID && !isMobile,
-										'!border-l-outline-blue-5': row.key === focusedRowKey,
-										'!pl-10 sm:!pl-12': row.inStack,
-									}"
-									:data-row-key="row.key"
-									@set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
-									@archive-thread="rowArchive(row.thread)"
-									@trash-thread="rowTrash(row.thread)"
-									@delete-thread="junkOrDeleteThreads([row.thread.thread_id], false)"
-									@set-flagged="(flagged: boolean) => rowSetFlagged(row.thread, flagged)"
-									@set-selected="
-										(selected: boolean) =>
-											!isAllAccountsSearch &&
-											toggleSelect([row.thread.thread_id], selected)
-									"
-								/>
-							</template>
-						</template>
+						<!-- Subtle loading bar: a segment sliding across the bottom outline (no layout shift) -->
+						<LoadingBar v-if="threadsResource?.loading" />
 					</div>
-					<!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
-					     batch (appended, never refetching loaded rows). Sits after all groups so collapsing
-					     a group can't disable it. -->
-					<div ref="loadMoreSentinel" class="h-px" />
-					<div v-if="loadingMore" class="flex justify-center py-3">
-						<LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
-					</div>
-				</div>
-				<div v-else class="flex h-full items-center justify-center">
-					<!-- While the (still-mounted) search header's new query loads, this area is the
-					     loading surface — the empty message must not flash first. -->
-					<LoaderCircle
-						v-if="threadsResource?.loading"
-						class="text-ink-gray-5 h-5 w-5 animate-spin"
-					/>
-					<p v-else class="text-ink-gray-5">
-						{{
-							mailbox !== 'search'
-								? __('No mails found for the selected filter.')
-								: hasSearchQuery
-									? __('No results found for the given query.')
-									: __('Search your mail')
-						}}
-					</p>
-				</div>
-			</div>
-			<div class="flex cursor-col-resize justify-center" @mousedown="startResizing">
-				<div
-					ref="resizer"
-					class="group-hover:bg-surface-gray-8 h-full rounded-full transition-all duration-300 ease-in-out"
-				/>
-			</div>
 
-			<!-- Mail thread -->
-			<!-- Mobile opens as a page push (iOS-style slide from the right): the pane
-			     stays mounted and slides via transform, so close animates too.
-			     visibility rides the same transition — it flips only after the
-			     slide-out ends, keeping the offscreen pane out of the focus order.
-			     Teleported to body on mobile (like the selection bar): inside the
-			     layout's isolate stacking context the remounting tab bar would paint
-			     over the pane during the slide-out. -->
-			<Teleport to="body" :disabled="!isMobile">
-			<div
-				class="bg-surface-base"
-				:class="{
-					'overflow-hidden': isMobile,
-					'w-2/3': !isMobile && showReadingPane,
-					'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
-					'fixed inset-0 z-20 transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
-						isMobile,
-					'invisible translate-x-full': isMobile && !threadID,
-					hidden: !isMobile && !showReadingPane && !threadID,
-				}"
-				@touchstart.passive="onThreadTouchStart"
-				@touchend.passive="onThreadTouchEnd"
-			>
-				<!-- The swipe slide lives inside MailThread (its toolbar must not move), armed
-				     via `slide` per swipe and cleared on slide-done. The scroll wrapper must be
-				     h-full on desktop too, or the empty state's h-full collapses. -->
-				<div class="h-full overflow-y-auto">
+					<!-- Mail list -->
+					<div
+						v-if="threadsResource?.data?.length"
+						ref="mailList"
+						class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
+					>
+						<div v-for="(group, key) in groupedThreads" :key="key">
+							<MailGroupHeader
+								v-if="groupMessagesBy !== 'None' && !isMobile"
+								:date-key="key"
+								:monthly="groupMessagesBy === 'Month'"
+								:collapsed="collapsedGroups.includes(key)"
+								:collapsible="!isLastGroup(key)"
+								:focused="focusedRowKey === `group:${key}`"
+								:selected="isGroupSelected(key)"
+								@toggle="toggleGroupCollapse(key)"
+							>
+								<!-- Mobile: group select ("all of Today") appears only in selection mode. -->
+								<template #lead>
+									<div
+										v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
+										class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-3"
+										@click.stop.prevent="
+											toggleSelect(getGroupThreads(key), !isGroupSelected(key))
+										"
+									>
+										<Checkbox
+											:model-value="isGroupSelected(key)"
+											size="md"
+											class="pointer-events-none"
+										/>
+									</div>
+								</template>
+							</MailGroupHeader>
+							<template v-if="isMobile || !collapsedGroups.includes(key)">
+								<!-- A stack row stands in for a run of look-alike threads; when expanded, its
+								     members follow it as ordinary (indented) rows. -->
+								<template v-for="row in groupedRows[key]" :key="row.key">
+									<!-- Stacks are disabled in search (see stackingEnabled), so unlike the thread
+									     rows below they never need the all-accounts cross-account handling. -->
+									<StackListItem
+										v-if="row.type === 'stack'"
+										:threads="row.threads"
+										:expanded="row.expanded"
+										:is-selected="isStackSelected(row.threads)"
+										:class="rowClasses(row)"
+										:data-row-key="row.key"
+										@toggle="toggleStack(row)"
+										@set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
+										@archive-threads="stackArchive(row.threads)"
+										@trash-threads="stackTrash(row.threads)"
+										@delete-threads="stackDelete(row.threads)"
+										@set-selected="
+											(selected: boolean) =>
+												toggleSelect(
+													row.threads.map((t) => t.thread_id),
+													selected,
+												)
+										"
+									/>
+									<MailListItem
+										v-else
+										:mailbox
+										:mail="row.thread"
+										:account-id="isAllAccountsSearch ? row.thread.account : undefined"
+										:account-label="
+											isAllAccountsSearch ? shortAccountLabel(row.thread.account_name) : undefined
+										"
+										:selectable="!isAllAccountsSearch"
+										:selection-mode="mobileSelectionMode"
+										:is-selected="selections.includes(row.thread.thread_id)"
+										:hide-sender="row.inStack"
+										:class="rowClasses(row)"
+										:data-row-key="row.key"
+										@set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
+										@archive-thread="rowArchive(row.thread)"
+										@trash-thread="rowTrash(row.thread)"
+										@delete-thread="junkOrDeleteThreads([row.thread.thread_id], false)"
+										@set-flagged="(flagged: boolean) => rowSetFlagged(row.thread, flagged)"
+										@set-selected="
+											(selected: boolean) =>
+												!isAllAccountsSearch &&
+												toggleSelect([row.thread.thread_id], selected)
+										"
+									/>
+								</template>
+							</template>
+						</div>
+						<!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
+						     batch (appended, never refetching loaded rows). Sits after all groups so collapsing
+						     a group can't disable it. -->
+						<div ref="loadMoreSentinel" class="h-px" />
+						<div v-if="loadingMore" class="flex justify-center py-3">
+							<LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
+						</div>
+					</div>
+					<div v-else class="flex h-full items-center justify-center">
+						<!-- While the (still-mounted) search header's new query loads, this area is the
+						     loading surface — the empty message must not flash first. -->
+						<LoaderCircle
+							v-if="threadsResource?.loading"
+							class="text-ink-gray-5 h-5 w-5 animate-spin"
+						/>
+						<p v-else class="text-ink-gray-5">
+							{{
+								mailbox !== 'search'
+									? __('No mails found for the selected filter.')
+									: hasSearchQuery
+										? __('No results found for the given query.')
+										: __('Search your mail')
+							}}
+						</p>
+					</div>
+				</template>
+
 				<MailThread
 					ref="mailThread"
 					:slide="threadSlide"
@@ -449,9 +401,7 @@
 					@prev-thread="goToThreadByOffset(-1)"
 					@next-thread="goToThreadByOffset(1)"
 				/>
-				</div>
-			</div>
-			</Teleport>
+			</ThreadPane>
 		</template>
 
 		<!-- No mails (the search view keeps its header and shows an inline message instead) -->
@@ -521,16 +471,13 @@
 	</div>
 	</Teleport>
 
-	<ShortcutsModal v-model="showShortcuts" />
 </template>
 <script setup lang="ts">
-import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useIntersectionObserver } from '@vueuse/core'
 import {
 	Archive,
 	ChevronDown,
-	ChevronRight,
 	CircleAlert,
 	CircleCheck,
 	Ellipsis,
@@ -540,8 +487,6 @@ import {
 	LoaderCircle,
 	Mail as MailIcon,
 	MailOpen,
-	Mails,
-	Paperclip,
 	RefreshCw,
 	Star,
 	StarOff,
@@ -561,43 +506,50 @@ import {
 } from 'frappe-ui'
 
 import {
-	getFormattedDate,
 	isMac,
 	raisePromiseToast,
 	raiseToast,
 	shouldIgnoreKeypress,
-	startResizing,
 	stripShortcutHint,
 } from '@/apps/mail/utils'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
 import {
+	hasCursor,
+	isNavigationKey,
+	navigationOffset,
+	stepFromKey,
+	useGPrefix,
+} from '@/apps/mail/utils/listNavigation'
+import {
 	useMobileSelection,
+	useReadingPane,
 	useScreenSize,
 	useSwipeNav,
 	useUndo,
 } from '@/apps/mail/utils/composables'
-import { buildListRows } from '@/apps/mail/utils/threadStacks'
+import { useStoredFilter } from '@/apps/mail/utils/listFilter'
+import { useListRows } from '@/apps/mail/composables/useListRows'
+import {
+	PAGE_LENGTH,
+	usePaginatedThreads,
+} from '@/apps/mail/composables/usePaginatedThreads'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
+import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import ScreenedEmailAddressModal from '@/apps/mail/components/Modals/ScreenedEmailAddressModal.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
-import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
+import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 
 import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
-import type { ListRow, StackRow } from '@/apps/mail/utils/threadStacks'
-
-// A date header, the one navigable row the list draws itself rather than getting from buildListRows —
-// which is deliberately date-agnostic, so this type belongs here rather than in threadStacks.
-type GroupRow = { type: 'group'; key: string; dateKey: string }
-type NavRow = ListRow | GroupRow
+import type { NavRow } from '@/apps/mail/composables/useListRows'
 
 const { accountId, mailbox, threadID } = defineProps<{
 	accountId: string
@@ -613,59 +565,45 @@ const { undo, setUndoAction } = useUndo()
 
 const socket = inject('$socket')
 const user = inject('$user') as UserResource
-const dayjs = inject('$dayjs')
 
 const store = userStore()
 const { mailboxes, mailboxIds } = store
 
 // Appearance
 
-const showReadingPane = computed(() => !!user.data?.show_reading_pane)
-const groupMessagesBy = computed(() => user.data.group_messages_by)
+// Split View. Shared with ThreadPane, which sizes both halves of the split from it — this view also
+// reads it to decide whether the info banners survive an open thread, and how the toolbar's bulk
+// actions collapse (into a menu with the pane taking two thirds of the row, spelled out without).
+const showReadingPane = useReadingPane()
 
-// Thread Groups
+// Infinite scroll (shared by the threads and search resources — only one is active at a time).
+// usePaginatedThreads owns the state between the reset and append fetches: the epochs, the refresh
+// merge, the removal suppression, the sentinel, the edge crossing. See there.
+const {
+	container: mailListRef,
+	hasMore,
+	loadingMore,
+	isFetching,
+	canGoNext,
+	threadIDs,
+	threadByOffset,
+	takeResetWindow,
+	beginReset,
+	beginRefresh,
+	onResetSuccess,
+	appendThreads,
+	loadMoreThenOpenEdge,
+	topUpIfShort,
+	suppressRemoved,
+	unsuppressRemoved,
+} = usePaginatedThreads({
+	resource: () => threadsResource.value,
+	fetchMore: () => (mailbox === 'search' ? loadMoreSearch : loadMoreThreads).reload(),
+	openThreadID: () => threadID,
+	onEdgeThread: (id, action) => (action === 'open' ? goToThread(id) : focusOnThread(id)),
+})
 
-const groupedThreads = computed<Record<string, Thread[]>>(() =>
-	threadsResource.value?.data?.reduce((groups: Record<string, Thread[]>, thread: Thread) => {
-		const date = dayjs(thread.received_at).format(
-			groupMessagesBy.value === 'Day' ? 'YYYY-MM-DD' : 'YYYY-MM',
-		)
-		if (!groups[date]) groups[date] = []
-		groups[date].push(thread)
-		return groups
-	}, {}),
-)
-
-const isLastGroup = (key: string) => Object.keys(groupedThreads.value).at(-1) === key
-
-const collapsedGroups = ref<string[]>([])
-
-const toggleGroupCollapse = (key: string) => {
-	// The cursor follows the click, as it does when you open a mail: Enter and a click are the same
-	// gesture on the same row, and Enter can only mean that if the cursor is already there. Above the
-	// last-group guard, so clicking a header that can't fold still takes the cursor.
-	focusedRowKey.value = `group:${key}`
-	if (isLastGroup(key)) return
-
-	if (collapsedGroups.value.includes(key))
-		return (collapsedGroups.value = collapsedGroups.value.filter((d) => d !== key))
-
-	collapsedGroups.value.push(key)
-	// Collapsing keeps the group's selection: "collapse a day, tick it, archive it" is a bulk move
-	// worth having, and the header's own checkbox goes on showing that the day is selected. Only the
-	// reading pane has to move, since it would otherwise point at a row that is no longer rendered.
-	if (groupedThreads.value[key]?.some((thread) => thread.thread_id === threadID)) goToMailbox()
-}
-
-const getGroupThreads = (group: string) => groupedThreads.value[group]?.map((t) => t.thread_id)
-
-watch(groupMessagesBy, () => (collapsedGroups.value = []))
-
-// Thread Stacks
-//
-// A run of adjacent look-alike threads from one sender collapses into a single row, so a chatty
-// notification sender can't bury the rest of the mailbox. This is a display layer over groupedThreads:
-// runs are detected within a date group and never span one.
+// Rows and the cursor
 
 // Stacking earns its place only where mail arrives unasked-for and one sender can drown the rest. It is
 // off wherever the sender is not the signal, or where hiding rows would defeat the list itself:
@@ -679,48 +617,36 @@ const stackingEnabled = computed(
 	() => !['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox),
 )
 
-// The thread_ids of every member of every expanded stack. In-memory only — stacks re-collapse on a
-// mailbox switch. Keyed by member id rather than by stack key so a run keeps its expanded state as it
-// grows in either direction (appended by infinite scroll, prepended by a refresh), and so routing to a
-// thread can expand its stack without having to locate the run first.
-const expandedStacks = ref(new Set<string>())
-
-const isRunExpanded = (run: Thread[]) => run.some((t) => expandedStacks.value.has(t.thread_id))
-
-const rowKeyOf = (mail: Thread) =>
-	isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name
-
-const groupedRows = computed<Record<string, ListRow[]>>(() =>
-	Object.fromEntries(
-		Object.entries(groupedThreads.value ?? {}).map(([key, group]) => [
-			key,
-			buildListRows(group, {
-				rowKey: rowKeyOf,
-				isExpanded: isRunExpanded,
-				enabled: stackingEnabled.value,
-			}),
-		]),
-	),
-)
-
-// The rows the list actually renders, in visual order. The cursor walks these rather than the flat list
-// of loaded threads, so it can never land on a row that isn't on screen: a collapsed stack is a single
-// stop (its members aren't rendered), and a collapsed date group contributes only its header.
-//
-// Headers exist only when the user groups by day or month; with grouping off none are rendered, and
-// collapsedGroups is provably empty there because only a header's own click can fill it.
-const navigableRows = computed<NavRow[]>(() => {
-	const rows: NavRow[] = []
-	for (const [dateKey, groupRows] of Object.entries(groupedRows.value)) {
-		if (groupMessagesBy.value !== 'None')
-			rows.push({ type: 'group', key: `group:${dateKey}`, dateKey })
-		if (collapsedGroups.value.includes(dateKey)) continue
-		rows.push(...groupRows)
-	}
-	return rows
+// The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
+// Inboxes list (see useListRows).
+const {
+	groupMessagesBy,
+	groupedThreads,
+	getGroupThreads,
+	isLastGroup,
+	collapsedGroups,
+	expandedStacks,
+	groupedRows,
+	navigableRows,
+	focusedRowKey,
+	focusedRow,
+	focusRow,
+	focusOnThread,
+	rowClasses,
+	toggleStack,
+	toggleGroupCollapse,
+	revealThread,
+} = useListRows({
+	threads: () => threadsResource.value?.data ?? [],
+	// Rows are keyed by mail name, prefixed with the account in an all-accounts search — where two
+	// accounts' rows sit in one list and a name alone need not be unique.
+	rowKey: (mail: Thread) =>
+		isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name,
+	stackingEnabled: () => stackingEnabled.value,
+	openThreadID: () => threadID,
+	onOpenThreadHidden: () => goToMailbox(),
+	container: mailListRef,
 })
-
-const focusedRow = computed(() => navigableRows.value.find((row) => row.key === focusedRowKey.value))
 
 // Every thread a row stands for: one for a thread row, the whole run for a stack, the whole day for a
 // header — mirroring exactly what each row's own checkbox selects.
@@ -731,53 +657,23 @@ const rowThreadIDs = (row: NavRow): string[] =>
 			? row.threads.map((t) => t.thread_id)
 			: (getGroupThreads(row.dateKey) ?? [])
 
-const toggleStack = (row: StackRow) => {
-	const ids = row.threads.map((t) => t.thread_id)
-	// The cursor follows the click, as it does when you open a mail. This also covers the fold: the
-	// members are about to be hidden, so the stack row that now stands for them is where the cursor
-	// belongs, and Enter-fold-Enter-unfold stays a round trip rather than a way to lose your place.
-	focusedRowKey.value = row.key
-	if (!row.expanded) return ids.forEach((id) => expandedStacks.value.add(id))
-
-	ids.forEach((id) => expandedStacks.value.delete(id))
-	// Don't leave the reading pane pointing at a row we just hid — the same reason toggleGroupCollapse
-	// leaves the thread when its group collapses.
-	if (threadID && ids.includes(threadID)) goToMailbox()
-}
-
 // Derived rather than stored, mirroring isGroupSelected: it can never drift from `selections`, and
 // every existing path that mutates them (Cmd+A, Esc, resetSelections, shift+arrow, a member's own
 // checkbox) keeps the stack checkbox honest for free.
 const isStackSelected = (threads: Thread[]) =>
 	threads.every((t) => selections.value.includes(t.thread_id))
 
-// The keyboard cursor, as a row key (see navigableRows). A row key rather than a thread id because the
-// cursor can sit on a stack row or a date header, neither of which is a thread — and one ref rather
-// than two so the cursor can never be in two places at once.
-const focusedRowKey = ref<string>()
-
+// A deep link or a step to the next thread can land inside a collapsed stack or a folded day — surface
+// it either way, and leave the cursor on it (see revealThread).
 watch(
 	() => threadID,
-	(val) => {
-		if (!val) return
-
-		// A deep link or a step to the next thread can land inside a collapsed stack — surface it, just
-		// as a collapsed date group opens below. An opened thread is always visible in the list.
-		expandedStacks.value.add(val)
-
-		setTimeout(() => focusOnThread(val))
-		for (const group of collapsedGroups.value) {
-			if (getGroupThreads(group).includes(val))
-				return (collapsedGroups.value = collapsedGroups.value.filter((d) => d !== group))
-		}
-	},
+	(val) => val && revealThread(val),
 	{ immediate: true },
 )
 
 // Selection
 
 const mailThreadRef = useTemplateRef('mailThread')
-const mailListRef = useTemplateRef('mailList')
 
 const selections = ref<string[]>([])
 
@@ -875,13 +771,11 @@ const isGroupSelected = (key: string) =>
 
 // Shortcuts
 
-const showShortcuts = ref(false)
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
 
 const isShiftPressed = ref(false)
-const isGPressed = ref(false)
-const gPressTimeout = ref<ReturnType<typeof setTimeout>>()
+const gPrefix = useGPrefix()
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
 
 const handleKeyDown = (e: KeyboardEvent) => {
@@ -891,24 +785,28 @@ const handleKeyDown = (e: KeyboardEvent) => {
 	// Handle Ctrl/Cmd+A (Select All)
 	if ((e.metaKey || e.ctrlKey) && key === 'a' && !shouldIgnoreKeypress(e, true)) {
 		e.preventDefault()
-		isGPressed.value = false
+		gPrefix.disarm()
 		return toggleSelectAll(true)
 	}
 
 	// Handle Ctrl/Cmd+Z (Undo)
 	if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
 		e.preventDefault()
-		isGPressed.value = false
+		gPrefix.disarm()
 		return undo()
 	}
 
 	if (shouldIgnoreKeypress(e)) return
 
 	if (key === 'g') return handleGKeyPress(e)
-	if (isGPressed.value) return handleGMenuNavigation(e, key)
+	// A letter after `g` is a mailbox jump, which MailLayout owns. Swallow it here so it can't
+	// also fire a thread-action shortcut sharing that letter.
+	if (gPrefix.armed.value) {
+		gPrefix.disarm()
+		return
+	}
 	if (key === 'enter') return handleEnter(e)
 	if (key === 'escape') return handleEscape(e)
-	if (key === '?') return handleShowShortcuts(e)
 
 	const hasSelection = selections.value.length > 0 || threadID
 	if (hasSelection) handleThreadActions(e, key)
@@ -916,48 +814,19 @@ const handleKeyDown = (e: KeyboardEvent) => {
 }
 
 const handleGKeyPress = (e: KeyboardEvent) => {
-	clearTimeout(gPressTimeout.value)
-
 	// The reading pane walks threads, so it names one; the list walks rows, so it takes the edge row —
 	// which is the day's header when one sits above the first mail.
-	if (e.shiftKey) {
+	const intent = gPrefix.press(e.shiftKey)
+
+	if (intent === 'last') {
 		if (threadID) return goToThread(threadIDs.value.at(-1))
 		return focusRow(navigableRows.value.at(-1))
 	}
 
-	if (isGPressed.value) {
-		isGPressed.value = false
+	if (intent === 'first') {
 		if (threadID) return goToThread(threadIDs.value[0])
 		return focusRow(navigableRows.value[0])
 	}
-
-	isGPressed.value = true
-	gPressTimeout.value = setTimeout(() => (isGPressed.value = false), 750)
-}
-
-const handleGMenuNavigation = (e: KeyboardEvent, key: string) => {
-	isGPressed.value = false
-
-	const navigationMap: Record<string, string> = {
-		i: mailboxIds.inbox,
-		f: 'starred',
-		s: mailboxIds.sent,
-		d: mailboxIds.drafts,
-		j: mailboxIds.junk,
-		a: mailboxIds.archive,
-		t: mailboxIds.trash,
-	}
-
-	const mailboxId = navigationMap[key]
-	if (mailboxId) {
-		e.preventDefault()
-		router.push({ name: 'mail-mailbox', params: { accountId, mailbox: mailboxId } })
-	}
-}
-
-const handleShowShortcuts = (e: KeyboardEvent) => {
-	e.preventDefault()
-	showShortcuts.value = true
 }
 
 // Enter means "act on the row I'm on": open a mail, or fold/unfold a stack or a day.
@@ -1012,12 +881,11 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
 }
 
 const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
-	const navigationKeys = ['arrowup', 'arrowdown', 'j', 'k']
-	if (!navigationKeys.includes(key)) return
+	if (!isNavigationKey(key)) return
 
 	e.preventDefault()
 
-	const offset = ['arrowup', 'k'].includes(key) ? -1 : 1
+	const offset = navigationOffset(key)
 	const prevIDs = focusedRow.value ? rowThreadIDs(focusedRow.value) : []
 
 	let newIDs: string[] = []
@@ -1028,19 +896,17 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 	if (threadID) {
 		// The reading pane walks threads rather than rows: opening one always reveals it, so it can
 		// never land on something hidden (see the threadID watcher).
-		const next = getThreadByOffset(offset)
+		const next = threadByOffset(offset)
 		goToThreadByOffset(offset)
 		if (next) newIDs = [next]
 	} else {
 		const rows = navigableRows.value
-		// A cursor whose row is gone — folded away, or removed by a mutation — restarts at the top.
-		const index = rows.findIndex((row) => row.key === focusedRowKey.value)
-		const next = index === -1 ? rows[0] : rows[index + offset]
+		const next = stepFromKey(rows, focusedRowKey.value, offset)
 
 		if (next) {
 			focusRow(next)
 			newIDs = rowThreadIDs(next)
-		} else if (index !== -1) loadMoreThenOpenEdge(offset, 'focus')
+		} else if (hasCursor(rows, focusedRowKey.value)) loadMoreThenOpenEdge(offset, 'focus')
 	}
 
 	// Handle shift+arrow selection. A row carries every thread it stands for, so shifting onto a stack
@@ -1163,29 +1029,9 @@ const selectActions = computed((): SelectAction[] => [
 
 // Search
 
-// Infinite-scroll state (shared by the threads and search resources — only one is active at a time)
-const PAGE_LENGTH = 25
-const hasMore = ref(false) // lookahead: the last fetched window returned an extra row, so more exist
-const loadingMore = ref(false) // an append fetch is in flight (drives the bottom spinner)
 // An optimistic removal emptied the list but more threads exist, so a refill is coming once the server
 // mutation lands. Keeps the loading state (not the empty state) during the gap before the refill fetch.
 const refillPending = ref(false)
-// Bumped on every reset-to-top; an in-flight append captures it and discards its result if it changed
-// meanwhile, so a stale window can't land on a freshly reset list.
-const epoch = ref(0)
-let loadEpoch = 0 // epoch captured when the current append was triggered
-// Refresh ("check for new mail") state: merges the newest window into the loaded list, preserving
-// scroll — set while such a reload is in flight so its onSuccess prepends instead of replacing.
-const refreshMode = ref(false)
-let refreshEpoch = 0 // epoch captured when the refresh was triggered (dropped if a reset intervenes)
-// The loaded list to merge the fresh window into. Captured at *response* time (in the resource
-// transform), not refresh-start, so it reflects any optimistic removals/undo-inserts that happened
-// while the refresh was in flight — otherwise a thread archived mid-refresh would reappear.
-let refreshSnapshot: Thread[] = []
-// Thread ids optimistically removed by an action whose request is still in flight. The server still
-// returns these for a moment, so a refresh/append landing in that window would re-insert the row; the
-// merges below skip them. Cleared on rollback (restoreThreadsToList) and after a short timeout.
-const recentlyRemoved = new Set<string>()
 // Current mailbox's record (carries total_threads/unread_threads); used by the periodic poll to
 // detect count changes and by the tab title's unread badge.
 const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
@@ -1224,46 +1070,15 @@ const screenerBanner = computed(() => {
 })
 const goToScreener = () => router.push({ name: 'mail-screener', params: { accountId } })
 
-const scrollListToTop = () => mailListRef.value?.scrollTo({ top: 0 })
-
-// Called when a first-window fetch resolves. Two modes:
-// - refresh: keep the loaded rows, prepend only threads not already loaded (new mail), and hold the
-//   reader's scroll position (re-anchored by the height the prepended rows added).
-// - reset: reveal the fresh first window and scroll to top (mailbox switch, filter, undo, …).
-// Either way, cancel any pending edge navigation.
-const onResetSuccess = () => {
-	pendingEdgeThread = null
-
-	if (refreshMode.value) {
-		refreshMode.value = false
-		// A reset (mailbox switch, filter, undo) raced in and bumped the epoch — drop this stale merge.
-		if (refreshEpoch !== epoch.value) return
-		// Anchor to the current scroll before merging. The window replaced `data` a beat ago but the DOM
-		// hasn't re-rendered yet, so these still reflect the loaded list the reader is looking at.
-		const el = mailListRef.value
-		const prevTop = el?.scrollTop ?? 0
-		const prevHeight = el?.scrollHeight ?? 0
-		const freshWindow = threadsResource.value.data ?? []
-		const existing = new Set(refreshSnapshot.map((t) => t.thread_id))
-		const fresh = freshWindow.filter(
-			(t: Thread) => !existing.has(t.thread_id) && !recentlyRemoved.has(t.thread_id),
-		)
-		threadsResource.value.data = [...fresh, ...refreshSnapshot]
-		// Keep the reader where they were: shift scroll by the height the prepended rows added. If they
-		// were already at the top, leave them there so the new mail is visible.
-		nextTick(() => {
-			if (el && prevTop > 0) el.scrollTop = prevTop + (el.scrollHeight - prevHeight)
-		})
-		return
-	}
-
-	scrollListToTop()
-}
-
 // Cross-account search: when the search dialog's "all accounts" toggle was on, the flag rides along in
 // the query (kept out of the filter conditions on the server). The merged results carry their owning
 // account, so each row opens in — and acts within — its own account (see the row-action wrappers).
 const isAllAccountsSearch = computed(() => mailbox === 'search' && route.query.all_accounts != null)
+
+// The row's account, by its short name: blank for the currently open account (only
+// the odd ones out get labelled), the local part otherwise, unless two accounts share one.
+const shortAccountLabel = (name?: string | null) =>
+	name ? (store.accountShortNames[name] ?? name) : undefined
 
 // The mobile Search tab lands on this route with no query yet. There's nothing to fetch —
 // an empty filter would run an unbounded search — so the list area shows a hint instead
@@ -1294,10 +1109,8 @@ const searchResults = createResource({
 		all_accounts: isAllAccountsSearch.value,
 	}),
 	transform: (data: [Thread[], number]) => {
-		if (refreshMode.value) refreshSnapshot = threadsResource.value.data ?? []
-		hasMore.value = data[0].length > PAGE_LENGTH
 		searchTotal.value = data[1] ?? 0
-		return data[0].slice(0, PAGE_LENGTH)
+		return takeResetWindow(data[0])
 	},
 	onSuccess: () => {
 		onResetSuccess()
@@ -1319,9 +1132,15 @@ watch(
 
 // Main data
 
-const filter = ref<string | null>(
-	localStorage.getItem(`user:${user.data.name}:filter:${mailbox}`) || null,
-)
+// The remembered All/Unread/Starred/Has-attachments choice, its menu, and its own title (see
+// useStoredFilter) — all shared with the merged All Inboxes list. Starred is not offered inside
+// Trash, nor inside the Starred list itself, where it would filter a list to itself.
+const { filter, reloadFilter, FILTER_OPTIONS, filterTitle } = useStoredFilter({
+	scope: () => mailbox,
+	onChange: () => resetThreads(false),
+	starrable: () => ![mailboxIds.trash, 'starred'].includes(mailbox),
+})
+
 const isMailboxLoaded = ref(false)
 
 // Reset resource for a mailbox: always the first window. Over-fetches one row (PAGE_LENGTH + 1) to
@@ -1335,14 +1154,7 @@ const threads = createResource({
 		start: 0,
 		filter_by: filter.value,
 	}),
-	transform: (data: [Thread[], string]) => {
-		// In refresh mode, snapshot the live loaded list now — before this window replaces it — so the
-		// merge in onResetSuccess reflects any optimistic removals/undo-inserts made during the fetch.
-		if (refreshMode.value) refreshSnapshot = threadsResource.value.data ?? []
-		const rows = data[0]
-		hasMore.value = rows.length > PAGE_LENGTH
-		return rows.slice(0, PAGE_LENGTH)
-	},
+	transform: (data: [Thread[], string]) => takeResetWindow(data[0]),
 	onSuccess: (data: [Thread[], string]) => {
 		onResetSuccess()
 		if (mailbox === data[1]) isMailboxLoaded.value = true
@@ -1362,29 +1174,10 @@ const showDeleteBanner = computed(
 		(showReadingPane.value || !threadID),
 )
 
-// ── Infinite scroll ─────────────────────────────────────────────────────────────────────────────
-// Two fetch paths that both write `threadsResource.value.data` — the single accumulated list every
-// consumer reads: the reset resources above replace it (start:0); the append resources below push the
-// next window onto it. Kept separate so createResource's replace-on-reload never fights the append.
-
-// Appends the next window onto the loaded list, deduped by thread_id. `start = data.length` stays
-// correct across optimistic removals (the server list shifts left by the same rows we dropped); the
-// only skew is new mail inserted at the front, which the dedupe absorbs and the next reset reconciles.
-const appendThreads = (rows: Thread[]) => {
-	loadingMore.value = false
-	// Discard a stale window that resolved after a reset began (mailbox switch, refresh, undo, …).
-	if (loadEpoch !== epoch.value) return
-	const seen = new Set(threadsResource.value.data.map((t: Thread) => t.thread_id))
-	const fresh = rows
-		.slice(0, PAGE_LENGTH)
-		.filter((t) => !seen.has(t.thread_id) && !recentlyRemoved.has(t.thread_id))
-	// Stop auto-loading if the window added nothing new (offset stuck behind heavy front-inserted mail);
-	// the next reset (poll/refresh/socket) reconciles. Guards against a tight reload loop while the
-	// sentinel stays in view.
-	hasMore.value = rows.length > PAGE_LENGTH && fresh.length > 0
-	threadsResource.value.data = [...threadsResource.value.data, ...fresh]
-	openPendingEdgeThread()
-}
+// ── Append fetches ──────────────────────────────────────────────────────────────────────────────
+// The other half of the two fetch paths that write `threadsResource.value.data`: the reset resources
+// above replace it (start:0), these push the next window onto it (via appendThreads). Kept separate so
+// createResource's replace-on-reload never fights the append.
 
 const loadMoreThreads = createResource({
 	url: 'suite.mail.api.mail.get_threads',
@@ -1412,59 +1205,9 @@ const loadMoreSearch = createResource({
 	onError: () => (loadingMore.value = false),
 })
 
-const loadMore = () => {
-	if (!hasMore.value || loadingMore.value || threadsResource.value.loading) return
-	loadingMore.value = true
-	loadEpoch = epoch.value
-	;(mailbox === 'search' ? loadMoreSearch : loadMoreThreads).reload()
-}
-
-const loadMoreSentinel = useTemplateRef('loadMoreSentinel')
-
-// True while the sentinel is in view.
-const sentinelVisible = ref(false)
-
-// The height the list had reached the last time we topped it up, so a fill that adds nothing can be
-// detected. Reset at the start of each fill episode (see below).
-let lastFillHeight = 0
-
-useIntersectionObserver(
-	loadMoreSentinel,
-	([entry]) => {
-		const entering = !!entry?.isIntersecting && !sentinelVisible.value
-		sentinelVisible.value = !!entry?.isIntersecting
-		if (entering) lastFillHeight = 0
-		if (sentinelVisible.value) loadMore()
-	},
-	{ root: mailListRef },
-)
-
-// Rescues the one case the observer cannot: the rendered list is too short to scroll, so the sentinel
-// can never leave and re-enter the viewport to fire again — infinite scroll would die with nothing left
-// to scroll. A window of 25 threads can collapse to a single stack row, so filling the viewport can take
-// several of them.
-//
-// Both guards are load-bearing. Stop once the list can scroll, because from there the user's own
-// scrolling drives the observer. And stop if a window added no height: its rows landed somewhere they
-// cannot be seen (a collapsed date group), so further windows would be just as invisible — without this,
-// collapsing a large group turns into a stampede that walks the entire mailbox 25 threads at a time.
-watch(groupedRows, () => {
-	if (!sentinelVisible.value || !hasMore.value) return
-
-	nextTick(() => {
-		const el = mailListRef.value
-		if (!el || !sentinelVisible.value) return
-
-		const grew = el.scrollHeight > lastFillHeight
-		lastFillHeight = el.scrollHeight
-		if (el.scrollHeight <= el.clientHeight && grew) loadMore()
-	})
-})
-
-// The reading pane's Next arrow can always advance while more threads remain to load (crossing the
-// last loaded thread triggers an append). The Prev arrow is disabled at the first loaded thread, which
-// is the first thread overall (we always start from the top).
-const canGoNext = computed(() => hasMore.value)
+// Keep infinite scroll alive while the rendered list is too short to scroll (see topUpIfShort). Must
+// stay below groupedRows: `watch` evaluates its source at setup.
+watch(groupedRows, topUpIfShort)
 
 const isLoading = computed(() => {
 	// Search is one page: its header (input + filter chips) mounts immediately and stays put
@@ -1476,10 +1219,6 @@ const isLoading = computed(() => {
 	if (refillPending.value) return true
 	return !threadsResource.value.data.length && threadsResource.value?.loading
 })
-
-const threadIDs = computed(
-	() => threadsResource.value.data?.map((thread: Thread) => thread.thread_id) || [],
-)
 
 // Reset-to-top: refetch only the first window, replacing the loaded list and scrolling to the top
 // (via onResetSuccess). Bumping `epoch` discards any append/refresh still in flight. Used for
@@ -1493,8 +1232,7 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 	// This reload supersedes any pending refill (its own, or an interrupting mailbox switch); from here
 	// the resource's `loading` drives isLoading, so the flag has done its job.
 	refillPending.value = false
-	refreshMode.value = false
-	epoch.value++
+	beginReset()
 	resetSelections()
 	// Clear the previous search's count so the header doesn't show a stale total while the new fetch runs.
 	if (mailbox === 'search') {
@@ -1514,16 +1252,7 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 // threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
 // the Refresh button, the periodic poll, and the new-mail socket. Selections are preserved.
 const refreshThreads = (reloadMailboxes = true) => {
-	if (threadsResource.value.loading || loadingMore.value) return
-
-	refreshMode.value = true
-	// Bump the epoch so an append still in flight is discarded (appendThreads checks it) instead of
-	// landing after the merge and clobbering it. A new append can't start mid-refresh (loadMore bails
-	// while the resource is loading), so this fully closes the refresh/append race. The merge base
-	// (refreshSnapshot) and scroll anchor are captured later, at response time, so they reflect the list
-	// as it actually is when the window arrives — not a stale start-of-refresh copy.
-	epoch.value++
-	refreshEpoch = epoch.value
+	if (!beginRefresh()) return
 	threadsResource.value.reload()
 	if (reloadMailboxes) mailboxes.reload()
 }
@@ -1545,10 +1274,7 @@ const removeThreadsFromList = (thread_ids: string[]): Thread[] => {
 		(thread: Thread) => !thread_ids.includes(thread.thread_id),
 	)
 	// Suppress re-insertion by an in-flight refresh/append until the server-side removal lands.
-	thread_ids.forEach((id) => {
-		recentlyRemoved.add(id)
-		setTimeout(() => recentlyRemoved.delete(id), 15000)
-	})
+	suppressRemoved(thread_ids)
 	// If this emptied the list but more exist, a refill is coming (refillIfEmpty, once the mutation
 	// lands) — flag it so the empty state doesn't flash in the meantime.
 	if (!threadsResource.value.data.length && hasMore.value) refillPending.value = true
@@ -1573,7 +1299,7 @@ const restoreThreadsToList = (restored: Thread[]) => {
 	// Rows are back (removal failed / undo), so no refill is coming — drop the pending-refill hold.
 	refillPending.value = false
 	// A restored thread should be visible again — lift any removal suppression.
-	restored.forEach((t: Thread) => recentlyRemoved.delete(t.thread_id))
+	unsuppressRemoved(restored.map((t: Thread) => t.thread_id))
 	const list = [...(threadsResource.value.data ?? [])]
 	const present = new Set(list.map((t: Thread) => t.thread_id))
 	for (const thread of restored) {
@@ -1595,7 +1321,7 @@ watch(
 
 		isMailboxLoaded.value = false
 		threadsResource.value.data = []
-		filter.value = localStorage.getItem(`user:${user.data.name}:filter:${mailbox}`) || null
+		reloadFilter()
 		focusedRowKey.value = undefined
 		collapsedGroups.value = []
 		// Stacks re-collapse on a mailbox switch. Note a *filter* change deliberately doesn't clear
@@ -1645,34 +1371,14 @@ onUnmounted(() => {
 const goToMailbox = () =>
 	router.push({ name: 'mail-mailbox', params: { accountId, mailbox }, query: route.query })
 
-const getThreadByOffset = (offset: number, currentThread: string = threadID!) =>
-	threadIDs.value[threadIDs.value.indexOf(currentThread) + offset]
-
 const goToThread = (threadID: string) => {
 	threadSlide.value = pendingThreadSlide
 	if (threadID)
 		router.push({ name: 'mail-mail', params: { accountId, mailbox, threadID }, query: route.query })
 }
 
-// Stepping past the last loaded thread loads the next window, then opens/focuses the newly appended
-// thread once it arrives (`openPendingEdgeThread`, called from the append's onSuccess). `action`
-// distinguishes the reading view (open) from list keyboard focus (focus). `anchor` is the thread we
-// stepped off (the previously-last loaded), captured so we can resolve its successor after the append.
-// There's no backward case — the first loaded thread is the first thread overall.
-let pendingEdgeThread: { action: 'open' | 'focus'; anchor: string | undefined } | null = null
-
-const loadMoreThenOpenEdge = (offset: number, action: 'open' | 'focus') => {
-	// One crossing at a time: ignore further edge steps until the append resolves, so key auto-repeat
-	// at the bottom of the list can't fire a burst of loads.
-	if (pendingEdgeThread || offset < 0 || !hasMore.value) return
-	// A focus crossing can only happen from the last navigable row, whose last thread is the last loaded
-	// one — so the tail anchors the successor without needing to map a row back to a thread.
-	pendingEdgeThread = { action, anchor: action === 'open' ? threadID : threadIDs.value.at(-1) }
-	loadMore()
-}
-
 const goToThreadByOffset = (offset: number) => {
-	const next = getThreadByOffset(offset)
+	const next = threadByOffset(offset)
 	if (next) return goToThread(next)
 	loadMoreThenOpenEdge(offset, 'open')
 }
@@ -1694,64 +1400,11 @@ const { onTouchStart: onThreadTouchStart, onTouchEnd: onThreadTouchEnd } = useSw
 const threadSlide = ref('')
 let pendingThreadSlide = ''
 
-const openPendingEdgeThread = () => {
-	if (!pendingEdgeThread) return
-	const { action, anchor } = pendingEdgeThread
-	// The successor of the anchor is now loaded (undefined only if nothing new arrived — then stop).
-	const id = getThreadByOffset(1, anchor)
-	pendingEdgeThread = null
-	if (!id) return
-	if (action === 'open') goToThread(id)
-	else focusOnThread(id)
-}
-
 const goToNextThreadOrMailbox = (excludedThreads: string[] = []) => {
 	const idx = threadIDs.value.indexOf(threadID)
 	const next = threadIDs.value.slice(idx + 1).find((id) => !excludedThreads.includes(id))
 	if (next) goToThread(next)
 	else goToMailbox()
-}
-
-const focusRow = (row?: NavRow) => {
-	if (!row) return
-
-	focusedRowKey.value = row.key
-	scrollIntoView(row.key)
-}
-
-// The row that stands for a thread on screen: its own row when rendered, the collapsed stack that hides
-// it, or — when its whole day is folded away — that day's header. Callers name a thread ("go to the
-// first mail", "open the thread that just loaded"); this is how that lands somewhere visible.
-const rowForThread = (threadID?: string): NavRow | undefined => {
-	if (!threadID) return
-
-	const row = navigableRows.value.find(
-		(row) =>
-			(row.type === 'thread' && row.thread.thread_id === threadID) ||
-			// Only a collapsed stack stands in for its members. An expanded one precedes its member rows,
-			// so without this guard every member would resolve to the stack row above it.
-			(row.type === 'stack' && !row.expanded && row.threads.some((t) => t.thread_id === threadID)),
-	)
-	if (row) return row
-
-	const dateKey = collapsedGroups.value.find((key) => getGroupThreads(key)?.includes(threadID))
-	return navigableRows.value.find((row) => row.key === `group:${dateKey}`)
-}
-
-const focusOnThread = (threadID?: string) => focusRow(rowForThread(threadID))
-
-const scrollIntoView = (rowKey: string) => {
-	// Centering the focused row is a keyboard-navigation affordance; on mobile it
-	// only made the list visibly jump behind the thread pane's slide-in.
-	if (isMobile.value) return
-
-	// The row may have only just been revealed by its stack or its day opening, so wait for the render
-	// before looking it up. A no-op when nothing changed.
-	nextTick(() => {
-		mailListRef.value
-			?.querySelector(`[data-row-key="${rowKey}"]`)
-			?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-	})
 }
 
 // Actions
@@ -1928,38 +1581,6 @@ const emptyMailboxOptions = computed(() => ({
 	],
 }))
 
-// Filter
-
-const FILTER_OPTIONS = [
-	{
-		label: __('All'),
-		icon: Mails,
-		onClick: () => setFilter(null),
-	},
-	{
-		label: __('Unread'),
-		icon: MailIcon,
-		onClick: () => setFilter('unread'),
-	},
-	{
-		label: __('Starred'),
-		icon: Star,
-		onClick: () => setFilter('starred'),
-		condition: () => ![mailboxIds.trash, 'starred'].includes(mailbox),
-	},
-	{
-		label: __('Has attachments'),
-		icon: Paperclip,
-		onClick: () => setFilter('has_attachments'),
-	},
-]
-
-const setFilter = (value: string | null) => {
-	filter.value = value
-	localStorage.setItem(`user:${user.data.name}:filter:${mailbox}`, value ?? '')
-	resetThreads(false)
-}
-
 // UI formatting
 
 const mailboxName = computed(() => {
@@ -1999,16 +1620,7 @@ const title = computed(() => {
 			: __('{0} results', [String(searchTotal.value)])
 	}
 
-	switch (filter.value) {
-		case 'unread':
-			return __('Unread Mails')
-		case 'starred':
-			return __('Starred Mails')
-		case 'has_attachments':
-			return __('With Attachments')
-		default:
-			return __('All Mails')
-	}
+	return filterTitle.value
 })
 
 // The search modal lives in HeaderActions but is opened from two places — its own button, and the

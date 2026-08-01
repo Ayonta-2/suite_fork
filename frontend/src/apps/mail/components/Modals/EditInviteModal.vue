@@ -18,6 +18,7 @@
 					label: __('Save'),
 					variant: 'solid',
 					disabled: !isEditableInvite || !accountRequest.isDirty,
+					loading: accountRequest.save?.loading,
 					onClick: saveInvite,
 				},
 			],
@@ -62,6 +63,7 @@
 					v-model="inviteExpiresAt"
 					type="datetime-local"
 					:label="__('Expires At')"
+					:description="__('The invitation link stops working after this time.')"
 					:disabled="!isEditableInvite"
 				/>
 				<hr />
@@ -128,7 +130,7 @@ type MethodResource = { submit?: () => void; loading?: boolean }
 type AccountRequestResource = {
 	doc?: InviteDoc
 	isDirty: boolean
-	save?: { submit?: () => void }
+	save?: { submit?: () => void; loading?: boolean }
 	reload?: () => void
 	sendVerificationEmail?: MethodResource
 }
@@ -219,8 +221,8 @@ const getMailAccountRequest = () =>
 				raiseToast(__('Invite updated.'))
 				emit('reloadInvites')
 			},
-			onError: (error: { messages?: string[] }) => {
-				raiseToast(error.messages?.[0] || __('Failed to update invite.'), 'error')
+			onError: (error: { messages?: string[]; message?: string }) => {
+				raiseToast(error?.messages?.[0] || error?.message || __('Request failed.'), 'error')
 				accountRequest.value?.reload?.()
 			},
 		},
@@ -228,8 +230,8 @@ const getMailAccountRequest = () =>
 			sendVerificationEmail: {
 				method: 'send_verification_email',
 				onSuccess: () => raiseToast(__('Invitation email sent.')),
-				onError: (error: { messages?: string[] }) =>
-					raiseToast(error.messages?.[0] || __('Failed to send invitation email.'), 'error'),
+				onError: (error: { messages?: string[]; message?: string }) =>
+					raiseToast(error?.messages?.[0] || error?.message || __('Request failed.'), 'error'),
 			},
 		},
 	})

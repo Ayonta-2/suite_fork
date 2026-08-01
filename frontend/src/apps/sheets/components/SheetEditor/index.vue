@@ -560,9 +560,13 @@
 
         <!-- Filter by values -->
         <template v-if="filterPanel.mode === 'values'">
+          <!-- When a search is active these act on the *shown* matches only
+               (Google-Sheets behaviour). Relabel so it's obvious — otherwise
+               "Clear" during a search reads as "clear everything" and silently
+               leaves the hidden values checked. -->
           <div class="sn-fp-vlinks">
-            <Button variant="ghost" size="sm" label="Select all" @click="selectAllFilterValues" />
-            <Button variant="ghost" size="sm" label="Clear" @click="clearAllFilterValues" />
+            <Button variant="ghost" size="sm" :label="valueSearchActive ? 'Select shown' : 'Select all'" @click="selectAllFilterValues" />
+            <Button variant="ghost" size="sm" :label="valueSearchActive ? 'Clear shown'  : 'Clear'"      @click="clearAllFilterValues" />
             <span class="sn-fp-count">Displaying {{ filterPanel.valueSet.size }}</span>
           </div>
           <FormControl
@@ -1233,6 +1237,7 @@ import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
 import { autoCloseKey } from '../../utils/formula-autoclose.js'
+import { overlayRectStyle } from '../../utils/overlay-rect.js'
 import { isCanvasClipboardTarget } from '../../utils/clipboard-target.js'
 import { computeFillDown, computeFillRight } from '../../engine/fill-series.js'
 import { detectSeries }                       from '../../engine/patterns/index.js'
@@ -2019,6 +2024,10 @@ const filteredFilterValues = computed(() => {
   return filterPanel.allValues.filter(v => String(v).toLowerCase().includes(q))
 })
 
+// True while the value search box narrows the list — Select all / Clear then
+// act on the shown subset, so their labels change to say so.
+const valueSearchActive = computed(() => filterPanel.valueSearch.trim() !== '')
+
 function toggleFilterValue(v) {
   if (filterPanel.valueSet.has(v)) filterPanel.valueSet.delete(v)
   else                             filterPanel.valueSet.add(v)
@@ -2710,23 +2719,16 @@ const filterHighlightStyle = computed(() => {
   const br = grid.getCellRect?.(r1, c1)
   if (!tl || !br) return null
   const zoom    = grid.getZoom?.() ?? 1
-  const headerY = COL_HEADER_H * zoom
-  const headerX = ROW_HEADER_W * zoom
-  const right   = br.x + br.width
-  const bottom  = br.y + br.height
-  // No viewport clamp: when the range runs past the viewport the far borders
-  // sit off-screen and the grid-wrap's overflow:hidden clips them (no frame at
-  // the edge); the opaque scrollbar (z-index 16) covers any border landing in
-  // its gutter while it's visible.
-  if (bottom <= headerY || right <= headerX) return null
-  const top  = Math.max(tl.y, headerY)
-  const left = Math.max(tl.x, headerX)
-  return {
-    top:    top  + 'px',
-    left:   left + 'px',
-    width:  (right  - left) + 'px',
-    height: (bottom - top)  + 'px',
-  }
+  // `|| Infinity` treats a 0/undefined viewport (before the first layout) as
+  // "unclamped" — a 0 would otherwise collapse the overlay to nothing.
+  const vp    = grid.getViewportSize?.()
+  const viewW = vp?.w || Infinity
+  const viewH = vp?.h || Infinity
+  return overlayRectStyle(tl, br, {
+    headerX: ROW_HEADER_W * zoom,
+    headerY: COL_HEADER_H * zoom,
+    viewW, viewH,
+  })
 })
 
 // Per-sub-sheet peer dots — small colored circles next to each tab label
@@ -3280,6 +3282,13 @@ function _setupGridInstance() {
   grid.onRender(() => { renderVersion.value++ })
 }
 
+function _pinGridWrapScroll() {
+  const wrap = gridWrapRef.value
+  if (!wrap) return
+  if (wrap.scrollTop)  wrap.scrollTop = 0
+  if (wrap.scrollLeft) wrap.scrollLeft = 0
+}
+
 function _setupEventListeners() {
   canvasRef.value.addEventListener('contextmenu', _onCanvasContextMenu)
   // computeSelectionStats fires from the grid's onSelect callback on every
@@ -3291,6 +3300,12 @@ function _setupEventListeners() {
     grid.resize(width, height)
   })
   ro.observe(gridWrapRef.value)
+  // Safety net: the grid-wrap must never scroll natively — all scrolling flows
+  // through the canvas + custom scrollbars, so its scrollTop/Left are meant to
+  // stay 0. An overlay taller/wider than the viewport can still give it
+  // scrollable overflow, and a stray focus/scrollIntoView then scrolls it,
+  // dragging the canvas off-position. Pin it back the instant that happens.
+  gridWrapRef.value.addEventListener('scroll', _pinGridWrapScroll, { passive: true })
   window.addEventListener('keydown',      onGlobalKey)
   window.addEventListener('beforeunload', onBeforeUnloadGuard)
   document.addEventListener('paste',     onDocPaste)
@@ -3380,6 +3395,7 @@ onBeforeUnmount(() => {
     saveExisting(props.id, currentTitle.value, { keepalive: true })
   }
   window.removeEventListener('beforeunload', onBeforeUnloadGuard)
+  gridWrapRef.value?.removeEventListener('scroll', _pinGridWrapScroll)
   ro?.disconnect()
   grid?.destroy()
   window.removeEventListener('keydown', onGlobalKey)
@@ -6404,20 +6420,27 @@ function toggleShowFormulas() {
 <!-- Unscoped: frappe-ui's Dropdown teleports its menu to document.body, so
      a scoped rule never reaches it. This caps the menu height (and the
      inner content body Reka renders inside it) so long lists like the
-     number-format picker stay scrollable instead of falling off-screen. -->
+     number-format picker stay scrollable instead of falling off-screen.
+     frappe-ui beta.3 named the teleported menu `.dropdown-content`; beta.25
+     (the version Suite ships) renamed it to `.menu-content` /
+     `[data-reka-menu-content]`, so target every marker or the cap silently
+     stops matching after a frappe-ui bump and the menu clips off-screen. -->
 <style>
 .dropdown-content,
-.dropdown-content [data-slot=content-body] {
+.dropdown-content [data-slot=content-body],
+.menu-content,
+[data-reka-menu-content] {
   max-height: min(60vh, 480px);
   overflow-y: auto;
 }
-/* reka-ui teleports the popover to <body> as `.dropdown-content` (frappe-ui
-   default z-index:50) with no marker we can target, so the slicer's column menu
-   rendered behind the floating slicer (8400) / context menu (9000). Gate the
-   bump on `body:has(.sn-slicer)` — only while a Sheets slicer is floating — so
+/* reka-ui teleports the popover to <body> (frappe-ui default z-index:50) with
+   no marker we can target, so the slicer's column menu rendered behind the
+   floating slicer (8400) / context menu (9000). Gate the bump on
+   `body:has(.sn-slicer)` — only while a Sheets slicer is floating — so
    dropdowns everywhere else in the app (and other Suite products) keep their
    normal stacking. The doubled class still outranks the single-class default. */
-body:has(.sn-slicer) .dropdown-content.dropdown-content { z-index: 9500; }
+body:has(.sn-slicer) .dropdown-content.dropdown-content,
+body:has(.sn-slicer) .menu-content.menu-content { z-index: 9500; }
 
 /* A Frappe UI Dialog draws a translucent (~12% black) scrim over the grid.
    The filter-range outline and pivot-output highlight are full-height dark
@@ -6435,8 +6458,8 @@ body:has(.dialog-overlay) .sn-pivot-highlight { display: none; }
    z-index sits above the filter (14) / pivot (15) range outlines so the opaque
    track paints over any outline border that reaches the scrollbar gutter, but
    below the notes drawer (30) and popovers. */
-.sn-sb          { position:absolute; z-index:16; background:var(--surface-menu-bar, #f8f8f8);
-                  border:0 solid var(--outline-gray-2, #e2e2e2);
+.sn-sb          { position:absolute; z-index:16; background:var(--surface-gray-2, var(--surface-base));
+                  border:0 solid var(--outline-gray-2);
                   opacity:1; transition:opacity .2s ease; }
 /* --sn-sb-thick is published by canvas/scrollbars.js from SCROLLBAR_THICK, the
    single source of truth; the 12px fallback only covers the pre-mount frame. */
@@ -6444,18 +6467,18 @@ body:has(.dialog-overlay) .sn-pivot-highlight { display: none; }
 .sn-sb-h        { left:0; bottom:0; height:var(--sn-sb-thick, 12px); border-top-width:1px; }
 .sn-sb-corner   { position:absolute; z-index:16; right:0; bottom:0;
                   width:var(--sn-sb-thick, 12px); height:var(--sn-sb-thick, 12px);
-                  background:var(--surface-menu-bar, #f8f8f8);
-                  border-left:1px solid var(--outline-gray-2, #e2e2e2);
-                  border-top:1px solid var(--outline-gray-2, #e2e2e2);
+                  background:var(--surface-gray-2, var(--surface-base));
+                  border-left:1px solid var(--outline-gray-2);
+                  border-top:1px solid var(--outline-gray-2);
                   opacity:1; transition:opacity .2s ease; }
 /* Auto-hidden state — faded out and click-through so cells under the gutter
    stay reachable. JS (canvas/scrollbars.js) toggles this on inactivity. */
 .sn-sb--hidden  { opacity:0; pointer-events:none; }
-.sn-sb-thumb    { position:absolute; border-radius:6px; background:var(--ink-gray-4, #b8b8b8);
+.sn-sb-thumb    { position:absolute; border-radius:6px; background:var(--ink-gray-4);
                   transition:background .12s ease; cursor:grab; touch-action:none; }
 .sn-sb-v .sn-sb-thumb { top:0; left:2px; right:2px; }
 .sn-sb-h .sn-sb-thumb { left:0; top:2px; bottom:2px; }
-.sn-sb-thumb:hover           { background:var(--ink-gray-5, #7c7c7c); }
-.sn-sb-dragging .sn-sb-thumb { background:var(--ink-gray-6, #6b6b6b); cursor:grabbing; }
+.sn-sb-thumb:hover           { background:var(--ink-gray-5); }
+.sn-sb-dragging .sn-sb-thumb { background:var(--ink-gray-6); cursor:grabbing; }
 .sn-sb-dragging              { cursor:grabbing; user-select:none; }
 </style>

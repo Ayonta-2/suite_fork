@@ -1,27 +1,25 @@
 import frappe
 
-from suite.drive.api.permissions import get_teams, user_has_permission
+from suite.drive.api.permissions import user_has_permission
 from suite.drive.overrides.file import File, content_query_conditions
 
 READ_PTYPES = frozenset({"read", "report", "export", "email", "print", "select"})
 
 
 def filter_templates(user):
-    if user == "Administrator":
-        return ""
-
-    owner_clause = f"`tabWriter Template`.`owner` = {frappe.db.escape(user)}"
-    teams = ", ".join(frappe.db.escape(team) for team in get_teams(user))
-    if not teams:
-        return f"({owner_clause})"
-    return f"({owner_clause} or `tabWriter Template`.team in ({teams}))"
+    # Templates are site-wide readable; guests get nothing.
+    if (user or frappe.session.user) == "Guest":
+        return "1=0"
+    return ""
 
 
 def template_has_permission(doc, ptype="read", user=None):
     user = user or frappe.session.user
     if ptype == "create" or user == "Administrator":
         return True
-    return doc.get("owner") == user or doc.get("team") in get_teams(user)
+    if ptype in READ_PTYPES:
+        return user != "Guest"
+    return doc.get("owner") == user
 
 
 def document_query_conditions(user):

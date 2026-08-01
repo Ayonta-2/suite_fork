@@ -38,7 +38,10 @@ const confirmPassword = ref('')
 const errorMessage = computed(() =>
 	confirmPassword.value && confirmPassword.value !== newPassword.value
 		? __('Passwords do not match')
-		: changePassword.error?.messages?.[0],
+		: changePassword.error &&
+			(changePassword.error?.messages?.[0] ||
+				changePassword.error?.message ||
+				__('Request failed.')),
 )
 
 const dialogOptions = computed(() => ({
@@ -47,6 +50,7 @@ const dialogOptions = computed(() => ({
 		{
 			label: __('Confirm'),
 			variant: 'solid',
+			loading: changePassword.loading,
 			onClick: () => changePassword.submit(),
 			disabled: !newPassword.value.length || confirmPassword.value !== newPassword.value,
 		},

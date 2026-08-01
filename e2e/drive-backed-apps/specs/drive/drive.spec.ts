@@ -19,7 +19,7 @@ test.describe.serial("Drive critical paths", () => {
 		const { page } = owner;
 		const folderName = uniqueName(run.run_id, "folder");
 		const uploadedName = uniqueName(run.run_id, "upload", ".txt");
-		const renamedName = uniqueName(run.run_id, "renamed", ".txt");
+		const renamedName = uniqueName(run.run_id, "renamed with spaces", ".txt");
 		const uploadedLabel = uploadedName.replace(/\.txt$/, "");
 		const renamedLabel = renamedName.replace(/\.txt$/, "");
 
@@ -50,9 +50,16 @@ test.describe.serial("Drive critical paths", () => {
 
 		await openEntityActions(page, uploaded.name);
 		await page.getByRole("button", { name: "Rename", exact: true }).click();
-		const renameDialog = page.getByRole("dialog", { name: "Rename" });
-		await renameDialog.getByRole("textbox").fill(renamedLabel);
-		await renameDialog.getByRole("button", { name: "Confirm" }).click();
+		// Renaming is inline in the row, not a dialog.
+		const renameInput = page
+			.getByTestId(`drive-entity-${uploaded.name}`)
+			.getByRole("textbox");
+		await renameInput.fill("");
+		// Typed key by key: the row is a <button>, so a space must not activate it.
+		await renameInput.pressSequentially(renamedLabel);
+		await expect(renameInput).toHaveValue(renamedLabel);
+		await expect(page).toHaveURL(/\/drive\/?$/);
+		await renameInput.press("Enter");
 		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(renamedLabel);
 
 		await openEntityActions(page, uploaded.name);

@@ -72,13 +72,14 @@ test("renames, moves, trashes, restores, and reopens a Writer document from Driv
 	await expect(documentRow).toContainText(title);
 	await openEntityActions(owner.page, file.name);
 	await owner.page.getByRole("button", { name: "Rename", exact: true }).click();
-	const renameDialog = owner.page.getByRole("dialog", { name: "Rename" });
-	await renameDialog.getByRole("textbox").fill(renamedTitle);
+	// Renaming is inline in the row, not a dialog.
+	const renameInput = documentRow.getByRole("textbox");
+	await renameInput.fill(renamedTitle);
 	const [renameResponse] = await Promise.all([
 		owner.page.waitForResponse(
 			(response) => response.url().includes("suite.drive.api.files.rename"),
 		),
-		renameDialog.getByRole("button", { name: "Confirm" }).click(),
+		renameInput.press("Enter"),
 	]);
 	if (!renameResponse.ok()) throw new Error(await renameResponse.text());
 	await expect(documentRow).toContainText(renamedTitle);

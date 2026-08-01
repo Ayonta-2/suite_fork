@@ -249,7 +249,7 @@
 					:class="{
 						'w-2/3': !isMobile && showReadingPane,
 						'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
-						'fixed inset-0 z-20 transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
+						'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
 							isMobile,
 						'invisible translate-x-full': isMobile && !openSender,
 						hidden: !isMobile && !showReadingPane && !openSender,
@@ -383,6 +383,7 @@ import {
 } from 'frappe-ui'
 
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
+import { isNavigationKey, navigationOffset } from '@/apps/mail/utils/listNavigation'
 import { useScreenSize, useSettings, useSwipeNav } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
@@ -503,11 +504,10 @@ const handleKeydown = (e: KeyboardEvent) => {
 		return
 	}
 
-	const offset =
-		key === 'arrowup' || key === 'k' ? -1 : key === 'arrowdown' || key === 'j' ? 1 : 0
-	if (!offset) return
+	if (!isNavigationKey(key)) return
 
 	e.preventDefault()
+	const offset = navigationOffset(key)
 	const list = senders.data ?? []
 	const cur = list.findIndex(
 		(s: ScreeningSender) => s.from_email === openSender.value!.from_email,

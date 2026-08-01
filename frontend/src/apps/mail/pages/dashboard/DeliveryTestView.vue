@@ -2,17 +2,22 @@
 	<DashboardLayout :breadcrumbs="[{ label: __('Delivery Test') }]">
 		<div class="flex flex-col gap-5">
 			<DashboardCard :title="__('Test SMTP Delivery')">
-				<template #actions><span /></template>
+				<p class="text-ink-gray-5 border-b px-5 py-3 text-sm">
+					{{
+						__(
+							'Trace a live SMTP delivery to any recipient or domain to diagnose DNS, connection and handshake issues.',
+						)
+					}}
+				</p>
 				<div class="flex items-end gap-3 p-5">
-					<div class="flex-1">
-						<label class="text-ink-gray-5 mb-1.5 block text-xs">{{ __('Recipient or domain') }}</label>
-						<FormControl
-							v-model="target"
-							placeholder="someone@example.com"
-							:disabled="running"
-							@keyup.enter="start"
-						/>
-					</div>
+					<FormControl
+						v-model="target"
+						class="w-full max-w-xl"
+						:label="__('Recipient or domain')"
+						placeholder="someone@example.com"
+						:disabled="running"
+						@keyup.enter="start"
+					/>
 					<Button v-if="!running" variant="solid" :label="__('Start Test')" :disabled="!target" @click="start" />
 					<Button v-else theme="red" :label="__('Stop')" @click="stop" />
 				</div>
@@ -133,10 +138,11 @@ const detail = (event: TraceEvent) => {
 
 const dotClass = (type: string) => {
 	// Anchor suffix matches so incidental substrings (e.g. "lost" inside "ehloStart") don't misfire.
-	if (/Success(ful)?$/i.test(type)) return 'bg-green-500'
-	if (/NotFound$/.test(type)) return 'bg-amber-500'
+	// Semantic surface tokens (not raw palette colours) so the dots follow the theme.
+	if (/Success(ful)?$/i.test(type)) return 'bg-surface-green-7'
+	if (/NotFound$/.test(type)) return 'bg-surface-amber-7'
 	if (/(Error|Failed|Fatal|Timeout|Rejected|Denied|Lost|Refused)$/i.test(type) || TERMINAL_ERRORS.has(type))
-		return 'bg-red-500'
+		return 'bg-surface-red-7'
 	return 'bg-surface-gray-5'
 }
 

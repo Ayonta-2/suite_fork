@@ -13,12 +13,10 @@ test("favourite and unfavourite a file toggles its Favourites membership", async
 	await owner.page.goto("/drive");
 	const name = uniqueName(run.run_id, "fav");
 	const folder = await createFolder(owner.page, name);
-	const team = owner.user.personal_team;
 
 	const favouriteNames = async (): Promise<string[]> => {
 		const response = await owner.page.request.get(
 			"/api/method/suite.drive.api.list.favourites",
-			{ params: { team } },
 		);
 		const rows = await frappeData<Array<{ name: string }>>(response);
 		return rows.map((row) => row.name);

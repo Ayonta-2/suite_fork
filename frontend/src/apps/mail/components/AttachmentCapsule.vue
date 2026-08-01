@@ -31,10 +31,12 @@ import { getAttachmentUrl } from '@/apps/mail/resources'
 import { downloadUrlAsFile, getFileIcon } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 
-const { fileName, blobID, type } = defineProps<{
+const { fileName, blobID, type, account } = defineProps<{
 	fileName: string
 	blobID?: string
 	type?: string
+	// The blob's owning account (merged lists / cross-account panes); active when unset.
+	account?: string
 }>()
 
 const { isMobile } = useScreenSize()
@@ -55,8 +57,13 @@ const downloadAttachment = async () => {
 	if (!blobID) return
 
 	isDownloading.value = true
-	const url = await getAttachmentUrl(blobID, type)
-	downloadUrlAsFile(url, fileName || 'attachment')
-	isDownloading.value = false
+	try {
+		const url = await getAttachmentUrl(blobID, type, account)
+		downloadUrlAsFile(url, fileName || 'attachment')
+	} catch {
+		// the resource's onError already raised a toast; just stop spinning
+	} finally {
+		isDownloading.value = false
+	}
 }
 </script>

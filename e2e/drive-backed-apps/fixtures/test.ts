@@ -16,7 +16,7 @@ const userStatePath = (index: number) =>
 interface ProvisionedUser extends Credentials {
 	user: string;
 	drive_settings: string;
-	personal_team: string;
+	user_folder: string;
 }
 
 interface ProvisionedRun {

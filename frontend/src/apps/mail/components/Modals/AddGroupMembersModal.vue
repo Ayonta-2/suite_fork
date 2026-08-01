@@ -4,7 +4,13 @@
 		:options="{
 			title: __('Add Members'),
 			actions: [
-				{ label: __('Add'), variant: 'solid', disabled: !accountIds.length, onClick: addMembers.submit },
+				{
+					label: __('Add'),
+					variant: 'solid',
+					disabled: !accountIds.length,
+					loading: addMembers.loading,
+					onClick: addMembers.submit,
+				},
 			],
 		}"
 	>
@@ -12,7 +18,9 @@
 			<div class="space-y-1.5">
 				<label class="text-ink-gray-5 block text-xs">{{ __('Accounts') }}</label>
 				<MultiSelect v-model="accountIds" :options="options" />
-				<ErrorMessage :message="addMembers.error?.messages?.[0] || addMembers.error?.message" />
+				<ErrorMessage
+					:message="addMembers.error && (addMembers.error?.messages?.[0] || addMembers.error?.message || __('Request failed.'))"
+				/>
 			</div>
 		</template>
 	</Dialog>

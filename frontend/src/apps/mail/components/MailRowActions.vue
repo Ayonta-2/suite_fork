@@ -10,7 +10,8 @@
 		<button class="action-btn" @click.stop.prevent="emit('setFlagged', !flagged)">
 			<Star
 				class="icon text-ink-gray-5"
-				:style="flagged ? 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' : ''"
+				:class="{ flagged }"
+				:style="flagged ? FLAGGED_STAR_STYLE : ''"
 			/>
 		</button>
 	</Tooltip>
@@ -24,7 +25,8 @@
 	>
 		<Star
 			class="text-ink-gray-5 h-5 w-5"
-			:style="flagged ? 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' : ''"
+			:class="{ flagged }"
+			:style="flagged ? FLAGGED_STAR_STYLE : ''"
 		/>
 	</button>
 </template>
@@ -34,6 +36,7 @@ import { computed } from 'vue'
 import { Archive, Mail, MailOpen, Star, Trash2 } from 'lucide-vue-next'
 import { Tooltip } from 'frappe-ui'
 
+import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 
@@ -125,9 +128,10 @@ const actions = computed(() =>
 }
 
 /* Hover-capable pointers only: on touch, :hover sticks after a tap and the
-   star would stay dark until something else is touched. */
+   star would stay dark until something else is touched. A flagged star is
+   exempt, or its amber wouldn't show until the pointer left the button. */
 @media (hover: hover) {
-	.action-btn:hover > * {
+	.action-btn:hover > :not(.flagged) {
 		color: var(--ink-gray-8) !important;
 		stroke-width: 2 !important;
 	}

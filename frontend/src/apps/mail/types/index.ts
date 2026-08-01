@@ -91,6 +91,14 @@ export interface Recipient {
 	display_name: string | null
 }
 
+// Everyone who has written in a thread, in the order they first wrote. Derived from the thread's own
+// messages rather than served with it (see utils/participants), `is_self` included.
+export interface ThreadParticipant {
+	name: string
+	email: string
+	is_self: boolean
+}
+
 export interface Mailbox {
 	mailbox: string
 	mailbox_id: string
@@ -218,4 +226,13 @@ export interface NotificationPayload {
 		notification_icon?: string
 		click_action?: string
 	}
+}
+
+export interface QuotaUsage {
+	total: number
+	used: number
+	available: number
+	used_percentage: number
+	available_percentage: number
+	unlimited: boolean
 }

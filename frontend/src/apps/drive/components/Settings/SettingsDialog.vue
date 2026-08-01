@@ -70,8 +70,8 @@ const allGroups = [
     label: 'Workspace',
     items: [
       {
-        label: 'Teams',
-        value: 'teams',
+        label: 'Users',
+        value: 'users',
         icon: LucideUserPlus,
         component: markRaw(UserListSettings),
       },

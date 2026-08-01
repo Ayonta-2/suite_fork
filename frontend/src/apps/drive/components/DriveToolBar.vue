@@ -1,15 +1,15 @@
 <template>
-  <div class="flex p-5 pb-0 h-12">
+  <div class="flex items-center px-5 pt-3 h-12">
     <div v-if="selections?.length" class="my-auto w-[40%] text-base text-ink-gray-8">
       {{ selections.length }}
       {{ selections.length === 1 ? __('item') : __('items') }}
       {{ __('selected') }}
     </div>
-    <div v-if="$route.name === 'drive-Shared'"
+    <div v-if="$route.name === 'drive-Home'"
       class="bg-surface-gray-2 rounded-[10px] space-x-0.5 h-7 flex items-center mr-4 py-1">
       <TabButtons v-model="shareView" :options="[
         {
-          label: __('Site'),
+          label: __('Yours'),
           value: false,
         },
         {
@@ -24,6 +24,16 @@
         <LucideSearch class="size-4" />
       </template>
     </TextInput>
+    <Dropdown v-if="!selections?.length" class="ml-2 my-auto" :options="availableFilterTypes.map(({ name, icon }) => ({
+      label: __(name),
+      icon: h('img', { src: icon }),
+      onClick: () => activeFilters.push({ name, icon }),
+      disabled: activeFilters.includes({ name, icon }),
+    }))
+      " :button="{
+        icon: LucideFilter,
+        tooltip: 'Filter',
+      }" :disabled placement="right" />
 
     <div class="flex gap-2 ml-auto my-auto">
       <template v-if="!selections?.length">
@@ -38,20 +48,8 @@
           </div>
         </div>
         <Button v-if="delayedLoading" :loading="true" label="Loading..." />
-        <TeamSelector :disabled="disabled && team === 'all'" v-if="
-          ['Shared', 'Recents', 'Favourites', 'Trash'].includes($route.name)
-        " v-model="team" :none="true" />
-        <Dropdown :options="availableFilterTypes.map(({ name, icon }) => ({
-          label: __(name),
-          icon: h('img', { src: icon }),
-          onClick: () => activeFilters.push({ name, icon }),
-          disabled: activeFilters.includes({ name, icon }),
-        }))
-          " :button="{
-            icon: LucideFilter,
-            tooltip: 'Filter',
-          }" :disabled placement="right" />
-        <SortControl v-if="$route.name !== 'Recents'" v-model="sortOrder" :options="columnHeaders" :menu-items="sortMenuItems" :disabled />
+        <SortControl v-if="$route.name !== 'Recents' && view !== 'list'" v-model="sortOrder" :options="columnHeaders"
+          :menu-items="sortMenuItems" :disabled />
 
         <TabButtons v-model="view" :options="[
           {
@@ -101,13 +99,11 @@ import { view, shareView } from '@/apps/drive/data/prefs'
 import { onKeyDown } from '@vueuse/core'
 import LucideFilter from '~icons/lucide/filter'
 import SortControl from '@/components/SortControl.vue'
-import TeamSelector from '@/apps/drive/components/TeamSelector.vue'
 
 import LucideX from '~icons/lucide/x'
 
 const sortOrder = defineModel('sortOrder')
 const search = defineModel('search')
-const team = defineModel('team')
 const props = defineProps({
   selections: Array,
   actionItems: Array,

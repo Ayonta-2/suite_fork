@@ -21,7 +21,15 @@
 			:disable-collapse="isMobile"
 		>
 			<template #footer-items>
-				<QuotaBar v-if="user.data.is_jmap_configured" :is-collapsed="isSidebarCollapsed" />
+				<!-- Personal widgets (events, quota) are meaningless while administering the server. -->
+				<UpcomingEvents
+					v-if="user.data.is_jmap_configured && !route.meta.isDashboard"
+					:is-collapsed="isSidebarCollapsed"
+				/>
+				<QuotaBar
+					v-if="user.data.is_jmap_configured && !route.meta.isDashboard"
+					:is-collapsed="isSidebarCollapsed"
+				/>
 			</template>
 			<template #sidebar-item="{ item }">
 				<SidebarItem
@@ -93,7 +101,7 @@ import { Avatar, Button, Dropdown, Sidebar, SidebarItem } from 'frappe-ui'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
-import { useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
+import { useAccountSwitch, useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { userStore } from '@/apps/mail/stores/user'
 import MailLogo from '@/apps/mail/components/Icons/MailLogo.vue'
@@ -103,9 +111,11 @@ import SettingsModal from '@/apps/mail/components/Modals/SettingsModal.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import PWASettings from '@/apps/mail/components/PWASettings.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
+import UpcomingEvents from '@/apps/mail/components/UpcomingEvents.vue'
 
 import type { MailboxData } from '@/apps/mail/types'
 
+import ArrowLeft from '~icons/lucide/arrow-left'
 import BookUser from '~icons/lucide/book-user'
 import Clock from '~icons/lucide/clock'
 import ContactRound from '~icons/lucide/contact-round'
@@ -113,6 +123,7 @@ import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
 import Flag from '~icons/lucide/flag'
 import Globe from '~icons/lucide/globe'
+import House from '~icons/lucide/house'
 import KeyRound from '~icons/lucide/key-round'
 import Lock from '~icons/lucide/lock'
 import LogOut from '~icons/lucide/log-out'
@@ -135,6 +146,7 @@ import Wrench from '~icons/lucide/wrench'
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
+const { switchAccount } = useAccountSwitch()
 const { isSidebarOpen, closeSidebar } = useSidebar()
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 const { logout, branding } = sessionStore()
@@ -163,6 +175,23 @@ const subtitle = computed(() => {
 	return currentAccount._name
 })
 
+// Leave the dashboard for the active account's default mailbox (or the address
+// books when no mailbox exists yet). Shared by the header menu item and the
+// pinned "Back to Mail" sidebar item.
+const goToMailbox = () => {
+	const mailbox = mailboxes.data?.[0]?.id
+	if (mailbox)
+		router.push({
+			name: 'mail-mailbox',
+			params: { accountId: store.accountId, mailbox },
+		})
+	else
+		router.push({
+			name: 'mail-address-books',
+			params: { accountId: store.accountId },
+		})
+}
+
 const menuItems = computed(() => [
 	{
 		group: '',
@@ -174,19 +203,7 @@ const menuItems = computed(() => [
 			{
 				icon: Mailbox,
 				label: __('Mailbox'),
-				onClick: () => {
-					const mailbox = mailboxes.data?.[0]?.id
-					if (mailbox)
-						router.push({
-							name: 'mail-mailbox',
-							params: { accountId: store.accountId, mailbox },
-						})
-					else
-						router.push({
-							name: 'mail-address-books',
-							params: { accountId: store.accountId },
-						})
-				},
+				onClick: goToMailbox,
 				condition: () =>
 					user.data.is_suite_admin &&
 					user.data.is_jmap_configured &&
@@ -231,17 +248,7 @@ const menuItems = computed(() => [
 						'div',
 						{
 							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
-							onClick: async () => {
-								// Account-scoped routes carry an accountId, so swap it in place to stay in the
-								// same section. Account-agnostic routes (All Inboxes) have no accountId param —
-								// reusing their name would go nowhere, so route through the account shortcut,
-								// which the guard resolves to that account's default mailbox.
-								router.push(
-									route.params.accountId
-										? { name: route.name, params: { ...route.params, accountId: a.id } }
-										: { name: 'mail-account-shortcut', params: { accountId: a.id } },
-								)
-							},
+							onClick: () => switchAccount(a.id),
 						},
 						[
 							h(Avatar, { label: a._name, size: 'md' }),
@@ -372,8 +379,10 @@ const dashboardItems = [
 			},
 		],
 	},
+	// Logs and Actions each held a group of one whose label repeated the item;
+	// a single System group keeps the nav shorter without losing meaning.
 	{
-		label: __('Observability'),
+		label: __('System'),
 		items: [
 			{
 				label: __('Logs'),
@@ -381,11 +390,6 @@ const dashboardItems = [
 				to: { name: 'mail-logs' },
 				activeFor: ['mail-logs', 'mail-log'],
 			},
-		],
-	},
-	{
-		label: __('Actions'),
-		items: [
 			{
 				label: __('Actions'),
 				icon: Wrench,
@@ -450,7 +454,30 @@ const screeningEnabled = computed(
 )
 
 const sidebarItems = computed(() => {
-	if (route.meta.isDashboard) return dashboardItems
+	if (route.meta.isDashboard) {
+		// A pinned, unlabelled group at the top of the nav: the exit back to the
+		// inbox (previously buried in the header dropdown) and the Overview home.
+		// Admins without a JMAP account (e.g. System Managers) have no inbox to
+		// go back to, so the exit is omitted for them.
+		const pinned = [
+			...(user.data?.is_jmap_configured
+				? [
+						{
+							label: __('Back to Mail'),
+							icon: ArrowLeft,
+							onClick: goToMailbox,
+						},
+					]
+				: []),
+			{
+				label: __('Overview'),
+				icon: House,
+				to: { name: 'mail-overview' },
+				activeFor: ['mail-overview'],
+			},
+		]
+		return [{ label: '', items: pinned }, ...dashboardItems]
+	}
 
 	// Screening is a roleless folder; it gets its own nameless group pinned to the top of the
 	// sidebar, separate from the default and custom mailboxes.
@@ -502,7 +529,7 @@ const sidebarItems = computed(() => {
 	const groups = [
 		{ label: __('Default'), items: defaultItems },
 		{ label: __('Custom'), items: customItems },
-		{ label: __('People'), items: contactsItems },
+		{ label: __('People'), items: contactsItems, collapsible: true },
 	]
 
 	// All Inboxes and Screener share one nameless group pinned above the folders, so they sit at
@@ -515,7 +542,9 @@ const sidebarItems = computed(() => {
 			label: __('All Inboxes'),
 			icon: Mails,
 			to: { name: 'mail-all-inboxes' },
-			activeFor: ['mail-all-inboxes'],
+			// A thread opened from the merged list is its own route (it carries the
+			// thread's real account/mailbox params) but still belongs to this item.
+			activeFor: ['mail-all-inboxes', 'mail-all-inboxes-mail'],
 			suffix: allInboxesUnread.data ? String(allInboxesUnread.data) : '',
 		})
 	if (screenerItem && screeningEnabled.value) pinnedItems.push(screenerItem)

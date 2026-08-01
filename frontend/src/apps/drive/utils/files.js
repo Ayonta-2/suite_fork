@@ -1,16 +1,7 @@
 import router from '@/apps/drive/router'
 
-import {
-  appendBreadcrumb,
-  applyBreadCrumbs,
-  isHomeContext,
-} from '@/apps/drive/data/breadcrumbs'
+import { isHomeContext } from '@/apps/drive/data/breadcrumbs'
 import { currentFolder } from '@/apps/drive/data/currentFolder'
-
-export {
-  applyBreadCrumbs as setBreadCrumbs,
-  buildBreadCrumbs,
-} from '@/apps/drive/data/breadcrumbs'
 import { formatSize } from '@/apps/drive/utils/format'
 import { nextTick } from 'vue'
 import { useTimeAgo } from '@vueuse/core'
@@ -22,7 +13,6 @@ import {
   createSheet,
   getDocuments,
 } from '@/apps/drive/resources/files'
-import { getTeams, getPublicTeams } from '@/apps/drive/resources/files'
 import { set } from 'idb-keyval'
 import { toast } from '@/apps/drive/utils/toasts.js'
 import { useFileUpload, toast as nToast } from 'frappe-ui'
@@ -95,10 +85,6 @@ export function isReadonly(entity) {
   return entity?.kind === 'readonly'
 }
 
-export function isSiteFile(entity) {
-  return !entity?.team
-}
-
 export function isAttachmentRef(entity) {
   return entity?.content_doctype === ATTACHMENT_CONTENT_DOCTYPE
 }
@@ -107,20 +93,25 @@ export function isVirtual(entity) {
   return entity?.kind === 'virtual'
 }
 
+// Where a folder row points. Virtual grouping nodes aren't Files - they're
+// attachment buckets, and their `name` is a doctype or a docname, so routing
+// them like a folder lands on an entity that doesn't exist. A node with an
+// attached_to_name drills into a single document; otherwise into a doctype.
+export const folderRoute = (entity) =>
+  isVirtual(entity)
+    ? {
+        name: 'drive-Attachments',
+        params: entity.attached_to_name
+          ? {
+              doctype: entity.attached_to_doctype,
+              docname: entity.attached_to_name,
+            }
+          : { doctype: entity.attached_to_doctype },
+      }
+    : { name: 'drive-Folder', params: { entityName: entity.name } }
+
 export const openEntity = (entity, new_tab = false) => {
-  // Virtual grouping node: navigate into its attachments bucket. A node with an
-  // attached_to_name drills into a single document; otherwise into a doctype.
-  if (isVirtual(entity)) {
-    return router.push({
-      name: 'drive-Attachments',
-      params: entity.attached_to_name
-        ? {
-            doctype: entity.attached_to_doctype,
-            docname: entity.attached_to_name,
-          }
-        : { doctype: entity.attached_to_doctype },
-    })
-  }
+  if (isVirtual(entity)) return router.push(folderRoute(entity))
 
   if (!entity.is_folder) {
     if (!getRecents.data?.some?.((k) => k.name === entity.name))
@@ -135,22 +126,9 @@ export const openEntity = (entity, new_tab = false) => {
   if (new_tab) {
     return window.open(getFileLink(entity, false), '_blank')
   }
-  if (!['Link', 'Presentation'].includes(entity.file_type) && !isSheet(entity)) {
-    if (!entity.breadcrumbs?.length)
-      appendBreadcrumb({
-        label: entity.file_name,
-        name: entity.name,
-        route: null,
-      })
-    else applyBreadCrumbs(entity)
-  }
-
   // hm?
   if (entity.name === '') {
-    router.push({
-      name: entity.is_private ? 'drive-Home' : 'drive-Team',
-      params: { team },
-    })
+    router.push({ name: 'drive-Home' })
   } else if (entity.is_folder) {
     router.push({
       name: 'drive-Folder',
@@ -164,8 +142,8 @@ export const openEntity = (entity, new_tab = false) => {
       )
     )
       window.open(entity.file_url, '_blank')
-  } else if (entity.file_type === 'Presentation') {
-    window.location.href = '/slides/presentation/' + entity.file_url
+  } else if (isPresentation(entity)) {
+    window.location.href = '/slides/presentation/' + entity.content_docname
   } else if (
     entity.file_type === 'Document' ||
     entity.file_type === 'Markdown'
@@ -254,10 +232,22 @@ export const sortEntities = (rows, order) => {
   // Mutates directly
   const field = order.field
   const asc = order.ascending ? 1 : -1
+  // Nullish sorts last either way — `>` is false in both directions against it
+  const compare = (x, y) => {
+    if (x == null || y == null) return x == y ? 0 : x == null ? 1 : -1
+    return x === y ? 0 : x > y ? 1 : -1
+  }
   rows.sort((a, b) => {
-    return a[field] == b[field] ? 0 : a[field] > b[field] ? asc : -asc
+    // Folders have no byte size, so they sink below files and sort by count
+    if (field === 'file_size' && a.is_folder !== b.is_folder)
+      return a.is_folder ? 1 : -1
+    const sortField =
+      field === 'file_size' && a.is_folder ? 'child_count' : field
+    const primary = compare(a[sortField], b[sortField])
+    if (primary) return primary * asc
+    return compare(a.file_name, b.file_name) * asc
   })
-  if (order.smart) {
+  if (order.smart && field === 'file_name') {
     rows.sort((a, b) => {
       const [endA, endB] = trimCommonPrefix(a.file_name, b.file_name)
       if (!endA) return 0
@@ -471,12 +461,18 @@ const copyToClipboard = (str) => {
 export async function updateURLSlug(file_name) {
   const route = router.currentRoute.value
   await nextTick()
+  // Only the folder/file pages carry a `:slug` segment. Guard against callers
+  // firing on other pages (e.g. rename from a list view), where appending a
+  // slug would produce a bogus path like `/drive/<slug>` that matches no route.
+  if (!['drive-Folder', 'drive-File'].includes(route.name)) return
   const slug = slugger(file_name)
   if (route.params.slug !== slug) {
-    // Hacky, but we only want to update the URL - triggering a reload breaks a lot
+    // Hacky, but we only want to update the URL - triggering a reload breaks a lot.
+    // Preserve the existing history state so vue-router's back/forward tracking
+    // isn't wiped.
     const base = window.location.pathname.split('/').slice(0, 4).join('/')
     const new_path = base + (base.endsWith('/') ? '' : '/') + slug
-    history.replaceState({}, null, new_path)
+    history.replaceState(history.state, '', new_path)
   }
 }
 
@@ -500,20 +496,15 @@ export function getLink(entity, copy = true, withDomain = true) {
       (entity.content_docname || entity.name)
   } else {
     link = `${
-      withDomain ? window.location.origin + '/drive' : ''
-    }/${getLinkStem(entity)}`
+      withDomain ? window.location.origin : ''
+    }/drive/${getLinkStem(entity)}`
   }
   if (!copy) return link
   try {
     copyToClipboard(link).then(() => toast('Copied to your clipboard.'))
   } catch (err) {
     if (err.name === 'NotAllowedError') {
-      toast({
-        icon: 'alert-triangle',
-        iconClasses: 'text-ink-red-6',
-        title: 'Clipboard permission denied',
-        position: 'bottom-right',
-      })
+      toast('Clipboard permission denied')
     } else {
       console.error('Failed to copy link:', err)
     }
@@ -552,11 +543,9 @@ export const pasteObj = (e) => {
       .find((item) => item.type.includes('image'))
       ?.getAsFile()
     const route = router.currentRoute.value
-    if (file && ['drive-Home', 'drive-Folder', 'drive-Team'].includes(route.name)) {
+    if (file && ['drive-Home', 'drive-Folder'].includes(route.name)) {
       const entity = uploadImage(file, {
-        team: route.params.team,
         parent: route.params.entityName || '',
-        personal: isHomeContext() ? 1 : 0,
         total_file_size: file.size,
         file_modified: file.lastModified,
       })
@@ -704,11 +693,10 @@ export function getRandomColor() {
   return color
 }
 export const newExternal = async (type) => {
-  const route = router.currentRoute.value
   if (type === 'Presentation') {
     window.location.href = `/slides/presentation/new?parent=${
       currentFolder.value.name
-    }&team=${route.params.team || ''}`
+    }`
     return
   }
   if (type === 'Spreadsheet') {
@@ -720,7 +708,6 @@ export const newExternal = async (type) => {
     return
   }
   const data = await createDocument.submit({
-    team: route.params.team,
     parent: currentFolder.value.name,
   })
   prettyData([data])
