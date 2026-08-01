@@ -82,6 +82,7 @@
 import { computed, inject, onMounted, reactive, ref } from 'vue'
 import { Button, ErrorMessage, FormControl, SettingsRow, Switch, createResource } from 'frappe-ui'
 
+import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
 import { userStore } from '@/apps/mail/stores/user'
 
 const { accountId } = userStore()
@@ -133,6 +134,10 @@ const createCalendarExport = createResource({
 				.map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
 				.filter(([, v]) => Boolean(v)),
 		)
+		// The date pickers give local days; the API listens UTC, so send the day's bounds
+		// in the user's zone or the first/last hours of the range get cut off.
+		if (cleanedFilter.after) cleanedFilter.after = utcDayStart(cleanedFilter.after as string)
+		if (cleanedFilter.before) cleanedFilter.before = utcDayEnd(cleanedFilter.before as string)
 		return { account: accountId, ...calendarExport, filter: cleanedFilter }
 	},
 	onSuccess: () => ongoingExport.reload(),

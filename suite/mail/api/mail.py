@@ -2,14 +2,13 @@ import hashlib
 import io
 import os
 import zipfile
-from datetime import UTC, datetime
 
 import frappe
 import pydenticon
 import requests
 from frappe import _
 from frappe.model.document import bulk_insert
-from frappe.utils import cint, format_datetime, random_string
+from frappe.utils import cint, random_string
 
 from suite.mail.api.contacts import create_contacts_if_not_exists
 from suite.mail.api.utils import get_avatar_url
@@ -59,6 +58,7 @@ from suite.mail.jmap import (
 )
 from suite.mail.store import get_email_address_index
 from suite.mail.utils import get_config, log_mail_error
+from suite.mail.utils.dt import normalize_utc_z, to_user_timezone
 from suite.mail.utils.user import get_account_emails, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils import convert_html_to_text
@@ -719,7 +719,7 @@ def get_mime_message(name: str) -> dict:
         "created_at": {
             "label": _("Created at"),
             "value": _("{0} (Delivered after {1} seconds)").format(
-                format_datetime(doc.sent_at, "E, MMM d, yyyy 'at' h:mm a"),
+                to_user_timezone(doc.sent_at).strftime("%a, %b %-d, %Y at %-I:%M %p"),
                 round(doc.received_after),
             ),
         },
@@ -950,16 +950,12 @@ def normalize_filter(filter: dict) -> dict:
         filter[key] = "$seen"
         del filter["isRead"]
 
+    # The API listens UTC: full timestamps pass through, a bare date is read as UTC midnight.
     for date_key in ["after", "before"]:
         if filter.get(date_key):
-            filter[date_key] = parse_date_to_utc_iso(filter[date_key])
+            filter[date_key] = normalize_utc_z(filter[date_key])
 
     return {"operator": "AND", "conditions": [{k: v} for k, v in filter.items()]}
-
-
-def parse_date_to_utc_iso(date_str: str) -> str:
-    """Parse date string and convert to ISO format with UTC timezone."""
-    return datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC).isoformat()
 
 
 @frappe.whitelist()

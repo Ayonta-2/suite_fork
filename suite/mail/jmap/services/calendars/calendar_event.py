@@ -4,6 +4,7 @@ from uuid import uuid7
 from suite.mail.jmap.services.calendars.calendar import CalendarService
 from suite.mail.jmap.services.calendars.calendars import CalendarsService
 from suite.mail.jmap.services.calendars.participant_identity import ParticipantIdentityService
+from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.dt import utcnow
 
 
@@ -490,9 +491,10 @@ class CalendarEventService(CalendarsService):
                         "offset": alert["offset"].upper(),
                     }
                 elif alert["type"] == "AbsoluteTrigger":
+                    # The API listens UTC: a naive value is read as UTC and sent as ``...Z``.
                     trigger = {
                         "@type": "AbsoluteTrigger",
-                        "when": alert["when"].upper(),
+                        "when": normalize_utc_z(alert["when"]),
                     }
                 else:
                     continue

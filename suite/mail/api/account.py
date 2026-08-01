@@ -215,8 +215,11 @@ def get_user_info() -> dict | None:
     data = result[0]
 
     # The APIs speak UTC, so the interface needs a zone to render those timestamps in. The User's own
-    # choice wins; sites that never set one fall back to the system zone.
+    # choice wins; sites that never set one fall back to the system zone. The system zone is sent
+    # separately: plain DB datetime fields (e.g. the exchange doctypes) arrive as naive strings in
+    # that zone, and the interface needs it to read them correctly.
     data.time_zone = data.time_zone or get_system_timezone()
+    data.system_time_zone = get_system_timezone()
 
     data.is_suite_admin = is_suite_admin(user)
     data.is_system_manager = is_system_manager(user)
@@ -503,16 +506,17 @@ def create_calendar_export(
 def normalize_calendar_filter(filter: dict) -> dict:
     """Normalize a calendar export filter into a JMAP CalendarEvent/query FilterCondition."""
 
-    from suite.utils.dt import convert_to_utc
+    from suite.mail.utils.dt import normalize_utc_z
 
     normalized = {}
     if title := filter.get("title"):
         normalized["title"] = title
     if in_calendar := filter.get("inCalendar"):
         normalized["inCalendar"] = in_calendar
+    # The API listens UTC: a naive filter value is read as UTC, not system time.
     for key in ("after", "before"):
         if value := filter.get(key):
-            normalized[key] = convert_to_utc(value, naive=True).strftime("%Y-%m-%dT%H:%M:%SZ")
+            normalized[key] = normalize_utc_z(value)
 
     return normalized
 

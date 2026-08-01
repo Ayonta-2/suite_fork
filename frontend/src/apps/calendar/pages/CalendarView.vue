@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Button, Calendar, Dialog, createResource, usePageMeta } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/calendar/utils'
+import { fromEventZone } from '@/apps/calendar/utils/datetime'
 import { userStore } from '@/apps/calendar/stores/user'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
 import EventDetailSidebar from '@/apps/calendar/components/EventDetailSidebar.vue'
@@ -83,17 +84,21 @@ onMounted(() => {
 })
 
 const transformEvent = (event) => {
-	const start = dayjs(event.start)
+	// The all-day heuristic reads the stored wall clock (midnight in the event's own zone).
+	const rawStart = dayjs(event.start)
 	const dur = dayjs.duration(event.duration || 'PT0S')
-	const end = start.add(dur)
 	const isAllDay =
-		start.hour() === 0 &&
-		start.minute() === 0 &&
-		start.second() === 0 &&
+		rawStart.hour() === 0 &&
+		rawStart.minute() === 0 &&
+		rawStart.second() === 0 &&
 		dur.days() > 0 &&
 		dur.hours() === 0 &&
 		dur.minutes() === 0 &&
 		dur.seconds() === 0
+
+	// Timed events are placed in the viewer's zone; all-day events keep their calendar date.
+	const start = isAllDay ? rawStart : fromEventZone(event.start, event.time_zone)
+	const end = start.add(dur)
 
 	return {
 		...event,
@@ -142,8 +147,8 @@ const events = createResource({
 			.month(calendarRef.value?.currentMonth)
 		return {
 			account: store.accountId,
-			from_date: date.startOf('month').subtract(37, 'day').toDate(),
-			to_date: date.endOf('month').add(37, 'day').toDate(),
+			from_date: date.startOf('month').subtract(37, 'day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
+			to_date: date.endOf('month').add(37, 'day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
 			time_zone: dayjs.tz.guess(),
 		}
 	},
@@ -300,6 +305,9 @@ const submitEvent = (sendEmail: boolean) => {
 
 	eventToBeUpdated.start = dayjs(eventToBeUpdated.fromDateTime).format('YYYY-MM-DDTHH:mm:ss')
 	if (!eventToBeUpdated.isAllDay) {
+		// The dragged wall clock is in the viewer's zone; re-zone the event to match, or the
+		// same numbers would be reinterpreted in the event's original zone.
+		eventToBeUpdated.time_zone = dayjs.tz.guess()
 		const start = dayjs(eventToBeUpdated.fromDateTime)
 		const end = dayjs(eventToBeUpdated.toDateTime)
 		const diff = dayjs.duration(end.diff(start))

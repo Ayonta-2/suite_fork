@@ -7,7 +7,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
-from frappe.utils.data import convert_utc_to_system_timezone, get_datetime
 
 from suite.mail.doctype.sieve_script.sieve_script import (
     activate_last_active_sieve_script,
@@ -16,8 +15,8 @@ from suite.mail.doctype.sieve_script.sieve_script import (
 )
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_vacation_response_service
+from suite.mail.utils.dt import normalize_utc_z
 from suite.utils import convert_html_to_text
-from suite.utils.dt import convert_to_utc
 
 
 class VacationResponse(Document):
@@ -104,8 +103,9 @@ def update_vacation_response(
     """Updates the vacation response settings for the given account."""
 
     enabled = bool(enabled)
-    from_date = convert_to_utc(from_date).isoformat() if from_date else None
-    to_date = convert_to_utc(to_date).isoformat() if to_date else None
+    # The API listens UTC: naive values are read as UTC and sent to Stalwart in the ``...Z`` form.
+    from_date = normalize_utc_z(from_date)
+    to_date = normalize_utc_z(to_date)
 
     if enabled and (from_date and to_date) and (from_date >= to_date):
         frappe.throw(_("To Date must be after From Date."))
@@ -139,17 +139,11 @@ def update_vacation_response(
 def format_vacation_response(account: str, vr: dict) -> dict:
     """Formats the vacation response data."""
 
-    from_date = vr.get("fromDate", None)
-    local_from_date = convert_utc_to_system_timezone(get_datetime(from_date)) if from_date else None
-
-    to_date = vr.get("toDate", None)
-    local_to_date = convert_utc_to_system_timezone(get_datetime(to_date)) if to_date else None
-
     return {
         "account": account,
         "enabled": cint(vr.get("isEnabled")),
-        "from_date": local_from_date,
-        "to_date": local_to_date,
+        "from_date": normalize_utc_z(vr.get("fromDate")),
+        "to_date": normalize_utc_z(vr.get("toDate")),
         "subject": vr.get("subject"),
         "text_body": vr.get("textBody"),
         "html_body": vr.get("htmlBody"),

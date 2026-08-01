@@ -18,8 +18,9 @@ from suite.calendar.doctype.calendar_event.invitations import (
 )
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_event_service
+from suite.mail.utils.dt import normalize_utc_z
 from suite.utils import parse_filters
-from suite.utils.dt import convert_to_utc, parse_iso_datetime, utcnow
+from suite.utils.dt import utcnow
 
 
 class CalendarEvent(Document):
@@ -233,12 +234,9 @@ class CalendarEvent(Document):
             frappe.msgprint(_("Please select an account to view calendar events."), alert=True)
             return []
 
-        after = filters.get("after") and convert_to_utc(filters.get("after"), naive=True).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
-        before = filters.get("before") and convert_to_utc(filters.get("before"), naive=True).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        # The API listens UTC: a naive filter value is read as UTC, not system time.
+        after = normalize_utc_z(filters.get("after"))
+        before = normalize_utc_z(filters.get("before"))
 
         filter = {}
         if title:
@@ -651,7 +649,8 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
             "type": a.get("trigger", {}).get("@type", ""),
             "relative_to": a.get("trigger", {}).get("relativeTo", "").title(),
             "offset": a.get("trigger", {}).get("offset", "").upper(),
-            "when": a.get("trigger", {}).get("when", "").upper(),
+            # AbsoluteTrigger.when is a UTCDateTime; serve it in the canonical ``...Z`` form.
+            "when": normalize_utc_z(a.get("trigger", {}).get("when")) or "",
         }
         for uid, a in event.get("alerts", {}).items()
     ]
@@ -685,8 +684,8 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
 
     created = event.get("created")
     updated = event.get("updated")
-    created_utc = created or updated or utcnow()
-    updated_utc = updated or created or utcnow()
+    created_utc = normalize_utc_z(created or updated or utcnow())
+    updated_utc = normalize_utc_z(updated or created or utcnow())
 
     return {
         "name": f"{account}|{event['id']}",
@@ -719,8 +718,8 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
         "may_invite_self": cint(event.get("mayInviteSelf") or False),
         "may_invite_others": cint(event.get("mayInviteOthers") or False),
         "hide_attendees": cint(event.get("hideAttendees") or False),
-        "creation": parse_iso_datetime(created_utc),
-        "modified": parse_iso_datetime(updated_utc),
+        "creation": created_utc,
+        "modified": updated_utc,
         "sequence": cint(event.get("sequence") or False),
     }
 

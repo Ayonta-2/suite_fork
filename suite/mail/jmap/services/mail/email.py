@@ -8,7 +8,7 @@ from suite.mail.jmap.services.core import CallIdGenerator
 from suite.mail.jmap.services.mail.mail import MailService
 from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
-from suite.utils.dt import convert_to_utc
+from suite.mail.utils.dt import to_utc_z
 
 
 class EmailService(MailService):
@@ -457,7 +457,8 @@ class EmailService(MailService):
 
         # Headers
         if email.sent_at:
-            draft["sentAt"] = convert_to_utc(email.sent_at).isoformat()
+            # Mail Queue's sent_at holds system time; Stalwart wants the UTC ``...Z`` form.
+            draft["sentAt"] = to_utc_z(email.sent_at)
         if email.message_id:
             draft["header:Message-ID"] = f"<{email.message_id}>"
 

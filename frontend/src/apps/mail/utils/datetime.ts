@@ -4,8 +4,7 @@ import { userStore } from '@/apps/mail/stores/user'
 /**
  * Timestamps on the wire are always UTC, spelled the way Stalwart spells them:
  * "2026-07-28T09:02:30Z". Nothing on the server converts them, so this module is the single place
- * that moves between that wire format and the zone the session user reads and types in — their
- * `time_zone` on the User doc, which `get_user_info` resolves (falling back to the site's zone).
+ * that moves between that wire format and the zone the user reads and types in.
  */
 
 // What `<input type="datetime-local">` reads and writes.
@@ -13,12 +12,13 @@ const LOCAL_INPUT_FORMAT = 'YYYY-MM-DDTHH:mm'
 const UTC_FORMAT = 'YYYY-MM-DDTHH:mm:ss[Z]'
 
 /**
- * The user's zone, or the browser's until `get_user_info` has loaded (it is fetched once at
- * startup, so this only matters for the first paint).
+ * The zone timestamps are displayed and typed in: the browser's, falling back to `time_zone` on
+ * the User doc for the rare environment where the browser cannot say (`get_user_info` resolves
+ * that to the site's zone when unset, completing the browser → user → system fallback chain).
  */
 export const userTimeZone = (): string => {
 	const { userResource } = userStore()
-	return userResource.data?.time_zone || dayjs.tz.guess()
+	return dayjs.tz.guess() || userResource.data?.time_zone
 }
 
 /** Reads a UTC timestamp from an API into the user's zone. */
@@ -42,6 +42,36 @@ export const toLocalInput = (value?: string | null): string =>
  */
 export const fromLocalInput = (value?: string | null): string =>
 	value ? dayjs.tz(value, userTimeZone()).utc().format(UTC_FORMAT) : ''
+
+/**
+ * The site's zone — what plain Frappe DB datetime fields (e.g. the exchange doctypes) are
+ * stored and served in, as naive strings. Distinct from `userTimeZone()`, which is where
+ * timestamps are *displayed*.
+ */
+export const systemTimeZone = (): string => {
+	const { userResource } = userStore()
+	return userResource.data?.system_time_zone || dayjs.tz.guess()
+}
+
+/** Formats a naive system-zone DB timestamp (not a `...Z` wire value) in the user's zone. */
+export const formatSystemDateTime = (value?: string | null, format = 'MMM D YYYY, h:mm A'): string =>
+	value ? dayjs.tz(value, systemTimeZone()).tz(userTimeZone()).format(format) : ''
+
+/**
+ * Turns a wall-clock reading in the user's zone back into the naive system-zone string a plain
+ * DB datetime field stores — the write-side counterpart of `formatSystemDateTime`, for the rare
+ * form that edits such a field directly.
+ */
+export const toSystemDateTime = (value?: string | null): string =>
+	value ? dayjs.tz(value, userTimeZone()).tz(systemTimeZone()).format('YYYY-MM-DD HH:mm:ss') : ''
+
+/** The start of a `YYYY-MM-DD` day in the user's zone, as a UTC timestamp the APIs take. */
+export const utcDayStart = (date?: string | null): string =>
+	date ? dayjs.tz(date, userTimeZone()).startOf('day').utc().format(UTC_FORMAT) : ''
+
+/** The end of a `YYYY-MM-DD` day in the user's zone, as a UTC timestamp the APIs take. */
+export const utcDayEnd = (date?: string | null): string =>
+	date ? dayjs.tz(date, userTimeZone()).endOf('day').utc().format(UTC_FORMAT) : ''
 
 /** The current time as a UTC timestamp the APIs take. */
 export const utcNow = (): string => dayjs.utc().format(UTC_FORMAT)

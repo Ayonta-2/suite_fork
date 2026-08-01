@@ -1,9 +1,9 @@
 import base64
-from datetime import UTC, datetime
+from datetime import datetime
 
 import frappe
 from frappe import _
-from frappe.utils import cint, convert_utc_to_system_timezone, create_batch, now, random_string
+from frappe.utils import cint, create_batch, now, random_string
 
 from suite.mail.api.auth import validate_user
 from suite.mail.doctype.mail_message.mail_message import fetch_blobs, fetch_messages
@@ -14,8 +14,8 @@ from suite.mail.doctype.mail_sync_history.mail_sync_history import (
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.jmap import get_mailbox_id_by_role
 from suite.mail.utils import get_config
+from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
 from suite.mail.utils.logger import get_inbound_logger
-from suite.utils.dt import convert_to_utc
 from suite.utils.rate_limiter import dynamic_rate_limit
 
 
@@ -72,12 +72,12 @@ def pull(
         result = []
         source = get_source()
         mailbox = mailbox or "inbox"
-        last_received_at = convert_to_system_timezone(last_received_at)
         account = get_user_personal_jmap_account(frappe.session.user, raise_exception=True)
         sync_history = get_mail_sync_history(account, source)
-        result = get_mails(account, mailbox, limit, last_received_at or sync_history.last_received_at)
+        # The API listens UTC; the sync-history fallback is a system-time DB field.
+        last_received_at = normalize_utc_z(last_received_at) or to_utc_z(sync_history.last_received_at)
+        result = get_mails(account, mailbox, limit, last_received_at)
         update_mail_sync_history(sync_history, result["last_received_at"], result["last_received_mail"])
-        result["last_received_at"] = convert_to_utc(result["last_received_at"])
 
         return result
 
@@ -111,12 +111,11 @@ def pull_raw(
         result = []
         source = get_source()
         mailbox = mailbox or "inbox"
-        last_received_at = convert_to_system_timezone(last_received_at)
         account = get_user_personal_jmap_account(frappe.session.user, raise_exception=True)
         sync_history = get_mail_sync_history(account, source)
-        result = get_raw_mails(account, mailbox, limit, last_received_at or sync_history.last_received_at)
+        last_received_at = normalize_utc_z(last_received_at) or to_utc_z(sync_history.last_received_at)
+        result = get_raw_mails(account, mailbox, limit, last_received_at)
         update_mail_sync_history(sync_history, result["last_received_at"], result["last_received_mail"])
-        result["last_received_at"] = convert_to_utc(result["last_received_at"])
 
         return result
 
@@ -143,15 +142,6 @@ def get_source() -> str:
     return frappe.request.headers.get("X-Site") or frappe.local.request_ip
 
 
-def convert_to_system_timezone(last_received_at: str) -> datetime | None:
-    """Converts the last_received_at to system timezone."""
-
-    if last_received_at:
-        dt = datetime.fromisoformat(last_received_at)
-        dt_utc = dt.astimezone(UTC)
-        return convert_utc_to_system_timezone(dt_utc)
-
-
 def get_mails(
     account: str, mailbox: str, limit: int, last_received_at: str | datetime | None = None
 ) -> dict[str, list[dict] | str]:
@@ -161,23 +151,15 @@ def get_mails(
 
     filter = {"inMailbox": mailbox_id}
     if last_received_at:
-        dt = (
-            last_received_at
-            if isinstance(last_received_at, datetime)
-            else datetime.fromisoformat(last_received_at)
-        )
-        dt_utc = dt.astimezone(UTC)
-        filter["after"] = dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        filter["after"] = normalize_utc_z(last_received_at)
 
     sort = [{"property": "receivedAt", "isAscending": True}]
     messages, _total = fetch_messages(account, filter, limit=limit, sort=sort)
-    last_received_at = messages[-1]["received_at"] if messages else now()
+    # Messages already carry UTC ``...Z`` timestamps; the fallback stamps "now" in the same shape.
+    last_received_at = messages[-1]["received_at"] if messages else to_utc_z(now())
     last_received_mail = messages[-1]["name"] if messages else None
 
     for message in messages:
-        for field in ["sent_at", "received_at"]:
-            message[field] = convert_to_utc(message[field])
-
         for field in ["creation", "modified"]:
             message.pop(field, None)
 
@@ -211,8 +193,9 @@ def update_mail_sync_history(
 ) -> None:
     """Update the last_received_at in the Mail Sync History."""
 
+    # The wire value is UTC ``...Z``; the DB field holds system time.
     kwargs = {
-        "last_received_at": last_received_at or now(),
+        "last_received_at": from_utc_z(last_received_at) or now(),
     }
 
     if last_received_mail:

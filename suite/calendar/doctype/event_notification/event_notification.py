@@ -9,8 +9,8 @@ from frappe.utils import cint
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_event_notification_service
+from suite.mail.utils.dt import normalize_utc_z
 from suite.utils import parse_filters
-from suite.utils.dt import parse_iso_datetime
 
 
 class EventNotification(Document):
@@ -189,7 +189,7 @@ def format_event_notification(account: str, notification: dict) -> dict:
         "id": notification["id"],
         "draft": notification.get("isDraft", False),
         "type": notification.get("type", "").title(),
-        "created_utc": notification["created"],
+        "created_utc": normalize_utc_z(notification["created"]),
         "comment": notification.get("comment", ""),
         "calendar_event": calendar_event,
         "calendar_event_id": calendar_event_id,
@@ -199,8 +199,8 @@ def format_event_notification(account: str, notification: dict) -> dict:
         "changed_by_schedule_id": changed_by.get("scheduleId"),
         "event": event,
         "event_patch": event_patch,
-        "creation": parse_iso_datetime(notification["created"]),
-        "modified": parse_iso_datetime(notification["created"]),
+        "creation": normalize_utc_z(notification["created"]),
+        "modified": normalize_utc_z(notification["created"]),
     }
 
 

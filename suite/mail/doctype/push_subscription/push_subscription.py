@@ -13,6 +13,7 @@ from frappe.utils import cint, today
 
 from suite.mail.jmap import get_push_subscription_service
 from suite.mail.utils import generate_uuid_style_hash, log_mail_error
+from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.user import is_jmap_configured
 from suite.utils import parse_filters
 from suite.utils.dt import get_utc_now, parse_iso_datetime
@@ -324,7 +325,7 @@ def fetch_push_subscriptions(user: str, page: int = 1, limit: int = 10) -> list:
 def format_push_subscription(user: str, push_subscription: dict) -> dict:
     """Formats push subscription data for display."""
 
-    expires = parse_iso_datetime(push_subscription["expires"]) if push_subscription.get("expires") else None
+    expires = normalize_utc_z(push_subscription.get("expires"))
     types = push_subscription.get("types") or []
     return {
         "user": user,

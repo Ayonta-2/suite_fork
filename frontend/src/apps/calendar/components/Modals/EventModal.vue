@@ -5,6 +5,7 @@ import { Button, Dialog, Dropdown, FormControl, Switch, createResource, toast } 
 
 import meetLogo from '@/assets/app-logos/meet.png'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
+import { fromEventZone, fromWallClock, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
@@ -28,7 +29,9 @@ const getEventData = () => {
 	if (isNew.value) return getDefaultEventData()
 
 	const { calendarEvent: ev } = selectedEvent
-	const start = dayjs(ev.start)
+	// Timed events edit in the viewer's zone (saving re-zones them to it, see eventParams);
+	// all-day events keep their calendar date.
+	const start = ev.isAllDay ? dayjs(ev.start) : fromEventZone(ev.start, ev.time_zone)
 	const end = start.add(dayjs.duration(ev.duration))
 	const displayEnd = ev.isAllDay ? end.subtract(1, 'day') : end
 
@@ -136,12 +139,15 @@ const eventParams = computed(() => {
 		duration: duration.value,
 	}
 
-	if (selectedEvent.calendarEvent?.recurrence_id && !isUpdateInstance.value) {
-		params.start = selectedEvent.calendarEvent.master_start
-	}
-
 	if (event.title) params.title = event.title
 	if (dayjs?.tz) params.time_zone = dayjs.tz.guess()
+
+	if (selectedEvent.calendarEvent?.recurrence_id && !isUpdateInstance.value) {
+		// The master's start passes through unchanged, so it must keep the master's zone —
+		// pairing it with the browser's would silently shift the whole series.
+		params.start = selectedEvent.calendarEvent.master_start
+		params.time_zone = selectedEvent.calendarEvent.time_zone || params.time_zone
+	}
 	if (event.recurrence_rule && Object.keys(event.recurrence_rule).length)
 		params.recurrence_rule = event.recurrence_rule
 	if (event.privacy) params.privacy = event.privacy
@@ -159,7 +165,8 @@ const eventParams = computed(() => {
 			if (a.type === 'AbsoluteTrigger')
 				return {
 					...base,
-					when: dayjs(`${a.date}T${a.time}`).format('YYYY-MM-DD[T]HH:mm:ss'),
+					// The date/time inputs are a wall clock in the user's zone; the API takes UTC.
+					when: fromWallClock(`${a.date}T${a.time}`),
 				}
 
 			return {
@@ -173,13 +180,17 @@ const eventParams = computed(() => {
 	return params
 })
 
-const patch = computed(() =>
-	Object.fromEntries(
+const patch = computed(() => {
+	const changed = Object.fromEntries(
 		[...new Set([...Object.keys(eventParams.value), ...Object.keys(originalParams)])]
 			.filter((k) => JSON.stringify(eventParams.value[k]) !== JSON.stringify(originalParams[k]))
 			.map((k) => [k, eventParams.value[k]]),
-	),
-)
+	)
+	// A changed start is a wall clock in the viewer's zone; without the zone alongside it the
+	// server would reinterpret those numbers in the event's stored zone.
+	if ('start' in changed && !('time_zone' in changed)) changed.time_zone = eventParams.value.time_zone
+	return changed
+})
 
 // --- Helpers ---
 
@@ -188,8 +199,8 @@ const parseAlert = (a: any) => {
 		return {
 			type: a.type,
 			action: a.action,
-			date: dayjs.utc(a.when).format('YYYY-MM-DD'),
-			time: dayjs.utc(a.when).format('HH:mm'),
+			date: inUserTimeZone(a.when).format('YYYY-MM-DD'),
+			time: inUserTimeZone(a.when).format('HH:mm'),
 		}
 
 	const d = dayjs.duration(a.offset).$d

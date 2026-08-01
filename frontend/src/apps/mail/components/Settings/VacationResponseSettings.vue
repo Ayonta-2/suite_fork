@@ -61,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import {
 	Button,
 	FormControl,
@@ -74,6 +74,7 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { convertHtmlToText, raiseToast } from '@/apps/mail/utils'
+import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScriptStateModal.vue'
@@ -81,7 +82,6 @@ import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScri
 import type { VacationResponse } from '@/apps/mail/types/doctypes'
 
 const store = userStore()
-const dayjs = inject('$dayjs')
 
 const { buttons } = useTextEditorButtons()
 const { isMobile } = useScreenSize()
@@ -105,8 +105,8 @@ const vacationResponse = createResource({
 	auto: true,
 	transform: (doc: VacationResponse) => {
 		doc['enabled'] = !!doc['enabled']
-		if (doc['from_date']) doc['from_date'] = dayjs(doc['from_date']).format('YYYY-MM-DDTHH:mm')
-		if (doc['to_date']) doc['to_date'] = dayjs(doc['to_date']).format('YYYY-MM-DDTHH:mm')
+		doc['from_date'] = toLocalInput(doc['from_date'])
+		doc['to_date'] = toLocalInput(doc['to_date'])
 		Object.assign(original, doc)
 		return doc
 	},
@@ -117,8 +117,8 @@ const updateVacationResponse = createResource({
 	makeParams: () => ({
 		account: store.accountId,
 		enabled: vacationResponse.data.enabled,
-		from_date: vacationResponse.data.from_date,
-		to_date: vacationResponse.data.to_date,
+		from_date: fromLocalInput(vacationResponse.data.from_date),
+		to_date: fromLocalInput(vacationResponse.data.to_date),
 		subject: vacationResponse.data.subject,
 		text_body: convertHtmlToText(vacationResponse.data.html_body),
 		html_body: vacationResponse.data.html_body,

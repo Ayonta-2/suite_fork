@@ -46,7 +46,7 @@ from suite.mail.stalwart.oauth import OAuthClient
 from suite.mail.stalwart.role import Role
 from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
-from suite.mail.utils.dt import from_utc_z, to_utc_z
+from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
 from suite.utils import execute_with_logging
@@ -167,7 +167,7 @@ def get_domains(txt: str | None = None, is_enabled: bool | None = None) -> list[
                     "name": domain["name"],
                     "description": domain.get("description", ""),
                     "is_enabled": domain["isEnabled"],
-                    "created_at": domain["createdAt"],
+                    "created_at": normalize_utc_z(domain["createdAt"]),
                 }
             )
 
@@ -249,7 +249,7 @@ def get_domain(domain_id: str) -> dict:
         "name": domain["name"],
         "description": domain.get("description", ""),
         "is_enabled": domain["isEnabled"],
-        "created_at": domain["createdAt"],
+        "created_at": normalize_utc_z(domain["createdAt"]),
         "dns_records": dns_records,
     }
 
@@ -1101,7 +1101,7 @@ def get_groups(search: str | None = None) -> list[dict]:
             "name": g.get("name"),
             "email": g.get("emailAddress"),
             "description": g.get("description"),
-            "created_at": g.get("createdAt"),
+            "created_at": normalize_utc_z(g.get("createdAt")),
         }
         for g in groups
     ]
@@ -1164,7 +1164,7 @@ def get_group(group_id: str) -> dict:
         "name": group.get("name"),
         "email": group.get("emailAddress"),
         "description": group.get("description"),
-        "created_at": group.get("createdAt"),
+        "created_at": normalize_utc_z(group.get("createdAt")),
         "role_ids": _keys((group.get("roles") or {}).get("roleIds")),
         "locale": group.get("locale"),
         "time_zone": group.get("timeZone"),
@@ -1594,7 +1594,7 @@ def get_oauth_clients(search: str | None = None) -> list[dict]:
             "id": c["id"],
             "client_id": c.get("clientId"),
             "description": c.get("description"),
-            "created_at": c.get("createdAt"),
+            "created_at": normalize_utc_z(c.get("createdAt")),
         }
         for c in clients
     ]
@@ -1627,8 +1627,8 @@ def get_oauth_client(client_id: str) -> dict:
         "id": client["id"],
         "client_id": client.get("clientId"),
         "description": client.get("description"),
-        "created_at": client.get("createdAt"),
-        "expires_at": client.get("expiresAt"),
+        "created_at": normalize_utc_z(client.get("createdAt")),
+        "expires_at": normalize_utc_z(client.get("expiresAt")),
         "redirect_uris": _keys(client.get("redirectUris")),
         "contacts": _keys(client.get("contacts")),
         "logo": client.get("logo"),
@@ -1652,7 +1652,7 @@ def add_oauth_client(
 
     uris = _listify(redirect_uris)
     contact_list = _listify(contacts)
-    expires = to_utc_z(expires_at)
+    expires = normalize_utc_z(expires_at)
 
     def _create() -> str:
         return get_oauth_client_service().create(
@@ -1707,7 +1707,7 @@ def update_oauth_client(
         patch["logo"] = logo.strip() or None
     if expires_at is not None:
         # Blank clears the expiry.
-        patch["expiresAt"] = to_utc_z(expires_at)
+        patch["expiresAt"] = normalize_utc_z(expires_at)
 
     if patch:
         get_oauth_client_service().update(oauth_client_id, patch)
@@ -1809,7 +1809,7 @@ def get_dkim_signatures(domain_id: str | None = None) -> list[dict]:
             "algorithm": _DKIM_ALGORITHMS.get(s.get("@type"), s.get("@type")),
             "domain": domain_names.get(s.get("domainId")),
             "selector": s.get("selector"),
-            "created_at": s.get("createdAt"),
+            "created_at": normalize_utc_z(s.get("createdAt")),
         }
         for s in signatures
     ]
@@ -1855,8 +1855,8 @@ def get_dkim_signature(signature_id: str) -> dict:
         "auid": sig.get("auid"),
         "public_key": sig.get("publicKey"),
         "stage": sig.get("stage"),
-        "created_at": sig.get("createdAt"),
-        "next_transition": sig.get("nextTransitionAt"),
+        "created_at": normalize_utc_z(sig.get("createdAt")),
+        "next_transition": normalize_utc_z(sig.get("nextTransitionAt")),
     }
 
 
@@ -1891,8 +1891,8 @@ def _queue_row(message: dict) -> dict:
         "recipients": recipients,
         "recipient_count": len(recipients),
         "size": message.get("size"),
-        "next_retry": message.get("nextRetry"),
-        "created_at": message.get("createdAt"),
+        "next_retry": normalize_utc_z(message.get("nextRetry")),
+        "created_at": normalize_utc_z(message.get("createdAt")),
     }
 
 
@@ -1947,12 +1947,12 @@ def _recipient_detail(email: str, recipient: dict) -> dict:
         "response_code": status.get("responseCode"),
         "enhanced_code": status.get("responseEnhanced"),
         "message": status.get("responseMessage"),
-        "next_retry": recipient.get("retryDue"),
+        "next_retry": normalize_utc_z(recipient.get("retryDue")),
         "retry_count": recipient.get("retryCount"),
-        "next_notification": recipient.get("notifyDue"),
+        "next_notification": normalize_utc_z(recipient.get("notifyDue")),
         "notify_count": recipient.get("notifyCount"),
         "expiry_type": expires.get("@type"),
-        "expires_at": expires.get("expiresAt"),
+        "expires_at": normalize_utc_z(expires.get("expiresAt")),
         "expires_attempts": expires.get("expiresAttempts"),
     }
 
@@ -1982,11 +1982,11 @@ def get_queued_message(message_id: str) -> dict:
         "priority": message.get("priority"),
         "env_id": message.get("envId"),
         "flags": _message_flags(message),
-        "next_retry": message.get("nextRetry"),
+        "next_retry": normalize_utc_z(message.get("nextRetry")),
         "next_notify": message.get("nextNotify"),
         "received_from_ip": message.get("receivedFromIp"),
         "received_via_port": message.get("receivedViaPort"),
-        "created_at": message.get("createdAt"),
+        "created_at": normalize_utc_z(message.get("createdAt")),
         "recipients": recipients,
         "has_content": bool(message.get("blobId")),
     }
@@ -2008,7 +2008,7 @@ def get_queue_recipient_options() -> dict:
 def _utc_datetime(value: str | None) -> str | None:
     """Normalizes a timestamp the API was called with to the UTCDateTime Stalwart stores."""
 
-    return to_utc_z(value)
+    return normalize_utc_z(value)
 
 
 def _status_object(
@@ -2296,13 +2296,13 @@ def _report_row(direction: str, report: dict) -> dict:
             "id": report["id"],
             "from": report.get("from"),
             "subject": report.get("subject"),
-            "received_at": report.get("receivedAt"),
+            "received_at": normalize_utc_z(report.get("receivedAt")),
         }
     return {
         "id": report["id"],
         "domain": report.get("domain"),
-        "created_at": report.get("createdAt"),
-        "deliver_at": report.get("deliverAt"),
+        "created_at": normalize_utc_z(report.get("createdAt")),
+        "deliver_at": normalize_utc_z(report.get("deliverAt")),
     }
 
 
@@ -2357,16 +2357,16 @@ def get_report(kind: str, direction: str, report_id: str) -> dict:
                 "from": report.get("from"),
                 "subject": report.get("subject"),
                 "to": _set_keys(report.get("to")),
-                "received_at": report.get("receivedAt"),
-                "expires_at": report.get("expiresAt"),
+                "received_at": normalize_utc_z(report.get("receivedAt")),
+                "expires_at": normalize_utc_z(report.get("expiresAt")),
             }
         )
     else:
         meta.update(
             {
                 "domain": report.get("domain"),
-                "created_at": report.get("createdAt"),
-                "deliver_at": report.get("deliverAt"),
+                "created_at": normalize_utc_z(report.get("createdAt")),
+                "deliver_at": normalize_utc_z(report.get("deliverAt")),
             }
         )
         if kind == "dmarc":
@@ -2406,7 +2406,7 @@ def _log_row(entry: dict, labels: dict) -> dict:
     level, event = entry.get("level"), entry.get("event")
     return {
         "id": entry["id"],
-        "timestamp": entry.get("timestamp"),
+        "timestamp": normalize_utc_z(entry.get("timestamp")),
         "level": level,
         "level_label": labels["levels"].get(level, level),
         "event": event,
