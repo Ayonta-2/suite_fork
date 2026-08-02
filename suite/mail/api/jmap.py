@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 from frappe.utils import random_string
 
+from suite.calendar.doctype.calendar_event.calendar_event import enqueue_send_event_alert_notification
 from suite.mail.doctype.mail_message.mail_message import enqueue_fetch_changes
 from suite.mail.doctype.push_subscription.push_subscription import (
     decrypt_jmap_push_payload,
@@ -99,6 +100,14 @@ def push_notification() -> dict:
 
                     else:
                         logger.warning("unhandled-state-change-entity", entity=entity)
+
+            return {"status": "processed"}
+
+        elif event_type == "CalendarAlert":
+            ctx["account"] = request_data.get("accountId")
+
+            logger.info("calendar-alert-received")
+            enqueue_send_event_alert_notification(user, request_data, ctx=ctx)
 
             return {"status": "processed"}
 

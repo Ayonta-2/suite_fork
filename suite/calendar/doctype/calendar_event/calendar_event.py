@@ -3,13 +3,17 @@
 
 
 import json
+from datetime import datetime
 from typing import Literal
+from urllib.parse import quote
 from uuid import uuid7
+from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint
+from frappe.push_notification import PushNotification
+from frappe.utils import cint, get_system_timezone
 
 from suite.calendar.doctype.calendar.calendar import validate_calendar_name_format
 from suite.calendar.doctype.calendar_event.invitations import (
@@ -17,9 +21,12 @@ from suite.calendar.doctype.calendar_event.invitations import (
     custom_event_invites_enabled,
 )
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_calendar_event_service
+from suite.mail.jmap import get_calendar_event_service, get_jmap_connection
+from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
+from suite.mail.utils import log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
-from suite.utils import parse_filters
+from suite.mail.utils.logger import get_push_logger
+from suite.utils import enqueue_job, parse_filters, user_context
 from suite.utils.dt import utcnow
 
 
@@ -739,6 +746,109 @@ def _enqueue_event_notification(account: str, action: str, **kwargs) -> None:
         action=action,
         **kwargs,
     )
+
+
+def send_event_alert_notification(user: str, alert: dict, ctx: dict | None = None) -> None:
+    """Sends a device push notification for a JMAP CalendarAlert triggered by the server.
+
+    The alert only carries identifiers (accountId, calendarEventId, recurrenceId), so the event
+    is fetched with the user's own JMAP credentials to build the notification content — which
+    also ensures a forged alert can't surface another account's event to this user."""
+
+    ctx = ctx or {}
+    logger = get_push_logger(ctx)
+
+    account = alert.get("accountId")
+    event_id = alert.get("calendarEventId")
+    recurrence_id = alert.get("recurrenceId")
+
+    if not account or not event_id:
+        logger.warning("calendar-alert-missing-ids")
+        return
+
+    try:
+        pn = PushNotification("mail")
+        if not pn.is_enabled():
+            logger.debug("push-notifications-disabled")
+            return
+
+        service = CalendarEventService(account, get_jmap_connection(user))
+
+        events = service.get([event_id])
+        if not events:
+            logger.warning("calendar-alert-event-not-found")
+            return
+
+        event = events[0]
+        all_day = bool(event.get("showWithoutTime"))
+
+        # For a recurring event the alert's recurrenceId is the triggering instance's local
+        # start; a non-recurring event has none, so fall back to the event's own start.
+        start_dt = None
+        if start := recurrence_id or event.get("start"):
+            start_dt = datetime.fromisoformat(start)
+
+        # LocalDate values carry no zone — they are local to the event's timeZone. Convert
+        # timed events to the user's time zone for display; all-day dates stay as-is.
+        if start_dt and not all_day:
+            try:
+                user_time_zone = frappe.db.get_value("User", user, "time_zone")
+                start_dt = start_dt.replace(tzinfo=ZoneInfo(event.get("timeZone") or get_system_timezone()))
+                start_dt = start_dt.astimezone(ZoneInfo(user_time_zone or get_system_timezone()))
+            except Exception:
+                logger.warning("calendar-alert-timezone-conversion-failed")
+
+        if not start_dt:
+            body = _("Event starting soon")
+        elif all_day:
+            body = _("{0} · All day").format(start_dt.strftime("%a, %d %b"))
+        else:
+            body = _("{0} at {1}").format(
+                start_dt.strftime("%a, %d %b"), start_dt.strftime("%I:%M %p").lstrip("0")
+            )
+
+        url = frappe.utils.get_url()
+        link = f"{url}/calendar/account/{account}"
+        if start_dt:
+            link += f"/day/{start_dt.year}/{start_dt.month}/{start_dt.day}?event={quote(event_id, safe='')}"
+            if recurrence_id:
+                link += f"&recurrence={quote(recurrence_id, safe='')}"
+
+        pn.send_notification_to_user(
+            user,
+            event.get("title") or _("[No title]"),
+            body,
+            link,
+            f"{url}/assets/suite/calendar/images/logo.png",
+        )
+
+        logger.info("calendar-alert-notification-sent")
+
+    except Exception:
+        logger.error("calendar-alert-notification-failed")
+        log_mail_error(
+            _("Failed to send calendar alert notification"),
+            frappe.get_traceback(with_context=True),
+        )
+
+
+def enqueue_send_event_alert_notification(user: str, alert: dict, ctx: dict | None = None) -> None:
+    """Enqueues the device push notification for a triggered JMAP CalendarAlert."""
+
+    ctx = ctx or {}
+    logger = get_push_logger(ctx)
+
+    logger.debug("enqueueing-event-alert-notification")
+
+    with user_context("Administrator"):
+        enqueue_job(
+            send_event_alert_notification,
+            user=user,
+            alert=alert,
+            ctx=ctx,
+            queue="short",
+            enqueue_after_commit=True,
+        )
 
 
 def _previous_invite_state(account: str, id: str) -> tuple[list[str], int]:

@@ -276,8 +276,8 @@ scheduler_events = {
         "suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
         "suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
         "suite.mail.doctype.push_subscription.push_subscription.renew_expiring_push_subscriptions",
-        "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
         "suite.mail.doctype.contacts_exchange.contacts_exchange.clean_contacts_import_export_directories",
+        "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
     ],
     "hourly": [
         # drive

@@ -22,6 +22,25 @@ def has_user_settings(user: str, raise_exception: bool = False) -> bool:
     return False
 
 
+def get_jmap_configured_users() -> list[str]:
+    """Returns enabled users that have JMAP credentials configured.
+
+    The enabled flag lives on User — User Settings has no such field — so the two doctypes
+    must be joined to filter on it.
+    """
+
+    USER = frappe.qb.DocType("User")
+    USER_SETTINGS = frappe.qb.DocType("User Settings")
+
+    return (
+        frappe.qb.from_(USER_SETTINGS)
+        .join(USER)
+        .on(USER.name == USER_SETTINGS.user)
+        .select(USER_SETTINGS.user)
+        .where((USER.enabled == 1) & (USER_SETTINGS.username != "") & (USER_SETTINGS.username.isnotnull()))
+    ).run(pluck="user")
+
+
 def is_jmap_configured(user: str, raise_exception: bool = False) -> bool:
     """Returns True if the user has JMAP settings configured else False."""
 
