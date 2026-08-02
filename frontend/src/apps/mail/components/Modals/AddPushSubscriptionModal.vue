@@ -35,9 +35,10 @@
 				<div class="space-y-2">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Types') }}</label>
 					<p class="text-ink-gray-5 text-xs">
-						{{ __('A StateChange notification is sent only when one of these types changes.') }}
+						{{ __('A notification is sent only for the selected types.') }}
 					</p>
-					<div class="grid grid-cols-2 gap-2">
+					<Checkbox v-model="allTypes" :label="__('All')" />
+					<div v-if="!allTypes" class="grid grid-cols-2 gap-2">
 						<Checkbox
 							v-for="type in AVAILABLE_TYPES"
 							:key="type"
@@ -63,13 +64,14 @@ const emit = defineEmits<{ created: [] }>()
 
 const user = inject('$user')
 
-// The JMAP data types a client can subscribe to. These mirror the Push Subscription doctype's default
-// set; all are enabled by default so a new subscription behaves like a fresh client registration.
-const AVAILABLE_TYPES = ['Email', 'Mailbox', 'Identity', 'VacationResponse'] as const
+// The JMAP data types a client can narrow a subscription down to. 'All' is the default and sends
+// no types at all — the server then subscribes to every type, including ones not listed here.
+const AVAILABLE_TYPES = ['Email', 'Mailbox', 'Identity', 'VacationResponse', 'CalendarAlert'] as const
 type SubscriptionType = (typeof AVAILABLE_TYPES)[number]
 
 const url = ref('')
 const deviceClientId = ref('')
+const allTypes = ref(true)
 const selectedTypes = reactive<Record<SubscriptionType, boolean>>(
 	Object.fromEntries(AVAILABLE_TYPES.map((t) => [t, true])) as Record<SubscriptionType, boolean>,
 )
@@ -77,9 +79,11 @@ const selectedTypes = reactive<Record<SubscriptionType, boolean>>(
 const chosenTypes = computed(() => AVAILABLE_TYPES.filter((t) => selectedTypes[t]))
 
 // A URL is optional (blank falls back to the app default), but if given it must be an https URL to
-// match the backend's validation. At least one type must be selected.
+// match the backend's validation. Either 'All' or at least one type must be selected.
 const canCreate = computed(
-	() => chosenTypes.value.length > 0 && (!url.value.trim() || url.value.trim().startsWith('https://')),
+	() =>
+		(allTypes.value || chosenTypes.value.length > 0) &&
+		(!url.value.trim() || url.value.trim().startsWith('https://')),
 )
 
 const addPushSubscription = createResource({
@@ -88,7 +92,7 @@ const addPushSubscription = createResource({
 		user: user.data.name,
 		url: url.value.trim() || undefined,
 		device_client_id: deviceClientId.value.trim() || undefined,
-		types: chosenTypes.value,
+		types: allTypes.value ? undefined : chosenTypes.value,
 	}),
 	onSuccess: () => {
 		raiseToast(__('Push subscription created.'))
@@ -103,6 +107,7 @@ watch(show, (open) => {
 	if (!open) return
 	url.value = ''
 	deviceClientId.value = ''
+	allTypes.value = true
 	AVAILABLE_TYPES.forEach((t) => (selectedTypes[t] = true))
 })
 </script>

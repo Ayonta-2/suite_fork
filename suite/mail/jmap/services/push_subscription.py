@@ -64,12 +64,18 @@ class PushSubscriptionService(CoreService):
         for batch in self.create_batches(subscriptions, self.max_objects_in_set):
             payload = {}
             for subscription in batch:
-                payload[subscription["id"]] = {}
+                patch = {}
 
                 if verification_code := subscription.get("verification_code"):
-                    payload[subscription["id"]]["verificationCode"] = verification_code
-                else:
-                    payload[subscription["id"]]["expires"] = subscription.get("expires")
+                    patch["verificationCode"] = verification_code
+                if "types" in subscription:
+                    patch["types"] = subscription["types"]
+                # A bare {"id": ...} is a renewal: expires=null makes the server bump the
+                # subscription to its maximum lifetime.
+                if not patch or "expires" in subscription:
+                    patch["expires"] = subscription.get("expires")
+
+                payload[subscription["id"]] = patch
 
             response = self._update(payload)
 

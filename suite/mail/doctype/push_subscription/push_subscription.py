@@ -14,7 +14,7 @@ from frappe.utils import cint, today
 from suite.mail.jmap import get_push_subscription_service
 from suite.mail.utils import generate_uuid_style_hash, log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
-from suite.mail.utils.user import is_jmap_configured
+from suite.mail.utils.user import get_jmap_configured_users, is_jmap_configured
 from suite.utils import parse_filters
 from suite.utils.dt import get_utc_now, parse_iso_datetime
 from suite.utils.user import is_system_manager
@@ -246,7 +246,7 @@ def renew_push_subscription(user: str, id: str) -> None:
             frappe.throw(_(response["description"]), title=title)
 
 
-def renew_expiring_push_subscriptions() -> None:
+def z() -> None:
     """Renews soon-to-expire push subscriptions for all JMAP configured users.
 
     Scheduled to run daily. A subscription is renewed when its expiry is within
@@ -259,7 +259,7 @@ def renew_expiring_push_subscriptions() -> None:
 
     cutoff = get_utc_now() + timedelta(days=RENEW_THRESHOLD_DAYS)
 
-    for user in frappe.db.get_all("User Settings", {"enabled": 1, "username": ["!=", ""]}, pluck="user"):
+    for user in get_jmap_configured_users():
         try:
             service = get_push_subscription_service(user, ignore_permissions=True)
 
