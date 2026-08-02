@@ -82,6 +82,7 @@ import {
 	pairElementId,
 	dragOccurred,
 	addFixedWidthToElement,
+	ensureExplicitHeight,
 	setEditableState,
 	duplicateElements,
 	activeElements,
@@ -382,6 +383,8 @@ const handlePositionChange = (total) => {
 let resizeStartBounds = null
 
 const startElementResize = (e, resizer) => {
+	ensureExplicitHeight(activeElement.value, selectionBounds)
+
 	resizeStartBounds = {
 		left: selectionBounds.left,
 		top: selectionBounds.top,

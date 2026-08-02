@@ -448,6 +448,7 @@ const addMediaElement = async (file, type) => {
 	const src = file.file_url
 
 	let elementWidth = 0
+	let elementHeight = 0
 
 	let position = {
 		left: 0,
@@ -460,7 +461,7 @@ const addMediaElement = async (file, type) => {
 	if (type == 'image') {
 		const { width, aspectRatio } = await getNaturalSize(src)
 		elementWidth = Math.max(Math.min(width, 800), 30)
-		const elementHeight = elementWidth / aspectRatio
+		elementHeight = elementWidth / aspectRatio
 		position = getLeftTopForCenteredElement(elementWidth, elementHeight)
 		if (isGifFile(file)) {
 			imagePoster = await generateImagePoster(src)
@@ -468,7 +469,7 @@ const addMediaElement = async (file, type) => {
 	} else {
 		elementWidth = 400
 		const { posterURL, aspectRatio } = await getVideoPoster(src)
-		const elementHeight = elementWidth / aspectRatio
+		elementHeight = elementWidth / aspectRatio
 		position = getLeftTopForCenteredElement(elementWidth, elementHeight)
 		videoPoster = posterURL
 	}
@@ -477,6 +478,7 @@ const addMediaElement = async (file, type) => {
 		id: generateUniqueId(),
 		zIndex: currentSlide.value.elements.length + 1,
 		width: elementWidth,
+		height: elementHeight,
 		left: position.left,
 		top: position.top,
 		opacity: 100,
@@ -741,6 +743,13 @@ const addFixedWidthToElement = () => {
 	}
 }
 
+// the stored number equals what auto-height already renders, so no markDirty
+const ensureExplicitHeight = (element, measuredBox) => {
+	if (!element || !['image', 'video'].includes(element.type)) return
+	if (element.height) return
+	element.height = measuredBox.height
+}
+
 const { initTextEditor, activeEditor } = useTextEditor()
 let editorOldText = ''
 
@@ -999,6 +1008,7 @@ export {
 	selectAllElements,
 	getElementPosition,
 	addFixedWidthToElement,
+	ensureExplicitHeight,
 	setEditableState,
 	replaceMediaElement,
 	normalizeZIndices,
