@@ -1,5 +1,5 @@
 <template>
-	<div class="h-full">
+	<div class="h-full" @dblclick="handleDoubleClick">
 		<div :style="maskStyle">
 			<img
 				v-if="imageSrc"
@@ -33,12 +33,13 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, inject, ref } from 'vue'
 
 import { FileUploader } from 'frappe-ui'
 
 import { presentationId } from '@/apps/slides/stores/presentation'
-import { activeElement } from '@/apps/slides/stores/element'
+import { activeElement, activeElementIds } from '@/apps/slides/stores/element'
+import { startCrop } from '@/apps/slides/stores/imageCrop'
 import { allowedImageFileTypes, defaultBorderColor } from '@/apps/slides/utils/constants'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 import { getCroppedImageBox } from '@/apps/slides/utils/imageCrop'
@@ -59,6 +60,17 @@ const element = defineModel('element', {
 	type: Object,
 	default: null,
 })
+
+const inReadonlyMode = inject('inReadonlyMode', ref(false))
+const inSlideShowMode = inject('inSlideShowMode', ref(false))
+
+const handleDoubleClick = (e) => {
+	if (props.mode != 'editor' || inReadonlyMode.value || inSlideShowMode.value) return
+
+	e.stopPropagation()
+	activeElementIds.value = [element.value.id]
+	startCrop(element.value)
+}
 
 const replaceButtonClasses =
 	'absolute inset-[calc(50%-16px)] flex size-8 cursor-pointer items-center justify-center rounded-lg bg-white'

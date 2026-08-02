@@ -13,7 +13,7 @@ export interface Size {
 	height: number
 }
 
-const FULL_RECT: CropRect = { x: 0, y: 0, width: 1, height: 1 }
+export const FULL_RECT: CropRect = { x: 0, y: 0, width: 1, height: 1 }
 
 // the box the full image must occupy so exactly the crop rect shows through
 // the frame. unit-agnostic: the result is in whatever units `frame` uses
