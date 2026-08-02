@@ -10,7 +10,8 @@ const interactionOffset = reactive({ left: 0, top: 0, width: 0, height: 0 })
 
 const rotationDelta = ref(0)
 
-const commitInteraction = () => {
+// extraCommands join the same batched history entry as the offset commands
+const commitInteraction = (extraCommands = []) => {
 	const commands = []
 
 	activeElements.value.forEach((element) => {
@@ -36,6 +37,8 @@ const commitInteraction = () => {
 			addCommand('rotation', rotation, normalizeRotation(rotation + rotationDelta.value))
 		}
 	})
+
+	commands.push(...extraCommands)
 
 	if (commands.length) {
 		commandHistory.execute(

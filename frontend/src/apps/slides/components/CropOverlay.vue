@@ -9,21 +9,24 @@
 			</div>
 		</div>
 		<div ref="controlsFrame" :style="controlsFrameStyles">
-			<div :style="windowStyles" @mousedown.stop>
+			<div :style="windowStyles" @mousedown.stop="startPan">
 				<CropHandle v-for="handle in HANDLES" :key="handle" :handle="handle" />
 			</div>
 		</div>
 	</div>
 </template>
 <script setup>
-import { computed, onBeforeUnmount, onDeactivated, onMounted, useTemplateRef } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, useTemplateRef } from 'vue'
 
 import CropHandle from '@/apps/slides/components/CropHandle.vue'
 
-import { currentSlide, slideBounds } from '@/apps/slides/stores/slide'
-import { cropElementId, draftCrop, cancelCrop } from '@/apps/slides/stores/imageCrop'
+import { useCropExit } from '@/apps/slides/composables/useCropExit'
+import { useCropPan } from '@/apps/slides/composables/useCropPan'
+
+import { slideBounds } from '@/apps/slides/stores/slide'
+import { cropElement, draftCrop, cancelCrop } from '@/apps/slides/stores/imageCrop'
 import { selectionColor } from '@/apps/slides/utils/constants'
-import { getCroppedImageBox } from '@/apps/slides/utils/imageCrop'
+import { getCroppedImageBox } from '@/apps/slides/utils/cropGeometry'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 
 const HANDLES = [
@@ -40,10 +43,6 @@ const HANDLES = [
 const GHOST_OPACITY = 0.4
 
 const controlsFrame = useTemplateRef('controlsFrame')
-
-const cropElement = computed(() =>
-	currentSlide.value?.elements.find((el) => el.id == cropElementId.value),
-)
 
 const getFrameStyles = (zIndex) => {
 	const el = cropElement.value
@@ -112,48 +111,15 @@ const windowStyles = computed(() => ({
 	outline: `${selectionColor} dashed ${2 / slideBounds.scale}px`,
 	// pull the outline in so it straddles the edge, centered like the handles
 	outlineOffset: `-${1 / slideBounds.scale}px`,
+	cursor: 'move',
 	pointerEvents: 'auto',
 }))
 
-// the exit click never edits: no marquee, no selection, no panel action
-let swallowNextClick = false
+const { startPan } = useCropPan(borderInset)
 
-const onDocumentMousedown = (e) => {
-	// a swallowed mousedown whose click never fired must not eat this one's
-	swallowNextClick = false
+useCropExit(controlsFrame)
 
-	if (!cropElement.value) return
-	if (controlsFrame.value?.contains(e.target)) return
-
-	e.preventDefault()
-	e.stopPropagation()
-
-	// right-click is only suppressed; the contextmenu handler is gated on the mode
-	if (e.button == 2) return
-
-	swallowNextClick = true
-	cancelCrop()
-}
-
-// buttons act on click, which still fires after a swallowed mousedown
-const onDocumentClick = (e) => {
-	if (!swallowNextClick) return
-	swallowNextClick = false
-
-	e.preventDefault()
-	e.stopPropagation()
-}
-
-onMounted(() => {
-	document.addEventListener('mousedown', onDocumentMousedown, true)
-	document.addEventListener('click', onDocumentClick, true)
-})
-
-onBeforeUnmount(() => {
-	document.removeEventListener('mousedown', onDocumentMousedown, true)
-	document.removeEventListener('click', onDocumentClick, true)
-	cancelCrop()
-})
+onBeforeUnmount(cancelCrop)
 
 onDeactivated(cancelCrop)
 </script>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getCroppedImageBox } from '@/apps/slides/utils/imageCrop'
+import { FULL_RECT, getCroppedImageBox, panCrop } from '@/apps/slides/utils/cropGeometry'
 
 const frame = { width: 200, height: 100 }
 
@@ -27,5 +27,27 @@ describe('getCroppedImageBox', () => {
 			expect(crop.width * box.width).toBeCloseTo(frame.width)
 			expect(crop.height * box.height).toBeCloseTo(frame.height)
 		}
+	})
+})
+
+describe('panCrop', () => {
+	const crop = { x: 0.25, y: 0.25, width: 0.5, height: 0.5 }
+
+	it('slides the crop opposite the drag, in image fractions', () => {
+		// the image spans 2x the frame, so half a frame of drag is a quarter of it
+		const panned = panCrop(crop, { x: 100, y: -50 }, frame)
+		expect(panned).toEqual({ x: 0, y: 0.5, width: 0.5, height: 0.5 })
+	})
+
+	it('clamps to the image edges without changing size', () => {
+		const pastTopLeft = panCrop(crop, { x: 10000, y: 10000 }, frame)
+		expect(pastTopLeft).toEqual({ x: 0, y: 0, width: 0.5, height: 0.5 })
+
+		const pastBottomRight = panCrop(crop, { x: -10000, y: -10000 }, frame)
+		expect(pastBottomRight).toEqual({ x: 0.5, y: 0.5, width: 0.5, height: 0.5 })
+	})
+
+	it('cannot move a full-rect crop', () => {
+		expect(panCrop({ ...FULL_RECT }, { x: 50, y: -50 }, frame)).toEqual(FULL_RECT)
 	})
 })

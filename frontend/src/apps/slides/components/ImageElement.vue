@@ -42,7 +42,7 @@ import { activeElement, activeElementIds } from '@/apps/slides/stores/element'
 import { startCrop } from '@/apps/slides/stores/imageCrop'
 import { allowedImageFileTypes, defaultBorderColor } from '@/apps/slides/utils/constants'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
-import { getCroppedImageBox } from '@/apps/slides/utils/imageCrop'
+import { getCroppedImageBox } from '@/apps/slides/utils/cropGeometry'
 import { useBoxShadow } from '@/apps/slides/composables/useShadow'
 
 const props = defineProps({

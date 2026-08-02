@@ -35,7 +35,7 @@ import {
 } from '@/apps/slides/stores/slideshow'
 
 import { markDirty } from '@/apps/slides/stores/saving'
-import { inCropMode, cancelCrop } from '@/apps/slides/stores/imageCrop'
+import { inCropMode, commitCrop, cancelCrop } from '@/apps/slides/stores/imageCrop'
 
 const { toggleNavigationPanel } = useNavigationPanel()
 const { activeEditor, toggleMark } = useTextEditor()
@@ -263,6 +263,13 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Edit',
 			condition: () => inCropMode.value,
 			handler: () => cancelCrop(),
+		},
+		{
+			key: 'Enter',
+			description: 'Apply crop',
+			group: 'Edit',
+			condition: () => inCropMode.value,
+			handler: () => commitCrop(),
 		},
 		{
 			key: 'd',

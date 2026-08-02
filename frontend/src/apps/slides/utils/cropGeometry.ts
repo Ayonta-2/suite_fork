@@ -13,6 +13,11 @@ export interface Size {
 	height: number
 }
 
+export interface Point {
+	x: number
+	y: number
+}
+
 export const FULL_RECT: CropRect = { x: 0, y: 0, width: 1, height: 1 }
 
 // the box the full image must occupy so exactly the crop rect shows through
@@ -29,5 +34,20 @@ export const getCroppedImageBox = (crop: CropRect | null | undefined, frame: Siz
 		top: -y * imgHeight || 0,
 		width: imgWidth,
 		height: imgHeight,
+	}
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+
+// pan the image behind the frame: the crop rect slides the opposite way,
+// clamped to the image edges. the size never changes, which preserves aspect
+export const panCrop = (crop: CropRect, localDelta: Point, frame: Size): CropRect => {
+	const { x, y, width, height } = crop
+
+	return {
+		x: clamp(x - (localDelta.x * width) / frame.width, 0, 1 - width),
+		y: clamp(y - (localDelta.y * height) / frame.height, 0, 1 - height),
+		width,
+		height,
 	}
 }
