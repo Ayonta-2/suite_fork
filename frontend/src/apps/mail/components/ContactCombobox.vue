@@ -35,10 +35,16 @@ const store = userStore()
 const contactSearch = createResource({
 	url: 'suite.mail.api.contacts.get_contacts',
 	auto: false,
-	makeParams: (text: string) => ({
-		account: store.accountId,
-		filter: { operator: 'OR', conditions: [{ text }, { email: text }] },
-	}),
+	makeParams: (text: string) => {
+		// frappe-ui's fetch nulls Event params and reuses the previous params object when called
+		// with a falsy value, feeding it back here as `text` — guard against a non-string so the
+		// previous {account, filter} object can't get nested into a new filter.
+		const query = typeof text === 'string' ? text : ''
+		return {
+			account: store.accountId,
+			...(query ? { filter: { operator: 'OR', conditions: [{ text: query }, { email: query }] } } : {}),
+		}
+	},
 	transform: (data: { email: string; full_name?: string; user_image?: string }[]) =>
 		data.map((o) => {
 			const name = o.full_name || ''
