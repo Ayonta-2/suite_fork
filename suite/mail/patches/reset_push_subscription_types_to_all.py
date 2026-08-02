@@ -30,7 +30,11 @@ def execute() -> None:
 
             response = service.update(updates)
             if not_updated := response.get("notUpdated"):
-                errors = "<br>".join(f"{id}: {error['description']}" for id, error in not_updated.items())
+                errors = "<br>".join(
+                    # SetError's description is optional; fall back to its required type
+                    f"{id}: {error.get('description') or error.get('type')}"
+                    for id, error in not_updated.items()
+                )
                 log_mail_error(
                     _("Push Subscription Update Failed"),
                     _("Failed to reset push subscription types for user {0}:<br>{1}").format(user, errors),
