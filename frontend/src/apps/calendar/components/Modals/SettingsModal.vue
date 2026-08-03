@@ -2,8 +2,8 @@
 	<SettingsDialog v-model="show" v-model:tab="activeTab" size="5xl">
 		<template #title>{{ __('Settings') }}</template>
 		<SettingsSidebar>
-			<SettingsNavGroup>
-				<SettingsNavItem v-for="tab in TABS" :key="tab.value" :value="tab.value">
+			<SettingsNavGroup v-for="group in TAB_GROUPS" :key="group.label" :label="group.label">
+				<SettingsNavItem v-for="tab in group.items" :key="tab.value" :value="tab.value">
 					<template #prefix>
 						<component :is="tab.icon" class="size-4 shrink-0 text-ink-gray-6" />
 					</template>
@@ -38,38 +38,50 @@ import ProfileSettings from '@/apps/calendar/components/Settings/ProfileSettings
 
 const show = defineModel<boolean>({ default: false })
 
-const TABS = [
+const TAB_GROUPS = [
 	{
-		label: __('Profile'),
-		value: 'profile',
-		icon: User,
-		component: markRaw(ProfileSettings),
+		label: __('General'),
+		items: [
+			{
+				label: __('Profile'),
+				value: 'profile',
+				icon: User,
+				component: markRaw(ProfileSettings),
+			},
+			{
+				label: __('Participant Identity'),
+				value: 'participant-identity',
+				icon: Contact,
+				component: markRaw(ParticipantIdentitySettings),
+			},
+			{
+				label: __('Appearance'),
+				value: 'appearance',
+				icon: Palette,
+				component: markRaw(AppearanceSettings),
+			},
+		],
 	},
 	{
-		label: __('Participant Identity'),
-		value: 'participant-identity',
-		icon: Contact,
-		component: markRaw(ParticipantIdentitySettings),
-	},
-	{
-		label: __('Appearance'),
-		value: 'appearance',
-		icon: Palette,
-		component: markRaw(AppearanceSettings),
-	},
-	{
-		label: __('Import'),
-		value: 'import',
-		icon: HardDriveDownload,
-		component: markRaw(ImportSettings),
-	},
-	{
-		label: __('Export'),
-		value: 'export',
-		icon: HardDriveUpload,
-		component: markRaw(ExportSettings),
+		label: __('Data'),
+		items: [
+			{
+				label: __('Import'),
+				value: 'import',
+				icon: HardDriveDownload,
+				component: markRaw(ImportSettings),
+			},
+			{
+				label: __('Export'),
+				value: 'export',
+				icon: HardDriveUpload,
+				component: markRaw(ExportSettings),
+			},
+		],
 	},
 ]
+
+const TABS = TAB_GROUPS.flatMap((group) => group.items)
 
 const activeTab = ref(TABS[0].value)
 </script>
