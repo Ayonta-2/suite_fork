@@ -62,6 +62,8 @@ website_route_rules = [
     {"from_route": "/calendar/<path:app_path>", "to_route": "suite"},
 ]
 
+home_page = "suite"
+
 # mail — website redirects
 website_redirects = [
     {
