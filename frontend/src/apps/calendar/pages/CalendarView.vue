@@ -13,7 +13,7 @@ import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
 const dayjs = inject('$dayjs')
 
 const store = userStore()
-const { identities } = store
+const { participantIdentities } = store
 
 const route = useRoute()
 const router = useRouter()
@@ -118,10 +118,10 @@ const transformEvent = (event) => {
 }
 
 const getEventRole = (event) => {
-	if (identities.data?.some((id) => id.email === event.organizer.replace('mailto:', '')))
+	if (participantIdentities.data?.some((id) => id.email === event.organizer.replace('mailto:', '')))
 		return 'Organizer'
 	if (
-		identities.data?.some((id) =>
+		participantIdentities.data?.some((id) =>
 			event.participants?.some((p) => p.email.replace('mailto:', '') === id.email),
 		)
 	)
@@ -294,7 +294,7 @@ const handleUpdateEvent = () => {
 const hasParticipantsOtherThanUser = computed(
 	() =>
 		eventToBeUpdated.participants?.some((p) =>
-			identities.data.every((i) => i.email !== p.email),
+			participantIdentities.data.every((i) => i.email !== p.email),
 		) ?? false,
 )
 

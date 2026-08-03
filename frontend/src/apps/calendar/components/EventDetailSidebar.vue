@@ -35,12 +35,12 @@ const emit = defineEmits(['close', 'edit', 'reloadEvents', 'emailParticipants'])
 const dayjs = inject('$dayjs')
 
 const store = userStore()
-const { identities } = store
+const { participantIdentities } = store
 
 // --- User / RSVP ---
 
 const userParticipant = computed(() =>
-	calendarEvent.participants.find((p) => identities.data?.some((id) => id.email === p.email)),
+	calendarEvent.participants.find((p) => participantIdentities.data?.some((id) => id.email === p.email)),
 )
 const userResponse = computed(() => userParticipant.value?.participation_status)
 
@@ -72,12 +72,12 @@ const eventCalendar = computed(
 
 // The organizer beats the viewer's own address (redundant in their own panel);
 // for self-organized events they coincide. Fall back to the account's address
-// (from identities — the calendar id only carries an opaque JMAP account id),
+// (from participantIdentities — the calendar id only carries an opaque JMAP account id),
 // then the calendar's display name.
 const calendarOwnerLabel = computed(
 	() =>
 		calendarEvent.organizer?.replace('mailto:', '') ||
-		identities.data?.[0]?.email ||
+		participantIdentities.data?.[0]?.email ||
 		eventCalendar.value?.calendar_name,
 )
 
@@ -158,7 +158,7 @@ const visibleParticipants = computed(() =>
 const participantEmails = computed(() =>
 	calendarEvent.participants
 		.map((p) => p.email)
-		.filter((email) => email && identities.data?.every((id) => id.email !== email)),
+		.filter((email) => email && participantIdentities.data?.every((id) => id.email !== email)),
 )
 
 // --- Alerts ---
@@ -293,13 +293,13 @@ const editEvent = createResource({
 // (mirrors the "Notify Participants" prompt shown when creating/editing an event).
 const isOrganizer = computed(
 	() =>
-		identities.data?.some(
+		participantIdentities.data?.some(
 			(id) => id.email === (calendarEvent.organizer || '').replace('mailto:', ''),
 		) ?? false,
 )
 const hasParticipantsOtherThanUser = computed(
 	() =>
-		calendarEvent.participants?.some((p) => identities.data?.every((i) => i.email !== p.email)) ??
+		calendarEvent.participants?.some((p) => participantIdentities.data?.every((i) => i.email !== p.email)) ??
 		false,
 )
 

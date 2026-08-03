@@ -73,6 +73,7 @@ export const userStore = defineStore('mail-user', () => {
 		mailboxes.fetch()
 		addressBooks.fetch()
 		identities.fetch()
+		participantIdentities.fetch()
 		screenedAddresses.fetch()
 		globalScreenedAddresses.fetch()
 		sieveScripts.fetch()
@@ -148,6 +149,14 @@ export const userStore = defineStore('mail-user', () => {
 		cache: ['identities', accountId.value],
 	})
 
+	// Calendar participant identities (JMAP ParticipantIdentity) — the address/display name the
+	// user acts as when organizing or attending events, distinct from the mail sending identities.
+	const participantIdentities = createResource({
+		url: 'suite.mail.api.account.get_participant_identities',
+		makeParams: () => ({ account: accountId.value }),
+		cache: ['participantIdentities', accountId.value],
+	})
+
 	// Screened senders for the account: each is `{ email, action }` where action is 'Reject'
 	// (discard incoming mail) or 'Spam' (file it into the Spam folder).
 	const screenedAddresses = createResource({
@@ -181,6 +190,7 @@ export const userStore = defineStore('mail-user', () => {
 		mailboxes.reset()
 		addressBooks.reset()
 		identities.reset()
+		participantIdentities.reset()
 		screenedAddresses.reset()
 		globalScreenedAddresses.reset()
 		sieveScripts.reset()
@@ -197,6 +207,7 @@ export const userStore = defineStore('mail-user', () => {
 		accountShortNames,
 		addressBooks,
 		identities,
+		participantIdentities,
 		domains,
 		sieveScripts,
 		screenedAddresses,

@@ -11,6 +11,7 @@ from suite.mail.api.mail import normalize_filter
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.identity.identity import fetch_identities
 from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
+from suite.mail.doctype.participant_identity.participant_identity import fetch_participant_identities
 from suite.mail.stalwart import get_domains
 from suite.mail.utils import is_stalwart_configured, log_mail_error
 from suite.mail.utils.dns import parse_dns_zone_file
@@ -617,6 +618,13 @@ def get_identities(account: str) -> list[dict]:
     """Return the email identities for the user"""
 
     return fetch_identities(account, page=1, limit=100)
+
+
+@frappe.whitelist()
+def get_participant_identities(account: str) -> list[dict]:
+    """Return the calendar participant identities for the user"""
+
+    return fetch_participant_identities(account, page=1, limit=100)
 
 
 @frappe.whitelist()

@@ -34,7 +34,6 @@ from suite.utils import execute_with_logging, user_context
 from suite.utils.lock import acquire_lock, release_lock
 from suite.utils.user import is_suite_admin, is_system_manager
 
-
 DEFAULT_MAILBOX_RENAMES = {
     "inbox": ("Inbox", "Inbox"),
     "sent": ("Sent Items", "Sent"),

@@ -27,6 +27,7 @@ import { computed, inject, markRaw, ref, watch, type Component } from 'vue'
 import {
 	BellRing,
 	Code,
+	Contact,
 	Eye,
 	Feather,
 	Fingerprint,
@@ -59,6 +60,7 @@ import ExportSettings from '@/apps/mail/components/Settings/ExportSettings.vue'
 import FolderSettings from '@/apps/mail/components/Settings/FolderSettings.vue'
 import IdentitySettings from '@/apps/mail/components/Settings/IdentitySettings.vue'
 import ImportSettings from '@/apps/mail/components/Settings/ImportSettings.vue'
+import ParticipantIdentitySettings from '@/apps/mail/components/Settings/ParticipantIdentitySettings.vue'
 import ProfileSettings from '@/apps/mail/components/Settings/ProfileSettings.vue'
 import PushSubscriptionSettings from '@/apps/mail/components/Settings/PushSubscriptionSettings.vue'
 import ScreenedEmailAddressSettings from '@/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue'
@@ -114,6 +116,13 @@ const tabGroups = computed((): SettingsTabGroup[] => {
 					value: 'identity',
 					icon: Fingerprint,
 					component: markRaw(IdentitySettings),
+					condition: jmap,
+				},
+				{
+					label: __('Participant Identity'),
+					value: 'participant-identity',
+					icon: Contact,
+					component: markRaw(ParticipantIdentitySettings),
 					condition: jmap,
 				},
 				{
