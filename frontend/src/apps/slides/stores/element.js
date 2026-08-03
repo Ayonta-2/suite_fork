@@ -14,6 +14,7 @@ import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 import { getElementDiv } from './elementRegistry'
 import { markDirty } from './saving'
 import { generateUniqueId, cloneObj, normalizeRotation } from '../utils/helpers'
+import { getBorderInset, getCoverCrop, isFullRect } from '../utils/cropGeometry'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
 import { presentationId } from './presentation'
 import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from './transition'
@@ -421,6 +422,15 @@ const getVideoPoster = async (videoUrl) => {
 	})
 }
 
+const getNaturalAspectRatio = (src) => {
+	return new Promise((resolve, reject) => {
+		const img = new Image()
+		img.onload = () => resolve(img.naturalWidth / img.naturalHeight)
+		img.onerror = reject
+		img.src = src
+	})
+}
+
 const getNaturalSize = async (dataURL) => {
 	return new Promise((resolve, reject) => {
 		const img = new Image()
@@ -565,6 +575,33 @@ const replaceMediaElement = async (element, fileDoc) => {
 					property: 'poster',
 					oldValue: oldPoster,
 					newValue: newPoster,
+				}),
+			)
+		}
+	}
+
+	// the frame stays put and the new image is cover-cropped into it
+	if (element.type === 'image' && element.src !== fileDoc.file_url) {
+		const inset = getBorderInset(element)
+
+		// a legacy image can reach replace without ever being resized or cropped
+		if (!element.height) {
+			const oldAspect = await getNaturalAspectRatio(element.src)
+			element.height = (element.width - 2 * inset) / oldAspect + 2 * inset
+		}
+
+		const frameAspect = (element.width - 2 * inset) / (element.height - 2 * inset)
+		const cover = getCoverCrop(await getNaturalAspectRatio(fileDoc.file_url), frameAspect)
+		const newCrop = isFullRect(cover) ? undefined : cover
+
+		if (element.crop || newCrop) {
+			commands.push(
+				editElementCommand({
+					slideId: currentSlide.value.clientId,
+					elementIds: [element.id],
+					property: 'crop',
+					oldValue: element.crop,
+					newValue: newCrop,
 				}),
 			)
 		}
@@ -1009,6 +1046,7 @@ export {
 	getElementPosition,
 	addFixedWidthToElement,
 	ensureExplicitHeight,
+	getNaturalAspectRatio,
 	setEditableState,
 	replaceMediaElement,
 	normalizeZIndices,

@@ -33,7 +33,7 @@ import { interactionOffset } from '@/apps/slides/stores/interaction'
 import { slideBounds } from '@/apps/slides/stores/slide'
 import { cropElement, draftCrop, cancelCrop } from '@/apps/slides/stores/imageCrop'
 import { selectionColor } from '@/apps/slides/utils/constants'
-import { getCroppedImageBox } from '@/apps/slides/utils/cropGeometry'
+import { getBorderInset, getCroppedImageBox } from '@/apps/slides/utils/cropGeometry'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 
 const HANDLES = [
@@ -73,12 +73,7 @@ const ghostFrameStyles = computed(() => getFrameStyles(10000))
 
 const controlsFrameStyles = computed(() => getFrameStyles(10001))
 
-// the crop rect maps to the content box, so the window insets by the border
-const borderInset = computed(() => {
-	const el = cropElement.value
-	if (!el.borderStyle || el.borderStyle == 'none') return 0
-	return el.borderWidth || 0
-})
+const borderInset = computed(() => getBorderInset(cropElement.value))
 
 const contentBoxStyles = computed(() => ({
 	position: 'absolute',
@@ -116,9 +111,9 @@ const windowStyles = computed(() => ({
 	position: 'absolute',
 	inset: `${borderInset.value}px`,
 	// outline, not border: it takes no layout space, so the handles stay put
-	outline: `${selectionColor} dashed ${2 / slideBounds.scale}px`,
+	outline: `${selectionColor} dashed ${1.5 / slideBounds.scale}px`,
 	// pull the outline in so it straddles the edge, centered like the handles
-	outlineOffset: `-${1 / slideBounds.scale}px`,
+	outlineOffset: `-${0.75 / slideBounds.scale}px`,
 	cursor: 'move',
 	pointerEvents: 'auto',
 }))

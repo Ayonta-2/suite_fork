@@ -16,7 +16,7 @@ const props = defineProps({
 })
 
 const LENGTH = 16
-const THICKNESS = 4
+const THICKNESS = 3
 const COLOR = selectionColor
 
 const scaledPx = (value) => `${value / slideBounds.scale}px`

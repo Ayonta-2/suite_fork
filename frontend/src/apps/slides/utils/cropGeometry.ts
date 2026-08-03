@@ -20,6 +20,31 @@ export interface Point {
 
 export const FULL_RECT: CropRect = { x: 0, y: 0, width: 1, height: 1 }
 
+// with a tolerance: clamping at an image edge can leave float dust, and a
+// near-full crop must still count as the canonical absent state
+export const isFullRect = (crop: CropRect) =>
+	Math.abs(crop.x) < 1e-9 &&
+	Math.abs(crop.y) < 1e-9 &&
+	Math.abs(crop.width - 1) < 1e-9 &&
+	Math.abs(crop.height - 1) < 1e-9
+
+// the crop maps to the content box: a border on the mask insets the frame
+export const getBorderInset = (element: { borderStyle?: string; borderWidth?: number }) => {
+	if (!element.borderStyle || element.borderStyle == 'none') return 0
+	return element.borderWidth || 0
+}
+
+// the centred rect an object-cover render shows: the axis where the image
+// overbleeds the frame is trimmed equally on both sides
+export const getCoverCrop = (naturalAspect: number, frameAspect: number): CropRect => {
+	if (naturalAspect > frameAspect) {
+		const width = frameAspect / naturalAspect
+		return { x: (1 - width) / 2, y: 0, width, height: 1 }
+	}
+	const height = naturalAspect / frameAspect
+	return { x: 0, y: (1 - height) / 2, width: 1, height }
+}
+
 // the box the full image must occupy so exactly the crop rect shows through
 // the frame. unit-agnostic: the result is in whatever units `frame` uses
 export const getCroppedImageBox = (crop: CropRect | null | undefined, frame: Size) => {

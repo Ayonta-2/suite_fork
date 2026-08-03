@@ -1,10 +1,12 @@
 import { computed, ref } from 'vue'
 
-import { ensureExplicitHeight, pendingShapeType } from './element'
+import { ensureExplicitHeight, getNaturalAspectRatio, pendingShapeType } from './element'
 import { currentSlide, selectionBounds } from './slide'
 import { commitInteraction, resetInteractionOffset } from './interaction'
-import { editElementCommand } from './commands'
-import { FULL_RECT } from '../utils/cropGeometry'
+import { commandHistory } from './historyMeta'
+import { batchCommand, editElementCommand } from './commands'
+import { getBorderInset, getCoverCrop, isFullRect } from '../utils/cropGeometry'
+import { getAttachmentUrl } from '../utils/mediaUploads'
 
 const cropElementId = ref(null)
 const draftCrop = ref(null)
@@ -15,7 +17,7 @@ const cropElement = computed(() =>
 	currentSlide.value?.elements.find((el) => el.id == cropElementId.value),
 )
 
-const startCrop = (element) => {
+const startCrop = async (element) => {
 	if (!element || element.type != 'image') return
 
 	ensureExplicitHeight(element, selectionBounds)
@@ -23,7 +25,16 @@ const startCrop = (element) => {
 	// a primed shape draw must not arm through the mode
 	pendingShapeType.value = null
 
-	draftCrop.value = { ...(element.crop ?? FULL_RECT) }
+	let crop = element.crop
+	if (!crop) {
+		// an uncropped image renders object-cover, so seed the draft from that
+		// rect: for a placeholder it differs from the full rect, and nothing jumps
+		const inset = getBorderInset(element)
+		const frameAspect = (element.width - 2 * inset) / (element.height - 2 * inset)
+		crop = getCoverCrop(await getNaturalAspectRatio(getAttachmentUrl(element.src)), frameAspect)
+	}
+
+	draftCrop.value = { ...crop }
 	cropElementId.value = element.id
 }
 
@@ -34,14 +45,6 @@ const cancelCrop = () => {
 	cropElementId.value = null
 	draftCrop.value = null
 }
-
-// with a tolerance: clamping at an image edge can leave float dust, and a
-// near-full crop must still commit as canonical absent
-const isFullRect = (crop) =>
-	Math.abs(crop.x) < 1e-9 &&
-	Math.abs(crop.y) < 1e-9 &&
-	Math.abs(crop.width - 1) < 1e-9 &&
-	Math.abs(crop.height - 1) < 1e-9
 
 const cropsEqual = (a, b) => {
 	if (!a || !b) return !a && !b
@@ -69,4 +72,42 @@ const commitCrop = () => {
 	cancelCrop()
 }
 
-export { inCropMode, cropElementId, cropElement, draftCrop, startCrop, commitCrop, cancelCrop }
+// clear the crop and give the frame back its natural aspect, in one undo step
+const resetImageCrop = async (element) => {
+	if (!element?.crop) return
+
+	const inset = getBorderInset(element)
+	const naturalAspect = await getNaturalAspectRatio(getAttachmentUrl(element.src))
+	const newHeight = (element.width - 2 * inset) / naturalAspect + 2 * inset
+
+	const slideId = currentSlide.value.clientId
+	const commands = [
+		editElementCommand({
+			slideId,
+			elementIds: [element.id],
+			property: 'crop',
+			oldValue: element.crop,
+			newValue: undefined,
+		}),
+		editElementCommand({
+			slideId,
+			elementIds: [element.id],
+			property: 'height',
+			oldValue: element.height,
+			newValue: newHeight,
+		}),
+	]
+
+	commandHistory.execute(batchCommand({ slideId, elementIds: [element.id], commands }))
+}
+
+export {
+	inCropMode,
+	cropElementId,
+	cropElement,
+	draftCrop,
+	startCrop,
+	commitCrop,
+	cancelCrop,
+	resetImageCrop,
+}

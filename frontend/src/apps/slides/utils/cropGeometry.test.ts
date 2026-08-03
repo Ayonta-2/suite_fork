@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { getCroppedImageBox, panCrop, resizeCrop } from '@/apps/slides/utils/cropGeometry'
+import {
+	getCoverCrop,
+	getCroppedImageBox,
+	isFullRect,
+	panCrop,
+	resizeCrop,
+} from '@/apps/slides/utils/cropGeometry'
 
 const frame = { width: 200, height: 100 }
 
@@ -27,6 +33,31 @@ describe('getCroppedImageBox', () => {
 			expect(crop.width * box.width).toBeCloseTo(frame.width, 10)
 			expect(crop.height * box.height).toBeCloseTo(frame.height, 10)
 		}
+	})
+})
+
+describe('isFullRect', () => {
+	it('tolerates float dust from edge clamping', () => {
+		expect(isFullRect({ x: 0, y: 0, width: 1, height: 1 })).toBe(true)
+		expect(isFullRect({ x: 1e-12, y: -1e-12, width: 1 + 1e-12, height: 1 - 1e-12 })).toBe(true)
+	})
+
+	it('rejects a real crop', () => {
+		expect(isFullRect({ x: 0, y: 0, width: 0.999, height: 1 })).toBe(false)
+		expect(isFullRect({ x: 0.001, y: 0, width: 1, height: 1 })).toBe(false)
+	})
+})
+
+describe('getCoverCrop', () => {
+	it('trims the axis where the image overbleeds the frame, centred', () => {
+		// a 2:1 image in a square frame: half the width shows
+		expect(getCoverCrop(2, 1)).toEqual({ x: 0.25, y: 0, width: 0.5, height: 1 })
+		// a 1:2 image in a square frame: half the height shows
+		expect(getCoverCrop(0.5, 1)).toEqual({ x: 0, y: 0.25, width: 1, height: 0.5 })
+	})
+
+	it('matching aspects show the full image', () => {
+		expect(getCoverCrop(1.5, 1.5)).toEqual({ x: 0, y: 0, width: 1, height: 1 })
 	})
 })
 
