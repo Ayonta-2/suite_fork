@@ -14,7 +14,7 @@ export function createOverlay(parent) {
     'display:none',
     'box-sizing:border-box',
     `border:2px solid ${COLORS.selBorder}`,
-    'background:#FFFFFF',
+    'background:var(--surface-base, #FFFFFF)',
     'padding:0 4px',
     'font:13px InterVar,Inter,ui-sans-serif,system-ui,sans-serif',
     'letter-spacing:0.02em',
@@ -44,6 +44,8 @@ export function createOverlay(parent) {
     const deco = [fmt.underline && 'underline', fmt.strikethrough && 'line-through'].filter(Boolean).join(' ')
     el.style.textDecoration = deco || 'none'
     el.style.color          = fmt.color     || COLORS.cellText
+    el.style.backgroundColor = fmt.backgroundColor || fmt.bg || COLORS.white
+    el.style.borderColor     = COLORS.selBorder
     // Textareas top-align text; pad so a single line sits centered like the
     // old <input> did. 4px = the 2px borders (box-sizing:border-box).
     const lineH = Math.round(((fmt.fontSize || 13) * zoom) * 1.3)

@@ -343,8 +343,9 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     _acEl = document.createElement('div')
     _acEl.style.cssText = [
       'position:absolute', 'display:none', 'z-index:50',
-      'background:#fff', 'border:1px solid #e2e2e2', 'border-radius:6px',
-      'box-shadow:0 4px 14px rgba(0,0,0,.1)',
+      'background:var(--surface-elevation-2, var(--surface-base, #ffffff))',
+      'border:1px solid var(--outline-gray-2, #e2e2e2)', 'border-radius:6px',
+      'box-shadow:0 4px 14px rgba(0,0,0,.25)',
       'min-width:200px', 'max-height:208px', 'overflow-y:auto',
       'padding:4px 0',
       'font:13px Inter,system-ui,sans-serif',
@@ -408,13 +409,13 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     _acEl.innerHTML = ''
     _acItems.forEach((item, i) => {
       const row = document.createElement('div')
-      row.style.cssText = `display:flex;align-items:baseline;gap:10px;padding:6px 12px;cursor:pointer;white-space:nowrap;border-radius:4px;${i === _acIdx ? 'background:#f3f3f3;' : ''}`
+      row.style.cssText = `display:flex;align-items:baseline;gap:10px;padding:6px 12px;cursor:pointer;white-space:nowrap;border-radius:4px;${i === _acIdx ? 'background:var(--surface-gray-2, #f3f3f3);' : ''}`
       const right = item.kind === 'sheet'
-        ? `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#0891b2;background:#ecfeff;border-radius:3px;padding:1px 5px;">sheet</span>`
+        ? `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-cyan-6, #0891b2);background:var(--surface-cyan-1, #ecfeff);border-radius:3px;padding:1px 5px;">sheet</span>`
         : item.kind === 'range'
-          ? `<span style="font-size:11px;color:#7c7c7c;">Tab to fill range</span>`
-          : `<span style="font-size:11px;color:#7c7c7c;">${AC_FUNS[item.name]}</span>`
-      row.innerHTML = `<span style="font-weight:600;min-width:80px;color:#171717;">${item.name}</span>${right}`
+          ? `<span style="font-size:11px;color:var(--ink-gray-5, #7c7c7c);">Tab to fill range</span>`
+          : `<span style="font-size:11px;color:var(--ink-gray-5, #7c7c7c);">${AC_FUNS[item.name]}</span>`
+      row.innerHTML = `<span style="font-weight:600;min-width:80px;color:var(--ink-gray-9, #171717);">${item.name}</span>${right}`
       row.addEventListener('mousedown', e => { e.preventDefault(); _acCommit(item) })
       row.addEventListener('mouseover', () => { _acIdx = i; _acHighlight() })
       _acEl.appendChild(row)
@@ -435,7 +436,7 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
   function _acHighlight() {
     if (!_acEl) return
     Array.from(_acEl.children).forEach((row, i) => {
-      row.style.background = i === _acIdx ? '#f3f3f3' : ''
+      row.style.background = i === _acIdx ? 'var(--surface-gray-2, #f3f3f3)' : ''
     })
   }
 
@@ -457,11 +458,11 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     if (!desc) { _acHide(); return }
     _acItems = []; _acIdx = 0
     const params = desc.params
-      .map((p, i) => i === desc.active ? `<b style="color:#171717;">${p}</b>` : p)
+      .map((p, i) => i === desc.active ? `<b style="color:var(--ink-gray-9, #171717);">${p}</b>` : p)
       .join(', ')
     _acEl.innerHTML =
-      `<div style="padding:6px 12px;white-space:nowrap;color:#7c7c7c;">` +
-      `<span style="font-weight:600;color:#171717;">${ctx.fn}</span>(${params})</div>`
+      `<div style="padding:6px 12px;white-space:nowrap;color:var(--ink-gray-5, #7c7c7c);">` +
+      `<span style="font-weight:600;color:var(--ink-gray-9, #171717);">${ctx.fn}</span>(${params})</div>`
     const ox = parseFloat(overlay.el.style.left)   || 0
     const oy = parseFloat(overlay.el.style.top)    || 0
     const oh = parseFloat(overlay.el.style.height) || 24
