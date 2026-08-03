@@ -13,15 +13,6 @@ export const raiseToast = (message: string, type = 'success') => {
 	toast.error(text)
 }
 
-export const copyToClipBoard = async (text: string) => {
-	try {
-		await navigator.clipboard.writeText(text)
-		raiseToast(__('Copied to clipboard.'))
-	} catch {
-		raiseToast(__('Failed to copy.'), 'error')
-	}
-}
-
 export const raisePromiseToast = (
 	action: () => Promise<unknown>,
 	loading: string,

@@ -13,7 +13,7 @@ from suite.mail.doctype.identity.identity import fetch_identities
 from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.doctype.participant_identity.participant_identity import fetch_participant_identities
 from suite.mail.stalwart import get_domains
-from suite.mail.utils import is_stalwart_configured, log_mail_error
+from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.user import (
@@ -32,12 +32,6 @@ _SRV_SERVICE_MAP = {
     "_imap": ("IMAP", "STARTTLS"),
     "_pop3s": ("POP3", "SSL/TLS"),
     "_pop3": ("POP3", "STARTTLS"),
-}
-
-# SRV service label -> (protocol, connection security) for calendar clients. See RFC 6764.
-_CALDAV_SRV_SERVICE_MAP = {
-    "_caldavs": ("CalDAV", "SSL/TLS"),
-    "_caldav": ("CalDAV", "None"),
 }
 
 
@@ -275,28 +269,11 @@ def get_mail_client_config() -> list[dict]:
     3. Fallback: parse the user's domain DNS SRV records (if Stalwart is configured).
     """
 
-    return _get_client_config(lambda protocol: protocol != "CalDAV", _SRV_SERVICE_MAP)
-
-
-@frappe.whitelist()
-def get_calendar_client_config() -> list[dict]:
-    """Returns the CalDAV endpoints for connecting third-party calendar clients.
-
-    Same resolution order as `get_mail_client_config`, reading the CalDAV rows of the
-    admin-entered table and the RFC 6764 SRV records from DNS.
-    """
-
-    return _get_client_config(lambda protocol: protocol == "CalDAV", _CALDAV_SRV_SERVICE_MAP)
-
-
-def _get_client_config(protocol_filter, srv_service_map: dict) -> list[dict]:
-    """Shared resolution for the mail/calendar client-config endpoints."""
-
     settings = frappe.get_cached_doc("Mail Settings")
     if not settings.show_mail_client_config:
         return []
 
-    if rows := [row for row in settings.mail_client_configurations if protocol_filter(row.protocol)]:
+    if settings.mail_client_configurations:
         return [
             {
                 "protocol": row.protocol,
@@ -304,17 +281,43 @@ def _get_client_config(protocol_filter, srv_service_map: dict) -> list[dict]:
                 "port": row.port,
                 "connection_security": row.connection_security,
             }
-            for row in rows
+            for row in settings.mail_client_configurations
         ]
 
     if is_stalwart_configured():
-        return _get_client_config_from_dns(srv_service_map)
+        return _get_client_config_from_dns()
 
     return []
 
 
-def _get_client_config_from_dns(srv_service_map: dict) -> list[dict]:
-    """Derives client endpoints from the domain DNS SRV records.
+@frappe.whitelist()
+def get_calendar_client_config() -> dict:
+    """Returns the CalDAV connection details for connecting third-party calendar clients.
+
+    CalDAV is served by the JMAP server over HTTP, so the endpoints derive from the configured
+    server URL rather than DNS: autodiscovery at /.well-known/caldav and the account's calendars
+    at /dav/cal/<account_name>, where the account name is the user's Stalwart login.
+    See https://stalw.art/docs/collaboration/calendar/#accessing-calendars.
+    """
+
+    settings = frappe.get_cached_doc("Mail Settings")
+    if not settings.show_mail_client_config or not is_stalwart_configured():
+        return {}
+
+    username = frappe.db.get_value("User Settings", {"user": frappe.session.user}, "username")
+    if not username:
+        return {}
+
+    server_url = get_config("server_url").rstrip("/")
+    return {
+        "server_url": server_url,
+        "calendar_url": f"{server_url}/dav/cal/{username}",
+        "username": username,
+    }
+
+
+def _get_client_config_from_dns() -> list[dict]:
+    """Derives mail-client endpoints from the domain DNS SRV records.
 
     Best-effort: on any failure (Stalwart unreachable, malformed zone file) the error is
     logged and an empty list is returned so the Advanced tab degrades gracefully.
@@ -335,7 +338,7 @@ def _get_client_config_from_dns(srv_service_map: dict) -> list[dict]:
             if record["type"] != "SRV":
                 continue
 
-            mapping = srv_service_map.get(record["name"].split(".")[0])
+            mapping = _SRV_SERVICE_MAP.get(record["name"].split(".")[0])
             if not mapping:
                 continue
 
