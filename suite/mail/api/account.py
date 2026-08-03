@@ -301,7 +301,7 @@ def get_calendar_client_config() -> dict:
     """
 
     settings = frappe.get_cached_doc("Mail Settings")
-    if not settings.show_mail_client_config or not is_stalwart_configured():
+    if not settings.show_calendar_client_config or not is_stalwart_configured():
         return {}
 
     username = frappe.db.get_value("User Settings", {"user": frappe.session.user}, "username")
