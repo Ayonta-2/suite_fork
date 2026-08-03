@@ -10,7 +10,11 @@ from frappe import _
 from frappe.model.document import bulk_insert
 from frappe.utils import cint, random_string
 
-from suite.mail.api.contacts import create_contacts_if_not_exists
+from suite.mail.api.contacts import (
+    create_contacts_if_not_exists,
+    enrich_contacts_with_user_images,
+    get_contacts,
+)
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.mail_message.mail_message import (
     add_messages_to_mailbox,
@@ -1023,6 +1027,45 @@ def search_email_addresses(account: str, text: str, limit: int = 10) -> list[dic
     get_user_for_jmap_account(account, raise_exception=True)
 
     return get_email_address_index(account).search_email_addresses(text, limit=cint(limit))
+
+
+@frappe.whitelist()
+def get_email_suggestions(account: str, text: str, limit: int = 10) -> list[dict]:
+    """Suggest up to `limit` {name, email, user_image} recipients matching `text`.
+
+    Sources are tried in cost order — the account's local address index (built from cached messages
+    and contacts), then a JMAP contact search, and finally the server-side email search (slowest —
+    it queries the JMAP server's messages) — falling through to the next source only when the
+    previous one returned nothing.
+    """
+
+    get_user_for_jmap_account(account, raise_exception=True)
+
+    text = (text or "").strip()
+    limit = cint(limit) or 10
+    if not text:
+        return []
+
+    suggestions = get_email_address_index(account).search_email_addresses(text, limit=limit)
+
+    if not suggestions:
+        filter = {"operator": "OR", "conditions": [{"text": text}, {"email": text}]}
+        seen = set()
+        for contact in get_contacts(account, filter, limit):
+            email = (contact.get("email") or "").strip()
+            if email and email.lower() not in seen:
+                seen.add(email.lower())
+                suggestions.append({"name": contact.get("full_name") or None, "email": email})
+
+    if not suggestions:
+        suggestions = [
+            {"name": None, "email": email}
+            for email in get_email_service(account).get_email_suggestions(text, limit=limit)
+        ]
+
+    suggestions = suggestions[:limit]
+    enrich_contacts_with_user_images(suggestions)
+    return suggestions
 
 
 @frappe.whitelist()

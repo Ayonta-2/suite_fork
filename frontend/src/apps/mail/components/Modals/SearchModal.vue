@@ -387,24 +387,19 @@ const folderMatches = computed<MailboxData[]>(() =>
 )
 
 const contactSearch = createResource({
-	url: 'suite.mail.api.contacts.get_contacts',
+	url: 'suite.mail.api.mail.get_email_suggestions',
 	auto: false,
-	makeParams: (text: string) => {
+	makeParams: (text: string) => ({
+		account: store.accountId,
 		// frappe-ui's fetch reuses the previous params object when called with a falsy value (our
 		// intended empty query) and feeds it back here as `text`, so guard against a non-string.
-		const query = typeof text === 'string' ? text : ''
-		return {
-			account: store.accountId,
-			limit: 5,
-			// Omit the filter entirely for an empty query → the backend returns a default contact list, so the
-			// dropdown is populated the moment an operator (e.g. `from:`) is inserted, before anything is typed.
-			// (Sending `filter: undefined` can serialize to the string "undefined" and error server-side.)
-			...(query ? { filter: { operator: 'OR', conditions: [{ text: query }, { email: query }] } } : {}),
-		}
-	},
-	transform: (data: { email: string; full_name?: string; user_image?: string }[]) =>
+		// An empty query returns [] (no default contact list), which also clears stale matches.
+		text: typeof text === 'string' ? text : '',
+		limit: 5,
+	}),
+	transform: (data: { email: string; name?: string; user_image?: string }[]) =>
 		data.map((o) => {
-			const name = o.full_name || ''
+			const name = o.name || ''
 			// Shape serves both consumers: the inline operator dropdown (email/name/image) and the advanced
 			// comboboxes (value/label/display_name for frappe-ui's Combobox).
 			return { value: o.email, label: name || o.email, email: o.email, name, display_name: name, image: o.user_image }
