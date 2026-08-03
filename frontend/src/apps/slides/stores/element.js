@@ -566,7 +566,7 @@ const replaceMediaElement = async (element, fileDoc) => {
 
 	if (element.type === 'video') {
 		const oldPoster = element.poster
-		const newPoster = await getVideoPoster(fileDoc.file_url)
+		const { posterURL: newPoster } = await getVideoPoster(fileDoc.file_url)
 		if (oldPoster !== newPoster) {
 			commands.push(
 				editElementCommand({
