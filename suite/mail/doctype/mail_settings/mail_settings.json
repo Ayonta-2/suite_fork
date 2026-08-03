@@ -13,6 +13,7 @@
   "password",
   "mail_client_config_section",
   "show_mail_client_config",
+  "show_calendar_client_config",
   "mail_client_configurations",
   "spamassassin_section",
   "spamd_host",
@@ -566,6 +567,13 @@
    "label": "Show Connection Details in Mail UI"
   },
   {
+   "default": "1",
+   "description": "Show the CalDAV connection details in the Calendar UI so users can set up third-party calendar clients. When unchecked, nothing is shown.",
+   "fieldname": "show_calendar_client_config",
+   "fieldtype": "Check",
+   "label": "Show Connection Details in Calendar UI"
+  },
+  {
    "depends_on": "eval: doc.show_mail_client_config",
    "description": "Connection endpoints shown to users. Leave empty to fall back to the domain's DNS records.",
    "fieldname": "mail_client_configurations",
@@ -732,7 +740,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-07-15 18:46:42.475053",
+ "modified": "2026-08-03 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",

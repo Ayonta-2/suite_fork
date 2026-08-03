@@ -83,6 +83,7 @@ class MailSettings(Document):
         server_deployment_timeout: DF.Int
         server_job_timeout: DF.Int
         server_url: DF.Data | None
+        show_calendar_client_config: DF.Check
         show_mail_client_config: DF.Check
         signup_domains: DF.SmallText | None
         spamd_host: DF.Data | None

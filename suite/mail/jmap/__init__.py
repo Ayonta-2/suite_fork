@@ -334,6 +334,27 @@ def get_identities(account: str) -> list[dict]:
     return identities
 
 
+def get_participant_identities(account: str) -> list[dict]:
+    """Returns the list of participant identities for the specified account."""
+
+    user = get_user_for_jmap_account(account, raise_exception=True)
+    connection = get_jmap_connection(user)
+    service = ParticipantIdentityService(account, connection)
+
+    return [
+        {
+            "name": f"{account}|{i['id']}",
+            "account": account,
+            "user": user,
+            "id": i["id"],
+            "_name": i["name"],
+            "email": i["calendarAddress"].lower().replace("mailto:", ""),
+            "default": cint(bool(i["isDefault"])),
+        }
+        for i in service.get()
+    ]
+
+
 def get_identity_id_by_email(account: str, email: str, raise_exception: bool = False) -> str | None:
     """Returns the identity ID for the specified email address, or None if not found."""
 

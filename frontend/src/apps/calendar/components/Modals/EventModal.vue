@@ -19,7 +19,7 @@ const emit = defineEmits(['reloadEvents'])
 const user = inject('$user')
 const dayjs = inject('$dayjs')
 const store = userStore()
-const { identities } = store
+const { participantIdentities } = store
 
 const isNew = computed(() => !selectedEvent?.calendarEvent)
 
@@ -219,7 +219,7 @@ const parseAlert = (a: any) => {
 }
 
 const hasParticipantsOtherThanUser = (participants: any[]) =>
-	participants?.some((p) => identities.data.every((i) => i.email !== p.email)) ?? false
+	participants?.some((p) => participantIdentities.data.every((i) => i.email !== p.email)) ?? false
 
 const hasMeetLink = (ev: any) =>
 	(ev?.links || []).some((link: any) => link?.href?.includes('/meet/')) ||

@@ -16,7 +16,7 @@ function add_bulk_delete_button_to_actions(listview) {
 			__('Delete {0} {1} permanently?', [count, count === 1 ? 'item' : 'items']),
 			() => {
 				frappe.call({
-					method: 'mail.client.doctype.event_notification.event_notification.bulk_delete',
+					method: 'suite.calendar.doctype.event_notification.event_notification.bulk_delete',
 					args: {
 						names: listview.get_checked_items(true),
 					},

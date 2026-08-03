@@ -34,7 +34,7 @@ from suite.calendar.doctype.calendar_exchange.calendar_exchange import (
 )
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_calendar_event_service, get_identities
+from suite.mail.jmap import get_calendar_event_service, get_participant_identities
 from suite.utils import log_error
 from suite.utils.dt import get_utc_now
 
@@ -68,7 +68,7 @@ def custom_event_invites_enabled() -> bool:
 
 
 def acting_as_organizer(account: str, organizer: str | None) -> bool:
-    """True when the organizer address is one of the acting account's own identities.
+    """True when the organizer address is one of the acting account's own participant identities.
 
     Guards against firing invite blasts when an attendee (not the organizer) edits their
     own response on a shared event — that case should fall back to server scheduling.
@@ -79,7 +79,7 @@ def acting_as_organizer(account: str, organizer: str | None) -> bool:
 
     organizer = organizer.lower().replace("mailto:", "")
     try:
-        return organizer in {i["email"] for i in get_identities(account)}
+        return organizer in {i["email"] for i in get_participant_identities(account)}
     except Exception:
         return False
 
@@ -434,14 +434,14 @@ def _display_name(event: dict, email: str) -> str:
 
 
 def _organizer_name(account: str, event: dict, organizer: str) -> str | None:
-    """Returns the organizer's display name, preferring the sending identity's name.
+    """Returns the organizer's display name, preferring the matching participant identity's name.
 
     Falls back to a participant name, then None — never the bare email, so the From header
     doesn't render as "alice@x.com <alice@x.com>".
     """
 
     try:
-        for identity in get_identities(account):
+        for identity in get_participant_identities(account):
             if identity["email"] == organizer:
                 name = (identity.get("_name") or "").strip()
                 return name if name and name.lower() != organizer else None

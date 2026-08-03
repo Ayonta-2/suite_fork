@@ -1,62 +1,69 @@
 <template>
-	<FormControl
-		v-model="calendarImport.format"
-		:label="__('Format')"
-		type="select"
-		variant="outline"
-		:options="FORMAT_OPTIONS"
-		required
-	/>
-	<FormControl
-		v-model="calendarImport.calendar"
-		:label="__('Calendar')"
-		type="select"
-		variant="outline"
-		:options="calendarOptions"
-	/>
-	<input
-		ref="fileInput"
-		type="file"
-		class="hidden"
-		:accept="acceptTypes"
-		@change="onFileSelected"
-	/>
-	<Button
-		class="w-full"
-		:label="uploading ? __('Uploading ({0}%)', [progress]) : __('Upload File')"
-		:loading="uploading"
-		@click="fileInput?.click()"
-	/>
-	<p class="text-ink-gray-5 mt-2 flex text-sm">{{ fileUploadSubtitle }}</p>
+	<AppSettingsHeader :title="__('Import')" />
+	<AppSettingsBody>
+		<div class="flex flex-col gap-5">
+			<FormControl
+				v-model="calendarImport.format"
+				:label="__('Format')"
+				type="select"
+				variant="outline"
+				:options="FORMAT_OPTIONS"
+				required
+			/>
+			<FormControl
+				v-model="calendarImport.calendar"
+				:label="__('Calendar')"
+				type="select"
+				variant="outline"
+				:options="calendarOptions"
+			/>
+			<input
+				ref="fileInput"
+				type="file"
+				class="hidden"
+				:accept="acceptTypes"
+				@change="onFileSelected"
+			/>
+			<Button
+				class="w-full"
+				:label="uploading ? __('Uploading ({0}%)', [progress]) : __('Upload File')"
+				:loading="uploading"
+				@click="fileInput?.click()"
+			/>
+			<p class="text-ink-gray-5 mt-2 flex text-sm">{{ fileUploadSubtitle }}</p>
 
-	<Button
-		class="min-h-7"
-		:label="__('Create Import')"
-		variant="solid"
-		:loading="ongoingImport.data?.name"
-		:disabled="ongoingImport.loading || ongoingImport.error || !calendarImport.file"
-		@click="createCalendarImport.submit()"
-	/>
-	<div class="!mt-3 space-x-1 text-base">
-		<span class="text-ink-gray-5">{{ importSubtitle }}</span>
-		<a class="hover:underline" :href="importHref" target="_blank">
-			{{ importLinkText }}
-		</a>
-	</div>
-	<ErrorMessage
-		v-if="createCalendarImport.error"
-		:message="createCalendarImport.error"
-		class="mb-2.5"
-	/>
+			<Button
+				class="min-h-7"
+				:label="__('Create Import')"
+				variant="solid"
+				:loading="ongoingImport.data?.name"
+				:disabled="ongoingImport.loading || ongoingImport.error || !calendarImport.file"
+				@click="createCalendarImport.submit()"
+			/>
+			<div class="!mt-3 space-x-1 text-base">
+				<span class="text-ink-gray-5">{{ importSubtitle }}</span>
+				<a class="hover:underline" :href="importHref" target="_blank">
+					{{ importLinkText }}
+				</a>
+			</div>
+			<ErrorMessage
+				v-if="createCalendarImport.error"
+				:message="createCalendarImport.error"
+				class="mb-2.5"
+			/>
+		</div>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
 import { computed, inject, onMounted, reactive, ref } from 'vue'
 import { Button, ErrorMessage, FormControl, createResource } from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
-import { raiseToast } from '@/apps/mail/utils'
-import { useChunkedUpload } from '@/apps/mail/utils/useChunkedUpload'
-import { userStore } from '@/apps/mail/stores/user'
+import { raiseToast } from '@/apps/calendar/utils'
+import { useChunkedUpload } from '@/utils/useChunkedUpload'
+import { userStore } from '@/apps/calendar/stores/user'
 
 const { accountId } = userStore()
 

@@ -13,12 +13,12 @@ const { participants, dontShowRemove } = defineProps<{
 
 defineEmits(['removeParticipant'])
 
-const { identities } = userStore()
+const { participantIdentities } = userStore()
 
 const organizer = computed(() => participants.find((p) => p.isOrganizer)?.email)
 
 const isUserOrganizer = computed(
-	() => identities.data?.some((id) => id.email === organizer.value?.replace('mailto:', '')) ?? false,
+	() => participantIdentities.data?.some((id) => id.email === organizer.value?.replace('mailto:', '')) ?? false,
 )
 
 const showRemoveParticipant = (participant: any) =>

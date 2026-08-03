@@ -11,8 +11,9 @@ from suite.mail.api.mail import normalize_filter
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.identity.identity import fetch_identities
 from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
+from suite.mail.doctype.participant_identity.participant_identity import fetch_participant_identities
 from suite.mail.stalwart import get_domains
-from suite.mail.utils import is_stalwart_configured, log_mail_error
+from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.user import (
@@ -287,6 +288,32 @@ def get_mail_client_config() -> list[dict]:
         return _get_client_config_from_dns()
 
     return []
+
+
+@frappe.whitelist()
+def get_calendar_client_config() -> dict:
+    """Returns the CalDAV connection details for connecting third-party calendar clients.
+
+    CalDAV is served by the JMAP server over HTTP, so the endpoints derive from the configured
+    server URL rather than DNS: autodiscovery at /.well-known/caldav and the account's calendars
+    at /dav/cal/<account_name>, where the account name is the user's Stalwart login.
+    See https://stalw.art/docs/collaboration/calendar/#accessing-calendars.
+    """
+
+    settings = frappe.get_cached_doc("Mail Settings")
+    if not settings.show_calendar_client_config or not is_stalwart_configured():
+        return {}
+
+    username = frappe.db.get_value("User Settings", {"user": frappe.session.user}, "username")
+    if not username:
+        return {}
+
+    server_url = get_config("server_url").rstrip("/")
+    return {
+        "server_url": server_url,
+        "calendar_url": f"{server_url}/dav/cal/{username}",
+        "username": username,
+    }
 
 
 def _get_client_config_from_dns() -> list[dict]:
@@ -617,6 +644,13 @@ def get_identities(account: str) -> list[dict]:
     """Return the email identities for the user"""
 
     return fetch_identities(account, page=1, limit=100)
+
+
+@frappe.whitelist()
+def get_participant_identities(account: str) -> list[dict]:
+    """Return the calendar participant identities for the user"""
+
+    return fetch_participant_identities(account, page=1, limit=100)
 
 
 @frappe.whitelist()

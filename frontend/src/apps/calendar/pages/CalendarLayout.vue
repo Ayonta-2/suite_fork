@@ -6,13 +6,14 @@ import { raiseToast, shouldIgnoreKeypress } from '@/apps/calendar/utils'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { useTheme } from '@/apps/calendar/utils/composables'
 import { userStore } from '@/apps/calendar/stores/user'
+import { initSocket } from '@/apps/calendar/socket'
 
 /**
  * Calendar route-group layout.
  *
  * The suite shell already provides the top-level chrome, so this layout only:
- *   - provides the calendar-local `$user` (mail/calendar userResource) and
- *     `$dayjs` injections that calendar components depend on,
+ *   - provides the calendar-local `$user` (mail/calendar userResource), `$dayjs`
+ *     and `$socket` injections that calendar components depend on,
  *   - applies the user's color scheme to <html data-theme>,
  *   - ports the Cmd/Ctrl+Shift+L theme-cycle shortcut,
  *   - wraps children in FrappeUIProvider and renders the nested <router-view>.
@@ -22,6 +23,7 @@ const { dataTheme } = useTheme()
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
+provide('$socket', initSocket())
 
 watchEffect(() => document.documentElement.setAttribute('data-theme', dataTheme.value))
 
