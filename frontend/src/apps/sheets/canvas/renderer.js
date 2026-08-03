@@ -18,7 +18,7 @@ export function createRenderer(ctx, geometry) {
                     freeze: frz = { rows: 0, cols: 0 }, getMergeInfo, isSlave,
                     getComment = null, getValidation = null, getCondFormat = null,
                     getRightInset = null, getDiffFor = null, getSparkline = null,
-                    marchAnts = null, marchPhase = 0, pickerRect = null, zoom = 1 }) {
+                    marchAnts = null, marchPhase = 0, pickerRect = null, colDrag = null, zoom = 1 }) {
     if (!cssW || !cssH) return
     ctx.save()
     const k = (window.devicePixelRatio || 1) * zoom
@@ -56,6 +56,28 @@ export function createRenderer(ctx, geometry) {
 
     if (frozW_ > 0 || frozH_ > 0) gridPainter.drawFreezeSeparators(frozW_, frozH_, cssW, cssH)
 
+    if (colDrag) _drawColDrag(colDrag, cssH)
+
+    ctx.restore()
+  }
+
+  // Column drag affordance: shade the column(s) being moved and draw a thick
+  // insertion line at the drop boundary. Drawn last so it sits above everything.
+  function _drawColDrag({ fromCol, count, insertCol }, cssH) {
+    const { colX, cw } = geometry
+    ctx.save()
+    ctx.fillStyle = 'rgba(37, 99, 235, 0.14)'
+    for (let i = 0; i < count; i++) {
+      const c = fromCol + i
+      ctx.fillRect(colX(c), 0, cw(c), cssH)
+    }
+    const ix = colX(insertCol)
+    ctx.strokeStyle = '#2563eb'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(ix, 0)
+    ctx.lineTo(ix, cssH)
+    ctx.stroke()
     ctx.restore()
   }
 

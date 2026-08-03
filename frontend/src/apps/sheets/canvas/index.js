@@ -12,7 +12,7 @@ import { checkboxRect } from './checkbox-geometry.js'
 
 export { colLabel, cellId, parseCellId } from '../utils/cells.js'
 
-export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getFormat, onFill, onBatchCommit, getMergeInfo, isSlave, getMasterId, getComment, getValidation, getCondFormat, getSparkline, getRightInset, onHyperlinkClick, onLinkHover, onDropdownClick, onCheckboxToggle, onPivotDrill, onResizeEnd, getSheetNames, getCurrentSheet, getEditingHomeSheet, getDisplay, getCellIds, lazyValues = false, canEdit = () => true, isCellEditable, onBlockedEdit } = {}) {
+export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getFormat, onFill, onBatchCommit, getMergeInfo, isSlave, getMasterId, getComment, getValidation, getCondFormat, getSparkline, getRightInset, onHyperlinkClick, onLinkHover, onDropdownClick, onCheckboxToggle, onPivotDrill, onResizeEnd, onColMove, getSheetNames, getCurrentSheet, getEditingHomeSheet, getDisplay, getCellIds, lazyValues = false, canEdit = () => true, isCellEditable, onBlockedEdit } = {}) {
   const ctx = canvas.getContext('2d')
   const dpr = window.devicePixelRatio || 1
 
@@ -48,6 +48,10 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
   let resizing   = null  // { col, startX, startW }
   let resizingRow = null  // { row, startY, startH }
   let filling    = null  // { startCell }
+  // Column-header drag-to-reorder. Armed on a header mousedown (pending, moved:
+  // false) and promoted to an active drag once the pointer passes threshold, so
+  // a plain click still selects. { fromCol, count, startX, startY, moved, insertCol }
+  let colDrag    = null
   let _tabAnchorCol = null  // column where the current Tab sequence started
 
   const scroll     = { x: 0, y: 0 }
@@ -113,7 +117,7 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
   }
 
   function render() {
-    renderer.render({ cssW, cssH, getValue, sel, selEnd, selMode, editing, getFormat, freeze, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getSparkline, getRightInset, getDiffFor: _diffCells ? _getDiffFor : null, marchAnts, marchPhase, pickerRect, zoom: _zoom })
+    renderer.render({ cssW, cssH, getValue, sel, selEnd, selMode, editing, getFormat, freeze, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getSparkline, getRightInset, getDiffFor: _diffCells ? _getDiffFor : null, marchAnts, marchPhase, pickerRect, colDrag: (colDrag && colDrag.moved) ? colDrag : null, zoom: _zoom })
     scrollbars.layout()
     for (const cb of _renderListeners) cb()
   }
@@ -1241,12 +1245,24 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     const colHit = geo.hitTestColHeader(e.clientX, e.clientY, rect)
     if (colHit !== null) {
       if (editing) _commitAndHide()
-      selMode = 'col'
-      sel    = { r: 0, c: colHit }
-      selEnd = { r: TOTAL_ROWS - 1, c: colHit }
+      // Pressing inside an existing multi-column selection keeps it and arms a
+      // block move; otherwise select the single column (and arm a 1-col move).
+      const range = getSelRange()
+      const inBlock = selMode === 'col' && range.c1 > range.c0 && colHit >= range.c0 && colHit <= range.c1
+      if (!inBlock) {
+        selMode = 'col'
+        sel    = { r: 0, c: colHit }
+        selEnd = { r: TOTAL_ROWS - 1, c: colHit }
+        onSelect?.(colLabel(colHit) + ':' + colLabel(colHit))
+      }
+      // Moving columns is a data mutation — arm the drag only with write access.
+      if (canEdit() && onColMove) {
+        colDrag = inBlock
+          ? { fromCol: range.c0, count: range.c1 - range.c0 + 1, startX: e.clientX, startY: e.clientY, moved: false, insertCol: null }
+          : { fromCol: colHit, count: 1, startX: e.clientX, startY: e.clientY, moved: false, insertCol: null }
+      }
       canvas.focus()
       render()
-      onSelect?.(colLabel(colHit) + ':' + colLabel(colHit))
       return
     }
 
@@ -1388,9 +1404,15 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     const hoverCell = !resizing && !resizingRow && !dragging && !overFill
       ? geo.hitTest(e.clientX, e.clientY, rect) : null
     const overLink = hoverCell && getFormat?.(cellId(hoverCell.r, hoverCell.c))?.hyperlink
-    if (resizeCol !== null || resizing)            canvas.style.cursor = 'col-resize'
+    // A column header (away from its resize edge) is grabbable — signal it with a
+    // grab/grabbing cursor so drag-to-reorder is discoverable, not hidden.
+    const overColHeader = resizeCol === null && !resizing && !resizingRow && canEdit() && onColMove &&
+                          geo.hitTestColHeader(e.clientX, e.clientY, rect) !== null
+    if ((colDrag && colDrag.moved))                canvas.style.cursor = 'grabbing'
+    else if (resizeCol !== null || resizing)       canvas.style.cursor = 'col-resize'
     else if (resizeRowHit !== null || resizingRow) canvas.style.cursor = 'row-resize'
     else if (overFill)                             canvas.style.cursor = 'crosshair'
+    else if (overColHeader)                        canvas.style.cursor = 'grab'
     else if (overLink)                             canvas.style.cursor = 'pointer'
     else                                           canvas.style.cursor = 'default'
 
@@ -1451,6 +1473,15 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
   })
 
   function _onDocMouseMove(e) {
+    if (colDrag) {
+      const moved = Math.hypot(e.clientX - colDrag.startX, e.clientY - colDrag.startY) >= 5
+      if (colDrag.moved || moved) {
+        colDrag.moved = true
+        colDrag.insertCol = geo.colInsertIndex(e.clientX, canvas.getBoundingClientRect())
+        document.body.style.cursor = 'grabbing'
+        render()
+      }
+    }
     if (resizing) {
       // Drag delta is in physical CSS px; colW stores logical units, so undo
       // the zoom on the delta before applying. When multiple columns are in
@@ -1472,6 +1503,15 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
   }
 
   function _onDocMouseUp() {
+    if (colDrag) {
+      const cd = colDrag
+      colDrag = null
+      document.body.style.cursor = ''
+      if (cd.moved && cd.insertCol != null) {
+        onColMove?.(cd.fromCol, cd.insertCol, cd.count)
+      }
+      render()
+    }
     const didResize = resizing || resizingRow
     if (resizing)    resizing    = null
     if (resizingRow) resizingRow = null
@@ -1797,6 +1837,27 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     _applyCanvasSize()
   }
 
+  // View-metadata half of a structural op — permute column widths and the
+  // hidden-column set through the same index map the engines use. (The engines
+  // own cell/format/range state; the grid owns widths / hidden / freeze.)
+  function remapColsMeta(mapCol) {
+    const pairs = Object.entries(colW).map(([k, v]) => [+k, v])
+    for (const [c] of pairs) delete colW[c]
+    for (const [c, w] of pairs) { const nc = mapCol(c); if (nc != null && nc >= 0) colW[nc] = w }
+    const cols = [...hiddenCols]; hiddenCols.clear()
+    for (const c of cols) { const nc = mapCol(c); if (nc != null && nc >= 0) hiddenCols.add(nc) }
+    _applyCanvasSize()
+  }
+
+  function remapRowsMeta(mapRow) {
+    const pairs = Object.entries(rowH).map(([k, v]) => [+k, v])
+    for (const [r] of pairs) delete rowH[r]
+    for (const [r, h] of pairs) { const nr = mapRow(r); if (nr != null && nr >= 0) rowH[nr] = h }
+    const rows = [...hiddenRows]; hiddenRows.clear()
+    for (const r of rows) { const nr = mapRow(r); if (nr != null && nr >= 0) hiddenRows.add(nr) }
+    _applyCanvasSize()
+  }
+
   function getHitRegion(ex, ey) {
     const rect = canvas.getBoundingClientRect()
     return {
@@ -1947,7 +2008,7 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
     getPreMousedownSel,
     moveTo: (r, c) => moveSel(r, c),
     getColWidth, setColWidth, getRowHeight, setRowHeight,
-    shiftRowHeights, shiftColWidths, getHitRegion,
+    shiftRowHeights, shiftColWidths, remapColsMeta, remapRowsMeta, getHitRegion,
     setFreeze, setHiddenRows, setHiddenCols, setFilterHiddenRows, getHiddenRows, getHiddenCols,
     getColumnHeaderRects, getRow0Rect, getRowRect, onRender,
     setMarchingAnts,

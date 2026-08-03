@@ -755,6 +755,9 @@
         <Button variant="ghost" size="sm" iconLeft="plus"        label="Insert N columns…"   @click="openInsertMany('col', false)" />
         <Button variant="ghost" size="sm" iconLeft="trash-2"     label="Delete column"       @click="doDeleteCol()" />
         <hr class="sn-ctx-sep" />
+        <Button v-if="contextMenu.targetCol > 0" variant="ghost" size="sm" iconLeft="chevron-left"  label="Move column left"  @click="doMoveColLeft()" />
+        <Button variant="ghost" size="sm" iconLeft="chevron-right" label="Move column right" @click="doMoveColRight()" />
+        <hr class="sn-ctx-sep" />
         <Button variant="ghost" size="sm" iconLeft="maximize-2"  label="Auto-fit width"      @click="doAutoFitCol()" />
         <Button variant="ghost" size="sm" iconLeft="eye-off"     label="Hide column"         @click="doHideCols()" />
         <Button v-if="manualHiddenCols.size > 0" variant="ghost" size="sm" iconLeft="eye" label="Unhide all columns" @click="doUnhideAllCols()" />
@@ -1242,6 +1245,7 @@ import { isCanvasClipboardTarget } from '../../utils/clipboard-target.js'
 import { computeFillDown, computeFillRight } from '../../engine/fill-series.js'
 import { detectSeries }                       from '../../engine/patterns/index.js'
 import { adjustFormula }                    from '../../engine/formula-adjust.js'
+import { moveMap, insertMap, deleteMap }    from '../../engine/ref-remap.js'
 import { createSheet }         from '../../engine/sheet.js'
 import { createHistory }       from '../../engine/history.js'
 import { createFormatsEngine } from '../../engine/formats.js'
@@ -3270,6 +3274,10 @@ function _setupGridInstance() {
       history.push()
       isDirty.value = true
     },
+    onColMove(fromCol, toCol, count) {
+      if (readOnly.value) return
+      doMoveCol(fromCol, toCol, count)
+    },
     // Lazy render is the default; eager `data` cache stays as an opt-out
     // fallback (`?lazy=0`). See _lazyValuesEnabled.
     lazyValues: _lazyValuesEnabled(),
@@ -5164,23 +5172,32 @@ function _onDocMouseDown(e) {
 }
 
 
-function doInsertRow(below = false, count = 1) {
-  contextMenu.open = false
-  const atRow = contextMenu.targetRow + (below ? 1 : 0)
-  for (let i = 0; i < count; i++) {
-    const sn = sheet.getCurrentSheet()
-    sheet.insertRow(atRow)
-    formats.insertRow(atRow, sn)
-    comments.insertRow(atRow, sn)
-    validation.insertRow(atRow, sn)
-    protection.insertRow(atRow, sn)
-    condFormat.insertRow(atRow, sn)
-    sortFilter.insertRow(atRow, sn)
-    grid.shiftRowHeights(atRow, 1)
-  }
+// Row twin of _applyColStructural — same reference-correct path for row ops.
+// Slicers are column-bound only, so they take no row remap.
+function _applyRowStructural(mapRow) {
+  const sn = sheet.getCurrentSheet()
+  sheet.remapRows(mapRow, sn)
+  formats.remapRows(mapRow, sn)
+  merge.remapRows(mapRow, sn)
+  comments.remapRows(mapRow, sn)
+  validation.remapRows(mapRow, sn)
+  protection.remapRows(mapRow, sn)
+  condFormat.remapRows(mapRow, sn)
+  sortFilter.remapRows(mapRow, sn)
+  namedRanges.remapRows(mapRow, sn)
+  charts.remapRows(mapRow, sn)
+  pivot.remapRows(mapRow, sn)
+  grid.remapRowsMeta(mapRow)
   _repopulateGrid()
   _applyHiddenRows()
   markEdited()
+  recomputePivotsForSheet(sn)
+}
+
+function doInsertRow(below = false, count = 1) {
+  contextMenu.open = false
+  const atRow = contextMenu.targetRow + (below ? 1 : 0)
+  _applyRowStructural(insertMap(atRow, count))
 }
 
 // ── Zoom ──────────────────────────────────────────────────────────────────────
@@ -5434,7 +5451,6 @@ function confirmInsertMany() {
 
 function doDeleteRow() {
   contextMenu.open = false
-  const sn = sheet.getCurrentSheet()
   // Same span logic as doDeleteCol: delete the whole selected row block when
   // the right-clicked row falls inside it, else just the targeted row. Only a
   // real row span counts — in 'col'/'all' selections getSelection() reports
@@ -5444,16 +5460,29 @@ function doDeleteRow() {
   const within = rowSpan && contextMenu.targetRow >= sel.r0 && contextMenu.targetRow <= sel.r1
   const start  = within ? sel.r0 : contextMenu.targetRow
   const count  = within ? sel.r1 - sel.r0 + 1 : 1
-  for (let i = 0; i < count; i++) {
-    sheet.deleteRow(start)
-    formats.deleteRow(start, sn)
-    comments.deleteRow(start, sn)
-    validation.deleteRow(start, sn)
-    protection.deleteRow(start, sn)
-    condFormat.deleteRow(start, sn)
-    sortFilter.deleteRow(start, sn)
-    grid.shiftRowHeights(start + 1, -1)
-  }
+  _applyRowStructural(deleteMap(start, count))
+}
+
+// Fan one column index-map across every engine and the grid's view metadata,
+// then refresh. This is the single structural-column path behind insert, delete
+// AND move — every one is reference-correct because sheet.remapCols rewrites
+// formulas workbook-wide. The workbook-level engines (merge/charts/pivot/named)
+// filter internally to the op sheet, so passing `sn` is safe.
+function _applyColStructural(mapCol) {
+  const sn = sheet.getCurrentSheet()
+  sheet.remapCols(mapCol, sn)
+  formats.remapCols(mapCol, sn)
+  merge.remapCols(mapCol, sn)
+  comments.remapCols(mapCol, sn)
+  validation.remapCols(mapCol, sn)
+  protection.remapCols(mapCol, sn)
+  condFormat.remapCols(mapCol, sn)
+  sortFilter.remapCols(mapCol, sn)
+  slicers.remapCols(mapCol, sn)
+  namedRanges.remapCols(mapCol, sn)
+  charts.remapCols(mapCol, sn)
+  pivot.remapCols(mapCol, sn)
+  grid.remapColsMeta(mapCol)
   _repopulateGrid()
   _applyHiddenRows()
   markEdited()
@@ -5463,29 +5492,13 @@ function doDeleteRow() {
 function doInsertCol(right = false, count = 1) {
   contextMenu.open = false
   const atCol = contextMenu.targetCol + (right ? 1 : 0)
-  const sn = sheet.getCurrentSheet()
-  for (let i = 0; i < count; i++) {
-    sheet.insertCol(atCol)
-    formats.insertCol(atCol, sn)
-    comments.insertCol(atCol, sn)
-    validation.insertCol(atCol, sn)
-    protection.insertCol(atCol, sn)
-    condFormat.insertCol(atCol, sn)
-    sortFilter.insertCol(atCol, sn)
-    slicers.insertCol(atCol, sn)
-    grid.shiftColWidths(atCol, 1)
-  }
-  _repopulateGrid()
-  _applyHiddenRows()
-  markEdited()
+  _applyColStructural(insertMap(atCol, count))
 }
 
 function doDeleteCol() {
   contextMenu.open = false
-  const sn = sheet.getCurrentSheet()
   // When the right-clicked column is inside a multi-column selection, delete
-  // every selected column; otherwise just the targeted one. Each delete shifts
-  // the rest left, so the block start index stays fixed across iterations.
+  // every selected column; otherwise just the targeted one.
   // Only a real column span counts — in 'row'/'all' selections getSelection()
   // reports c1 = last col, which would otherwise delete every column to the right.
   const sel = grid.getSelection()
@@ -5493,22 +5506,26 @@ function doDeleteCol() {
   const within = colSpan && contextMenu.targetCol >= sel.c0 && contextMenu.targetCol <= sel.c1
   const start  = within ? sel.c0 : contextMenu.targetCol
   const count  = within ? sel.c1 - sel.c0 + 1 : 1
-  for (let i = 0; i < count; i++) {
-    sheet.deleteCol(start)
-    formats.deleteCol(start, sn)
-    comments.deleteCol(start, sn)
-    validation.deleteCol(start, sn)
-    protection.deleteCol(start, sn)
-    condFormat.deleteCol(start, sn)
-    sortFilter.deleteCol(start, sn)
-    slicers.deleteCol(start, sn)
-    grid.shiftColWidths(start + 1, -1)
-  }
-  _repopulateGrid()
-  _applyHiddenRows()
-  markEdited()
-  recomputePivotsForSheet(sn)
+  _applyColStructural(deleteMap(start, count))
 }
+
+// Move a column block so its new start sits before column `toCol` (an index in
+// the pre-move space, the drop target). No-op when dropped inside its own span.
+function doMoveCol(fromCol, toCol, count = 1) {
+  contextMenu.open = false
+  if (toCol >= fromCol && toCol <= fromCol + count) return
+  _applyColStructural(moveMap(fromCol, toCol, count))
+  // Keep the moved column(s) selected at their new home (Google behaviour), so
+  // the header highlight and the status-bar summary track the data that moved.
+  const dest = toCol <= fromCol ? toCol : toCol - count
+  grid.setSelection({ r0: 0, c0: dest, r1: 1e7, c1: dest + count - 1, mode: 'col' })
+}
+
+// Menu / palette: nudge the targeted column one position. Left drops it before
+// its left neighbour; right drops it after its right neighbour (toCol is a
+// pre-move "insert before" index, so right is targetCol + 2).
+function doMoveColLeft()  { const c = contextMenu.targetCol; if (c > 0) doMoveCol(c, c - 1, 1) }
+function doMoveColRight() { const c = contextMenu.targetCol; doMoveCol(c, c + 2, 1) }
 
 function doAutoFitCol() {
   contextMenu.open = false
@@ -5709,6 +5726,7 @@ const cmdGroups = computed(() => buildCommandGroups({
   undo, redo, repeatLast, showFindReplace, showFormulas, repopulateGrid: _repopulateGrid, showShortcutsHelp,
   contextMenu, getGrid: () => grid,
   doInsertRow, doDeleteRow, doInsertCol, doDeleteCol,
+  doMoveColLeft, doMoveColRight,
   doHideRows, doHideCols, doUnhideAllRows, doUnhideAllCols,
   doAutoFitCol, doAutoFitRow, toggleMerge, addRowsCount, doAddMoreRows,
   doFreezeRow, doFreezeCol, doUnfreezeRows, doUnfreezeCols, showSortFilter,

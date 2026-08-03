@@ -22,6 +22,7 @@
 //
 // Pure store — no rendering, no data fetching, no ECharts.
 
+import { remapRangeString, parseA1Range } from './ref-remap.js'
 import { deepClone } from '../utils/deep-clone.js'
 
 export function createChartEngine() {
@@ -84,8 +85,35 @@ export function createChartEngine() {
 		_notify()
 	}
 
+	// Structural permutation. Remap each chart's source range, and — because the
+	// encoding x/y are column indices *into that range* — remap those through the
+	// induced local permutation so a reorder inside the range keeps series bound
+	// to the same data. Charts whose source column vanished drop that series.
+	function _remap(sheet, mapCol, mapRow) {
+		const lc = String(sheet || '').toLowerCase()
+		let changed = false
+		for (const id of Object.keys(_charts)) {
+			const ch = _charts[id]
+			if (String(ch.sourceSheet || '').toLowerCase() !== lc) continue
+			const before = parseA1Range(ch.sourceRange)
+			const nextRange = remapRangeString(ch.sourceRange, { opSheet: ch.sourceSheet, mapCol, mapRow })
+			ch.sourceRange = nextRange
+			changed = true
+			if (mapCol && before && nextRange !== '#REF!' && ch.encoding) {
+				const after = parseA1Range(nextRange)
+				const local = (li) => { const g = mapCol(before.c0 + li); return g == null || g < 0 ? null : g - after.c0 }
+				if (typeof ch.encoding.x === 'number') { const nx = local(ch.encoding.x); ch.encoding.x = nx == null ? 0 : nx }
+				if (Array.isArray(ch.encoding.y)) ch.encoding.y = ch.encoding.y.map(local).filter(v => v != null && v >= 0)
+			}
+		}
+		if (changed) _notify()
+	}
+	function remapCols(mapCol, sheet) { _remap(sheet, mapCol, null) }
+	function remapRows(mapRow, sheet) { _remap(sheet, null, mapRow) }
+
 	return {
 		add, update, remove, get, list, listForSheet, affectsChart,
+		remapCols, remapRows,
 		snapshot, restore, setOnChange,
 	}
 }

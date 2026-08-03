@@ -54,6 +54,13 @@ export function createSlicerEngine() {
     for (const sl of store[sheet]) if (sl.col > atCol) sl.col -= 1
   }
 
+  function remapCols(mapCol, sheet = 'Sheet1') {
+    if (!store[sheet]) return
+    store[sheet] = store[sheet]
+      .map(sl => ({ ...sl, col: mapCol(sl.col) }))
+      .filter(sl => sl.col != null && sl.col >= 0)   // bound column deleted
+  }
+
   // ── Sheet lifecycle ──────────────────────────────────────────────────────────
   function renameSheet(oldName, newName) {
     if (store[oldName] && !store[newName]) { store[newName] = store[oldName]; delete store[oldName] }
@@ -77,7 +84,7 @@ export function createSlicerEngine() {
 
   return {
     list, get, add, remove, move, setCol,
-    insertCol, deleteCol,
+    insertCol, deleteCol, remapCols,
     renameSheet, duplicateSheet, deleteSheet,
     snapshot, restore,
   }
