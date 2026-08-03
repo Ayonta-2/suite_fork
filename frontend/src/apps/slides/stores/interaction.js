@@ -51,11 +51,15 @@ const commitInteraction = (extraCommands = []) => {
 		)
 	}
 
+	resetInteractionOffset()
+	rotationDelta.value = 0
+}
+
+const resetInteractionOffset = () => {
 	interactionOffset.left = 0
 	interactionOffset.top = 0
 	interactionOffset.width = 0
 	interactionOffset.height = 0
-	rotationDelta.value = 0
 }
 
-export { interactionOffset, rotationDelta, commitInteraction }
+export { interactionOffset, rotationDelta, commitInteraction, resetInteractionOffset }

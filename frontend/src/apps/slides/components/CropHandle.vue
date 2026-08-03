@@ -4,6 +4,7 @@
 <script setup>
 import { computed } from 'vue'
 
+import { cursorMap } from '@/apps/slides/composables/useResizer'
 import { slideBounds } from '@/apps/slides/stores/slide'
 import { selectionColor } from '@/apps/slides/utils/constants'
 
@@ -66,6 +67,7 @@ const handleStyles = computed(() => {
 	return {
 		position: 'absolute',
 		boxSizing: 'border-box',
+		cursor: cursorMap[props.handle],
 		...(isEdge ? getEdgeStyles() : getCornerStyles()),
 	}
 })

@@ -1,6 +1,7 @@
 import { onBeforeUnmount } from 'vue'
 
 import { cropElement, draftCrop } from '@/apps/slides/stores/imageCrop'
+import { interactionOffset } from '@/apps/slides/stores/interaction'
 import { slideBounds } from '@/apps/slides/stores/slide'
 import { panCrop } from '@/apps/slides/utils/cropGeometry'
 
@@ -32,8 +33,12 @@ export const useCropPan = (borderInset) => {
 		const el = cropElement.value
 		if (!panStart || !el) return
 
+		// mid-session the frame carries the uncommitted offset of earlier drags
 		const inset = borderInset.value
-		const frame = { width: el.width - 2 * inset, height: el.height - 2 * inset }
+		const frame = {
+			width: el.width + interactionOffset.width - 2 * inset,
+			height: el.height + interactionOffset.height - 2 * inset,
+		}
 
 		draftCrop.value = panCrop(panStart.crop, screenDeltaToLocal(e, el), frame)
 	}

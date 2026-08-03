@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 
 import { ensureExplicitHeight, pendingShapeType } from './element'
 import { currentSlide, selectionBounds } from './slide'
-import { commitInteraction } from './interaction'
+import { commitInteraction, resetInteractionOffset } from './interaction'
 import { editElementCommand } from './commands'
 import { FULL_RECT } from '../utils/cropGeometry'
 
@@ -28,11 +28,20 @@ const startCrop = (element) => {
 }
 
 const cancelCrop = () => {
+	// drop the session's uncommitted frame offset; out of mode it belongs to a normal drag
+	if (inCropMode.value) resetInteractionOffset()
+
 	cropElementId.value = null
 	draftCrop.value = null
 }
 
-const isFullRect = (crop) => crop.x == 0 && crop.y == 0 && crop.width == 1 && crop.height == 1
+// with a tolerance: clamping at an image edge can leave float dust, and a
+// near-full crop must still commit as canonical absent
+const isFullRect = (crop) =>
+	Math.abs(crop.x) < 1e-9 &&
+	Math.abs(crop.y) < 1e-9 &&
+	Math.abs(crop.width - 1) < 1e-9 &&
+	Math.abs(crop.height - 1) < 1e-9
 
 const cropsEqual = (a, b) => {
 	if (!a || !b) return !a && !b

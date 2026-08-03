@@ -10,7 +10,12 @@
 		</div>
 		<div ref="controlsFrame" :style="controlsFrameStyles">
 			<div :style="windowStyles" @mousedown.stop="startPan">
-				<CropHandle v-for="handle in HANDLES" :key="handle" :handle="handle" />
+				<CropHandle
+					v-for="handle in HANDLES"
+					:key="handle"
+					:handle="handle"
+					@mousedown.stop="startResize($event, handle)"
+				/>
 			</div>
 		</div>
 	</div>
@@ -22,7 +27,9 @@ import CropHandle from '@/apps/slides/components/CropHandle.vue'
 
 import { useCropExit } from '@/apps/slides/composables/useCropExit'
 import { useCropPan } from '@/apps/slides/composables/useCropPan'
+import { useCropResize } from '@/apps/slides/composables/useCropResize'
 
+import { interactionOffset } from '@/apps/slides/stores/interaction'
 import { slideBounds } from '@/apps/slides/stores/slide'
 import { cropElement, draftCrop, cancelCrop } from '@/apps/slides/stores/imageCrop'
 import { selectionColor } from '@/apps/slides/utils/constants'
@@ -44,14 +51,15 @@ const GHOST_OPACITY = 0.4
 
 const controlsFrame = useTemplateRef('controlsFrame')
 
+// mid-session the frame carries the uncommitted offset, like SlideElement
 const getFrameStyles = (zIndex) => {
 	const el = cropElement.value
 	return {
 		position: 'absolute',
-		left: `${el.left}px`,
-		top: `${el.top}px`,
-		width: `${el.width}px`,
-		height: `${el.height}px`,
+		left: `${el.left + interactionOffset.left}px`,
+		top: `${el.top + interactionOffset.top}px`,
+		width: `${el.width + interactionOffset.width}px`,
+		height: `${el.height + interactionOffset.height}px`,
 		// unconditional like SlideElement: a transform skips pixel snapping, so
 		// omitting it at rotation 0 would land the overlay half a pixel off
 		transform: `rotate(${el.rotation || 0}deg)`,
@@ -116,6 +124,8 @@ const windowStyles = computed(() => ({
 }))
 
 const { startPan } = useCropPan(borderInset)
+
+const { startResize } = useCropResize(borderInset)
 
 useCropExit(controlsFrame)
 

@@ -51,3 +51,59 @@ export const panCrop = (crop: CropRect, localDelta: Point, frame: Size): CropRec
 		height,
 	}
 }
+
+// per axis: -1 grabs the low edge (left/top), 1 the high edge, 0 leaves the axis alone
+const GRAB_SIGN: Record<string, Point> = {
+	left: { x: -1, y: 0 },
+	right: { x: 1, y: 0 },
+	top: { x: 0, y: -1 },
+	bottom: { x: 0, y: 1 },
+	'top-left': { x: -1, y: -1 },
+	'top-right': { x: 1, y: -1 },
+	'bottom-left': { x: -1, y: 1 },
+	'bottom-right': { x: 1, y: 1 },
+}
+
+const dragCropEdge = (
+	offset: number,
+	size: number,
+	frameSize: number,
+	grab: number,
+	delta: number,
+	minFrame: number,
+) => {
+	if (!grab) return { offset, size, delta: 0 }
+
+	// the image never scales, so crop and frame trade edges at this fixed rate
+	const imageSize = frameSize / size
+	const shrinkLimit = Math.max(0, frameSize - minFrame)
+
+	if (grab < 0) {
+		// low edge: +delta drags inward, -delta stops at the image's low edge
+		const clamped = clamp(delta, Math.min(0, -offset * imageSize), shrinkLimit)
+		return { offset: offset + clamped / imageSize, size: size - clamped / imageSize, delta: clamped }
+	}
+
+	// high edge: -delta drags inward, +delta stops at the image's high edge
+	const clamped = clamp(delta, -shrinkLimit, Math.max(0, (1 - offset - size) * imageSize))
+	return { offset, size: size + clamped / imageSize, delta: clamped }
+}
+
+// owns every clamp; the caller must move the frame by the returned delta verbatim, or the content shifts
+export const resizeCrop = (
+	crop: CropRect,
+	frame: Size,
+	handle: string,
+	localEdgeDelta: Point,
+	minFrame: Size,
+): { crop: CropRect; localEdgeDelta: Point } => {
+	const grab = GRAB_SIGN[handle]
+
+	const xAxis = dragCropEdge(crop.x, crop.width, frame.width, grab.x, localEdgeDelta.x, minFrame.width)
+	const yAxis = dragCropEdge(crop.y, crop.height, frame.height, grab.y, localEdgeDelta.y, minFrame.height)
+
+	return {
+		crop: { x: xAxis.offset, y: yAxis.offset, width: xAxis.size, height: yAxis.size },
+		localEdgeDelta: { x: xAxis.delta, y: yAxis.delta },
+	}
+}
