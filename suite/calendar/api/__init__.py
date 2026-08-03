@@ -3,6 +3,7 @@ import json
 import frappe
 from frappe import _
 
+from suite.calendar.api.rsvp import record_rsvp
 from suite.calendar.doctype.calendar.calendar import fetch_calendars
 from suite.calendar.doctype.calendar_event.calendar_event import (
     fetch_calendar_events,
@@ -120,6 +121,17 @@ def _with_name(items: list[dict] | None) -> list[dict] | None:
     return [
         {**item, "name": item["_name"]} if "name" not in item and "_name" in item else item for item in items
     ]
+
+
+@frappe.whitelist()
+def rsvp_calendar_event(account: str, id: str, response: str) -> None:
+    """Records the logged-in user's RSVP (accepted / declined / tentative) on the event.
+
+    Patches only the caller's own participationStatus — unlike edit_calendar_event, which
+    rewrites the whole event — and routes the organizer's notification through the custom
+    event_response template when custom event invites are enabled (see record_rsvp)."""
+
+    record_rsvp(account, id, response)
 
 
 @frappe.whitelist()

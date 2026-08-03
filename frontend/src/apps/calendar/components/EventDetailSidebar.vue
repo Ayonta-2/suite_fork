@@ -50,12 +50,23 @@ const RSVP_OPTIONS = [
 	{ label: __('Maybe'), value: 'TENTATIVE' },
 ]
 
+// RSVPs go through the dedicated endpoint rather than a whole-event edit: it patches only the
+// caller's own participationStatus, and routes the organizer's notification through the custom
+// event_response template when custom event invites are enabled.
+const rsvpEvent = createResource({
+	url: 'suite.calendar.api.rsvp_calendar_event',
+	makeParams: (response: string) => ({
+		account: store.accountId,
+		// master_id is only set on recurring events; fall back to the event's own id
+		id: calendarEvent.master_id || calendarEvent.id,
+		response: response.toLowerCase(),
+	}),
+	onSuccess: () => emit('reloadEvents'),
+})
+
 const handleSetResponse = (response: string) => {
 	if (!response || response === userResponse.value) return
-	const participants = calendarEvent.participants.map((p) =>
-		p.email === userParticipant.value?.email ? { ...p, participation_status: response } : p,
-	)
-	toast.promise(editEvent.submit({ patch: { participants } }), {
+	toast.promise(rsvpEvent.submit(response), {
 		loading: __('Sending response...'),
 		success: __('Response sent.'),
 		error: __('Action failed. Please try again in some time.'),

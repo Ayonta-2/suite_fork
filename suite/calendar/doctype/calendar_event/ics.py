@@ -22,11 +22,19 @@ from suite.calendar.doctype.calendar_exchange.calendar_exchange import (
 PRODID = "-//Frappe Mail//Calendar Invite//EN"
 
 
-def build_event_ics(event: dict, method: str = "REQUEST", recurrence_id: str | None = None) -> str:
+def build_event_ics(
+    event: dict,
+    method: str = "REQUEST",
+    recurrence_id: str | None = None,
+    attendee_email: str | None = None,
+) -> str:
     """Returns the iCalendar text for a JSCalendar event using the given iTIP method.
 
     When `recurrence_id` is set, a single occurrence (tagged with RECURRENCE-ID) is emitted
     instead of the whole series — used to cancel one instance of a recurring event.
+
+    Pass `attendee_email` for a REPLY: RFC 5546 requires the reply to carry exactly the
+    responding ATTENDEE, so every other one is dropped from the components.
     """
 
     cal = Calendar()
@@ -36,12 +44,16 @@ def build_event_ics(event: dict, method: str = "REQUEST", recurrence_id: str | N
 
     if recurrence_id:
         component = _instance_component(event, recurrence_id, method)
+        if attendee_email:
+            _only_attendee(component, attendee_email)
         _stamp_outgoing(component, method)
         cal.add_component(component)
     else:
         for component in _build_components(event):
             if method == "CANCEL":
                 _mark_cancelled(component)
+            if attendee_email:
+                _only_attendee(component, attendee_email)
             _stamp_outgoing(component, method)
             cal.add_component(component)
 
@@ -89,6 +101,23 @@ def _instance_component(event: dict, recurrence_id: str, method: str):
         _mark_cancelled(component)
 
     return component
+
+
+def _only_attendee(component, email: str) -> None:
+    """Keeps only the given address's ATTENDEE property (with its params — PARTSTAT et al)."""
+
+    attendees = component.get("attendee")
+    if attendees is None:
+        return
+    if not isinstance(attendees, list):
+        attendees = [attendees]
+
+    email = email.lower()
+    kept = [a for a in attendees if str(a).lower().replace("mailto:", "") == email]
+
+    del component["attendee"]
+    for attendee in kept:
+        component.add("attendee", attendee)
 
 
 def _mark_cancelled(component) -> None:

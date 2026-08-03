@@ -183,6 +183,63 @@ def notify_organizer_of_response(account: str, event_id: str, participant_email:
         frappe.set_user(original_user)
 
 
+def notify_organizer_of_reply(account: str, event_id: str, responder_email: str, status: str) -> None:
+    """Sends the organizer an attendee's RSVP as a custom-template email carrying an iTIP REPLY.
+
+    The custom-invite counterpart of the server's iMIP scheduling mail: when Mail Settings sends
+    invites from the client, an attendee's response goes out the same way — the visible body is
+    the event_response template, sent from the attendee's own account, and the embedded
+    text/calendar part (METHOD:REPLY, only the responder's ATTENDEE per RFC 5546) lets the
+    organizer's calendar server record the response mechanically, wherever they're hosted.
+    """
+
+    display = RESPONSE_DISPLAY.get((status or "").lower())
+    if not display:
+        return
+
+    try:
+        events = get_calendar_event_service(account).get([event_id])
+        if not events:
+            return
+        event = events[0]
+
+        organizer = (event.get("organizerCalendarAddress") or "").lower().replace("mailto:", "")
+        responder_email = responder_email.lower()
+        # No organizer to tell, or the organizer responding on their own event.
+        if not organizer or organizer == responder_email:
+            return
+
+        user = get_user_for_jmap_account(account, raise_exception=True)
+        responder_name = _organizer_name(account, event, responder_email)
+        subject, html = _render_response(
+            event,
+            organizer,
+            _organizer_name(account, event, organizer),
+            responder_email,
+            responder_name or responder_email,
+            display,
+            # Hand-built MIME embeds the logo as a CID part (attached by _build_mime), not
+            # frappe.sendmail's `embed=` mechanism.
+            logo_src_attr='src="cid:eventlogo"',
+        )
+
+        ics = build_event_ics(event, method="REPLY", attendee_email=responder_email)
+        message = _build_mime(responder_name, responder_email, organizer, subject, html, ics, "REPLY")
+
+        MailQueue._create(
+            user=user,
+            account=account,
+            from_name=responder_name,
+            from_email=responder_email,
+            recipients=[{"name": None, "email": organizer, "type": "To"}],
+            raw_message=message,
+            via_api=True,
+            delivery_mode="Enqueue",
+        )
+    except Exception:
+        log_error("Calendar", title=_("Failed to send RSVP reply for event {0}").format(event_id))
+
+
 def _response_inline_images() -> list[dict]:
     """Returns the Calendar logo for the response email in frappe.sendmail's `embed=` format."""
 
@@ -258,9 +315,13 @@ def _render(kind, event, organizer, organizer_name, participant, links) -> tuple
 
 
 def _render_response(
-    event, organizer, organizer_name, responder_email, responder_name, display
+    event, organizer, organizer_name, responder_email, responder_name, display, logo_src_attr=None
 ) -> tuple[str, str]:
-    """Returns (subject, html) for the organizer's RSVP notification email."""
+    """Returns (subject, html) for the organizer's RSVP notification email.
+
+    The default logo reference suits frappe.sendmail (the HTTP RSVP heads-up), which inlines
+    images from an `embed=` attribute; the iTIP REPLY path passes its own CID reference.
+    """
 
     label, state = display
     context = _context(event, organizer, organizer_name, None, None)
@@ -270,8 +331,7 @@ def _render_response(
             "responder_email": responder_email,
             "response_label": label,
             "response_state": state,
-            # Sent via frappe.sendmail, which inlines the logo from an `embed=` attribute.
-            "logo_src_attr": f'embed="{RESPONSE_LOGO_EMBED}"',
+            "logo_src_attr": logo_src_attr or f'embed="{RESPONSE_LOGO_EMBED}"',
         }
     )
 

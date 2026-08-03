@@ -3,6 +3,7 @@ from uuid import uuid7
 import frappe
 from frappe import _
 
+from suite.calendar.api.rsvp import record_rsvp
 from suite.calendar.doctype.calendar_event.calendar_event import (
     format_calendar_event,
     get_calendar_events,
@@ -11,9 +12,6 @@ from suite.calendar.doctype.calendar_exchange.calendar_exchange import SERVER_MA
 from suite.mail.jmap import format_jmap_error, get_calendar_event_service, get_participant_identities
 from suite.mail.jmap.services.calendars.calendar import CalendarService
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
-
-# JSCalendar participationStatus values a reader can respond with.
-RSVP_RESPONSES = ("accepted", "tentative", "declined")
 
 
 @frappe.whitelist()
@@ -80,34 +78,14 @@ def add_invite_to_calendar(account: str, blob_id: str) -> dict:
 
 @frappe.whitelist()
 def rsvp_to_invite(account: str, blob_id: str, response: str) -> dict:
-    """Records the viewer's RSVP to an invite attachment: puts the event on their calendar first if
-    it isn't yet, then patches their own participationStatus with scheduling messages on, so the
-    JMAP server sends the iTIP reply to the organizer. Returns the updated calendar copy."""
-
-    response = (response or "").lower()
-    if response not in RSVP_RESPONSES:
-        frappe.throw(_("Invalid RSVP response."))
+    """Records the viewer's RSVP to an invite attachment: puts the event on their calendar first
+    if it isn't yet, then records the response via `record_rsvp` — which notifies the organizer
+    through the custom event_response template when custom event invites are enabled, or the JMAP
+    server's own scheduling mail otherwise. Returns the updated calendar copy."""
 
     service = get_calendar_event_service(account)
     event_id = _ensure_on_calendar(service, _parse_events(service, blob_id))
-
-    copies = service.get([event_id])
-    if not copies:
-        frappe.throw(_("Could not record your response. The event may no longer exist."))
-
-    # Participant keys are per-copy (each server generates its own), so locate the viewer in this
-    # copy by address — any of the account's participant identities counts as "me".
-    emails = {identity["email"] for identity in get_participant_identities(account)}
-    participant_uid = _find_participant_uid(copies[0], emails)
-    if not participant_uid:
-        frappe.throw(_("You are not a participant of this event."))
-
-    result = service.set_participation_status(
-        event_id, participant_uid, response, send_scheduling_messages=True
-    )
-    if result.get("notUpdated"):
-        error = next(iter(result["notUpdated"].values()), None)
-        frappe.throw(_("Could not record your response: {0}").format(format_jmap_error(error)))
+    record_rsvp(account, event_id, response)
 
     if formatted := get_calendar_events(account, [event_id]):
         return formatted[0]
@@ -185,17 +163,6 @@ def _viewer_participant(account: str, event: dict) -> dict | None:
                 "email": participant["email"],
                 "status": participant.get("participation_status") or "",
             }
-
-    return None
-
-
-def _find_participant_uid(event: dict, emails: set[str]) -> str | None:
-    """Returns the participant key in a *raw* JMAP event copy matching any of the given addresses."""
-
-    for uid, participant in (event.get("participants") or {}).items():
-        address = (participant.get("calendarAddress") or participant.get("email") or "").lower()
-        if address.replace("mailto:", "") in emails:
-            return uid
 
     return None
 

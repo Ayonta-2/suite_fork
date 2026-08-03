@@ -24,7 +24,12 @@ from frappe import _
 from frappe.utils import escape_html
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_jmap_connection
+from suite.mail.jmap import (
+    format_jmap_error,
+    get_calendar_event_service,
+    get_jmap_connection,
+    get_participant_identities,
+)
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
 from suite.utils import log_error
 from suite.utils.dt import get_utc_now
@@ -35,6 +40,9 @@ RESPONSES: dict[str, tuple[str, str]] = {
     "tentative": ("tentative", "Maybe"),
     "decline": ("declined", "No"),
 }
+
+# JSCalendar participationStatus values a logged-in attendee can respond with (see record_rsvp).
+PARTICIPATION_RESPONSES = ("accepted", "tentative", "declined")
 
 
 def build_rsvp_links(
@@ -103,6 +111,63 @@ def resolve_rsvp(token: str) -> dict:
         "event_title": escape_html((event or {}).get("title") or ""),
         "event_when": _format_event_when(event) if event else "",
     }
+
+
+def record_rsvp(account: str, event_id: str, response: str) -> str:
+    """Records the logged-in caller's RSVP on their own copy of the event and tells the organizer.
+
+    Their entry is matched by address against the account's participant identities and patched
+    surgically. With custom event invites enabled (Mail Settings) the server's iMIP scheduling
+    mail is suppressed and the custom event_response email — carrying the iTIP REPLY — is sent
+    instead (see `notify_organizer_of_reply`); otherwise the JMAP server emits its own reply.
+    Returns the responder's address.
+    """
+
+    from suite.calendar.doctype.calendar_event.invitations import custom_event_invites_enabled
+
+    response = (response or "").lower()
+    if response not in PARTICIPATION_RESPONSES:
+        frappe.throw(_("Invalid RSVP response."))
+
+    service = get_calendar_event_service(account)
+    copies = service.get([event_id])
+    if not copies:
+        frappe.throw(_("Could not record your response. The event may no longer exist."))
+
+    # Participant keys are per-copy (each server generates its own), so locate the caller in this
+    # copy by address — any of the account's participant identities counts as "me".
+    identity_emails = {identity["email"] for identity in get_participant_identities(account)}
+
+    participant_uid = responder_email = None
+    for uid, participant in (copies[0].get("participants") or {}).items():
+        address = (participant.get("calendarAddress") or participant.get("email") or "").lower()
+        if (address := address.replace("mailto:", "")) in identity_emails:
+            participant_uid, responder_email = uid, address
+            break
+
+    if not participant_uid:
+        frappe.throw(_("You are not a participant of this event."))
+
+    use_custom_reply = custom_event_invites_enabled()
+    result = service.set_participation_status(
+        event_id, participant_uid, response, send_scheduling_messages=not use_custom_reply
+    )
+    if result.get("notUpdated"):
+        error = next(iter(result["notUpdated"].values()), None)
+        frappe.throw(_("Could not record your response: {0}").format(format_jmap_error(error)))
+
+    if use_custom_reply:
+        frappe.enqueue(
+            "suite.calendar.doctype.calendar_event.invitations.notify_organizer_of_reply",
+            queue="short",
+            enqueue_after_commit=True,
+            account=account,
+            event_id=event_id,
+            responder_email=responder_email,
+            status=response,
+        )
+
+    return responder_email
 
 
 def _notify_organizer(payload: dict, status: str) -> None:
