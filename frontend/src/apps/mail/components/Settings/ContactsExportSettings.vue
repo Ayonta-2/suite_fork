@@ -107,7 +107,12 @@ const createContactsExport = createResource({
 				.map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
 				.filter(([, v]) => Boolean(v)),
 		)
-		return { account: accountId, ...contactsExport, filter: cleanedFilter }
+		return {
+			account: accountId,
+			...contactsExport,
+			limit: contactsExport.limit || undefined,
+			filter: cleanedFilter,
+		}
 	},
 	onSuccess: () => ongoingExport.reload(),
 })
