@@ -143,7 +143,12 @@ const createMailExport = createResource({
 		// in the user's zone or the first/last hours of the range get cut off.
 		if (cleanedFilter.after) cleanedFilter.after = utcDayStart(cleanedFilter.after as string)
 		if (cleanedFilter.before) cleanedFilter.before = utcDayEnd(cleanedFilter.before as string)
-		return { account: accountId, ...mailExport, filter: cleanedFilter }
+		return {
+			account: accountId,
+			...mailExport,
+			limit: mailExport.limit || undefined,
+			filter: cleanedFilter,
+		}
 	},
 	onSuccess: () => ongoingExport.reload(),
 })
