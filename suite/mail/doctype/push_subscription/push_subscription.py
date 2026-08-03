@@ -98,7 +98,7 @@ class PushSubscription(Document):
     def validate_url(self) -> None:
         """Validates the URL to ensure it starts with 'https://'."""
 
-        if self.url and not self.url.startswith("https"):
+        if self.url and not self.url.startswith("https://"):
             frappe.throw(_("The URL must start with 'https://'."))
 
     @frappe.whitelist()
@@ -165,7 +165,19 @@ def _add_push_subscription(
     device_client_id = device_client_id or generate_uuid_style_hash(
         f"frappe-{frappe.local.site.replace('.', '-')}-{user}"
     )
-    url = url or f"{frappe.utils.get_url()}/api/method/suite.mail.api.jmap.push_notification?user={user}"
+    if url:
+        if not url.startswith("https://"):
+            frappe.throw(_("The URL must start with 'https://'."))
+    else:
+        site_url = frappe.utils.get_url()
+        if not site_url.startswith("https://"):
+            frappe.throw(
+                _(
+                    "Cannot use the site URL {0} as the push endpoint because the site is not served over HTTPS."
+                ).format(frappe.bold(site_url))
+            )
+        url = f"{site_url}/api/method/suite.mail.api.jmap.push_notification?user={user}"
+
     types = types or None
 
     creation_id = str(uuid7())
