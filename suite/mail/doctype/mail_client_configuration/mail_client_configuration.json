@@ -17,7 +17,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Protocol",
-   "options": "SMTP\nIMAP\nPOP3",
+   "options": "SMTP\nIMAP\nPOP3\nCalDAV",
    "reqd": 1
   },
   {
@@ -54,7 +54,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-09 11:06:31.416111",
+ "modified": "2026-08-03 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Client Configuration",

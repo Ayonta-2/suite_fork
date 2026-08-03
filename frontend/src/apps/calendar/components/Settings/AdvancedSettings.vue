@@ -32,12 +32,12 @@
 			<div v-if="configRows.length" class="space-y-4 border-t pt-5">
 				<div class="space-y-1">
 					<h2 class="text-base-semibold text-ink-gray-8">
-						{{ __('Mail Client Configuration') }}
+						{{ __('Calendar Client Configuration') }}
 					</h2>
 					<p class="text-ink-gray-6 text-base">
 						{{
 							__(
-								'Use these details to connect a third-party mail client such as Thunderbird or the Gmail app.',
+								'Use these CalDAV details to connect a third-party calendar client such as Thunderbird or Apple Calendar.',
 							)
 						}}
 					</p>
@@ -98,7 +98,7 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import CopyControl from '@/components/CopyControl.vue'
-import { copyToClipBoard } from '@/apps/mail/utils'
+import { copyToClipBoard } from '@/apps/calendar/utils'
 
 const user = inject('$user')
 
@@ -116,7 +116,7 @@ const generateKeys = createResource({
 })
 
 const clientConfig = createResource({
-	url: 'suite.mail.api.account.get_mail_client_config',
+	url: 'suite.mail.api.account.get_calendar_client_config',
 	auto: true,
 })
 
