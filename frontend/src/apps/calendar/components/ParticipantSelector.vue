@@ -28,17 +28,13 @@ const normalizedExcludedEmails = computed(() =>
 )
 
 const mailContacts = createResource({
-	url: 'suite.mail.api.contacts.get_contacts',
-	makeParams: (text: string) => {
+	url: 'suite.mail.api.mail.get_email_suggestions',
+	makeParams: (text: string) => ({
+		account: props.account,
 		// frappe-ui's fetch nulls Event params and reuses the previous params object when called
-		// with a falsy value, feeding it back here as `text` — guard against a non-string so the
-		// previous {account, filter} object can't get nested into a new filter.
-		const query = typeof text === 'string' ? text : ''
-		return {
-			account: props.account,
-			...(query ? { filter: { operator: 'OR', conditions: [{ text: query }, { email: query }] } } : {}),
-		}
-	},
+		// with a falsy value, feeding it back here as `text` — guard against a non-string.
+		text: typeof text === 'string' ? text : '',
+	}),
 	transform: (data: any[]) => data.map((contact) => contact.email),
 })
 
