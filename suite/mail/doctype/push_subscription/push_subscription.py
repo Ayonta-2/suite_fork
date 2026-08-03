@@ -258,7 +258,7 @@ def renew_push_subscription(user: str, id: str) -> None:
             frappe.throw(_(response["description"]), title=title)
 
 
-def z() -> None:
+def renew_expiring_push_subscriptions() -> None:
     """Renews soon-to-expire push subscriptions for all JMAP configured users.
 
     Scheduled to run daily. A subscription is renewed when its expiry is within
