@@ -29,11 +29,11 @@
 				<FormControl
 					v-model="identityName"
 					type="combobox"
-					:label="__('Email')"
+					:label="__('Identity')"
 					variant="outline"
 					:options="
 						identities.data.map((identity: Identity) => ({
-							label: identity.email,
+							label: `${identity.email} (${identity.id})`,
 							value: identity.name,
 						}))
 					"
