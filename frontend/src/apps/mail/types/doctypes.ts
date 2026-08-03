@@ -459,20 +459,6 @@ export interface Identity extends DocType {
   user?: string;
 }
 
-// Last updated: 2026-08-03 00:00:00.000000
-export interface ParticipantIdentity extends DocType {
-  /** Identity ID: Data */
-  id?: string;
-  /** Name: Data */
-  _name?: string;
-  /** Email: Data */
-  email: string;
-  /** Set as default Participant Identity: Check */
-  default: 0 | 1;
-  /** Account: Link (JMAP Account) */
-  account: string;
-}
-
 // Last updated: 2026-04-16 12:20:38.930196
 export interface MailSignature extends DocType {
   /** Signature Name: Data */

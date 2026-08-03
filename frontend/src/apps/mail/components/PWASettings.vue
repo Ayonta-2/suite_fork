@@ -96,7 +96,6 @@ import {
 	BellRing,
 	ChevronLeft,
 	ChevronRight,
-	Contact,
 	Eye,
 	Feather,
 	Fingerprint,
@@ -113,7 +112,6 @@ import Account from '@/apps/mail/components/Settings/Account.vue'
 import AppearanceSettings from '@/apps/mail/components/Settings/AppearanceSettings.vue'
 import FolderSettings from '@/apps/mail/components/Settings/FolderSettings.vue'
 import IdentitySettings from '@/apps/mail/components/Settings/IdentitySettings.vue'
-import ParticipantIdentitySettings from '@/apps/mail/components/Settings/ParticipantIdentitySettings.vue'
 import ProfileSettings from '@/apps/mail/components/Settings/ProfileSettings.vue'
 import ScreenedEmailAddressSettings from '@/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue'
 import SignatureSettings from '@/apps/mail/components/Settings/SignatureSettings.vue'
@@ -160,13 +158,6 @@ const groups = computed(() => {
 					value: 'identity',
 					icon: Fingerprint,
 					component: markRaw(IdentitySettings),
-					condition: jmap,
-				},
-				{
-					label: __('Participant Identity'),
-					value: 'participant-identity',
-					icon: Contact,
-					component: markRaw(ParticipantIdentitySettings),
 					condition: jmap,
 				},
 				{

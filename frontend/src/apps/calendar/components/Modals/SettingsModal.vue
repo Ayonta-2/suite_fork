@@ -20,7 +20,7 @@
 </template>
 <script setup lang="ts">
 import { markRaw, ref } from 'vue'
-import { Palette, User } from 'lucide-vue-next'
+import { Contact, Palette, User } from 'lucide-vue-next'
 import {
 	SettingsContent,
 	SettingsDialog,
@@ -31,6 +31,7 @@ import {
 } from 'frappe-ui'
 
 import AppearanceSettings from '@/apps/calendar/components/Settings/AppearanceSettings.vue'
+import ParticipantIdentitySettings from '@/apps/calendar/components/Settings/ParticipantIdentitySettings.vue'
 import ProfileSettings from '@/apps/calendar/components/Settings/ProfileSettings.vue'
 
 const show = defineModel<boolean>({ default: false })
@@ -41,6 +42,12 @@ const TABS = [
 		value: 'profile',
 		icon: User,
 		component: markRaw(ProfileSettings),
+	},
+	{
+		label: __('Participant Identity'),
+		value: 'participant-identity',
+		icon: Contact,
+		component: markRaw(ParticipantIdentitySettings),
 	},
 	{
 		label: __('Appearance'),

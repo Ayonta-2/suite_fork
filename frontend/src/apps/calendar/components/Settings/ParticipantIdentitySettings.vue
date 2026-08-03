@@ -5,7 +5,6 @@
 				v-if="identity?.doc && !identity.loading"
 				:label="__('Save')"
 				variant="solid"
-				:size="isMobile ? 'md' : 'sm'"
 				:disabled="
 					identity.get.loading ||
 					JSON.stringify(identity.doc) === JSON.stringify(identity.originalDoc)
@@ -13,13 +12,7 @@
 				:loading="identity.save.loading"
 				@click="save"
 			/>
-			<Button
-				icon-left="lucide-plus"
-				:label="__('New')"
-				:size="isMobile ? 'md' : 'sm'"
-				variant="outline"
-				@click="showAddDialog"
-			/>
+			<Button icon-left="lucide-plus" :label="__('New')" variant="outline" @click="showAddDialog" />
 		</template>
 	</AppSettingsHeader>
 	<AppSettingsBody>
@@ -148,15 +141,12 @@ import { Button, Dialog, FormControl, createDocumentResource, createResource } f
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
-import { raiseToast } from '@/apps/mail/utils'
-import { useScreenSize } from '@/apps/mail/utils/composables'
-import { userStore } from '@/apps/mail/stores/user'
+import { raiseToast } from '@/apps/calendar/utils'
+import { userStore } from '@/apps/calendar/stores/user'
 
-import type { ParticipantIdentity } from '@/apps/mail/types'
+import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 
 const { accountId, participantIdentities } = userStore()
-
-const { isMobile } = useScreenSize()
 
 const identityName = ref(participantIdentities.data?.[0]?.name || '')
 
