@@ -1,7 +1,14 @@
 import { computed, ref } from 'vue'
 
-import { ensureExplicitHeight, getNaturalAspectRatio, pendingShapeType } from './element'
-import { currentSlide, selectionBounds } from './slide'
+import { toast } from 'frappe-ui'
+
+import {
+	activeElement,
+	ensureExplicitHeight,
+	getNaturalAspectRatio,
+	pendingShapeType,
+} from './element'
+import { currentSlide, slides } from './slide'
 import { commitInteraction, resetInteractionOffset } from './interaction'
 import { commandHistory } from './historyMeta'
 import { batchCommand, editElementCommand } from './commands'
@@ -17,10 +24,20 @@ const cropElement = computed(() =>
 	currentSlide.value?.elements.find((el) => el.id == cropElementId.value),
 )
 
+const probeNaturalAspect = async (element) => {
+	try {
+		return await getNaturalAspectRatio(getAttachmentUrl(element.src))
+	} catch {
+		toast.error('Failed to load the image.')
+	}
+}
+
 const startCrop = async (element) => {
 	if (!element || element.type != 'image') return
 
-	ensureExplicitHeight(element, selectionBounds)
+	ensureExplicitHeight(element)
+	// without a height the frame-aspect math below is NaN
+	if (!element.height) return
 
 	// a primed shape draw must not arm through the mode
 	pendingShapeType.value = null
@@ -31,7 +48,11 @@ const startCrop = async (element) => {
 		// rect: for a placeholder it differs from the full rect, and nothing jumps
 		const inset = getBorderInset(element)
 		const frameAspect = (element.width - 2 * inset) / (element.height - 2 * inset)
-		crop = getCoverCrop(await getNaturalAspectRatio(getAttachmentUrl(element.src)), frameAspect)
+		const naturalAspect = await probeNaturalAspect(element)
+		if (naturalAspect == null) return
+		// the load may outlive a deletion, slide switch, or selection change
+		if (activeElement.value?.id != element.id) return
+		crop = getCoverCrop(naturalAspect, frameAspect)
 	}
 
 	draftCrop.value = { ...crop }
@@ -76,11 +97,17 @@ const commitCrop = () => {
 const resetImageCrop = async (element) => {
 	if (!element?.crop) return
 
+	const naturalAspect = await probeNaturalAspect(element)
+	if (naturalAspect == null) return
+
+	// the load may outlive a slide switch or the element itself
+	const slide = slides.value.find((s) => s.elements.some((el) => el.id == element.id))
+	if (!slide) return
+
 	const inset = getBorderInset(element)
-	const naturalAspect = await getNaturalAspectRatio(getAttachmentUrl(element.src))
 	const newHeight = (element.width - 2 * inset) / naturalAspect + 2 * inset
 
-	const slideId = currentSlide.value.clientId
+	const slideId = slide.clientId
 	const commands = [
 		editElementCommand({
 			slideId,

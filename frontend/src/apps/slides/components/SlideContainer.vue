@@ -386,7 +386,7 @@ const handlePositionChange = (total) => {
 let resizeStartBounds = null
 
 const startElementResize = (e, resizer) => {
-	ensureExplicitHeight(activeElement.value, selectionBounds)
+	ensureExplicitHeight(activeElement.value)
 
 	resizeStartBounds = {
 		left: selectionBounds.left,

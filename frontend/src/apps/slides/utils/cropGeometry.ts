@@ -34,9 +34,13 @@ export const getBorderInset = (element: { borderStyle?: string; borderWidth?: nu
 	return element.borderWidth || 0
 }
 
+const isUsableAspect = (aspect: number) => Number.isFinite(aspect) && aspect > 0
+
 // the centred rect an object-cover render shows: the axis where the image
 // overbleeds the frame is trimmed equally on both sides
 export const getCoverCrop = (naturalAspect: number, frameAspect: number): CropRect => {
+	// a dimensionless SVG probes as NaN (0/0), which must not become a crop
+	if (!isUsableAspect(naturalAspect) || !isUsableAspect(frameAspect)) return { ...FULL_RECT }
 	if (naturalAspect > frameAspect) {
 		const width = frameAspect / naturalAspect
 		return { x: (1 - width) / 2, y: 0, width, height: 1 }

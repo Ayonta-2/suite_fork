@@ -59,6 +59,13 @@ describe('getCoverCrop', () => {
 	it('matching aspects show the full image', () => {
 		expect(getCoverCrop(1.5, 1.5)).toEqual({ x: 0, y: 0, width: 1, height: 1 })
 	})
+
+	it('falls back to the full rect when an aspect is not a positive finite number', () => {
+		expect(getCoverCrop(NaN, 1)).toEqual({ x: 0, y: 0, width: 1, height: 1 })
+		expect(getCoverCrop(2, NaN)).toEqual({ x: 0, y: 0, width: 1, height: 1 })
+		expect(getCoverCrop(0, 1)).toEqual({ x: 0, y: 0, width: 1, height: 1 })
+		expect(getCoverCrop(2, Infinity)).toEqual({ x: 0, y: 0, width: 1, height: 1 })
+	})
 })
 
 describe('panCrop', () => {

@@ -51,7 +51,8 @@ const removeElementCommand = ({ slideId, element }) => ({
 
 const editElements = (state, slideId, elementIds, property, value) => {
 	elementIds.forEach((elementId) => {
-		findElement(state, slideId, elementId)[property] = cloneValue(value)
+		const element = findElement(state, slideId, elementId)
+		if (element) element[property] = cloneValue(value)
 	})
 }
 
