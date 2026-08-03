@@ -9,7 +9,7 @@
 			</div>
 		</div>
 		<div ref="controlsFrame" :style="controlsFrameStyles">
-			<div :style="windowStyles" @mousedown.stop="startPan">
+			<div :style="windowStyles" @mousedown.stop="startPan" @dblclick.stop="commitCrop">
 				<CropHandle
 					v-for="handle in HANDLES"
 					:key="handle"
@@ -31,7 +31,7 @@ import { useCropResize } from '@/apps/slides/composables/useCropResize'
 
 import { interactionOffset } from '@/apps/slides/stores/interaction'
 import { slideBounds } from '@/apps/slides/stores/slide'
-import { cropElement, draftCrop, cancelCrop } from '@/apps/slides/stores/imageCrop'
+import { cropElement, draftCrop, cancelCrop, commitCrop } from '@/apps/slides/stores/imageCrop'
 import { selectionColor } from '@/apps/slides/utils/constants'
 import { getBorderInset, getCroppedImageBox } from '@/apps/slides/utils/cropGeometry'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
