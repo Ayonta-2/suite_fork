@@ -10,11 +10,25 @@
 					{{ invite.event.title || __('Untitled event') }}
 				</span>
 				<span v-if="whenLabel" class="block truncate">{{ whenLabel }}</span>
+				<span v-if="locationLabel" class="block truncate">{{ locationLabel }}</span>
 			</div>
 		</div>
 		<div class="flex shrink-0 items-center justify-end gap-3">
+			<template v-if="invite.participant">
+				<span>{{ __('Going?') }}</span>
+				<div class="flex items-center gap-1.5">
+					<Button
+						v-for="option in RSVP_OPTIONS"
+						:key="option.value"
+						:label="option.label"
+						:variant="currentResponse === option.value ? 'solid' : 'outline'"
+						:loading="rsvp.loading && pendingResponse === option.value"
+						@click="handleRsvp(option.value)"
+					/>
+				</div>
+			</template>
 			<Button
-				v-if="!invite.exists"
+				v-else-if="!invite.exists"
 				:label="__('Add to Calendar')"
 				:loading="addInvite.loading"
 				@click="addInvite.submit()"
@@ -30,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { CalendarPlus } from 'lucide-vue-next'
 import { Button, createResource } from 'frappe-ui'
@@ -51,6 +65,7 @@ interface InviteEvent {
 	time_zone: string
 	show_without_time: 0 | 1
 	recurrence_id?: string | null
+	locations: { _name?: string }[]
 }
 
 interface InviteDetails {
@@ -58,6 +73,9 @@ interface InviteDetails {
 	method: string
 	exists: boolean
 	event: InviteEvent
+	// The viewer's own entry on the event — present when they're invited, carrying their
+	// current response (e.g. 'ACCEPTED', or '' when they haven't answered yet).
+	participant: { uid: string; email: string; status: string } | null
 }
 
 const { attachment, account } = defineProps<{ attachment: Attachment; account: string }>()
@@ -98,6 +116,13 @@ const whenLabel = computed(() => {
 	return `${start.format('MMM D, YYYY, h:mm A')} – ${end.format('MMM D, YYYY, h:mm A')}`
 })
 
+const locationLabel = computed(() =>
+	(invite.value?.event.locations || [])
+		.map((location) => location._name)
+		.filter(Boolean)
+		.join(', '),
+)
+
 const addInvite = createResource({
 	url: 'suite.calendar.api.invites.add_invite_to_calendar',
 	makeParams: () => ({ account, blob_id: attachment.blob_id }),
@@ -111,6 +136,39 @@ const addInvite = createResource({
 	},
 	onError: (error: { message?: string }) => raiseToast(error.message || '', 'error'),
 })
+
+// --- RSVP (mirrors the calendar app's "Going?" control) ---
+
+const RSVP_OPTIONS = [
+	{ label: __('Yes'), value: 'ACCEPTED' },
+	{ label: __('No'), value: 'DECLINED' },
+	{ label: __('Maybe'), value: 'TENTATIVE' },
+]
+
+const currentResponse = computed(() => invite.value?.participant?.status || '')
+const pendingResponse = ref('')
+
+const rsvp = createResource({
+	url: 'suite.calendar.api.invites.rsvp_to_invite',
+	makeParams: (response: string) => ({ account, blob_id: attachment.blob_id, response }),
+	onSuccess: (event: InviteEvent) => {
+		details.data = {
+			...details.data,
+			exists: true,
+			event,
+			participant: { ...details.data.participant, status: pendingResponse.value },
+		}
+		raiseToast(__('Response sent.'))
+		useUpcomingEvents().events.reload()
+	},
+	onError: (error: { message?: string }) => raiseToast(error.message || '', 'error'),
+})
+
+const handleRsvp = (response: string) => {
+	if (rsvp.loading || response === currentResponse.value) return
+	pendingResponse.value = response
+	rsvp.submit(response.toLowerCase())
+}
 
 const viewInCalendar = () => {
 	const event = invite.value?.event
