@@ -43,3 +43,11 @@ export const fromWallClock = (value?: string | null): string =>
  */
 export const fromEventZone = (start: string, eventTimeZone?: string | null) =>
 	eventTimeZone ? dayjs.tz(start, eventTimeZone).tz(userTimeZone()) : dayjs(start)
+
+/** The start of a `YYYY-MM-DD` day in the user's zone, as a UTC timestamp the APIs take. */
+export const utcDayStart = (date?: string | null): string =>
+	date ? dayjs.tz(date, userTimeZone()).startOf('day').utc().format(UTC_FORMAT) : ''
+
+/** The end of a `YYYY-MM-DD` day in the user's zone, as a UTC timestamp the APIs take. */
+export const utcDayEnd = (date?: string | null): string =>
+	date ? dayjs.tz(date, userTimeZone()).endOf('day').utc().format(UTC_FORMAT) : ''

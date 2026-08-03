@@ -20,7 +20,7 @@
 </template>
 <script setup lang="ts">
 import { markRaw, ref } from 'vue'
-import { Contact, Palette, User } from 'lucide-vue-next'
+import { Contact, HardDriveDownload, HardDriveUpload, Palette, User } from 'lucide-vue-next'
 import {
 	SettingsContent,
 	SettingsDialog,
@@ -31,6 +31,8 @@ import {
 } from 'frappe-ui'
 
 import AppearanceSettings from '@/apps/calendar/components/Settings/AppearanceSettings.vue'
+import ExportSettings from '@/apps/calendar/components/Settings/ExportSettings.vue'
+import ImportSettings from '@/apps/calendar/components/Settings/ImportSettings.vue'
 import ParticipantIdentitySettings from '@/apps/calendar/components/Settings/ParticipantIdentitySettings.vue'
 import ProfileSettings from '@/apps/calendar/components/Settings/ProfileSettings.vue'
 
@@ -54,6 +56,18 @@ const TABS = [
 		value: 'appearance',
 		icon: Palette,
 		component: markRaw(AppearanceSettings),
+	},
+	{
+		label: __('Import'),
+		value: 'import',
+		icon: HardDriveDownload,
+		component: markRaw(ImportSettings),
+	},
+	{
+		label: __('Export'),
+		value: 'export',
+		icon: HardDriveUpload,
+		component: markRaw(ExportSettings),
 	},
 ]
 
