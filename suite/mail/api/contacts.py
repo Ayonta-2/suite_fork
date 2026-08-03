@@ -22,12 +22,28 @@ def get_address_books(account: str) -> list[dict]:
     return [{f: d[f] for f in fields} for d in address_books]
 
 
+def sanitize_filter(filter: dict | None) -> dict | None:
+    """Recursively removes conditions with empty values from the given JMAP filter."""
+
+    if not filter:
+        return None
+
+    if "conditions" in filter:
+        conditions = [c for c in map(sanitize_filter, filter["conditions"] or []) if c]
+        if not conditions:
+            return None
+        if len(conditions) == 1:
+            return conditions[0]
+        return {**filter, "conditions": conditions}
+
+    return {k: v for k, v in filter.items() if v} or None
+
+
 @frappe.whitelist()
 def get_contact_cards(account: str, filter: dict | None = None, limit: int = 50) -> list[dict]:
     """Returns the contact cards for the given account."""
 
-    if filter:
-        filter = {k: v for k, v in filter.items() if v}
+    filter = sanitize_filter(filter)
 
     if not (contact_cards := fetch_contact_cards(account, filter, 0, limit)[0]):
         return []
