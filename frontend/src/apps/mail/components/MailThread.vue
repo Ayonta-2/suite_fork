@@ -272,6 +272,12 @@
 											</div>
 										</template>
 									</Alert>
+									<CalendarInviteBanner
+										v-if="!readonly && !isCollapsed(mail) && icsAttachment(mail)"
+										:key="`invite-${mail.name}`"
+										:attachment="icsAttachment(mail)"
+										:account="scopeAccountId"
+									/>
 									<EmailContent
 										v-if="hasHtmlContent(mail.html_body)"
 										:content="mail.html_body"
@@ -428,6 +434,7 @@ import { provideAccountScope } from '@/apps/mail/utils/accountScope'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
+import CalendarInviteBanner from '@/apps/mail/components/CalendarInviteBanner.vue'
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
@@ -857,6 +864,17 @@ const showMailDetails = ref<string>()
 const filteredAttachments = (mail: Mail) =>
 	mail.attachments.filter(
 		(a: Attachment) => a.disposition === 'attachment' || !a.type.startsWith('image/'),
+	)
+
+// The message's calendar invite, if it carries one — as a text/calendar (or application/ics)
+// part or a file merely named *.ics.
+const icsAttachment = (mail: Mail) =>
+	mail.attachments?.find(
+		(a: Attachment) =>
+			a.blob_id &&
+			(a.type?.toLowerCase().startsWith('text/calendar') ||
+				a.type?.toLowerCase() === 'application/ics' ||
+				a.filename?.toLowerCase().endsWith('.ics')),
 	)
 
 const showAttachmentViewer = ref(false)
