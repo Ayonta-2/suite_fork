@@ -224,6 +224,8 @@ def format_participant_identity(account: str, identity: dict) -> dict:
         "default": cint(bool(identity["isDefault"])),
         "_name": identity["name"],
         "email": identity["calendarAddress"].split("mailto:")[-1].lower(),
+        "owner": frappe.session.user,
+        "modified_by": frappe.session.user,
         "creation": today(),
         "modified": today(),
     }
