@@ -2,34 +2,7 @@
 	<AppSettingsHeader :title="__('Advanced')" />
 	<AppSettingsBody>
 		<div class="flex flex-col gap-5">
-			<h2 class="text-base-semibold text-ink-gray-8">{{ __('API Access') }}</h2>
-			<CopyControl
-				v-if="user.data?.api_key"
-				:label="__('API Key')"
-				:value="user.data?.api_key"
-			/>
-			<p v-else class="text-base">
-				{{ __(`You don't have an API key yet. Generate one to access the API.`) }}
-			</p>
-			<Button
-				class="min-h-7 self-start"
-				:label="user.data?.api_key ? __('Regenerate Secret') : __('Generate Keys')"
-				@click="generateKeys.submit()"
-			/>
-
-			<Dialog v-model="showSecret" :options="{ title: __('API Access') }">
-				<template #body-content>
-					<p class="text-base">
-						{{
-							__(`Please copy the API secret now. You won’t be able to see it again!`)
-						}}
-					</p>
-					<CopyControl :label="__('API Key')" :value="user.data?.api_key" />
-					<CopyControl :label="__('API Secret')" :value="apiSecret" />
-				</template>
-			</Dialog>
-
-			<div v-if="configRows.length" class="space-y-4 border-t pt-5">
+			<div v-if="configRows.length" class="space-y-4">
 				<div class="space-y-1">
 					<h2 class="text-base-semibold text-ink-gray-8">
 						{{ __('Calendar Client Configuration') }}
@@ -86,14 +59,8 @@
 	</AppSettingsBody>
 </template>
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
-import {
-	Badge,
-	Button,
-	Dialog,
-	Tooltip,
-	createResource,
-} from 'frappe-ui'
+import { computed, inject } from 'vue'
+import { Badge, Tooltip, createResource } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
@@ -101,19 +68,6 @@ import CopyControl from '@/components/CopyControl.vue'
 import { copyToClipBoard } from '@/apps/calendar/utils'
 
 const user = inject('$user')
-
-const showSecret = ref(false)
-const apiSecret = ref('')
-
-const generateKeys = createResource({
-	url: 'suite.utils.user.generate_user_keys',
-	makeParams: () => ({ user: user.data?.name }),
-	onSuccess: (data) => {
-		if (!user.data?.api_key) user.reload()
-		apiSecret.value = data.api_secret
-		showSecret.value = true
-	},
-})
 
 const clientConfig = createResource({
 	url: 'suite.mail.api.account.get_calendar_client_config',
