@@ -153,6 +153,29 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
         )
         return response.status_code == 200
 
+    @staticmethod
+    def personal_account(member: frappe._dict) -> str:
+        """Returns the member's personal JMAP account id."""
+
+        from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
+
+        return get_user_personal_jmap_account(member.email, raise_exception=True)
+
+    @classmethod
+    def deliver_mail(cls, sender: frappe._dict, recipient: frappe._dict, subject: str | None = None) -> dict:
+        """Sends a mail and waits until it lands in the recipient's inbox, returning the thread row."""
+
+        subject = subject or f"Delivered {unique_name('subject')}"
+        result = cls.send_mail(sender, recipient.email, subject=subject)
+        assert result["status"] == "Submitted", result.get("error")
+
+        def find_thread():
+            return next((t for t in cls.get_inbox_threads(recipient) if t["subject"] == subject), None)
+
+        return cls.wait_until(
+            find_thread, timeout=60, message=f"Mail '{subject}' did not reach {recipient.email}."
+        )
+
     @classmethod
     def disable_screening(cls, member: frappe._dict) -> None:
         """Turns off screening on the member's personal account so inbound mail hits the inbox.
@@ -181,7 +204,8 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
         with cls.set_user(member.email):
             account = get_user_personal_jmap_account(member.email, raise_exception=True)
             inbox = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
-            return get_threads(account, inbox, limit=20)
+            threads, _mailbox = get_threads(account, inbox, limit=20)
+            return threads
 
     @classmethod
     def send_mail(
