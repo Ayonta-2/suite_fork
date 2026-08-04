@@ -83,11 +83,12 @@ class TestAdminQueue(StalwartIntegrationTestCase):
         for key in ("status_types", "error_types", "expiry_types"):
             self.assertTrue(options[key])
 
-        # Push the next retry out and read it back.
+        # Message-level nextRetry is a smoke call only: stock Stalwart derives it from the
+        # recipients' retryDue and ignores direct writes (some builds accept them).
         next_retry = _utc_z(datetime.now(UTC) + timedelta(hours=6))
         update_queued_message(message_id, next_retry=next_retry)
-        self.assertEqual(get_queued_message(message_id)["next_retry"], next_retry)
 
+        # The recipient's retryDue is the effective retry knob and must round-trip.
         recipient_retry = _utc_z(datetime.now(UTC) + timedelta(hours=2))
         update_queued_recipient(message_id, recipient, next_retry=recipient_retry)
         row = next(r for r in get_queued_message(message_id)["recipients"] if r["email"] == recipient)
