@@ -27,10 +27,14 @@ performs. Override with `STALWART_VERSION`, `STALWART_CLI_VERSION`,
 ```sh
 bench --site <site> set-config allow_tests true
 bench --site <site> set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0, 'root_domain_name': 'example.test'}" --parse
+bench --site <site> execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
+bench --site <site> clear-cache
 ```
 
-(`Mail Settings` takes priority over `site_config.json` — leave its Stalwart fields
-empty on test sites.)
+(`Mail Settings` takes priority over `site_config.json` — leave its Stalwart fields empty
+on test sites. `verify_ssl` must be unchecked there explicitly because the field defaults
+to on, which would shadow the site_config value; the container's certificate is
+self-signed.)
 
 ## Run the tests
 

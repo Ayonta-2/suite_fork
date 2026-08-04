@@ -269,6 +269,10 @@ jobs:
         run: |
           bench --site test_site set-config allow_tests true
           bench --site test_site set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0, 'root_domain_name': 'example.test'}" --parse
+          # Mail Settings wins over site_config and its verify_ssl checkbox defaults to on,
+          # which would shadow the verify_ssl: 0 above (the container's cert is self-signed).
+          bench --site test_site execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
+          bench --site test_site clear-cache
 
           for path in $GITHUB_WORKSPACE/suite/mail/tests/test_*.py $GITHUB_WORKSPACE/suite/calendar/tests/test_*.py; do
             [ -e "$path" ] || continue
