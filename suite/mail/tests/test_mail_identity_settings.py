@@ -124,8 +124,9 @@ class TestMailIdentitySettings(StalwartIntegrationTestCase):
 
             calendar = get_calendar_client_config()
             self.assertIsInstance(calendar, dict)
-            if calendar.get("server_url"):
-                self.assertIn(self.member.email, calendar["server_url"])
+            if calendar.get("calendar_url"):
+                self.assertIn(self.member.email, calendar["calendar_url"])
+                self.assertEqual(calendar.get("username"), self.member.email)
 
     def test_user_settings_actions(self):
         settings = frappe.get_doc("User Settings", {"user": self.member.email})
