@@ -16,8 +16,10 @@ STALWART_URL="http://127.0.0.1:${STALWART_HTTP_PORT}"
 export STALWART_VERSION STALWART_ADMIN_USER STALWART_ADMIN_PASSWORD STALWART_HTTP_PORT
 
 wait_for_http() {
+    # Any HTTP response counts as reachable: in bootstrap mode the server answers with an
+    # error status on most paths, so only connection failures should keep us waiting.
     for _ in $(seq 1 90); do
-        if curl -fs -o /dev/null "$STALWART_URL"; then
+        if curl -s -o /dev/null "$STALWART_URL"; then
             return 0
         fi
         sleep 2
