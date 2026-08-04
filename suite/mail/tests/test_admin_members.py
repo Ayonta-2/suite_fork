@@ -2,14 +2,15 @@
 # For license information, please see license.txt
 
 import secrets
+from unittest.mock import patch
 
 import frappe
-from frappe.utils import sha256_hash
 
 from suite.mail.api.account import (
     create_account,
     get_account_request,
     get_account_setup_options,
+    resend_otp,
     signup,
     validate_email_assigned,
     verify_otp,
@@ -121,23 +122,26 @@ class TestAdminMembers(StalwartIntegrationTestCase):
 
             request = frappe.get_last_doc("Mail Account Request", {"account": email})
 
-            # NOTE: resend_otp is not exercised - it calls MailAccountRequest.set_otp(),
-            # which does not exist (no code writes the account_request_otp_hash cache key),
-            # so the endpoint raises AttributeError. Needs a fix in the app.
+            # resend_otp regenerates the code and emails it. The code only travels by email,
+            # so read it off the document instance before send_verification_email consumes it.
+            captured = {}
+            original_send = type(request).send_verification_email
 
-            # The OTP only travels by email, so plant a known one in the cache the way set_otp does.
-            frappe.cache.set_value(
-                f"account_request_otp_hash:{request.name}", sha256_hash("123456"), expires_in_sec=600
-            )
+            def capture_otp(doc):
+                captured["otp"] = doc._signup_otp
+                return original_send(doc)
 
+            with self.set_user("Guest"), patch.object(type(request), "send_verification_email", capture_otp):
+                resend_otp(request.name)
+            self.assertTrue(captured["otp"])
+
+            wrong = "000000" if captured["otp"] != "000000" else "111111"
             with self.set_user("Guest"):
-                self.assertRaisesRegex(
-                    frappe.ValidationError, "Invalid OTP", verify_otp, request.name, "000000"
-                )
-                self.assertEqual(verify_otp(request.name, "123456"), request.request_key)
+                self.assertRaisesRegex(frappe.ValidationError, "Invalid OTP", verify_otp, request.name, wrong)
+                self.assertEqual(verify_otp(request.name, captured["otp"]), request.request_key)
                 # The OTP is single-use.
                 self.assertRaisesRegex(
-                    frappe.ValidationError, "Invalid OTP", verify_otp, request.name, "123456"
+                    frappe.ValidationError, "Invalid OTP", verify_otp, request.name, captured["otp"]
                 )
 
         # Signup is rejected when disabled or for a domain outside the allow-list.

@@ -23,11 +23,15 @@ from suite.mail.stalwart import create_account, create_app_password, get_roles
 from suite.mail.utils import get_config, is_stalwart_configured
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
-from suite.utils import execute_with_logging
+from suite.utils import execute_with_logging, generate_otp
 from suite.utils.user import is_suite_admin, is_system_manager
 
 STALWART_DEFAULT_USER_ROLES = ["User"]
 STALWART_DEFAULT_ADMIN_ROLES = ["User", "Tenant Administrator"]
+
+# How long a signup OTP stays valid. Only its hash is kept (in cache); the code itself
+# travels by email and is never stored.
+OTP_TTL_SECONDS = 10 * 60
 
 
 def _lines(value: str | None) -> list[str]:
@@ -268,12 +272,45 @@ class MailAccountRequest(Document):
         if self.is_expired:
             frappe.throw(_("This request has expired. Please create a new one."))
 
+    def set_otp(self) -> None:
+        """Generates a fresh signup OTP, caching only its hash (see `verify_otp`).
+
+        The code itself is stashed transiently on the document so the very next
+        `send_verification_email` on this instance can email it - it is never persisted.
+        """
+
+        otp = str(generate_otp(length=6))
+        frappe.cache.set_value(
+            f"account_request_otp_hash:{self.name}",
+            frappe.utils.sha256_hash(otp),
+            expires_in_sec=OTP_TTL_SECONDS,
+        )
+        self._signup_otp = otp
+
     @frappe.whitelist()
     def send_verification_email(self) -> None:
         """Send verification email to the user."""
 
         self.validate_expired()
         self.validate_backup_email()
+
+        # A freshly generated OTP (see set_otp) takes precedence over the invite link:
+        # the caller is walking the code-verification flow, not the signup-link flow.
+        if getattr(self, "_signup_otp", None):
+            frappe.sendmail(
+                recipients=self.backup_email,
+                subject=_("Frappe Mail - Verification Code"),
+                template="generic",
+                args={
+                    "title": _("Your verification code is {0}.").format(self._signup_otp),
+                    "description": _(
+                        "Enter this code to verify your email address. It expires in {0} minutes."
+                    ).format(OTP_TTL_SECONDS // 60),
+                },
+                now=True,
+            )
+            self._signup_otp = None
+            return
 
         if self.invited_by:
             subject = _("You have been invited by {0} to join Frappe Mail").format(self.invited_by)
