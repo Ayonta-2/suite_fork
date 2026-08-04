@@ -124,7 +124,7 @@
                 variant="subtle"
                 icon="lucide-chevron-left"
                 :label="__('Back')"
-                :disabled="markOnboarded.loading"
+                :disabled="navigating"
                 @click="goBack"
               />
               <Button
@@ -133,7 +133,7 @@
                 class="!gap-1"
                 :label="__('Open Suite')"
                 icon-right="lucide-chevron-right"
-                :loading="markOnboarded.loading"
+                :loading="navigating"
                 @click="openSuite"
               />
             </div>
@@ -146,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, type ComponentPublicInstance, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, type ComponentPublicInstance, type Ref } from 'vue'
 import { Button, Combobox, ErrorMessage, Tooltip, createResource } from 'frappe-ui'
 import LucideMail from '~icons/lucide/mail'
 import LucideUser from '~icons/lucide/user'
@@ -246,12 +246,7 @@ function goBack() {
 // so closing the tab here doesn't send the user back through the wizard.
 function finish() {
   step.value = 'ready'
-  // The button is natively disabled while the request is in flight, so the
-  // step-change focus no-ops; focus again once it settles.
-  markOnboarded
-    .submit()
-    .catch(() => {})
-    .finally(() => nextTick(focusStep))
+  markOnboarded.submit().catch(() => {})
 }
 
 const isDark = computed(() =>
@@ -262,12 +257,16 @@ function toggleTheme() {
   switchTheme(isDark.value ? 'light' : 'dark')
 }
 
+const navigating = ref(false)
+
 async function openSuite() {
+  navigating.value = true
   // Completion already ran on reaching this step; only retry if it's unfinished.
   try {
     if (markOnboarded.loading) await markOnboarded.promise
     else if (!markOnboarded.fetched || markOnboarded.error) await markOnboarded.submit()
   } catch {
+    navigating.value = false
     return
   }
   // Full reload so the router's cached setup state refetches.
