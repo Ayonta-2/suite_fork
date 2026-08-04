@@ -217,6 +217,13 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Setup Node
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+
       - name: Cache pip
         if: steps.mail-calendar-changes.outputs.run == '1'
         uses: actions/cache@v4
