@@ -1,9 +1,10 @@
 <template>
-  <AppSettingsHeader>
+  <SettingsHeader>
     <h2 class="text-lg-semibold text-ink-gray-8">{{ __('Preferences') }}</h2>
-  </AppSettingsHeader>
-  <AppSettingsBody>
-    <div class="divide-y divide-outline-gray-1">
+  </SettingsHeader>
+  <SettingsBody>
+    <!-- pt-2.5 + first row's py-3.5 = 24px, level with the profile tab's pt-6 -->
+    <div class="divide-y divide-outline-gray-1 pt-2.5">
       <SettingsRow
         :title="__('Appearance')"
         :description="__('Choose a light, dark, or system-matched interface.')"
@@ -16,7 +17,7 @@
       </SettingsRow>
       <SettingsRow
         :title="__('Language')"
-        :description="__('The language the interface is shown in.')"
+        :description="__('The language that the interface is shown in.')"
       >
         <Combobox
           trigger="button"
@@ -43,7 +44,7 @@
         />
       </SettingsRow>
     </div>
-  </AppSettingsBody>
+  </SettingsBody>
 </template>
 
 <script setup lang="ts">
@@ -51,6 +52,8 @@ import { computed, ref } from 'vue'
 import {
   Combobox,
   Select,
+  SettingsBody,
+  SettingsHeader,
   SettingsRow,
   createDocumentResource,
   createResource,
@@ -58,8 +61,6 @@ import {
 } from 'frappe-ui'
 
 import { useSessionStore } from '@/boot/session'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import { switchTheme, themeMode } from '@/utils/setupTheme'
 
 const THEME_OPTIONS = [
@@ -79,6 +80,7 @@ const user = createDocumentResource({
 const saving = computed(() => user.setValue.loading)
 
 const languageOptions = ref<{ label: string; value: string }[]>([])
+
 createResource({
   url: 'frappe.client.get_list',
   params: {
@@ -95,6 +97,7 @@ createResource({
 })
 
 const timezoneOptions = ref<{ label: string; value: string }[]>([])
+
 createResource({
   url: 'frappe.core.doctype.user.user.get_timezones',
   auto: true,
@@ -104,8 +107,7 @@ createResource({
 })
 
 // Language and time zone shape the whole session (translations, rendered
-// dates), so a full reload after save is the only way to apply them (CRM does
-// the same).
+// dates), so a full reload after save is the only way to apply them.
 async function saveUserField(fieldname: 'language' | 'time_zone', value?: string | null) {
   if (!user.doc || saving.value) return
   if (!value || value === user.originalDoc?.[fieldname]) return

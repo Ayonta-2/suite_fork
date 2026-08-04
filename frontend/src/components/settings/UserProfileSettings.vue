@@ -1,7 +1,5 @@
 <template>
-	<AppSettingsHeader>
-		<h2 class="text-lg-semibold text-ink-gray-8">{{ __('Profile') }}</h2>
-	</AppSettingsHeader>
+	<AppSettingsHeader :title="__('Profile')" />
 	<AppSettingsBody>
 		<div v-if="user?.doc" class="flex flex-col gap-6">
 			<FileUploader

@@ -46,7 +46,7 @@
 </template>
 
 <script setup>
-import { h, ref, inject } from 'vue'
+import { ref, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dropdown, Button } from 'frappe-ui'
 import { ArrowLeft, Plus, Copy, Trash, LogOut, Command } from 'lucide-vue-next'
@@ -72,15 +72,13 @@ const inReadonlyMode = inject('inReadonlyMode', ref(false))
 
 const sessionStore = useSessionStore()
 
-const menuIcon = (icon) => h(icon, { class: 'stroke-[1.5] !size-3.5' })
-
 const appsMenuOption = useAppSwitcher('slides')
 
 const themeMenuOption = useThemeMenuOption()
 
 const getLogoutMenuOption = () => ({
 	label: 'Log out',
-	icon: menuIcon(LogOut),
+	icon: LogOut,
 	onClick: () => sessionStore.logout.submit(),
 })
 
@@ -104,7 +102,7 @@ const getContextMenuOptions = () => {
 			options: [
 				{
 					label: 'Back to Home',
-					icon: menuIcon(ArrowLeft),
+					icon: ArrowLeft,
 					onClick: () => router.replace({ name: 'slides-home' }),
 				},
 				appsMenuOption.value,
@@ -117,7 +115,7 @@ const getContextMenuOptions = () => {
 			group: 'Presentation',
 			options: presentationActions.map(({ label, icon, action }) => ({
 				label,
-				icon: menuIcon(icon),
+				icon,
 				onClick: () => emit('performDropdownAction', action),
 			})),
 		})
@@ -128,7 +126,7 @@ const getContextMenuOptions = () => {
 		options: [
 			{
 				label: 'Shortcuts',
-				icon: menuIcon(Command),
+				icon: Command,
 				onClick: () => (showShortcutsModal.value = true),
 			},
 			themeMenuOption,
