@@ -135,11 +135,14 @@
 										@delete-mail="(m: Mail) => emit('deleteMail', m)"
 									/>
 								</div>
+								<!-- An expanded mail always needs the gap between header and body —
+								     keying it on the preview alone left image-only mails (empty text
+								     preview) flush. Collapsed rows keep the preview-keyed padding. -->
 								<div
 									class="flex items-center space-x-3"
 									:class="{
 										'cursor-pointer': mail !== thread[thread.length - 1],
-										'pb-6': mail.preview,
+										'pb-6': mail.preview || !isCollapsed(mail),
 									}"
 									@click.stop="mail.collapsed = !mail.collapsed"
 								>
