@@ -68,6 +68,40 @@ class TestCalendarExchangeAndNotifications(StalwartIntegrationTestCase):
         self.assertEqual(doc.status, "Completed", doc.get("output"))
         self.assertTrue(frappe.db.exists("File", {"attached_to_name": doc.name}))
 
+    def test_calendar_jmap_round_trip(self):
+        """Export in the jmap format and re-import the artifact."""
+
+        with self.set_user(self.member.email):
+            add_calendar_event(
+                self.account,
+                title=f"JMAP round trip {unique_name('event')}",
+                start="2026-11-25T09:00:00",
+                duration="PT1H",
+                time_zone="UTC",
+            )
+            create_calendar_export(self.account, "jmap", ".tgz", "Start (DESC)")
+            export = frappe.get_last_doc(
+                "Calendar Exchange", {"account": self.account, "operation": "Export"}
+            )
+            export._export()
+            export.reload()
+            self.assertEqual(export.status, "Completed", export.get("output"))
+
+            file_url = frappe.db.get_value(
+                "File",
+                {"attached_to_doctype": "Calendar Exchange", "attached_to_name": export.name},
+                "file_url",
+            )
+            self.assertTrue(file_url)
+
+            create_calendar_import(self.account, "jmap", file_url)
+            imported = frappe.get_last_doc(
+                "Calendar Exchange", {"account": self.account, "operation": "Import"}
+            )
+            imported._import()
+            imported.reload()
+            self.assertEqual(imported.status, "Completed", imported.get("output"))
+
     def test_event_notifications_contract(self):
         # Without server-side scheduling traffic the listing stays empty but must answer cleanly.
         with self.set_user(self.member.email):
