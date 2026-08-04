@@ -34,6 +34,7 @@ import CopyControl from '@/components/CopyControl.vue'
 
 const clientConfig = createResource({
 	url: 'suite.mail.api.account.get_calendar_client_config',
+	cache: 'calendar-client-config',
 	auto: true,
 })
 

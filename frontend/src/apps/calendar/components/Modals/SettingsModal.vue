@@ -2,7 +2,7 @@
 	<SettingsDialog v-model="show" v-model:tab="activeTab" size="5xl">
 		<template #title>{{ __('Settings') }}</template>
 		<SettingsSidebar>
-			<SettingsNavGroup v-for="group in TAB_GROUPS" :key="group.label" :label="group.label">
+			<SettingsNavGroup v-for="group in tabGroups" :key="group.label" :label="group.label">
 				<SettingsNavItem v-for="tab in group.items" :key="tab.value" :value="tab.value">
 					<template #prefix>
 						<component :is="tab.icon" class="size-4 shrink-0 text-ink-gray-6" />
@@ -12,16 +12,17 @@
 			</SettingsNavGroup>
 		</SettingsSidebar>
 		<SettingsContent>
-			<SettingsPanel v-for="tab in TABS" :key="tab.value" :value="tab.value">
+			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
 				<component :is="tab.component" />
 			</SettingsPanel>
 		</SettingsContent>
 	</SettingsDialog>
 </template>
 <script setup lang="ts">
-import { markRaw, ref } from 'vue'
+import { computed, markRaw, ref } from 'vue'
 import { Code, Contact, HardDriveDownload, HardDriveUpload, Palette, User } from 'lucide-vue-next'
 import {
+	createResource,
 	SettingsContent,
 	SettingsDialog,
 	SettingsNavGroup,
@@ -93,7 +94,21 @@ const TAB_GROUPS = [
 	},
 ]
 
-const TABS = TAB_GROUPS.flatMap((group) => group.items)
+// The Advanced tab only holds the CalDAV client config, which the server withholds
+// unless Mail Settings enables it — hide the whole Developer group when it's empty.
+const clientConfig = createResource({
+	url: 'suite.mail.api.account.get_calendar_client_config',
+	cache: 'calendar-client-config',
+	auto: true,
+})
 
-const activeTab = ref(TABS[0].value)
+const tabGroups = computed(() =>
+	clientConfig.data?.server_url
+		? TAB_GROUPS
+		: TAB_GROUPS.filter((group) => group.label !== __('Developer')),
+)
+
+const tabs = computed(() => tabGroups.value.flatMap((group) => group.items))
+
+const activeTab = ref(tabs.value[0].value)
 </script>
