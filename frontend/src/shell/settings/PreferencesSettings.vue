@@ -7,7 +7,7 @@
     <div class="divide-y divide-outline-gray-1 pt-2.5">
       <SettingsRow
         :title="__('Appearance')"
-        :description="__('Choose a light, dark, or system-matched interface.')"
+        :description="__('Choose a light, dark, or system-matched interface')"
       >
         <Select
           :model-value="themeMode"
@@ -17,7 +17,7 @@
       </SettingsRow>
       <SettingsRow
         :title="__('Language')"
-        :description="__('The language that the interface is shown in.')"
+        :description="__('The language that the interface is shown in')"
       >
         <Combobox
           trigger="button"
@@ -31,7 +31,7 @@
       </SettingsRow>
       <SettingsRow
         :title="__('Time zone')"
-        :description="__('Your local time zone for dates and times.')"
+        :description="__('Your local time zone for dates and times')"
       >
         <Combobox
           trigger="button"

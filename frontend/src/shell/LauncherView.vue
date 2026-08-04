@@ -10,10 +10,10 @@
 
       <Dropdown :options="userMenuOptions" align="end">
         <button
-          class="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+          class="flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
           :aria-label="__('User menu')"
         >
-          <Avatar :image="imageURL" :label="fullName" size="xl" />
+          <Avatar :image="imageURL" :label="fullName" size="lg" />
         </button>
       </Dropdown>
     </header>
