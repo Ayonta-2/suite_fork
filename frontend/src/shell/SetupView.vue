@@ -168,7 +168,18 @@ const step = ref<Step>('welcome')
 const stepIndex = computed(() => stepOrder.indexOf(step.value))
 const trackIndex = computed(() => stepIndex.value - 1)
 const timezone = ref(Intl.DateTimeFormat().resolvedOptions().timeZone)
-const timezoneOptions = Intl.supportedValuesOf('timeZone').map((tz) => ({ label: tz, value: tz }))
+const timezones = ref<string[]>(
+  typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [],
+)
+// Safari < 15.4 has no Intl.supportedValuesOf; fetch the list instead.
+if (!timezones.value.length) {
+  createResource({
+    url: 'frappe.geo.country_info.get_country_timezone_info',
+    auto: true,
+    onSuccess: (data: { all_timezones: string[] }) => (timezones.value = data.all_timezones),
+  })
+}
+const timezoneOptions = computed(() => timezones.value.map((tz) => ({ label: tz, value: tz })))
 const inviteSummary = ref('')
 const getStartedButton = ref<ComponentPublicInstance>()
 const workspaceForm = ref<InstanceType<typeof WorkspaceBrandingForm>>()
