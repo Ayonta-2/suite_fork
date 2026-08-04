@@ -6,7 +6,6 @@ from frappe import _
 from frappe.utils import cint, get_datetime, get_system_timezone, get_url, now_datetime
 from frappe.utils.data import sha256_hash
 
-from suite.mail.api.admin import add_member
 from suite.mail.api.mail import normalize_filter
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.identity.identity import fetch_identities
@@ -46,15 +45,13 @@ def validate_email_assigned(email: str) -> None:
 
 @frappe.whitelist(allow_guest=True)
 @dynamic_rate_limit()
-def signup(
-    username: str,
-    domain: str,
-    email: str,
-    password: str,
-    first_name: str,
-    last_name: str | None = None,
-) -> None:
-    """Create a new Mail Account for signup"""
+def signup(username: str, domain: str, email: str) -> str:
+    """Start a self-serve signup: record the request and email a verification code.
+
+    Nothing is provisioned here. The caller proves ownership of the backup email via
+    `verify_otp`, which releases the request key, and only `create_account` with that
+    key creates the account.
+    """
 
     if not frappe.db.get_single_value("Mail Settings", "allow_signup"):
         frappe.throw(_("Signup is disabled."))
@@ -63,16 +60,15 @@ def signup(
         frappe.throw(_("Domain {0} is not allowed for signup.").format(domain))
 
     with user_context("Administrator"):
-        add_member(
-            username=username,
-            domain=domain,
-            is_admin=False,
-            send_invite=False,
-            backup_email=email,
-            first_name=first_name,
-            last_name=last_name,
-            password=password,
-        )
+        account_request = frappe.new_doc("Mail Account Request")
+        account_request.account = f"{username}@{domain}"
+        account_request.backup_email = email
+        account_request.send_invite = 0
+        account_request.insert(ignore_permissions=True)
+
+    account_request.set_otp()
+    account_request.send_verification_email()
+    return account_request.name
 
 
 @frappe.whitelist(allow_guest=True)
