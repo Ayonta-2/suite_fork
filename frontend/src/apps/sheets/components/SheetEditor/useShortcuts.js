@@ -53,7 +53,7 @@ const NUMBER_FORMAT_KEYS = {
 export function useShortcuts(actions) {
   const {
     formulaInputEl, undo, redo, onSave, toggleFmt, repeatLast,
-    toggleShowFormulas, showFindReplace,
+    toggleShowFormulas, showFindReplace, openFindReplace,
     openVersionHistory, openHyperlinkDialog, openCommentPanel, openQuickFilterForActive,
     zoomBy, resetZoom,
     commentPanel, dropdownPanel, splitText, revertSplitPreview, closeSplit,
@@ -79,7 +79,18 @@ export function useShortcuts(actions) {
   useShortcut([
     // View / tools — available even in read-only.
     { key: 's',  ctrl: true, description: 'Save',            group: 'View', handler: onSave },
-    { key: 'f',  ctrl: true, description: 'Find & replace',  group: 'View', handler: () => { showFindReplace.value = true } },
+    {
+      key: 'f',
+      ctrl: true,
+      description: 'Find & replace',
+      group: 'View',
+      allowInInput: true,
+      handler: () => {
+        document.activeElement?.blur?.()
+        if (openFindReplace) openFindReplace()
+        else if (showFindReplace) showFindReplace.value = true
+      },
+    },
     { key: '`',  ctrl: true, description: 'Show formulas',   group: 'View', handler: toggleShowFormulas },
     { key: '=',  ctrl: true, description: 'Zoom in',         group: 'View', handler: () => zoomBy(+0.1) },
     { key: '+',  ctrl: true, description: 'Zoom in',         group: 'View', handler: () => zoomBy(+0.1) },

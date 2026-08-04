@@ -874,10 +874,11 @@
     <!-- Find & Replace panel -->
     <FindReplace
       v-if="showFindReplace"
+      ref="findReplaceRef"
       :sheet="sheet"
       :grid="grid"
       :is-protected="(id) => _cellSilentlyProtected(id)"
-      @close="showFindReplace = false"
+      @close="showFindReplace = false; canvasRef?.focus?.()"
       @navigate-to="onNavigateTo"
     />
 
@@ -1667,6 +1668,17 @@ const editingHomeCell  = ref(null)
 // `number:3` still shows "Number" as selected.
 const activeNumberFormatType = computed(() => parseNumberFmt(activeNumberFormat.value).type)
 const showFindReplace   = ref(false)
+const findReplaceRef    = ref(null)
+
+function openFindReplace() {
+  document.activeElement?.blur?.()
+  showFindReplace.value = true
+  const triggerFocus = () => findReplaceRef.value?.focusInput?.()
+  nextTick(triggerFocus)
+  setTimeout(triggerFocus, 0)
+  setTimeout(triggerFocus, 50)
+}
+
 const showShortcutsHelp = ref(false)
 
 const showInsertManyDialog = ref(false)
@@ -3975,7 +3987,7 @@ function _deleteRowsColsFromSelection() {
 const { onGlobalKey } = useShortcuts({
   formulaInputEl:           () => formulaInputRef.value,
   undo, redo, onSave, toggleFmt, repeatLast, toggleShowFormulas,
-  showFindReplace,
+  showFindReplace, openFindReplace,
   openVersionHistory, openHyperlinkDialog, openCommentPanel, openQuickFilterForActive,
   zoomBy, resetZoom,
   commentPanel, dropdownPanel, splitText,
@@ -5793,7 +5805,7 @@ const cmdQuery       = ref('')
 
 const cmdGroups = computed(() => buildCommandGroups({
   toggleFmt, setAlign, setValign, adjustDecimals, toggleWrap, clearFormatting,
-  undo, redo, repeatLast, showFindReplace, showFormulas, repopulateGrid: _repopulateGrid, showShortcutsHelp,
+  undo, redo, repeatLast, showFindReplace, openFindReplace, showFormulas, repopulateGrid: _repopulateGrid, showShortcutsHelp,
   contextMenu, getGrid: () => grid,
   doInsertRow, doDeleteRow, doInsertCol, doDeleteCol,
   doMoveColLeft, doMoveColRight,
