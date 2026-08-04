@@ -299,6 +299,67 @@ const mapAttrColor = (raw: string, role: ColorRole) => {
 	return mapColorToken(token, role)
 }
 
+// ——— Author color-scheme rules ——————————————————————————————————————————————
+//
+// Emails ship their own `@media (prefers-color-scheme: dark)` rules, and the
+// srcdoc iframe inherits the app's scheme, so in dark mode they DO activate.
+// They still can't be honored: sanitization strips the attributes their
+// selectors key on (Discourse's dm="body"), so the design half-applies — a
+// broad `p, td { color: inherit !important }` fires without any of the
+// surfaces it assumed, inheriting the light-theme fallback onto a dark canvas.
+// They'd also fight the deterministic remap, and their canvas rules fool the
+// art-direction check. Normalizing every email to its light-scheme self — the
+// one design that is always fully authored — gives the remap one trustworthy
+// input.
+
+const PURE_LIGHT_CONDITION =
+	/^\s*(?:only\s+)?(?:all|screen)?\s*(?:and\s*)?\(\s*prefers-color-scheme\s*:\s*light\s*\)\s*$/i
+
+export const stripDarkSchemeMedia = (css: string): string => {
+	let out = ''
+	let i = 0
+	while (i < css.length) {
+		const at = css.indexOf('@media', i)
+		const brace = at === -1 ? -1 : css.indexOf('{', at)
+		if (brace === -1) return out + css.slice(i)
+		out += css.slice(i, at)
+		let depth = 1
+		let j = brace + 1
+		while (j < css.length && depth > 0) {
+			if (css[j] === '{') depth++
+			else if (css[j] === '}') depth--
+			j++
+		}
+		const condition = css.slice(at + '@media'.length, brace)
+		if (/prefers-color-scheme\s*:\s*dark/i.test(condition) && !/\bnot\b/i.test(condition)) {
+			// Dark-only rules: drop the whole block.
+		} else if (PURE_LIGHT_CONDITION.test(condition)) {
+			// Light-only rules are part of the light design — make them
+			// unconditional so the remap sees them even in a dark-scheme iframe.
+			out += css.slice(brace + 1, depth === 0 ? j - 1 : j)
+		} else {
+			out += css.slice(at, j)
+		}
+		i = j
+	}
+	return out
+}
+
+/** Reduce the email to its light-scheme design, in place. */
+export const normalizeToLightScheme = (doc: Document) => {
+	doc.querySelectorAll('style').forEach((style) => {
+		const media = style.getAttribute('media')
+		if (media && /prefers-color-scheme\s*:\s*dark/i.test(media) && !/\bnot\b/i.test(media)) {
+			style.remove()
+			return
+		}
+		if (media && PURE_LIGHT_CONDITION.test(media)) style.removeAttribute('media')
+		const css = style.textContent ?? ''
+		const stripped = stripDarkSchemeMedia(css)
+		if (stripped !== css) style.textContent = stripped
+	})
+}
+
 // ——— Art direction detection ————————————————————————————————————————————————
 //
 // An email is art-directed when its author both claimed the whole canvas — a
@@ -389,6 +450,26 @@ const elementTextColor = (el: Element): string | null => {
 	return inline?.trim() || el.getAttribute('color')
 }
 
+// A surface painted by url(...) — a raster the remap cannot rewrite (the token
+// pass masks url() precisely so it never touches one). Its pixels are
+// byte-identical in dark mode, so the text resting on it must be too:
+// remapping dark text over a light gradient JPEG flips it near-white and it
+// vanishes into the image. CSS gradients don't count — they carry color
+// literals and are remapped like any other surface. Requires a non-empty
+// url(): blocked remote assets are blanked to url() and paint nothing.
+const hasImageBackground = (el: Element): boolean =>
+	/background[^;:]*:[^;]*url\(\s*[^)\s]/i.test(el.getAttribute('style') ?? '')
+
+// The innermost element whose background the text actually rests on — the one
+// that decides whether its text follows the remap (color surface) or the
+// authored bytes (image surface). A color-backed card nested inside a hero
+// image is its own surface: its text keeps following the remap.
+const nearestSurface = (el: Element): Element | null => {
+	let cur: Element | null = el
+	while (cur && !elementBackground(cur) && !hasImageBackground(cur)) cur = cur.parentElement
+	return cur
+}
+
 const parseAnyColor = (raw: string | null): Rgba | null => {
 	if (!raw) return null
 	const token = raw.trim()
@@ -408,8 +489,10 @@ export const remapEmailForDarkMode = (doc: Document) => {
 	doc.querySelectorAll('[style], [color]').forEach((el) => {
 		const fg = parseAnyColor(elementTextColor(el))
 		if (!fg || fg.a !== 1) return
-		let surface: Element | null = el
-		while (surface && !elementBackground(surface)) surface = surface.parentElement
+		const surface = nearestSurface(el)
+		// Text over an image surface is pinned to its authored bytes below —
+		// matching a color further up the tree there is coincidence, not intent.
+		if (surface && hasImageBackground(surface)) return
 		const bg = surface && parseAnyColor(elementBackground(surface))
 		if (!surface || !bg || bg.a !== 1) return
 		if (
@@ -418,6 +501,26 @@ export const remapEmailForDarkMode = (doc: Document) => {
 			Math.round(fg.b) === Math.round(bg.b)
 		)
 			camouflaged.push({ el, surface })
+	})
+
+	// Snapshot text resting on image surfaces before remapping, to re-pin its
+	// authored color afterwards. Two shapes: text with its own color literal,
+	// and image surfaces whose text inherits from above — the ancestor literal
+	// gets remapped light, so the surface needs an explicit copy of the color
+	// it inherited when authored (default black: an author relying on the UA
+	// default designed against a light image).
+	const pinned: Array<{ el: Element; color: string }> = []
+	doc.querySelectorAll('[style], [color]').forEach((el) => {
+		const authored = elementTextColor(el)
+		if (!authored) return
+		const surface = nearestSurface(el)
+		if (surface && hasImageBackground(surface)) pinned.push({ el, color: authored })
+	})
+	doc.querySelectorAll('[style]').forEach((el) => {
+		if (!hasImageBackground(el) || elementTextColor(el)) return
+		let cur = el.parentElement
+		while (cur && !elementTextColor(cur)) cur = cur.parentElement
+		pinned.push({ el, color: (cur && elementTextColor(cur)) || '#000000' })
 	})
 
 	doc.querySelectorAll('style').forEach((style) => {
@@ -443,5 +546,15 @@ export const remapEmailForDarkMode = (doc: Document) => {
 		if (style && /(?:^|;)\s*color\s*:/i.test(style))
 			el.setAttribute('style', style.replace(/((?:^|;)\s*color\s*:\s*)[^;]+/i, `$1${surfaceColor}`))
 		else if (el.getAttribute('color')) el.setAttribute('color', surfaceColor)
+	})
+
+	// Never overlaps with the camouflage pass: nearestSurface is deterministic,
+	// and camouflage skips image surfaces while pinning requires one.
+	pinned.forEach(({ el, color }) => {
+		const style = el.getAttribute('style')
+		if (style && /(?:^|;)\s*color\s*:/i.test(style))
+			el.setAttribute('style', style.replace(/((?:^|;)\s*color\s*:\s*)[^;]+/i, `$1${color}`))
+		else if (el.getAttribute('color')) el.setAttribute('color', color)
+		else el.setAttribute('style', `${style ? style.replace(/;?\s*$/, ';') : ''}color:${color}`)
 	})
 }

@@ -48,7 +48,7 @@ import { Button } from 'frappe-ui'
 
 import { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils'
 import { useTheme } from '@/apps/mail/utils/composables'
-import { isArtDirected, remapEmailForDarkMode } from '@/apps/mail/utils/darkMail'
+import { isArtDirected, normalizeToLightScheme, remapEmailForDarkMode } from '@/apps/mail/utils/darkMail'
 
 const {
 	content,
@@ -143,9 +143,12 @@ const srcdoc = computed(() => {
 	// would second-guess a deliberate design. Everything else (plain mail,
 	// floating cards, replies quoting either kind) adapts to the dark canvas.
 	// Note this is a DOM-shape check, not "does it declare dark support" — the
-	// email's own @media rules key on the OS scheme, not the app's theme toggle,
-	// so declarations can't be trusted. Remap runs before collapseQuotes so the
-	// toggle buttons it inserts keep their exact theme colors.
+	// email's own dark-scheme rules are dropped up front (sanitization guts the
+	// selectors they rely on, and half a dark design is worse than none), so
+	// every email is judged and remapped as its light-scheme self. Remap runs
+	// before collapseQuotes so the toggle buttons it inserts keep their exact
+	// theme colors.
+	normalizeToLightScheme(doc)
 	const remapped = dataTheme.value === 'dark' && !isArtDirected(doc)
 	if (remapped) remapEmailForDarkMode(doc)
 	collapseQuotes(doc)

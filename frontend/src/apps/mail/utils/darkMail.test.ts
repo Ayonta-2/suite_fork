@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
 	isArtDirected,
 	mapColorToken,
+	normalizeToLightScheme,
 	parseCssColor,
 	remapCssText,
 	remapCssValue,
 	remapEmailForDarkMode,
+	stripDarkSchemeMedia,
 } from './darkMail'
 
 const parseDoc = (html: string) => new DOMParser().parseFromString(html, 'text/html')
@@ -197,6 +199,71 @@ describe('remapEmailForDarkMode', () => {
 		expect(luma(surface)).toBeLessThan(0.35)
 	})
 
+	it('keeps authored text over a raster background image — the pixels beneath it never change', () => {
+		// The Meta survey layout: a light gradient JPEG hero with dark heading and
+		// gray body copy. The image can't be remapped, so lightening the text
+		// would put near-white on a light image.
+		const doc = parseDoc(`
+			<div style="background-image: url(https://cdn.example.com/gradient.jpg);">
+				<h1 style="color: #1c2b33;">Help us create a better experience.</h1>
+				<p style="color: #465967;">By taking our quick survey&hellip;</p>
+			</div>
+			<div style="background-color: #66788a;">
+				<p style="color: #ffffff;">Take the survey</p>
+			</div>
+		`)
+		remapEmailForDarkMode(doc)
+		expect(doc.querySelector('h1')!.getAttribute('style')).toContain('color: #1c2b33;')
+		expect(doc.querySelector('p')!.getAttribute('style')).toContain('color: #465967;')
+		// The color-backed section next to it still follows the remap.
+		const slate = doc.querySelectorAll('div')[1]!.getAttribute('style')!
+		expect(luma(slate.match(/background-color:\s*([^;]+)/)![1])).toBeLessThan(0.35)
+	})
+
+	it('still remaps a color-backed card nested inside an image hero', () => {
+		const doc = parseDoc(`
+			<table><tr><td style="background: url(https://cdn.example.com/hero.png) no-repeat;">
+				<h1 style="color: #111111;">On the image</h1>
+				<a style="background-color: #ffffff; color: #111111;">On the card</a>
+			</td></tr></table>
+		`)
+		remapEmailForDarkMode(doc)
+		expect(doc.querySelector('h1')!.getAttribute('style')).toContain('color: #111111;')
+		const card = doc.querySelector('a')!.getAttribute('style')!
+		expect(card).toContain('background-color: #171717;')
+		expect(luma(card.match(/(?:^|;)\s*color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
+	})
+
+	it('pins inherited text color onto an image surface explicitly', () => {
+		// The wrapper's literal gets remapped light for the rest of the email; the
+		// image surface must keep an authored copy for the text inheriting into it.
+		const doc = parseDoc(`
+			<div style="color: #333333;">
+				<div style="background-image: url(https://cdn.example.com/bg.jpg);"><p>inherits</p></div>
+				<p>on the canvas</p>
+			</div>
+		`)
+		remapEmailForDarkMode(doc)
+		const wrapper = doc.querySelectorAll('div')[0]!.getAttribute('style')!
+		expect(luma(wrapper.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
+		expect(doc.querySelectorAll('div')[1]!.getAttribute('style')).toContain('color:#333333')
+	})
+
+	it('treats blanked url() (blocked remote assets) and gradients as remappable surfaces', () => {
+		const doc = parseDoc(`
+			<div style="background-image: url();">
+				<p style="color: #444444;">image was blocked</p>
+			</div>
+			<div style="background-image: linear-gradient(#ffffff, #eeeeee);">
+				<p style="color: #444444;">gradient stops are remapped with me</p>
+			</div>
+		`)
+		remapEmailForDarkMode(doc)
+		doc.querySelectorAll('p').forEach((p) => {
+			expect(luma(p.getAttribute('style')!.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
+		})
+	})
+
 	it('remaps <style> sheets and legacy hash-less bgcolor', () => {
 		const doc = parseDoc(`
 			<style>.body { background: #f6f6f6; } .muted { color: #888888; }</style>
@@ -208,6 +275,60 @@ describe('remapEmailForDarkMode', () => {
 		expect(sheet).not.toContain('#888888')
 		expect(doc.querySelector('div')!.getAttribute('bgcolor')).toBe('#171717')
 		expect(luma(doc.querySelector('[color]')!.getAttribute('color')!)).toBeGreaterThan(0.6)
+	})
+})
+
+describe('normalizeToLightScheme', () => {
+	it('drops author dark-scheme blocks — sanitization guts the selectors they rely on', () => {
+		// The Discourse notification: its dark support keys on dm="…" attributes
+		// the sanitizer strips, so only the broad `color: inherit !important`
+		// survives and text inherits the light-theme fallback onto a dark canvas.
+		const doc = parseDoc(`
+			<style>
+				.footer { color: #666; }
+				@media (prefers-color-scheme: dark) {
+					html { background: #151515 !important; }
+					h1, h2, h3, p, span, td { color: inherit !important; }
+					[dm='body'] { background: #222222 !important; color: #dddddd !important; }
+					code, pre code, blockquote { background: #323232 !important; }
+				}
+			</style>
+			<blockquote style="border-left:5px solid #e9e9e9;background-color:#f8f8f8">quoted</blockquote>
+			<p>Hi there, I am based in Taiwan.</p>
+		`)
+		normalizeToLightScheme(doc)
+		const sheet = doc.querySelector('style')!.textContent!
+		expect(sheet).toContain('.footer { color: #666; }')
+		expect(sheet).not.toContain('prefers-color-scheme')
+		expect(sheet).not.toContain('inherit')
+		// The canvas claim the dark block carried (html { background }) is gone
+		// with it: the email is judged as its light self and gets remapped.
+		expect(isArtDirected(doc)).toBe(false)
+	})
+
+	it('unwraps pure light-scheme blocks so the remap sees the whole light design', () => {
+		const doc = parseDoc(
+			'<style>@media (prefers-color-scheme: light) { body { background: #ffffff; } }</style><p>hi</p>',
+		)
+		normalizeToLightScheme(doc)
+		const sheet = doc.querySelector('style')!.textContent!
+		expect(sheet).not.toContain('@media')
+		expect(sheet).toContain('body { background: #ffffff; }')
+	})
+
+	it('leaves unrelated and compound media conditions untouched', () => {
+		const css =
+			'@media (max-width: 600px) { .col { width: 100% } } ' +
+			'@media screen and (prefers-color-scheme: light) and (max-width: 600px) { p { color: #111 } }'
+		expect(stripDarkSchemeMedia(css)).toBe(css)
+	})
+
+	it('removes dark-scheme <style media> elements entirely', () => {
+		const doc = parseDoc(
+			'<style media="(prefers-color-scheme: dark)">body { background: #000; }</style><p>hi</p>',
+		)
+		normalizeToLightScheme(doc)
+		expect(doc.querySelector('style')).toBeNull()
 	})
 })
 
