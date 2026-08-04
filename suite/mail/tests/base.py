@@ -59,13 +59,9 @@ def _stalwart_available() -> bool:
         else:
             server_url, verify_ssl = get_config(("server_url", "verify_ssl"))
             try:
-                requests.get(
-                    urljoin(server_url, "/.well-known/jmap"), timeout=5, verify=bool(verify_ssl)
-                )
+                requests.get(urljoin(server_url, "/.well-known/jmap"), timeout=5, verify=bool(verify_ssl))
             except requests.RequestException as e:
-                raise RuntimeError(
-                    f"Stalwart is configured at {server_url} but not reachable: {e}"
-                ) from e
+                raise RuntimeError(f"Stalwart is configured at {server_url} but not reachable: {e}") from e
             _stalwart_probe = True
 
     return _stalwart_probe
@@ -137,6 +133,83 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
         from suite.mail.jmap import get_jmap_connection
 
         return get_jmap_connection(user, ignore_permissions=True)
+
+    @staticmethod
+    def get_app_password(user: str) -> str:
+        """Returns the user's decrypted Stalwart app password."""
+
+        return frappe.get_doc("User Settings", {"user": user}).get_password("app_password")
+
+    @staticmethod
+    def stalwart_auth_ok(username: str, password: str) -> bool:
+        """Whether ``username``/``password`` can open a JMAP session directly on Stalwart."""
+
+        server_url, verify_ssl = get_config(("server_url", "verify_ssl"))
+        response = requests.get(
+            urljoin(server_url, "/.well-known/jmap"),
+            auth=(username, password),
+            timeout=10,
+            verify=bool(verify_ssl),
+        )
+        return response.status_code == 200
+
+    @classmethod
+    def disable_screening(cls, member: frappe._dict) -> None:
+        """Turns off screening on the member's personal account so inbound mail hits the inbox.
+
+        Personal accounts enable screening by default, which diverts mail from unknown senders
+        into the Screening folder - tests asserting inbox delivery must opt out first.
+        """
+
+        from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
+
+        with cls.set_user(member.email):
+            account = get_user_personal_jmap_account(member.email, raise_exception=True)
+            doc = frappe.get_doc("JMAP Account", account)
+            if doc.enable_screening:
+                doc.enable_screening = 0
+                doc.save(ignore_permissions=True)
+
+    @classmethod
+    def get_inbox_threads(cls, member: frappe._dict) -> list[dict]:
+        """Returns the member's inbox threads, acting as the member."""
+
+        from suite.mail.api.mail import get_threads
+        from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
+        from suite.mail.jmap import get_mailbox_id_by_role
+
+        with cls.set_user(member.email):
+            account = get_user_personal_jmap_account(member.email, raise_exception=True)
+            inbox = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
+            return get_threads(account, inbox, limit=20)
+
+    @classmethod
+    def send_mail(
+        cls,
+        sender: frappe._dict,
+        to: str | list[str],
+        subject: str | None = None,
+        html_body: str = "<p>Integration test mail.</p>",
+        **kwargs,
+    ) -> dict:
+        """Sends a mail from ``sender`` (a create_member result) and returns create_mail's result."""
+
+        from suite.mail.api.mail import create_mail
+        from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
+
+        recipients = [to] if isinstance(to, str) else list(to)
+        with cls.set_user(sender.email):
+            account = get_user_personal_jmap_account(sender.email, raise_exception=True)
+            return create_mail(
+                account=account,
+                from_email=sender.email,
+                to=[{"email": email} for email in recipients],
+                cc=kwargs.pop("cc", []),
+                bcc=kwargs.pop("bcc", []),
+                subject=subject or f"Test mail {unique_name('subject')}",
+                html_body=html_body,
+                **kwargs,
+            )
 
     # --- factories ----------------------------------------------------------
 
