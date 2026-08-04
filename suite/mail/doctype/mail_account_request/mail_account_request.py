@@ -303,7 +303,7 @@ class MailAccountRequest(Document):
     def force_verify_and_create_account(
         self,
         first_name: str,
-        last_name: str,
+        last_name: str | None,
         password: str,
         locale: str | None = None,
         time_zone: str | None = None,
@@ -323,7 +323,7 @@ class MailAccountRequest(Document):
     def create_account(
         self,
         first_name: str,
-        last_name: str,
+        last_name: str | None,
         password: str,
         locale: str | None = None,
         time_zone: str | None = None,
