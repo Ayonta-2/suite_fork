@@ -27,10 +27,13 @@ def fake_request(files: dict | None = None):
         headers={"X-Site": "test-client.example.test"},  # the sync-history source
     )
     previous = getattr(frappe.local, "request", None)
+    previous_ip = getattr(frappe.local, "request_ip", None)
     frappe.local.request = Request(builder.get_environ())
+    frappe.local.request_ip = "127.0.0.1"  # the ip-based rate limiter requires an identity
     try:
         yield
     finally:
+        frappe.local.request_ip = previous_ip
         if previous is None:
             delattr(frappe.local, "request")
         else:
