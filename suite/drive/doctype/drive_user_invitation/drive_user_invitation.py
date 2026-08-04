@@ -38,6 +38,8 @@ class DriveUserInvitation(Document):
             frappe.db.commit()
 
     def invite_via_email(self):
+        from suite.drive.api.notifications import drive_logo_inline_images
+
         frappe.sendmail(
             recipients=self.email,
             subject="Frappe Drive - Invitation",
@@ -48,6 +50,7 @@ class DriveUserInvitation(Document):
                 ),
                 "user": frappe.session.user,
             },
+            inline_images=drive_logo_inline_images(),
             now=True,
         )
 
