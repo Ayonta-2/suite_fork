@@ -8,8 +8,13 @@ plain `bench run-tests --app suite` stays green without it.
 
 ```sh
 cd apps/suite/suite/mail/tests/docker
+echo "127.0.0.1 mail.example.test" | sudo tee -a /etc/hosts  # once
 ./start-stalwart.sh
 ```
+
+The JMAP session advertises URLs at `https://mail.example.test` (the bootstrap
+`serverHostname`), so that name must resolve to the container and its TLS listener is
+published on 443 (self-signed; the tests run with `verify_ssl: 0`).
 
 This boots `stalwartlabs/stalwart` on `http://127.0.0.1:8080` with recovery admin
 `admin:admin`, applies `bootstrap.ndjson` through `stalwart-cli` (downloaded on the

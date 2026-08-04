@@ -204,7 +204,11 @@ jobs:
 
       - name: Start Stalwart
         if: steps.mail-calendar-changes.outputs.run == '1'
-        run: bash $GITHUB_WORKSPACE/suite/mail/tests/docker/start-stalwart.sh
+        run: |
+          # The JMAP session advertises URLs at https://mail.example.test (the bootstrap
+          # serverHostname), which must resolve to the local container.
+          echo "127.0.0.1 mail.example.test" | sudo tee -a /etc/hosts
+          bash $GITHUB_WORKSPACE/suite/mail/tests/docker/start-stalwart.sh
         env:
           STALWART_VERSION: v0.16.8
           STALWART_CLI_VERSION: v1.0.8
