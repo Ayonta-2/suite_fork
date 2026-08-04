@@ -38,7 +38,10 @@ class TestMailContacts(StalwartIntegrationTestCase):
             return {b["_name"]: b for b in get_address_books(self.account)}
 
     def _default_book(self) -> str:
-        return next(b["id"] for b in self._books().values() if b["default"])
+        # With several books present the server may stop flagging any as default;
+        # fall back to the first book so later tests stay order-independent.
+        books = list(self._books().values())
+        return next((b["id"] for b in books if b["default"]), books[0]["id"])
 
     def test_address_books(self):
         self.assertTrue(any(b["default"] for b in self._books().values()))
@@ -125,6 +128,48 @@ class TestMailContacts(StalwartIntegrationTestCase):
                 message="Deleted contact card still listed.",
             )
             delete_address_books(self.account, [other_book])
+
+    def test_bulk_add_and_move_to(self):
+        from suite.mail.doctype.contact_card.contact_card import (
+            bulk_add_contact_cards,
+            contact_card_move_to_address_book,
+        )
+
+        with self.set_user(self.member.email):
+            default_book = self._default_book()
+            names = [f"Bulk {unique_name('person')}" for _ in range(2)]
+            bulk_add_contact_cards(
+                self.account,
+                [
+                    {
+                        "address_book_ids": [default_book],
+                        "full_name": name,
+                        "kind": "individual",
+                        "emails": [
+                            {"address": f"{unique_name('bulk')}@elsewhere.example.org", "type": "Personal"}
+                        ],
+                    }
+                    for name in names
+                ],
+            )
+            cards = self.wait_until(
+                lambda: [
+                    c
+                    for c in get_contact_cards(self.account, {"text": "Bulk "}) or []
+                    if c["full_name"] in names
+                ]
+                or None,
+                message="Bulk-added contact cards not found.",
+            )
+            self.assertEqual(len(cards), 2)
+
+            # move_to replaces the card's whole address-book membership.
+            target_book = add_address_book(self.account, unique_name("book"))
+            contact_card_move_to_address_book(self.account, [c["id"] for c in cards], target_book)
+            self.wait_until(
+                lambda: get_address_book_contact_count(self.account, target_book) == 2,
+                message="move_to did not land the cards in the target book.",
+            )
 
     def test_auto_create_contact_on_send(self):
         with self.set_user(self.member.email):

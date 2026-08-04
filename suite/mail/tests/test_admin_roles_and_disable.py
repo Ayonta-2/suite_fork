@@ -171,6 +171,25 @@ class TestAdminRolesAndDisable(StalwartIntegrationTestCase):
         key = set_reset_password_key(member.email)
         self.assertEqual(get_user_for_reset_password_key(key), member.email)
 
+    def test_update_password_via_reset_key(self):
+        from suite.mail.api.account import set_reset_password_key
+        from suite.mail.events import update_password
+
+        member = self.create_member()
+        key = set_reset_password_key(member.email)
+        new_password = f"Tst@{secrets.token_hex(8)}"
+
+        # The whitelisted override propagates the reset to the Stalwart account. Frappe's core
+        # update_password logs the user in afterwards, which needs a session login_manager
+        # that the test context does not have - stub it.
+        from unittest.mock import MagicMock, patch
+
+        with self.set_user("Guest"), patch.object(frappe.local, "login_manager", MagicMock(), create=True):
+            update_password(new_password=new_password, key=key)
+
+        self.assertTrue(self.stalwart_auth_ok(member.email, new_password))
+        self.assertFalse(self.stalwart_auth_ok(member.email, member.password))
+
     def test_non_admin_cannot_manage_roles(self):
         member = self.create_member()
         with self.set_user(member.email):

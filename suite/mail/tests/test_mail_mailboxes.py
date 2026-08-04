@@ -89,6 +89,22 @@ class TestMailMailboxes(StalwartIntegrationTestCase):
             frappe.db.exists("Mailbox Settings", {"account": self.account, "mailbox_id": updated["id"]})
         )
 
+    def test_update_mailbox_position(self):
+        from suite.mail.doctype.mailbox.mailbox import update_mailbox_position
+
+        first = unique_name("pos-a")
+        second = unique_name("pos-b")
+        with self.set_user(self.member.email):
+            create_mailbox(self.account, first)
+            create_mailbox(self.account, second)
+            first_id = self._mailbox_by_name(first)["id"]
+            second_id = self._mailbox_by_name(second)["id"]
+
+            # Move the first mailbox after the second; the listing still holds both.
+            update_mailbox_position(self.account, first_id, prior_mailbox_id=second_id)
+        self.assertIsNotNone(self._mailbox_by_name(first))
+        self.assertIsNotNone(self._mailbox_by_name(second))
+
     def test_empty_trash(self):
         thread = self.deliver_mail(self.other, self.member)
 

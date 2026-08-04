@@ -72,6 +72,27 @@ class TestMailIdentitySettings(StalwartIntegrationTestCase):
                 self.member.email,
             )
 
+    def test_delete_participant_identity(self):
+        from suite.mail.api.admin import add_member_email
+        from suite.mail.doctype.participant_identity.participant_identity import (
+            delete_participant_identities,
+        )
+
+        # Adding an alias makes the server create a participant identity for it automatically.
+        alias = f"{unique_name('alias')}@{self.domain}"
+        add_member_email(self.member.email, alias)
+
+        with self.set_user(self.member.email):
+            row = self.wait_until(
+                lambda: next(
+                    (i for i in get_participant_identities(self.account) if i["email"] == alias), None
+                ),
+                message="No participant identity appeared for the new alias.",
+            )
+
+            delete_participant_identities(self.account, [row["id"]])
+            self.assertNotIn(row["id"], {i["id"] for i in get_participant_identities(self.account)})
+
     def test_vacation_response(self):
         with self.set_user(self.member.email):
             update_vacation_response(

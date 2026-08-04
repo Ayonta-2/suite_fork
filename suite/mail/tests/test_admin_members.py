@@ -11,6 +11,7 @@ from suite.mail.api.account import (
     get_account_request,
     get_account_setup_options,
     signup,
+    validate_email_assigned,
     verify_otp,
 )
 from suite.mail.api.admin import (
@@ -120,6 +121,10 @@ class TestAdminMembers(StalwartIntegrationTestCase):
 
             request = frappe.get_last_doc("Mail Account Request", {"account": email})
 
+            # NOTE: resend_otp is not exercised - it calls MailAccountRequest.set_otp(),
+            # which does not exist (no code writes the account_request_otp_hash cache key),
+            # so the endpoint raises AttributeError. Needs a fix in the app.
+
             # The OTP only travels by email, so plant a known one in the cache the way set_otp does.
             frappe.cache.set_value(
                 f"account_request_otp_hash:{request.name}", sha256_hash("123456"), expires_in_sec=600
@@ -151,6 +156,10 @@ class TestAdminMembers(StalwartIntegrationTestCase):
 
     def test_add_member_negatives(self):
         member = self.create_member()
+
+        # An address that already belongs to a User is reported as taken.
+        self.assertRaisesRegex(frappe.ValidationError, "already taken", validate_email_assigned, member.email)
+        validate_email_assigned(f"{unique_name('free')}@{self.domain}")  # free address passes
 
         # Duplicate primary address.
         self.assertRaises(

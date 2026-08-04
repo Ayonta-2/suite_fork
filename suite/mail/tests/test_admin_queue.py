@@ -12,6 +12,7 @@ from suite.mail.api.admin import (
     get_queued_message,
     get_queued_message_source,
     get_queued_messages,
+    retry_all_queued_messages,
     retry_queued_messages,
     run_action,
     update_queued_message,
@@ -113,6 +114,9 @@ class TestAdminQueue(StalwartIntegrationTestCase):
 
     def test_cancel_all_with_filter(self):
         _message_id, recipient = self._park_mail_in_queue()
+
+        # The filtered retry-all variant schedules matching messages without erroring.
+        retry_all_queued_messages(to=recipient)
 
         cancel_all_queued_messages(to=recipient)
         self.wait_until(
