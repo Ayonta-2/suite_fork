@@ -47,15 +47,8 @@ function save() {
   })
 }
 
-function reset() {
-  name.value = workspaceName.value
-  logo.value = workspaceLogo.value
-  saveWorkspace.reset()
-}
-
 defineExpose({
   save,
-  reset,
   canSave,
   saving: computed(() => saveWorkspace.loading),
 })
