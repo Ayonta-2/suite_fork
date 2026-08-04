@@ -130,6 +130,17 @@ def create_notification(from_user: str, to_user: str, type: str, entity: str, me
         return False
 
 
+def drive_logo_inline_images():
+    """The Drive wordmark logo in frappe.sendmail's `embed=` format (templates
+    reference it as embed="drive-logo.png")."""
+
+    try:
+        with open(frappe.get_app_path("suite", "public", "drive", "images", "logo.png"), "rb") as f:
+            return [{"filename": "drive-logo.png", "filecontent": f.read()}]
+    except OSError:
+        return []
+
+
 def send_share_email(to, message, link, type_):
     try:
         frappe.sendmail(
@@ -141,6 +152,7 @@ def send_share_email(to, message, link, type_):
                 "type": type_,
                 "link": link,
             },
+            inline_images=drive_logo_inline_images(),
             now=True,
         )
     except:

@@ -14,7 +14,11 @@
 		<!-- Mirrors the section labels and unread suffixes of the sidebar's nav groups. -->
 		<div class="flex items-center justify-between px-2 py-1.5">
 			<span class="truncate text-sm text-ink-gray-5">{{ __('Upcoming events') }}</span>
-			<span class="shrink-0 text-sm text-ink-gray-4">{{ upcoming.length }}</span>
+			<!-- The list shows three rows before scrolling, so a count only says
+			     something new once there are events hidden below the fold. -->
+			<span v-if="upcoming.length > 3" class="shrink-0 text-sm text-ink-gray-4">
+				{{ upcoming.length }}
+			</span>
 		</div>
 		<!-- Four rows tall, then scrolls. -mx/px (and -mb/pb at scroll end) keep
 		     the clip edge off the active row's shadow, same trick as the sidebar
