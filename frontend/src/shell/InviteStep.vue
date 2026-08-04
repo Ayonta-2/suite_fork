@@ -1,12 +1,14 @@
 <template>
-  <div class="flex flex-col gap-2">
+  <div ref="root" class="flex flex-col gap-2">
     <FormControl
       v-model="emails"
       type="textarea"
       variant="outline"
+      :autofocus="autofocus"
       :rows="3"
       class="resize-none"
       :placeholder="__('name@company.com, another@company.com')"
+      :description="description"
       :disabled="invite.loading"
       @keydown.enter="submitOnEnter"
     />
@@ -15,12 +17,29 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { ErrorMessage, FormControl, createResource } from 'frappe-ui'
 
+const props = defineProps<{ prefill?: string; autofocus?: boolean; description?: string }>()
 const emit = defineEmits<{ sent: [summary: string] }>()
 
-const emails = ref('')
+const root = ref<HTMLElement>()
+const emails = ref(props.prefill || '')
+
+// The Dialog's [autofocus] handling focuses and select()s the textarea in a
+// rAF queued before this one; collapse that selection so the caret lands at
+// the end of the prefilled text instead.
+onMounted(async () => {
+  if (!props.autofocus) return
+  await nextTick()
+  requestAnimationFrame(() => {
+    const textarea = root.value?.querySelector('textarea')
+    if (!textarea) return
+    textarea.focus()
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+  })
+})
+
 const clientError = ref('')
 
 const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
@@ -65,7 +84,9 @@ function submit() {
         : __("These don't look like valid email addresses: {0}", [invalid.join(', ')])
     return
   }
-  invite.submit({ emails: cleaned.join(', ') })
+  // Errors surface inline via `invite.error`; swallow the rejection so the
+  // dialog action's awaited onClick doesn't raise it again unhandled.
+  return invite.submit({ emails: cleaned.join(', ') }).catch(() => {})
 }
 
 function submitOnEnter(e: KeyboardEvent) {

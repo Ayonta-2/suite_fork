@@ -5,6 +5,7 @@
       <FormControl
         v-model="name"
         type="text"
+        maxlength="25"
         variant="outline"
         :label="__('Workspace name')"
         :placeholder="__('Acme Inc.')"

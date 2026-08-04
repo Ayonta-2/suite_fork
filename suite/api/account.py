@@ -123,6 +123,47 @@ def get_invite_roles() -> list[str]:
 
 
 @frappe.whitelist()
+def get_users() -> list[dict]:
+    frappe.only_for("System Manager")
+
+    users = frappe.get_all(
+        "User",
+        filters={
+            "enabled": 1,
+            "user_type": "System User",
+            "name": ["not in", ["Administrator", "Guest"]],
+        },
+        fields=["name", "email", "full_name", "user_image"],
+        order_by="full_name asc",
+    )
+    admins = set(
+        frappe.get_all(
+            "Has Role",
+            filters={"role": "System Manager", "parenttype": "User"},
+            pluck="parent",
+        )
+    )
+    for user in users:
+        user["is_admin"] = user["name"] in admins
+    return users
+
+
+@frappe.whitelist()
+def get_pending_invites() -> list[dict]:
+    frappe.only_for("System Manager")
+
+    invites = frappe.get_all(
+        "User Invitation",
+        filters={"status": "Pending", "app_name": "suite"},
+        fields=["name", "email", "creation", "invited_by"],
+        order_by="creation desc",
+    )
+    for invite in invites:
+        invite["invited_by_name"] = frappe.db.get_value("User", invite["invited_by"], "full_name")
+    return invites
+
+
+@frappe.whitelist()
 @redis_cache(user=True)
 def get_logged_in_user() -> dict | None:
     user = frappe.session.user

@@ -37,12 +37,11 @@ import {
   SettingsPanel,
   SettingsSidebar,
 } from 'frappe-ui'
-import { Settings, SlidersHorizontal, Users } from 'lucide-vue-next'
+import { Settings, SlidersHorizontal } from 'lucide-vue-next'
 
 import { useCurrentUser } from '@/boot/session'
 import UserProfileSettings from '@/components/settings/UserProfileSettings.vue'
 import PreferencesSettings from '@/shell/settings/PreferencesSettings.vue'
-import UsersSettings from '@/shell/settings/UsersSettings.vue'
 import { settingsTab, showSettings } from '@/shell/settings/useSettingsDialog'
 import WorkspaceSettings from '@/shell/settings/WorkspaceSettings.vue'
 
@@ -66,7 +65,6 @@ const allGroups = [
     condition: () => systemUser.value,
     items: [
       { label: 'General', value: 'workspace', icon: Settings, component: markRaw(WorkspaceSettings) },
-      { label: 'Users', value: 'users', icon: Users, component: markRaw(UsersSettings) },
     ],
   },
 ]

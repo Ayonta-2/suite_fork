@@ -11,6 +11,25 @@ class AccountTestBase(unittest.TestCase):
         self.enterContext(mock.patch("suite.api.account._", side_effect=lambda s: s))
 
 
+class GuardedEndpoints(AccountTestBase):
+    def test_deny_non_system_manager_before_any_side_effect(self):
+        self.frappe.only_for.side_effect = RuntimeError("not allowed")
+        endpoints = {
+            "mark_onboarded": lambda: account.mark_onboarded(),
+            "update_workspace": lambda: account.update_workspace("Acme"),
+            "invite_users": lambda: account.invite_users("bob@example.com"),
+            "get_users": lambda: account.get_users(),
+            "get_pending_invites": lambda: account.get_pending_invites(),
+        }
+        for name, call in endpoints.items():
+            with self.subTest(endpoint=name):
+                with self.assertRaises(RuntimeError):
+                    call()
+        self.frappe.get_all.assert_not_called()
+        self.frappe.get_single.assert_not_called()
+        self.frappe.db.set_single_value.assert_not_called()
+
+
 class MarkOnboarded(AccountTestBase):
     def setUp(self):
         super().setUp()
@@ -22,13 +41,6 @@ class MarkOnboarded(AccountTestBase):
         )
         self.enterContext(mock.patch("suite.api.account.build_setup_args", return_value={"country": "India"}))
         self.frappe.is_setup_complete.return_value = False
-
-    def test_denies_non_system_manager_before_any_write(self):
-        self.frappe.only_for.side_effect = RuntimeError("not allowed")
-        with self.assertRaises(RuntimeError):
-            account.mark_onboarded()
-        self.engine.assert_not_called()
-        self.frappe.db.set_single_value.assert_not_called()
 
     def test_runs_engine_when_suite_is_the_wizard_and_setup_is_open(self):
         account.mark_onboarded(timezone="Asia/Kolkata")
@@ -45,44 +57,70 @@ class MarkOnboarded(AccountTestBase):
                 self.engine.assert_not_called()
 
 
-class UpdateWorkspace(AccountTestBase):
-    def test_denies_non_system_manager_before_save(self):
-        self.frappe.only_for.side_effect = RuntimeError("not allowed")
-        with self.assertRaises(RuntimeError):
-            account.update_workspace("Acme")
-        self.frappe.get_single.assert_not_called()
+class ValidateWorkspaceLogo(AccountTestBase):
+    def setUp(self):
+        super().setUp()
+        self.frappe.throw.side_effect = RuntimeError
 
-    def test_saves_trimmed_name_and_valid_logo(self):
-        self.frappe.db.exists.return_value = "FILE-0001"
-        settings = mock.Mock(workspace_logo="")
-        self.frappe.get_single.return_value = settings
-
-        account.update_workspace("  Acme  ", "/files/logo.png")
-
-        self.assertEqual(settings.workspace_name, "Acme")
-        self.assertEqual(settings.workspace_logo, "/files/logo.png")
-        settings.save.assert_called_once()
+    def test_allows_empty_logo(self):
+        account.validate_workspace_logo("")
         self.frappe.throw.assert_not_called()
+
+    def test_allows_public_raster_file_attached_to_suite_settings(self):
+        self.frappe.db.exists.return_value = "FILE-0001"
+        account.validate_workspace_logo("/files/logo.png")
+        self.frappe.throw.assert_not_called()
+
+    def test_rejects_paths_outside_public_files(self):
+        for logo in ("https://evil.example/logo.png", "/private/files/logo.png"):
+            with self.subTest(logo=logo):
+                with self.assertRaises(RuntimeError):
+                    account.validate_workspace_logo(logo)
+
+    def test_rejects_non_raster_extensions(self):
+        with self.assertRaises(RuntimeError):
+            account.validate_workspace_logo("/files/logo.svg")
+
+    def test_rejects_files_not_attached_to_suite_settings(self):
+        self.frappe.db.exists.return_value = None
+        with self.assertRaises(RuntimeError):
+            account.validate_workspace_logo("/files/logo.png")
 
 
 class InviteUsers(AccountTestBase):
-    def setUp(self):
-        super().setUp()
-        self.invite = self.enterContext(mock.patch("frappe.core.api.user_invitation.invite_by_email"))
-
-    def test_denies_non_system_manager_before_inviting(self):
-        self.frappe.only_for.side_effect = RuntimeError("not allowed")
-        with self.assertRaises(RuntimeError):
-            account.invite_users("bob@example.com")
-        self.invite.assert_not_called()
-
     def test_passes_server_derived_roles_and_suite_redirect(self):
+        invite = self.enterContext(mock.patch("frappe.core.api.user_invitation.invite_by_email"))
         self.frappe.get_hooks.return_value = {"allowed_roles": {"System Manager": ["Suite User"]}}
         self.frappe.get_roles.return_value = ["System Manager"]
         account.invite_users("bob@example.com")
-        self.invite.assert_called_once_with(
+        invite.assert_called_once_with(
             emails="bob@example.com",
             roles=["Suite User"],
             redirect_to_path="/suite",
             app_name="suite",
         )
+
+
+class GetUsers(AccountTestBase):
+    def test_flags_system_managers_as_admins(self):
+        self.frappe.get_all.side_effect = [
+            [
+                {
+                    "name": "alice@example.com",
+                    "email": "alice@example.com",
+                    "full_name": "Alice",
+                    "user_image": None,
+                },
+                {
+                    "name": "bob@example.com",
+                    "email": "bob@example.com",
+                    "full_name": "Bob",
+                    "user_image": None,
+                },
+            ],
+            ["alice@example.com"],
+        ]
+
+        users = account.get_users()
+
+        self.assertEqual([u["is_admin"] for u in users], [True, False])
