@@ -6558,14 +6558,20 @@ body:has(.sn-slicer) .dropdown-content.dropdown-content,
 body:has(.sn-slicer) .menu-content.menu-content { z-index: 9500; }
 
 /* A Frappe UI Dialog draws a translucent (~12% black) scrim over the grid.
-   The filter-range outline and pivot-output highlight are full-height dark
-   1.5px borders spanning the whole data region, so their vertical borders stay
-   visible THROUGH that scrim and flank the open dialog — reading as a line
-   cutting across it (e.g. the Share dialog while a filter is active). Hide
-   those decorations whenever a dialog is up. `.dialog-overlay` portals to
-   <body>, so `:has` from body catches every one. */
+   The filter-range outline, pivot-output highlight, floating charts, and
+   other canvas overlays sit above canvas content. Hide/suppress those
+   decorations whenever a dialog is up. `.dialog-overlay` portals to
+   <body>, so `:has` from body catches every open dialog modal. */
 body:has(.dialog-overlay) .sn-filter-range,
-body:has(.dialog-overlay) .sn-pivot-highlight { display: none; }
+body:has(.dialog-overlay) .sn-pivot-highlight,
+body:has(.dialog-overlay) .sn-pivot-fab,
+body:has(.dialog-overlay) .sn-remote-cursor,
+body:has(.dialog-overlay) .sn-filter-overlay { display: none; }
+
+body:has(.dialog-overlay) .co-layer {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
 
 /* Overlay scrollbars for the canvas grid. The elements are created imperatively
    in canvas/scrollbars.js (appended to .sn-grid-wrap), so they carry no scoped
