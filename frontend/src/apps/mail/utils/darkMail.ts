@@ -347,7 +347,13 @@ const isChromaticToken = (token: string): boolean => {
 const BODY_BACKGROUND_RULE = /(?:^|[\s,{}])(?:body|html)\b[^{]*\{[^}]*background/i
 
 export const isArtDirected = (doc: Document): boolean => {
-	const sheets = Array.from(doc.querySelectorAll('style')).map((s) => s.textContent ?? '')
+	// Quoted content speaks only for itself, never for the reply wrapping it —
+	// its style sheets can't claim the canvas and its colors don't make the
+	// reply "painted" (the BFS below skips quoted subtrees for the same reason).
+	const isQuoted = (el: Element) => !!el.closest('.gmail_quote, .frappe_mail_quote, blockquote')
+	const sheets = Array.from(doc.querySelectorAll('style'))
+		.filter((style) => !isQuoted(style))
+		.map((s) => s.textContent ?? '')
 
 	let claimsCanvas = sheets.some((css) => BODY_BACKGROUND_RULE.test(css))
 	const bodyWeight = contentWeight(doc.body)
@@ -365,6 +371,7 @@ export const isArtDirected = (doc: Document): boolean => {
 	// Painted with color anywhere? (The canvas itself may be the colorful part.)
 	const values: string[] = []
 	doc.querySelectorAll('[bgcolor], [style]').forEach((el) => {
+		if (isQuoted(el)) return
 		const bg = elementBackground(el)
 		if (bg) values.push(bg)
 	})

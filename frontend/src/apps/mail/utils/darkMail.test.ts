@@ -270,6 +270,16 @@ describe('isArtDirected', () => {
 			</div>
 		`)
 		expect(isArtDirected(doc)).toBe(false)
+		// Same via a quoted <style> sheet with a chromatic body rule — the sheet
+		// speaks for the quote, not for the reply's canvas.
+		const sheetDoc = parseDoc(`
+			<p>my reply</p>
+			<div class="gmail_quote">
+				<style>body { background: #10182b; }</style>
+				<p>quoted campaign</p>
+			</div>
+		`)
+		expect(isArtDirected(sheetDoc)).toBe(false)
 	})
 })
 
