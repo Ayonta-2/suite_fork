@@ -47,7 +47,8 @@ import { ImageOff } from 'lucide-vue-next'
 import { Button } from 'frappe-ui'
 
 import { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils'
-import { useTheme } from '@/apps/mail/utils/composables'
+import { useComposeMail, useTheme } from '@/apps/mail/utils/composables'
+import { parseMailto } from '@/apps/mail/utils/mailto'
 import { isArtDirected, normalizeToLightScheme, remapEmailForDarkMode } from '@/apps/mail/utils/darkMail'
 
 const {
@@ -58,6 +59,7 @@ const {
 const emit = defineEmits<{ trust: [] }>()
 
 const { dataTheme } = useTheme()
+const { requestCompose } = useComposeMail()
 
 const isIframeReady = ref(false)
 
@@ -94,6 +96,12 @@ const handleMessage = (event: MessageEvent) => {
 	// swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
 	if (event.data?.type === 'swipe') {
 		window.dispatchEvent(new CustomEvent('email-swipe', { detail: event.data.direction }))
+		return
+	}
+	// A `mailto:` the reader clicked inside the message — open our own composer on it.
+	if (event.data?.type === 'mailto') {
+		const draft = parseMailto(String(event.data.href ?? ''))
+		if (draft) requestCompose(draft)
 		return
 	}
 	if (event.data?.type !== 'keyboard') return
@@ -282,9 +290,15 @@ const srcdoc = computed(() => {
 					const anchor = e.target.closest('a');
 					if (anchor) {
 						e.preventDefault();
-						if (anchor.getAttribute('href')?.trim()) {
-							window.open(anchor.href, '_blank');
+						const href = anchor.getAttribute('href')?.trim();
+						if (!href) return;
+						// A mailto belongs to this app: opening it would hand the OS's default
+						// mail client a draft the user has to finish somewhere else.
+						if (/^mailto:/i.test(href)) {
+							window.parent.postMessage({ type: 'mailto', href: anchor.href }, '*');
+							return;
 						}
+						window.open(anchor.href, '_blank');
 					}
 				});
 

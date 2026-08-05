@@ -116,6 +116,7 @@
 				>
 					<span class="text-ink-gray-4 text-sm">{{ __('Subject') }}</span>
 					<input
+						ref="subjectInput"
 						v-model="mail.subject"
 						class="flex-1 cursor-text border-none bg-inherit text-base focus-visible:!ring-0"
 					/>
@@ -309,6 +310,7 @@ const { isMobile } = useScreenSize()
 const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef('toInput')
 const ccInput = useTemplateRef('ccInput')
+const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 
 const showContactsModal = ref(false)
 const insertContactsInto = ref('')
@@ -423,10 +425,21 @@ const originalMail = ref<ComposeMailData>()
 const updateOriginalMail = () => (originalMail.value = JSON.parse(JSON.stringify(mail)))
 const isDraftUpdated = computed(() => JSON.stringify(mail) !== JSON.stringify(originalMail.value))
 
+// Start where there is still something to write: the body on a reply (recipients and
+// subject come with the thread), the subject when the draft arrived addressed but
+// unnamed — a `mailto:` link, or a calendar invite's participants — and the To field
+// otherwise. The delay is the dialog's: focusing during its transition doesn't take.
 onMounted(() => {
 	updateOriginalMail()
-	if (!mailDetails?.in_reply_to) setTimeout(() => toInput.value?.setFocus(), 50)
-	else textEditor.value.editor.commands.focus()
+	if (mailDetails?.in_reply_to) return textEditor.value.editor.commands.focus()
+
+	// Deferred, and the choice made from inside: TextEditor renders nothing until it has
+	// built its editor on its own mounted hook, so neither field exists yet at this point.
+	setTimeout(() => {
+		if (!isRecipientsEmpty.value && !mail.subject && subjectInput.value)
+			subjectInput.value.focus()
+		else toInput.value?.setFocus()
+	}, 50)
 })
 
 onUnmounted(() => saveDraft())
