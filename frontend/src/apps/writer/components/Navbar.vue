@@ -305,8 +305,8 @@ const fileActions = computed(() =>
                   icon: LucideFileText,
                   onClick: () => {
                     downloadDocxFromHtml(
-                      editor.getHTML(),
-                      `${file.doc.file_name}.docx`,
+                      editor.value.getHTML(),
+                      `${props.file.doc.file_name}.docx`,
                       props.document?.doc?.settings,
                     )
                   },
