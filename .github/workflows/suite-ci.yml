@@ -157,7 +157,18 @@ jobs:
 
   mail-calendar:
     runs-on: ubuntu-latest
-    name: Mail & Calendar
+    name: ${{ matrix.name }}
+
+    # One matrix leg per module; both legs run whenever either module changes,
+    # since the calendar tests build on the mail harness and Stalwart accounts.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: mail
+            name: Mail
+          - module: calendar
+            name: Calendar
 
     services:
       redis-cache:
@@ -263,7 +274,7 @@ jobs:
         env:
           CI: "Yes"
 
-      - name: Run Mail & Calendar Tests
+      - name: Run ${{ matrix.name }} Tests
         if: steps.mail-calendar-changes.outputs.run == '1'
         working-directory: /home/runner/frappe-bench
         run: |
@@ -277,7 +288,7 @@ jobs:
           bench --site test_site execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
           bench --site test_site clear-cache
 
-          for path in $GITHUB_WORKSPACE/suite/mail/tests/test_*.py $GITHUB_WORKSPACE/suite/calendar/tests/test_*.py; do
+          for path in $GITHUB_WORKSPACE/suite/${{ matrix.module }}/tests/test_*.py; do
             [ -e "$path" ] || continue
             rel="${path#"$GITHUB_WORKSPACE"/}"
             module="$(echo "${rel%.py}" | tr / .)"
