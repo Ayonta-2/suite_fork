@@ -118,11 +118,15 @@ class MailQueue(OwnerFromUser, Document):
     @staticmethod
     def clear_old_logs(days: int = 3) -> None:
         MQ = frappe.qb.DocType("Mail Queue")
+        cutoff = get_datetime(add_to_date(now(), days=-days))
         (
             frappe.qb.from_(MQ)
             .where(
-                (MQ.status.isin(["Drafted", "Submitted", "Cancelled"]))
-                & (MQ.creation < get_datetime(add_to_date(now(), days=-days)))
+                ((MQ.status.isin(["Drafted", "Submitted", "Cancelled"])) & (MQ.creation < cutoff))
+                # A Scheduled row whose hold elapsed this long ago has delivered (or surfaced
+                # in the MTA queue) — without this, rows never reconciled by the Scheduled
+                # page (e.g. every undo-send hold) would accumulate forever.
+                | ((MQ.status == "Scheduled") & (MQ.send_at < cutoff))
             )
             .delete()
         ).run()

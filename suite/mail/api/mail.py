@@ -9,7 +9,7 @@ import pydenticon
 import requests
 from frappe import _
 from frappe.model.document import bulk_insert
-from frappe.utils import cint, now, random_string
+from frappe.utils import add_to_date, cint, now, random_string
 
 from suite.mail.api.contacts import (
     create_contacts_if_not_exists,
@@ -72,6 +72,14 @@ from suite.utils.user import is_system_manager
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
 SCREENING_FETCH_LIMIT = 500
+
+# Undo send: the composer's default Send holds delivery (FUTURERELEASE) for the visible
+# undo window plus a grace that covers request latency, so an Undo clicked at the last
+# moment still reaches the server before the hold elapses. Computed on the server clock —
+# a skewed client clock must not be able to shorten (or invalidate) the hold. The window
+# half is mirrored by UNDO_SEND_WINDOW_MS in ComposeMailEditor.vue.
+UNDO_SEND_WINDOW_SECONDS = 7
+UNDO_SEND_HOLD_SECONDS = UNDO_SEND_WINDOW_SECONDS + 3
 
 # All Inboxes bounds. limit/start are user-supplied, and per_account_limit (= start + limit) is fetched
 # from *every* account and merged in memory, so both are clamped. MAX_FETCH caps the deepest reachable
@@ -576,8 +584,10 @@ def create_mail(
     forwarded_from_id: str | None = None,
     save_as_draft: bool = False,
     send_at: str | None = None,
+    undo_send: bool = False,
 ) -> dict:
-    """Creates new mail queue. `send_at` (UTC `...Z`) schedules delivery via FUTURERELEASE."""
+    """Creates new mail queue. `send_at` (UTC `...Z`) schedules delivery via FUTURERELEASE;
+    `undo_send` instead holds delivery briefly so the sender can cancel from the undo toast."""
 
     doc_attachments = []
     for d in attachments or []:
@@ -601,6 +611,10 @@ def create_mail(
             for email in emails
         ]
 
+    send_at = from_utc_z(send_at)
+    if undo_send and not send_at and not save_as_draft:
+        send_at = add_to_date(now(), seconds=UNDO_SEND_HOLD_SECONDS)
+
     doc = MailQueue._create(
         user=get_user_for_jmap_account(account, raise_exception=True),
         account=account,
@@ -614,14 +628,20 @@ def create_mail(
         attachments=doc_attachments,
         recipients=recipients,
         save_as_draft=save_as_draft,
-        send_at=from_utc_z(send_at),
+        send_at=send_at,
     )
 
     if not save_as_draft and doc.status in ("Submitted", "Scheduled"):
         create_contacts_if_not_exists(account, doc.recipients)
         auto_accept_recipients(account, doc.recipients)
 
-    return {"id": doc.id, "status": doc.status, "error": doc.error_message, "thread_id": doc.thread_id}
+    return {
+        "name": doc.name,
+        "id": doc.id,
+        "status": doc.status,
+        "error": doc.error_message,
+        "thread_id": doc.thread_id,
+    }
 
 
 @frappe.whitelist()
@@ -638,8 +658,11 @@ def update_draft_mail(
     attachments: list[dict] | None = None,
     submit: bool = False,
     send_at: str | None = None,
+    undo_send: bool = False,
 ) -> dict:
-    """Creates new mail queue from existing draft message. `send_at` (UTC `...Z`) schedules delivery via FUTURERELEASE."""
+    """Creates new mail queue from existing draft message. `send_at` (UTC `...Z`) schedules delivery
+    via FUTURERELEASE; `undo_send` instead holds delivery briefly so the sender can cancel from the
+    undo toast."""
 
     message = frappe.get_doc("Mail Message", f"{account}|{id}")
     message.check_permission(permtype="write")
@@ -690,13 +713,18 @@ def update_draft_mail(
                 {"type": type, "email": email.get("email"), "display_name": email.get("display_name")},
             )
 
-    queue = message.submit(send_at=from_utc_z(send_at)) if submit else message.save_draft()
+    send_at = from_utc_z(send_at)
+    if undo_send and submit and not send_at:
+        send_at = add_to_date(now(), seconds=UNDO_SEND_HOLD_SECONDS)
+
+    queue = message.submit(send_at=send_at) if submit else message.save_draft()
 
     if submit and queue.status in ("Submitted", "Scheduled"):
         create_contacts_if_not_exists(account, message.recipients)
         auto_accept_recipients(account, message.recipients)
 
     return {
+        "name": queue.name,
         "id": queue.id,
         "status": queue.status,
         "error": queue.error_message,

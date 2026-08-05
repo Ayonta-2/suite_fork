@@ -16,7 +16,7 @@ There is no undo-send window feature — only explicit scheduling is covered her
 from datetime import datetime
 
 import frappe
-from frappe.utils import add_to_date, get_datetime, get_datetime_str, now
+from frappe.utils import add_to_date, get_datetime, get_datetime_str, now, time_diff_in_seconds
 
 from suite.mail.jmap import get_email_service, get_email_submission_service
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
@@ -242,3 +242,48 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
 
         self.assertEqual(doc.status, "Scheduled")
         self.assertEqual(doc.submission_id, scheduled.doc.submission_id)
+
+    def test_undo_send_holds_and_cancels(self):
+        # The composer's default Send: the server computes a short hold so the sender
+        # can cancel from the undo toast; Undo is just cancel_scheduled_mail.
+        from suite.mail.api.mail import UNDO_SEND_HOLD_SECONDS, cancel_scheduled_mail
+
+        result = self.send_mail(self.sender, self.recipient.email, undo_send=True)
+        self.assertEqual(result["status"], "Scheduled", result.get("error"))
+        self.assertTrue(result["name"])
+
+        with self.set_user("Administrator"):
+            doc = frappe.get_doc("Mail Queue", result["name"])
+        self.assertTrue(doc.submission_id)
+
+        hold = time_diff_in_seconds(doc.send_at, now())
+        self.assertGreater(hold, 0)
+        self.assertLessEqual(hold, UNDO_SEND_HOLD_SECONDS + 5)
+
+        account = self.personal_account(self.sender)
+        with self.set_user(self.sender.email):
+            cancelled = cancel_scheduled_mail(account, result["name"])
+        self.assertEqual(cancelled["status"], "Cancelled")
+
+        submission = self._get_submission(account, doc.submission_id)
+        self.assertEqual(submission["undoStatus"], "canceled")
+
+    def test_clear_old_logs_purges_stale_scheduled(self):
+        from suite.mail.doctype.mail_queue.mail_queue import MailQueue
+
+        stale = self._schedule(minutes=120)
+        fresh = self._schedule(minutes=120)
+
+        with self.set_user("Administrator"):
+            # A hold that elapsed days ago has long since delivered; the row is a log now.
+            frappe.db.set_value(
+                "Mail Queue",
+                stale.name,
+                "send_at",
+                add_to_date(now(), days=-4),
+                update_modified=False,
+            )
+            MailQueue.clear_old_logs()
+
+        self.assertFalse(frappe.db.exists("Mail Queue", stale.name))
+        self.assertTrue(frappe.db.exists("Mail Queue", fresh.name))
