@@ -3,35 +3,42 @@
 	     Stays mounted and slides via transform so dismissal animates too; visibility
 	     flips after the slide-out, keeping the closed sheet out of the focus order.
 	     z-30: above the thread's reply bar (z-20), which stays mounted underneath
-	     and is revealed as the sheet slides out. -->
-	<div
-		class="bg-surface-base fixed inset-0 z-30 flex flex-col pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
-		:class="{ 'invisible translate-y-full': !show || !painted }"
-	>
-		<div class="sticky top-0 flex items-center border-b px-3 py-2.5">
-			<Button variant="ghost" class="mr-2" @click="close">
-				<template #icon>
-					<X class="text-ink-gray-5 h-4 w-4" />
-				</template>
-			</Button>
-			<h2 class="flex-1">{{ __('Compose Mail') }}</h2>
-			<!-- AdaptiveDropdown (bottom sheet, z-50): a plain Dropdown's popup portals
-			     to body with no z-index, so this sheet would paint over it. -->
-			<AdaptiveDropdown :options="ACTIONS">
-				<Button variant="ghost" class="mr-2">
+	     and is revealed as the sheet slides out.
+
+	     Teleported to body, like the thread pane: the layout's isolate paints its
+	     whole subtree as one unit in the root stacking context, so a sheet opened
+	     from inside a thread (a `mailto:` link in the message) lost to the pane —
+	     which teleports out for the same reason — however high its own z went. -->
+	<Teleport to="body">
+		<div
+			class="bg-surface-base fixed inset-0 z-30 flex flex-col pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+			:class="{ 'invisible translate-y-full': !show || !painted }"
+		>
+			<div class="sticky top-0 flex items-center border-b px-3 py-2.5">
+				<Button variant="ghost" class="mr-2" @click="close">
 					<template #icon>
-						<EllipsisVertical class="text-ink-gray-5 h-4 w-4" />
+						<X class="text-ink-gray-5 h-4 w-4" />
 					</template>
 				</Button>
-			</AdaptiveDropdown>
-			<Button variant="ghost" @click="emit('sendMail')">
-				<template #icon>
-					<SendHorizontal class="text-ink-gray-5 h-4 w-4" />
-				</template>
-			</Button>
+				<h2 class="flex-1">{{ __('Compose Mail') }}</h2>
+				<!-- AdaptiveDropdown (bottom sheet, z-50): a plain Dropdown's popup portals
+				     to body with no z-index, so this sheet would paint over it. -->
+				<AdaptiveDropdown :options="ACTIONS">
+					<Button variant="ghost" class="mr-2">
+						<template #icon>
+							<EllipsisVertical class="text-ink-gray-5 h-4 w-4" />
+						</template>
+					</Button>
+				</AdaptiveDropdown>
+				<Button variant="ghost" @click="emit('sendMail')">
+					<template #icon>
+						<SendHorizontal class="text-ink-gray-5 h-4 w-4" />
+					</template>
+				</Button>
+			</div>
+			<slot name="body-content" />
 		</div>
-		<slot name="body-content" />
-	</div>
+	</Teleport>
 </template>
 
 <script setup lang="ts">
