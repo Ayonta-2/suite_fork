@@ -77,6 +77,8 @@ class TestAdminMembers(StalwartIntegrationTestCase):
         request = frappe.get_last_doc("Mail Account Request", {"account": email})
         self.assertFalse(request.is_verified)
         self.assertTrue(request.request_key)
+        # Admin-created requests record the inviter, unlike self-signups.
+        self.assertTrue(request.invited_by)
 
         with self.set_user("Guest"):
             details = get_account_request(request.request_key)
@@ -133,6 +135,8 @@ class TestAdminMembers(StalwartIntegrationTestCase):
             request = frappe.get_doc("Mail Account Request", request_name)
             self.assertFalse(request.is_verified)
             self.assertFalse(frappe.db.exists("User", email))
+            # An empty invited_by is what marks a self-signup request.
+            self.assertFalse(request.invited_by)
 
             # resend_otp regenerates the code, invalidating the previous one.
             first_otp = captured["otp"]

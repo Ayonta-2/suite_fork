@@ -65,6 +65,9 @@ def signup(username: str, domain: str, email: str) -> str:
         account_request.account = f"{username}@{domain}"
         account_request.backup_email = email
         account_request.send_invite = 0
+        # The insert runs elevated, so mark the request as self-serve: an empty
+        # invited_by is what distinguishes a self-signup from an admin invite.
+        account_request.flags.self_signup = True
         account_request.insert(ignore_permissions=True)
 
     account_request.set_otp()

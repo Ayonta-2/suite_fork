@@ -61,12 +61,12 @@ class MailAccountRequest(Document):
         backup_email: DF.Data
         expires_at: DF.Datetime | None
         groups: DF.SmallText | None
-        invited_by: DF.Link
+        invited_by: DF.Link | None
         ip_address: DF.Data | None
         is_admin: DF.Check
         is_verified: DF.Check
         mailing_lists: DF.SmallText | None
-        quota_gb: DF.Float | None
+        quota_gb: DF.Float
         request_key: DF.Data | None
         roles: DF.SmallText | None
         send_invite: DF.Check
@@ -170,7 +170,12 @@ class MailAccountRequest(Document):
         self.ip_address = frappe.local.request_ip
 
     def validate_invited_by(self) -> None:
-        """Validates the invited_by."""
+        """Records who created the request. A self-signup has no inviter - an empty
+        invited_by is what distinguishes it from an admin-created request."""
+
+        if self.flags.self_signup:
+            self.invited_by = None
+            return
 
         user = frappe.session.user
 
