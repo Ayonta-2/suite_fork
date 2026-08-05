@@ -262,6 +262,15 @@ doc_events = {
     },
 }
 
+user_invitation = {
+    "allowed_roles": {
+        "System Manager": ["Suite User"],
+    },
+}
+
+# Suite's onboarding replaces the built-in desk setup wizard
+setup_wizard_url = "/suite/setup"
+
 # ============================================================================
 # Scheduled Tasks (per-frequency lists combined; cron keys de-duplicated)
 # ============================================================================
