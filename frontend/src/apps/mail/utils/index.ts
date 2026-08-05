@@ -4,6 +4,7 @@ import { toast } from 'frappe-ui'
 
 import { FOLDER_ICON_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
 import dayjs from '@/apps/mail/utils/dayjs'
+import { flattenMentions } from '@/apps/mail/utils/mentions'
 import AudioIcon from '@/apps/mail/components/Icons/AudioIcon.vue'
 import ImageIcon from '@/apps/mail/components/Icons/ImageIcon.vue'
 import PDFIcon from '@/apps/mail/components/Icons/PDFIcon.vue'
@@ -351,9 +352,13 @@ export const randomString = (length: number) => {
 	return result
 }
 
-export const processInlineImages = (mail: ComposeMailData) => {
+// `sending`: mentions are flattened to plain links only on the way out. A draft keeps
+// the editor's own mention nodes, so reopening one still shows the chips.
+export const processInlineImages = (mail: ComposeMailData, { sending = false } = {}) => {
 	const htmlBody = mail.html_body! + mail.quoted_content
 	const $ = cheerio.load(htmlBody)
+
+	if (sending) flattenMentions($)
 
 	const regularAttachments = mail.attachments?.filter((a) => a.disposition !== 'inline') || []
 	const inlineAttachments = mail.attachments?.filter((a) => a.disposition === 'inline') || []

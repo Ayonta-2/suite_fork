@@ -2,14 +2,17 @@
 	<TextEditor
 		ref="textEditor"
 		editor-class="prose-sm max-w-none"
-		:extensions="[CustomImageExtension, CustomParagraphExtension]"
+		:extensions="[CustomImageExtension, CustomParagraphExtension, ...MentionExtensions]"
 		:content="mail.html_body.replaceAll('<div><br></div>', '<div></div>')"
 		:upload-function
 		class="flex flex-col max-sm:overflow-y-auto"
 		:class="{ 'pointer-events-none opacity-50': !show, 'sm:h-[75vh]': !isInThread }"
 		:style="isMobile && { height: editorHeight }"
 		@change="
-			(val: string) => (mail.html_body = val.replaceAll('<div></div>', '<div><br></div>'))
+			(val: string) => {
+				mail.html_body = val.replaceAll('<div></div>', '<div><br></div>')
+				dropUnmentionedRecipients()
+			}
 		"
 		@dragenter.prevent="handleDragEnter"
 		@dragover.prevent="handleDragOver"
@@ -246,6 +249,7 @@ import {
 	createResource,
 	useFileUpload,
 } from 'frappe-ui'
+import { Mention } from 'frappe-ui/editor'
 
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import {
@@ -256,11 +260,13 @@ import {
 	randomString,
 } from '@/apps/mail/utils'
 import { useScreenSize, useVisualViewport } from '@/apps/mail/utils/composables'
+import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
 import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
 
 import type { Attachment, ComposeMailData, File as FileDoc, Identity, UserResource } from '@/apps/mail/types'
+import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 
 import RecipientInput from './Controls/RecipientInput.vue'
 import ContactsModal from './Modals/ContactsModal.vue'
@@ -326,6 +332,59 @@ const appendEmoji = (emoji: string) => {
 const editorHeight = useVisualViewport(
 	(viewport) => `${viewport.height - viewport.offsetTop - 113}px`,
 )
+
+// Mentions
+
+// Picking a mention adds that person to To — reaching back up to the recipient fields
+// is the trip the shortcut exists to save. Only the pick adds, so a mention arriving
+// with pasted or forwarded content doesn't quietly address the mail to anyone.
+//
+// Recipients this composer added that way, and only those: deleting the mention takes
+// them back out again, while someone typed into To by hand and then mentioned stays
+// put — the mention didn't put them there and doesn't get to remove them.
+const mentionedRecipients = new Set<string>()
+
+const addMentionedRecipient = ({ email, display_name, image }: MentionCandidate) => {
+	if ([...mail.to, ...mail.cc, ...mail.bcc].some((r) => r.email === email)) return
+
+	mail.to.push({ email, display_name, image })
+	mentionedRecipients.add(email)
+}
+
+const dropUnmentionedRecipients = () => {
+	const editor = textEditor.value?.editor
+	if (!editor || !mentionedRecipients.size) return
+
+	const mentioned = new Set<string>()
+	editor.state.doc.descendants((node) => {
+		if (node.type.name === 'mention' && node.attrs.id) mentioned.add(node.attrs.id)
+	})
+
+	for (const email of mentionedRecipients) {
+		// Still named somewhere in the body — mentioning someone twice and deleting one
+		// of the two keeps them addressed.
+		if (mentioned.has(email)) continue
+
+		mail.to = mail.to.filter((recipient) => recipient.email !== email)
+		mentionedRecipients.delete(email)
+	}
+}
+
+const MentionExtensions = [
+	// The inline node. Its own `@` suggester stays inert with no item source of its
+	// own — the search below is the one wired up.
+	Mention,
+	createMentionSuggestion({
+		account: () => scopeAccountId.value,
+		onSelect: addMentionedRecipient,
+		// Null in a thread or the mobile sheet, where nothing is holding the rest of
+		// the page inert and the default <body> is fine.
+		container: () =>
+			(textEditor.value?.$el as HTMLElement | undefined)?.closest<HTMLElement>(
+				'[role="dialog"]',
+			) ?? null,
+	}),
+]
 
 // Setup & hooks
 
@@ -461,7 +520,7 @@ const createMail = createResource({
 	makeParams: ({ save_as_draft }: { save_as_draft: boolean }) => ({
 		account: scopeAccountId.value,
 		...mail,
-		...processInlineImages(mail),
+		...processInlineImages(mail, { sending: !save_as_draft }),
 		from_name: getIdentity(mail.from_email!)._name,
 		save_as_draft,
 	}),
@@ -474,7 +533,7 @@ const updateDraft = createResource({
 	makeParams: ({ submit }: { submit: boolean }) => ({
 		account: scopeAccountId.value,
 		...mail,
-		...processInlineImages(mail),
+		...processInlineImages(mail, { sending: submit }),
 		from_name: getIdentity(mail.from_email!)._name,
 		submit,
 	}),
