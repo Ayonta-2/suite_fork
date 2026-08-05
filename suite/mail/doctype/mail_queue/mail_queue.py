@@ -1079,6 +1079,63 @@ def process_pending_emails(mails: list[str]) -> None:
                 )
 
 
+def reconcile_scheduled_emails() -> None:
+    """Flips Scheduled rows whose hold has elapsed to their real submission state.
+
+    The Scheduled page reconciles lazily and clear_old_logs purges eventually, but with
+    undo send every UI send passes through Scheduled — without this sweep the queue log
+    would show delivered mail as Scheduled (and never record submitted_at) until purged.
+    """
+
+    rows = frappe.db.get_all(
+        "Mail Queue",
+        filters={
+            "status": "Scheduled",
+            "submission_id": ("is", "set"),
+            # Small buffer past the hold so in-flight releases aren't queried mid-flip.
+            "send_at": ("<", add_to_date(now(), minutes=-1)),
+        },
+        fields=["name", "account", "submission_id"],
+    )
+    if not rows:
+        return
+
+    by_account: dict[str, list] = {}
+    for row in rows:
+        by_account.setdefault(row.account, []).append(row)
+
+    MQ = frappe.qb.DocType("Mail Queue")
+    for account, account_rows in by_account.items():
+        try:
+            service = get_email_submission_service(account, ignore_permissions=True)
+            undo_by_id = {
+                s["id"]: s.get("undoStatus") for s in service.get([r.submission_id for r in account_rows])
+            }
+        except Exception:
+            log_mail_error(_("Failed - Reconcile Scheduled Emails"), frappe.get_traceback(with_context=True))
+            continue
+
+        # Unknown ids (submission object gone) are left alone — same conservative call as
+        # the Scheduled page; clear_old_logs picks them up eventually.
+        submitted = [r.name for r in account_rows if undo_by_id.get(r.submission_id) == "final"]
+        cancelled = [r.name for r in account_rows if undo_by_id.get(r.submission_id) == "canceled"]
+
+        if submitted:
+            (
+                frappe.qb.update(MQ)
+                .set(MQ.status, "Submitted")
+                .set(MQ.submitted_at, now())
+                .where(MQ.name.isin(submitted))
+            ).run()
+        if cancelled:
+            (
+                frappe.qb.update(MQ)
+                .set(MQ.status, "Cancelled")
+                .set(MQ.cancelled_at, now())
+                .where(MQ.name.isin(cancelled))
+            ).run()
+
+
 def enqueue_process_pending_emails(batch_size: int | None = None, max_batch_size: int | None = None) -> None:
     """Enqueue process pending emails."""
 

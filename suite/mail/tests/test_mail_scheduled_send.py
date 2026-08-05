@@ -274,6 +274,48 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         submission = self._get_submission(account, doc.submission_id)
         self.assertEqual(submission["undoStatus"], "canceled")
 
+    def test_reconciliation_sweep(self):
+        # The 5-minute cron flips rows whose hold elapsed: delivered submissions to
+        # Submitted, out-of-band cancellations to Cancelled.
+        from suite.mail.doctype.mail_queue.mail_queue import reconcile_scheduled_emails
+
+        account = self.personal_account(self.sender)
+
+        delivered = self.send_mail(
+            self.sender,
+            self.recipient.email,
+            subject=f"Sweep {unique_name('subject')}",
+            send_at=to_utc_z(add_to_date(now(), seconds=15)),
+        )
+        self.assertEqual(delivered["status"], "Scheduled", delivered.get("error"))
+
+        out_of_band = self._schedule(minutes=120)
+        with self.set_user(self.sender.email):
+            get_email_submission_service(account).cancel(out_of_band.doc.submission_id)
+
+        with self.set_user("Administrator"):
+            delivered_doc = frappe.get_doc("Mail Queue", delivered["name"])
+
+        self.wait_until(
+            lambda: (self._get_submission(account, delivered_doc.submission_id) or {}).get("undoStatus")
+            == "final",
+            timeout=90,
+            message="The held submission never went final.",
+        )
+
+        with self.set_user("Administrator"):
+            # Age both rows past the sweep's buffer.
+            for name in (delivered["name"], out_of_band.name):
+                frappe.db.set_value(
+                    "Mail Queue", name, "send_at", add_to_date(now(), minutes=-2), update_modified=False
+                )
+            reconcile_scheduled_emails()
+
+            self.assertEqual(frappe.db.get_value("Mail Queue", delivered["name"], "status"), "Submitted")
+            self.assertTrue(frappe.db.get_value("Mail Queue", delivered["name"], "submitted_at"))
+            self.assertEqual(frappe.db.get_value("Mail Queue", out_of_band.name, "status"), "Cancelled")
+            self.assertTrue(frappe.db.get_value("Mail Queue", out_of_band.name, "cancelled_at"))
+
     def test_clear_old_logs_purges_stale_scheduled(self):
         from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 
