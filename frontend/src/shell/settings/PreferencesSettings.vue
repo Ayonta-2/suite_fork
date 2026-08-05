@@ -61,6 +61,7 @@ import {
 } from 'frappe-ui'
 
 import { useSessionStore } from '@/boot/session'
+import { useTimezones } from '@/shell/useTimezones'
 import { switchTheme, themeMode } from '@/utils/setupTheme'
 
 const THEME_OPTIONS = [
@@ -96,15 +97,7 @@ createResource({
   },
 })
 
-const timezoneOptions = ref<{ label: string; value: string }[]>([])
-
-createResource({
-  url: 'frappe.core.doctype.user.user.get_timezones',
-  auto: true,
-  onSuccess(data: { timezones: string[] }) {
-    timezoneOptions.value = data.timezones.map((tz) => ({ label: tz, value: tz }))
-  },
-})
+const { timezoneOptions } = useTimezones()
 
 // Language and time zone shape the whole session (translations, rendered
 // dates), so a full reload after save is the only way to apply them.

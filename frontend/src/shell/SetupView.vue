@@ -156,6 +156,7 @@ import { setupTheme, switchTheme, systemDark, themeMode } from '@/utils/setupThe
 import SetupProgressTrack from '@/shell/SetupProgressTrack.vue'
 import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
 import InviteStep from '@/shell/InviteStep.vue'
+import { detectTimezone, useTimezones } from '@/shell/useTimezones'
 
 const apps = SUITE_APPS
 const suiteLogo = SUITE_LOGO
@@ -167,19 +168,8 @@ const stepOrder: Step[] = ['welcome', 'workspace', 'invite', 'ready']
 const step = ref<Step>('welcome')
 const stepIndex = computed(() => stepOrder.indexOf(step.value))
 const trackIndex = computed(() => stepIndex.value - 1)
-const timezone = ref(Intl.DateTimeFormat().resolvedOptions().timeZone)
-const timezones = ref<string[]>(
-  typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [],
-)
-// Safari < 15.4 has no Intl.supportedValuesOf; fetch the list instead.
-if (!timezones.value.length) {
-  createResource({
-    url: 'frappe.geo.country_info.get_country_timezone_info',
-    auto: true,
-    onSuccess: (data: { all_timezones: string[] }) => (timezones.value = data.all_timezones),
-  })
-}
-const timezoneOptions = computed(() => timezones.value.map((tz) => ({ label: tz, value: tz })))
+const timezone = ref(detectTimezone())
+const { timezoneOptions } = useTimezones()
 const inviteSummary = ref('')
 const getStartedButton = ref<ComponentPublicInstance>()
 const workspaceForm = ref<InstanceType<typeof WorkspaceBrandingForm>>()
