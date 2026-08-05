@@ -26,6 +26,7 @@
 		/>
 	</div>
 	<IframeResizer
+		ref="frame"
 		v-show="isIframeReady"
 		class="w-full"
 		license="GPLv3"
@@ -36,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 // The package maps `./sfc` only via its (non-honored) `browser` field under
 // Vite 8/Rolldown, so import the concrete SFC file directly.
@@ -60,6 +61,7 @@ const emit = defineEmits<{ trust: [] }>()
 
 const { dataTheme } = useTheme()
 const { requestCompose } = useComposeMail()
+const frame = useTemplateRef<{ $el: HTMLIFrameElement }>('frame')
 
 const isIframeReady = ref(false)
 
@@ -99,7 +101,13 @@ const handleMessage = (event: MessageEvent) => {
 		return
 	}
 	// A `mailto:` the reader clicked inside the message — open our own composer on it.
+	// Only this message's own frame gets to do that: `window` hears every window that
+	// can reach us (an attachment rendered in a frame, an embedder), and this one puts
+	// a stranger's address and body in front of the user as a ready-to-send draft.
 	if (event.data?.type === 'mailto') {
+		if (event.source !== (frame.value?.$el as HTMLIFrameElement | undefined)?.contentWindow)
+			return
+
 		const draft = parseMailto(String(event.data.href ?? ''))
 		if (draft) requestCompose(draft)
 		return
