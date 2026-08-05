@@ -9,6 +9,7 @@ from frappe.utils.data import sha256_hash
 from suite.mail.api.mail import normalize_filter
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.identity.identity import fetch_identities
+from suite.mail.doctype.mail_account_request.mail_account_request import otp_cache_key
 from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.doctype.participant_identity.participant_identity import fetch_participant_identities
 from suite.mail.stalwart import get_domains
@@ -87,11 +88,11 @@ def resend_otp(account_request: str) -> None:
 def verify_otp(account_request: str, otp: str) -> str:
     """Verify the OTP and return the request key"""
 
-    otp_hash = frappe.cache.get_value(f"account_request_otp_hash:{account_request}", expires=True)
-    if not otp_hash or otp_hash != frappe.utils.sha256_hash(otp):
+    otp_hash = frappe.cache.get_value(otp_cache_key(account_request), expires=True)
+    if not otp_hash or otp_hash != sha256_hash(otp):
         frappe.throw(_("Invalid OTP. Please try again."))
 
-    frappe.cache.delete_value(f"account_request_otp_hash:{account_request}")
+    frappe.cache.delete_value(otp_cache_key(account_request))
     return frappe.db.get_value("Mail Account Request", account_request, "request_key")
 
 
