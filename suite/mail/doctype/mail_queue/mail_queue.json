@@ -76,6 +76,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "description": "Delivery lifecycle status, set by the system: Pending/Queued are awaiting processing, Drafted is stored on the server, Submitted is handed over for delivery, Scheduled is held for later delivery, Cancelled had its scheduled delivery cancelled, and the Failed states are eligible for retry.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -87,6 +88,7 @@
    "search_index": 1
   },
   {
+   "description": "Display name used in the From header. Defaults to the sending identity's name.",
    "fieldname": "from_name",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -96,6 +98,7 @@
    "set_only_once": 1
   },
   {
+   "description": "Sender address. Must match one of the account's identities.",
    "fieldname": "from_email",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -111,6 +114,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "Subject line of the email.",
    "fieldname": "subject",
    "fieldtype": "Small Text",
    "in_standard_filter": 1,
@@ -167,12 +171,14 @@
    "label": "Body"
   },
   {
+   "description": "HTML body of the email.",
    "fieldname": "html_body",
    "fieldtype": "Code",
    "label": "HTML",
    "set_only_once": 1
   },
   {
+   "description": "Plain-text alternative body of the email.",
    "fieldname": "text_body",
    "fieldtype": "Code",
    "label": "Text",
@@ -194,6 +200,7 @@
    "set_only_once": 1
   },
   {
+   "description": "RFC 5322 Message-ID. Generated automatically if left empty.",
    "fieldname": "message_id",
    "fieldtype": "Data",
    "in_standard_filter": 1,
@@ -204,6 +211,7 @@
    "set_only_once": 1
   },
   {
+   "description": "JMAP blob id of the stored message, used to fetch the raw MIME content.",
    "fieldname": "blob_id",
    "fieldtype": "Data",
    "label": "Blob ID",
@@ -215,6 +223,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "Value of the RFC 5322 Date header. Defaults to the creation time. Not the delivery time \u2014 see Send At (Scheduled).",
    "fieldname": "sent_at",
    "fieldtype": "Datetime",
    "label": "Sent At",
@@ -227,6 +236,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "JMAP id of the mailbox currently holding the message: Drafts while drafted, Sent after submission, and back to Drafts when a scheduled delivery is cancelled.",
    "fieldname": "mailbox_id",
    "fieldtype": "Data",
    "in_standard_filter": 1,
@@ -236,6 +246,7 @@
    "search_index": 1
   },
   {
+   "description": "JMAP thread id assigned by the server.",
    "fieldname": "thread_id",
    "fieldtype": "Data",
    "in_standard_filter": 1,
@@ -251,12 +262,14 @@
    "label": "Message"
   },
   {
+   "description": "Full RFC 5322 MIME message. When set, it is imported as-is and the individual content fields (subject, bodies, recipients, etc.) are derived from it instead.",
    "fieldname": "raw_message",
    "fieldtype": "Code",
    "label": "Raw Message",
    "set_only_once": 1
   },
   {
+   "description": "The stored MIME message, fetched from the server on demand via the blob id.",
    "fieldname": "message",
    "fieldtype": "Code",
    "is_virtual": 1,
@@ -265,6 +278,7 @@
    "read_only": 1
   },
   {
+   "description": "The server's JMAP response, formatted for reading.",
    "fieldname": "response",
    "fieldtype": "JSON",
    "is_virtual": 1,
@@ -273,6 +287,7 @@
    "read_only": 1
   },
   {
+   "description": "Raw JMAP response captured at processing time.",
    "fieldname": "_response",
    "fieldtype": "JSON",
    "hidden": 1,
@@ -281,6 +296,7 @@
    "read_only": 1
   },
   {
+   "description": "Human-readable error extracted from the JMAP response.",
    "fieldname": "error_message",
    "fieldtype": "Small Text",
    "hidden": 1,
@@ -314,6 +330,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "description": "Message-ID of the email being replied to, used by the server to thread them together.",
    "fieldname": "in_reply_to",
    "fieldtype": "Data",
    "in_standard_filter": 1,
@@ -324,6 +341,7 @@
   },
   {
    "depends_on": "eval: !doc.__islocal",
+   "description": "Size of the stored message in bytes, as reported by the server.",
    "fieldname": "size",
    "fieldtype": "Int",
    "label": "Size",
@@ -334,6 +352,7 @@
   },
   {
    "depends_on": "eval: doc.save_as_draft",
+   "description": "When the draft was stored on the server.",
    "fieldname": "drafted_at",
    "fieldtype": "Datetime",
    "label": "Drafted At",
@@ -342,6 +361,7 @@
   },
   {
    "depends_on": "eval: !doc.save_as_draft",
+   "description": "When the email was submitted for delivery.",
    "fieldname": "submitted_at",
    "fieldtype": "Datetime",
    "label": "Submitted At",
@@ -350,6 +370,7 @@
   },
   {
    "depends_on": "eval: doc.status == 'Cancelled'",
+   "description": "When the scheduled delivery was cancelled.",
    "fieldname": "cancelled_at",
    "fieldtype": "Datetime",
    "label": "Cancelled At",
@@ -370,7 +391,7 @@
    "set_only_once": 1
   },
   {
-   "description": "Scheduled delivery time (FUTURERELEASE) — the server holds delivery until then. Distinct from Sent At, which is the RFC 5322 Date header.",
+   "description": "Scheduled delivery time (FUTURERELEASE) \u2014 the server holds delivery until then. Distinct from Sent At, which is the RFC 5322 Date header.",
    "fieldname": "send_at",
    "fieldtype": "Datetime",
    "label": "Send At (Scheduled)",
@@ -385,6 +406,7 @@
    "label": "Error"
   },
   {
+   "description": "Traceback of the last processing failure.",
    "fieldname": "error_log",
    "fieldtype": "Code",
    "label": "Error Log",
@@ -401,6 +423,7 @@
   },
   {
    "depends_on": "eval: doc.retries > 0",
+   "description": "Earliest time the next automatic retry may run. The gap grows with each attempt.",
    "fieldname": "next_retry_after",
    "fieldtype": "Datetime",
    "label": "Next Retry After",
@@ -409,6 +432,7 @@
    "search_index": 1
   },
   {
+   "description": "When the email was queued for background processing.",
    "fieldname": "queued_at",
    "fieldtype": "Datetime",
    "label": "Queued At",
@@ -417,6 +441,7 @@
    "search_index": 1
   },
   {
+   "description": "JMAP email id of the message being replied to. It is marked $answered on submission.",
    "fieldname": "in_reply_to_id",
    "fieldtype": "Data",
    "in_standard_filter": 1,
@@ -425,6 +450,7 @@
    "set_only_once": 1
   },
   {
+   "description": "JMAP email id of the message being forwarded. It is marked $forwarded on submission.",
    "fieldname": "forwarded_from_id",
    "fieldtype": "Data",
    "in_standard_filter": 1,
@@ -481,6 +507,7 @@
    "read_only": 1
   },
   {
+   "description": "IP address of the request that created this email.",
    "fieldname": "from_ip",
    "fieldtype": "Data",
    "in_standard_filter": 1,
@@ -491,6 +518,7 @@
   {
    "default": "0",
    "depends_on": "eval: !doc.__islocal",
+   "description": "Set when the email was created through the public outbound API.",
    "fieldname": "via_api",
    "fieldtype": "Check",
    "label": "API",
@@ -499,6 +527,7 @@
   },
   {
    "default": "0",
+   "description": "Marks a bulk (newsletter) email: delivered in batch mode and defaulting to Low priority.",
    "fieldname": "newsletter",
    "fieldtype": "Check",
    "label": "Newsletter",
@@ -506,6 +535,7 @@
    "set_only_once": 1
   },
   {
+   "description": "Delivery priority, sent as the SMTP MT-PRIORITY envelope parameter (Low \u22124, Normal 0, High 4). Defaults to Low for newsletters, otherwise Normal.",
    "fieldname": "priority",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -523,6 +553,7 @@
   {
    "default": "0",
    "depends_on": "eval: doc.retries > 0",
+   "description": "Number of failed processing attempts so far.",
    "fieldname": "retries",
    "fieldtype": "Int",
    "in_standard_filter": 1,
@@ -534,6 +565,7 @@
   {
    "default": "3",
    "depends_on": "eval: doc.__islocal || doc.retries",
+   "description": "Maximum automatic retries before the email stays failed.",
    "fieldname": "max_retries",
    "fieldtype": "Int",
    "label": "Max Retries",
@@ -544,6 +576,7 @@
    "set_only_once": 1
   },
   {
+   "description": "JMAP email id assigned by the server.",
    "fieldname": "id",
    "fieldtype": "Data",
    "in_standard_filter": 1,
@@ -554,6 +587,7 @@
    "search_index": 1
   },
   {
+   "description": "JMAP EmailSubmission id of the latest submission. While Scheduled, it is used to reconcile, reschedule, or cancel the held delivery.",
    "fieldname": "submission_id",
    "fieldtype": "Data",
    "in_standard_filter": 1,
@@ -585,6 +619,7 @@
    "set_only_once": 1
   },
   {
+   "description": "The JMAP account the email is sent from.",
    "fieldname": "account",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -600,7 +635,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-05 00:00:00.000000",
+ "modified": "2026-08-05 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Queue",
