@@ -49,7 +49,7 @@
             </div>
           </div>
         </div>
-        <Badge theme="amber" variant="outline">{{ __('Pending') }}</Badge>
+        <Badge theme="amber" variant="outline">{{ __('Invited') }}</Badge>
       </div>
     </div>
   </section>
