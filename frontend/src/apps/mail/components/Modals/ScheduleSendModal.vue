@@ -15,7 +15,7 @@
 				</div>
 				<FormControl
 					v-model="customValue"
-					type="datetime-local"
+					type="datetime"
 					:label="__('Pick a date and time')"
 					:min="minLocal"
 				/>
@@ -30,7 +30,7 @@ import { computed, ref, watch } from 'vue'
 import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 
 import dayjs from '@/apps/mail/utils/dayjs'
-import { fromLocalInput, toLocalInput, userTimeZone } from '@/apps/mail/utils/datetime'
+import { fromLocalInput, inUserTimeZone, userTimeZone } from '@/apps/mail/utils/datetime'
 
 const show = defineModel<boolean>()
 
@@ -47,16 +47,20 @@ const emit = defineEmits<{ confirm: [sendAt: string] }>()
 // against the account's real maxDelayedSend either way.
 const MAX_DELAY_DAYS = 30
 
+// The DateTimePicker (FormControl type="datetime") speaks local wall-clock
+// 'YYYY-MM-DD HH:mm:ss' strings; fromLocalInput turns them back into UTC Z.
+const LOCAL_FORMAT = 'YYYY-MM-DD HH:mm:ss'
+
 const customValue = ref('')
 const error = ref('')
 
 watch(show, () => {
 	if (!show.value) return
-	customValue.value = toLocalInput(initialValue)
+	customValue.value = initialValue ? inUserTimeZone(initialValue).format(LOCAL_FORMAT) : ''
 	error.value = ''
 })
 
-const minLocal = computed(() => dayjs().tz(userTimeZone()).format('YYYY-MM-DDTHH:mm'))
+const minLocal = computed(() => dayjs().tz(userTimeZone()).format(LOCAL_FORMAT))
 
 const presets = computed(() => {
 	const now = dayjs().tz(userTimeZone())
