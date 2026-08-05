@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 import frappe
 
 from suite.mail.api.admin import (
-    add_queued_recipient,
     cancel_all_queued_messages,
     cancel_queued_messages,
     get_queue_recipient_options,
@@ -97,14 +96,10 @@ class TestAdminQueue(StalwartIntegrationTestCase):
         row = next(r for r in get_queued_message(message_id)["recipients"] if r["email"] == recipient)
         self.assertEqual(row["next_retry"], recipient_retry)
 
-        # Recipients cannot be added to a parked message: the server only patches recipients
-        # that exist in the envelope ("Recipient ... does not exist").
-        self.assertRaises(
-            frappe.ValidationError, add_queued_recipient, message_id, f"{unique_name('added')}@{self.domain}"
-        )
-
         # Removing a recipient cancels its delivery: the server keeps the row but marks it
         # permanently failed ("Delivery canceled."). The other recipient stays scheduled.
+        # (There is deliberately no add endpoint - the server only patches recipients that
+        # exist in the envelope.)
         remove_queued_recipient(message_id, self.cc_recipient.email)
         rows = {r["email"]: r for r in get_queued_message(message_id)["recipients"]}
         cc_row = rows.get(self.cc_recipient.email)
