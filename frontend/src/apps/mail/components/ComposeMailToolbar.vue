@@ -40,21 +40,30 @@
 					:icon-left="Trash2"
 					@click="emit('discardMail')"
 				/>
-				<Button
-					variant="solid"
-					:label="__('Send')"
-					:tooltip="__('Send ({0}+Enter)', [modifier])"
-					:icon-left="SendHorizontal"
-					:disabled="isRecipientsEmpty"
-					@click="emit('sendMail')"
-				/>
-				<Dropdown :options="sendOptions" placement="top-end">
-					<Button variant="solid" :disabled="isRecipientsEmpty" class="!ml-px">
-						<template #icon>
-							<ChevronDown class="h-4 w-4" />
-						</template>
-					</Button>
-				</Dropdown>
+				<!-- Split button: one pill, the 1px gap shows the toolbar background as the divider. -->
+				<div class="flex items-center gap-px">
+					<Button
+						variant="solid"
+						:label="__('Send')"
+						:tooltip="__('Send ({0}+Enter)', [modifier])"
+						:icon-left="SendHorizontal"
+						:disabled="isRecipientsEmpty"
+						class="!rounded-r-none"
+						@click="emit('sendMail')"
+					/>
+					<Dropdown :options="sendOptions" placement="top-end">
+						<Button
+							variant="solid"
+							:tooltip="__('Schedule send')"
+							:disabled="isRecipientsEmpty"
+							class="!rounded-l-none"
+						>
+							<template #icon>
+								<ChevronDown class="h-4 w-4" />
+							</template>
+						</Button>
+					</Dropdown>
+				</div>
 			</div>
 		</div>
 	</div>
