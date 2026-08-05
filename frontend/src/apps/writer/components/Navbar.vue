@@ -91,6 +91,14 @@
         }"
       />
     </div>
+    <input
+      ref="docxInputRef"
+      name="docx-import"
+      type="file"
+      accept=".docx"
+      style="display: none"
+      @change="onImportDocx"
+    />
     <Dialogs v-model="dialog" :docs="file?.doc && [file]" />
   </nav>
 </template>
@@ -108,6 +116,7 @@ import Dialogs from '@/apps/writer/components/Dialogs.vue'
 import { dynamicList } from '@/apps/writer/utils/'
 import { downloadZippedHTML, downloadMD } from '@/apps/writer/utils'
 import { downloadDocxFromHtml } from '../utils/docxexporter'
+import { importDocx } from '../utils/docximporter'
 
 import LucideUsers from '~icons/lucide/users'
 import LucideBuilding2 from '~icons/lucide/building-2'
@@ -122,6 +131,7 @@ import LucideTrash from '~icons/lucide/trash'
 import LucideMoreHorizontal from '~icons/lucide/more-horizontal'
 import LucideShare2 from '~icons/lucide/share-2'
 import LucideDownload from '~icons/lucide/download'
+import LucideUpload from '~icons/lucide/upload'
 import LucidePlus from '~icons/lucide/plus'
 import LucideLink from '~icons/lucide/link'
 import LucideArrowLeftRight from '~icons/lucide/arrow-left-right'
@@ -163,6 +173,7 @@ const showTemplates = defineModel('showTemplates')
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const dialog = inject('dialog', ref(''))
 const editor = inject('editor', null)
+const docxInputRef = ref(null)
 
 const route = useRoute()
 const formattedCrumbs = computed(() => {
@@ -336,6 +347,18 @@ const fileActions = computed(() =>
               ],
             },
             {
+              label: 'Import',
+              icon: LucideUpload,
+              cond: props.file.doc.write,
+              submenu: [
+                {
+                  label: 'DOCX',
+                  icon: LucideFileText,
+                  onClick: () => docxInputRef.value?.click(),
+                },
+              ],
+            },
+            {
               icon: LucideHistory,
               label: 'Versions',
               cond: props.file.doc.write,
@@ -375,6 +398,13 @@ const fileActions = computed(() =>
       })
     : [],
 )
+
+const onImportDocx = async (e) => {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  if (!file) return
+  await importDocx(file, { editor, currentFileId: props.file.doc.name })
+}
 
 // Utility functions for doc
 const clearCache = () => {
