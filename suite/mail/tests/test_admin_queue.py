@@ -6,12 +6,14 @@ from datetime import UTC, datetime, timedelta
 import frappe
 
 from suite.mail.api.admin import (
+    add_queued_recipient,
     cancel_all_queued_messages,
     cancel_queued_messages,
     get_queue_recipient_options,
     get_queued_message,
     get_queued_message_source,
     get_queued_messages,
+    remove_queued_recipient,
     retry_all_queued_messages,
     retry_queued_messages,
     run_action,
@@ -84,23 +86,31 @@ class TestAdminQueue(StalwartIntegrationTestCase):
         for key in ("status_types", "error_types", "expiry_types"):
             self.assertTrue(options[key])
 
-        # Queue edits are smoke calls only: stock v0.16.x accepts the update but silently
-        # ignores nextRetry/retryDue writes, while newer builds apply them - so the calls
-        # must succeed and the read-back must stay well-formed, but no round-trip is asserted.
+        # Queue retry edits round-trip on Stalwart v0.16.16+ (older stock builds accepted the
+        # update but silently ignored nextRetry/retryDue writes).
         next_retry = _utc_z(datetime.now(UTC) + timedelta(hours=6))
         update_queued_message(message_id, next_retry=next_retry)
+        self.assertEqual(get_queued_message(message_id)["next_retry"], next_retry)
 
         recipient_retry = _utc_z(datetime.now(UTC) + timedelta(hours=2))
         update_queued_recipient(message_id, recipient, next_retry=recipient_retry)
         row = next(r for r in get_queued_message(message_id)["recipients"] if r["email"] == recipient)
-        self.assertRegex(row["next_retry"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+        self.assertEqual(row["next_retry"], recipient_retry)
 
-        # NOTE: recipient set edits (add_queued_recipient / remove_queued_recipient) are not
-        # covered: the server rejects new recipient keys ("Recipient does not exist") and silently
-        # ignores "recipients/{email}: null" removals, so only scalar recipient patches work.
-        self.assertIn(
-            self.cc_recipient.email, [r["email"] for r in get_queued_message(message_id)["recipients"]]
+        # Recipients cannot be added to a parked message: the server only patches recipients
+        # that exist in the envelope ("Recipient ... does not exist").
+        self.assertRaises(
+            frappe.ValidationError, add_queued_recipient, message_id, f"{unique_name('added')}@{self.domain}"
         )
+
+        # Removing a recipient cancels its delivery: the server keeps the row but marks it
+        # permanently failed ("Delivery canceled."). The other recipient stays scheduled.
+        remove_queued_recipient(message_id, self.cc_recipient.email)
+        rows = {r["email"]: r for r in get_queued_message(message_id)["recipients"]}
+        cc_row = rows.get(self.cc_recipient.email)
+        if cc_row is not None:
+            self.assertEqual(cc_row["status_type"], "PermanentFailure")
+        self.assertIn(recipient, rows)
 
         # Retry schedules immediate delivery: the next retry moves back from the +6h we set.
         retry_queued_messages([message_id])

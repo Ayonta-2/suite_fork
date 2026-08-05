@@ -55,9 +55,10 @@ class TestAdminOps(StalwartIntegrationTestCase):
         try:
             page = admin.get_logs(page_length=5)
         except frappe.ValidationError:
-            # A freshly bootstrapped server can answer x:Log/query with serverUnavailable
-            # when no queryable log history store is configured.
-            self.skipTest("Server has no queryable log history store.")
+            # Stock Stalwart (verified on v0.16.16) answers x:Log/query with serverUnavailable
+            # even with enabled Log tracers - the log viewer backend simply is not implemented
+            # there, unlike on production builds.
+            self.skipTest("Server has no queryable log store.")
         self.assertLessEqual(len(page["logs"]), 5)
         self.assertIsInstance(page["total"], int)
 
