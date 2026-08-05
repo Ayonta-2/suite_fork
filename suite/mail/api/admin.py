@@ -50,7 +50,6 @@ from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
 from suite.utils import execute_with_logging
-from suite.utils.dt import get_utc_now
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.user import is_suite_admin, is_system_manager, is_user_enabled
 
@@ -2147,30 +2146,13 @@ def update_queued_recipient(
 
 
 @frappe.whitelist()
-def add_queued_recipient(message_id: str, email: str) -> None:
-    """Adds a recipient (pending delivery) to a queued message."""
-
-    from datetime import timedelta
-
-    check_admin_permission("update queued messages", f"{message_id} ({email})")
-
-    email = (email or "").strip()
-    if not email:
-        frappe.throw(_("Recipient email is required."))
-
-    now = get_utc_now()
-    recipient = {
-        "status": {"@type": "Scheduled"},
-        "retryDue": to_utc_z(now),
-        "notifyDue": to_utc_z(now),
-        "expires": {"@type": "Ttl", "expiresAt": to_utc_z(now + timedelta(days=5))},
-    }
-    get_queued_message_service().update(message_id, {f"recipients/{email}": recipient})
-
-
-@frappe.whitelist()
 def remove_queued_recipient(message_id: str, email: str) -> None:
-    """Removes a recipient from a queued message."""
+    """Cancels delivery to one recipient of a queued message.
+
+    The server keeps the recipient row for the delivery report and marks it permanently
+    failed ("Delivery canceled."). Recipients cannot be added to a queued message - the
+    server only patches recipients that exist in the envelope.
+    """
 
     check_admin_permission("update queued messages", f"{message_id} ({email})")
     get_queued_message_service().update(message_id, {f"recipients/{email}": None})

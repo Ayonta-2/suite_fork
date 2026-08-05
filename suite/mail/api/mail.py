@@ -1250,12 +1250,17 @@ def _screen_email_addresses(
         build_automation_sieve(account, activate=True)
 
 
-def auto_accept_recipients(account: str, recipients: list) -> None:
+def auto_accept_recipients(account: str, recipients: list | str) -> None:
     """When screening is enabled, allowlist the people you email so their replies reach the inbox.
 
     Non-overriding, so it never un-rejects a sender you deliberately blocked. Failures are logged and
     swallowed — auto-accept must never block sending.
+
+    ``recipients`` arrives in whatever shape the caller holds: Mail Message child rows, plain dicts,
+    or Mail Queue's JSON string field.
     """
+
+    import json
 
     from suite.mail.doctype.sieve_script.sieve_script import is_screening_enabled
 
@@ -1263,7 +1268,15 @@ def auto_accept_recipients(account: str, recipients: list) -> None:
         if not is_screening_enabled(account):
             return
 
-        emails = list({r.email for r in recipients if getattr(r, "email", None)})
+        if isinstance(recipients, str):
+            recipients = json.loads(recipients)
+
+        def get_email(recipient) -> str | None:
+            if isinstance(recipient, dict):
+                return recipient.get("email")
+            return getattr(recipient, "email", None)
+
+        emails = list({email for r in recipients if (email := get_email(r))})
         if emails:
             # Recipients a global Accepted rule already covers — their exact address or their
             # domain — need no account-level rule: the global rule already lets their replies through.
