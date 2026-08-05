@@ -769,6 +769,12 @@ class MailQueue(OwnerFromUser, Document):
             # step (undoStatus is "canceled") and reattempts the move.
             frappe.throw(get_jmap_set_error_message(result, "notUpdated", self.id))
 
+        # Evict the cached copy — it still carries the Sent mailbox and would show a
+        # stale folder label in Drafts until the next sync.
+        from suite.mail.doctype.mail_message.mail_message import _remove_cached_messages
+
+        _remove_cached_messages(self.account, [self.id])
+
         self._db_set(notify=True, status="Cancelled", cancelled_at=now(), mailbox_id=drafts_mailbox_id)
 
     def _validate_is_scheduled(self) -> None:

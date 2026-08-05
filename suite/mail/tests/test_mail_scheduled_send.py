@@ -100,10 +100,16 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         old_submission_id = scheduled.doc.submission_id
 
         from suite.mail.api.mail import cancel_scheduled_mail
+        from suite.mail.doctype.mail_message.mail_message import _cache_messages, _get_cached_messages
+
+        # Seed the data store with the (soon stale, Sent-labelled) cached copy; cancel
+        # must evict it or Drafts keeps showing the old folder label until the next sync.
+        _cache_messages(account, {scheduled.doc.id: {"id": scheduled.doc.id}})
 
         with self.set_user(self.sender.email):
             result = cancel_scheduled_mail(account, scheduled.name)
         self.assertEqual(result["status"], "Cancelled")
+        self.assertIsNone(_get_cached_messages(account, [scheduled.doc.id])[scheduled.doc.id])
 
         with self.set_user("Administrator"):
             doc = frappe.get_doc("Mail Queue", scheduled.name)
