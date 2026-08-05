@@ -48,14 +48,21 @@
 					:disabled="isRecipientsEmpty"
 					@click="emit('sendMail')"
 				/>
+				<Dropdown :options="sendOptions" placement="top-end">
+					<Button variant="solid" :disabled="isRecipientsEmpty" class="!ml-px">
+						<template #icon>
+							<ChevronDown class="h-4 w-4" />
+						</template>
+					</Button>
+				</Dropdown>
 			</div>
 		</div>
 	</div>
 </template>
 <script setup lang="ts">
 import { computed, useTemplateRef } from 'vue'
-import { Laugh, Paperclip, SendHorizontal, Trash2 } from 'lucide-vue-next'
-import { Button, TextEditorFixedMenu } from 'frappe-ui'
+import { CalendarClock, ChevronDown, Laugh, Paperclip, SendHorizontal, Trash2 } from 'lucide-vue-next'
+import { Button, Dropdown, TextEditorFixedMenu } from 'frappe-ui'
 
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons, useVisualViewport } from '@/apps/mail/utils/composables'
@@ -65,9 +72,17 @@ const { isRecipientsEmpty } = defineProps<{
 	isRecipientsEmpty: boolean
 }>()
 
-const emit = defineEmits(['appendEmoji', 'selectFiles', 'discardMail', 'sendMail'])
+const emit = defineEmits(['appendEmoji', 'selectFiles', 'discardMail', 'sendMail', 'scheduleSend'])
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
+
+const sendOptions = [
+	{
+		label: __('Schedule send'),
+		icon: CalendarClock,
+		onClick: () => emit('scheduleSend'),
+	},
+]
 
 // Make toolbar hover over keyboard on mobile
 

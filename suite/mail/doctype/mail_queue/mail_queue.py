@@ -30,7 +30,12 @@ from frappe.utils import (
 )
 
 from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
-from suite.mail.jmap import get_email_service, get_identities, get_jmap_connection
+from suite.mail.jmap import (
+    get_email_service,
+    get_email_submission_service,
+    get_identities,
+    get_jmap_connection,
+)
 from suite.mail.jmap.models import (
     EmailAddress,
     EmailAttachment,
@@ -60,6 +65,7 @@ class MailQueue(OwnerFromUser, Document):
         account: DF.Link
         attachments: DF.JSON | None
         blob_id: DF.Data | None
+        cancelled_at: DF.Datetime | None
         delivery_mode: DF.Literal["Immediate", "Enqueue", "Batch"]
         destroy_after_submit: DF.Check
         drafted_at: DF.Datetime | None
@@ -85,12 +91,23 @@ class MailQueue(OwnerFromUser, Document):
         reply_to: DF.JSON | None
         retries: DF.Int
         save_as_draft: DF.Check
+        send_at: DF.Datetime | None
         sent_at: DF.Datetime | None
         size: DF.Int
         status: DF.Literal[
-            "", "Pending", "Queued", "Failed", "Drafted", "Failed to Draft", "Submitted", "Failed to Submit"
+            "",
+            "Pending",
+            "Queued",
+            "Failed",
+            "Drafted",
+            "Failed to Draft",
+            "Submitted",
+            "Failed to Submit",
+            "Scheduled",
+            "Cancelled",
         ]
         subject: DF.SmallText | None
+        submission_id: DF.Data | None
         submitted_at: DF.Datetime | None
         text_body: DF.Code | None
         thread_id: DF.Data | None
@@ -104,7 +121,7 @@ class MailQueue(OwnerFromUser, Document):
         (
             frappe.qb.from_(MQ)
             .where(
-                (MQ.status.isin(["Drafted", "Submitted"]))
+                (MQ.status.isin(["Drafted", "Submitted", "Cancelled"]))
                 & (MQ.creation < get_datetime(add_to_date(now(), days=-days)))
             )
             .delete()
@@ -167,6 +184,7 @@ class MailQueue(OwnerFromUser, Document):
         doc.newsletter = cint(kwargs.newsletter)
         doc.priority = kwargs.priority
         doc.sent_at = kwargs.sent_at
+        doc.send_at = kwargs.send_at
         doc.in_reply_to = kwargs.in_reply_to
         doc.in_reply_to_id = kwargs.in_reply_to_id
         doc.save_as_draft = cint(kwargs.save_as_draft)
@@ -201,6 +219,17 @@ class MailQueue(OwnerFromUser, Document):
             "High": 4,
         }
         return mt_priority_map.get(self.priority, 0)
+
+    @property
+    def _hold_until(self) -> int | None:
+        """Returns the scheduled delivery time as epoch seconds (the RFC 4865 HOLDUNTIL value), or None if not scheduled."""
+
+        if not self.send_at:
+            return None
+
+        from suite.utils.dt import convert_to_utc
+
+        return int(convert_to_utc(get_datetime(self.send_at)).timestamp())
 
     @property
     def identity(self) -> dict:
@@ -314,6 +343,7 @@ class MailQueue(OwnerFromUser, Document):
             self.validate_raw_message()
             self.validate_from_email()
             self.validate_from_name()
+            self.validate_send_at_window()
             self.validate_destroy_after_submit()
             self.validate_delivery_mode()
             self.validate_reply_to()
@@ -421,10 +451,40 @@ class MailQueue(OwnerFromUser, Document):
 
         self.from_name = self.from_name or self.identity["_name"]
 
+    def validate_send_at_window(self) -> None:
+        """Validates the scheduled delivery time (FUTURERELEASE)."""
+
+        if not self.send_at:
+            return
+
+        if self.save_as_draft:
+            frappe.throw(_("Cannot schedule an email that is being saved as a draft."))
+
+        if self.destroy_after_submit:
+            frappe.throw(_("Cannot schedule an email that is set to be destroyed after submission."))
+
+        self.send_at = get_datetime_str(get_datetime(self.send_at))
+        if get_datetime(self.send_at) <= now_datetime():
+            frappe.throw(_("Send At must be in the future."))
+
+        max_delay = 2_592_000
+        try:
+            max_delay = get_email_submission_service(self.account).max_delayed_send
+        except Exception:
+            pass  # best-effort; the server enforces its own limit at submission
+
+        if time_diff_in_seconds(self.send_at, now()) > max_delay:
+            frappe.throw(_("Send At cannot be more than {0} days in the future.").format(max_delay // 86400))
+
     def validate_destroy_after_submit(self) -> None:
         """Validates the destroy after submit setting."""
 
         if self.save_as_draft or self.destroy_after_submit:
+            return
+
+        if self.send_at:
+            # A scheduled email must outlive submission: cancel reverts it to Drafts and
+            # reschedule/send-now reference it by id, so never auto-destroy it.
             return
 
         if self.newsletter:
@@ -656,6 +716,114 @@ class MailQueue(OwnerFromUser, Document):
         self._process()
 
     @frappe.whitelist()
+    def reschedule(self, send_at: str) -> None:
+        """Moves the scheduled delivery time by canceling the held submission and creating a
+        new one — undoStatus is the only mutable property of a submission (RFC 8621 §7.5)."""
+
+        self.check_permission("write")
+        self._validate_is_scheduled()
+
+        self.send_at = send_at
+        self.validate_send_at_window()
+
+        self._cancel_submission()
+        self._resubmit(hold_until=self._hold_until)
+
+    @frappe.whitelist()
+    def send_now(self) -> None:
+        """Delivers a scheduled email immediately by canceling the held submission and creating an unheld one."""
+
+        self.check_permission("write")
+        self._validate_is_scheduled()
+
+        self._cancel_submission()
+        self._resubmit(hold_until=None)
+
+    @frappe.whitelist()
+    def cancel_schedule(self) -> None:
+        """Cancels scheduled delivery and moves the message back to Drafts for editing."""
+
+        self.check_permission("write")
+        self._validate_is_scheduled()
+        self._cancel_submission()
+
+        from suite.mail.jmap import get_jmap_set_error_message
+
+        connection = get_jmap_connection(self.user)
+        email_service = EmailService(self.account, connection)
+        drafts_mailbox_id = MailboxService(self.account, connection).get_mailbox_id_by_role(
+            "drafts", create_if_not_exists=True, raise_exception=True
+        )
+
+        # Replace (not patch) mailboxIds so the message leaves Sent; restore $draft.
+        result = email_service.update(
+            [{"id": self.id, "mailbox_ids": {drafts_mailbox_id: True}, "keywords": {"$draft": True}}],
+            replace_mailboxes=True,
+        )
+        if self.id not in result["updated"]:
+            # The submission is already canceled; retrying this action skips the cancel
+            # step (undoStatus is "canceled") and reattempts the move.
+            frappe.throw(get_jmap_set_error_message(result, "notUpdated", self.id))
+
+        self._db_set(notify=True, status="Cancelled", cancelled_at=now(), mailbox_id=drafts_mailbox_id)
+
+    def _validate_is_scheduled(self) -> None:
+        if self.status != "Scheduled":
+            frappe.throw(_("Only scheduled emails can be modified. Current status: {0}").format(self.status))
+
+    def _cancel_submission(self) -> None:
+        """Cancels the held submission; reconciles the row and throws if it already went final."""
+
+        if not self.submission_id:
+            return  # an earlier resubmit failed after canceling; nothing left to cancel
+
+        service = get_email_submission_service(self.account)
+        submissions = service.get([self.submission_id])
+        undo_status = submissions[0].get("undoStatus") if submissions else "final"
+
+        if undo_status == "pending":
+            service.cancel(self.submission_id)
+        elif undo_status != "canceled":
+            self._db_set(notify=True, status="Submitted", submitted_at=now())
+            frappe.throw(_("This email has already been delivered and can no longer be changed."))
+
+    def _resubmit(self, hold_until: int | None) -> None:
+        """Creates a replacement submission for the (already canceled) previous one."""
+
+        service = get_email_submission_service(self.account)
+
+        try:
+            created = service.resubmit(
+                email_id=self.id,
+                from_email=self.from_email,
+                rcpt_emails=[r["email"].lower() for r in json_loads(self.recipients, default=[])],
+                envelope_id=self.name,
+                priority=self._priority,
+                hold_until=hold_until,
+            )
+        except Exception:
+            # The old submission is already canceled: fail closed. The row stays Scheduled
+            # without a submission id, so a retried action skips the cancel step.
+            self._db_set(notify=True, submission_id=None, error_log=frappe.get_traceback(with_context=True))
+            raise
+
+        if hold_until:
+            self._db_set(
+                notify=True,
+                status="Scheduled",
+                submission_id=created["id"],
+                send_at=get_datetime_str(get_datetime(self.send_at)),
+            )
+        else:
+            self._db_set(
+                notify=True,
+                status="Submitted",
+                submission_id=created["id"],
+                submitted_at=now(),
+                send_at=None,
+            )
+
+    @frappe.whitelist()
     def get_mime_message(self) -> str:
         """Returns the MIME message content."""
 
@@ -746,6 +914,7 @@ class MailQueue(OwnerFromUser, Document):
                 destroy_after_submit=bool(self.destroy_after_submit),
                 forwarded_id=self.forwarded_from_id,
                 reply_to_id=self.in_reply_to_id,
+                hold_until=self._hold_until,
             )
 
             response = email_service.create([email])
@@ -775,14 +944,19 @@ class MailQueue(OwnerFromUser, Document):
 
             if not self.save_as_draft:
                 idx = 2 if self.raw_message and self.id else 1
-                if response["methodResponses"][idx][1].get("created", {}).get(f"submit-{self.name}"):
+                if data := response["methodResponses"][idx][1].get("created", {}).get(f"submit-{self.name}"):
                     kwargs.update(
                         {
-                            "status": "Submitted",
-                            "submitted_at": now(),
+                            "submission_id": data["id"],
                             "mailbox_id": sent_mailbox_id,
                         }
                     )
+                    if self.send_at:
+                        # The server holds delivery (FUTURERELEASE); submitted_at is set once
+                        # the submission goes final (reconciliation or send-now).
+                        kwargs["status"] = "Scheduled"
+                    else:
+                        kwargs.update({"status": "Submitted", "submitted_at": now()})
                 elif response["methodResponses"][idx][1].get("notCreated", {}).get(f"submit-{self.name}"):
                     retries = cint(self.retries) + 1
                     kwargs.update(

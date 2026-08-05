@@ -43,14 +43,14 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { EllipsisVertical, SendHorizontal, Trash2, X } from 'lucide-vue-next'
+import { CalendarClock, EllipsisVertical, SendHorizontal, Trash2, X } from 'lucide-vue-next'
 import { Button } from 'frappe-ui'
 
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 
 const show = defineModel<boolean>()
 
-const emit = defineEmits(['reloadMails', 'sendMail', 'discardMail'])
+const emit = defineEmits(['reloadMails', 'sendMail', 'discardMail', 'scheduleSend'])
 
 const close = () => {
 	if (show.value) {
@@ -82,6 +82,11 @@ onMounted(() => {
 onUnmounted(() => window.removeEventListener('popstate', close))
 
 const ACTIONS = [
+	{
+		label: __('Schedule send'),
+		onClick: () => emit('scheduleSend'),
+		icon: CalendarClock,
+	},
 	{
 		label: __('Discard'),
 		onClick: () => emit('discardMail'),

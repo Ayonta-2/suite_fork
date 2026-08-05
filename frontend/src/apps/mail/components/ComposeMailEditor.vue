@@ -204,6 +204,7 @@
 				@append-emoji="(emoji: string) => appendEmoji(emoji)"
 				@discard-mail="discardMail"
 				@send-mail="sendMail"
+				@schedule-send="openScheduleModal"
 			/>
 		</template>
 	</TextEditor>
@@ -212,6 +213,7 @@
 		v-model="showContactsModal"
 		@insert="(selections) => mail[insertContactsInto].push(...selections)"
 	/>
+	<ScheduleSendModal v-model="showScheduleModal" @confirm="scheduleSend" />
 </template>
 
 <script setup lang="ts">
@@ -271,6 +273,7 @@ import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 
 import RecipientInput from './Controls/RecipientInput.vue'
 import ContactsModal from './Modals/ContactsModal.vue'
+import ScheduleSendModal from './Modals/ScheduleSendModal.vue'
 
 const show = defineModel<boolean>()
 
@@ -459,7 +462,7 @@ const saveDraft = async () => {
 	isSavingDraft.value = false
 }
 
-const sendMail = async () => {
+const sendMail = async (sendAt?: string) => {
 	if (deleteMail.loading) return
 
 	if (isRecipientsEmpty.value)
@@ -470,9 +473,22 @@ const sendMail = async () => {
 	if (createMail.loading) await createMail.promise
 	if (updateDraft.loading) await updateDraft.promise
 
-	if (mail.id) updateDraft.submit({ submit: true })
-	else createMail.submit({ save_as_draft: false })
+	if (mail.id) updateDraft.submit({ submit: true, send_at: sendAt })
+	else createMail.submit({ save_as_draft: false, send_at: sendAt })
 }
+
+// Schedule send (FUTURERELEASE)
+
+const showScheduleModal = ref(false)
+
+const openScheduleModal = () => {
+	if (isRecipientsEmpty.value)
+		return raiseToast(__('Please add at least one recipient.'), 'error')
+
+	showScheduleModal.value = true
+}
+
+const scheduleSend = (sendAt: string) => sendMail(sendAt)
 
 const isDiscarding = ref(false)
 
@@ -493,7 +509,7 @@ watch(show, (val) => {
 	isSavingDraft.value = false
 })
 
-defineExpose({ sendMail, discardMail })
+defineExpose({ sendMail, discardMail, openScheduleModal })
 
 const onMailUpdateSuccess = ({
 	id,
@@ -511,7 +527,7 @@ const onMailUpdateSuccess = ({
 	if (error) return raiseToast(error, 'error')
 	if (isDiscarding.value) return
 
-	if (!isInThread || status === 'Submitted') reloadMails()
+	if (!isInThread || status === 'Submitted' || status === 'Scheduled') reloadMails()
 	if (show.value) return
 
 	if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
@@ -524,18 +540,28 @@ const onMailUpdateSuccess = ({
 				? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
 				: undefined,
 		)
+	else if (status === 'Scheduled')
+		raiseToast(__('Send scheduled.'), 'success', {
+			label: __('View'),
+			onClick: () =>
+				router.push({
+					name: 'mail-scheduled',
+					params: { accountId: scopeAccountId.value },
+				}),
+		})
 }
 
 // Resources
 
 const createMail = createResource({
 	url: 'suite.mail.api.mail.create_mail',
-	makeParams: ({ save_as_draft }: { save_as_draft: boolean }) => ({
+	makeParams: ({ save_as_draft, send_at }: { save_as_draft: boolean; send_at?: string }) => ({
 		account: scopeAccountId.value,
 		...mail,
 		...processInlineImages(mail, { sending: !save_as_draft }),
 		from_name: getIdentity(mail.from_email!)._name,
 		save_as_draft,
+		send_at,
 	}),
 	onSuccess: onMailUpdateSuccess,
 	onError: (error) => raiseToast(error.message, 'error'),
@@ -543,12 +569,13 @@ const createMail = createResource({
 
 const updateDraft = createResource({
 	url: 'suite.mail.api.mail.update_draft_mail',
-	makeParams: ({ submit }: { submit: boolean }) => ({
+	makeParams: ({ submit, send_at }: { submit: boolean; send_at?: string }) => ({
 		account: scopeAccountId.value,
 		...mail,
 		...processInlineImages(mail, { sending: submit }),
 		from_name: getIdentity(mail.from_email!)._name,
 		submit,
+		send_at,
 	}),
 	onSuccess: onMailUpdateSuccess,
 	onError: (error) => raiseToast(error.message, 'error'),

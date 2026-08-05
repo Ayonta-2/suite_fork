@@ -18,6 +18,7 @@
   "column_break_lnat",
   "priority",
   "delivery_mode",
+  "send_at",
   "section_break_nug2",
   "retries",
   "max_retries",
@@ -38,6 +39,7 @@
   "forwarded_from_id",
   "message_id",
   "id",
+  "submission_id",
   "blob_id",
   "size",
   "from_ip",
@@ -52,6 +54,7 @@
   "drafted_after",
   "submitted_at",
   "submitted_after",
+  "cancelled_at",
   "column_break_kuap",
   "in_reply_to",
   "in_reply_to_id",
@@ -79,7 +82,7 @@
    "in_standard_filter": 1,
    "label": "Status",
    "no_copy": 1,
-   "options": "\nPending\nQueued\nFailed\nDrafted\nFailed to Draft\nSubmitted\nFailed to Submit",
+   "options": "\nPending\nQueued\nFailed\nDrafted\nFailed to Draft\nSubmitted\nFailed to Submit\nScheduled\nCancelled",
    "read_only": 1,
    "search_index": 1
   },
@@ -346,6 +349,14 @@
    "read_only": 1
   },
   {
+   "depends_on": "eval: doc.status == 'Cancelled'",
+   "fieldname": "cancelled_at",
+   "fieldtype": "Datetime",
+   "label": "Cancelled At",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
    "default": "Immediate",
    "description": "<pre><b>Immediate</b> \u2014 send right after insert (after_insert).\n<b>Enqueue</b> \u2014 enqueue a job (using frappe.enqueue).\n<b>Batch</b> \u2014 wait to be picked up by a scheduled background job.\n</pre>",
    "fieldname": "delivery_mode",
@@ -357,6 +368,15 @@
    "reqd": 1,
    "search_index": 1,
    "set_only_once": 1
+  },
+  {
+   "description": "Scheduled delivery time (FUTURERELEASE) — the server holds delivery until then. Distinct from Sent At, which is the RFC 5322 Date header.",
+   "fieldname": "send_at",
+   "fieldtype": "Datetime",
+   "label": "Send At (Scheduled)",
+   "no_copy": 1,
+   "read_only_depends_on": "eval: !doc.__islocal",
+   "search_index": 1
   },
   {
    "collapsible": 1,
@@ -534,6 +554,15 @@
    "search_index": 1
   },
   {
+   "fieldname": "submission_id",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Submission ID",
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
    "default": "0",
    "depends_on": "eval: !doc.save_as_draft",
    "description": "If enabled, the message will be deleted after successful submission.",
@@ -571,7 +600,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-21 00:00:00.000000",
+ "modified": "2026-08-05 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Queue",
