@@ -18,6 +18,8 @@ import {
 } from '@/apps/slides/stores/slide'
 import {
 	resetFocus,
+	exitTextEditing,
+	focusElementId,
 	addTextElement,
 	pendingShapeType,
 	selectAllElements,
@@ -146,6 +148,17 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		pendingShapeType.value = shapeType
 	}
 
+	// dialogs dismiss on Escape only if the event wasn't defaultPrevented,
+	// and matching a shortcut always prevents — so don't match while one is open
+	const hasOpenDialog = () => !!document.querySelector('[role="dialog"]')
+
+	const handleEscape = (e) => {
+		if (isPlainInput(e)) return e.target.blur()
+		if (focusElementId.value) return exitTextEditing()
+		if (e.target?.isContentEditable) return e.target.blur()
+		resetFocus()
+	}
+
 	useShortcut([
 		{
 			key: '?',
@@ -254,8 +267,9 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 'Escape',
 			description: 'Deselect',
 			group: 'Edit',
-			condition: inEditMode,
-			handler: () => resetFocus(),
+			allowInInput: true,
+			condition: () => inEditMode() && !hasOpenDialog(),
+			handler: handleEscape,
 		},
 		{
 			key: 'Escape',
