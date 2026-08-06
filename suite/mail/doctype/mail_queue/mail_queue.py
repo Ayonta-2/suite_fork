@@ -725,7 +725,7 @@ class MailQueue(OwnerFromUser, Document):
         new one — undoStatus is the only mutable property of a submission (RFC 8621 §7.5)."""
 
         self.check_permission("write")
-        self._validate_is_scheduled()
+        self._lock_and_validate_scheduled()
 
         self.send_at = send_at
         self.validate_send_at_window()
@@ -738,7 +738,7 @@ class MailQueue(OwnerFromUser, Document):
         """Delivers a scheduled email immediately by canceling the held submission and creating an unheld one."""
 
         self.check_permission("write")
-        self._validate_is_scheduled()
+        self._lock_and_validate_scheduled()
 
         self._cancel_submission()
         self._resubmit(hold_until=None)
@@ -748,7 +748,7 @@ class MailQueue(OwnerFromUser, Document):
         """Cancels scheduled delivery and moves the message back to Drafts for editing."""
 
         self.check_permission("write")
-        self._validate_is_scheduled()
+        self._lock_and_validate_scheduled()
         self._cancel_submission()
 
         from suite.mail.jmap import get_jmap_set_error_message
@@ -777,7 +777,33 @@ class MailQueue(OwnerFromUser, Document):
 
         self._db_set(notify=True, status="Cancelled", cancelled_at=now(), mailbox_id=drafts_mailbox_id)
 
-    def _validate_is_scheduled(self) -> None:
+    def _lock_and_validate_scheduled(self) -> None:
+        """Serializes the scheduled-send actions on this row and validates it is still held.
+
+        Each action cancels the current submission and may create a replacement, so two of
+        them reading the same state both pass validation and race: the loser either fails
+        on an already-canceled submission or — the damaging case — resubmits a message the
+        winner just cancelled and moved back to Drafts, delivering mail the user undid.
+
+        The lock is held until the request's transaction ends, so a second action blocks
+        and then re-reads what the first committed. The state is re-read from the locked
+        row rather than trusted from the in-memory doc, which may predate that write.
+        """
+
+        current = frappe.db.get_value(
+            "Mail Queue",
+            self.name,
+            ["status", "submission_id", "send_at"],
+            for_update=True,
+            as_dict=True,
+        )
+        if not current:
+            frappe.throw(_("Mail Queue {0} no longer exists.").format(self.name))
+
+        self.status = current.status
+        self.submission_id = current.submission_id
+        self.send_at = current.send_at
+
         if self.status != "Scheduled":
             frappe.throw(_("Only scheduled emails can be modified. Current status: {0}").format(self.status))
 
@@ -1123,19 +1149,21 @@ def reconcile_scheduled_emails() -> None:
         submitted = [r.name for r in account_rows if undo_by_id.get(r.submission_id) == "final"]
         cancelled = [r.name for r in account_rows if undo_by_id.get(r.submission_id) == "canceled"]
 
+        # Still-Scheduled guard: an action may have moved the row to a terminal state
+        # between the get above and this write, and must not be clobbered back.
         if submitted:
             (
                 frappe.qb.update(MQ)
                 .set(MQ.status, "Submitted")
                 .set(MQ.submitted_at, now())
-                .where(MQ.name.isin(submitted))
+                .where(MQ.name.isin(submitted) & (MQ.status == "Scheduled"))
             ).run()
         if cancelled:
             (
                 frappe.qb.update(MQ)
                 .set(MQ.status, "Cancelled")
                 .set(MQ.cancelled_at, now())
-                .where(MQ.name.isin(cancelled))
+                .where(MQ.name.isin(cancelled) & (MQ.status == "Scheduled"))
             ).run()
 
 

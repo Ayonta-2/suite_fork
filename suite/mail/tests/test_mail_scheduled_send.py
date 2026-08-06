@@ -274,6 +274,35 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         submission = self._get_submission(account, doc.submission_id)
         self.assertEqual(submission["undoStatus"], "canceled")
 
+    def test_stale_action_cannot_resurrect_a_cancelled_schedule(self):
+        # Overlapping actions used to both pass validation on the same state: the loser
+        # saw the winner's cancellation as "already canceled", fell through, and created
+        # a live submission for a message that had just been moved back to Drafts.
+        from suite.mail.api.mail import cancel_scheduled_mail
+
+        account = self.personal_account(self.sender)
+
+        for action in (
+            lambda doc: doc.send_now(),
+            lambda doc: doc.reschedule(get_datetime_str(add_to_date(now(), minutes=240))),
+        ):
+            scheduled = self._schedule(minutes=120)
+
+            with self.set_user(self.sender.email):
+                # Loaded while still Scheduled, i.e. before the cancellation below.
+                stale = frappe.get_doc("Mail Queue", scheduled.name)
+                cancel_scheduled_mail(account, scheduled.name)
+
+                with self.assertRaises(frappe.ValidationError):
+                    action(stale)
+
+            with self.set_user("Administrator"):
+                doc = frappe.get_doc("Mail Queue", scheduled.name)
+
+            self.assertEqual(doc.status, "Cancelled")
+            self.assertEqual(doc.submission_id, scheduled.doc.submission_id)
+            self.assertEqual(self._get_submission(account, doc.submission_id)["undoStatus"], "canceled")
+
     def test_reconciliation_sweep(self):
         # The 5-minute cron flips rows whose hold elapsed: delivered submissions to
         # Submitted, out-of-band cancellations to Cancelled.

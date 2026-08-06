@@ -769,13 +769,23 @@ def get_scheduled_mails(account: str) -> list[dict]:
 
     result = []
     for row in rows:
+        # Filtered on status too: a concurrent action may have moved the row to a terminal
+        # state since the query above, and reconciliation must not clobber it back.
         undo_status = undo_by_id.get(row.submission_id)
         if row.submission_id and undo_status == "final":
-            frappe.db.set_value("Mail Queue", row.name, {"status": "Submitted", "submitted_at": now()})
+            frappe.db.set_value(
+                "Mail Queue",
+                {"name": row.name, "status": "Scheduled"},
+                {"status": "Submitted", "submitted_at": now()},
+            )
             continue
         if row.submission_id and undo_status == "canceled":
             # Canceled out-of-band (e.g. from the desk or the admin MTA queue).
-            frappe.db.set_value("Mail Queue", row.name, {"status": "Cancelled", "cancelled_at": now()})
+            frappe.db.set_value(
+                "Mail Queue",
+                {"name": row.name, "status": "Scheduled"},
+                {"status": "Cancelled", "cancelled_at": now()},
+            )
             continue
 
         row.recipients = json.loads(row.recipients or "[]")
