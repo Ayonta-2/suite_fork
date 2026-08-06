@@ -35,6 +35,7 @@ import {
 } from '@/apps/slides/stores/slideshow'
 
 import { markDirty } from '@/apps/slides/stores/saving'
+import { inCropMode, commitCrop, cancelCrop } from '@/apps/slides/stores/imageCrop'
 
 const { toggleNavigationPanel } = useNavigationPanel()
 const { activeEditor, toggleMark } = useTextEditor()
@@ -42,7 +43,7 @@ const { activeEditor, toggleMark } = useTextEditor()
 export const showShortcutsModal = ref(false)
 
 export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
-	const inEditMode = () => !inReadonlyMode.value && !inSlideShowMode.value
+	const inEditMode = () => !inReadonlyMode.value && !inSlideShowMode.value && !inCropMode.value
 	const inReadonly = () => inReadonlyMode.value && !inSlideShowMode.value
 	const inSlideShow = () => inSlideShowMode.value
 	const hasElements = () => activeElementIds.value.length > 0
@@ -255,6 +256,20 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Edit',
 			condition: inEditMode,
 			handler: () => resetFocus(),
+		},
+		{
+			key: 'Escape',
+			description: 'Exit crop mode',
+			group: 'Edit',
+			condition: () => inCropMode.value,
+			handler: () => cancelCrop(),
+		},
+		{
+			key: 'Enter',
+			description: 'Apply crop',
+			group: 'Edit',
+			condition: () => inCropMode.value,
+			handler: () => commitCrop(),
 		},
 		{
 			key: 'd',
