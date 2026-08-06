@@ -108,6 +108,8 @@ import Dialogs from '@/apps/writer/components/Dialogs.vue'
 import { dynamicList } from '@/apps/writer/utils/'
 import { downloadZippedHTML, downloadMD } from '@/apps/writer/utils'
 import { downloadDocxFromHtml } from '../utils/docxexporter'
+import { orderedTabs } from '@/apps/writer/extensions/tabs'
+import { createDialog } from '@/apps/writer/utils/dialogs'
 
 import LucideUsers from '~icons/lucide/users'
 import LucideBuilding2 from '~icons/lucide/building-2'
@@ -163,6 +165,41 @@ const showTemplates = defineModel('showTemplates')
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const dialog = inject('dialog', ref(''))
 const editor = inject('editor', null)
+
+const exportDocx = () => {
+  if (!editor.value) return
+  const filename = `${props.file.doc.file_name}.docx`
+  const settings = props.document?.doc?.settings
+  const tabs = orderedTabs(editor.value.state.doc)
+
+  if (tabs.length <= 1) {
+    downloadDocxFromHtml(editor.value.getHTML(), filename, settings)
+    return
+  }
+
+  createDialog({
+    title: 'Export DOCX',
+    message: 'This document has multiple tabs. Export just the current tab, or all of them?',
+    actions: [
+      {
+        label: 'All Tabs',
+        variant: 'outline',
+        onClick: ({ close }) => {
+          downloadDocxFromHtml(editor.value.getHTML(), filename, settings)
+          close()
+        },
+      },
+      {
+        label: 'Current Tab',
+        variant: 'solid',
+        onClick: ({ close }) => {
+          downloadDocxFromHtml(editor.value.commands.getCurrentTabHTML(), filename, settings)
+          close()
+        },
+      },
+    ],
+  })
+}
 
 const route = useRoute()
 const formattedCrumbs = computed(() => {
@@ -303,13 +340,7 @@ const fileActions = computed(() =>
                 {
                   label: 'DOCX',
                   icon: LucideFileText,
-                  onClick: () => {
-                    downloadDocxFromHtml(
-                      editor.value.getHTML(),
-                      `${props.file.doc.file_name}.docx`,
-                      props.document?.doc?.settings,
-                    )
-                  },
+                  onClick: () => exportDocx(),
                 },
                 {
                   label: 'Folder',
