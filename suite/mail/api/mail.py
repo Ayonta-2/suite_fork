@@ -34,7 +34,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     set_seen_status,
     set_spam_status,
 )
-from suite.mail.doctype.mail_queue.mail_queue import MailQueue
+from suite.mail.doctype.mail_queue.mail_queue import MailQueue, apply_reconciled_submissions
 from suite.mail.doctype.mailbox.mailbox import add_mailbox, delete_mailboxes
 from suite.mail.doctype.mailbox_settings.mailbox_settings import (
     automation_rules_to_settings,
@@ -767,31 +767,24 @@ def get_scheduled_mails(account: str) -> list[dict]:
         s["id"]: s.get("undoStatus") for s in (service.get(submission_ids) if submission_ids else [])
     }
 
-    result = []
+    result, submitted, cancelled = [], [], []
     for row in rows:
-        # Filtered on status too: a concurrent action may have moved the row to a terminal
-        # state since the query above, and reconciliation must not clobber it back.
         undo_status = undo_by_id.get(row.submission_id)
         if row.submission_id and undo_status == "final":
-            frappe.db.set_value(
-                "Mail Queue",
-                {"name": row.name, "status": "Scheduled"},
-                {"status": "Submitted", "submitted_at": now()},
-            )
+            submitted.append(row.name)
             continue
         if row.submission_id and undo_status == "canceled":
             # Canceled out-of-band (e.g. from the desk or the admin MTA queue).
-            frappe.db.set_value(
-                "Mail Queue",
-                {"name": row.name, "status": "Scheduled"},
-                {"status": "Cancelled", "cancelled_at": now()},
-            )
+            cancelled.append(row.name)
             continue
 
         row.recipients = json.loads(row.recipients or "[]")
         row.send_at = to_utc_z(row.send_at)
         row.creation = to_utc_z(row.creation)
         result.append(row)
+
+    # Two writes at most, however many rows finalized since the last visit.
+    apply_reconciled_submissions(submitted, cancelled)
 
     return result
 

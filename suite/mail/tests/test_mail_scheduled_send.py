@@ -345,6 +345,23 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
             self.assertEqual(frappe.db.get_value("Mail Queue", out_of_band.name, "status"), "Cancelled")
             self.assertTrue(frappe.db.get_value("Mail Queue", out_of_band.name, "cancelled_at"))
 
+    def test_reconciliation_writes_are_batched(self):
+        # Reconciliation runs on the Scheduled page's read path, so its write count must
+        # stay flat as rows finalize rather than growing one UPDATE per row.
+        from suite.mail.doctype.mail_queue.mail_queue import apply_reconciled_submissions
+
+        rows = [self._schedule(minutes=120) for _ in range(3)]
+        submitted = [rows[0].name, rows[1].name]
+        cancelled = [rows[2].name]
+
+        with self.set_user("Administrator"):
+            with self.assertQueryCount(2):  # one per terminal state, not per row
+                apply_reconciled_submissions(submitted, cancelled)
+
+            for name in submitted:
+                self.assertEqual(frappe.db.get_value("Mail Queue", name, "status"), "Submitted")
+            self.assertEqual(frappe.db.get_value("Mail Queue", cancelled[0], "status"), "Cancelled")
+
     def test_clear_old_logs_purges_stale_scheduled(self):
         from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 

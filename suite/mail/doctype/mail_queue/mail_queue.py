@@ -1105,6 +1105,35 @@ def process_pending_emails(mails: list[str]) -> None:
                 )
 
 
+def apply_reconciled_submissions(submitted: list[str], cancelled: list[str]) -> None:
+    """Moves Scheduled rows to the terminal state their submission reports.
+
+    Batched on purpose: the Scheduled page reconciles on its read path, so a per-row write
+    would make page latency grow with the number of finalized rows — and with undo send,
+    every UI send leaves one behind between hourly sweeps.
+
+    Still-Scheduled guard: an action may have moved a row to a terminal state since the
+    submission states were read, and must not be clobbered back.
+    """
+
+    MQ = frappe.qb.DocType("Mail Queue")
+    timestamp = now()
+
+    for names, status, field in (
+        (submitted, "Submitted", MQ.submitted_at),
+        (cancelled, "Cancelled", MQ.cancelled_at),
+    ):
+        # Chunked so a backlog (e.g. the first sweep after downtime) can't build an
+        # oversized IN list.
+        for batch in create_batch(names, 500):
+            (
+                frappe.qb.update(MQ)
+                .set(MQ.status, status)
+                .set(field, timestamp)
+                .where(MQ.name.isin(batch) & (MQ.status == "Scheduled"))
+            ).run()
+
+
 def reconcile_scheduled_emails() -> None:
     """Flips Scheduled rows whose hold has elapsed to their real submission state.
 
@@ -1133,7 +1162,6 @@ def reconcile_scheduled_emails() -> None:
     for row in rows:
         by_account.setdefault(row.account, []).append(row)
 
-    MQ = frappe.qb.DocType("Mail Queue")
     for account, account_rows in by_account.items():
         try:
             service = get_email_submission_service(account, ignore_permissions=True)
@@ -1149,22 +1177,7 @@ def reconcile_scheduled_emails() -> None:
         submitted = [r.name for r in account_rows if undo_by_id.get(r.submission_id) == "final"]
         cancelled = [r.name for r in account_rows if undo_by_id.get(r.submission_id) == "canceled"]
 
-        # Still-Scheduled guard: an action may have moved the row to a terminal state
-        # between the get above and this write, and must not be clobbered back.
-        if submitted:
-            (
-                frappe.qb.update(MQ)
-                .set(MQ.status, "Submitted")
-                .set(MQ.submitted_at, now())
-                .where(MQ.name.isin(submitted) & (MQ.status == "Scheduled"))
-            ).run()
-        if cancelled:
-            (
-                frappe.qb.update(MQ)
-                .set(MQ.status, "Cancelled")
-                .set(MQ.cancelled_at, now())
-                .where(MQ.name.isin(cancelled) & (MQ.status == "Scheduled"))
-            ).run()
+        apply_reconciled_submissions(submitted, cancelled)
 
 
 def enqueue_process_pending_emails(batch_size: int | None = None, max_batch_size: int | None = None) -> None:
