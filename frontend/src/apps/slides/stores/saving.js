@@ -89,8 +89,12 @@ const getPresentationFromLocalDB = async (id) => {
 // explicit dirty flag set by every mutation path
 const dirty = ref(false)
 
+// bumped on every markDirty so a save can tell if edits arrived while it was in flight
+let dirtyGeneration = 0
+
 const markDirty = () => {
 	dirty.value = true
+	dirtyGeneration++
 }
 
 const markClean = () => {
@@ -135,6 +139,7 @@ const saveCurrentState = async () => {
 	isSaving.value = true
 
 	try {
+		const generationAtSnapshot = dirtyGeneration
 		const content = getLatestSlideContent()
 
 		// save to indexedDB as dirty (not yet synced); baseModified = server version these build on
@@ -149,9 +154,10 @@ const saveCurrentState = async () => {
 		// if offline, stay dirty so we retry once back online
 		if (!navigator.onLine) return
 
-		// only mark clean once the server actually has the changes
+		// only mark clean once the server actually has the changes,
+		// and only if no edit arrived while this save was in flight
 		await syncPresentationToServer()
-		markClean()
+		if (dirtyGeneration === generationAtSnapshot) markClean()
 		saveFailed.value = false
 	} catch (err) {
 		// keep dirty so autosave retries and beforeunload warns; log once per outage
