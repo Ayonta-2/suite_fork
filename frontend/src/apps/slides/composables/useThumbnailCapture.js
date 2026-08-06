@@ -10,10 +10,12 @@ import { captureDOM } from '@/apps/slides/utils/domToWebp'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 
 const DEBOUNCE_MS = 5000
+const MAX_CAPTURE_ATTEMPTS = 3
 
 export const useThumbnailCapture = (thumbnailCapture, hasOngoingInteraction) => {
 	const pendingKey = ref('')
 	const busy = ref(false)
+	const failedAttempts = ref(0)
 
 	const slideKey = computed(() => getSlideKey())
 
@@ -33,6 +35,7 @@ export const useThumbnailCapture = (thumbnailCapture, hasOngoingInteraction) => 
 
 	const markPending = (key) => {
 		pendingKey.value = key
+		failedAttempts.value = 0
 		schedule()
 	}
 
@@ -66,7 +69,12 @@ export const useThumbnailCapture = (thumbnailCapture, hasOngoingInteraction) => 
 			await apply(url)
 			clear(key)
 		} catch (error) {
-			console.warn('Could not generate presentation thumbnail', error)
+			failedAttempts.value++
+			// give up until the slide changes again
+			if (failedAttempts.value >= MAX_CAPTURE_ATTEMPTS) {
+				console.warn('Could not generate presentation thumbnail', error)
+				clear(key)
+			}
 		} finally {
 			busy.value = false
 			retryIfPending()
