@@ -775,7 +775,14 @@ class MailQueue(OwnerFromUser, Document):
 
         _remove_cached_messages(self.account, [self.id])
 
+        previous_mailbox_id = self.mailbox_id
         self._db_set(notify=True, status="Cancelled", cancelled_at=now(), mailbox_id=drafts_mailbox_id)
+
+        # Refresh the open mailbox view the way the message actions do. It can't be driven
+        # from the composer that raised the undo toast: the dialog drops its content when it
+        # closes, so that component is already gone by the time the undo runs.
+        if mailbox_ids := [m for m in {drafts_mailbox_id, previous_mailbox_id} if m]:
+            frappe.publish_realtime("new_mail_created", mailbox_ids, user=self.user)
 
     def _lock_and_validate_scheduled(self) -> None:
         """Serializes the scheduled-send actions on this row and validates it is still held.

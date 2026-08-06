@@ -130,6 +130,31 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         self.assertTrue(emails[0]["keywords"].get("$draft"))
         self.assertEqual(doc.mailbox_id, drafts_id)
 
+    def test_cancel_refreshes_open_mailbox_views(self):
+        # The composer that raises the undo toast is unmounted by the time Undo runs, so
+        # the refresh rides the same realtime event the message actions use.
+        from unittest.mock import patch
+
+        from suite.mail.api.mail import cancel_scheduled_mail
+        from suite.mail.jmap import get_mailbox_id_by_role
+
+        scheduled = self._schedule(minutes=120)
+        account = self.personal_account(self.sender)
+
+        with self.set_user(self.sender.email):
+            drafts_id = get_mailbox_id_by_role(account, "drafts", raise_exception=True)
+            sent_id = get_mailbox_id_by_role(account, "sent", raise_exception=True)
+
+            with patch("frappe.publish_realtime") as publish:
+                cancel_scheduled_mail(account, scheduled.name)
+
+        events = [c for c in publish.call_args_list if c.args and c.args[0] == "new_mail_created"]
+        self.assertTrue(events, "cancel did not publish a mailbox refresh")
+
+        # Both the folder it left and the one it landed in, so either open view updates.
+        self.assertEqual(set(events[-1].args[1]), {drafts_id, sent_id})
+        self.assertEqual(events[-1].kwargs["user"], self.sender.email)
+
     def test_reschedule_creates_new_submission(self):
         scheduled = self._schedule(minutes=120)
         account = self.personal_account(self.sender)
