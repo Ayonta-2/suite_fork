@@ -5,6 +5,8 @@ import { interactionOffset } from '@/apps/slides/stores/interaction'
 import { slideBounds } from '@/apps/slides/stores/slide'
 import { panCrop } from '@/apps/slides/utils/cropGeometry'
 
+const DRAG_START_THRESHOLD = 4
+
 // drag inside the crop window to pan the image behind it. writes only the
 // draft; committed state is untouched until exit
 export const useCropPan = (borderInset) => {
@@ -32,6 +34,13 @@ export const useCropPan = (borderInset) => {
 	const pan = (e) => {
 		const el = cropElement.value
 		if (!panStart || !el) return
+
+		// click jitter must not pan; a double click needs two still clicks to land
+		if (!panStart.started) {
+			const distance = Math.hypot(e.clientX - panStart.x, e.clientY - panStart.y)
+			if (distance < DRAG_START_THRESHOLD) return
+			panStart.started = true
+		}
 
 		// mid-session the frame carries the uncommitted offset of earlier drags
 		const inset = borderInset.value

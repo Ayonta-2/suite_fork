@@ -4,7 +4,7 @@ import { cloneObj } from '@/apps/slides/utils/helpers'
 
 // object values are cloned per assignment so elements never share one
 // reference, and a command's snapshots can't be mutated from outside
-const cloneValue = (value) => (typeof value == 'object' && value != null ? cloneObj(value) : value)
+const cloneValue = (value) => (typeof value === 'object' && value !== null ? cloneObj(value) : value)
 
 const findSlide = (state, slideId) => state.find((s) => s.clientId === slideId)
 

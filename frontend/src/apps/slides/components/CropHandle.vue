@@ -17,11 +17,11 @@ const props = defineProps({
 
 const LENGTH = 16
 const THICKNESS = 3
+const HIT_PADDING = 4
 const COLOR = selectionColor
 
 const scaledPx = (value) => `${value / slideBounds.scale}px`
 
-// an L-shaped bracket: two thick borders on the corner's edges
 const getCornerStyles = () => {
 	const border = `${scaledPx(THICKNESS)} solid ${COLOR}`
 	const offset = `-${scaledPx(THICKNESS / 2)}`
@@ -39,26 +39,31 @@ const getCornerStyles = () => {
 	}
 }
 
-// a short bar centred on the edge
+// the padding is invisible hit area; the clip keeps the painted bar thin
 const getEdgeStyles = () => {
-	const offset = `-${scaledPx(THICKNESS / 2)}`
+	const offset = `-${scaledPx(THICKNESS / 2 + HIT_PADDING)}`
+	const bar = {
+		padding: scaledPx(HIT_PADDING),
+		backgroundColor: COLOR,
+		backgroundClip: 'content-box',
+	}
 
 	if (['left', 'right'].includes(props.handle)) {
 		return {
+			...bar,
 			[props.handle]: offset,
-			top: `calc(50% - ${scaledPx(LENGTH / 2)})`,
-			width: scaledPx(THICKNESS),
-			height: scaledPx(LENGTH),
-			backgroundColor: COLOR,
+			top: `calc(50% - ${scaledPx(LENGTH / 2 + HIT_PADDING)})`,
+			width: scaledPx(THICKNESS + 2 * HIT_PADDING),
+			height: scaledPx(LENGTH + 2 * HIT_PADDING),
 		}
 	}
 
 	return {
+		...bar,
 		[props.handle]: offset,
-		left: `calc(50% - ${scaledPx(LENGTH / 2)})`,
-		width: scaledPx(LENGTH),
-		height: scaledPx(THICKNESS),
-		backgroundColor: COLOR,
+		left: `calc(50% - ${scaledPx(LENGTH / 2 + HIT_PADDING)})`,
+		width: scaledPx(LENGTH + 2 * HIT_PADDING),
+		height: scaledPx(THICKNESS + 2 * HIT_PADDING),
 	}
 }
 

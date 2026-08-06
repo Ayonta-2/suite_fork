@@ -17,6 +17,7 @@ import { getAttachmentUrl } from '../utils/mediaUploads'
 
 const cropElementId = ref(null)
 const draftCrop = ref(null)
+const initialCrop = ref(null)
 
 const inCropMode = computed(() => cropElementId.value != null)
 
@@ -56,6 +57,7 @@ const startCrop = async (element) => {
 	}
 
 	draftCrop.value = { ...crop }
+	initialCrop.value = { ...crop }
 	cropElementId.value = element.id
 }
 
@@ -65,6 +67,7 @@ const cancelCrop = () => {
 
 	cropElementId.value = null
 	draftCrop.value = null
+	initialCrop.value = null
 }
 
 const cropsEqual = (a, b) => {
@@ -79,6 +82,8 @@ const commitCrop = () => {
 	// a full rect commits as absent: that is the canonical uncropped state
 	const newCrop = isFullRect(draftCrop.value) ? undefined : draftCrop.value
 
+	// an untouched session must not add a do-nothing undo step
+	if (cropsEqual(draftCrop.value, initialCrop.value)) return cancelCrop()
 	if (cropsEqual(element.crop, newCrop)) return cancelCrop()
 
 	const command = editElementCommand({
@@ -130,7 +135,6 @@ const resetImageCrop = async (element) => {
 
 export {
 	inCropMode,
-	cropElementId,
 	cropElement,
 	draftCrop,
 	startCrop,
