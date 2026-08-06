@@ -7,7 +7,32 @@ import { session } from '@/boot/session'
 
 const inSlideShowMode = ref(false)
 
+// the click's user activation expires before the slideshow route finishes
+// loading, so fullscreen has to be requested here and not on the other side
+const requestFullscreen = async () => {
+	const el = document.documentElement
+	const request =
+		el.requestFullscreen ||
+		el.webkitRequestFullscreen ||
+		el.msRequestFullscreen ||
+		el.mozRequestFullScreen
+
+	if (!request) return false
+
+	try {
+		await request.call(el)
+		return true
+	} catch {
+		return false
+	}
+}
+
+const exitFullscreen = () => {
+	if (document.fullscreenElement) document.exitFullscreen()
+}
+
 const startSlideShow = () => {
+	requestFullscreen()
 	router.replace({
 		name: 'slides-slideshow',
 		params: router.currentRoute.value.params,
@@ -16,6 +41,7 @@ const startSlideShow = () => {
 }
 
 const endSlideShow = () => {
+	exitFullscreen()
 	inSlideShowMode.value = false
 	focusedSlide.value = null
 	const slide =
@@ -129,6 +155,7 @@ const changeSlideInSlideshow = (index) => {
 export {
 	inSlideShowMode,
 	showSlideshowEndScreen,
+	requestFullscreen,
 	startSlideShow,
 	endSlideShow,
 	prefetchNextSlide,

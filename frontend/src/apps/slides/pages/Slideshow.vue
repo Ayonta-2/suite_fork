@@ -63,8 +63,7 @@
 
 <script setup>
 import { computed, onActivated, onDeactivated, ref, useTemplateRef, watch, provide } from 'vue'
-import { useRouter } from 'vue-router'
-import { useShortcut } from 'frappe-ui'
+import { toast, useShortcut } from 'frappe-ui'
 
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import SlideshowEndScreen from '@/apps/slides/components/SlideshowEndScreen.vue'
@@ -73,6 +72,7 @@ import FadeElementTransition from '@/apps/slides/components/FadeElementTransitio
 import {
 	inSlideShowMode,
 	showSlideshowEndScreen,
+	requestFullscreen,
 	endSlideShow,
 	prefetchNextSlide,
 	changeSlideInSlideshow,
@@ -85,8 +85,6 @@ import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/s
 import { resetFocus } from '@/apps/slides/stores/element'
 
 const slideContainerRef = useTemplateRef('slideContainer')
-
-const router = useRouter()
 
 const props = defineProps({
 	presentationId: {
@@ -275,7 +273,7 @@ const handleFullScreenChange = () => {
 		inSlideShowMode.value = true
 	} else {
 		slideContainerRef.value?.removeEventListener('mousemove', resetCursorVisibility)
-		endSlideShow()
+		if (inSlideShowMode.value) endSlideShow()
 	}
 }
 
@@ -287,23 +285,15 @@ const slideContainerStyles = computed(() => {
 })
 
 const initFullscreenMode = async () => {
-	const container = slideContainerRef.value
-	if (!container) return
-
-	const fullscreenMethods = [
-		container.requestFullscreen,
-		container.webkitRequestFullscreen, // Safari
-		container.msRequestFullscreen, // IE
-		container.mozRequestFullScreen, // Firefox
-	]
-
-	const fullscreenMethod = fullscreenMethods.find((method) => method)
-
-	if (fullscreenMethod) {
-		fullscreenMethod.call(container).catch((e) => {
-			router.replace({ name: 'slides-editor' })
-		})
+	// fullscreen is requested on the click that starts the slideshow, so the
+	// change event fires before this component is around to hear it
+	if (!document.fullscreenElement && !(await requestFullscreen())) {
+		toast.error('Could not enter fullscreen mode')
+		endSlideShow()
+		return
 	}
+
+	handleFullScreenChange()
 }
 
 const loadPresentation = async () => {
