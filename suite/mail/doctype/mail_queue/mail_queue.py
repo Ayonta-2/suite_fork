@@ -1085,6 +1085,9 @@ def reconcile_scheduled_emails() -> None:
     The Scheduled page reconciles lazily and clear_old_logs purges eventually, but with
     undo send every UI send passes through Scheduled — without this sweep the queue log
     would show delivered mail as Scheduled (and never record submitted_at) until purged.
+
+    Hourly is deliberate: nothing user-facing waits on it (the page reconciles on load),
+    and a row survives days before purge, so it gets many attempts.
     """
 
     rows = frappe.db.get_all(
