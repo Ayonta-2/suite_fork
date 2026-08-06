@@ -489,7 +489,25 @@ const sfuConnection = useSFUConnection({
 		participantStore.activeSpeakerIds = participantIds;
 	},
 });
-const { networkQuality } = useNetworkQuality(sfuConnection.sfuManager);
+const { networkQuality, downlinkQuality, isTransportFailed } = useNetworkQuality(
+	sfuConnection.sfuManager,
+);
+const localNetworkQuality = computed(() => {
+	if (isTransportFailed.value) return "critical";
+	if (
+		sfuConnection.localNetworkQuality.value === "critical" ||
+		downlinkQuality.value === "critical"
+	) {
+		return "critical";
+	}
+	if (
+		sfuConnection.localNetworkQuality.value === "poor" ||
+		downlinkQuality.value === "poor"
+	) {
+		return "poor";
+	}
+	return "good";
+});
 
 // --- Media Controls ---
 const mediaControls = useMediaControls({
@@ -586,6 +604,7 @@ provideMeetingContext({
 	isInMeeting: computed(() => true),
 	onBackgroundEffectsChanged: mediaControls.applyBackgroundEffectsToLocalStream,
 	networkQuality,
+	localNetworkQuality,
 });
 
 // Provide legacy injects for components not yet migrated to useMeetingContext
