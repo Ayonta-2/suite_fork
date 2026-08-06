@@ -78,7 +78,7 @@ SCREENING_FETCH_LIMIT = 500
 # moment still reaches the server before the hold elapses. Computed on the server clock —
 # a skewed client clock must not be able to shorten (or invalidate) the hold. The window
 # half is mirrored by UNDO_SEND_WINDOW_MS in ComposeMailEditor.vue.
-UNDO_SEND_WINDOW_SECONDS = 7
+UNDO_SEND_WINDOW_SECONDS = 10
 UNDO_SEND_HOLD_SECONDS = UNDO_SEND_WINDOW_SECONDS + 3
 
 # All Inboxes bounds. limit/start are user-supplied, and per_account_limit (= start + limit) is fetched

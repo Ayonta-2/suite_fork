@@ -464,7 +464,7 @@ const saveDraft = async () => {
 
 // Mirrors UNDO_SEND_WINDOW_SECONDS in api/mail.py; the server holds delivery a few
 // seconds longer than this so a last-moment Undo still lands in time.
-const UNDO_SEND_WINDOW_MS = 7000
+const UNDO_SEND_WINDOW_MS = 10000
 
 // A plain Send holds delivery for the undo window ('undo'); the Schedule send flow
 // passes an explicit time ('scheduled'). Both come back with status 'Scheduled', so
