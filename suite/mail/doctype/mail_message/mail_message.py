@@ -1365,6 +1365,10 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
 
         result = email_service.changes(current_state)
 
+        if not result:
+            logger.warning("empty-changes-response")
+            return
+
         if created_ids := result["created"]:
             logger.info("new-messages-created", count=len(created_ids))
 
