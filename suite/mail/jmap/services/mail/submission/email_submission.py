@@ -201,7 +201,7 @@ class EmailSubmissionService(CoreService):
                     rcpt_emails={r.email for r in email.recipients},
                     envelope_id=email.creation_id,
                     priority=email.priority,
-                    hold_until=email.hold_until
+                    hold_until=email.hold_until,
                 ),
             }
 
