@@ -43,8 +43,10 @@ export const raiseToast = (
 	message: string,
 	type = 'success',
 	action?: { label: string; onClick: () => void },
+	duration?: number,
 ) => {
-	if (type === 'success') return toast.success(message, action ? { action } : undefined)
+	if (type === 'success')
+		return toast.success(message, action || duration ? { action, duration } : undefined)
 
 	const div = document.createElement('div')
 	div.innerHTML = message

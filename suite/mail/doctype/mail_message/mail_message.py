@@ -357,10 +357,10 @@ class MailMessage(Document):
         return self._update_or_submit_draft(save_as_draft=True)
 
     @frappe.whitelist()
-    def submit(self) -> MailQueue:
-        """Submit the draft Mail Message."""
+    def submit(self, send_at: str | None = None) -> MailQueue:
+        """Submit the draft Mail Message. `send_at` (system-time string) schedules delivery via FUTURERELEASE."""
 
-        return self._update_or_submit_draft(save_as_draft=False)
+        return self._update_or_submit_draft(save_as_draft=False, send_at=send_at)
 
     @frappe.whitelist()
     def move_to_mailbox(self, mailbox_id: str) -> None:
@@ -583,7 +583,7 @@ class MailMessage(Document):
         ]:
             self.__dict__.pop(property, None)
 
-    def _update_or_submit_draft(self, save_as_draft: bool = True) -> MailQueue:
+    def _update_or_submit_draft(self, save_as_draft: bool = True, send_at: str | None = None) -> MailQueue:
         """Update or submit the draft Mail Message."""
 
         if not self.draft:
@@ -622,6 +622,7 @@ class MailMessage(Document):
             id=self.id,
             in_reply_to=self.in_reply_to,
             save_as_draft=save_as_draft,
+            send_at=send_at,
             delivery_mode="Immediate",
         )
 

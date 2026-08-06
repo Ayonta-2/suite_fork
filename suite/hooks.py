@@ -300,15 +300,16 @@ scheduler_events = {
     ],
     "hourly_long": [
         # mail
+        "suite.mail.doctype.mail_queue.mail_queue.reconcile_scheduled_emails",
         "suite.mail.doctype.mail_message.mail_message.schedule_fetch_changes",
     ],
     "cron": {
         "*/5 * * * *": [
             # mail
             "suite.mail.doctype.server_job.server_job.retry_failed_jobs",
+            "suite.mail.doctype.mail_queue.mail_queue.enqueue_process_pending_emails",
             "suite.mail.doctype.server_deployment.server_deployment.retry_failed_deployments",
             "suite.mail.doctype.server_ansible_play.server_ansible_play.retry_failed_ansible_plays",
-            "suite.mail.doctype.mail_queue.mail_queue.enqueue_process_pending_emails",
         ],
     },
 }

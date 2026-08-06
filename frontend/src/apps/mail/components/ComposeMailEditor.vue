@@ -204,6 +204,7 @@
 				@append-emoji="(emoji: string) => appendEmoji(emoji)"
 				@discard-mail="discardMail"
 				@send-mail="sendMail"
+				@schedule-send="openScheduleModal"
 			/>
 		</template>
 	</TextEditor>
@@ -212,6 +213,7 @@
 		v-model="showContactsModal"
 		@insert="(selections) => mail[insertContactsInto].push(...selections)"
 	/>
+	<ScheduleSendModal v-model="showScheduleModal" @confirm="scheduleSend" />
 </template>
 
 <script setup lang="ts">
@@ -271,6 +273,7 @@ import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 
 import RecipientInput from './Controls/RecipientInput.vue'
 import ContactsModal from './Modals/ContactsModal.vue'
+import ScheduleSendModal from './Modals/ScheduleSendModal.vue'
 
 const show = defineModel<boolean>()
 
@@ -459,20 +462,56 @@ const saveDraft = async () => {
 	isSavingDraft.value = false
 }
 
-const sendMail = async () => {
+// Mirrors UNDO_SEND_WINDOW_SECONDS in api/mail.py; the server holds delivery a few
+// seconds longer than this so a last-moment Undo still lands in time.
+const UNDO_SEND_WINDOW_MS = 10000
+
+// A plain Send holds delivery for the undo window ('undo'); the Schedule send flow
+// passes an explicit time ('scheduled'). Both come back with status 'Scheduled', so
+// the toast has to know which one it is confirming.
+const sendMode = ref<'undo' | 'scheduled'>('undo')
+
+const sendMail = async (sendAt?: string) => {
 	if (deleteMail.loading) return
 
 	if (isRecipientsEmpty.value)
 		return raiseToast(__('Please add at least one recipient.'), 'error')
 
+	sendMode.value = sendAt ? 'scheduled' : 'undo'
 	isSavingDraft.value = false
 	show.value = false
 	if (createMail.loading) await createMail.promise
 	if (updateDraft.loading) await updateDraft.promise
 
-	if (mail.id) updateDraft.submit({ submit: true })
-	else createMail.submit({ save_as_draft: false })
+	if (mail.id) updateDraft.submit({ submit: true, send_at: sendAt, undo_send: !sendAt })
+	else createMail.submit({ save_as_draft: false, send_at: sendAt, undo_send: !sendAt })
 }
+
+// Undo send: Send actually scheduled delivery a few seconds out (server-side hold), so
+// undoing is just cancelling that schedule — the message lands back in Drafts.
+
+const undoSend = createResource({
+	url: 'suite.mail.api.mail.cancel_scheduled_mail',
+	makeParams: ({ name }: { name: string }) => ({ account: scopeAccountId.value, name }),
+	onSuccess: () => {
+		reloadMails()
+		raiseToast(__('Sending undone. The message is back in your drafts.'))
+	},
+	onError: (error) => raiseToast(error.message, 'error'),
+})
+
+// Schedule send (FUTURERELEASE)
+
+const showScheduleModal = ref(false)
+
+const openScheduleModal = () => {
+	if (isRecipientsEmpty.value)
+		return raiseToast(__('Please add at least one recipient.'), 'error')
+
+	showScheduleModal.value = true
+}
+
+const scheduleSend = (sendAt: string) => sendMail(sendAt)
 
 const isDiscarding = ref(false)
 
@@ -493,14 +532,16 @@ watch(show, (val) => {
 	isSavingDraft.value = false
 })
 
-defineExpose({ sendMail, discardMail })
+defineExpose({ sendMail, discardMail, openScheduleModal })
 
 const onMailUpdateSuccess = ({
+	name,
 	id,
 	status,
 	error,
 	thread_id,
 }: {
+	name: string
 	id: string
 	status: string
 	error: string
@@ -511,7 +552,7 @@ const onMailUpdateSuccess = ({
 	if (error) return raiseToast(error, 'error')
 	if (isDiscarding.value) return
 
-	if (!isInThread || status === 'Submitted') reloadMails()
+	if (!isInThread || status === 'Submitted' || status === 'Scheduled') reloadMails()
 	if (show.value) return
 
 	if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
@@ -524,18 +565,44 @@ const onMailUpdateSuccess = ({
 				? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
 				: undefined,
 		)
+	else if (status === 'Scheduled' && sendMode.value === 'undo')
+		raiseToast(
+			__('Message sent.'),
+			'success',
+			{ label: __('Undo'), onClick: () => undoSend.submit({ name }) },
+			UNDO_SEND_WINDOW_MS,
+		)
+	else if (status === 'Scheduled')
+		raiseToast(__('Send scheduled.'), 'success', {
+			label: __('View'),
+			onClick: () =>
+				router.push({
+					name: 'mail-scheduled',
+					params: { accountId: scopeAccountId.value },
+				}),
+		})
 }
 
 // Resources
 
 const createMail = createResource({
 	url: 'suite.mail.api.mail.create_mail',
-	makeParams: ({ save_as_draft }: { save_as_draft: boolean }) => ({
+	makeParams: ({
+		save_as_draft,
+		send_at,
+		undo_send,
+	}: {
+		save_as_draft: boolean
+		send_at?: string
+		undo_send?: boolean
+	}) => ({
 		account: scopeAccountId.value,
 		...mail,
 		...processInlineImages(mail, { sending: !save_as_draft }),
 		from_name: getIdentity(mail.from_email!)._name,
 		save_as_draft,
+		send_at,
+		undo_send,
 	}),
 	onSuccess: onMailUpdateSuccess,
 	onError: (error) => raiseToast(error.message, 'error'),
@@ -543,12 +610,22 @@ const createMail = createResource({
 
 const updateDraft = createResource({
 	url: 'suite.mail.api.mail.update_draft_mail',
-	makeParams: ({ submit }: { submit: boolean }) => ({
+	makeParams: ({
+		submit,
+		send_at,
+		undo_send,
+	}: {
+		submit: boolean
+		send_at?: string
+		undo_send?: boolean
+	}) => ({
 		account: scopeAccountId.value,
 		...mail,
 		...processInlineImages(mail, { sending: submit }),
 		from_name: getIdentity(mail.from_email!)._name,
 		submit,
+		send_at,
+		undo_send,
 	}),
 	onSuccess: onMailUpdateSuccess,
 	onError: (error) => raiseToast(error.message, 'error'),
