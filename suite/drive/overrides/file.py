@@ -47,6 +47,13 @@ class File(FrappeFile):
     def validate(self):
         if self.is_new() and not self.flags.file_created:
             return super().validate()
+        if (
+            not self.is_new()
+            and not self.flags.file_created
+            and self.has_value_changed("file_url")
+            and not self._not_in_disk()
+        ):
+            self.manager.get_local_path(self.file_url)
         # Blob-backed Drive files must be private: they're served only through
         # Drive's permission layer, never the public /files/ path. Folders, links
         # and content-doctype files have no on-disk blob, and adopted framework
