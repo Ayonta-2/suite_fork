@@ -547,7 +547,6 @@ const probeReplacementMedia = async (element, fileDoc) => {
 	}
 
 	return {
-		oldAspect: element.height ? null : await getNaturalAspectRatio(getAttachmentUrl(element.src)),
 		newAspect: await getNaturalAspectRatio(newUrl),
 		poster: isGifFile(fileDoc) ? await generateImagePoster(newUrl) : null,
 	}
@@ -565,14 +564,11 @@ const pushVideoReplaceEdits = (element, { poster, aspect }, pushEdit) => {
 }
 
 // the frame stays put and the new image is cover-cropped into it
-const pushImageReplaceEdits = (element, { oldAspect, newAspect, poster }, pushEdit) => {
+const pushImageReplaceEdits = (element, { newAspect, poster }, pushEdit) => {
 	const inset = getBorderInset(element)
 
-	// a legacy image can reach replace without ever being resized or cropped
-	if (!element.height && Number.isFinite(oldAspect) && oldAspect > 0) {
-		element.height = (element.width - 2 * inset) / oldAspect + 2 * inset
-	}
-
+	// without a height the frame aspect is NaN and getCoverCrop falls back to
+	// the full rect, so a legacy element just keeps sizing itself
 	const frameAspect = (element.width - 2 * inset) / (element.height - 2 * inset)
 	const coverCrop = getCoverCrop(newAspect, frameAspect)
 	const newCrop = isFullRect(coverCrop) ? undefined : coverCrop
@@ -583,6 +579,9 @@ const pushImageReplaceEdits = (element, { oldAspect, newAspect, poster }, pushEd
 }
 
 const replaceMediaElement = async (element, fileDoc) => {
+	// measure while the old media is still rendered, before any await
+	ensureExplicitHeight(element)
+
 	const srcChanged = element.src !== fileDoc.file_url
 	const probes = srcChanged ? await probeReplacementMedia(element, fileDoc) : null
 
