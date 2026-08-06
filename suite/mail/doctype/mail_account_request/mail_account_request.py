@@ -28,7 +28,6 @@ from suite.utils import execute_with_logging, generate_otp
 from suite.utils.user import is_suite_admin, is_system_manager
 
 STALWART_DEFAULT_USER_ROLES = ["User"]
-STALWART_DEFAULT_ADMIN_ROLES = ["User", "Tenant Administrator"]
 
 # How long a signup OTP stays valid. Only its hash is kept (in cache); the code itself
 # travels by email and is never stored.
@@ -90,7 +89,7 @@ class MailAccountRequest(Document):
         if roles := _lines(self.roles):
             return roles
 
-        return list(STALWART_DEFAULT_ADMIN_ROLES if self.is_admin else STALWART_DEFAULT_USER_ROLES)
+        return list(STALWART_DEFAULT_USER_ROLES)
 
     @property
     def domain(self) -> str:
