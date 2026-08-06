@@ -553,10 +553,10 @@ const probeReplacementMedia = async (element, fileDoc) => {
 }
 
 // the width stays put and the frame height refits the new video
-const pushVideoReplaceEdits = (element, { poster, aspect }, pushEdit) => {
+const pushVideoReplaceEdits = (element, { frameHeight, poster, aspect }, pushEdit) => {
 	if (element.poster !== poster) pushEdit('poster', element.poster, poster)
 
-	if (element.height && Number.isFinite(aspect) && aspect > 0) {
+	if (frameHeight && Number.isFinite(aspect) && aspect > 0) {
 		const inset = getBorderInset(element)
 		const newHeight = (element.width - 2 * inset) / aspect + 2 * inset
 		if (newHeight !== element.height) pushEdit('height', element.height, newHeight)
@@ -564,12 +564,14 @@ const pushVideoReplaceEdits = (element, { poster, aspect }, pushEdit) => {
 }
 
 // the frame stays put and the new image is cover-cropped into it
-const pushImageReplaceEdits = (element, { newAspect, poster }, pushEdit) => {
+const pushImageReplaceEdits = (element, { frameHeight, newAspect, poster }, pushEdit) => {
+	if (!element.height && frameHeight) pushEdit('height', element.height, frameHeight)
+
 	const inset = getBorderInset(element)
 
 	// without a height the frame aspect is NaN and getCoverCrop falls back to
 	// the full rect, so a legacy element just keeps sizing itself
-	const frameAspect = (element.width - 2 * inset) / (element.height - 2 * inset)
+	const frameAspect = (element.width - 2 * inset) / (frameHeight - 2 * inset)
 	const coverCrop = getCoverCrop(newAspect, frameAspect)
 	const newCrop = isFullRect(coverCrop) ? undefined : coverCrop
 	if (element.crop || newCrop) pushEdit('crop', element.crop, newCrop)
@@ -580,7 +582,7 @@ const pushImageReplaceEdits = (element, { newAspect, poster }, pushEdit) => {
 
 const replaceMediaElement = async (element, fileDoc) => {
 	// measure while the old media is still rendered, before any await
-	ensureExplicitHeight(element)
+	const frameHeight = element.height || getElementDiv(element.id)?.offsetHeight
 
 	const srcChanged = element.src !== fileDoc.file_url
 	const probes = srcChanged ? await probeReplacementMedia(element, fileDoc) : null
@@ -599,8 +601,8 @@ const replaceMediaElement = async (element, fileDoc) => {
 
 	if (srcChanged) {
 		pushEdit('src', element.src, fileDoc.file_url)
-		if (element.type === 'video') pushVideoReplaceEdits(element, probes, pushEdit)
-		if (element.type === 'image') pushImageReplaceEdits(element, probes, pushEdit)
+		if (element.type === 'video') pushVideoReplaceEdits(element, { frameHeight, ...probes }, pushEdit)
+		if (element.type === 'image') pushImageReplaceEdits(element, { frameHeight, ...probes }, pushEdit)
 	}
 
 	if (element.attachmentName !== fileDoc.name) {
