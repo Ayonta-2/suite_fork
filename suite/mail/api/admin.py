@@ -11,13 +11,8 @@ from frappe.utils import cint, flt, validate_email_address
 from pypika import Case, Order
 
 from suite.mail.api.utils import get_avatar_url
-from suite.mail.doctype.mail_account_request.mail_account_request import (
-    STALWART_DEFAULT_ADMIN_ROLES,
-    STALWART_DEFAULT_USER_ROLES,
-)
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.stalwart import (
-    add_account_role,
     get_account_metadata,
     get_account_service,
     get_action_service,
@@ -34,7 +29,6 @@ from suite.mail.stalwart import (
     get_queued_message_service,
     get_report_service,
     get_role_service,
-    remove_account_role,
 )
 from suite.mail.stalwart import get_domains as get_stalwart_domains
 from suite.mail.stalwart import get_permissions as get_stalwart_permissions
@@ -798,7 +792,11 @@ def update_member(
     locale: str | None = None,
     time_zone: str | None = None,
 ) -> None:
-    """Updates a member's role, display name, quota, locale and time zone on Frappe and Stalwart."""
+    """Updates a member's role, display name, quota, locale and time zone.
+
+    The role only toggles the Suite Admin role on Frappe; Stalwart roles stay untouched, since
+    Suite Admin calls are proxied through the configured Stalwart admin credentials.
+    """
 
     check_admin_permission("update members", member_id)
     check_member_target(member_id)
@@ -821,18 +819,6 @@ def update_member(
 
     account_id = _member_account(member_id)
     account_service = get_account_service()
-
-    # Role: the base "User" Stalwart role always stays; only the admin-only roles are toggled.
-    if role is not None:
-        extra_roles = list(set(STALWART_DEFAULT_ADMIN_ROLES) - set(STALWART_DEFAULT_USER_ROLES))
-        toggle = add_account_role if role == "admin" else remove_account_role
-        execute_with_logging(
-            func=lambda: [toggle(member_id, r) for r in extra_roles],
-            title=_("Failed to update roles for {0}").format(member_id),
-            user_message=_("An error occurred while updating the role, check error logs for more details."),
-            with_context=False,
-            module="Mail",
-        )
 
     if not account_id:
         return

@@ -198,7 +198,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Stalwart roles (one per line) assigned to the account on creation. Left blank, defaults follow the Is Admin flag: User, plus Tenant Administrator for admins.",
+   "description": "Stalwart roles (one per line) assigned to the account on creation. Left blank, defaults to User.",
    "fieldname": "roles",
    "fieldtype": "Small Text",
    "label": "Stalwart Roles",
@@ -207,7 +207,7 @@
   },
   {
    "default": "0",
-   "description": "If enabled, the created user gets the Suite Admin role in Frappe and the Tenant Administrator role on Stalwart.",
+   "description": "If enabled, the created user gets the Suite Admin role in Frappe.",
    "fieldname": "is_admin",
    "fieldtype": "Check",
    "label": "Is Admin",
