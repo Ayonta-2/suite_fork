@@ -7,6 +7,7 @@ import { router } from '@/apps/slides/router'
 import { slides } from './slide'
 import { markClean, markDirty, getPresentationFromLocalDB } from './saving'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
+import { normalizeColor } from '@/apps/slides/utils/color'
 import { v4 as uuid4 } from 'uuid'
 import { commandHistory } from './historyMeta'
 
@@ -170,6 +171,9 @@ const parseElements = (value, slide) => {
 			// 'circle' was renamed to 'oval' to match the display name
 			el.shapeType = 'oval'
 		}
+		for (const key of ['fillColor', 'strokeColor', 'borderColor', 'shadowColor']) {
+			if (el[key]) el[key] = normalizeColor(el[key])
+		}
 		migrateShadow(el)
 		return el
 	})
@@ -193,6 +197,7 @@ const ensureUniqueClientIds = (slides) => {
 
 const normalizeSlideDoc = (doc) => {
 	for (const slide of doc.slides || []) {
+		slide.background = normalizeColor(slide.background)
 		slide.elements = parseElements(slide.elements, slide)
 		slide.clientId = slide.client_id || uuid4()
 		slide.transitionDuration = slide.transition_duration
@@ -229,6 +234,7 @@ const getPresentationResource = (name) => {
 				const restored = JSON.parse(JSON.stringify(local.content))
 				// local content skips the load pipeline; migrate + dedup it here too
 				for (const slide of restored) {
+					slide.background = normalizeColor(slide.background)
 					slide.elements = parseElements(slide.elements, slide)
 				}
 				ensureUniqueClientIds(restored)

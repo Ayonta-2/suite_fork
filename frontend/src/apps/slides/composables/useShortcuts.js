@@ -18,6 +18,8 @@ import {
 } from '@/apps/slides/stores/slide'
 import {
 	resetFocus,
+	exitTextEditing,
+	focusElementId,
 	addTextElement,
 	pendingShapeType,
 	selectAllElements,
@@ -146,6 +148,18 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		pendingShapeType.value = shapeType
 	}
 
+	// overlays dismiss on Escape only if the event wasn't defaultPrevented,
+	// and matching a shortcut always prevents — so don't match while one is open
+	const hasOpenOverlay = () =>
+		!!document.querySelector('[data-dismissable-layer][data-state="open"]')
+
+	const handleEscape = (e) => {
+		if (isPlainInput(e)) return e.target.blur()
+		if (focusElementId.value) return exitTextEditing()
+		if (e.target?.isContentEditable) return e.target.blur()
+		resetFocus()
+	}
+
 	useShortcut([
 		{
 			key: '?',
@@ -254,21 +268,24 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 'Escape',
 			description: 'Deselect',
 			group: 'Edit',
-			condition: inEditMode,
-			handler: () => resetFocus(),
+			allowInInput: true,
+			condition: () => inEditMode() && !hasOpenOverlay(),
+			handler: handleEscape,
 		},
 		{
 			key: 'Escape',
 			description: 'Exit crop mode',
 			group: 'Edit',
-			condition: () => inCropMode.value,
+			allowInInput: true,
+			condition: () => inCropMode.value && !hasOpenOverlay(),
 			handler: () => cancelCrop(),
 		},
 		{
 			key: 'Enter',
 			description: 'Apply crop',
 			group: 'Edit',
-			condition: () => inCropMode.value,
+			allowInInput: true,
+			condition: () => inCropMode.value && !hasOpenOverlay(),
 			handler: () => commitCrop(),
 		},
 		{

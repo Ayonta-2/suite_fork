@@ -673,13 +673,18 @@ const deleteElements = async (e, ids) => {
 	let commands = []
 
 	idsToDelete.forEach((id) => {
+		// re-entrant: the focusElementId and activeElement watches both blur an empty text element
+		const element = currentSlide.value.elements.find((el) => el.id === id)
+		if (!element) return
 		commands.push(
 			removeElementCommand({
 				slideId: currentSlide.value.clientId,
-				element: currentSlide.value.elements.find((el) => el.id === id),
+				element,
 			}),
 		)
 	})
+
+	if (!commands.length) return
 
 	const elementsCopy = JSON.parse(JSON.stringify(currentSlide.value.elements))
 	const normalizedElements = normalizeZIndices(
@@ -718,6 +723,12 @@ const resetFocus = () => {
 	activeElementIds.value = []
 	focusElementId.value = null
 	pairElementId.value = null
+}
+
+// exit text editing but keep the element selected; the focusElementId
+// watch tears down the editor
+const exitTextEditing = () => {
+	focusElementId.value = null
 }
 
 const getElementPosition = (elementId) => {
@@ -889,7 +900,7 @@ watch(
 
 // focusElementId changing to a shape's id enters text-edit mode for that shape.
 // The activeElement watch won't fire then (same element object), so this handles it.
-// Also handles the inverse: focusElementId cleared while still on the same shape (Escape).
+// Also handles the inverse: focusElementId cleared while the element stays selected (Escape).
 watch(
 	() => focusElementId.value,
 	(id, oldId) => {
@@ -899,9 +910,10 @@ watch(
 		} else if (oldId && activeEditor.value) {
 			if (activeElement.value?.id !== oldId) return
 			const oldElement = findSlideElement(oldId)
-			if (oldElement?.type !== 'shape') return
+			if (!['text', 'shape'].includes(oldElement?.type)) return
 			blurAndSaveContent(oldElement)
-			replaceEditor()
+			if (oldElement.type === 'shape') replaceEditor()
+			else replaceEditor(() => initEditorForElement(findSlideElement(oldId)))
 		}
 	},
 )
@@ -1042,6 +1054,7 @@ export {
 	activeElement,
 	setActiveElements,
 	resetFocus,
+	exitTextEditing,
 	addTextElement,
 	addMediaElement,
 	addShapeElement,
