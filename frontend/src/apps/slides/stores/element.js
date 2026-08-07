@@ -673,6 +673,7 @@ const deleteElements = async (e, ids) => {
 	let commands = []
 
 	idsToDelete.forEach((id) => {
+		// re-entrant: the focusElementId and activeElement watches both blur an empty text element
 		const element = currentSlide.value.elements.find((el) => el.id === id)
 		if (!element) return
 		commands.push(

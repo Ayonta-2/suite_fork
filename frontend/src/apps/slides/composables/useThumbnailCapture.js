@@ -1,4 +1,4 @@
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick, onScopeDispose } from 'vue'
 import { debounce } from 'lodash'
 import { call } from 'frappe-ui'
 
@@ -143,6 +143,8 @@ export const useThumbnailCapture = (thumbnailCapture, hasOngoingInteraction) => 
 	}
 
 	watch(slideKey, onSlideChange, { immediate: true })
+
+	onScopeDispose(reset)
 
 	return {
 		cancel,

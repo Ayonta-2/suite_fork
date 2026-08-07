@@ -148,9 +148,10 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		pendingShapeType.value = shapeType
 	}
 
-	// dialogs dismiss on Escape only if the event wasn't defaultPrevented,
+	// overlays dismiss on Escape only if the event wasn't defaultPrevented,
 	// and matching a shortcut always prevents — so don't match while one is open
-	const hasOpenDialog = () => !!document.querySelector('[role="dialog"]')
+	const hasOpenOverlay = () =>
+		!!document.querySelector('[data-dismissable-layer][data-state="open"]')
 
 	const handleEscape = (e) => {
 		if (isPlainInput(e)) return e.target.blur()
@@ -268,7 +269,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Deselect',
 			group: 'Edit',
 			allowInInput: true,
-			condition: () => inEditMode() && !hasOpenDialog(),
+			condition: () => inEditMode() && !hasOpenOverlay(),
 			handler: handleEscape,
 		},
 		{

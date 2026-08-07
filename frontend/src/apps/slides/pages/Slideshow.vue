@@ -73,6 +73,7 @@ import {
 	inSlideShowMode,
 	showSlideshowEndScreen,
 	requestFullscreen,
+	exitFullscreen,
 	endSlideShow,
 	prefetchNextSlide,
 	changeSlideInSlideshow,
@@ -322,6 +323,12 @@ onActivated(() => {
 onDeactivated(() => {
 	document.removeEventListener('fullscreenchange', handleFullScreenChange)
 	window.removeEventListener('resize', updateWindowSize)
+
+	// leaving by any route other than endSlideShow would strand the editor in fullscreen
+	if (inSlideShowMode.value) {
+		inSlideShowMode.value = false
+		exitFullscreen()
+	}
 })
 
 watch(

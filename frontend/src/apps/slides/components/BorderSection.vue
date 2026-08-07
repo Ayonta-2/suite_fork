@@ -1,5 +1,12 @@
 <template>
 	<Section label="Border" :initialState="hasBorder">
+		<PropertyRow label="Style">
+			<LineStyleSelect
+				:modelValue="displayStyle"
+				:options="borderStyleOptions"
+				@update:modelValue="setBorderStyle"
+			/>
+		</PropertyRow>
 		<PropertyRow label="Color">
 			<ColorPicker
 				:modelValue="activeElement.borderColor || defaultBorderColor"
@@ -32,13 +39,6 @@
 			@change-start="borderRadius.begin"
 			@change-end="borderRadius.commit"
 		/>
-		<PropertyRow label="Style">
-			<LineStyleSelect
-				:modelValue="displayStyle"
-				:options="borderStyleOptions"
-				@update:modelValue="setBorderStyle"
-			/>
-		</PropertyRow>
 	</Section>
 </template>
 

@@ -9,22 +9,22 @@ const inSlideShowMode = ref(false)
 
 // the click's user activation expires before the slideshow route finishes
 // loading, so fullscreen has to be requested here and not on the other side
-const requestFullscreen = async () => {
+let pendingFullscreen = null
+
+const requestFullscreen = () => {
+	if (pendingFullscreen) return pendingFullscreen
+
 	const el = document.documentElement
-	const request =
-		el.requestFullscreen ||
-		el.webkitRequestFullscreen ||
-		el.msRequestFullscreen ||
-		el.mozRequestFullScreen
+	if (!el.requestFullscreen) return Promise.resolve(false)
 
-	if (!request) return false
+	// a second request would consume the already-spent activation and reject
+	pendingFullscreen = el
+		.requestFullscreen()
+		.then(() => true)
+		.catch(() => false)
+		.finally(() => (pendingFullscreen = null))
 
-	try {
-		await request.call(el)
-		return true
-	} catch {
-		return false
-	}
+	return pendingFullscreen
 }
 
 const exitFullscreen = () => {
@@ -156,6 +156,7 @@ export {
 	inSlideShowMode,
 	showSlideshowEndScreen,
 	requestFullscreen,
+	exitFullscreen,
 	startSlideShow,
 	endSlideShow,
 	prefetchNextSlide,
