@@ -14,7 +14,7 @@
   "username",
   "app_password",
   "inbound_section",
-  "skip_schedule_fetch_changes",
+  "disable_push_subscriptions",
   "column_break_nqwp",
   "recovery_section",
   "backup_email",
@@ -155,10 +155,10 @@
   },
   {
    "default": "0",
-   "description": "Skip periodic fetching of email changes (new, updated, or deleted).",
-   "fieldname": "skip_schedule_fetch_changes",
+   "description": "Prevent JMAP push subscriptions from being created or renewed for this user.",
+   "fieldname": "disable_push_subscriptions",
    "fieldtype": "Check",
-   "label": "Skip Schedule Fetch Changes",
+   "label": "Disable Push Subscriptions",
    "search_index": 1
   },
   {
@@ -201,7 +201,7 @@
    "link_fieldname": "user_settings"
   }
  ],
- "modified": "2026-07-21 00:00:00.000000",
+ "modified": "2026-08-07 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "User Settings",

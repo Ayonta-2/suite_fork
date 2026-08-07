@@ -301,7 +301,6 @@ scheduler_events = {
     "hourly_long": [
         # mail
         "suite.mail.doctype.mail_queue.mail_queue.reconcile_scheduled_emails",
-        "suite.mail.doctype.mail_message.mail_message.schedule_fetch_changes",
     ],
     "cron": {
         "*/5 * * * *": [
