@@ -2,7 +2,8 @@ import tinycolor from 'tinycolor2'
 
 // colors saved before hex normalization lack the leading '#' and render as invalid CSS
 export const normalizeColor = (colorString) => {
-	if (!colorString || colorString.startsWith('#')) return colorString
+	if (!colorString || typeof colorString !== 'string' || colorString.startsWith('#'))
+		return colorString
 	const parsed = tinycolor(colorString)
 	return parsed.isValid() ? parsed.toHex8String() : colorString
 }

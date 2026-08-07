@@ -25,6 +25,7 @@ const { saveCurrentState, markDirty, dirty, getPresentationFromLocalDB } = await
 
 describe('saveCurrentState', () => {
 	beforeEach(() => {
+		presentationId.value = 'p1'
 		presentationDoc.value = { modified: 'M1' }
 		slides.value = [{ clientId: 'c1', background: '#ff0000ff', elements: [] }]
 		serverSave = async () => {
@@ -48,6 +49,25 @@ describe('saveCurrentState', () => {
 		expect(dirty.value).toBe(true)
 		expect(local.dirty).toBe(true)
 		expect(local.content[0].background).toBe('#00ff00ff')
+	})
+
+	it('leaves the local copy alone when the editor moved on mid-save', async () => {
+		markDirty()
+
+		serverSave = async () => {
+			// resetEditorState() blanks slides but leaves presentationId and the resource,
+			// and savePresentationDoc then repoints presentationDoc at the old doc
+			slides.value = []
+			markDirty()
+			presentationId.value = 'p2'
+			presentationDoc.value = { modified: 'M2' }
+		}
+
+		await saveCurrentState()
+
+		const local: any = await getPresentationFromLocalDB('p1')
+		expect(local.content).toHaveLength(1)
+		expect(local.baseModified).toBe('M1')
 	})
 
 	it('marks the local copy clean when nothing changed during the save', async () => {
