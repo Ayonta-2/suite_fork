@@ -20,9 +20,10 @@ def get_data_base_path() -> str:
 def get_blob_base_path() -> str:
     """Base directory holding every blob store for the current site.
 
-    Sits directly under the site directory, so it is per-site (multi-tenant safe), never web-served, and excluded from site
-    backups — blobs are a cache refetched on demand, and backing them up would bloat every
-    backup.
+    Sits directly under the site directory rather than ``private``, because Frappe Cloud backs up
+    the entire ``private`` directory and blobs are a cache refetched on demand — including them
+    would bloat every backup. The location is still per-site (multi-tenant safe) and never
+    web-served.
     """
 
     return os.path.join(get_bench_path(), "sites", frappe.local.site, "blob-store")
