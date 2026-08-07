@@ -95,3 +95,4 @@ suite.mail.patches.reset_push_subscription_types_to_all
 # --- suite_core ---
 # Existing, already-set-up sites shouldn't be sent through Suite's onboarding.
 execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frappe.is_setup_complete() else None
+suite.suite_core.patches.move_blob_store_out_of_private

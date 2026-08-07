@@ -8,18 +8,19 @@ from suite.store import get_blob_base_path
 
 
 def execute() -> None:
-    """Relocate the blob store from ``private/files/blob-store`` to the current blob base path.
+    """Relocate the blob store from ``private/blob-store`` to the site directory root.
 
-    The blob store used to live inside ``private/files``, so every files backup tarred the whole
-    blob cache. It now sits at ``get_blob_base_path()`` (the site directory root), which backups
-    do not include. Migrating is a single directory move — the internal layout is unchanged.
+    Frappe Cloud backs up the entire ``private`` directory, so even after moving out of
+    ``private/files`` the blob cache still landed in every site backup. It now sits directly
+    under the site directory (``sites/<site>/blob-store``), which backups do not include.
+    Migrating is a single directory move — the internal layout is unchanged.
 
     Best-effort: blobs are a cache refetched on demand, so if the new directory already exists
     (an interrupted earlier run, or stores already created at the new location) the old directory
     is simply dropped rather than merged.
     """
 
-    old_path = os.path.join(get_bench_path(), "sites", frappe.local.site, "private", "files", "blob-store")
+    old_path = os.path.join(get_bench_path(), "sites", frappe.local.site, "private", "blob-store")
     if not os.path.isdir(old_path) or os.path.islink(old_path):
         return
 
