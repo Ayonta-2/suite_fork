@@ -48,7 +48,9 @@ class MoveBlobStorePatchTests:
         self.module.execute()
 
         self.assertFalse(os.path.exists(self.old_path))
-        self.assertEqual(self.read_blob(self.new_path, "mail", "account%40example.com", "data.mdb"), b"blob-bytes")
+        self.assertEqual(
+            self.read_blob(self.new_path, "mail", "account%40example.com", "data.mdb"), b"blob-bytes"
+        )
 
     def test_drops_old_store_when_destination_exists(self):
         self.write_blob(self.old_path, "mail", "stale.mdb", content=b"stale")
