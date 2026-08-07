@@ -276,14 +276,16 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 'Escape',
 			description: 'Exit crop mode',
 			group: 'Edit',
-			condition: () => inCropMode.value,
+			allowInInput: true,
+			condition: () => inCropMode.value && !hasOpenOverlay(),
 			handler: () => cancelCrop(),
 		},
 		{
 			key: 'Enter',
 			description: 'Apply crop',
 			group: 'Edit',
-			condition: () => inCropMode.value,
+			allowInInput: true,
+			condition: () => inCropMode.value && !hasOpenOverlay(),
 			handler: () => commitCrop(),
 		},
 		{
