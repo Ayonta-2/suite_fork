@@ -1,6 +1,7 @@
 <template>
 	<ContextMenu :options="contextMenuOptions">
-		<div>
+		<!-- the trigger has to cover the slide, or a blank-canvas right-click never reaches it -->
+		<div data-slide-surface class="absolute inset-0">
 			<slot />
 		</div>
 	</ContextMenu>
@@ -14,16 +15,23 @@ import {
 	activeElements,
 	focusElementId,
 	setActiveElements,
+	selectAllElements,
+	resetFocus,
 	duplicateElements,
 	deleteElements,
 	flipElements,
 	isSelectionLocked,
+	hasLockedElements,
+	hasUnlockedElements,
 	toggleLock,
+	lockAll,
+	unlockAll,
 } from '@/apps/slides/stores/element'
 
 import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
 import { inCropMode, startCrop } from '@/apps/slides/stores/imageCrop'
-import { currentSlide } from '@/apps/slides/stores/slide'
+import { currentSlide, slideIndex } from '@/apps/slides/stores/slide'
+import { buildSlideContextOptions } from '@/apps/slides/utils/slideMenu'
 
 import BringToFront from '@/apps/slides/icons/BringToFront.vue'
 import SendToBack from '@/apps/slides/icons/SendToBack.vue'
@@ -39,11 +47,11 @@ import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
 import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
 
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
+const openLayoutDialog = inject('openLayoutDialog')
 
 const contextMenuOptions = ref([])
 
-// the underlying trigger opens the menu unless the event is defaultPrevented, so
-// we open it only for right-clicks that land on an element or the selection box
+// the underlying trigger opens the menu unless the event is defaultPrevented
 const handleContextMenu = (e) => {
 	if (e.target?.isContentEditable) return e.stopPropagation()
 
@@ -56,11 +64,39 @@ const handleContextMenu = (e) => {
 		)
 		if (!element || focusElementId.value == element.id) return e.preventDefault()
 		setActiveElements([element.id])
-	} else if (!e.target?.closest?.('[data-selection-box]')) {
-		return e.preventDefault()
+		contextMenuOptions.value = buildElementContextOptions()
+	} else if (e.target?.closest?.('[data-selection-box]')) {
+		contextMenuOptions.value = buildElementContextOptions()
+	} else {
+		resetFocus()
+		contextMenuOptions.value = buildSlideMenuOptions()
 	}
+}
 
-	contextMenuOptions.value = buildElementContextOptions()
+const buildSlideMenuOptions = () => {
+	const slideOptions = [
+		{ label: 'Select all', icon: 'lucide-box-select', onClick: () => selectAllElements() },
+		{
+			label: 'Lock all',
+			icon: 'lucide-lock',
+			condition: () => hasUnlockedElements.value,
+			onClick: () => lockAll(),
+		},
+		{
+			label: 'Unlock all',
+			icon: 'lucide-lock-open',
+			condition: () => hasLockedElements.value,
+			onClick: () => unlockAll(),
+		},
+	]
+
+	return [
+		{ group: '', options: slideOptions },
+		{
+			group: '',
+			options: buildSlideContextOptions({ index: slideIndex.value, openLayoutDialog }),
+		},
+	]
 }
 
 const buildElementContextOptions = () => {

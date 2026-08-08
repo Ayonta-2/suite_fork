@@ -58,6 +58,10 @@ const hasLockedElements = computed(
 	() => currentSlide.value?.elements.some((el) => el.locked) ?? false,
 )
 
+const hasUnlockedElements = computed(
+	() => currentSlide.value?.elements.some((el) => !el.locked) ?? false,
+)
+
 const activeElement = computed(() => {
 	if (focusElementId.value) {
 		return currentSlide.value?.elements.find((element) => element.id === focusElementId.value)
@@ -98,6 +102,13 @@ const toggleLock = async () => {
 	if (!idsToLock.length) return
 
 	setLocked(idsToLock, locking)
+}
+
+const lockAll = () => {
+	const ids = (currentSlide.value?.elements || []).filter((el) => !el.locked).map((el) => el.id)
+	if (!ids.length) return
+
+	setLocked(ids, true)
 }
 
 const unlockAll = () => {
@@ -1116,7 +1127,9 @@ export {
 	activeElement,
 	isSelectionLocked,
 	hasLockedElements,
+	hasUnlockedElements,
 	toggleLock,
+	lockAll,
 	unlockAll,
 	setActiveElements,
 	resetFocus,
