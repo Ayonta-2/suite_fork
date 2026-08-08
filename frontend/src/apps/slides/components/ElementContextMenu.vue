@@ -64,7 +64,6 @@ const handleContextMenu = (e) => {
 }
 
 const buildElementContextOptions = () => {
-	const canFlip = activeElements.value.every((el) => ['shape', 'image'].includes(el.type))
 	const canCrop = activeElements.value.length == 1 && activeElements.value[0].type == 'image'
 
 	const orderOptions = [
@@ -102,18 +101,9 @@ const buildElementContextOptions = () => {
 			})
 		}
 
-		if (canFlip) {
-			transformOptions.push(
-				{
-					label: 'Flip horizontal',
-					icon: FlipHorizontal,
-					onClick: () => flipElements('horizontal'),
-				},
-				{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
-			)
-		}
-
 		transformOptions.push(
+			{ label: 'Flip horizontal', icon: FlipHorizontal, onClick: () => flipElements('horizontal') },
+			{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
 			{ label: 'Order', icon: BringToFront, submenu: orderOptions },
 			{ label: 'Align', icon: AlignLeft, submenu: alignOptions },
 		)
