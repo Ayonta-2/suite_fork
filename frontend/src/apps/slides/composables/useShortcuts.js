@@ -28,6 +28,7 @@ import {
 	deleteElements,
 	duplicateElements,
 	activeElement,
+	isSelectionLocked,
 } from '@/apps/slides/stores/element'
 import {
 	changeSlideInSlideshow,
@@ -52,6 +53,8 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const hasActiveTextEditor = () => hasElements() && !!activeEditor.value
 
 	const nudge = (key) => {
+		if (isSelectionLocked.value) return
+
 		let dx = 0
 		let dy = 0
 
@@ -94,7 +97,11 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			return
 		}
 
-		if (activeEditor.value?.can()[operation]() && activeElement.value?.type == 'text') {
+		if (
+			activeEditor.value?.can()[operation]() &&
+			activeElement.value?.type == 'text' &&
+			!isSelectionLocked.value
+		) {
 			activeEditor.value.commands[operation]()
 			return
 		}
@@ -109,8 +116,11 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	}
 
 	const handleBold = (e) => {
-		if (inEditMode() && hasActiveTextEditor()) toggleMark('bold')
-		else if (inEditMode() || inReadonly()) toggleNavigationPanel(e)
+		if (inEditMode() && hasActiveTextEditor()) {
+			if (!isSelectionLocked.value) toggleMark('bold')
+			return
+		}
+		if (inEditMode() || inReadonly()) toggleNavigationPanel(e)
 	}
 
 	const handleArrowUp = () => {
@@ -369,7 +379,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Format Text',
 			condition: inEditMode,
 			handler: () => {
-				if (hasActiveTextEditor()) toggleMark('italic')
+				if (hasActiveTextEditor() && !isSelectionLocked.value) toggleMark('italic')
 			},
 		},
 		{
@@ -379,7 +389,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Format Text',
 			condition: inEditMode,
 			handler: () => {
-				if (hasActiveTextEditor()) toggleMark('underline')
+				if (hasActiveTextEditor() && !isSelectionLocked.value) toggleMark('underline')
 			},
 		},
 
