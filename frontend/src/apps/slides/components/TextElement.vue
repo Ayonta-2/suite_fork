@@ -97,7 +97,8 @@ const handleMouseDown = (e) => {
 
 const handleDoubleClick = (e) => {
 	e.stopPropagation()
-	if (inSlideShowMode.value || isEditable.value || inReadonlyMode.value) return
+	if (inSlideShowMode.value || isEditable.value || inReadonlyMode.value || element.value.locked)
+		return
 
 	activeElementIds.value = [element.value.id]
 	focusElementId.value = element.value.id

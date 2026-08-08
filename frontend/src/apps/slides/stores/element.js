@@ -30,6 +30,8 @@ import {
 	removeElementCommand,
 } from '@/apps/slides/stores/commands'
 
+const findSlideElement = (id) => currentSlide.value?.elements.find((el) => el.id === id)
+
 const activeElementIds = ref([])
 const focusElementId = ref(null)
 const pairElementId = ref(null)
@@ -48,6 +50,14 @@ const activeElements = computed(() => {
 	return elements
 })
 
+const isSelectionLocked = computed(
+	() => activeElements.value.length > 0 && activeElements.value.every((el) => el.locked),
+)
+
+const hasLockedElements = computed(
+	() => currentSlide.value?.elements.some((el) => el.locked) ?? false,
+)
+
 const activeElement = computed(() => {
 	if (focusElementId.value) {
 		return currentSlide.value?.elements.find((element) => element.id === focusElementId.value)
@@ -60,6 +70,47 @@ const setActiveElements = (ids) => {
 	if (ids.length == 1 && activeElementIds.value.includes(ids[0])) return
 	activeElementIds.value = ids
 	focusElementId.value = null
+}
+
+const lockRejectedAt = ref(0)
+
+const pulseLockRejected = () => {
+	lockRejectedAt.value = Date.now()
+}
+
+const setLocked = (elementIds, locked) => {
+	commandHistory.execute(
+		editElementCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds,
+			property: 'locked',
+			oldValue: locked ? undefined : true,
+			newValue: locked ? true : undefined,
+		}),
+	)
+}
+
+const toggleLock = async () => {
+	const ids = [...activeElementIds.value]
+	if (!ids.length) return
+
+	const locking = !isSelectionLocked.value
+	if (locking && focusElementId.value) {
+		exitTextEditing()
+		await nextTick()
+	}
+
+	const idsToLock = ids.filter((id) => findSlideElement(id))
+	if (!idsToLock.length) return
+
+	setLocked(idsToLock, locking)
+}
+
+const unlockAll = () => {
+	const ids = (currentSlide.value?.elements || []).filter((el) => el.locked).map((el) => el.id)
+	if (!ids.length) return
+
+	setLocked(ids, false)
 }
 
 const getElementContent = (element) => {
@@ -668,7 +719,8 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 }
 
 const deleteElements = async (e, ids) => {
-	const idsToDelete = ids || activeElementIds.value
+	const idsToDelete = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
+	if (!idsToDelete.length) return pulseLockRejected()
 	await resetFocus()
 	let commands = []
 
@@ -713,8 +765,10 @@ const deleteElements = async (e, ids) => {
 }
 
 const selectAllElements = (e) => {
-	e.preventDefault()
-	activeElementIds.value = currentSlide.value.elements.map((element) => element.id)
+	e?.preventDefault()
+	const unlocked = currentSlide.value.elements.filter((el) => !el.locked)
+	const target = unlocked.length ? unlocked : currentSlide.value.elements
+	activeElementIds.value = target.map((element) => element.id)
 }
 
 const resetFocus = () => {
@@ -866,13 +920,16 @@ const setEditableState = () => {
 const initEditorForElement = (element) => {
 	if (element?.type == 'text') {
 		const isEditable = focusElementId.value == element.id
-		initTextEditor(element.id, element.content, isEditable, element.editorMetadata?.lineHeight)
+		initTextEditor(
+			element.id,
+			element.content,
+			isEditable,
+			element.locked ? null : element.editorMetadata?.lineHeight,
+		)
 
 		if (isEditable) setEditableState()
 	}
 }
-
-const findSlideElement = (id) => currentSlide.value?.elements.find((el) => el.id === id)
 
 const replaceEditor = (fn) =>
 	nextTick(() => {
@@ -1003,6 +1060,8 @@ const updatePosition = (axis, value) => {
 }
 
 const flipElements = (direction) => {
+	if (isSelectionLocked.value) return
+
 	const property = direction == 'horizontal' ? 'invertX' : 'invertY'
 
 	const commands = activeElements.value.map((element) => {
@@ -1052,6 +1111,12 @@ export {
 	dragOccurred,
 	activeElements,
 	activeElement,
+	isSelectionLocked,
+	hasLockedElements,
+	lockRejectedAt,
+	pulseLockRejected,
+	toggleLock,
+	unlockAll,
 	setActiveElements,
 	resetFocus,
 	exitTextEditing,
@@ -1072,6 +1137,7 @@ export {
 	updatePosition,
 	flipElements,
 	findElement,
+	findSlideElement,
 	cropSelectionToFitContent,
 	getElementCenter,
 }

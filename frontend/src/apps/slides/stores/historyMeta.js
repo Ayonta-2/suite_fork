@@ -2,6 +2,7 @@ import { ref, nextTick } from 'vue'
 import {
 	activeElementIds,
 	cropSelectionToFitContent,
+	findSlideElement,
 	focusElementId,
 	setActiveElements,
 } from '@/apps/slides/stores/element'
@@ -54,7 +55,10 @@ const jumpToSlideByIndex = async (index, focus) => {
 const jumpToElementsByIds = (jumpToIds, focusOnId) => {
 	if (!jumpToIds || jumpToIds.length === 0) return
 
-	const elementExists = jumpToIds.every((id) =>
+	const unlocked = jumpToIds.filter((id) => !findSlideElement(id)?.locked)
+	const targetIds = unlocked.length ? unlocked : jumpToIds
+
+	const elementExists = targetIds.every((id) =>
 		currentSlide.value?.elements?.some((el) => el.id === id),
 	)
 
@@ -63,15 +67,15 @@ const jumpToElementsByIds = (jumpToIds, focusOnId) => {
 		return
 	}
 
-	if (JSON.stringify(activeElementIds.value) !== JSON.stringify(jumpToIds)) {
+	if (JSON.stringify(activeElementIds.value) !== JSON.stringify(targetIds)) {
 		nextTick(() => {
-			setActiveElements(jumpToIds)
-			if (focusOnId) {
+			setActiveElements(targetIds)
+			if (focusOnId && !findSlideElement(focusOnId)?.locked) {
 				focusElementId.value = focusOnId
 			}
 		})
 	} else {
-		cropSelectionToFitContent(jumpToIds)
+		cropSelectionToFitContent(targetIds)
 	}
 }
 

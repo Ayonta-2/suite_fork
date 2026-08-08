@@ -224,7 +224,7 @@ const triggerSelection = (e, id) => {
 				activeElementIds.value = [...activeElementIds.value, id]
 			} else activeElementIds.value = [id]
 			focusElementId.value = null
-		} else if (activeElement.value?.type == 'text') {
+		} else if (activeElement.value?.type == 'text' && !activeElement.value.locked) {
 			focusElementId.value = id
 
 			setEditableState()
