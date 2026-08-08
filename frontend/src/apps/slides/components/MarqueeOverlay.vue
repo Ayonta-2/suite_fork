@@ -123,6 +123,7 @@ const getElementsWithinMarquee = (rect) => {
 	}
 
 	return currentSlide.value.elements
+		.filter((element) => !element.locked)
 		.filter((element) => isElementWithinMarquee(element, marqueeBounds))
 		.map((element) => element.id)
 }

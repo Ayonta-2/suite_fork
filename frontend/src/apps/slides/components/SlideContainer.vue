@@ -248,6 +248,8 @@ const handleMouseUp = (e, id) => {
 }
 
 const triggerDrag = (e, id) => {
+	if (id ? findSlideElement(id)?.locked : isSelectionLocked.value) return
+
 	const notEditable = id && focusElementId.value !== id
 	const isMultiSelect = activeElementIds.value.length > 1
 	const isNotInSelection = id && !activeElementIds.value.includes(id)
@@ -305,6 +307,8 @@ const watchForDragIntent = (downEvent, id) => {
 }
 
 const duplicateAndDrag = (e, id) => {
+	if (isSelectionLocked.value) return
+
 	duplicateElements(e, activeElements.value, slideIndex.value, false).then(() => {
 		watchForDragIntent(e, id)
 	})
