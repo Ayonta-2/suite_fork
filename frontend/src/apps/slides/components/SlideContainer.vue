@@ -92,7 +92,6 @@ import {
 	cropSelectionToFitContent,
 	findSlideElement,
 	isSelectionLocked,
-	pulseLockRejected,
 } from '@/apps/slides/stores/element'
 
 import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
@@ -233,7 +232,7 @@ const triggerSelection = (e, id) => {
 
 	if (isCmdOrCtrl(e) || e.shiftKey) {
 		if (activeElementIds.value.length && !!findSlideElement(id)?.locked !== isSelectionLocked.value)
-			return pulseLockRejected()
+			return
 		activeElementIds.value = [...activeElementIds.value, id]
 	} else {
 		activeElementIds.value = [id]

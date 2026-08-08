@@ -3,6 +3,8 @@ const sectionTitleClasses = 'text-base font-medium text-gray-800'
 const fieldLabelClasses = 'text-sm text-gray-600'
 
 const selectionColor = '#3B82F6'
+// selectionColor at 50% over white
+const lockColor = '#9DC1FB'
 const guideColor = '#C026D3'
 
 const MAX_BORDER_RADIUS = 50
@@ -37,6 +39,7 @@ export {
 	fieldLabelClasses,
 	allowedImageFileTypes,
 	selectionColor,
+	lockColor,
 	guideColor,
 	MAX_BORDER_RADIUS,
 	defaultBorderColor,

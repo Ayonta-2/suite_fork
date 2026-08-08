@@ -72,12 +72,6 @@ const setActiveElements = (ids) => {
 	focusElementId.value = null
 }
 
-const lockRejectedAt = ref(0)
-
-const pulseLockRejected = () => {
-	lockRejectedAt.value = Date.now()
-}
-
 const setLocked = (elementIds, locked) => {
 	commandHistory.execute(
 		editElementCommand({
@@ -720,7 +714,7 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 
 const deleteElements = async (e, ids) => {
 	const idsToDelete = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
-	if (!idsToDelete.length) return pulseLockRejected()
+	if (!idsToDelete.length) return
 	await resetFocus()
 	let commands = []
 
@@ -1122,8 +1116,6 @@ export {
 	activeElement,
 	isSelectionLocked,
 	hasLockedElements,
-	lockRejectedAt,
-	pulseLockRejected,
 	toggleLock,
 	unlockAll,
 	setActiveElements,
