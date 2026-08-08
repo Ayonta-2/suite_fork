@@ -733,7 +733,7 @@
   {
    "default": "100",
    "depends_on": "expand_mailing_list_participants",
-   "description": "Largest number of participants an event may carry once its mailing lists have been expanded. Participants beyond this are left out and reported.",
+   "description": "Largest number of participants an event may carry once its mailing lists have been expanded. Only members added by expansion are left out once this is reached, and they are reported; participants invited by name are always kept.",
    "fieldname": "max_mailing_list_participants",
    "fieldtype": "Int",
    "label": "Max Mailing List Participants"

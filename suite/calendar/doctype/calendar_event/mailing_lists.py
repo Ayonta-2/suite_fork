@@ -34,6 +34,14 @@ def expand_mailing_list_participants(participants: list[dict] | None) -> list[di
     Participants that are not mailing lists are passed through untouched, and the original order is
     preserved. Returns the input unchanged when expansion is disabled or the directory cannot be
     reached — a calendar event is never worth failing over this.
+
+    The size cap bounds the event's total participants, but only members added by expansion are ever
+    dropped to honour it. A participant the organizer named themselves is always kept, even when
+    that pushes the total past the cap, because dropping one removes them from the stored
+    event, and on the next update the invitation code reads that as a withdrawn attendee and mails
+    them a cancellation. For the same reason an explicit participant always wins over the same
+    address arriving through a list, no matter which order they appear in: the explicit entry
+    carries the uid their RSVP is recorded against, and a member entry would reset it.
     """
 
     if not participants or not _expansion_enabled():
@@ -47,29 +55,34 @@ def expand_mailing_list_participants(participants: list[dict] | None) -> list[di
         return participants
 
     limit = _max_participants()
-    expanded: list[dict] = []
-    seen: set[str] = set()
-    dropped: list[str] = []
+    slots: list[tuple[str, dict, bool]] = []
+    explicit: set[str] = set()
 
     for participant in participants:
         email = _email_of(participant)
         if email in index:
-            entries = [
-                (member, _member_participant(participant, member)) for member in _members(email, index)
-            ]
+            slots.extend(
+                (member, _member_participant(participant, member), True) for member in _members(email, index)
+            )
         else:
-            entries = [(email, participant)]
+            slots.append((email, participant, False))
+            if email:
+                explicit.add(email)
 
-        for address, entry in entries:
-            if address and address in seen:
-                continue
-            if len(expanded) >= limit:
-                dropped.append(address)
-                continue
+    expanded: list[dict] = []
+    seen: set[str] = set()
+    dropped: list[str] = []
 
-            if address:
-                seen.add(address)
-            expanded.append(entry)
+    for address, entry, is_member in slots:
+        if address and (address in seen or (is_member and address in explicit)):
+            continue
+        if is_member and len(expanded) >= limit:
+            dropped.append(address)
+            continue
+
+        if address:
+            seen.add(address)
+        expanded.append(entry)
 
     if dropped:
         _report_truncation(limit, dropped)
@@ -152,9 +165,9 @@ def _mailing_list_index() -> dict[str, list[str]]:
 
 
 def _report_truncation(limit: int, dropped: list[str]) -> None:
-    """Surfaces the participants a size cap left out, so the cap is never silent."""
+    """Surfaces the members a size cap left out, so the cap is never silent."""
 
-    message = _("Only the first {0} participants were invited; {1} more were left out.").format(
+    message = _("Mailing list expansion stopped at {0} participants; {1} members were left out.").format(
         limit, len(dropped)
     )
     frappe.msgprint(message, alert=True)

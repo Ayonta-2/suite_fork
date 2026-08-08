@@ -132,6 +132,37 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
         self.assertEqual(report.call_args.args[0], 2)
         self.assertEqual(report.call_args.args[1], ["carol@example.com"])
 
+    def test_the_cap_never_drops_an_explicitly_invited_participant(self):
+        # The list fills the cap on its own, so a naive total cap would truncate the attendee the
+        # organizer named after it — and on the next update _plan() reads a vanished participant as
+        # withdrawn and mails them a cancellation.
+        with patch(f"{MODULE}._report_truncation"):
+            expanded = self.expand(
+                [participant("everyone@example.com"), participant("boss@example.org")], limit=2
+            )
+
+        self.assertEqual(
+            [p["email"] for p in expanded],
+            ["alice@example.com", "bob@example.com", "boss@example.org"],
+        )
+
+    def test_explicit_participants_consume_the_cap_before_members(self):
+        with patch(f"{MODULE}._report_truncation") as report:
+            expanded = self.expand(
+                [participant("boss@example.org"), participant("everyone@example.com")], limit=2
+            )
+
+        # The cap bounds the total, so boss takes one of the two slots and expansion adds one member.
+        self.assertEqual([p["email"] for p in expanded], ["boss@example.org", "alice@example.com"])
+        self.assertEqual(report.call_args.args[1], ["bob@example.com", "carol@example.com"])
+
+    def test_an_explicit_participant_wins_even_when_the_list_comes_first(self):
+        expanded = self.expand([participant("team@example.com"), participant("alice@example.com")])
+
+        self.assertEqual([p["email"] for p in expanded], ["bob@example.com", "alice@example.com"])
+        # The explicit uid survives; a member entry would reset the RSVP recorded against it.
+        self.assertEqual(expanded[-1]["uid"], "uid-alice@example.com")
+
     def test_expansion_can_be_turned_off(self):
         participants = [participant("team@example.com")]
         with (
