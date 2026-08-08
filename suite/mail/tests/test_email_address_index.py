@@ -13,26 +13,26 @@ class SanitizeName(unittest.TestCase):
     """``_sanitize_name`` — strip wrapping quote pairs, leave everything else alone."""
 
     def test_single_quote_pair_is_stripped(self):
-        self.assertEqual(_sanitize_name("'Ayush Chaudhari'"), "Ayush Chaudhari")
+        self.assertEqual(_sanitize_name("'Jane Doe'"), "Jane Doe")
 
     def test_double_quote_pair_is_stripped(self):
-        self.assertEqual(_sanitize_name('"Ayush Chaudhari"'), "Ayush Chaudhari")
+        self.assertEqual(_sanitize_name('"Jane Doe"'), "Jane Doe")
 
     def test_backtick_pair_is_stripped(self):
-        self.assertEqual(_sanitize_name("`Ayush Chaudhari`"), "Ayush Chaudhari")
+        self.assertEqual(_sanitize_name("`Jane Doe`"), "Jane Doe")
 
     def test_nested_quote_pairs_are_stripped(self):
-        self.assertEqual(_sanitize_name("\"'Ayush Chaudhari'\""), "Ayush Chaudhari")
+        self.assertEqual(_sanitize_name("\"'Jane Doe'\""), "Jane Doe")
 
     def test_whitespace_between_nested_pairs_is_stripped(self):
-        self.assertEqual(_sanitize_name(" ' \"Ayush\" ' "), "Ayush")
+        self.assertEqual(_sanitize_name(" ' \"Jane\" ' "), "Jane")
 
     def test_unbalanced_quote_is_kept(self):
-        self.assertEqual(_sanitize_name("'Ayush"), "'Ayush")
-        self.assertEqual(_sanitize_name("Ayush'"), "Ayush'")
+        self.assertEqual(_sanitize_name("'Jane"), "'Jane")
+        self.assertEqual(_sanitize_name("Jane'"), "Jane'")
 
     def test_mismatched_quotes_are_kept(self):
-        self.assertEqual(_sanitize_name("'Ayush\""), "'Ayush\"")
+        self.assertEqual(_sanitize_name("'Jane\""), "'Jane\"")
 
     def test_interior_apostrophe_is_kept(self):
         self.assertEqual(_sanitize_name("O'Brien"), "O'Brien")
@@ -55,21 +55,21 @@ class ToDocument(unittest.TestCase):
         return EmailAddressIndex.to_document(mock.Mock(spec=EmailAddressIndex), address)
 
     def test_name_is_sanitized_everywhere(self):
-        document = self.to_document({"name": "'Ayush Chaudhari'", "email": "Ayush@Frappe.io"})
+        document = self.to_document({"name": "'Jane Doe'", "email": "Jane@Example.com"})
         self.assertEqual(
             document,
             {
-                "id": "ayush@frappe.io",
-                "email": "Ayush@Frappe.io",
-                "name": "Ayush Chaudhari",
-                "text": "Ayush Chaudhari Ayush@Frappe.io",
+                "id": "jane@example.com",
+                "email": "Jane@Example.com",
+                "name": "Jane Doe",
+                "text": "Jane Doe Jane@Example.com",
             },
         )
 
     def test_missing_name_leaves_email_only_text(self):
-        document = self.to_document({"email": "ayush@frappe.io"})
+        document = self.to_document({"email": "jane@example.com"})
         self.assertIsNone(document["name"])
-        self.assertEqual(document["text"], "ayush@frappe.io")
+        self.assertEqual(document["text"], "jane@example.com")
 
 
 class IndexAddresses(unittest.TestCase):
@@ -83,29 +83,29 @@ class IndexAddresses(unittest.TestCase):
         return index.index_documents.call_args[0][0]
 
     def test_valid_email_is_indexed(self):
-        address = {"name": "Ayush", "email": "ayush@frappe.io"}
+        address = {"name": "Jane", "email": "jane@example.com"}
         self.assertEqual(self.index_addresses([address]), [address])
 
     def test_missing_email_is_skipped(self):
-        self.assertEqual(self.index_addresses([{"name": "Ayush"}, {"name": "No Email", "email": ""}]), [])
+        self.assertEqual(self.index_addresses([{"name": "Jane"}, {"name": "No Email", "email": ""}]), [])
 
     def test_malformed_emails_are_skipped(self):
         malformed = [
             {"email": "not-an-email"},
-            {"email": "Ayush <ayush@frappe.io>"},
-            {"email": "ayush@frappe"},  # no TLD
-            {"email": "ayush @frappe.io"},
-            {"email": "@frappe.io"},
+            {"email": "Jane <jane@example.com>"},
+            {"email": "jane@example"},  # no TLD
+            {"email": "jane @example.com"},
+            {"email": "@example.com"},
         ]
         self.assertEqual(self.index_addresses(malformed), [])
 
     def test_valid_survives_malformed_neighbours(self):
-        valid = {"name": "Ayush", "email": "ayush@frappe.io"}
+        valid = {"name": "Jane", "email": "jane@example.com"}
         self.assertEqual(self.index_addresses([{"email": "not-an-email"}, valid]), [valid])
 
     def test_batch_dedupes_case_insensitively(self):
-        first = {"name": "Ayush", "email": "ayush@frappe.io"}
-        second = {"name": "Ayush Chaudhari", "email": "Ayush@Frappe.io"}
+        first = {"name": "Jane", "email": "jane@example.com"}
+        second = {"name": "Jane Doe", "email": "Jane@Example.com"}
         self.assertEqual(self.index_addresses([first, second]), [second])
 
 

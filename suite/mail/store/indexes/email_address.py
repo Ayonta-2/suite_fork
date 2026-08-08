@@ -6,7 +6,7 @@ from suite.store.search_store import FieldSpec, SearchStore
 
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
-# Quote characters some clients wrap display names in, e.g. "'Ayush Chaudhari'".
+# Quote characters some clients wrap display names in, e.g. "'Jane Doe'".
 _WRAPPING_QUOTES = "'\"`"
 
 
@@ -69,8 +69,8 @@ class EmailAddressIndex(SearchStore):
         """Return up to `limit` {name, email} addresses matching `query`, most relevant first.
 
         The query's tokens must appear as a consecutive, in-order phrase in the address's name or
-        email, with the last token matched as a prefix. So "saga" matches "sagar", and "sagar.s"
-        matches "sagar.s@…" / "Sagar Sharma" but not "sagar@…" or "sagar.v@…". Documents are unique
+        email, with the last token matched as a prefix. So "jan" matches "jane", and "jane.d"
+        matches "jane.d@…" / "Jane Doe" but not "jane@…" or "jane.r@…". Documents are unique
         per address, so the hits need no further deduping.
         """
 

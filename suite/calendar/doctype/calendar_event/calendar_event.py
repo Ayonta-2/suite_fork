@@ -20,6 +20,7 @@ from suite.calendar.doctype.calendar_event.invitations import (
     acting_as_organizer,
     custom_event_invites_enabled,
 )
+from suite.calendar.doctype.calendar_event.mailing_lists import expand_mailing_list_participants
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_event_service, get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
@@ -369,6 +370,7 @@ def add_calendar_event(
 
     uid = uuid7().hex
     creation_id = str(uuid7())
+    participants = expand_mailing_list_participants(participants)
     event = {
         "creation_id": creation_id,
         "uid": uid,
@@ -481,6 +483,7 @@ def update_calendar_event(
 ) -> None:
     """Updates a calendar event for the given account and event ID."""
 
+    participants = expand_mailing_list_participants(participants)
     event = {
         "id": id,
         "uid": uid,
@@ -539,6 +542,9 @@ def update_calendar_event_instance(
     send_scheduling_messages: bool = False,
 ) -> None:
     """Updates a specific instance of a recurring calendar event based on its master ID and recurrence ID."""
+
+    if "participants" in patch:
+        patch = patch | {"participants": expand_mailing_list_participants(patch["participants"])}
 
     use_custom_invites = False
     next_sequence = None
