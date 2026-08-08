@@ -35,7 +35,7 @@ const rotateHandleStyles = computed(() => {
 })
 
 const stemStyles = computed(() => {
-	const width = 1.5 / slideBounds.scale
+	const width = 1 / slideBounds.scale
 	const gap = STEM_GAP / slideBounds.scale
 	return {
 		position: 'absolute',

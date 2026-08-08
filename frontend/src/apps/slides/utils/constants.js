@@ -17,7 +17,7 @@ const getHandleBaseStyles = (scale) => ({
 	position: 'absolute',
 	zIndex: 9999,
 	backgroundColor: '#ffffff',
-	border: `${1.5 / scale}px solid ${selectionColor}`,
+	border: `${1 / scale}px solid ${selectionColor}`,
 	boxShadow: `0 ${1 / scale}px ${2 / scale}px rgba(0, 0, 0, 0.16)`,
 	boxSizing: 'border-box',
 })

@@ -39,7 +39,8 @@ const showControls = computed(() => {
 const outline = computed(() => {
 	if (activeElement.value?.shapeType == 'line') return 'none'
 
-	if (activeElementIds.value.length == 1) return `${selectionColor} solid ${2 / slideBounds.scale}px`
+	if (activeElementIds.value.length == 1)
+		return `${selectionColor} solid ${1.5 / slideBounds.scale}px`
 	return 'none'
 })
 
@@ -67,6 +68,8 @@ const boxStyles = computed(() => {
 		position: 'absolute',
 		backgroundColor: activeElementIds.value.length == 1 ? '' : `${selectionColor}25`,
 		outline: outline.value,
+		// straddle the edge instead of sitting outside it, so snap guides line up
+		outlineOffset: `-${0.75 / slideBounds.scale}px`,
 		width: `${selectionBounds.width}px`,
 		height: `${selectionBounds.height}px`,
 		left: `${selectionBounds.left - offsetLeft}px`,
