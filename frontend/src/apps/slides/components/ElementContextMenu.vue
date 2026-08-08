@@ -17,6 +17,8 @@ import {
 	duplicateElements,
 	deleteElements,
 	flipElements,
+	isSelectionLocked,
+	toggleLock,
 } from '@/apps/slides/stores/element'
 
 import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
@@ -63,6 +65,7 @@ const handleContextMenu = (e) => {
 
 const buildElementContextOptions = () => {
 	const canFlip = activeElements.value.every((el) => ['shape', 'image'].includes(el.type))
+	const canCrop = activeElements.value.length == 1 && activeElements.value[0].type == 'image'
 
 	const orderOptions = [
 		{ label: 'Bring to front', icon: BringToFront, onClick: () => arrangeElements('front') },
@@ -80,18 +83,6 @@ const buildElementContextOptions = () => {
 		{ label: 'Bottom', icon: AlignBottom, onClick: () => alignElement('bottom') },
 	]
 
-	const arrangeOptions = [
-		{ label: 'Order', icon: BringToFront, submenu: orderOptions },
-		{ label: 'Align', icon: AlignLeft, submenu: alignOptions },
-	]
-
-	if (canFlip) {
-		arrangeOptions.push(
-			{ label: 'Flip horizontal', icon: FlipHorizontal, onClick: () => flipElements('horizontal') },
-			{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
-		)
-	}
-
 	const clipboardOptions = [
 		{ label: 'Copy', icon: 'lucide-copy', onClick: () => document.execCommand('copy') },
 		{
@@ -101,23 +92,52 @@ const buildElementContextOptions = () => {
 		},
 	]
 
-	const canCrop = activeElements.value.length == 1 && activeElements.value[0].type == 'image'
-	if (canCrop) {
-		clipboardOptions.push({
-			label: 'Crop',
-			icon: 'lucide-crop',
-			onClick: () => startCrop(activeElements.value[0]),
+	const transformOptions = []
+	if (!isSelectionLocked.value) {
+		if (canCrop) {
+			transformOptions.push({
+				label: 'Crop',
+				icon: 'lucide-crop',
+				onClick: () => startCrop(activeElements.value[0]),
+			})
+		}
+
+		if (canFlip) {
+			transformOptions.push(
+				{
+					label: 'Flip horizontal',
+					icon: FlipHorizontal,
+					onClick: () => flipElements('horizontal'),
+				},
+				{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
+			)
+		}
+
+		transformOptions.push(
+			{ label: 'Order', icon: BringToFront, submenu: orderOptions },
+			{ label: 'Align', icon: AlignLeft, submenu: alignOptions },
+		)
+	}
+
+	const objectOptions = [
+		isSelectionLocked.value
+			? { label: 'Unlock', icon: 'lucide-lock-open', onClick: () => toggleLock() }
+			: { label: 'Lock', icon: 'lucide-lock', onClick: () => toggleLock() },
+	]
+
+	if (!isSelectionLocked.value) {
+		objectOptions.push({
+			label: 'Delete',
+			icon: 'lucide-trash-2',
+			theme: 'red',
+			onClick: () => deleteElements(),
 		})
 	}
 
-	const deleteOptions = [
-		{ label: 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => deleteElements() },
-	]
-
 	return [
 		{ group: '', options: clipboardOptions },
-		{ group: '', options: arrangeOptions },
-		{ group: '', options: deleteOptions },
+		{ group: '', options: transformOptions },
+		{ group: '', options: objectOptions },
 	]
 }
 

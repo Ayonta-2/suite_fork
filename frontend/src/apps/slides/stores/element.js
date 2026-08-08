@@ -975,6 +975,15 @@ watch(
 	},
 )
 
+// undo and redo can set locked underneath an element that is already being
+// edited, which no call-site guard covers
+watch(
+	() => !!focusElementId.value && !!findSlideElement(focusElementId.value)?.locked,
+	(locked) => {
+		if (locked) nextTick(exitTextEditing)
+	},
+)
+
 const normalizeZIndices = (elements) => {
 	const els = cloneObj(elements).sort((a, b) => {
 		const zIndexA = a.zIndex || 1

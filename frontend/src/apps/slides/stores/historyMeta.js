@@ -6,7 +6,7 @@ import {
 	focusElementId,
 	setActiveElements,
 } from '@/apps/slides/stores/element'
-import { changeEditorSlide, currentSlide, slideIndex, slides } from '@/apps/slides/stores/slide'
+import { changeEditorSlide, slideIndex, slides } from '@/apps/slides/stores/slide'
 
 let commandHistory = null
 
@@ -53,30 +53,33 @@ const jumpToSlideByIndex = async (index, focus) => {
 }
 
 const jumpToElementsByIds = (jumpToIds, focusOnId) => {
-	if (!jumpToIds || jumpToIds.length === 0) return
+	if (!jumpToIds?.length) return
 
 	const unlocked = jumpToIds.filter((id) => !findSlideElement(id)?.locked)
 	const targetIds = unlocked.length ? unlocked : jumpToIds
 
-	const elementExists = targetIds.every((id) =>
-		currentSlide.value?.elements?.some((el) => el.id === id),
-	)
-
-	if (!elementExists) {
+	if (!targetIds.every((id) => findSlideElement(id))) {
 		activeElementIds.value = []
 		return
 	}
 
-	if (JSON.stringify(activeElementIds.value) !== JSON.stringify(targetIds)) {
-		nextTick(() => {
-			setActiveElements(targetIds)
-			if (focusOnId && !findSlideElement(focusOnId)?.locked) {
-				focusElementId.value = focusOnId
-			}
-		})
-	} else {
+	if (JSON.stringify(activeElementIds.value) === JSON.stringify(targetIds)) {
 		cropSelectionToFitContent(targetIds)
+		return
 	}
+
+	nextTick(() => {
+		// setActiveElements early-returns when the one surviving id is already
+		// selected, which would leave the locked ones in the selection
+		if (targetIds.length < jumpToIds.length) {
+			activeElementIds.value = targetIds
+			focusElementId.value = null
+		} else {
+			setActiveElements(targetIds)
+		}
+
+		if (focusOnId && !findSlideElement(focusOnId)?.locked) focusElementId.value = focusOnId
+	})
 }
 
 const getSlideIndexForJump = (action, command, operation) => {

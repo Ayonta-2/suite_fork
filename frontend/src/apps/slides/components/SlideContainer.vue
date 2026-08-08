@@ -90,6 +90,9 @@ import {
 	duplicateElements,
 	activeElements,
 	cropSelectionToFitContent,
+	findSlideElement,
+	isSelectionLocked,
+	pulseLockRejected,
 } from '@/apps/slides/stores/element'
 
 import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
@@ -218,18 +221,25 @@ const hideOverlay = () => {
 }
 
 const triggerSelection = (e, id) => {
-	if (id) {
-		if (!activeElementIds.value.includes(id)) {
-			if (isCmdOrCtrl(e) || e.shiftKey) {
-				activeElementIds.value = [...activeElementIds.value, id]
-			} else activeElementIds.value = [id]
-			focusElementId.value = null
-		} else if (activeElement.value?.type == 'text' && !activeElement.value.locked) {
-			focusElementId.value = id
+	if (!id) return
 
+	if (activeElementIds.value.includes(id)) {
+		if (activeElement.value?.type == 'text' && !activeElement.value.locked) {
+			focusElementId.value = id
 			setEditableState()
 		}
+		return
 	}
+
+	if (isCmdOrCtrl(e) || e.shiftKey) {
+		if (activeElementIds.value.length && !!findSlideElement(id)?.locked !== isSelectionLocked.value)
+			return pulseLockRejected()
+		activeElementIds.value = [...activeElementIds.value, id]
+	} else {
+		activeElementIds.value = [id]
+	}
+
+	focusElementId.value = null
 }
 
 const handleMouseUp = (e, id) => {
