@@ -373,8 +373,11 @@ const updatePresentationTheme = async (theme) => {
 		name: presentationId.value,
 		fieldname: 'theme',
 		value: theme,
-	}).then(() => {
+	}).then((doc) => {
 		presentationDoc.value.theme = theme
+		// autosave stamps this onto the local copy, so a stale value would make the
+		// next load discard edits that had not synced yet
+		presentationDoc.value.modified = doc.modified
 	})
 }
 

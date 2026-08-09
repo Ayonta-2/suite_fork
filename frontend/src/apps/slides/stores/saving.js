@@ -113,9 +113,14 @@ const syncSnapshotToServer = async (snapshot, id, generation) => {
 
 	await savePresentationDoc(snapshot.content)
 
-	// slides and presentationDoc now belong to another presentation,
-	// so there's nothing safe to write back to the local copy
-	if (presentationId.value !== id) return
+	// presentationDoc moved on, so baseModified can't be refreshed - but the server has this
+	// snapshot, and a clean record is never read back for baseModified anyway
+	if (presentationId.value !== id) {
+		if (dirtyGeneration === generation) {
+			await savePresentationToLocalDB({ ...snapshot, dirty: false, updatedAt: Date.now() })
+		}
+		return
+	}
 
 	// an edit made mid-save isn't in the snapshot the server just took, so the
 	// local copy has to keep it and stay dirty; baseModified tracks the server version

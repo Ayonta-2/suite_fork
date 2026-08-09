@@ -83,6 +83,8 @@ const editElementCommand = ({
 }
 
 const addSlide = (state, index, slide) => {
+	// autosave may already have deleted the row, so the next save has to insert it
+	slide.name = ''
 	state.splice(index, 0, slide)
 	state.forEach((slide, idx) => {
 		slide.idx = idx + 1

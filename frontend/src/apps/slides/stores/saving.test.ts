@@ -70,6 +70,20 @@ describe('saveCurrentState', () => {
 		expect(local.baseModified).toBe('M1')
 	})
 
+	it('still marks the local copy clean when the editor moved on without editing', async () => {
+		markDirty()
+
+		serverSave = async () => {
+			presentationId.value = 'p2'
+			presentationDoc.value = { modified: 'M2' }
+		}
+
+		await saveCurrentState()
+
+		const local: any = await getPresentationFromLocalDB('p1')
+		expect(local.dirty).toBe(false)
+	})
+
 	it('marks the local copy clean when nothing changed during the save', async () => {
 		markDirty()
 
