@@ -764,11 +764,15 @@ const deleteElements = async (e, ids) => {
 	)
 }
 
+// a selection skips locked elements, unless that would leave nothing to select
+const selectableIds = (ids) => {
+	const unlocked = ids.filter((id) => !findSlideElement(id)?.locked)
+	return unlocked.length ? unlocked : ids
+}
+
 const selectAllElements = (e) => {
 	e?.preventDefault()
-	const unlocked = currentSlide.value.elements.filter((el) => !el.locked)
-	const target = unlocked.length ? unlocked : currentSlide.value.elements
-	activeElementIds.value = target.map((element) => element.id)
+	activeElementIds.value = selectableIds(currentSlide.value.elements.map((el) => el.id))
 }
 
 const resetFocus = () => {
@@ -1135,6 +1139,7 @@ export {
 	duplicateElements,
 	deleteElements,
 	selectAllElements,
+	selectableIds,
 	getElementPosition,
 	addFixedWidthToElement,
 	ensureExplicitHeight,

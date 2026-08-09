@@ -4,6 +4,7 @@ import {
 	cropSelectionToFitContent,
 	findSlideElement,
 	focusElementId,
+	selectableIds,
 	setActiveElements,
 } from '@/apps/slides/stores/element'
 import { changeEditorSlide, slideIndex, slides } from '@/apps/slides/stores/slide'
@@ -55,8 +56,7 @@ const jumpToSlideByIndex = async (index, focus) => {
 const jumpToElementsByIds = (jumpToIds, focusOnId) => {
 	if (!jumpToIds?.length) return
 
-	const unlocked = jumpToIds.filter((id) => !findSlideElement(id)?.locked)
-	const targetIds = unlocked.length ? unlocked : jumpToIds
+	const targetIds = selectableIds(jumpToIds)
 
 	if (!targetIds.every((id) => findSlideElement(id))) {
 		activeElementIds.value = []
