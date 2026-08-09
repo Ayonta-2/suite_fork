@@ -5,7 +5,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from werkzeug.exceptions import Forbidden, NotFound
 
-from suite.slides.api.file import validate_media_file
+from suite.slides.api.file import get_reference_presentations, validate_media_file
 from suite.slides.tests.utils import (
     make_presentation,
     make_private_image,
@@ -56,10 +56,7 @@ class TestMediaFileAccess(IntegrationTestCase):
     def test_guest_can_access_when_a_sibling_row_is_private(self):
         with self.set_user(OWNER):
             files = self.make_shared_url("Sibling Media")
-            # the lookup returns rows in name order, so share the one it won't reach first
-            first = frappe.db.exists("File", {"file_url": files[0].file_url})
-            reachable = next(f for f in files if f.name != first)
-            make_public(reachable.attached_to_name)
+            make_public(files[1].attached_to_name)
 
         with self.set_user("Guest"):
             self.assertIsNone(validate_media_file(files[0].file_url))
@@ -93,17 +90,6 @@ class TestMediaFileAccess(IntegrationTestCase):
             with self.assertRaises(Forbidden):
                 validate_media_file(files[0].file_url)
 
-    def test_shared_template_keeps_serving_its_media(self):
-        # a composite sends its own name, so a referenced template falls to the scan
-        with self.set_user(OWNER):
-            presentation = make_presentation("Shared Template Media")
-            file = make_private_image(presentation.name)
-            make_public(presentation.name)
-            frappe.db.set_value("Presentation", presentation.name, "is_template", 1)
-
-        with self.set_user("Guest"):
-            self.assertIsNone(validate_media_file(file.file_url))
-
     def test_guest_can_access_a_template_being_viewed(self):
         with self.set_user(OWNER):
             presentation = make_presentation("Viewed Template")
@@ -112,6 +98,34 @@ class TestMediaFileAccess(IntegrationTestCase):
 
         with self.set_user("Guest"):
             self.assertIsNone(validate_media_file(file.file_url, presentation.name))
+
+    def test_composite_resolves_to_the_presentations_it_shows(self):
+        # references must be public, so the scan would allow this too; resolving
+        # them is what keeps composites off that scan
+        with self.set_user(OWNER):
+            source = make_presentation("Composite Source")
+            file = make_private_image(source.name)
+            make_public(source.name)
+
+            composite = make_presentation("Composite")
+            composite.is_composite = 1
+            composite.append("reference_presentations", {"presentation": source.name})
+            composite.save()
+
+        self.assertEqual(get_reference_presentations(composite.name), {source.name})
+
+        with self.set_user("Guest"):
+            self.assertIsNone(validate_media_file(file.file_url, composite.name))
+
+    def test_orphan_attachment_row_is_forbidden_not_an_error(self):
+        with self.set_user(OWNER):
+            presentation = make_presentation("Orphan Row")
+            file = make_private_image(presentation.name)
+            frappe.db.set_value("File", file.name, "attached_to_name", "does-not-exist")
+
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(Forbidden):
+                validate_media_file(file.file_url)
 
     def test_unknown_url_not_found(self):
         with self.set_user(OWNER):

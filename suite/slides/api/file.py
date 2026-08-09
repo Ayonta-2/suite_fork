@@ -6,8 +6,6 @@ from frappe import _
 from werkzeug.exceptions import Forbidden, NotFound
 from werkzeug.wrappers import Response
 
-from suite.drive.overrides.file import content_has_permission
-
 
 def get_file_size(file_path: str) -> int:
     """
@@ -101,77 +99,91 @@ def get_media_response(src: str) -> Response:
 SCAN_LIMIT = 100
 
 
-def get_unshared_templates(names: set[str]) -> set[str]:
-    """Every user, Guest included, may read a template presentation, so a File row
-    attached to one would hand out its url globally. A template that is genuinely
-    shared keeps its real Drive grant, which is what gets checked here. Viewing a
-    template itself still works, through the `presentation` argument."""
-    if not names:
-        return set()
-
-    rows = frappe.get_all(
-        "Presentation",
-        filters={"name": ("in", list(names)), "is_template": 1},
-        fields=["name", "owner"],
-        order_by=None,
+def get_reference_presentations(name: str) -> set[str]:
+    """Presentations a composite shows; its media is attached to those, not to it."""
+    return set(
+        frappe.get_all(
+            "Reference Presentation",
+            filters={"parent": name, "parenttype": "Presentation"},
+            pluck="presentation",
+            order_by=None,
+        )
     )
 
-    return {
-        row.name
-        for row in rows
-        if not content_has_permission(
-            frappe._dict(doctype="Presentation", name=row.name, owner=row.owner), "read"
+
+def get_attached_presentations(src: str, names: set[str] | None = None) -> set[str]:
+    """Presentations holding `src`, deduped: one url collects a File row per upload."""
+    filters = {"file_url": src, "attached_to_doctype": "Presentation"}
+    limit = SCAN_LIMIT
+    if names is not None:
+        if not names:
+            return set()
+        filters["attached_to_name"] = ("in", list(names))
+        limit = None
+
+    found = set(
+        frappe.get_all(
+            "File", filters=filters, pluck="attached_to_name", distinct=True, order_by=None, limit=limit
         )
+    )
+
+    if limit and len(found) == limit:
+        frappe.logger("slides").warning(f"media access check for {src} stopped at {limit}")
+
+    return found
+
+
+def can_read_any(names: set[str]) -> bool:
+    """Whether the caller may read any of `names`. Templates they don't own don't
+    count, since everyone can read a template."""
+    if not names:
+        return False
+
+    user = frappe.session.user
+    candidates = {
+        row.name
+        for row in frappe.get_all(
+            "Presentation",
+            filters={"name": ("in", list(names))},
+            fields=["name", "owner", "is_template"],
+            order_by=None,
+        )
+        if not row.is_template or row.owner == user
     }
+    if not candidates:
+        return False
+
+    # a hint that skips the loop in the common case, never a decision
+    shortlist = frappe.get_list(
+        "Presentation", filters={"name": ("in", list(candidates))}, pluck="name", limit=1
+    )
+    if shortlist and frappe.has_permission("Presentation", "read", shortlist[0]):
+        return True
+
+    return any(frappe.has_permission("Presentation", "read", name) for name in candidates)
 
 
 def validate_media_file(src: str, presentation: str | None = None) -> None:
-    # the presentation being viewed resolves to a single indexed row, so the scan
-    # below is left to composite presentations and links made without this argument
-    if presentation and frappe.db.exists(
-        "File",
-        {"file_url": src, "attached_to_doctype": "Presentation", "attached_to_name": presentation},
-    ):
-        if frappe.has_permission("Presentation", "read", presentation):
+    if presentation:
+        viewed = get_attached_presentations(src, {presentation} | get_reference_presentations(presentation))
+        # everyone can read a template, which is what makes viewing one work
+        if presentation in viewed and frappe.has_permission("Presentation", "read", presentation):
+            return
+        if can_read_any(viewed - {presentation}):
             return
 
-    # frappe dedupes file content, so one url can have many File rows attached to
-    # different presentations; access is allowed if any one of them is readable
-    files = frappe.get_all(
-        "File",
-        filters={"file_url": src},
-        fields=["name", "attached_to_doctype", "attached_to_name"],
-        # a widely reused image collects a row per presentation, and guests reach
-        # this, so read a bounded slice; the default order would sort the whole
-        # set before the limit applies
-        order_by=None,
-        limit=SCAN_LIMIT,
-    )
-    if not files:
+    if not frappe.db.exists("File", {"file_url": src}):
         raise NotFound
 
-    attached_presentations = {
-        file.attached_to_name
-        for file in files
-        if file.attached_to_doctype == "Presentation" and file.attached_to_name
-    }
-    templates = get_unshared_templates(attached_presentations)
+    if frappe.db.exists("File", {"file_url": src, "is_private": 0}):
+        return
 
-    # File role perms exclude Guest, so check the attached presentation directly
-    for name in attached_presentations - templates:
-        if frappe.has_permission("Presentation", "read", name):
-            return
+    user = frappe.session.user
+    if user != "Guest" and frappe.db.exists("File", {"file_url": src, "owner": user}):
+        return
 
-    # File permissions fall through to the document a file is attached to, so
-    # templates have to stay out of this pass too
-    for file in files:
-        if file.attached_to_name in templates:
-            continue
-        if frappe.has_permission("File", "read", file.name):
-            return
-
-    if len(files) == SCAN_LIMIT:
-        frappe.logger("slides").warning(f"media access check for {src} stopped at {SCAN_LIMIT} rows")
+    if can_read_any(get_attached_presentations(src)):
+        return
 
     raise Forbidden(_("You don't have permission to access this file"))
 
@@ -181,8 +193,7 @@ def get_media_file(src: str, public: str | None = None, presentation: str | None
     """
     Fetches permitted video file and returns a response.
 
-    `presentation` is the presentation being viewed; it only narrows the lookup,
-    access is granted the same way with or without it.
+    `presentation` narrows the lookup, and is the only way a template's media is served.
 
     `public` is deprecated and ignored; access is determined server-side.
     """
