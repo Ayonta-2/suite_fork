@@ -1008,13 +1008,6 @@ const normalizeZIndices = (elements) => {
 	return elements
 }
 
-const findElement = (state, slideId, elementId) => {
-	const slide = state.find((s) => s.clientId === slideId)
-	if (!slide) return null
-
-	return slide.elements.find((el) => el.id === elementId)
-}
-
 const cropSelectionToFitContent = (elementIds) => {
 	let l = 10000,
 		t = 10000,
@@ -1150,7 +1143,6 @@ export {
 	isWithinOverlappingBounds,
 	updatePosition,
 	flipElements,
-	findElement,
 	findSlideElement,
 	cropSelectionToFitContent,
 	getElementCenter,
