@@ -98,7 +98,11 @@ const toggleLock = async () => {
 		await nextTick()
 	}
 
-	const idsToLock = ids.filter((id) => findSlideElement(id))
+	// the command carries one oldValue for the whole batch, so only pass ids that change
+	const idsToLock = ids.filter((id) => {
+		const element = findSlideElement(id)
+		return element && !!element.locked !== locking
+	})
 	if (!idsToLock.length) return
 
 	setLocked(idsToLock, locking)
@@ -698,6 +702,7 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 	sortedElements.forEach((element, index) => {
 		let newElement = JSON.parse(JSON.stringify(element))
 		newElement.id = generateUniqueId()
+		delete newElement.locked
 		newElement.zIndex = baseZIndex + index + 1
 		newElement.top += displaceByPx
 		newElement.left += displaceByPx
