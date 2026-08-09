@@ -41,9 +41,7 @@ class TestThumbnailPatches(IntegrationTestCase):
 
     def test_missing_thumbnail_blob_is_cleared(self):
         presentation = make_presentation("Deck With Deleted Thumbnail")
-        frappe.db.set_value(
-            "Presentation", presentation.name, "thumbnail", "/files/thumbnail-deleted.png"
-        )
+        frappe.db.set_value("Presentation", presentation.name, "thumbnail", "/files/thumbnail-deleted.png")
 
         clear_missing_presentation_thumbnails()
 
@@ -56,6 +54,4 @@ class TestThumbnailPatches(IntegrationTestCase):
 
         clear_missing_presentation_thumbnails()
 
-        self.assertEqual(
-            frappe.db.get_value("Presentation", presentation.name, "thumbnail"), file.file_url
-        )
+        self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), file.file_url)

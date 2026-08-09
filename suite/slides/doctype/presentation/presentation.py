@@ -340,9 +340,7 @@ def set_template_metadata(presentation, template) -> str:
 
 
 def copy_thumbnail_file(presentation_name: str, source_url: str) -> str:
-    source = frappe.db.get_value(
-        "File", {"file_url": source_url}, ["name", "file_name"], as_dict=True
-    )
+    source = frappe.db.get_value("File", {"file_url": source_url}, ["name", "file_name"], as_dict=True)
     if not source:
         return ""
 
