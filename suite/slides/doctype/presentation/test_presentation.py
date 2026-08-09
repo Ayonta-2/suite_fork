@@ -1,6 +1,8 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
+import os
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -135,6 +137,39 @@ class TestPresentationSecurity(IntegrationTestCase):
             presentation.save()
 
         self.assertEqual(frappe.db.count("File", {"file_url": url}), 1)
+
+    def test_duplicate_owns_its_thumbnail_file(self):
+        # content-hash dedup means both decks share one blob; what matters is that the
+        # copy holds its own File row, so the blob outlives the source's
+        with self.set_user(OWNER):
+            source = make_presentation("Duplicated Thumbnail")
+            save_presentation_thumbnail(source.name, make_thumbnail_data())
+            copy = create_presentation(duplicate_from=source.name)
+
+        file = frappe.get_doc("File", {"file_url": copy.thumbnail, "attached_to_name": copy.name})
+        self.assertEqual(file.attached_to_doctype, "Presentation")
+        self.assertEqual(file.attached_to_field, "thumbnail")
+
+    def test_duplicate_drops_a_thumbnail_whose_blob_is_gone(self):
+        # inheriting the URL would leave the copy dangling for good: the attach hook
+        # cannot re-create the File, so every later save of it logs the failure
+        with self.set_user(OWNER):
+            source = make_presentation("Missing Blob Source")
+            url = save_presentation_thumbnail(source.name, make_thumbnail_data())
+            os.remove(frappe.get_doc("File", {"file_url": url}).get_full_path())
+
+            copy = create_presentation(duplicate_from=source.name)
+
+        self.assertEqual(copy.thumbnail, "")
+
+    def test_asset_backed_cover_is_kept_as_is(self):
+        cover = "/assets/suite/slides/frontend/images/layouts/light/thumbnail-3.webp"
+        with self.set_user(OWNER):
+            template = make_presentation("Asset Cover Template")
+            frappe.db.set_value("Presentation", template.name, {"is_template": 1, "thumbnail": cover})
+            presentation = create_presentation(template=template.name)
+
+        self.assertEqual(presentation.thumbnail, cover)
 
     def test_composite_excludes_reference_made_private_later(self):
         with self.set_user(OWNER):
