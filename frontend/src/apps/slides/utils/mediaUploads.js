@@ -116,6 +116,7 @@ export const getAttachmentUrl = (fileUrl) => {
 			// Non-owner media already goes through the slides-namespaced proxy below.
 			return `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}${SLIDES_MEDIA_PARAM}`
 		}
-		return `/api/method/suite.slides.api.file.get_media_file?src=${fileUrl}`
+		const presentation = encodeURIComponent(presentationId.value || '')
+		return `/api/method/suite.slides.api.file.get_media_file?src=${fileUrl}&presentation=${presentation}`
 	}
 }

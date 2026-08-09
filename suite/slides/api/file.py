@@ -96,31 +96,54 @@ def get_media_response(src: str) -> Response:
     return response
 
 
-def validate_media_file(src) -> None:
-    file_name = frappe.db.exists("File", {"file_url": src})
-    if not file_name:
+def validate_media_file(src, presentation: str | None = None) -> None:
+    # the presentation being viewed resolves to a single indexed row, so the scan
+    # below is left to composite presentations and links made without this argument
+    if presentation and frappe.db.exists(
+        "File",
+        {"file_url": src, "attached_to_doctype": "Presentation", "attached_to_name": presentation},
+    ):
+        if frappe.has_permission("Presentation", "read", presentation):
+            return
+
+    # frappe dedupes file content, so one url can have many File rows attached to
+    # different presentations; access is allowed if any one of them is readable
+    files = frappe.get_all(
+        "File",
+        filters={"file_url": src},
+        fields=["name", "attached_to_doctype", "attached_to_name"],
+        # a widely reused image collects a row per presentation, and guests reach
+        # this, so read a bounded slice; ordering it would scan every row first
+        order_by=None,
+        limit=100,
+    )
+    if not files:
         raise NotFound
 
-    file_doc = frappe.get_doc("File", file_name)
-    if frappe.has_permission("File", "read", file_doc):
-        return
-
     # File role perms exclude Guest, so check the attached presentation directly
-    if file_doc.attached_to_doctype == "Presentation" and frappe.has_permission(
-        "Presentation", "read", file_doc.attached_to_name
-    ):
-        return
+    for file in files:
+        if file.attached_to_doctype == "Presentation" and frappe.has_permission(
+            "Presentation", "read", file.attached_to_name
+        ):
+            return
+
+    for file in files:
+        if frappe.has_permission("File", "read", file.name):
+            return
 
     raise Forbidden(_("You don't have permission to access this file"))
 
 
 @frappe.whitelist(allow_guest=True)
-def get_media_file(src: str, public: str | None = None) -> Response:
+def get_media_file(src: str, public: str | None = None, presentation: str | None = None) -> Response:
     """
     Fetches permitted video file and returns a response.
 
+    `presentation` is the presentation being viewed; it only narrows the lookup,
+    access is granted the same way with or without it.
+
     `public` is deprecated and ignored; access is determined server-side.
     """
-    validate_media_file(src)
+    validate_media_file(src, presentation)
 
     return get_media_response(src)
