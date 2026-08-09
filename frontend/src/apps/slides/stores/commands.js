@@ -105,7 +105,7 @@ const addSlideCommand = ({ slide, index, slideIndex }) => ({
 	fromSlideIndex: slideIndex,
 	debug: `Add slide ${slide.clientId} at index ${index}`,
 	execute(state) {
-		// autosave may already have deleted the row, so the next save has to insert it
+		// a name carried over from another row would make the next save update it
 		slide.name = ''
 		addSlide(state, index, slide)
 	},

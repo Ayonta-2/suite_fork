@@ -82,6 +82,37 @@ class TestMediaFileAccess(IntegrationTestCase):
             with self.assertRaises(Forbidden):
                 validate_media_file(self.file.file_url, own.name)
 
+    def test_template_row_grants_nothing_to_the_world(self):
+        # anyone can read a template presentation, so a row attached to one would
+        # hand out every url it shares with a private presentation
+        with self.set_user(OWNER):
+            files = self.make_shared_url("Template Media")
+            frappe.db.set_value("Presentation", files[1].attached_to_name, "is_template", 1)
+
+        with self.set_user("Guest"):
+            with self.assertRaises(Forbidden):
+                validate_media_file(files[0].file_url)
+
+    def test_shared_template_keeps_serving_its_media(self):
+        # a composite sends its own name, so a referenced template falls to the scan
+        with self.set_user(OWNER):
+            presentation = make_presentation("Shared Template Media")
+            file = make_private_image(presentation.name)
+            make_public(presentation.name)
+            frappe.db.set_value("Presentation", presentation.name, "is_template", 1)
+
+        with self.set_user("Guest"):
+            self.assertIsNone(validate_media_file(file.file_url))
+
+    def test_guest_can_access_a_template_being_viewed(self):
+        with self.set_user(OWNER):
+            presentation = make_presentation("Viewed Template")
+            file = make_private_image(presentation.name)
+            frappe.db.set_value("Presentation", presentation.name, "is_template", 1)
+
+        with self.set_user("Guest"):
+            self.assertIsNone(validate_media_file(file.file_url, presentation.name))
+
     def test_unknown_url_not_found(self):
         with self.set_user(OWNER):
             with self.assertRaises(NotFound):

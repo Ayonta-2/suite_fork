@@ -29,7 +29,9 @@ def unique_image_content():
 def make_private_image(presentation_name, content=None):
     # unique content per call: frappe dedupes Files by content hash, which
     # would otherwise share one file_url across unrelated test fixtures
-    content = content or unique_image_content()
+    if content is None:
+        content = unique_image_content()
+
     return frappe.get_doc(
         {
             "doctype": "File",

@@ -89,6 +89,8 @@ const getPresentationFromLocalDB = async (id) => {
 // explicit dirty flag set by every mutation path
 const dirty = ref(false)
 
+const isSaving = ref(false)
+
 // bumped on every markDirty so a save can tell if edits arrived while it was in flight;
 // per presentation, since loading one marks it dirty and must not disturb another's save
 const dirtyGenerations = new Map()
@@ -103,9 +105,9 @@ const markDirty = () => {
 
 const markClean = () => {
 	dirty.value = false
+	// a save in flight still has a generation to compare against, so leave it alone
+	if (!isSaving.value) dirtyGenerations.delete(presentationId.value)
 }
-
-const isSaving = ref(false)
 
 // true when an online save to the server failed; drives the "Not saved" indicator
 const saveFailed = ref(false)
@@ -115,14 +117,20 @@ const syncSnapshotToServer = async (snapshot, id, generation) => {
 	// would land on the wrong document; the snapshot stays dirty and gets retried
 	if (presentationId.value !== id) return
 
-	await savePresentationDoc(snapshot.content)
+	// the version this save produced, read from its own response: presentationDoc
+	// may already point at another presentation by the time it resolves
+	const savedModified = await savePresentationDoc(snapshot.content)
 
-	// presentationDoc moved on, so baseModified can't be refreshed - but the server has this
-	// snapshot, and a clean record is never read back for baseModified anyway
 	if (presentationId.value !== id) {
-		if (generationFor(id) === generation) {
-			await savePresentationToLocalDB({ ...snapshot, dirty: false, updatedAt: Date.now() })
-		}
+		// an edit made mid-save lives in slides.value, which belongs to another
+		// presentation now and can't be read back; the server has this snapshot
+		await savePresentationToLocalDB({
+			...snapshot,
+			dirty: false,
+			updatedAt: Date.now(),
+			baseModified: savedModified,
+		})
+		dirtyGenerations.delete(id)
 		return
 	}
 
@@ -135,7 +143,7 @@ const syncSnapshotToServer = async (snapshot, id, generation) => {
 		content: editedDuringSave ? getLatestSlideContent() : snapshot.content,
 		dirty: editedDuringSave,
 		updatedAt: Date.now(),
-		baseModified: presentationDoc.value?.modified,
+		baseModified: savedModified,
 	})
 }
 

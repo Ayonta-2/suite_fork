@@ -117,6 +117,8 @@ export const getAttachmentUrl = (fileUrl) => {
 			return `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}${SLIDES_MEDIA_PARAM}`
 		}
 		const presentation = encodeURIComponent(presentationId.value || '')
-		return `/api/method/suite.slides.api.file.get_media_file?src=${fileUrl}&presentation=${presentation}`
+		return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(
+			fileUrl,
+		)}&presentation=${presentation}`
 	}
 }

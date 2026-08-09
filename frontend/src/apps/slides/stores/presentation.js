@@ -286,11 +286,16 @@ const savePresentationDoc = async (updatedSlides) => {
 		}
 	})
 
-	await presentationResource.value.setValue.submit({
+	const resource = presentationResource.value
+	const doc = await resource.setValue.submit({
 		slides: newSlides,
 	})
 
-	presentationDoc.value = presentationResource.value.doc
+	// the editor can move on mid-save, and repointing presentationDoc at whatever
+	// the resource ref holds now would stamp this save onto another presentation
+	if (presentationResource.value === resource) presentationDoc.value = resource.doc
+
+	return doc?.modified
 }
 
 const presentationResource = ref(null)

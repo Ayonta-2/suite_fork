@@ -43,17 +43,14 @@ describe('removeSlideCommand', () => {
 })
 
 describe('addSlideCommand', () => {
-	it('drops the child row name on redo so the deleted row is re-inserted', () => {
-		const slide = makeSlide('c2', '')
+	it('never inserts a slide under a child row name it was handed', () => {
+		// pasted slides come from json, so the name is not ours to trust
+		const slide = makeSlide('c2', 'srv-row-2')
 		const state = [makeSlide('c1', 'srv-row-1')]
 
-		const command = addSlideCommand({ slide, index: 1, slideIndex: 0 })
-		command.execute(state)
-		// a save in between hands the row a server name that undo then deletes
-		state[1].name = 'srv-row-2'
-		command.undo(state)
-		command.execute(state)
+		addSlideCommand({ slide, index: 1, slideIndex: 0 }).execute(state)
 
+		expect(state).toHaveLength(2)
 		expect(state[1].name).toBe('')
 	})
 })

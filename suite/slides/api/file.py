@@ -6,6 +6,8 @@ from frappe import _
 from werkzeug.exceptions import Forbidden, NotFound
 from werkzeug.wrappers import Response
 
+from suite.drive.overrides.file import content_has_permission
+
 
 def get_file_size(file_path: str) -> int:
     """
@@ -96,7 +98,34 @@ def get_media_response(src: str) -> Response:
     return response
 
 
-def validate_media_file(src, presentation: str | None = None) -> None:
+SCAN_LIMIT = 100
+
+
+def get_unshared_templates(names: set[str]) -> set[str]:
+    """Every user, Guest included, may read a template presentation, so a File row
+    attached to one would hand out its url globally. A template that is genuinely
+    shared keeps its real Drive grant, which is what gets checked here. Viewing a
+    template itself still works, through the `presentation` argument."""
+    if not names:
+        return set()
+
+    rows = frappe.get_all(
+        "Presentation",
+        filters={"name": ("in", list(names)), "is_template": 1},
+        fields=["name", "owner"],
+        order_by=None,
+    )
+
+    return {
+        row.name
+        for row in rows
+        if not content_has_permission(
+            frappe._dict(doctype="Presentation", name=row.name, owner=row.owner), "read"
+        )
+    }
+
+
+def validate_media_file(src: str, presentation: str | None = None) -> None:
     # the presentation being viewed resolves to a single indexed row, so the scan
     # below is left to composite presentations and links made without this argument
     if presentation and frappe.db.exists(
@@ -113,23 +142,36 @@ def validate_media_file(src, presentation: str | None = None) -> None:
         filters={"file_url": src},
         fields=["name", "attached_to_doctype", "attached_to_name"],
         # a widely reused image collects a row per presentation, and guests reach
-        # this, so read a bounded slice; ordering it would scan every row first
+        # this, so read a bounded slice; the default order would sort the whole
+        # set before the limit applies
         order_by=None,
-        limit=100,
+        limit=SCAN_LIMIT,
     )
     if not files:
         raise NotFound
 
+    attached_presentations = {
+        file.attached_to_name
+        for file in files
+        if file.attached_to_doctype == "Presentation" and file.attached_to_name
+    }
+    templates = get_unshared_templates(attached_presentations)
+
     # File role perms exclude Guest, so check the attached presentation directly
-    for file in files:
-        if file.attached_to_doctype == "Presentation" and frappe.has_permission(
-            "Presentation", "read", file.attached_to_name
-        ):
+    for name in attached_presentations - templates:
+        if frappe.has_permission("Presentation", "read", name):
             return
 
+    # File permissions fall through to the document a file is attached to, so
+    # templates have to stay out of this pass too
     for file in files:
+        if file.attached_to_name in templates:
+            continue
         if frappe.has_permission("File", "read", file.name):
             return
+
+    if len(files) == SCAN_LIMIT:
+        frappe.logger("slides").warning(f"media access check for {src} stopped at {SCAN_LIMIT} rows")
 
     raise Forbidden(_("You don't have permission to access this file"))
 
