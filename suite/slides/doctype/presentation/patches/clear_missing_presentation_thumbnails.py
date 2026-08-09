@@ -16,6 +16,23 @@ def get_disk_path(file_url: str) -> str | None:
     return None
 
 
+def is_dangling(file_url: str) -> bool:
+    """Nothing can serve this URL any more.
+
+    A File row of any kind means some storage backend still owns the blob, and the
+    attach hook only rebuilds a thumbnail it cannot find a File for — so a surviving
+    row is reason enough to leave the field alone. Only once no row is left does the
+    on-disk check decide, and by then the URL can only be a local framework blob:
+    Drive rewrites S3-backed files to the `suite.drive.api.s3.fetch` prefix, which
+    get_disk_path() does not resolve.
+    """
+    if frappe.db.exists("File", {"file_url": file_url}):
+        return False
+
+    disk_path = get_disk_path(file_url)
+    return bool(disk_path) and not os.path.exists(disk_path)
+
+
 def execute():
     """Clear deck thumbnails whose blob is gone.
 
@@ -32,8 +49,7 @@ def execute():
     )
 
     for presentation in presentations:
-        disk_path = get_disk_path(presentation.thumbnail)
-        if not disk_path or os.path.exists(disk_path):
+        if not is_dangling(presentation.thumbnail):
             continue
 
         frappe.db.set_value(

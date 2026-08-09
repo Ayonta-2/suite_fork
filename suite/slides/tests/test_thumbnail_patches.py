@@ -1,6 +1,8 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
+import os
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -50,6 +52,18 @@ class TestThumbnailPatches(IntegrationTestCase):
     def test_present_thumbnail_blob_is_kept(self):
         presentation = make_presentation("Deck With Live Thumbnail")
         file = make_legacy_thumbnail_file(presentation.name)
+        frappe.db.set_value("Presentation", presentation.name, "thumbnail", file.file_url)
+
+        clear_missing_presentation_thumbnails()
+
+        self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), file.file_url)
+
+    def test_thumbnail_backed_by_a_file_row_is_kept(self):
+        # the blob need not sit on local disk: a surviving File row means some storage
+        # backend still owns it, so the field is not ours to clear
+        presentation = make_presentation("Deck With Remote Thumbnail")
+        file = make_legacy_thumbnail_file(presentation.name)
+        os.remove(frappe.get_doc("File", file.name).get_full_path())
         frappe.db.set_value("Presentation", presentation.name, "thumbnail", file.file_url)
 
         clear_missing_presentation_thumbnails()
