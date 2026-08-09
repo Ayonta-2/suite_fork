@@ -83,10 +83,10 @@ const getAssetUrl = (url) => {
 	if (presentationDoc.value?.owner === user || user === 'Administrator') {
 		return url
 	}
-	const presentation = encodeURIComponent(presentationId.value || '')
+	if (!presentationId.value) return url
 	return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(
 		url,
-	)}&presentation=${presentation}`
+	)}&presentation=${encodeURIComponent(presentationId.value)}`
 }
 
 const prefetchAsset = async (src, type) => {
