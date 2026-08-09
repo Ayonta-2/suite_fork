@@ -106,6 +106,7 @@ describe("useRecording", () => {
 		await recording.start();
 		await recording.stop();
 		expect(recording.state.value?.status).toBe("Stopping");
+		expect(recording.isLive.value).toBe(false);
 	});
 
 	it("does not let a stale state load overwrite a newer command revision", async () => {
@@ -174,6 +175,24 @@ describe("useRecording", () => {
 		expect(recording.state.value?.status).toBe("Recording");
 		expect(recording.isLive.value).toBe(true);
 		expect(toast.info).toHaveBeenCalledWith("This meeting is being recorded");
+	});
+
+	it("accepts a new recording session with a lower revision", () => {
+		const recording = useRecording("room");
+		recording.syncState({
+			name: "old-recording",
+			status: "Processing",
+			state_revision: 4,
+		});
+
+		recording.syncState({
+			name: "new-recording",
+			status: "Recording",
+			state_revision: 1,
+		});
+
+		expect(recording.state.value?.name).toBe("new-recording");
+		expect(recording.isLive.value).toBe(true);
 	});
 
 	it("tracks global recording availability", () => {
