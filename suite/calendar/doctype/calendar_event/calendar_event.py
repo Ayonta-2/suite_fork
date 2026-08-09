@@ -29,6 +29,7 @@ from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.logger import get_push_logger
 from suite.utils import enqueue_job, parse_filters, user_context
 from suite.utils.dt import utcnow
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 
 class CalendarEvent(Document):
@@ -344,6 +345,7 @@ def bulk_delete(names: str | list[str]) -> None:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def add_calendar_event(
     account: str,
     organizer: str | None = None,
@@ -457,6 +459,7 @@ def get_calendar_events(account: str, ids: list[str]) -> list[dict]:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def update_calendar_event(
     account: str,
     id: str,
@@ -534,6 +537,7 @@ def update_calendar_event(
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def update_calendar_event_instance(
     account: str,
     master_id: str,
@@ -577,6 +581,7 @@ def update_calendar_event_instance(
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def delete_calendar_events(account: str, ids: list[str], send_scheduling_messages: bool = False) -> None:
     """Deletes a calendar event for the given account by its ID."""
 
@@ -606,6 +611,7 @@ def delete_calendar_events(account: str, ids: list[str], send_scheduling_message
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def delete_calendar_event_instance(
     account: str, master_id: str, recurrence_id: str, send_scheduling_messages: bool = False
 ) -> None:
