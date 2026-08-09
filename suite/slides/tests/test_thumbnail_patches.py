@@ -1,0 +1,61 @@
+# Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and Contributors
+# See license.txt
+
+import frappe
+from frappe.tests import IntegrationTestCase
+
+from suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files import (
+    get_unused_thumbnail_files,
+)
+from suite.slides.doctype.presentation.patches.clear_missing_presentation_thumbnails import (
+    execute as clear_missing_presentation_thumbnails,
+)
+from suite.slides.tests.utils import PNG_1PX, make_presentation, unique_bytes
+
+
+def make_legacy_thumbnail_file(presentation_name):
+    """A thumbnail in the pre-webp naming scheme the cleanup patch targets."""
+    return frappe.get_doc(
+        {
+            "doctype": "File",
+            "file_name": "thumbnail-legacy.png",
+            "content": unique_bytes(PNG_1PX),
+            "is_private": 1,
+            "attached_to_doctype": "Presentation",
+            "attached_to_name": presentation_name,
+        }
+    ).insert()
+
+
+class TestThumbnailPatches(IntegrationTestCase):
+    def test_cleanup_keeps_thumbnail_referenced_only_by_the_deck(self):
+        referenced = make_presentation("Deck With Legacy Thumbnail")
+        kept = make_legacy_thumbnail_file(referenced.name)
+        frappe.db.set_value("Presentation", referenced.name, "thumbnail", kept.file_url)
+
+        orphan = make_legacy_thumbnail_file(make_presentation("Deck Without Thumbnail").name)
+
+        unused = {file.name for file in get_unused_thumbnail_files()}
+        self.assertNotIn(kept.name, unused)
+        self.assertIn(orphan.name, unused)
+
+    def test_missing_thumbnail_blob_is_cleared(self):
+        presentation = make_presentation("Deck With Deleted Thumbnail")
+        frappe.db.set_value(
+            "Presentation", presentation.name, "thumbnail", "/files/thumbnail-deleted.png"
+        )
+
+        clear_missing_presentation_thumbnails()
+
+        self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), "")
+
+    def test_present_thumbnail_blob_is_kept(self):
+        presentation = make_presentation("Deck With Live Thumbnail")
+        file = make_legacy_thumbnail_file(presentation.name)
+        frappe.db.set_value("Presentation", presentation.name, "thumbnail", file.file_url)
+
+        clear_missing_presentation_thumbnails()
+
+        self.assertEqual(
+            frappe.db.get_value("Presentation", presentation.name, "thumbnail"), file.file_url
+        )

@@ -21,6 +21,7 @@ from suite.slides.tests.utils import (
     make_private,
     make_private_image,
     make_public,
+    make_thumbnail_data,
 )
 from suite.tests.utils import ensure_user
 
@@ -112,6 +113,28 @@ class TestPresentationSecurity(IntegrationTestCase):
             result = get_composite_presentation(composite.name)
 
         self.assertEqual(len(result["slides"]), len(ref.slides))
+
+    def test_thumbnail_file_is_linked_to_its_field(self):
+        with self.set_user(OWNER):
+            presentation = make_presentation("Linked Thumbnail")
+            url = save_presentation_thumbnail(presentation.name, make_thumbnail_data())
+
+        file = frappe.get_doc("File", {"file_url": url})
+        self.assertEqual(file.attached_to_doctype, "Presentation")
+        self.assertEqual(file.attached_to_name, presentation.name)
+        self.assertEqual(file.attached_to_field, "thumbnail")
+
+    def test_saving_deck_does_not_duplicate_thumbnail_file(self):
+        # the framework's attach hook re-creates any Attach value it cannot match to a
+        # File, so an unlinked thumbnail grew a shadow File on every save of the deck
+        with self.set_user(OWNER):
+            presentation = make_presentation("Resaved Thumbnail")
+            url = save_presentation_thumbnail(presentation.name, make_thumbnail_data())
+            presentation.reload()
+            presentation.title = "Resaved Thumbnail, again"
+            presentation.save()
+
+        self.assertEqual(frappe.db.count("File", {"file_url": url}), 1)
 
     def test_composite_excludes_reference_made_private_later(self):
         with self.set_user(OWNER):

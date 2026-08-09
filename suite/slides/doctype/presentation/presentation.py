@@ -163,6 +163,10 @@ def create_thumbnail_file(presentation_name: str, file_name: str, content: bytes
             "doctype": "File",
             "attached_to_doctype": "Presentation",
             "attached_to_name": presentation_name,
+            # thumbnail is an Attach Image field, so the framework's attach hook looks
+            # for a File carrying the fieldname; without it every save of the deck is
+            # treated as an unattached URL and re-creates the File from disk
+            "attached_to_field": "thumbnail",
             "file_name": file_name,
             "is_private": 1,
             "content": content,

@@ -10,6 +10,18 @@ PNG_1PX = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 )
+WEBP_1PX = "UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAUAmJaQAA3AA/v02aAA="
+
+
+def unique_bytes(base64_data):
+    # unique trailing bytes per call: frappe dedupes Files by content hash, which
+    # would otherwise share one file_url across unrelated test fixtures
+    return base64.b64decode(base64_data.split(",", 1)[-1]) + uuid.uuid4().bytes
+
+
+def make_thumbnail_data():
+    """A distinct webp data URI, in the only format save_presentation_thumbnail accepts."""
+    return "data:image/webp;base64," + base64.b64encode(unique_bytes(WEBP_1PX)).decode()
 
 
 def make_presentation(title):
@@ -23,9 +35,7 @@ def make_presentation(title):
 
 
 def make_private_image(presentation_name):
-    # unique content per call: frappe dedupes Files by content hash, which
-    # would otherwise share one file_url across unrelated test fixtures
-    content = base64.b64decode(PNG_1PX.split(",", 1)[1]) + uuid.uuid4().bytes
+    content = unique_bytes(PNG_1PX)
     return frappe.get_doc(
         {
             "doctype": "File",
