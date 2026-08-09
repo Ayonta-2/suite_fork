@@ -68,6 +68,7 @@ from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, t
 from suite.mail.utils.user import get_account_emails, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils import convert_html_to_text
+from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.user import is_system_manager
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
@@ -1578,6 +1579,7 @@ def screen_out_senders(account: str, from_emails: list[str]) -> None:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@dynamic_rate_limit()
 def upload_file():
     from mimetypes import guess_type
     from pathlib import Path
