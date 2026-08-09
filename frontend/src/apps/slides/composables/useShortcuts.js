@@ -29,6 +29,7 @@ import {
 	duplicateElements,
 	activeElement,
 	isSelectionLocked,
+	toggleLock,
 } from '@/apps/slides/stores/element'
 import {
 	changeSlideInSlideshow,
@@ -322,6 +323,19 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Edit',
 			condition: inEditMode,
 			handler: deleteElementOrSlide,
+		},
+		{
+			key: 'l',
+			ctrl: true,
+			shift: true,
+			description: 'Lock or unlock element',
+			group: 'Edit',
+			allowInInput: true,
+			condition: inEditMode,
+			handler: (e) => {
+				if (isPlainInput(e)) return
+				toggleLock()
+			},
 		},
 		{
 			key: 'ArrowUp',
