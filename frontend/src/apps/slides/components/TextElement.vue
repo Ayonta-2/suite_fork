@@ -76,23 +76,18 @@ const flipTransform = computed(
 	() => `scale(${element.value?.invertX || 1}, ${element.value?.invertY || 1})`,
 )
 
-const editorStyles = computed(() => {
-	const styles = {
-		cursor: isEditable.value ? 'text' : '',
-		userSelect: isEditable.value ? 'text' : 'none',
-		transform: flipTransform.value,
-	}
-	const lh = element.value?.lineHeight
-	if (lh) styles['--el-line-height'] = lh
-	return styles
-})
-
 const elementLineHeightStyle = computed(() => {
 	const styles = { transform: flipTransform.value }
 	const lh = element.value?.lineHeight
 	if (lh) styles['--el-line-height'] = lh
 	return styles
 })
+
+const editorStyles = computed(() => ({
+	...elementLineHeightStyle.value,
+	cursor: isEditable.value ? 'text' : '',
+	userSelect: isEditable.value ? 'text' : 'none',
+}))
 
 const handleMouseDown = (e) => {
 	if (!isEditable.value || inReadonlyMode.value) return

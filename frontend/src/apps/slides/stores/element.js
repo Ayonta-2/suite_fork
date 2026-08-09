@@ -77,10 +77,17 @@ const setActiveElements = (ids) => {
 }
 
 const setLocked = (elementIds, locked) => {
+	// the command carries one oldValue for the whole batch, so only pass ids that change
+	const idsToSet = elementIds.filter((id) => {
+		const element = findSlideElement(id)
+		return element && !!element.locked !== locked
+	})
+	if (!idsToSet.length) return
+
 	commandHistory.execute(
 		editElementCommand({
 			slideId: currentSlide.value.clientId,
-			elementIds,
+			elementIds: idsToSet,
 			property: 'locked',
 			oldValue: locked ? undefined : true,
 			newValue: locked ? true : undefined,
@@ -98,29 +105,12 @@ const toggleLock = async () => {
 		await nextTick()
 	}
 
-	// the command carries one oldValue for the whole batch, so only pass ids that change
-	const idsToLock = ids.filter((id) => {
-		const element = findSlideElement(id)
-		return element && !!element.locked !== locking
-	})
-	if (!idsToLock.length) return
-
-	setLocked(idsToLock, locking)
+	setLocked(ids, locking)
 }
 
-const lockAll = () => {
-	const ids = (currentSlide.value?.elements || []).filter((el) => !el.locked).map((el) => el.id)
-	if (!ids.length) return
+const lockAll = () => setLocked((currentSlide.value?.elements || []).map((el) => el.id), true)
 
-	setLocked(ids, true)
-}
-
-const unlockAll = () => {
-	const ids = (currentSlide.value?.elements || []).filter((el) => el.locked).map((el) => el.id)
-	if (!ids.length) return
-
-	setLocked(ids, false)
-}
+const unlockAll = () => setLocked((currentSlide.value?.elements || []).map((el) => el.id), false)
 
 const getElementContent = (element) => {
 	const contentJSON = {

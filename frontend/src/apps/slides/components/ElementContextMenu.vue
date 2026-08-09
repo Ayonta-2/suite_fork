@@ -47,7 +47,7 @@ import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
 import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
 
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
-const openLayoutDialog = inject('openLayoutDialog')
+const openLayoutDialog = inject('openLayoutDialog', () => {})
 
 const contextMenuOptions = ref([])
 
@@ -69,11 +69,11 @@ const handleContextMenu = (e) => {
 		contextMenuOptions.value = buildElementContextOptions()
 	} else {
 		resetFocus()
-		contextMenuOptions.value = buildSlideMenuOptions()
+		contextMenuOptions.value = buildBlankSlideOptions()
 	}
 }
 
-const buildSlideMenuOptions = () => {
+const buildBlankSlideOptions = () => {
 	const slideOptions = [
 		{ label: 'Select all', icon: 'lucide-box-select', onClick: () => selectAllElements() },
 		{

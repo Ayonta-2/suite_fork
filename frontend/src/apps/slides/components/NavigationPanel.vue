@@ -84,7 +84,7 @@ const inReadonlyMode = inject('inReadonlyMode', ref(false))
 
 const emit = defineEmits(['changeSlide'])
 
-const openLayoutDialog = inject('openLayoutDialog')
+const openLayoutDialog = inject('openLayoutDialog', () => {})
 
 const activeOptions = ref([])
 
