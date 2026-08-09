@@ -89,12 +89,16 @@ const getPresentationFromLocalDB = async (id) => {
 // explicit dirty flag set by every mutation path
 const dirty = ref(false)
 
-// bumped on every markDirty so a save can tell if edits arrived while it was in flight
-let dirtyGeneration = 0
+// bumped on every markDirty so a save can tell if edits arrived while it was in flight;
+// per presentation, since loading one marks it dirty and must not disturb another's save
+const dirtyGenerations = new Map()
+
+const generationFor = (id) => dirtyGenerations.get(id) ?? 0
 
 const markDirty = () => {
 	dirty.value = true
-	dirtyGeneration++
+	const id = presentationId.value
+	if (id) dirtyGenerations.set(id, generationFor(id) + 1)
 }
 
 const markClean = () => {
@@ -116,7 +120,7 @@ const syncSnapshotToServer = async (snapshot, id, generation) => {
 	// presentationDoc moved on, so baseModified can't be refreshed - but the server has this
 	// snapshot, and a clean record is never read back for baseModified anyway
 	if (presentationId.value !== id) {
-		if (dirtyGeneration === generation) {
+		if (generationFor(id) === generation) {
 			await savePresentationToLocalDB({ ...snapshot, dirty: false, updatedAt: Date.now() })
 		}
 		return
@@ -124,7 +128,7 @@ const syncSnapshotToServer = async (snapshot, id, generation) => {
 
 	// an edit made mid-save isn't in the snapshot the server just took, so the
 	// local copy has to keep it and stay dirty; baseModified tracks the server version
-	const editedDuringSave = dirtyGeneration !== generation
+	const editedDuringSave = generationFor(id) !== generation
 
 	await savePresentationToLocalDB({
 		...snapshot,
@@ -157,7 +161,7 @@ const saveCurrentState = async () => {
 
 	try {
 		const idAtSnapshot = presentationId.value
-		const generationAtSnapshot = dirtyGeneration
+		const generationAtSnapshot = generationFor(idAtSnapshot)
 		const content = getLatestSlideContent()
 
 		// save to indexedDB as dirty (not yet synced); baseModified = server version these build on
@@ -179,7 +183,7 @@ const saveCurrentState = async () => {
 
 		// dirty belongs to another presentation now, so it isn't ours to clear
 		if (presentationId.value !== idAtSnapshot) return
-		if (dirtyGeneration === generationAtSnapshot) markClean()
+		if (generationFor(idAtSnapshot) === generationAtSnapshot) markClean()
 	} catch (err) {
 		// keep dirty so autosave retries and beforeunload warns; log once per outage
 		if (!saveFailed.value) console.error('Save failed: ', err)
