@@ -397,21 +397,32 @@ function buildListLevels(reference, kind, defaultFont) {
   return { reference, levels }
 }
 
+/** A fresh, collision-free numbering reference name — no shared counter needed. */
+function uniqueListRef(kind) {
+  return `${kind}-${crypto.randomUUID()}`
+}
+
 /**
  * Each top-level <ul>/<ol> gets its own numbering reference (two separate
  * lists must not share a running counter), and nested <ul>/<ol> inside an
  * <li> recurse at the next indent level instead of collapsing into the
  * parent bullet's paragraph.
+ *
+ * Returns { paragraphs, numberingConfigs } rather than mutating ctx: the
+ * numbering config for a list only exists where its <ul>/<ol> was found, so
+ * it's returned alongside the paragraphs and merged by the caller instead of
+ * being pushed into shared state mid-traversal.
  */
 async function processListNode(el, ctx, level = 0) {
   const tag = el.tagName.toLowerCase()
   const isTask = tag === 'ul' && el.getAttribute('data-type') === 'taskList'
 
   let reference = null
+  const numberingConfigs = []
   if (!isTask) {
     const kind = tag === 'ol' ? 'numbers' : 'bullets'
-    reference = ctx.nextListRef(kind)
-    ctx.numberingConfigs.push(buildListLevels(reference, kind, ctx.defaultFont))
+    reference = uniqueListRef(kind)
+    numberingConfigs.push(buildListLevels(reference, kind, ctx.defaultFont))
   }
 
   const out = []
@@ -453,10 +464,12 @@ async function processListNode(el, ctx, level = 0) {
     }
 
     for (const nested of nestedLists) {
-      out.push(...(await processListNode(nested, ctx, Math.min(level + 1, MAX_LIST_LEVEL))))
+      const child = await processListNode(nested, ctx, Math.min(level + 1, MAX_LIST_LEVEL))
+      out.push(...child.paragraphs)
+      numberingConfigs.push(...child.numberingConfigs)
     }
   }
-  return out
+  return { paragraphs: out, numberingConfigs }
 }
 
 async function paragraphsFromBlockquote(el, ctx) {
@@ -837,34 +850,31 @@ async function tableFromTABLE(tbl, ctx) {
 }
 
 /**
- * Recursively turns a node list into docx block children. Handles the tab
- * wrapper divs the editor emits (`<div data-tab-id>`, present whenever the
- * document uses tabs) by unwrapping them — and, when exporting every tab,
- * separating them with a heading + page break — plus image galleries, page
- * breaks, dividers, and a generic-container fallback so nothing silently
- * collapses into one mangled paragraph.
+ * Recursively turns a node list into docx block children. Handles a stray
+ * tab wrapper div (`<div data-tab-id>` — present when the editor emits a
+ * single tab's content, e.g. the "current tab only" export) by unwrapping
+ * it, plus image galleries, page breaks, dividers, and a generic-container
+ * fallback so nothing silently collapses into one mangled paragraph.
+ * Multi-tab heading/page-break separation is handled by the caller in
+ * `downloadDocxFromHtml`, not here — see that function for why.
+ *
+ * Returns { blocks, numberingConfigs }: list numbering configs are
+ * discovered only where a <ul>/<ol> is found, so each recursive call
+ * returns its own and the caller merges them, rather than every call
+ * reaching into a shared, mutated collection.
  */
 async function blocksFromNodes(nodeList, ctx) {
   const out = []
+  const numberingConfigs = []
   for (const node of Array.from(nodeList)) {
     if (node.nodeType !== Node.ELEMENT_NODE) continue
     const el = node
     const tag = el.tagName.toLowerCase()
 
     if (tag === 'div' && el.hasAttribute('data-tab-id')) {
-      if (ctx.multiTab) {
-        out.push(
-          new Paragraph({
-            pageBreakBefore: ctx.tabIndex > 0,
-            spacing: { before: 0, after: 200 },
-            children: [
-              new TextRun({ text: el.getAttribute('data-tab-label') || 'Untitled', bold: true, size: 40, font: ctx.defaultFont }),
-            ],
-          }),
-        )
-      }
-      ctx.tabIndex += 1
-      out.push(...(await blocksFromNodes(el.childNodes, ctx)))
+      const nested = await blocksFromNodes(el.childNodes, ctx)
+      out.push(...nested.blocks)
+      numberingConfigs.push(...nested.numberingConfigs)
     } else if (tag === 'div' && el.getAttribute('data-type') === 'image-group') {
       out.push(...(await blocksForImageGroup(el, ctx)))
     } else if (tag === 'div' && el.hasAttribute('data-page-break')) {
@@ -872,7 +882,9 @@ async function blocksFromNodes(nodeList, ctx) {
     } else if (tag === 'p') {
       out.push(await paragraphFromP(el, ctx))
     } else if (tag === 'ul' || tag === 'ol') {
-      out.push(...(await processListNode(el, ctx, 0)))
+      const list = await processListNode(el, ctx, 0)
+      out.push(...list.paragraphs)
+      numberingConfigs.push(...list.numberingConfigs)
     } else if (/^h[1-6]$/.test(tag)) {
       out.push(await headingFromHx(el, ctx))
     } else if (tag === 'blockquote') {
@@ -895,13 +907,15 @@ async function blocksFromNodes(nodeList, ctx) {
     } else {
       const hasBlockChildren = Array.from(el.children || []).some((c) => BLOCK_TAGS.has(c.tagName))
       if (hasBlockChildren) {
-        out.push(...(await blocksFromNodes(el.childNodes, ctx)))
+        const nested = await blocksFromNodes(el.childNodes, ctx)
+        out.push(...nested.blocks)
+        numberingConfigs.push(...nested.numberingConfigs)
       } else {
         out.push(await paragraphFromP(el, ctx))
       }
     }
   }
-  return out
+  return { blocks: out, numberingConfigs }
 }
 
 export async function downloadDocxFromHtml(html, filename, settings = {}) {
@@ -945,17 +959,36 @@ export async function downloadDocxFromHtml(html, filename, settings = {}) {
     defaultSpacing,
     tableWidthDxa: CONTENT_WIDTH_TWIPS,
     contentWidthPx: CONTENT_WIDTH_PX,
-    multiTab: topTabs.length > 1,
-    tabIndex: 0,
-    numberingConfigs: [],
-    listCounters: { bullets: 0, numbers: 0 },
-    nextListRef(kind) {
-      this.listCounters[kind] += 1
-      return `${kind}-${this.listCounters[kind]}`
-    },
   }
 
-  const children = await blocksFromNodes(body.childNodes, ctx)
+  // Exporting every tab: build each tab's heading + content as one unit, in
+  // an explicit indexed loop, then concatenate in order. This — rather than
+  // a shared counter mutated mid-recursion — is what keeps tab numbering and
+  // page-break placement correct regardless of traversal order.
+  let children
+  let numberingConfigs
+  if (topTabs.length > 1) {
+    children = []
+    numberingConfigs = []
+    for (const [index, tab] of topTabs.entries()) {
+      children.push(
+        new Paragraph({
+          pageBreakBefore: index > 0,
+          spacing: { before: 0, after: 200 },
+          children: [
+            new TextRun({ text: tab.getAttribute('data-tab-label') || 'Untitled', bold: true, size: 40, font: defaultFont }),
+          ],
+        }),
+      )
+      const tabResult = await blocksFromNodes(tab.childNodes, ctx)
+      children.push(...tabResult.blocks)
+      numberingConfigs.push(...tabResult.numberingConfigs)
+    }
+  } else {
+    const result = await blocksFromNodes(body.childNodes, ctx)
+    children = result.blocks
+    numberingConfigs = result.numberingConfigs
+  }
 
   const docxDoc = new Document({
     styles: {
@@ -995,7 +1028,7 @@ export async function downloadDocxFromHtml(html, filename, settings = {}) {
         children: children.length ? children : [emptyParagraph(ctx)],
       },
     ],
-    numbering: ctx.numberingConfigs.length ? { config: ctx.numberingConfigs } : undefined,
+    numbering: numberingConfigs.length ? { config: numberingConfigs } : undefined,
   })
 
   const blob = await Packer.toBlob(docxDoc)
