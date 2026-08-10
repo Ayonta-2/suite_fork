@@ -1144,6 +1144,7 @@ export {
 	updatePosition,
 	flipElements,
 	findSlideElement,
+	getInitialShapeTextContent,
 	cropSelectionToFitContent,
 	getElementCenter,
 }
