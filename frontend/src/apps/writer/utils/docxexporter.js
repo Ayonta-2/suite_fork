@@ -397,9 +397,29 @@ function buildListLevels(reference, kind, defaultFont) {
   return { reference, levels }
 }
 
-/** A fresh, collision-free numbering reference name — no shared counter needed. */
+/**
+ * A fresh, collision-free numbering reference name — no shared counter
+ * needed. `crypto.randomUUID()` requires a secure context (HTTPS) and is
+ * `undefined` on plain HTTP, which self-hosted instances commonly run on;
+ * `crypto.getRandomValues()` has no such restriction and is the fallback.
+ */
 function uniqueListRef(kind) {
-  return `${kind}-${crypto.randomUUID()}`
+  return `${kind}-${randomId()}`
+}
+
+function randomId() {
+  // `typeof crypto` (not `crypto?.x`) is required here: optional chaining
+  // only guards a null/undefined *value*, not a wholly undeclared global —
+  // referencing the bare `crypto` identifier still throws a ReferenceError
+  // if it doesn't exist at all.
+  if (typeof crypto !== 'undefined') {
+    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+    if (typeof crypto.getRandomValues === 'function') {
+      const bytes = crypto.getRandomValues(new Uint8Array(16))
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+    }
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
 }
 
 /**
