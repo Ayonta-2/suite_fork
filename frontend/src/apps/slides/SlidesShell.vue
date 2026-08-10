@@ -18,8 +18,7 @@ import '@/apps/slides/styles/fonts.css'
 
 const isOnline = ref(navigator?.onLine ?? true)
 
-// Inter ships with the app bundle, these don't. Fetch every face up front so applying
-// one from the picker never swaps mid-render.
+// Inter is in the app bundle, these aren't. Load every face so the picker never swaps.
 const bundledFontFaces = [
   '400 16px Anton',
   '400 16px "Courier Prime"',
@@ -28,9 +27,12 @@ const bundledFontFaces = [
   'italic 700 16px "Courier Prime"',
 ]
 
+// One char per unicode-range subset; load() samples basic Latin otherwise.
+const subsetSample = 'AĀẠ'
+
 const preloadBundledFonts = () => {
   if (!document.fonts?.load) return
-  bundledFontFaces.forEach((face) => document.fonts.load(face))
+  bundledFontFaces.forEach((face) => document.fonts.load(face, subsetSample))
 }
 
 const handleOffline = () => {
