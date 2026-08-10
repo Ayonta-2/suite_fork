@@ -14,8 +14,24 @@ import { toast, FrappeUIProvider } from 'frappe-ui'
 import { Wifi, WifiOff } from 'lucide-vue-next'
 import { saveCurrentState } from '@/apps/slides/stores/saving'
 import { setupTheme } from '@/utils/setupTheme'
+import '@/apps/slides/styles/fonts.css'
 
 const isOnline = ref(navigator?.onLine ?? true)
+
+// Inter ships with the app bundle, these don't. Fetch every face up front so applying
+// one from the picker never swaps mid-render.
+const bundledFontFaces = [
+  '400 16px Anton',
+  '400 16px "Courier Prime"',
+  'italic 400 16px "Courier Prime"',
+  '700 16px "Courier Prime"',
+  'italic 700 16px "Courier Prime"',
+]
+
+const preloadBundledFonts = () => {
+  if (!document.fonts?.load) return
+  bundledFontFaces.forEach((face) => document.fonts.load(face))
+}
 
 const handleOffline = () => {
   isOnline.value = false
@@ -44,6 +60,7 @@ onMounted(() => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   registerServiceWorker()
+  preloadBundledFonts()
   setupTheme()
   document.documentElement.style.overscrollBehavior = 'none'
 })
