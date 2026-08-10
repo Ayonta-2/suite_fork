@@ -3,6 +3,7 @@
 
 import json
 import re
+from contextlib import suppress
 from email.utils import formataddr
 from functools import cached_property
 from typing import Literal
@@ -1291,6 +1292,11 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
     re-fetched — a flag changed, a mailbox was re-synced — and the index counts every sighting of an
     address to rank suggestions, so re-indexing the same message would score sync churn as
     correspondence. The addresses on a message already cached were indexed when it first arrived.
+
+    Being cached is therefore what marks a message indexed, and a message whose addresses did not
+    reach the index does not stay cached. Otherwise the failure would be permanent: the message
+    would never be offered as new again, and the people on it could be missing from suggestions
+    until someone rebuilt the index by hand.
     """
 
     store = get_data_store(account)
@@ -1307,6 +1313,13 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
     try:
         get_email_address_index(account).index_addresses(_message_addresses(new_messages))
     except Exception:
+        # Uncache what was not indexed, so the next fetch of it is new again and tries once more.
+        # The message is still on the server; the cost of dropping it is one re-fetch, against
+        # addresses that would otherwise never be indexed at all. Suppressed in turn because
+        # indexing must not break caching, and a rollback that throws would do exactly that.
+        with suppress(Exception):
+            store.delete_many(Entity.EMAIL, keys=list(new_ids))
+
         log_mail_error(
             _("Failed to index message addresses for search"), frappe.get_traceback(with_context=True)
         )
