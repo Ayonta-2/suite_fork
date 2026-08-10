@@ -1294,11 +1294,12 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
     """
 
     store = get_data_store(account)
-    # Checked before the write, while the store can still tell which of these it has already seen.
-    known = store.exists_many(Entity.EMAIL, keys=list(messages))
-    store.set_many(Entity.EMAIL, items=messages)
+    # Which of these the cache had never held, answered by the write itself: two fetches racing to
+    # cache the same new message would otherwise both be told it was new and count its addresses
+    # twice. Only one of them gets the message back from here.
+    new_ids = store.set_many(Entity.EMAIL, items=messages)
 
-    new_messages = [message for message_id, message in messages.items() if message_id not in known]
+    new_messages = [message for message_id, message in messages.items() if message_id in new_ids]
     if not new_messages:
         return
 

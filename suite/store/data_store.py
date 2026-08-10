@@ -289,23 +289,6 @@ class DataStore(BaseStore):
         with self._txn(write=False) as txn:
             return txn.get(db_key) is not None
 
-    def exists_many(self, entity: Enum, keys: list[str]) -> set[str]:
-        """Return the subset of `keys` the store holds, checked in one transaction.
-
-        Cheaper than `get_many` when only presence matters — the cursor positions on the key
-        without reading its value, so nothing is fetched or deserialized — and cheaper than a
-        call to `exists` per key, which opens a transaction each time.
-        """
-
-        if not keys:
-            return set()
-
-        db_keys = [(key, self._db_key(entity, key)) for key in keys]
-
-        with self._txn(write=False) as txn:
-            cursor = txn.cursor()
-            return {key for key, db_key in db_keys if cursor.set_key(db_key)}
-
     def get_many(self, entity: Enum, keys: list[str]) -> dict[str, Any | None]:
         """Retrieve multiple values by a list of keys, returning a dictionary of key-value pairs."""
 
@@ -319,19 +302,35 @@ class DataStore(BaseStore):
 
         return {key: self._deserialize(value) if value is not None else None for key, value in raw}
 
-    def set_many(self, entity: Enum, items: dict[str, Any]) -> None:
-        """Store multiple key-value pairs at once, serializing values before saving."""
+    def set_many(self, entity: Enum, items: dict[str, Any]) -> set[str]:
+        """Store multiple key-value pairs at once, serializing values before saving.
+
+        Returns the keys the store did not already hold. They are decided inside the very
+        transaction that writes them, and that is what makes the answer safe to act on: LMDB
+        serializes writers, so of two workers storing the same key at once exactly one is told it
+        was new. Asking beforehand cannot promise that — both would look before either committed,
+        and both would be told yes. Callers that only need the write can ignore it.
+        """
 
         if not items:
-            return
+            return set()
 
-        encoded = [(self._db_key(entity, key), self._serialize(value)) for key, value in items.items()]
+        encoded = [(key, self._db_key(entity, key), self._serialize(value)) for key, value in items.items()]
+        new: set[str] = set()
 
         def _put_all(txn: Any) -> None:
-            for db_key, data in encoded:
-                txn.put(db_key, data)
+            # Rebuilt per attempt: `_write` runs this again if the map has to grow first.
+            new.clear()
+            cursor = txn.cursor()
+            for key, db_key, data in encoded:
+                # Positions on the key without reading its value: a lookup, not a copy of the value.
+                if not cursor.set_key(db_key):
+                    new.add(key)
+
+                cursor.put(db_key, data)
 
         self._write(_put_all)
+        return new
 
     def delete_many(self, entity: Enum, keys: list[str]) -> None:
         """Delete multiple keys from the storage at once."""
