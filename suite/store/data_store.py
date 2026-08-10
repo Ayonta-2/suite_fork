@@ -289,6 +289,23 @@ class DataStore(BaseStore):
         with self._txn(write=False) as txn:
             return txn.get(db_key) is not None
 
+    def exists_many(self, entity: Enum, keys: list[str]) -> set[str]:
+        """Return the subset of `keys` the store holds, checked in one transaction.
+
+        Cheaper than `get_many` when only presence matters — the cursor positions on the key
+        without reading its value, so nothing is fetched or deserialized — and cheaper than a
+        call to `exists` per key, which opens a transaction each time.
+        """
+
+        if not keys:
+            return set()
+
+        db_keys = [(key, self._db_key(entity, key)) for key in keys]
+
+        with self._txn(write=False) as txn:
+            cursor = txn.cursor()
+            return {key for key, db_key in db_keys if cursor.set_key(db_key)}
+
     def get_many(self, entity: Enum, keys: list[str]) -> dict[str, Any | None]:
         """Retrieve multiple values by a list of keys, returning a dictionary of key-value pairs."""
 

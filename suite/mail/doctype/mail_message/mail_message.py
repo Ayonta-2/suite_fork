@@ -1285,14 +1285,26 @@ def _get_cached_messages(account: str, ids: list[str]) -> dict[str, dict | None]
 
 
 def _cache_messages(account: str, messages: dict[str, dict]) -> None:
-    """Store messages in cache with the message ID as the key, and index their addresses for search."""
+    """Store messages in cache with the message ID as the key, and index their addresses for search.
+
+    Only messages the cache hasn't held before are indexed. Caching runs again whenever a message is
+    re-fetched — a flag changed, a mailbox was re-synced — and the index counts every sighting of an
+    address to rank suggestions, so re-indexing the same message would score sync churn as
+    correspondence. The addresses on a message already cached were indexed when it first arrived.
+    """
 
     store = get_data_store(account)
+    # Checked before the write, while the store can still tell which of these it has already seen.
+    known = store.exists_many(Entity.EMAIL, keys=list(messages))
     store.set_many(Entity.EMAIL, items=messages)
+
+    new_messages = [message for message_id, message in messages.items() if message_id not in known]
+    if not new_messages:
+        return
 
     # Feed sender/recipient addresses into the shared address index; never let indexing break caching.
     try:
-        get_email_address_index(account).index_addresses(_message_addresses(messages.values()))
+        get_email_address_index(account).index_addresses(_message_addresses(new_messages))
     except Exception:
         log_mail_error(
             _("Failed to index message addresses for search"), frappe.get_traceback(with_context=True)
@@ -1303,7 +1315,10 @@ def _remove_cached_messages(account: str, ids: list[str]) -> None:
     """Remove messages from cache for the provided IDs.
 
     Addresses are left in the search index on purpose: it is cumulative, and an address seen in an
-    evicted message is almost always still valid elsewhere.
+    evicted message is almost always still valid elsewhere. Their correspondence counts are left
+    standing too, and a message re-fetched after this counts again — the cache is what remembers
+    which messages have been seen. Counts rank addresses against each other, so that drift costs
+    an ordering nothing; `rebuild_email_address_index` recomputes them from the cache as it stands.
     """
 
     store = get_data_store(account)
