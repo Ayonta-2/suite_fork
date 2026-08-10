@@ -800,10 +800,16 @@ function computeColumnWidths(trs, totalCols, tableWidthDxa) {
  * cells for any cell declaring rowSpan, so we only need to emit the cells
  * that are actually present in the source HTML (rowspan-covered cells are
  * already absent from later rows there too) with their real colSpan/rowSpan.
+ *
+ * Returns { table, numberingConfigs }: a <ul>/<ol> inside a cell needs its
+ * numbering config threaded up to the document level the same way a
+ * top-level list's does (see `processListNode`), so it isn't dropped just
+ * because it's nested inside a cell rather than a block.
  */
 async function tableFromTABLE(tbl, ctx) {
   const borderColor = COLOR_MAP['var(--outline-gray-2)']
   const headerFill = COLOR_MAP['var(--surface-gray-2)']
+  const numberingConfigs = []
 
   const trs = Array.from(tbl.querySelectorAll(':scope > thead > tr, :scope > tbody > tr, :scope > tr'))
   let totalCols = 0
@@ -832,6 +838,10 @@ async function tableFromTABLE(tbl, ctx) {
       const pushP = async (n) => {
         if (n.nodeName === 'P') {
           paras.push(await paragraphFromP(n, cellCtx, isHeader ? { bold: true } : {}))
+        } else if (n.nodeName === 'UL' || n.nodeName === 'OL') {
+          const list = await processListNode(n, cellCtx, 0)
+          paras.push(...list.paragraphs)
+          numberingConfigs.push(...list.numberingConfigs)
         } else {
           for (const child of Array.from(n.childNodes || [])) await pushP(child)
         }
@@ -860,13 +870,14 @@ async function tableFromTABLE(tbl, ctx) {
     rows.push(new TableRow({ children: cells }))
   }
 
-  return new Table({
+  const table = new Table({
     width: { size: ctx.tableWidthDxa, type: WidthType.DXA },
     alignment: AlignmentType.LEFT,
     layout: TableLayoutType.FIXED,
     columnWidths,
     rows,
   })
+  return { table, numberingConfigs }
 }
 
 /**
@@ -913,7 +924,9 @@ async function blocksFromNodes(nodeList, ctx) {
       out.push(paragraphFromCodeBlock(el, ctx))
     } else if (tag === 'table') {
       out.push(new Paragraph({ children: [], spacing: { before: TABLE_SPACE_BEFORE } }))
-      out.push(await tableFromTABLE(el, ctx))
+      const tableResult = await tableFromTABLE(el, ctx)
+      out.push(tableResult.table)
+      numberingConfigs.push(...tableResult.numberingConfigs)
       out.push(new Paragraph({ children: [], spacing: { after: TABLE_SPACE_AFTER } }))
     } else if (tag === 'img') {
       const p = await imageParagraph(el, ctx)
