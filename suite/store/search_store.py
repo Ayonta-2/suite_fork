@@ -17,6 +17,10 @@ from suite.utils.lock import write_lock
 
 SCHEMA_VERSION_FILE = "schema.version"
 
+# How many documents an unbounded fetch (`limit=None`) asks for before it knows how many match.
+# Sized so one pass almost always holds the whole match set; see `_run_search` for what a miss costs.
+UNBOUNDED_FETCH_PAGE = 5000
+
 
 @dataclass(frozen=True)
 class FieldSpec:
@@ -146,7 +150,7 @@ class SearchStore:
     def search_prefix(
         self,
         terms: list[str],
-        limit: int = 20,
+        limit: int | None = 20,
         offset: int = 0,
         fields: list[str] | None = None,
         order_by: str | None = None,
@@ -159,6 +163,9 @@ class SearchStore:
         adjacent or in order. Tantivy scores term and prefix queries alike as a constant, so these
         hits come back in index order: ranking them is the caller's job (see
         `EmailAddressIndex.search_email_addresses`). Returns `(hits, count)`.
+
+        A caller that ranks the hits itself has to see all of them — an unscored page is an
+        arbitrary slice, not the best matches — so `limit=None` returns every match.
         """
 
         terms = [term for term in terms if term]
@@ -208,12 +215,19 @@ class SearchStore:
         )
 
     def _run_search(
-        self, build_query, limit: int, offset: int, order_by: str | None
+        self, build_query, limit: int | None, offset: int, order_by: str | None
     ) -> tuple[list[dict], int]:
         """Open the index, build a query via `build_query(index)`, run it, and return `(hits, count)`.
 
         Shared plumbing for the `search*` methods; swallows query errors (logged) into an empty
-        result so a malformed query never breaks the caller.
+        result so a malformed query never breaks the caller. `limit=None` returns every match.
+
+        Everything runs against one searcher, which holds the segments as they stood when it was
+        made. That is what makes an unbounded fetch whole rather than nearly whole: Tantivy needs a
+        limit up front, so the fetch guesses a page and repeats with the count if it guessed short,
+        and both passes have to read the same index for the count to still describe what the second
+        pass fetches. Reopening between them would let a write land in between and leave the fetch
+        short of its own count — the very truncation `limit=None` exists to avoid.
         """
 
         # Nothing has been indexed yet for this key.
@@ -227,9 +241,19 @@ class SearchStore:
             index.reload()
 
             searcher = index.searcher()
+            query = build_query(index)
+
+            page = UNBOUNDED_FETCH_PAGE if limit is None else limit
             result = searcher.search(
-                build_query(index), limit=limit, offset=offset, count=True, order_by_field=order_by
+                query, limit=page, offset=offset, count=True, order_by_field=order_by
             )
+
+            # Guessed short: ask this same searcher again, now knowing how many there are.
+            if limit is None and result.count - offset > page:
+                result = searcher.search(
+                    query, limit=result.count, offset=offset, count=True, order_by_field=order_by
+                )
+
             hits = [self._to_hit(searcher.doc(address), score) for score, address in result.hits]
             return (hits, result.count)
         except Exception:

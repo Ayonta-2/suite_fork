@@ -198,50 +198,27 @@ class Relevance(unittest.TestCase):
 
 
 class SearchEmailAddresses(unittest.TestCase):
-    """``search_email_addresses`` — every match is ranked, however many the index returns."""
+    """``search_email_addresses`` — ranks the whole match set, so it asks for the whole match set."""
 
-    def search(self, query, corpus, limit=10):
-        """Search `corpus` — held in index order — through a stand-in for the Tantivy retrieval.
+    def test_every_match_is_asked_for_not_a_page_of_them(self):
+        # Retrieval is unscored, so a page is an arbitrary slice: the best address sits wherever it
+        # was indexed. Ranking a page would let whoever was indexed first win a broad query.
+        index = mock.Mock(spec=EmailAddressIndex)
+        index.search_prefix.return_value = ([], 0)
 
-        The stand-in matches the way the real prefix query does (every token present, the last one
-        as a prefix), returns hits unscored in index order, and honours `limit` by truncating,
-        reporting the full match count alongside as Tantivy does.
-        """
+        EmailAddressIndex.search_email_addresses(index, "jan", limit=5)
 
-        def search_prefix(tokens, limit):
-            matched = [
-                hit
-                for hit in corpus
-                if all(
-                    any(word.startswith(token) for word in _tokenize(f"{hit['name']} {hit['email']}"))
-                    for token in tokens
-                )
-            ]
-            return (matched[:limit], len(matched))
+        index.search_prefix.assert_called_once_with(["jan"], limit=None)
+
+    def test_hits_come_back_ranked_and_capped_at_the_limit(self):
+        exact = {"name": "Jan Novak", "email": "jan@example.org"}
+        longer = {"name": "Janssen One", "email": "janssen1@example.com"}
 
         index = mock.Mock(spec=EmailAddressIndex)
-        index.search_prefix.side_effect = search_prefix
+        index.search_prefix.return_value = ([longer, exact], 2)
 
-        results = EmailAddressIndex.search_email_addresses(index, query, limit=limit)
-        return [result["email"] for result in results], index.search_prefix.call_count
-
-    def test_a_better_match_past_the_first_page_still_wins(self):
-        # The whole set has to be ranked: retrieval is unscored, so this exact-word match sits
-        # wherever it was indexed — here past a pool of longer words that merely start with "jan".
-        noise = [{"name": f"Janssen {n}", "email": f"janssen{n}@example.com"} for n in range(6000)]
-        exact = {"name": "Jan Novak", "email": "jan@example.org"}
-
-        emails, searches = self.search("jan", [*noise, exact])
-        self.assertEqual(emails[0], exact["email"])
-        # One search to fill the pool, a second once its count showed the pool had been truncated.
-        self.assertEqual(searches, 2)
-
-    def test_a_set_that_fits_the_pool_is_fetched_once(self):
-        corpus = [{"name": "Jane Doe", "email": "jane@example.com"}]
-
-        emails, searches = self.search("jane", corpus)
-        self.assertEqual(emails, [corpus[0]["email"]])
-        self.assertEqual(searches, 1)
+        results = EmailAddressIndex.search_email_addresses(index, "jan", limit=1)
+        self.assertEqual(results, [{"name": exact["name"], "email": exact["email"]}])
 
     def test_blank_query_searches_for_nothing(self):
         index = mock.Mock(spec=EmailAddressIndex)

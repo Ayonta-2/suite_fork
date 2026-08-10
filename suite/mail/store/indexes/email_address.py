@@ -11,11 +11,6 @@ _TOKEN_PATTERN = re.compile(r"[^\W_]+")
 # Quote characters some clients wrap display names in, e.g. "'Jane Doe'".
 _WRAPPING_QUOTES = "'\"`"
 
-# How many candidates a search asks for up front. Ranking needs the whole match set — see
-# `search_email_addresses` — and this is sized so one round-trip almost always holds it: a query
-# matching more addresses than this is a very short prefix against a very large address book.
-_CANDIDATE_POOL = 5000
-
 # Ranks below every explained match. A hit matched the indexed "<name> <email>" blob, which can span
 # fields — "doe jane" matches "Jane Doe jane@…" — so a candidate need not match any single field.
 _NO_MATCH = (9, 9, 9, 9, 9)
@@ -144,20 +139,18 @@ class EmailAddressIndex(SearchStore):
         "Jane Doeringer <jane@example.com>". Documents are unique per address, so the hits need no
         further deduping.
 
-        Every match is ranked, not a slice of them. Unscored hits come back in index order, so the
-        best address can sit anywhere in the match set, and cutting the set before ranking would
-        drop it: whoever was indexed first would win a broad query outright. Cost therefore scales
-        with how many addresses match — a single letter against a 20k-address book is the worst
-        case at ~90ms, and anything more selective comes back in a millisecond or so.
+        Every match is ranked, not a slice of them — hence the unbounded fetch. Unscored hits come
+        back in index order, so the best address can sit anywhere in the match set, and cutting the
+        set before ranking would drop it: whoever was indexed first would win a broad query
+        outright. Cost therefore scales with how many addresses match — a single letter against a
+        20k-address book is the worst case at ~90ms, and anything more selective comes back in a
+        millisecond or so.
         """
 
         tokens = _tokenize(query)
         if not tokens:
             return []
 
-        hits, total = self.search_prefix(tokens, limit=max(limit, _CANDIDATE_POOL))
-        if total > len(hits):
-            hits, _total = self.search_prefix(tokens, limit=total)
-
+        hits, _total = self.search_prefix(tokens, limit=None)
         hits.sort(key=lambda hit: _relevance_key(tokens, hit))
         return [{"name": hit.get("name"), "email": hit.get("email")} for hit in hits[:limit]]
