@@ -3,7 +3,7 @@ const sectionTitleClasses = 'text-base font-medium text-gray-800'
 const fieldLabelClasses = 'text-sm text-gray-600'
 
 const selectionColor = '#3B82F6'
-const lockColor = `${selectionColor}80`
+const lockColor = `${selectionColor}99`
 const guideColor = '#C026D3'
 const handleIconColor = '#4b5563'
 
