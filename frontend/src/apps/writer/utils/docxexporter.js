@@ -649,7 +649,12 @@ async function imageParagraph(el, ctx) {
     return null
   }
 
-  const floatAttr = (el.getAttribute('data-float') || '').toLowerCase()
+  const floatAttr = (
+    el.getAttribute('data-float') ||
+    el.getAttribute('datafloat') ||
+    el.style.float ||
+    ''
+  ).toLowerCase()
   const isFloating = floatAttr === 'left' || floatAttr === 'right'
   const maxWidth = isFloating ? Math.floor(ctx.contentWidthPx * 0.45) : ctx.contentWidthPx
   const { width, height } = fitImageSize(el, maxWidth)
