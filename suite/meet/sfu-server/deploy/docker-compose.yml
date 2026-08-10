@@ -82,6 +82,10 @@ services:
       - "127.0.0.1:${RECORDER_PORT:-3010}:3010"
     volumes:
       - recorder-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,mode=1777,uid=1000,gid=1000
+      - /home/node:size=256m,mode=0700,uid=1000,gid=1000
     environment:
       - PORT=3010
       - RECORDER_SECRET=${RECORDER_SECRET}
@@ -90,6 +94,7 @@ services:
       - RECORDER_SITE_ORIGIN=${RECORDER_SITE_ORIGIN}
       - RECORDER_ALLOW_HTTP=${RECORDER_ALLOW_HTTP:-false}
       - RECORDER_MAX_CONCURRENT=1
+      - RECORDER_MIN_FREE_BYTES=${RECORDER_MIN_FREE_BYTES:-1073741824}
       - SFU_ORIGIN=https://${DOMAIN}
       - SFU_SOCKET_PATH=/socket.io
       - RECORDER_CHROMIUM_NO_SANDBOX=true
@@ -98,6 +103,8 @@ services:
     pids_limit: ${RECORDER_PIDS_LIMIT:-512}
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     logging:
       driver: json-file
       options:
