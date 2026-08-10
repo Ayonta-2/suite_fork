@@ -1315,8 +1315,16 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
     except Exception:
         # Uncache what was not indexed, so the next fetch of it is new again and tries once more.
         # The message is still on the server; the cost of dropping it is one re-fetch, against
-        # addresses that would otherwise never be indexed at all. Suppressed in turn because
-        # indexing must not break caching, and a rollback that throws would do exactly that.
+        # addresses that would otherwise never be indexed at all.
+        #
+        # Unconditional on purpose, even though another request may have re-cached one of these in
+        # the meantime: that request found the id already there, so it skipped indexing too, and
+        # sparing its copy would leave the message cached with nobody left to index it — permanently,
+        # since only a cache miss brings it back through here. Its copy is a mirror of the server
+        # (flag changes write there first), so dropping it costs that request a re-fetch, not data.
+        #
+        # Suppressed in turn because indexing must not break caching, and a rollback that throws
+        # would do exactly that.
         with suppress(Exception):
             store.delete_many(Entity.EMAIL, keys=list(new_ids))
 

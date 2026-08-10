@@ -4,11 +4,14 @@
 cache first takes it, and only stays cached if that indexing got through — so a failure costs a
 re-fetch rather than leaving the people on that message out of suggestions for good."""
 
+import shutil
+import tempfile
 import unittest
 from unittest import mock
 
 from suite.mail.doctype.mail_message import mail_message
 from suite.mail.store import Entity
+from suite.store.data_store import DataStore
 
 
 class CacheMessages(unittest.TestCase):
@@ -101,6 +104,54 @@ class CacheMessages(unittest.TestCase):
         )
 
         log_error.assert_called_once()
+
+
+class RollbackAgainstAConcurrentUpdate(unittest.TestCase):
+    """What the rollback does when another request re-cached the message while indexing ran.
+
+    Against a real store, with the competing write landing inside the failing index call — the
+    window it would really land in.
+    """
+
+    def setUp(self):
+        self.path = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.path, ignore_errors=True)
+        self.store = DataStore(base_path=self.path, namespace=("test", "message-caching"))
+
+    def cache_with_a_competing_write_during_indexing(self, message, competing):
+        """Cache `message`; while indexing runs (and fails), another request caches `competing`."""
+
+        def index_addresses(_addresses):
+            self.store.set_many(Entity.EMAIL, items={"m1": competing})
+            raise RuntimeError("index is down")
+
+        index = mock.Mock()
+        index.index_addresses.side_effect = index_addresses
+
+        with (
+            mock.patch.object(mail_message, "get_data_store", return_value=self.store),
+            mock.patch.object(mail_message, "get_email_address_index", return_value=index),
+            mock.patch.object(mail_message, "log_mail_error"),
+        ):
+            mail_message._cache_messages("account", {"m1": message})
+
+    def test_the_newer_copy_is_dropped_along_with_the_rest(self):
+        # Deliberate, and the reason is the other request: it found the id already cached, so it
+        # skipped indexing on the same grounds this one did. Keeping its copy would leave the
+        # message cached with no one left to index it, and nothing brings it back through here
+        # except a cache miss — so the addresses on it would never be indexed at all. The copy is a
+        # mirror of the server, so dropping it costs a re-fetch; keeping it would cost the index.
+        message = {"id": "m1", "from_name": "Jane Doe", "from_email": "jane@example.com"}
+        self.cache_with_a_competing_write_during_indexing(message, {**message, "seen": 1})
+
+        self.assertFalse(self.store.exists(Entity.EMAIL, "m1"))
+
+    def test_the_next_fetch_of_it_is_new_again(self):
+        # Which is what makes the drop recoverable: the retry indexes the addresses that were lost.
+        message = {"id": "m1", "from_name": "Jane Doe", "from_email": "jane@example.com"}
+        self.cache_with_a_competing_write_during_indexing(message, {**message, "seen": 1})
+
+        self.assertEqual(self.store.set_many(Entity.EMAIL, items={"m1": message}), {"m1"})
 
 
 if __name__ == "__main__":
