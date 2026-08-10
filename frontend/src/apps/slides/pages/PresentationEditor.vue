@@ -15,13 +15,7 @@
 				v-model:hasOngoingInteraction="isSlideInteractionActive"
 			/>
 
-			<NavigationPanel
-				class="absolute bottom-0 top-0"
-				@changeSlide="changeEditorSlide"
-				@openLayoutDialog="openLayoutDialog"
-				@duplicate="duplicateSlide"
-				@delete="(index) => deleteSlide(false, index)"
-			/>
+			<NavigationPanel class="absolute bottom-0 top-0" @changeSlide="changeEditorSlide" />
 
 			<Toolbar v-if="!inReadonlyMode && presentationDoc" />
 
@@ -126,8 +120,6 @@ import {
 	focusedSlide,
 	setSlideIndex,
 	changeEditorSlide,
-	deleteSlide,
-	duplicateSlide,
 	addEmptySlide,
 	handleInsertSlide,
 } from '@/apps/slides/stores/slide'
@@ -418,6 +410,8 @@ const openLayoutDialog = (index) => {
 	showLayoutDialog.value = true
 	insertIndex.value = index
 }
+
+provide('openLayoutDialog', openLayoutDialog)
 
 const cleanup = () => {
 	showExportView.value = false
