@@ -1017,7 +1017,8 @@ const cropSelectionToFitContent = (elementIds) => {
 	// crop selection to selected element edges
 	elementIds.forEach((id) => {
 		const element = currentSlide.value.elements.find((el) => el.id === id)
-		const useLayoutBounds = elementIds.length == 1 && ['shape', 'image'].includes(element?.type)
+		// same source the resize observer writes from, so the two never disagree by a sub-pixel
+		const useLayoutBounds = elementIds.length == 1
 
 		const {
 			left: elementLeft,
