@@ -11,11 +11,9 @@ _TOKEN_PATTERN = re.compile(r"[^\W_]+")
 # Quote characters some clients wrap display names in, e.g. "'Jane Doe'".
 _WRAPPING_QUOTES = "'\"`"
 
-# Candidates pulled from the index before ranking. Tantivy returns prefix matches unscored, i.e. in
-# index order, so the best address can sit anywhere in the match set and the pool has to be deep
-# enough to hold it: this covers an entire address book of that size, and costs ~20ms in the worst
-# case measured — a single-letter query against a 20k-address book, where the next keystroke narrows
-# the field anyway. Anything more selective ranks in well under a millisecond.
+# How many candidates a search asks for up front. Ranking needs the whole match set — see
+# `search_email_addresses` — and this is sized so one round-trip almost always holds it: a query
+# matching more addresses than this is a very short prefix against a very large address book.
 _CANDIDATE_POOL = 5000
 
 # Ranks below every explained match. A hit matched the indexed "<name> <email>" blob, which can span
@@ -140,17 +138,26 @@ class EmailAddressIndex(SearchStore):
 
         Every token of the query must appear in the address's name or email, with the last token
         matched as a prefix — so "jan" matches "jane", and "jane.d" matches "jane.d@…" / "Jane Doe"
-        but not "jane@…" or "jane.r@…". The index scores those matches all alike, so a pool of
-        candidates is ranked here instead: an address wins by matching more of a name or local part,
-        earlier, and in order. Searching "doe" therefore leads with "John Doe <john@example.com>"
-        rather than "Jane Doeringer <jane@example.com>". Documents are unique per address, so the
-        hits need no further deduping.
+        but not "jane@…" or "jane.r@…". The index scores those matches all alike, so they are ranked
+        here instead: an address wins by matching more of a name or local part, earlier, and in
+        order. Searching "doe" therefore leads with "John Doe <john@example.com>" rather than
+        "Jane Doeringer <jane@example.com>". Documents are unique per address, so the hits need no
+        further deduping.
+
+        Every match is ranked, not a slice of them. Unscored hits come back in index order, so the
+        best address can sit anywhere in the match set, and cutting the set before ranking would
+        drop it: whoever was indexed first would win a broad query outright. Cost therefore scales
+        with how many addresses match — a single letter against a 20k-address book is the worst
+        case at ~90ms, and anything more selective comes back in a millisecond or so.
         """
 
         tokens = _tokenize(query)
         if not tokens:
             return []
 
-        hits, _total_count = self.search_prefix(tokens, limit=max(limit, _CANDIDATE_POOL))
+        hits, total = self.search_prefix(tokens, limit=max(limit, _CANDIDATE_POOL))
+        if total > len(hits):
+            hits, _total = self.search_prefix(tokens, limit=total)
+
         hits.sort(key=lambda hit: _relevance_key(tokens, hit))
         return [{"name": hit.get("name"), "email": hit.get("email")} for hit in hits[:limit]]
