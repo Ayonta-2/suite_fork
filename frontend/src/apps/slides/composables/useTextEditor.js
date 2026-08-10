@@ -18,6 +18,7 @@ export const activeEditor = ref(null)
 let editorElement = null
 let editorSlideId = null
 let lastCompositionId = null
+let stopContentWatch = null
 
 let suppressRecording = false
 
@@ -35,25 +36,22 @@ const patchedHTML = (html) => (html ? patchEmptyParagraphs(html).updatedHTML : h
 const isEditorLive = () => activeEditor.value && editorElement?.id === activeElement.value?.id
 
 // history writes state; the mounted editor has to be told
-watch(
-	() => activeElement.value?.content,
-	(html) => {
-		if (!isEditorLive()) return
+const reconcileEditorContent = (html) => {
+	if (!isEditorLive()) return
 
-		const editor = activeEditor.value
+	const editor = activeEditor.value
 
-		if (html == null) {
-			if (activeElement.value?.type !== 'shape') return
-			const seed = getInitialShapeTextContent(activeElement.value)
-			withRecordingSuppressed(() => editor.commands.setContent(seed, { emitUpdate: false }))
-			return
-		}
+	if (html == null) {
+		if (activeElement.value?.type !== 'shape') return
+		const seed = getInitialShapeTextContent(activeElement.value)
+		withRecordingSuppressed(() => editor.commands.setContent(seed, { emitUpdate: false }))
+		return
+	}
 
-		if (patchedHTML(editor.getHTML()) === html) return
+	if (patchedHTML(editor.getHTML()) === html) return
 
-		withRecordingSuppressed(() => editor.commands.setContent(html, { emitUpdate: false }))
-	},
-)
+	withRecordingSuppressed(() => editor.commands.setContent(html, { emitUpdate: false }))
+}
 
 const editorStyles = reactive({
 	textAlign: null,
@@ -255,6 +253,9 @@ export const useTextEditor = () => {
 		editorElement = findSlideElement(id)
 		editorSlideId = currentSlide.value?.clientId
 		lastCompositionId = null
+
+		stopContentWatch?.()
+		stopContentWatch = watch(() => activeElement.value?.content, reconcileEditorContent)
 
 		withRecordingSuppressed(() => {
 			activeEditor.value = new Editor({
