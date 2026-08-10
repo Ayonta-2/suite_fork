@@ -34,9 +34,9 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 				break
 			default: {
 				const handler = actions[action]
-				if (handler) {
-					handler(action, command, operation)
-				}
+				// the sequence is ordered, so a navigating action has to finish
+				// before the next one reads the slide it landed on
+				if (handler) await handler(action, command, operation)
 				break
 			}
 		}
