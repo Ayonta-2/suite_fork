@@ -244,9 +244,7 @@ class SearchStore:
             query = build_query(index)
 
             page = UNBOUNDED_FETCH_PAGE if limit is None else limit
-            result = searcher.search(
-                query, limit=page, offset=offset, count=True, order_by_field=order_by
-            )
+            result = searcher.search(query, limit=page, offset=offset, count=True, order_by_field=order_by)
 
             # Guessed short: ask this same searcher again, now knowing how many there are.
             if limit is None and result.count - offset > page:
