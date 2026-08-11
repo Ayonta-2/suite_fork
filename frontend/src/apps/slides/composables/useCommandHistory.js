@@ -78,37 +78,47 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 		record(command)
 	}
 
-	const undo = async () => {
-		if (!canUndo.value) return
-
-		const command = prevCommands.value.pop()
-
-		const sequence = getActionSequence(command.key, 'undo')
-		for (const action of sequence) {
-			await executeAction(action, command, 'undo')
-		}
-
-		nextCommands.value.push(command)
-		lastRecordedAt = 0
-
-		markDirty()
+	// undo and redo await navigation, so a second shortcut has to queue rather
+	// than interleave and land its command on the opposite stack out of order
+	let pending = Promise.resolve()
+	const queue = (run) => {
+		pending = pending.then(run, run)
+		return pending
 	}
 
-	const redo = async () => {
-		if (!canRedo.value) return
+	const undo = () =>
+		queue(async () => {
+			if (!canUndo.value) return
 
-		const command = nextCommands.value.pop()
+			const command = prevCommands.value.pop()
 
-		const sequence = getActionSequence(command.key, 'redo')
-		for (const action of sequence) {
-			await executeAction(action, command, 'redo')
-		}
+			const sequence = getActionSequence(command.key, 'undo')
+			for (const action of sequence) {
+				await executeAction(action, command, 'undo')
+			}
 
-		prevCommands.value.push(command)
-		lastRecordedAt = 0
+			nextCommands.value.push(command)
+			lastRecordedAt = 0
 
-		markDirty()
-	}
+			markDirty()
+		})
+
+	const redo = () =>
+		queue(async () => {
+			if (!canRedo.value) return
+
+			const command = nextCommands.value.pop()
+
+			const sequence = getActionSequence(command.key, 'redo')
+			for (const action of sequence) {
+				await executeAction(action, command, 'redo')
+			}
+
+			prevCommands.value.push(command)
+			lastRecordedAt = 0
+
+			markDirty()
+		})
 
 	const clearHistory = () => {
 		prevCommands.value = []

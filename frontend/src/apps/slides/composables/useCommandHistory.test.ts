@@ -136,6 +136,44 @@ describe('record coalescing', () => {
 	})
 })
 
+describe('overlapping operations', () => {
+	it('applies two undos in press order even when navigation settles out of order', async () => {
+		const resolvers: Array<() => void> = []
+		const navigating = useCommandHistory(state, {
+			actionOrder: {
+				execute: { editElement: ['execute'] },
+				undo: { editElement: ['jump', 'undo'] },
+			},
+			actions: { jump: () => new Promise<void>((resolve) => resolvers.push(resolve)) },
+		})
+
+		navigating.record(contentEdit('a', 'ab'))
+		vi.advanceTimersByTime(COALESCE_WINDOW + 1)
+		navigating.record(contentEdit('ab', 'abc'))
+		state.value[0].elements[0].content = 'abc'
+
+		const first = navigating.undo()
+		const second = navigating.undo()
+
+		// releasing the newest jump first is what reorders the edits
+		for (let i = 0; i < 20; i++) {
+			await Promise.resolve()
+			resolvers
+				.splice(0)
+				.reverse()
+				.forEach((resolve) => resolve())
+		}
+		await Promise.all([first, second])
+
+		expect(state.value[0].elements[0].content).toBe('a')
+
+		await navigating.redo()
+		expect(state.value[0].elements[0].content).toBe('ab')
+		await navigating.redo()
+		expect(state.value[0].elements[0].content).toBe('abc')
+	})
+})
+
 describe('record bookkeeping', () => {
 	it('discards the redo stack', async () => {
 		history.record(contentEdit('a', 'ab'))
