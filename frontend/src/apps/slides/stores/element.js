@@ -29,6 +29,7 @@ import {
 	addElementCommand,
 	removeElementCommand,
 } from '@/apps/slides/stores/commands'
+import { interactionOffset } from '@/apps/slides/stores/interaction'
 
 const findSlideElement = (id) => currentSlide.value?.elements.find((el) => el.id === id)
 
@@ -810,21 +811,27 @@ const getElementPosition = (elementId) => {
 
 const getElementLayoutPosition = (element) => {
 	const elementDiv = getElementDiv(element.id)
+
+	// a gesture in flight rides on a transform, so the rendered position is
+	// left/top plus the offset, which is what SelectionBox subtracts back out
+	const left = element.left + interactionOffset.left
+	const top = element.top + interactionOffset.top
+
 	// no rendered node yet: fall back to the element's stored bounds
 	if (!elementDiv) {
 		return {
-			left: element.left,
-			top: element.top,
-			right: element.left + (element.width || 0),
-			bottom: element.top + (element.height || 0),
+			left,
+			top,
+			right: left + (element.width || 0),
+			bottom: top + (element.height || 0),
 		}
 	}
 
 	return {
-		left: element.left,
-		top: element.top,
-		right: element.left + elementDiv.offsetWidth,
-		bottom: element.top + elementDiv.offsetHeight,
+		left,
+		top,
+		right: left + elementDiv.offsetWidth,
+		bottom: top + elementDiv.offsetHeight,
 	}
 }
 
