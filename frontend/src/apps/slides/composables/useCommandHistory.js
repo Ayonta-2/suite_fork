@@ -52,14 +52,20 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 
 		if (canCoalesce(command, top, forceCoalesce)) {
 			top.coalesceWith(command)
-			if (top.oldValue === top.newValue) prevCommands.value.pop()
+			if (top.oldValue === top.newValue) {
+				prevCommands.value.pop()
+				// the entry now on top is an older burst the next keystroke must not join
+				lastRecordedAt = 0
+			} else {
+				lastRecordedAt = Date.now()
+			}
 		} else {
 			prevCommands.value.push(command)
 			if (prevCommands.value.length > MAX_HISTORY) prevCommands.value.shift()
+			lastRecordedAt = Date.now()
 		}
 
 		nextCommands.value = []
-		lastRecordedAt = Date.now()
 
 		markDirty()
 	}

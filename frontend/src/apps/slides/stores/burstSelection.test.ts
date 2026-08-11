@@ -7,7 +7,7 @@ const { useCommandHistory } = await import('@/apps/slides/composables/useCommand
 const { addElementCommand, editElementCommand } = await import('./commands')
 const { actionOrder, actions } = await import('./historyMeta')
 const { activeElementIds, focusElementId, cropSelectionToFitContent } = await import('./element')
-const { slides, slideIndex } = await import('./slide')
+const { slides, slideIndex, selectionBounds, updateSelectionBounds } = await import('./slide')
 
 const slideId = 'c1'
 const image = (id: number) => ({ id, type: 'image', left: 10, top: 10, width: 100, height: 100 })
@@ -109,6 +109,42 @@ describe('a held-key run of undos', () => {
 
 		expect(frames.length).toBeGreaterThan(0)
 		expect(() => frames.forEach((f) => f())).not.toThrow()
+	})
+
+	it('drops the stale deferred crop once a later undo has retaken the selection', async () => {
+		const frames: Array<() => void> = []
+		vi.stubGlobal('requestAnimationFrame', (cb: () => void) => frames.push(cb))
+
+		const history = useCommandHistory(slides, { actionOrder, actions })
+
+		history.execute(addElementCommand({ slideId, element: image(1) }))
+		await nextTick()
+		history.execute(addElementCommand({ slideId, element: image(2) }))
+		await nextTick()
+		history.execute(
+			editElementCommand({
+				slideId,
+				elementIds: [1],
+				property: 'left',
+				oldValue: 10,
+				newValue: 50,
+			}),
+		)
+		await nextTick()
+
+		activeElementIds.value = [1]
+		updateSelectionBounds({ left: 400, top: 400, width: 50, height: 50 })
+
+		// the edit undo defers a crop of element 1, which survives; the undo after
+		// it clears the selection, so the crop must not repaint the old box
+		history.undo()
+		history.undo()
+
+		for (let i = 0; i < 5; i++) await nextTick()
+		frames.forEach((f) => f())
+
+		expect(activeElementIds.value).toEqual([])
+		expect(selectionBounds.left).toBe(400)
 	})
 })
 

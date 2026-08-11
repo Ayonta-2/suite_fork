@@ -120,6 +120,20 @@ describe('record coalescing', () => {
 		expect(history.canUndo.value).toBe(false)
 	})
 
+	it('does not fold the next edit into the burst before a dropped step', async () => {
+		history.record(contentEdit('a', 'ab'))
+		vi.advanceTimersByTime(COALESCE_WINDOW + 1)
+		history.record(contentEdit('ab', 'abc'))
+		history.record(contentEdit('abc', 'ab'))
+		history.record(contentEdit('ab', 'abx'))
+
+		state.value[0].elements[0].content = 'abx'
+		await history.undo()
+
+		expect(state.value[0].elements[0].content).toBe('ab')
+		expect(history.canUndo.value).toBe(true)
+	})
+
 	it('does not fold the next edit into the step undo just restored', async () => {
 		history.record(contentEdit('a', 'ab'))
 		vi.advanceTimersByTime(COALESCE_WINDOW + 1)

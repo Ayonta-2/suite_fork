@@ -719,10 +719,10 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 	)
 }
 
-const deleteElements = async (e, ids) => {
+const deleteElements = (e, ids) => {
 	const idsToDelete = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
 	if (!idsToDelete.length) return
-	await resetFocus()
+	resetFocus()
 	let commands = []
 
 	idsToDelete.forEach((id) => {
@@ -877,10 +877,13 @@ const getEditorHTML = () => {
 }
 
 const updateElementContent = (element) => {
-	const { wasUpdated, updatedHTML } = getEditorHTML()
+	const { updatedHTML } = getEditorHTML()
 	const currentText = activeEditor.value.getText()
 
-	if (editorOldText == currentText && !wasUpdated) return
+	// legacy content keeps needing the patch, so idempotence has to come from
+	// comparing against what is stored, or a second blur-save runs the refId
+	// pairing again after the slide index has already moved on
+	if (editorOldText == currentText && element.content == updatedHTML) return
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
 	if (refCommands.length) {
@@ -918,6 +921,14 @@ const blurAndSaveContent = (element) => {
 	} else {
 		deleteElements(null, [element.id])
 	}
+}
+
+// the watches below only fire after the slide has already changed, so leaving
+// a slide has to save the open editor while its element is still reachable
+const flushPendingBlur = () => {
+	const element = activeElement.value
+	if (!activeEditor.value || !['text', 'shape'].includes(element?.type)) return
+	blurAndSaveContent(element)
 }
 
 const setEditableState = () => {
@@ -1137,6 +1148,7 @@ export {
 	unlockAll,
 	setActiveElements,
 	resetFocus,
+	flushPendingBlur,
 	exitTextEditing,
 	addTextElement,
 	addMediaElement,

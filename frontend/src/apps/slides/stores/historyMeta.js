@@ -70,7 +70,10 @@ const jumpToElementsByIds = (jumpToIds, focusOnId) => {
 
 	if (JSON.stringify(activeElementIds.value) === JSON.stringify(targetIds)) {
 		// the box is measured off the DOM, so it can only be fitted once the change renders
-		requestAnimationFrame(() => cropSelectionToFitContent(targetIds))
+		requestAnimationFrame(() => {
+			if (jump !== latestJump) return
+			cropSelectionToFitContent(targetIds)
+		})
 		return
 	}
 

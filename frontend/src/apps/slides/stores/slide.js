@@ -8,7 +8,7 @@ import {
 	presentationTheme,
 	transformElements,
 } from '@/apps/slides/stores/presentation'
-import { resetFocus } from '@/apps/slides/stores/element'
+import { flushPendingBlur, resetFocus } from '@/apps/slides/stores/element'
 import { saveChanges, dirty, saveFailed } from '@/apps/slides/stores/saving'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { generateUniqueId, cloneObj } from '@/apps/slides/utils/helpers'
@@ -173,6 +173,7 @@ const deleteSlide = (deleteActive, index) => {
 
 const changeEditorSlide = (index, focus = true) => {
 	if (!inReadonlyMode.value) {
+		flushPendingBlur()
 		resetFocus()
 	}
 	return changeSlide(index, focus)
