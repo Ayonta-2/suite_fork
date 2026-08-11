@@ -14,13 +14,20 @@ def mark_worker_ready() -> None:
     Path(frappe.get_site_path("private", "suite-ci-worker-ready")).touch()
 
 
-def enable_scheduler_smoke_logging() -> None:
+def _scheduler_smoke_job_name() -> str:
     job_name = frappe.db.get_value("Scheduled Job Type", {"method": SCHEDULER_SMOKE_METHOD}, "name")
+    if not job_name:
+        raise RuntimeError(f"Scheduled job is not registered: {SCHEDULER_SMOKE_METHOD}")
+    return job_name
+
+
+def enable_scheduler_smoke_logging() -> None:
+    job_name = _scheduler_smoke_job_name()
     frappe.db.set_value("Scheduled Job Type", job_name, "create_log", 1)
 
 
 def scheduler_smoke_ran() -> bool:
-    job_name = frappe.db.get_value("Scheduled Job Type", {"method": SCHEDULER_SMOKE_METHOD}, "name")
+    job_name = _scheduler_smoke_job_name()
     return bool(
         frappe.db.exists(
             "Scheduled Job Log",

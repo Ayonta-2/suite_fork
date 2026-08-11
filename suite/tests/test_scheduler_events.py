@@ -1,8 +1,10 @@
 import unittest
+from unittest.mock import patch
 
 import frappe
 
 from suite import hooks
+from suite.tests.ci_smoke import SCHEDULER_SMOKE_METHOD, _scheduler_smoke_job_name
 
 
 class TestSchedulerEvents(unittest.TestCase):
@@ -17,3 +19,10 @@ class TestSchedulerEvents(unittest.TestCase):
         for method in methods:
             with self.subTest(method=method):
                 self.assertTrue(callable(frappe.get_attr(method)))
+
+    def test_scheduler_smoke_requires_registered_job(self):
+        with (
+            patch("suite.tests.ci_smoke.frappe.db.get_value", return_value=None),
+            self.assertRaisesRegex(RuntimeError, SCHEDULER_SMOKE_METHOD),
+        ):
+            _scheduler_smoke_job_name()
