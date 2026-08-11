@@ -195,7 +195,9 @@ jobs:
 
       - name: Build Meet Recorder UI
         if: always() && steps.node-server-changes.outputs.run_recorder == '1'
-        run: yarn workspace @suite/frontend build:recorder
+        run: |
+          yarn install --frozen-lockfile --ignore-scripts
+          yarn workspace @suite/frontend build:recorder
 
       - name: Run Meet Recorder Server Tests
         if: always() && steps.node-server-changes.outputs.run_recorder == '1'
