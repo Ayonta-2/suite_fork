@@ -3,6 +3,10 @@ import os
 import frappe
 from frappe.utils import get_files_path
 
+from suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files import (
+    get_url_variants,
+)
+
 PRIVATE_PREFIX = "/private/files/"
 PUBLIC_PREFIX = "/files/"
 
@@ -19,6 +23,10 @@ def get_disk_path(file_url: str) -> str | None:
 def is_dangling(file_url: str) -> bool:
     """Nothing can serve this URL any more.
 
+    Both privacy prefixes have to be ruled out: sanitize_attachment_urls stripped
+    /private from the stored string without touching the File row, so a field can read
+    /files/x while the row and the blob still live under /private/files/x.
+
     A File row of any kind means some storage backend still owns the blob, and the
     attach hook only rebuilds a thumbnail it cannot find a File for — so a surviving
     row is reason enough to leave the field alone. Only once no row is left does the
@@ -26,11 +34,13 @@ def is_dangling(file_url: str) -> bool:
     Drive rewrites S3-backed files to the `suite.drive.api.s3.fetch` prefix, which
     get_disk_path() does not resolve.
     """
-    if frappe.db.exists("File", {"file_url": file_url}):
+    variants = get_url_variants(file_url)
+
+    if frappe.db.exists("File", {"file_url": ["in", list(variants)]}):
         return False
 
-    disk_path = get_disk_path(file_url)
-    return bool(disk_path) and not os.path.exists(disk_path)
+    disk_paths = [path for path in map(get_disk_path, variants) if path]
+    return bool(disk_paths) and not any(os.path.exists(path) for path in disk_paths)
 
 
 def execute():

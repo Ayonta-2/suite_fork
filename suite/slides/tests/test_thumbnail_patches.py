@@ -58,6 +58,18 @@ class TestThumbnailPatches(IntegrationTestCase):
 
         self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), file.file_url)
 
+    def test_thumbnail_sanitized_to_the_public_prefix_is_kept(self):
+        # sanitize_attachment_urls stripped /private from the stored string only, so the
+        # field and its live File row disagree on the prefix
+        presentation = make_presentation("Presentation With Sanitized Thumbnail")
+        file = make_legacy_thumbnail_file(presentation.name)
+        sanitized_url = file.file_url.replace("/private", "", 1)
+        frappe.db.set_value("Presentation", presentation.name, "thumbnail", sanitized_url)
+
+        clear_missing_presentation_thumbnails()
+
+        self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), sanitized_url)
+
     def test_thumbnail_backed_by_a_file_row_is_kept(self):
         # the blob need not sit on local disk: a surviving File row means some storage
         # backend still owns it, so the field is not ours to clear
