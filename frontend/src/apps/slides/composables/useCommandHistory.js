@@ -24,7 +24,9 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 		return actionOrder[op]?.[commandKey]
 	}
 
-	const executeAction = async (action, command, operation) => {
+	// every action has to stay synchronous: an await here would let a second
+	// undo interleave between this one's pop and its push
+	const executeAction = (action, command, operation) => {
 		switch (action) {
 			case 'execute':
 				command.execute(state.value)
@@ -32,13 +34,9 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 			case 'undo':
 				command.undo(state.value)
 				break
-			default: {
-				const handler = actions[action]
-				// the sequence is ordered, so a navigating action has to finish
-				// before the next one reads the slide it landed on
-				if (handler) await handler(action, command, operation)
+			default:
+				actions[action]?.(action, command, operation)
 				break
-			}
 		}
 	}
 
@@ -66,59 +64,49 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 		markDirty()
 	}
 
-	const execute = async (command) => {
+	const execute = (command) => {
 		// undo and redo must still be able to restore a lock
 		if (isBlockedByLock(command, state.value)) return
 
 		const sequence = getActionSequence(command.key, 'execute')
 		for (const action of sequence) {
-			await executeAction(action, command, 'execute')
+			executeAction(action, command, 'execute')
 		}
 
 		record(command)
 	}
 
-	// undo and redo await navigation, so a second shortcut has to queue rather
-	// than interleave and land its command on the opposite stack out of order
-	let pending = Promise.resolve()
-	const queue = (run) => {
-		pending = pending.then(run, run)
-		return pending
+	const undo = () => {
+		if (!canUndo.value) return
+
+		const command = prevCommands.value.pop()
+
+		const sequence = getActionSequence(command.key, 'undo')
+		for (const action of sequence) {
+			executeAction(action, command, 'undo')
+		}
+
+		nextCommands.value.push(command)
+		lastRecordedAt = 0
+
+		markDirty()
 	}
 
-	const undo = () =>
-		queue(async () => {
-			if (!canUndo.value) return
+	const redo = () => {
+		if (!canRedo.value) return
 
-			const command = prevCommands.value.pop()
+		const command = nextCommands.value.pop()
 
-			const sequence = getActionSequence(command.key, 'undo')
-			for (const action of sequence) {
-				await executeAction(action, command, 'undo')
-			}
+		const sequence = getActionSequence(command.key, 'redo')
+		for (const action of sequence) {
+			executeAction(action, command, 'redo')
+		}
 
-			nextCommands.value.push(command)
-			lastRecordedAt = 0
+		prevCommands.value.push(command)
+		lastRecordedAt = 0
 
-			markDirty()
-		})
-
-	const redo = () =>
-		queue(async () => {
-			if (!canRedo.value) return
-
-			const command = nextCommands.value.pop()
-
-			const sequence = getActionSequence(command.key, 'redo')
-			for (const action of sequence) {
-				await executeAction(action, command, 'redo')
-			}
-
-			prevCommands.value.push(command)
-			lastRecordedAt = 0
-
-			markDirty()
-		})
+		markDirty()
+	}
 
 	const clearHistory = () => {
 		prevCommands.value = []

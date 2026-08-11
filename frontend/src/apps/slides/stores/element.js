@@ -1017,6 +1017,9 @@ const normalizeZIndices = (elements) => {
 }
 
 const cropSelectionToFitContent = (elementIds) => {
+	// every caller defers this, so the elements it names can be gone by now
+	if (!elementIds.every((id) => findSlideElement(id))) return
+
 	let l = 10000,
 		t = 10000,
 		r = 0,

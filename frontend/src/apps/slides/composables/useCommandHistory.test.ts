@@ -137,14 +137,15 @@ describe('record coalescing', () => {
 })
 
 describe('overlapping operations', () => {
-	it('applies two undos in press order even when navigation settles out of order', async () => {
-		const resolvers: Array<() => void> = []
+	// deliberately awaits nothing: an action that suspends the sequence would let a
+	// second undo interleave between this one's pop and its push
+	it('applies a run of undos in press order without waiting on a navigating action', () => {
 		const navigating = useCommandHistory(state, {
 			actionOrder: {
 				execute: { editElement: ['execute'] },
 				undo: { editElement: ['jump', 'undo'] },
 			},
-			actions: { jump: () => new Promise<void>((resolve) => resolvers.push(resolve)) },
+			actions: { jump: () => new Promise<void>(() => {}) },
 		})
 
 		navigating.record(contentEdit('a', 'ab'))
@@ -152,24 +153,14 @@ describe('overlapping operations', () => {
 		navigating.record(contentEdit('ab', 'abc'))
 		state.value[0].elements[0].content = 'abc'
 
-		const first = navigating.undo()
-		const second = navigating.undo()
-
-		// releasing the newest jump first is what reorders the edits
-		for (let i = 0; i < 20; i++) {
-			await Promise.resolve()
-			resolvers
-				.splice(0)
-				.reverse()
-				.forEach((resolve) => resolve())
-		}
-		await Promise.all([first, second])
+		navigating.undo()
+		navigating.undo()
 
 		expect(state.value[0].elements[0].content).toBe('a')
 
-		await navigating.redo()
+		navigating.redo()
 		expect(state.value[0].elements[0].content).toBe('ab')
-		await navigating.redo()
+		navigating.redo()
 		expect(state.value[0].elements[0].content).toBe('abc')
 	})
 })

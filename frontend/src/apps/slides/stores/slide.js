@@ -98,18 +98,21 @@ const setSlideIndex = (index) => {
 	slideIndex.value = index
 }
 
-const changeSlide = async (index, focus = true) => {
+const changeSlide = (index, focus = true) => {
 	index = Math.max(0, Math.min(index, slidesLength.value - 1))
 
-	await router.replace({
-		query: { slide: index + 1 },
-	})
+	slideIndex.value = index
 
 	if (focus) {
 		focusedSlide.value = index
 	} else {
 		focusedSlide.value = null
 	}
+
+	// the query only mirrors the slide we already landed on, so nothing waits on it
+	router.replace({
+		query: { slide: index + 1 },
+	})
 }
 
 const resetAndSave = async () => {
@@ -168,9 +171,9 @@ const deleteSlide = (deleteActive, index) => {
 	)
 }
 
-const changeEditorSlide = async (index, focus = true) => {
+const changeEditorSlide = (index, focus = true) => {
 	if (!inReadonlyMode.value) {
-		await resetFocus()
+		resetFocus()
 	}
 	return changeSlide(index, focus)
 }
