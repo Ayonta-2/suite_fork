@@ -223,7 +223,7 @@ const triggerSelection = (e, id) => {
 	if (!id) return
 
 	if (activeElementIds.value.includes(id)) {
-		if (activeElement.value?.type == 'text' && !activeElement.value.locked) {
+		if (['text', 'table'].includes(activeElement.value?.type) && !activeElement.value.locked) {
 			focusElementId.value = id
 			setEditableState()
 		}

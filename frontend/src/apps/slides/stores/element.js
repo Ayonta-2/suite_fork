@@ -22,7 +22,7 @@ import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from '
 import { commandHistory } from './historyMeta'
 
 import { generateHTML } from '@tiptap/core'
-import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
+import { extensions, hasTableNode, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
 import {
 	editElementCommand,
 	batchCommand,
@@ -143,6 +143,29 @@ const getElementContent = (element) => {
 				],
 			},
 		],
+	}
+
+	return generateHTML(contentJSON, extensions)
+}
+
+const getInitialTableContent = (rows, cols, columnWidth) => {
+	const getCell = (type) => ({
+		type,
+		attrs: { colspan: 1, rowspan: 1, colwidth: [columnWidth] },
+		content: [{ type: 'paragraph', attrs: { textAlign: 'left', lineHeight: 1.5 } }],
+	})
+
+	const getRow = (cellType) => ({
+		type: 'tableRow',
+		content: Array.from({ length: cols }, () => getCell(cellType)),
+	})
+
+	const tableRows = [getRow('tableHeader')]
+	while (tableRows.length < rows) tableRows.push(getRow('tableCell'))
+
+	const contentJSON = {
+		type: 'doc',
+		content: [{ type: 'table', content: tableRows }],
 	}
 
 	return generateHTML(contentJSON, extensions)
@@ -375,6 +398,44 @@ const addTextElement = async (text, position) => {
 			slideId: currentSlide.value.clientId,
 			elementIds: [element.id],
 			focusElementId: element.id,
+			commands,
+		}),
+	)
+}
+
+const addTableElement = async (rows = 3, cols = 3) => {
+	const columnWidth = 150
+	const width = cols * columnWidth
+
+	// rows size themselves to their content, so this only places the new element
+	const position = getLeftTopForCenteredElement(width, rows * 40)
+
+	const element = {
+		id: generateUniqueId(),
+		zIndex: currentSlide.value.elements.length + 1,
+		left: position.left,
+		top: position.top,
+		width,
+		type: 'table',
+		color: guessTextColorFromBackground(currentSlide.value.background),
+		content: getInitialTableContent(rows, cols, columnWidth),
+	}
+
+	const refCommands = getCommandsToUpdateElementRefId(element) || []
+
+	const commands = [
+		addElementCommand({
+			slideId: currentSlide.value.clientId,
+			element: element,
+		}),
+		...refCommands,
+	]
+
+	// tables open selected, not focused: editing starts on double-click
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: [element.id],
 			commands,
 		}),
 	)
@@ -904,14 +965,18 @@ const updateElementContent = (element) => {
 	markDirty()
 }
 
+// empty cells are still a table, only a deleted one leaves nothing to edit
+const isEditorEmpty = (element) => {
+	if (element.type === 'table') return !hasTableNode(activeEditor.value.state.doc)
+	return !activeEditor.value.getText().replace(/\u200B/g, '')
+}
+
 const blurAndSaveContent = (element) => {
 	activeEditor.value.setEditable(false)
 	// blur() drops the window selection, including one this editor never held
 	if (activeEditor.value.isFocused) activeEditor.value.commands.blur()
 
-	const isEmpty = (activeEditor.value?.getText() || '').replace(/\u200B/g, '') === ''
-
-	if (!isEmpty) return updateElementContent(element)
+	if (!isEditorEmpty(element)) return updateElementContent(element)
 
 	if (element.type === 'shape') {
 		if (element.content) {
@@ -927,13 +992,17 @@ const blurAndSaveContent = (element) => {
 // a slide has to save the open editor while its element is still reachable
 const flushPendingBlur = () => {
 	const element = activeElement.value
-	if (!activeEditor.value || !['text', 'shape'].includes(element?.type)) return
+	if (!activeEditor.value || !['text', 'table', 'shape'].includes(element?.type)) return
 	blurAndSaveContent(element)
 }
 
 const setEditableState = () => {
 	activeEditor.value.setEditable(true)
 	activeEditor.value.commands.focus()
+
+	// selecting the whole doc of a table selects every cell
+	if (activeElement.value?.type === 'table') return
+
 	activeEditor.value.commands.setTextSelection({
 		from: 0,
 		to: activeEditor.value.state.doc.content.size,
@@ -941,7 +1010,7 @@ const setEditableState = () => {
 }
 
 const initEditorForElement = (element) => {
-	if (element?.type == 'text') {
+	if (['text', 'table'].includes(element?.type)) {
 		initTextEditor(
 			element.id,
 			element.content,
@@ -971,7 +1040,7 @@ const initShapeEditor = (element) =>
 watch(
 	() => activeElement.value,
 	(element, oldElement) => {
-		if (['text', 'shape'].includes(oldElement?.type) && activeEditor.value) {
+		if (['text', 'table', 'shape'].includes(oldElement?.type) && activeEditor.value) {
 			blurAndSaveContent(oldElement)
 		}
 		replaceEditor(() => initEditorForElement(element))
@@ -990,7 +1059,7 @@ watch(
 		} else if (oldId && activeEditor.value) {
 			if (activeElement.value?.id !== oldId) return
 			const oldElement = findSlideElement(oldId)
-			if (!['text', 'shape'].includes(oldElement?.type)) return
+			if (!['text', 'table', 'shape'].includes(oldElement?.type)) return
 			blurAndSaveContent(oldElement)
 			if (oldElement.type === 'shape') replaceEditor()
 			else replaceEditor(() => initEditorForElement(findSlideElement(oldId)))
@@ -1153,6 +1222,7 @@ export {
 	addTextElement,
 	addMediaElement,
 	addShapeElement,
+	addTableElement,
 	duplicateElements,
 	deleteElements,
 	selectAllElements,

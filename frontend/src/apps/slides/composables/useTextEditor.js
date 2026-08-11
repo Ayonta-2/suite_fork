@@ -263,8 +263,9 @@ export const useTextEditor = () => {
 				editable: isEditable,
 				content: content,
 				// focus only lands once EditorContent has adopted the view, so tiptap
-				// has to do it itself after mounting
-				autofocus: isEditable ? 'all' : false,
+				// has to do it itself after mounting. 'all' inside a table would
+				// select every cell, so tables start with a cursor in the first one
+				autofocus: isEditable ? (editorElement?.type === 'table' ? 'start' : 'all') : false,
 				// to update styles in sidebar based on cursor position
 				onSelectionUpdate: ({ editor }) => setEditorStyles(editor),
 				// to update element content on every change

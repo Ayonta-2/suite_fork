@@ -9,8 +9,10 @@ import BulletList from '@tiptap/extension-bullet-list'
 import OrderedList from '@tiptap/extension-ordered-list'
 import ListItem from '@tiptap/extension-list-item'
 import Color from '@tiptap/extension-color'
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table'
 import { Selection } from '@tiptap/extensions'
 
+import { Fragment, Slice } from 'prosemirror-model'
 import { Plugin, PluginKey, TextSelection } from 'prosemirror-state'
 import { joinBackward } from 'prosemirror-commands'
 import { liftListItem } from 'prosemirror-schema-list'
@@ -72,6 +74,13 @@ const CustomTextStyle = TextStyle.extend({
 	},
 })
 
+export const hasTableNode = (doc) => {
+	for (let i = 0; i < doc.childCount; i++) {
+		if (doc.child(i).type.name === 'table') return true
+	}
+	return false
+}
+
 const PastePlainText = Extension.create({
 	name: 'pastePlainText',
 
@@ -87,8 +96,23 @@ const PastePlainText = Extension.create({
 			return true
 		}
 
+		// only table elements hold tables, and a text element left holding nothing
+		// but a table reads as empty and gets deleted on blur
+		const dropTables = (slice, view) => {
+			if (hasTableNode(view.state.doc)) return slice
+
+			const nodes = []
+			slice.content.forEach((node) => {
+				if (node.type.name !== 'table') nodes.push(node)
+			})
+
+			if (nodes.length === slice.content.childCount) return slice
+
+			return Slice.maxOpen(Fragment.fromArray(nodes))
+		}
+
 		const pastePlugin = new Plugin({
-			props: { handlePaste: pasteWithInheritedStyles },
+			props: { handlePaste: pasteWithInheritedStyles, transformPasted: dropTables },
 		})
 
 		return [pastePlugin]
@@ -395,19 +419,13 @@ const createListItemWithMarks = (event, view, listType) => {
 	const listItemPara = schema.nodes.paragraph.create($from.parent.attrs, zwsp)
 	const listItem = schema.nodes.listItem.create(null, listItemPara)
 
-	let listNode, selectionPos
-
-	if (listType === 'unordered') {
-		listNode = schema.nodes.bulletList.create(null, listItem)
-		selectionPos = start + listNode.nodeSize - 3
-	} else {
-		listNode = schema.nodes.orderedList.create(null, listItem)
-		selectionPos = start + listNode.nodeSize - 4
-	}
+	const nodeType = listType === 'unordered' ? schema.nodes.bulletList : schema.nodes.orderedList
+	const listNode = nodeType.create(null, listItem)
 
 	const tr = view.state.tr.replaceWith(start - 1, end, listNode)
 
-	const resolvedPos = tr.doc.resolve(selectionPos)
+	// end of the placeholder; off by one and near() walks forward out of the cell
+	const resolvedPos = tr.doc.resolve(start + listNode.nodeSize - 4)
 	tr.setSelection(TextSelection.near(resolvedPos))
 
 	view.dispatch(tr)
@@ -696,4 +714,11 @@ export const extensions = [
 	StyledEmptyLine,
 	LineHeight,
 	Selection.configure({ className: 'persisted-selection' }),
+	// resizing is app-level: prosemirror's column resizing math ignores canvas scale.
+	// dropping the View with it keeps the editor's DOM identical to the static
+	// render, which has no .tableWrapper for frappe-ui's leaked overflow rules to hit
+	Table.configure({ resizable: false, View: null }),
+	TableRow,
+	TableCell,
+	TableHeader,
 ]
