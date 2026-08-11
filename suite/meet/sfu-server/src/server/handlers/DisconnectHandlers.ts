@@ -11,7 +11,7 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 			deps.telemetry.socketDisconnects.inc({ reason: normalizedReason });
 			loggers.telemetry.event('socket_disconnect', {
 				reason: normalizedReason,
-				scope: socket.scope,
+				scope: socket.scope ?? 'unassigned',
 			});
 			deps.authManager.cleanupSocket(socket);
 
@@ -24,6 +24,9 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 
 			const roomId = socket.roomId;
 			const participantId = socket.participantId;
+			if (socket.scope === 'recording') {
+				deps.registry.deactivateRecorder(socket);
+			}
 
 			if (roomId && participantId) {
 				try {
@@ -80,13 +83,7 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 								roomId,
 							);
 						}
-					}
-
-					if (deps.registry.isEmpty(roomId)) {
-						deps.registry.cleanupRoom(roomId);
-						deps.e2eeEpochRelay.clearRoom(roomId);
-						await deps.e2eeRoster.clearRoom(roomId);
-						deps.mediasoup.closeRoom(roomId);
+						deps.roomLifecycle.scheduleCleanupIfHumanEmpty(roomId);
 					}
 				} catch (error) {
 					loggers.socketHandler.error('Error handling disconnect: %s', error);

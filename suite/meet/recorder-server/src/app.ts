@@ -10,15 +10,51 @@ import type { JobManager } from './JobManager.js';
 import type { Logger } from './logger.js';
 import type { CommandClaims, JobRecord } from './types.js';
 
-function exactBody(
-	value: unknown,
-	keys: string[],
-): value is Record<string, unknown> {
+interface ReserveBody {
+	job: string;
+}
+
+interface GrantBody {
+	grant: string;
+}
+
+interface StopBody {
+	job: string;
+	operation_id: string;
+}
+
+function exactBody(value: unknown, keys: string[]): value is object {
 	return (
 		!!value &&
 		typeof value === 'object' &&
 		!Array.isArray(value) &&
 		JSON.stringify(Object.keys(value).sort()) === JSON.stringify(keys)
+	);
+}
+
+function reserveBody(value: unknown): value is ReserveBody {
+	return (
+		exactBody(value, ['job']) && 'job' in value && typeof value.job === 'string'
+	);
+}
+
+function grantBody(value: unknown): value is GrantBody {
+	return (
+		exactBody(value, ['grant']) &&
+		'grant' in value &&
+		typeof value.grant === 'string' &&
+		value.grant.length > 0
+	);
+}
+
+function stopBody(value: unknown): value is StopBody {
+	return (
+		exactBody(value, ['job', 'operation_id']) &&
+		'job' in value &&
+		typeof value.job === 'string' &&
+		'operation_id' in value &&
+		typeof value.operation_id === 'string' &&
+		value.operation_id.length > 0
 	);
 }
 
@@ -64,9 +100,11 @@ export function createApp(
 	capacity.set(config.maxConcurrent);
 	void active;
 	app.disable('x-powered-by');
-	app.use(
-		express.json({ limit: '16kb', strict: true, type: 'application/json' }),
-	);
+	const json = express.json({
+		limit: '16kb',
+		strict: true,
+		type: 'application/json',
+	});
 
 	app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 	app.get('/ready', (_req, res) =>
@@ -106,28 +144,44 @@ export function createApp(
 		};
 	}
 
-	app.post('/v1/recordings', command('reserve'), async (req, res, next) => {
-		try {
-			const claims = res.locals.command as CommandClaims;
-			if (!exactBody(req.body, ['job']) || req.body.job !== claims.job)
+	app.post(
+		'/v1/recordings',
+		command('reserve'),
+		json,
+		async (req, res, next) => {
+			try {
+				const claims = res.locals.command as CommandClaims;
+				const body: unknown = req.body;
+				if (!reserveBody(body) || body.job !== claims.job)
+					return res
+						.status(422)
+						.json({
+							status: 'rejected',
+							job: claims.job,
+							reason: 'invalid_job',
+						});
+				await auth.consume(claims);
+				const result = await jobs.reserve(claims);
+				if (result.status === 'accepted') {
+					starts.inc({ outcome: 'accepted', reason: 'none' });
+					log.info({ event: 'job_reservation', status: 'accepted' });
+					return res.status(202).json(accepted(result.job));
+				}
+				starts.inc({ outcome: 'rejected', reason: result.reason });
 				return res
-					.status(422)
-					.json({ status: 'rejected', job: claims.job, reason: 'invalid_job' });
-			await auth.consume(claims);
-			const result = await jobs.reserve(claims);
-			if (result.status === 'accepted') {
-				starts.inc({ outcome: 'accepted', reason: 'none' });
-				log.info({ event: 'job_reservation', status: 'accepted' });
-				return res.status(202).json(accepted(result.job));
+					.status(
+						result.reason === 'capacity'
+							? 429
+							: result.reason === 'storage'
+								? 507
+								: 422,
+					)
+					.json({ status: 'rejected', job: claims.job, reason: result.reason });
+			} catch (error) {
+				next(error);
 			}
-			starts.inc({ outcome: 'rejected', reason: result.reason });
-			return res
-				.status(result.reason === 'capacity' ? 429 : 422)
-				.json({ status: 'rejected', job: claims.job, reason: result.reason });
-		} catch (error) {
-			next(error);
-		}
-	});
+		},
+	);
 
 	app.get('/v1/recordings/:id', command('query'), async (_req, res, next) => {
 		try {
@@ -149,21 +203,19 @@ export function createApp(
 	app.post(
 		'/v1/recordings/:id/grant',
 		command('grant'),
+		json,
 		async (req, res, next) => {
 			try {
 				const claims = res.locals.command as CommandClaims;
-				if (
-					!exactBody(req.body, ['grant']) ||
-					typeof req.body.grant !== 'string' ||
-					!req.body.grant
-				)
+				const body: unknown = req.body;
+				if (!grantBody(body))
 					return res.status(422).json({
 						status: 'rejected',
 						job: claims.job,
 						reason: 'invalid_job',
 					});
 				await auth.consume(claims);
-				if (!(await jobs.grant(claims, req.body.grant)))
+				if (!(await jobs.grant(claims, body.grant)))
 					return res.status(422).json({
 						status: 'rejected',
 						job: claims.job,
@@ -180,22 +232,19 @@ export function createApp(
 	app.post(
 		'/v1/recordings/:id/stop',
 		command('stop'),
+		json,
 		async (req, res, next) => {
 			try {
 				const claims = res.locals.command as CommandClaims;
-				if (
-					!exactBody(req.body, ['job', 'operation_id']) ||
-					req.body.job !== claims.job ||
-					typeof req.body.operation_id !== 'string' ||
-					!req.body.operation_id
-				)
+				const body: unknown = req.body;
+				if (!stopBody(body) || body.job !== claims.job)
 					return res.status(422).json({
 						status: 'rejected',
 						job: claims.job,
 						reason: 'invalid_job',
 					});
 				await auth.consume(claims);
-				if (!(await jobs.stop(claims, req.body.operation_id)))
+				if (!(await jobs.stop(claims, body.operation_id)))
 					return res.status(422).json({
 						status: 'rejected',
 						job: claims.job,
@@ -205,7 +254,7 @@ export function createApp(
 				return res.status(202).json({
 					status: 'accepted',
 					job: claims.job,
-					operation_id: req.body.operation_id,
+					operation_id: body.operation_id,
 				});
 			} catch (error) {
 				next(error);
@@ -216,13 +265,22 @@ export function createApp(
 	app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
 		if (error instanceof AuthError)
 			return res.status(401).json({ status: 'unauthorized' });
+		const status =
+			'status' in error && error.status === 413
+				? 413
+				: error instanceof SyntaxError
+					? 400
+					: 503;
 		log.error({
 			event: 'service_error',
-			reason: error instanceof SyntaxError ? 'invalid_json' : 'unavailable',
+			reason:
+				status === 413
+					? 'request_too_large'
+					: status === 400
+						? 'invalid_json'
+						: 'unavailable',
 		});
-		res
-			.status(error instanceof SyntaxError ? 400 : 503)
-			.json({ status: 'indeterminate' });
+		res.status(status).json({ status: 'indeterminate' });
 	});
 	return app;
 }

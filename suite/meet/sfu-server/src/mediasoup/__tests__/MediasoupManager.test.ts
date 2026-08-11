@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import { loadConfig } from '../../config';
 import type { Consumer } from '../../types';
 import { MediasoupManager } from '../MediasoupManager';
+
+const mediasoupConfig = loadConfig(
+	{ JWT_SECRET: 'test', NODE_ENV: 'development' },
+	{ cpuCount: 2, localIpv4: '127.0.0.1' },
+).mediasoup;
+
+function createManager(): MediasoupManager {
+	return new MediasoupManager(mediasoupConfig);
+}
 
 function makeConsumer(opts: {
 	paused: boolean;
@@ -27,7 +37,7 @@ function makeConsumer(opts: {
 
 describe('MediasoupManager.updateConsumerPreferences', () => {
 	it('requests a keyframe when a paused consumer is resumed with no layer change', async () => {
-		const mgr = new MediasoupManager();
+		const mgr = createManager();
 		const consumer = makeConsumer({ paused: true });
 		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
 			roomId: 'r1',
@@ -51,7 +61,7 @@ describe('MediasoupManager.updateConsumerPreferences', () => {
 	});
 
 	it('does not request a keyframe on a running consumer with no layer change', async () => {
-		const mgr = new MediasoupManager();
+		const mgr = createManager();
 		const consumer = makeConsumer({ paused: false });
 		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
 			roomId: 'r1',
@@ -77,7 +87,7 @@ describe('MediasoupManager.updateConsumerPreferences', () => {
 
 describe('MediasoupManager.createConsumer', () => {
 	it('keeps an existing consumer when its replacement fails', async () => {
-		const mgr = new MediasoupManager();
+		const mgr = createManager();
 		const internals = mgr as unknown as {
 			transportManager: {
 				getTransportData: (transportId: string) => unknown;
@@ -126,8 +136,60 @@ describe('MediasoupManager.createConsumer', () => {
 });
 
 describe('MediasoupManager resource access', () => {
+	it('removes every peer resource before closing a populated room', async () => {
+		const mgr = createManager();
+		const internals = mgr as unknown as {
+			roomManager: {
+				getRoom: (id: string) => unknown;
+				closeRoom: (id: string) => Promise<void>;
+			};
+		};
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
+			peers: new Map([
+				['peer-1', {}],
+				['peer-2', {}],
+			]),
+		} as never);
+		const removePeer = vi.spyOn(mgr, 'removePeer').mockResolvedValue(undefined);
+		const closeRoom = vi
+			.spyOn(internals.roomManager, 'closeRoom')
+			.mockResolvedValue(undefined);
+
+		await mgr.closeRoom('room-1');
+
+		expect(removePeer.mock.calls).toEqual([
+			['room-1', 'peer-1'],
+			['room-1', 'peer-2'],
+		]);
+		expect(closeRoom).toHaveBeenCalledWith('room-1');
+	});
+
+	it('rejects peers joining while their room is closing', async () => {
+		const mgr = createManager();
+		const internals = mgr as unknown as {
+			roomManager: {
+				getRoom: (id: string) => unknown;
+				closeRoom: (id: string) => Promise<void>;
+			};
+		};
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
+			peers: new Map([['peer-1', {}]]),
+		} as never);
+		let release!: () => void;
+		const removing = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		vi.spyOn(mgr, 'removePeer').mockReturnValue(removing);
+		vi.spyOn(internals.roomManager, 'closeRoom').mockResolvedValue(undefined);
+
+		const closing = mgr.closeRoom('room-1');
+		await expect(mgr.addPeer('room-1', 'peer-2')).rejects.toThrow('is closing');
+		release();
+		await closing;
+	});
+
 	it('requires transport room, peer, and direction to match', () => {
-		const mgr = new MediasoupManager();
+		const mgr = createManager();
 		const internals = mgr as unknown as {
 			transportManager: { getTransportData: (id: string) => unknown };
 		};
@@ -149,8 +211,24 @@ describe('MediasoupManager resource access', () => {
 		).toThrow('is not a recv transport');
 	});
 
+	it('requires consumer room and peer ownership to match', () => {
+		const mgr = createManager();
+		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
+			roomId: 'room-1',
+			peerId: 'peer-1',
+			consumer: {},
+		} as never);
+
+		expect(() => mgr.assertConsumerAccess('c1', 'room-2', 'peer-1')).toThrow(
+			'Consumer ownership mismatch',
+		);
+		expect(() => mgr.assertConsumerAccess('c1', 'room-1', 'peer-2')).toThrow(
+			'Consumer ownership mismatch',
+		);
+	});
+
 	it('rejects a producer from another room when creating a consumer', async () => {
-		const mgr = new MediasoupManager();
+		const mgr = createManager();
 		const internals = mgr as unknown as {
 			transportManager: { getTransportData: (id: string) => unknown };
 			producerManager: { getProducerData: (id: string) => unknown };

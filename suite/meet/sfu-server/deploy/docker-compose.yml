@@ -2,10 +2,9 @@
 # Frappe Meet SFU — Docker Compose Stack
 # ==============================================================================
 # Services:
-#   sfu     – Mediasoup SFU server (signaling on port 3000, fixed UDP media ports)
-#   recorder – Browser-based recording service (control on host loopback only)
-#   nginx   – Reverse proxy (SSL termination + WebSocket upgrade)
-#   certbot – Let's Encrypt certificate provisioning & renewal
+#   sfu      – Mediasoup SFU server (signaling on port 3000, fixed UDP media ports)
+#   nginx    – Reverse proxy (SSL termination + WebSocket upgrade)
+#   certbot  – Let's Encrypt certificate provisioning & renewal
 #
 # Usage:
 #   docker compose up -d        # start everything
@@ -45,8 +44,10 @@ services:
       - METRICS_TOKEN=${METRICS_TOKEN:-}
       - PORT=${PORT:-3000}
       - HOST=${HOST:-127.0.0.1}
+      - SOCKET_PING_TIMEOUT=${SOCKET_PING_TIMEOUT:-60000}
+      - SOCKET_PING_INTERVAL=${SOCKET_PING_INTERVAL:-25000}
       - WEBRTC_LISTEN_IP=${WEBRTC_LISTEN_IP:-}
-      - WEBRTC_ANNOUNCED_IP=${WEBRTC_ANNOUNCED_IP}
+      - WEBRTC_ANNOUNCED_IP=${WEBRTC_ANNOUNCED_IP:?WEBRTC_ANNOUNCED_IP is required}
       - WEBRTC_SERVER_PORT=${WEBRTC_SERVER_PORT:-40000}
       - MEDIASOUP_NUM_WORKERS=${MEDIASOUP_NUM_WORKERS:-}
       - MEDIASOUP_WORKER_LOGLEVEL=${MEDIASOUP_WORKER_LOGLEVEL:-warn}
@@ -64,38 +65,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "5"
-
-  recorder:
-    image: ${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}
-    container_name: suite-recorder
-    restart: unless-stopped
-    init: true
-    shm_size: "2gb"
-    ports:
-      - "127.0.0.1:${RECORDER_PORT:-3010}:3010"
-    volumes:
-      - recorder-data:/data
-    environment:
-      - PORT=3010
-      - RECORDER_SECRET=${RECORDER_SECRET}
-      - RECORDER_METRICS_TOKEN=${RECORDER_METRICS_TOKEN}
-      - RECORDER_SITE=${RECORDER_SITE}
-      - RECORDER_SITE_ORIGIN=${RECORDER_SITE_ORIGIN}
-      - RECORDER_ALLOW_HTTP=${RECORDER_ALLOW_HTTP:-false}
-      - RECORDER_MAX_CONCURRENT=1
-      - SFU_ORIGIN=https://${DOMAIN}
-      - SFU_SOCKET_PATH=/socket.io
-      - RECORDER_CHROMIUM_NO_SANDBOX=true
-    cpus: ${RECORDER_CPUS:-4}
-    mem_limit: ${RECORDER_MEMORY:-6g}
-    pids_limit: ${RECORDER_PIDS_LIMIT:-512}
-    security_opt:
-      - no-new-privileges:true
     logging:
       driver: json-file
       options:
@@ -173,6 +142,5 @@ services:
 volumes:
   alloy-data:
   sfu-grants:
-  recorder-data:
   certbot-webroot:
   certbot-certs:

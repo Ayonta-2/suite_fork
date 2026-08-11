@@ -1,4 +1,5 @@
 import type { Server } from 'socket.io';
+import type { SFUConfig } from '../config';
 import type { MediasoupManager } from '../mediasoup/MediasoupManager';
 import type { Telemetry } from '../telemetry/Telemetry';
 import type { ClientToServerEvents, ServerToClientEvents } from '../types';
@@ -26,6 +27,7 @@ import { registerRoomQueryHandlers } from './handlers/RoomQueryHandlers';
 import { registerScreenShareHandlers } from './handlers/ScreenShareHandlers';
 import { registerWebRtcTransportHandlers } from './handlers/WebRtcTransportHandlers';
 import type { RecordingGrantManager } from './RecordingGrantManager';
+import { RoomLifecycleCoordinator } from './RoomLifecycleCoordinator';
 import { RoomRegistry } from './RoomRegistry';
 
 const RECORDING_PROOF_TIMEOUT_MS = 10_000;
@@ -37,6 +39,7 @@ export class SocketHandlerManager {
 	private registry: RoomRegistry;
 	private rateLimiter: RateLimiter;
 	private e2eeEpochRelay: E2EEEpochRelay;
+	private roomLifecycle: RoomLifecycleCoordinator;
 	private telemetry: Telemetry;
 	private registerHandlers: ((socket: import('socket.io').Socket) => void)[];
 	private idleExpirySweep: NodeJS.Timeout | null = null;
@@ -47,6 +50,7 @@ export class SocketHandlerManager {
 		authManager: AuthManager,
 		telemetry: Telemetry,
 		roster: E2eeRosterStore,
+		private readonly runtime: SFUConfig['runtime'],
 		coordinatorPersistence?: E2eeCoordinatorPersistence,
 		private readonly recordingGrantManager?: RecordingGrantManager,
 	) {
@@ -63,18 +67,27 @@ export class SocketHandlerManager {
 			coordinatorPersistence,
 			this.rateLimiter,
 			telemetry,
+			this.runtime.bypassRateLimits,
 		);
 		this.e2eeEpochRelay.setRoster(roster);
+		this.roomLifecycle = new RoomLifecycleCoordinator(
+			this.registry,
+			this.e2eeEpochRelay,
+			roster,
+			this.mediasoup,
+		);
 
 		const deps: HandlerDeps = {
 			io,
 			registry: this.registry,
+			roomLifecycle: this.roomLifecycle,
 			mediasoup,
 			authManager,
 			rateLimiter: this.rateLimiter,
 			e2eeEpochRelay: this.e2eeEpochRelay,
 			e2eeRoster: roster,
 			telemetry,
+			runtime: this.runtime,
 		};
 
 		this.registerHandlers = [
@@ -235,6 +248,7 @@ export class SocketHandlerManager {
 	}
 
 	stop(): void {
+		this.roomLifecycle.stop();
 		if (this.idleExpirySweep) {
 			clearInterval(this.idleExpirySweep);
 			this.idleExpirySweep = null;

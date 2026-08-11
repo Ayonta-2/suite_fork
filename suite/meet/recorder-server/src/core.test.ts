@@ -8,9 +8,10 @@ import { AuthError, AuthManager } from './AuthManager.js';
 import { createApp } from './app.js';
 import type { Config } from './config.js';
 import { loadConfig } from './config.js';
+import { DiskGuard, type StorageGuard } from './DiskGuard.js';
 import { JobManager } from './JobManager.js';
 import { JobStore } from './JobStore.js';
-import type { Logger } from './logger.js';
+import type { LogEntry, Logger } from './logger.js';
 import { FakeRendererBridge, TEST_PUBLIC_JWK } from './RendererBridge.js';
 import { COMMAND_AUDIENCE, COMMAND_TYPE, type CommandClaims } from './types.js';
 
@@ -36,13 +37,20 @@ const baseClaims = {
 } satisfies CommandClaims;
 
 function token(
-	overrides: Record<string, unknown> = {},
-	header: Record<string, unknown> = {},
+	overrides: Partial<Omit<CommandClaims, 'aud' | 'limits'>> & {
+		aud?: string;
+		limits?: CommandClaims['limits'];
+		extra?: boolean;
+	} = {},
+	header: { typ?: string; kid?: string } = {},
 ): string {
 	return jwt.sign(
 		{ ...baseClaims, jti: crypto.randomUUID(), ...overrides },
 		secret,
-		{ algorithm: 'HS256', header: { typ: COMMAND_TYPE, ...header } },
+		{
+			algorithm: 'HS256',
+			header: { alg: 'HS256', typ: COMMAND_TYPE, ...header },
+		},
 	);
 }
 
@@ -93,14 +101,18 @@ describe('configuration', () => {
 		});
 		expect(config.port).toBe(3010);
 		expect(config.maxConcurrent).toBe(1);
+		expect(config.minimumFreeBytes).toBe(1024 * 1024 * 1024);
 	});
 
 	it.each([
 		['RECORDER_SECRET', 'short'],
+		['RECORDER_SECRET', 'change-me-to-an-independent-strong-random-string'],
 		['RECORDER_METRICS_TOKEN', 'short'],
+		['RECORDER_METRICS_TOKEN', 'change-me-to-an-independent-metrics-token'],
 		['RECORDER_SITE_ORIGIN', 'http://site.test'],
 		['RECORDER_SITE_ORIGIN', 'https://site.test/'],
 		['RECORDER_MAX_CONCURRENT', '0'],
+		['RECORDER_MIN_FREE_BYTES', '-1'],
 		['PORT', 'x'],
 	])('rejects invalid %s', (name, value) => {
 		const env: NodeJS.ProcessEnv = {
@@ -116,6 +128,23 @@ describe('configuration', () => {
 			[name]: value,
 		};
 		expect(() => loadConfig(env)).toThrow();
+	});
+
+	it('rejects credential reuse', () => {
+		const reused = 'r'.repeat(32);
+		expect(() =>
+			loadConfig({
+				RECORDER_SECRET: reused,
+				RECORDER_METRICS_TOKEN: reused,
+				RECORDER_SITE: 'site.test',
+				RECORDER_SITE_ORIGIN: 'https://site.test',
+				RECORDER_LEDGER_PATH: '/data/jobs.json',
+				CHROMIUM_EXECUTABLE: '/usr/bin/chromium',
+				RECORDER_RENDERER_ASSET_DIR: '/app/renderer',
+				SFU_ORIGIN: 'https://sfu.test',
+				SFU_SOCKET_PATH: '/socket.io',
+			}),
+		).toThrow('must be independent');
 	});
 
 	it('allows exact HTTP origins only when explicitly enabled', () => {
@@ -267,6 +296,49 @@ describe('JobStore and JobManager', () => {
 		expect(again.status).toBe('accepted');
 	});
 
+	it('reserves finalization space for every active job', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const storage: StorageGuard = {
+			ready: () => true,
+			canReserve: vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(false),
+		};
+		const manager = new JobManager(
+			store,
+			new FakeRendererBridge(),
+			2,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			storage,
+		);
+
+		expect((await manager.reserve(baseClaims)).status).toBe('accepted');
+		expect(
+			await manager.reserve({
+				...baseClaims,
+				job: 'job-2',
+				recording: 'recording-2',
+			}),
+		).toEqual({ status: 'rejected', reason: 'storage' });
+		expect(storage.canReserve).toHaveBeenNthCalledWith(1, 2_000_000);
+		expect(storage.canReserve).toHaveBeenNthCalledWith(2, 4_000_000);
+	});
+
+	it('fails disk readiness and admission closed', () => {
+		const enough = new DiskGuard('/data', 1_000, () => 1_500);
+		expect(enough.ready()).toBe(true);
+		expect(enough.canReserve(500)).toBe(true);
+		expect(enough.canReserve(501)).toBe(false);
+
+		const unavailable = new DiskGuard('/missing', 1, () => {
+			throw new Error('disk unavailable');
+		});
+		expect(unavailable.ready()).toBe(false);
+		expect(unavailable.canReserve(1)).toBe(false);
+	});
+
 	it('ends a persisted active job instead of resuming it after restart', async () => {
 		const store = new JobStore(path);
 		await store.initialize();
@@ -369,6 +441,68 @@ describe('JobStore and JobManager', () => {
 				health_reason: 'connection_lost',
 			}),
 		);
+	});
+
+	it('does not block unrelated jobs while a health callback is pending', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const bridge = new FakeRendererBridge();
+		let release!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const interrupted = vi.fn(async () => pending);
+		const manager = new JobManager(store, bridge, 2, undefined, interrupted);
+		await manager.reserve(baseClaims);
+		await bridge.emit({ job: 'job', type: 'configured' });
+		await bridge.emit({ job: 'job', type: 'proof_complete' });
+		await bridge.emit({ job: 'job', type: 'joined' });
+		await bridge.emit({ job: 'job', type: 'capture_ready' });
+
+		const delivery = bridge.emit({ job: 'job', type: 'interrupted' });
+		await vi.waitFor(() => expect(interrupted).toHaveBeenCalledOnce());
+		await expect(
+			manager.reserve({
+				...baseClaims,
+				job: 'job-2',
+				recording: 'recording-2',
+			}),
+		).resolves.toMatchObject({ status: 'accepted' });
+
+		release();
+		await delivery;
+	});
+
+	it('notifies the control plane when interrupted capture recovers', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const bridge = new FakeRendererBridge();
+		const recovered = vi.fn(async () => undefined);
+		const manager = new JobManager(
+			store,
+			bridge,
+			1,
+			undefined,
+			undefined,
+			async () => undefined,
+			recovered,
+		);
+		await manager.reserve(baseClaims);
+		await bridge.emit({ job: 'job', type: 'configured' });
+		await bridge.emit({ job: 'job', type: 'proof_complete' });
+		await bridge.emit({ job: 'job', type: 'joined' });
+		await bridge.emit({ job: 'job', type: 'capture_ready' });
+		await bridge.emit({ job: 'job', type: 'interrupted' });
+
+		await bridge.emit({ job: 'job', type: 'capture_ready' });
+
+		expect(recovered).toHaveBeenCalledWith(
+			expect.objectContaining({ job: 'job', state: 'capture_ready' }),
+		);
+		await bridge.emit({ job: 'job', type: 'interrupted' });
+		await bridge.emit({ job: 'job', type: 'capture_ready' });
+		expect(store.get('job')?.event_sequence).toBe(3);
+		expect(recovered).toHaveBeenCalledTimes(2);
 	});
 
 	it.each(['complete', 'partial', 'failed'] as const)(
@@ -553,6 +687,35 @@ describe('JobStore and JobManager', () => {
 		expect(bridge.hasWorker('job-2')).toBe(true);
 	});
 
+	it('keeps stopping jobs in capacity until they become terminal', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const bridge = new FakeRendererBridge();
+		const manager = new JobManager(store, bridge, 1);
+		await manager.reserve(baseClaims);
+		await manager.stop(baseClaims, 'stop-1');
+
+		expect(manager.activeCount).toBe(1);
+		expect(
+			await manager.reserve({
+				...baseClaims,
+				job: 'job-2',
+				recording: 'recording-2',
+			}),
+		).toEqual({ status: 'rejected', reason: 'capacity' });
+
+		await bridge.emit({ job: 'job', type: 'failed' });
+		expect(
+			(
+				await manager.reserve({
+					...baseClaims,
+					job: 'job-2',
+					recording: 'recording-2',
+				})
+			).status,
+		).toBe('accepted');
+	});
+
 	it('stops a reserved browser when the durable store update fails', async () => {
 		const store = new JobStore(path);
 		await store.initialize();
@@ -582,15 +745,29 @@ describe('JobStore and JobManager', () => {
 describe('HTTP contract', () => {
 	let app: ReturnType<typeof createApp>;
 	let bridge: FakeRendererBridge;
-	let logs: Array<Record<string, unknown>>;
+	let logs: LogEntry[];
 	let config: Config;
+	let storageAllowed: boolean;
 
 	beforeEach(async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'recorder-http-'));
 		const store = new JobStore(join(directory, 'ledger.json'));
 		await store.initialize();
 		bridge = new FakeRendererBridge();
-		const jobs = new JobManager(store, bridge, 1);
+		storageAllowed = true;
+		const jobs = new JobManager(
+			store,
+			bridge,
+			1,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			{
+				ready: () => true,
+				canReserve: () => storageAllowed,
+			},
+		);
 		config = {
 			port: 3010,
 			secret,
@@ -607,6 +784,13 @@ describe('HTTP contract', () => {
 			rendererConfigureTimeoutMs: 10_000,
 			sfuOrigin: 'https://sfu.test',
 			sfuSocketPath: '/socket.io',
+			dataRoot: directory,
+			minimumFreeBytes: 1024,
+			segmentSeconds: 30,
+			ffmpegExecutable: '/usr/bin/ffmpeg',
+			xvfbExecutable: '/usr/bin/Xvfb',
+			pulseaudioExecutable: '/usr/bin/pulseaudio',
+			pactlExecutable: '/usr/bin/pactl',
 		};
 		logs = [];
 		const logger: Logger = {
@@ -647,7 +831,13 @@ describe('HTTP contract', () => {
 			authenticated('POST', { job: 'job' }),
 		);
 		expect(reserve.status).toBe(202);
-		const reserveBody = (await reserve.json()) as Record<string, unknown>;
+		const reserveBody: {
+			status: 'accepted';
+			job: string;
+			accepted_at: string;
+			public_jwk: typeof TEST_PUBLIC_JWK;
+			state: string;
+		} = await reserve.json();
 		expect(Object.keys(reserveBody).sort()).toEqual([
 			'accepted_at',
 			'job',
@@ -698,6 +888,38 @@ describe('HTTP contract', () => {
 				acceptedAt: expect.any(String),
 			},
 		]);
+	});
+
+	it('rejects a new reservation when disk admission closes', async () => {
+		storageAllowed = false;
+		const response = await call(
+			app,
+			'/v1/recordings',
+			authenticated('POST', { job: 'job' }),
+		);
+		expect(response.status).toBe(507);
+		expect(await response.json()).toEqual({
+			status: 'rejected',
+			job: 'job',
+			reason: 'storage',
+		});
+	});
+
+	it('authenticates control requests before parsing bounded JSON', async () => {
+		const unauthorized = await call(app, '/v1/recordings', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{invalid',
+		});
+		expect(unauthorized.status).toBe(401);
+
+		const oversized = await call(
+			app,
+			'/v1/recordings',
+			authenticated('POST', { job: 'job', padding: 'x'.repeat(17 * 1024) }),
+		);
+		expect(oversized.status).toBe(413);
+		expect(await oversized.json()).toEqual({ status: 'indeterminate' });
 	});
 
 	it('binds route and body to signed job and rejects extra fields', async () => {

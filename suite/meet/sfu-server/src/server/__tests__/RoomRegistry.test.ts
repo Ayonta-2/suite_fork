@@ -3,6 +3,17 @@ import { describe, expect, it } from 'vitest';
 import type { UserData } from '../../types';
 import { RoomRegistry } from '../RoomRegistry';
 
+interface EmissionFixture {
+	event: string;
+	data: {
+		roomId?: string;
+		participantId?: string;
+		producerId?: string;
+		isScreen?: boolean;
+		shareData?: { producerId: string };
+	};
+}
+
 function makeSocket(id: string): Socket {
 	const emitCalls: { event: string; data: unknown }[] = [];
 	const sock = {
@@ -80,6 +91,33 @@ function addRecorderSocket(
 }
 
 describe('RoomRegistry', () => {
+	it('counts a participant as human until all of their sockets leave', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const first = makeSocket('first');
+		const second = makeSocket('second');
+
+		registry.claimParticipant(first, 'r1', 'p1');
+		registry.claimParticipant(second, 'r1', 'p1');
+		expect(registry.hasHumanParticipants('r1')).toBe(true);
+
+		registry.releaseParticipant(first, 'r1', 'p1');
+		expect(registry.hasHumanParticipants('r1')).toBe(true);
+
+		registry.releaseParticipant(second, 'r1', 'p1');
+		expect(registry.hasHumanParticipants('r1')).toBe(false);
+	});
+
+	it('does not count preview or recorder sockets as humans', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+
+		registry.joinScope(makeSocket('preview'), 'r1', 'presence-preview');
+		registry.joinRecorder(makeSocket('recorder'), 'r1', 'recorder-1');
+
+		expect(registry.hasHumanParticipants('r1')).toBe(false);
+	});
+
 	it('preserves replacement recorder ownership and only clears the active owner', () => {
 		const { io } = makeIo();
 		const registry = new RoomRegistry(io);
@@ -105,6 +143,29 @@ describe('RoomRegistry', () => {
 			registry.leaveRecorder(replacement, 'r1', 'recorder:recording-1'),
 		).toBe(true);
 		expect(registry.isRecorderPeer('r1', 'recorder:recording-1')).toBe(false);
+	});
+
+	it('releases proof-complete recorder ownership before room join', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const disconnected = makeSocket('disconnected');
+		const nextJob = makeSocket('next-job');
+		Object.assign(disconnected, {
+			recordingClaims: { recording_id: 'recording-1' },
+		});
+		Object.assign(nextJob, {
+			recordingClaims: { recording_id: 'recording-1' },
+		});
+
+		registry.activateRecorder(disconnected, 'recording-1', 'job-1');
+		registry.deactivateRecorder(disconnected);
+		expect(() =>
+			registry.activateRecorder(nextJob, 'recording-1', 'job-2'),
+		).not.toThrow();
+		registry.deactivateRecorder(disconnected);
+		expect(() =>
+			registry.activateRecorder(makeSocket('conflict'), 'recording-1', 'job-3'),
+		).toThrow('already connected');
 	});
 
 	describe('raised hands', () => {
@@ -233,7 +294,7 @@ describe('RoomRegistry', () => {
 				producerId: 'producer-1',
 				isScreen: false,
 				reason: 'private diagnostic',
-				details: { private: true },
+				details: { message: 'private diagnostic' },
 			});
 			registry.emitScreenShare('r1', 'screen_share_started', {
 				participantId: 'p1',
@@ -247,7 +308,11 @@ describe('RoomRegistry', () => {
 				fromName: 'Alice',
 				timestamp: 'ts',
 			});
-			registry.emitRaisedHand('r1', { participantId: 'p1', raised: true });
+			registry.emitRaisedHand('r1', {
+				participantId: 'p1',
+				raised: true,
+				timestamp: 'ts',
+			});
 			registry.emitPublicChat('r1', {
 				roomId: 'r1',
 				message: 'hello',
@@ -278,7 +343,7 @@ describe('RoomRegistry', () => {
 			]);
 			const calls = (
 				recorder as unknown as {
-					_emitCalls: { event: string; data: Record<string, unknown> }[];
+					_emitCalls: EmissionFixture[];
 				}
 			)._emitCalls;
 			expect(
