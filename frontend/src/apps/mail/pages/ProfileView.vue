@@ -24,7 +24,7 @@
 			<button
 				v-if="profileTab"
 				class="active:bg-surface-gray-1 flex w-full items-center gap-3.5 rounded-lg px-1 py-3.5"
-				@click="activeTab = profileTab"
+				@click="openTab(profileTab)"
 			>
 				<Avatar :label="fullName" :image="user.data?.user_image" size="2xl" class="size-14" />
 				<div class="min-w-0 flex-1 text-left">
@@ -53,7 +53,7 @@
 					v-for="tab in group.items"
 					:key="tab.value"
 					:class="rowClass"
-					@click="activeTab = tab"
+					@click="openTab(tab)"
 				>
 					<component :is="tab.icon" class="text-ink-gray-6 h-4 w-4 shrink-0" />
 					<span class="flex-1 truncate text-left">{{ tab.label }}</span>
@@ -69,7 +69,7 @@
 			</button>
 		</div>
 
-		<MobileSettingsSubPage :tab="activeTab" @close="activeTab = null" />
+		<MobileSettingsSubPage :tab="activeTab" @close="closeTab" />
 
 		<!-- In the sheet, logging out took two deliberate steps (open the sheet, tap the red
 		     row). Here it's whatever happens to be resting at the bottom of a scroll, so it asks. -->
@@ -87,6 +87,7 @@
 
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Check, ChevronRight, LogOut } from 'lucide-vue-next'
 import { Avatar, Dialog } from 'frappe-ui'
 
@@ -99,6 +100,8 @@ import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.v
 
 const user = inject('$user') as { data: Record<string, any> }
 
+const route = useRoute()
+const router = useRouter()
 const store = userStore()
 const { logout } = sessionStore()
 
@@ -106,7 +109,16 @@ const { logout } = sessionStore()
 const { groups, findTab } = useSettingsTabs(['profile'])
 const profileTab = computed(() => findTab('profile'))
 
-const activeTab = ref<SettingsTab | null>(null)
+// Which sub-page is open lives in the URL (?tab=appearance) rather than in a local ref, so
+// three things fall out for free: the back gesture closes it, re-tapping the Profile tab can
+// pop back to the page root by dropping the query, and a tab that isn't available to this
+// account (findTab honours the same conditions the list does) resolves to nothing.
+const activeTab = computed<SettingsTab | null>(
+	() => (route.query.tab ? findTab(String(route.query.tab)) : null) ?? null,
+)
+const openTab = (tab?: SettingsTab) => tab && router.push({ query: { tab: tab.value } })
+const closeTab = () => router.replace({ query: {} })
+
 const showLogoutConfirm = ref(false)
 
 const accounts = computed(() => store.userResource?.data?.accounts ?? [])

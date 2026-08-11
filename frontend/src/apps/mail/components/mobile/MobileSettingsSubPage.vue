@@ -14,14 +14,18 @@
 			class="bg-surface-base absolute inset-0 z-10 flex flex-col"
 			:class="{ 'pt-[env(safe-area-inset-top)]': safeAreaTop }"
 		>
-			<div class="bg-surface-base flex min-h-14 shrink-0 items-center border-b px-3">
+			<!-- Same bar as the tab destinations' title row (h-14, 2xl semibold), so a pushed
+			     page reads as the same surface at a different depth. -->
+			<div class="bg-surface-base flex h-14 shrink-0 items-center border-b px-3">
 				<Button variant="ghost" class="-ml-2 mr-2 !h-8 !w-8 shrink-0" @click="emit('close')">
 					<template #icon>
 						<ChevronLeft class="icon !h-[18px] !w-[18px]" />
 					</template>
 				</Button>
 
-				<h2 class="text-xl-semibold min-w-0 flex-1 truncate leading-5">{{ tab.label }}</h2>
+				<h2 class="min-w-0 flex-1 truncate text-2xl !font-semibold tracking-[-0.01em]">
+					{{ tab.label }}
+				</h2>
 
 				<!-- Sub-page actions (e.g. Save) teleport here from AppSettingsHeader —
 				     nav-bar placement; the target lives in this layer, so actions slide

@@ -61,16 +61,16 @@
 			</button>
 			<!-- The tab stands for the person, so it carries their photo when there is one
 			     and falls back to the active account's initial. A photo has no stroke to
-			     thicken, so the ring is what stands in for the other tabs' icon: always
-			     drawn, and `ring-current` puts it on the same ink channel they use — it
-			     darkens to 9 with the rest of the tab on selection, at the 1.5px the icons
-			     stroke at. No ring offset: the ring is the avatar's edge, not a halo. -->
+			     thicken the way the other icons do, so selection draws a ring instead —
+			     `ring-current` at the 1.5px they stroke at, and no offset, so it reads as
+			     the avatar's own edge rather than a halo. -->
 			<button :class="tabClass(profileActive)" @click="openProfile">
 				<Avatar
 					:label="activeAccountName"
 					:image="user.data?.user_image"
 					size="md"
-					class="size-5.5 shrink-0 ring-[1.5px] ring-current"
+					class="size-5.5 shrink-0"
+					:class="profileActive && 'ring-[1.5px] ring-current'"
 				/>
 				<span :class="labelClass(profileActive)">{{ __('Profile') }}</span>
 			</button>
@@ -174,10 +174,15 @@ const openScreener = () => {
 }
 
 // Profile is a route now, not a sheet over the current surface — so it dismisses the
-// search overlay on the way, like every other navigating tab.
+// search overlay on the way, like every other navigating tab. Re-tapping it pops back
+// to the root of its own stack: the open settings sub-page is a query on this route,
+// so dropping the query closes it.
 const openProfile = () => {
 	showSearchModal.value = false
-	if (profileActive.value) return
+	if (profileActive.value) {
+		if (route.query.tab) router.replace({ query: {} })
+		return
+	}
 	router.push({ name: 'mail-profile', params: { accountId: store.accountId } })
 }
 

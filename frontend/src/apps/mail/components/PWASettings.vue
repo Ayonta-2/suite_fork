@@ -3,14 +3,16 @@
 		<!-- Root bar — same compact-header recipe as ThreadHeader: -ml-2 cancels
 		     the ghost button's padding so the chevron glyph lands on the body's
 		     px-3 axis. -->
-		<div class="bg-surface-base flex min-h-14 shrink-0 items-center border-b px-3">
+		<div class="bg-surface-base flex h-14 shrink-0 items-center border-b px-3">
 			<Button variant="ghost" class="-ml-2 mr-2 !h-8 !w-8 shrink-0" @click="emit('close')">
 				<template #icon>
 					<ChevronLeft class="icon !h-[18px] !w-[18px]" />
 				</template>
 			</Button>
 
-			<h2 class="text-xl-semibold min-w-0 flex-1 truncate leading-5">{{ __('Settings') }}</h2>
+			<h2 class="min-w-0 flex-1 truncate text-2xl !font-semibold tracking-[-0.01em]">
+				{{ __('Settings') }}
+			</h2>
 		</div>
 
 		<!-- Root: grouped section list mirroring the desktop dialog's groups. The
