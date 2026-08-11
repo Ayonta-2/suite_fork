@@ -43,6 +43,9 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 	const canCoalesce = (command, top, forceCoalesce) => {
 		// key-less commands would match on undefined === undefined
 		if (!command.coalesceKey || command.coalesceKey !== top?.coalesceKey) return false
+		// a zeroed clock marks the top as no continuation target, and a forced
+		// fold must not reach past that either
+		if (!lastRecordedAt) return false
 		return forceCoalesce || Date.now() - lastRecordedAt <= COALESCE_WINDOW
 	}
 

@@ -134,6 +134,22 @@ describe('record coalescing', () => {
 		expect(history.canUndo.value).toBe(true)
 	})
 
+	it('never force-folds into the entry a dropped step exposed', async () => {
+		history.record(contentEdit('a', 'ab'))
+		await history.undo()
+		await history.redo()
+
+		history.record(contentEdit('ab', 'abc'), { forceCoalesce: true })
+		history.record(contentEdit('abc', 'ab'), { forceCoalesce: true })
+		history.record(contentEdit('ab', 'abx'), { forceCoalesce: true })
+
+		state.value[0].elements[0].content = 'abx'
+		await history.undo()
+
+		expect(state.value[0].elements[0].content).toBe('ab')
+		expect(history.canUndo.value).toBe(true)
+	})
+
 	it('does not fold the next edit into the step undo just restored', async () => {
 		history.record(contentEdit('a', 'ab'))
 		vi.advanceTimersByTime(COALESCE_WINDOW + 1)
