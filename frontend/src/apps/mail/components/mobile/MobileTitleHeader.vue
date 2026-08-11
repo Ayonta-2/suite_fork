@@ -4,7 +4,10 @@
 	     the right. Without the hamburger the title gets pl-4 (4px row + 16px =
 	     20px) to sit on the px-5 axis of the list content below it; with it,
 	     the button's own inset provides the offset. -->
-	<div class="flex items-center gap-1 px-1 pb-2.5 pt-2">
+	<!-- min-h-15 so every view's title row is the same height: without it the row is
+	     only as tall as what it happens to contain, and the ones with a hamburger or
+	     an action button (40px) stood 4px taller than a bare title (36px). -->
+	<div class="flex min-h-15 items-center gap-1 px-1 pb-2.5 pt-2">
 		<button
 			v-if="withMenu"
 			:aria-label="__('Folders')"
