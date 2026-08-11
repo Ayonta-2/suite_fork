@@ -46,6 +46,14 @@ HOME_LABEL = "Home"
 # uploads still sitting in them haven't been adopted into a user folder yet.
 FRAMEWORK_FOLDERS = ("Home", "Home/Attachments")
 
+# App-created buckets under the framework root, outside Drive's own tree
+# (`ROOT_FOLDER` / `USERS_FOLDER`). Like the framework folders they are shared
+# scaffolding rather than anyone's private space, so any user may add to them -
+# but unlike those, what lands here stays put instead of being adopted into a
+# user folder. Mail's compose attachments go to `Home/Frappe Mail`
+# (`suite/mail/install.py`).
+APP_FOLDERS = ("Home/Frappe Mail",)
+
 PERMISSION_TYPES = ["read", "comment", "share", "upload", "write"]
 
 

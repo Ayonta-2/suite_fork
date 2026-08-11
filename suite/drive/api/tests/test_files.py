@@ -28,6 +28,7 @@ from suite.drive.api.permissions import (
 )
 from suite.drive.overrides.file import File as DriveFile
 from suite.drive.utils import (
+    APP_FOLDERS,
     FRAMEWORK_FOLDERS,
     GENERAL_USER,
     STATUS_ACTIVE,
@@ -258,6 +259,32 @@ class TestDriveFilesAPI(IntegrationTestCase):
 
             # Drive's own flow inserts into the user's own folder.
             self.assertTrue(can_create_in_folder(get_user_folder(OTHER_USER).name))
+
+    def test_app_folder_upload_still_permitted(self):
+        """Mail's compose uploads name `Home/Frappe Mail` explicitly. It is an
+        app-owned bucket outside Drive's tree, created by Administrator at
+        install, so no user holds `upload` on it - denying it broke every
+        attachment sent from the Mail UI."""
+        for folder in APP_FOLDERS:
+            self.assertTrue(frappe.db.exists("File", folder), f"{folder} should exist")
+
+            with self.set_user(OTHER_USER):
+                self.assertFalse(get_user_access_for_user(folder, OTHER_USER).get("upload"))
+                self.assertTrue(can_create_in_folder(folder))
+
+                attachment = frappe.get_doc(
+                    {
+                        "doctype": "File",
+                        "folder": folder,
+                        "file_name": f"{frappe.generate_hash(8)}.txt",
+                        "is_private": 1,
+                        "content": "attachment contents",
+                    }
+                ).insert()
+
+            # What lands there stays owner-scoped: the bucket is shared, the rows aren't.
+            with self.set_user(MEMBER):
+                self.assertFalse(user_has_permission(attachment, "read"))
 
     def test_site_share_and_guest_public_access(self):
         # Inside a user folder, other site users are denied by default.
