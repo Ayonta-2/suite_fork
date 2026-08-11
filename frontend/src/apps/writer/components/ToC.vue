@@ -88,7 +88,11 @@
       <div v-if="editor.isEditable" class="flex items-center gap-1 pr-1">
         <Button class="grow !justify-start text-xs opacity-50 hover:opacity-100"
           :icon-left="h(LucidePlus, { class: 'size-4' })" :label="tabs.length ? 'Add tab' : 'Create tab'"
-          variant="ghost" @click="addTab" />
+          variant="ghost" @click="
+            tabs.length
+              ? editor.commands.createTab({ label: 'Untitled' })
+              : editor.commands.wrapInTab()
+            " />
         <Button v-if="!hasContent" :icon="LucideLeftClose" variant="ghost" @click="show = !show" tooltip="Hide" />
       </div>
     </div>
@@ -125,13 +129,6 @@ const props = defineProps({
 const hasContent = computed(
   () => tabs.value.length > 0 || props.anchors.length > 1,
 )
-
-// For the first tab, move the existing content into a tab of its own, then add
-// an empty one next to it (createTab focuses it) so nothing written is lost.
-const addTab = () => {
-  if (!tabs.value.length) props.editor.commands.wrapInTab()
-  props.editor.commands.createTab({ label: 'Untitled' })
-}
 
 const show = ref(JSON.parse(localStorage.getItem('showToc') || 'false'))
 watch(show, (v) => localStorage.setItem('showToc', v))
