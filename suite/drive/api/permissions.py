@@ -2,6 +2,7 @@ import frappe
 from frappe.model.document import Document
 
 from suite.drive.utils import (
+    APP_FOLDERS,
     FILE_FIELDS,
     FRAMEWORK_FOLDERS,
     GENERAL_USER,
@@ -280,9 +281,14 @@ def can_create_in_folder(folder: str | None, user: str | None = None):
     open. `folder` is likewise still empty here for attachments that let core's
     `set_folder_name` resolve it - to one of the same two folders - during
     `validate`, which runs after this check, so treat empty the same way.
+
+    `APP_FOLDERS` are open for the same reason: they sit outside Drive's tree and
+    belong to an app rather than to a user, so adding to one takes nothing from
+    anybody. Access to what lands there is still per row - the uploader owns it,
+    and nobody else gets it without a share.
     """
     user = user or frappe.session.user
-    if not folder or folder in FRAMEWORK_FOLDERS:
+    if not folder or folder in FRAMEWORK_FOLDERS or folder in APP_FOLDERS:
         return True
     try:
         return bool(get_user_access_for_user(folder, user).get("upload"))
