@@ -588,6 +588,9 @@ export const patchEmptyParagraphs = (htmlString) => {
 	let prevSpanStyles = null
 
 	allParagraphs.forEach((p) => {
+		// each table cell is its own styling context, styles must not carry across cells
+		if (p.closest('td, th')) return
+
 		const isEmpty = p.textContent.trim() === ''
 		const firstSpan = p.querySelector('span')
 
