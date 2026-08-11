@@ -37,13 +37,14 @@ docker compose version &>/dev/null || err "Docker Compose v2 is required."
 
 # Create install directory
 info "Installing to: $INSTALL_DIR"
-mkdir -p "$INSTALL_DIR/nginx/templates"
+mkdir -p "$INSTALL_DIR/alloy" "$INSTALL_DIR/nginx/templates" "$INSTALL_DIR/secrets"
 
 # Download files
 FILES=(
     "docker-compose.yml"
     ".env.example"
     "deploy.sh"
+    "alloy/sfu.alloy"
     "nginx/certbot-init.sh"
     "nginx/templates/default.conf.template"
 )
@@ -56,6 +57,7 @@ done
 # Make scripts executable
 chmod +x "$INSTALL_DIR/deploy.sh"
 chmod +x "$INSTALL_DIR/nginx/certbot-init.sh"
+chmod 700 "$INSTALL_DIR/secrets"
 
 # Create .env from template if it doesn't exist
 if [ ! -f "$INSTALL_DIR/.env" ]; then
@@ -75,6 +77,9 @@ echo "     nano $INSTALL_DIR/.env"
 echo ""
 echo "  2. Set these required values:"
 echo "     - JWT_SECRET       (generate: openssl rand -base64 32)"
+echo "     - RECORDER_SECRET  (generate: openssl rand -base64 48)"
+echo "     - RECORDER_METRICS_TOKEN  (generate: openssl rand -hex 32)"
+echo "     - RECORDER_SITE and RECORDER_SITE_ORIGIN"
 echo "     - WEBRTC_ANNOUNCED_IP  (find: curl -4 ifconfig.me)"
 echo "     - DOMAIN"
 echo "     - SSL_EMAIL"

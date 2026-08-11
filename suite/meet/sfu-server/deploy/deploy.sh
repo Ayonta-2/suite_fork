@@ -7,7 +7,7 @@
 #   ./deploy.sh start      — Start all services
 #   ./deploy.sh stop       — Stop all services
 #   ./deploy.sh restart    — Restart all services
-#   ./deploy.sh pull       — Pull the latest SFU image
+#   ./deploy.sh pull       — Pull the latest SFU and recorder images
 #   ./deploy.sh logs       — Tail logs from all services
 #   ./deploy.sh status     — Show container status and health
 #   ./deploy.sh ssl-init   — Provision SSL certificate (first time only)
@@ -94,6 +94,38 @@ check_env() {
         ok "JWT_SECRET is set"
     fi
 
+    if [ -z "${RECORDER_SECRET:-}" ] || [[ "$RECORDER_SECRET" == change-me-* ]] || (( ${#RECORDER_SECRET} < 32 )); then
+        err "RECORDER_SECRET must be set to an independent strong random value."
+        echo "  Generate one: openssl rand -base64 48"
+        errors=true
+    elif [ "$RECORDER_SECRET" = "${JWT_SECRET:-}" ]; then
+        err "RECORDER_SECRET must not reuse JWT_SECRET."
+        errors=true
+    else
+        ok "RECORDER_SECRET is set"
+    fi
+
+    if [ -z "${RECORDER_METRICS_TOKEN:-}" ] || [[ "$RECORDER_METRICS_TOKEN" == change-me-* ]] || (( ${#RECORDER_METRICS_TOKEN} < 32 )); then
+        err "RECORDER_METRICS_TOKEN must be set to an independent strong random value."
+        echo "  Generate one: openssl rand -hex 32"
+        errors=true
+    elif [ "$RECORDER_METRICS_TOKEN" = "${RECORDER_SECRET:-}" ] || [ "$RECORDER_METRICS_TOKEN" = "${JWT_SECRET:-}" ]; then
+        err "RECORDER_METRICS_TOKEN must not reuse another service credential."
+        errors=true
+    else
+        ok "RECORDER_METRICS_TOKEN is set"
+    fi
+
+    if [ -z "${RECORDER_SITE:-}" ] || [ "$RECORDER_SITE" = "example.com" ] || [[ "$RECORDER_SITE" == *.example.com ]]; then
+        err "RECORDER_SITE must be set to the exact Frappe site name."
+        errors=true
+    fi
+
+    if [ -z "${RECORDER_SITE_ORIGIN:-}" ] || [[ ! "$RECORDER_SITE_ORIGIN" =~ ^https://[^/]+$ ]] || [[ "$RECORDER_SITE_ORIGIN" =~ ^https://([^/]+\.)?example\.com$ ]]; then
+        err "RECORDER_SITE_ORIGIN must be the exact deployed HTTPS origin."
+        errors=true
+    fi
+
     if [ -z "${WEBRTC_ANNOUNCED_IP:-}" ]; then
         err "WEBRTC_ANNOUNCED_IP must be set to your server's public IP."
         echo "  Find it: curl -4 ifconfig.me"
@@ -116,6 +148,7 @@ check_env() {
 
     # Informational
     info "SFU Image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
+    info "Recorder Image: ${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}"
     info "SFU Port: ${PORT:-3000}"
     if [ -n "${MEDIASOUP_NUM_WORKERS:-}" ]; then
         local media_port_start="${WEBRTC_SERVER_PORT:-40000}"
@@ -134,16 +167,53 @@ check_env() {
     ok "Configuration is valid"
 }
 
+check_observability_env() {
+    check_env
+
+    local errors=false
+
+    if [ -z "${ALLOY_HOST:-}" ]; then
+        err "ALLOY_HOST must be a stable, unique host name."
+        errors=true
+    fi
+    if [ -z "${LOKI_PUSH_URL:-}" ]; then
+        err "LOKI_PUSH_URL must be set."
+        errors=true
+    fi
+    if [ -z "${LOKI_PUSH_USER:-}" ]; then
+        err "LOKI_PUSH_USER must be set."
+        errors=true
+    fi
+    if [ ! -s "$SCRIPT_DIR/secrets/loki-password" ]; then
+        err "secrets/loki-password must exist and contain the Loki push password."
+        errors=true
+    fi
+
+    if [ "$errors" = true ]; then
+        exit 1
+    fi
+
+    ok "Observability configuration is valid"
+}
+
+observability_is_configured() {
+    [ -n "${ALLOY_HOST:-}" ] \
+        && [ -n "${LOKI_PUSH_URL:-}" ] \
+        && [ -n "${LOKI_PUSH_USER:-}" ] \
+        && [ -s "$SCRIPT_DIR/secrets/loki-password" ]
+}
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 cmd_setup() {
     header "Frappe Meet SFU — Setup"
     check_dependencies
     check_env
 
-    header "Pulling SFU image"
+    header "Pulling service images"
     set -a; source "$ENV_FILE"; set +a
     docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
-    ok "Image pulled"
+    docker pull "${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}"
+    ok "Images pulled"
 
     # Start SFU first (nginx depends on it being healthy)
     header "Starting SFU"
@@ -183,48 +253,67 @@ cmd_setup() {
 cmd_start() {
     check_env
     header "Starting services"
-    compose up -d
+    if observability_is_configured; then
+        compose --profile observability up -d
+    else
+        compose up -d
+    fi
     ok "Services started"
     cmd_status
 }
 
 cmd_stop() {
     header "Stopping services"
-    compose down
+    compose --profile observability down
     ok "Services stopped"
 }
 
 cmd_restart() {
     header "Restarting services"
-    compose restart
+    compose --profile observability restart
     ok "Services restarted"
     cmd_status
 }
 
 cmd_pull() {
     set -a; source "$ENV_FILE"; set +a
-    header "Pulling latest SFU image"
+    header "Pulling latest service images"
     docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
-    ok "Image pulled"
-    info "Run './deploy.sh restart' to use the new image"
+    docker pull "${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}"
+    ok "Images pulled"
+    info "Run './deploy.sh update' to use the new images"
 }
 
 cmd_update() {
-    header "Updating SFU"
+    header "Updating SFU and recorder"
     cmd_pull
-    header "Recreating SFU container"
-    compose up -d --force-recreate sfu
-    ok "SFU updated"
+    header "Recreating service containers"
+    compose up -d --force-recreate grant-store-init sfu recorder
+    ok "SFU and recorder updated"
     cmd_status
 }
 
 cmd_logs() {
-    compose logs -f --tail=100 "$@"
+    compose --profile observability logs -f --tail=100 "$@"
+}
+
+cmd_observability_start() {
+    check_dependencies
+    check_observability_env
+    header "Starting log collector"
+    compose up -d alloy
+    ok "Alloy started"
+}
+
+cmd_observability_stop() {
+    header "Stopping log collector"
+    compose stop alloy
+    ok "Alloy stopped"
 }
 
 cmd_status() {
     header "Service Status"
-    compose ps -a
+    compose --profile observability ps -a
     echo ""
 
     set -a; source "$ENV_FILE"; set +a
@@ -267,9 +356,11 @@ cmd_help() {
     echo "  start      Start all services"
     echo "  stop       Stop all services"
     echo "  restart    Restart all services"
-    echo "  pull       Pull the latest SFU image from the registry"
-    echo "  update     Pull latest image and recreate the SFU container"
+    echo "  pull       Pull the latest SFU and recorder images"
+    echo "  update     Pull latest images and recreate service containers"
     echo "  logs       Tail logs (append service name to filter, e.g., logs sfu)"
+    echo "  observability-start  Validate and start the Alloy log collector"
+    echo "  observability-stop   Stop the Alloy log collector"
     echo "  status     Show container status and health"
     echo "  ssl-init   Provision SSL certificate (first time)"
     echo "  ssl-renew  Force SSL certificate renewal"
@@ -286,6 +377,8 @@ case "${1:-help}" in
     pull)      cmd_pull ;;
     update)    cmd_update ;;
     logs)      shift; cmd_logs "$@" ;;
+    observability-start) cmd_observability_start ;;
+    observability-stop)  cmd_observability_stop ;;
     status)    cmd_status ;;
     ssl-init)  cmd_ssl_init ;;
     ssl-renew) cmd_ssl_renew ;;
