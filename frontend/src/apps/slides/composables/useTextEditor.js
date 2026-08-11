@@ -262,6 +262,9 @@ export const useTextEditor = () => {
 				extensions: extensions,
 				editable: isEditable,
 				content: content,
+				// focus only lands once EditorContent has adopted the view, so tiptap
+				// has to do it itself after mounting
+				autofocus: isEditable ? 'all' : false,
 				// to update styles in sidebar based on cursor position
 				onSelectionUpdate: ({ editor }) => setEditorStyles(editor),
 				// to update element content on every change
@@ -271,7 +274,7 @@ export const useTextEditor = () => {
 
 			// If there is a legacy lineHeight to migrate for display, apply it in-memory
 			if (initialLineHeight != null) {
-				activeEditor.value.chain().focus().setGlobalLineHeight(initialLineHeight).run()
+				activeEditor.value.commands.setGlobalLineHeight(initialLineHeight)
 				delete editorElement?.editorMetadata
 			}
 		})

@@ -896,7 +896,8 @@ const updateElementContent = (element) => {
 
 const blurAndSaveContent = (element) => {
 	activeEditor.value.setEditable(false)
-	activeEditor.value.commands.blur()
+	// blur() drops the window selection, including one this editor never held
+	if (activeEditor.value.isFocused) activeEditor.value.commands.blur()
 
 	const isEmpty = (activeEditor.value?.getText() || '').replace(/\u200B/g, '') === ''
 
@@ -923,31 +924,31 @@ const setEditableState = () => {
 
 const initEditorForElement = (element) => {
 	if (element?.type == 'text') {
-		const isEditable = focusElementId.value == element.id
 		initTextEditor(
 			element.id,
 			element.content,
-			isEditable,
+			focusElementId.value == element.id,
 			element.locked ? null : element.editorMetadata?.lineHeight,
 		)
-
-		if (isEditable) setEditableState()
 	}
 }
 
-const replaceEditor = (fn) =>
-	nextTick(() => {
-		activeEditor.value?.destroy()
-		activeEditor.value = null
+// dropping the old editor before the next render keeps EditorContent from
+// mounting onto an editor that is about to be destroyed
+const replaceEditor = (fn) => {
+	activeEditor.value?.destroy()
+	activeEditor.value = null
+
+	return nextTick(() => {
 		fn?.()
 		editorOldText = activeEditor.value?.getText()
 	})
+}
 
 const initShapeEditor = (element) =>
-	replaceEditor(() => {
-		initTextEditor(element.id, element.content || getInitialShapeTextContent(element), true)
-		setEditableState()
-	})
+	replaceEditor(() =>
+		initTextEditor(element.id, element.content || getInitialShapeTextContent(element), true),
+	)
 
 watch(
 	() => activeElement.value,
