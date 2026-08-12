@@ -392,6 +392,10 @@ def create_presentation(
             frappe.throw("You cannot duplicate this presentation", frappe.PermissionError)
         source_thumbnail = set_duplicate_metadata(presentation, duplicate_from)
     else:
+        if not template or not frappe.db.exists("Presentation", template):
+            frappe.throw(f"Template {template!r} does not exist", frappe.DoesNotExistError)
+        if not frappe.has_permission("Presentation", "read", template):
+            frappe.throw("You cannot create a presentation from this template", frappe.PermissionError)
         source_thumbnail = set_template_metadata(presentation, template)
     presentation.flags.drive_parent = parent
     presentation.insert()

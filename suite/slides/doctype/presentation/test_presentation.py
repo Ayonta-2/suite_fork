@@ -69,6 +69,19 @@ class TestPresentationSecurity(IntegrationTestCase):
             with self.assertRaises(frappe.PermissionError):
                 create_presentation(duplicate_from=self.owner_presentation)
 
+    def test_create_rejects_a_template_that_no_longer_exists(self):
+        for template in ("this-template-was-deleted", None, ""):
+            with self.subTest(template=template):
+                with self.assertRaises(frappe.DoesNotExistError):
+                    create_presentation(template=template)
+
+    def test_create_from_template_requires_read(self):
+        # a presentation that is not a template is not a template to copy from either,
+        # whoever names it
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(frappe.PermissionError):
+                create_presentation(template=self.owner_presentation)
+
     def test_updated_json_blocks_file_exfil(self):
         exfil = [{"type": "image", "src": self.private_file.file_url}]
         with self.set_user(OTHER_USER):
