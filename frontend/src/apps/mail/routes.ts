@@ -115,6 +115,16 @@ export const routes: RouteRecordRaw[] = [
 				component: () => import('@/apps/mail/pages/MailboxView.vue'),
 				props: true,
 			},
+			// Compose as a page of its own rather than an overlay over the list. `noLayout` keeps
+			// the app chrome — and the full-height scroll frame it brings — out of the way, so the
+			// composer can own the visible area and decide for itself what scrolls inside it.
+			{
+				path: 'account/:accountId/compose',
+				name: 'mail-compose',
+				component: () => import('@/apps/mail/pages/ComposeView.vue'),
+				props: true,
+				meta: { noLayout: true },
+			},
 			// Profile as a page rather than a bottom sheet, so the tab behaves like the other
 			// three — a route the bar keeps a selected state for. It holds the mobile settings
 			// list itself; PWASettings stays for the sidebar and in-thread entry points.

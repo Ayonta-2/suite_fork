@@ -10,9 +10,9 @@
 		:extensions="[CustomImageExtension, CustomParagraphExtension, ...MentionExtensions]"
 		:content="mail.html_body.replaceAll('<div><br></div>', '<div></div>')"
 		:upload-function
-		class="flex flex-col max-sm:overflow-y-auto"
+		class="flex flex-col max-sm:min-h-0 max-sm:flex-1 max-sm:overflow-y-auto max-sm:overscroll-contain"
 		:class="{ 'pointer-events-none opacity-50': !show, 'sm:h-[75vh]': !isInThread }"
-		:style="isMobile && { height: editorHeight }"
+		@focusin="onFocusIn"
 		@change="
 			(val: string) => {
 				mail.html_body = val.replaceAll('<div></div>', '<div><br></div>')
@@ -200,6 +200,9 @@
 				</div>
 			</div>
 		</template>
+		<!-- Last child of the scroller, so `sticky bottom-0` (mobile, in the toolbar itself) pins it to
+		     the bottom of the scrollport while the fields and body scroll under it. The sheet ends where
+		     the keyboard begins, so that bottom edge is the top of the keyboard. -->
 		<template #bottom>
 			<ComposeMailToolbar
 				:is-recipients-empty
@@ -267,7 +270,7 @@ import {
 	raiseToast,
 	randomString,
 } from '@/apps/mail/utils'
-import { useScreenSize, useVisualViewport } from '@/apps/mail/utils/composables'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
 import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
@@ -334,14 +337,48 @@ const toggleCcBcc = () => {
 	if (showCcBcc.value) nextTick(() => ccInput.value?.setFocus())
 }
 
+// Pre-empt iOS's focus reveal. When focus moves to a field it thinks the keyboard covers, iOS scrolls
+// the page itself to bring it up — and a fixed pane can only chase that pan a frame behind, which is
+// the sheet lurching up and settling back on every hop between the body and the fields above.
+//
+// Putting the caret somewhere comfortable ourselves, synchronously as focus lands, leaves iOS with
+// nothing to reveal and so nothing to pan. Scrolling the pane we already own is invisible by
+// comparison — it's the scroll the reader asked for.
+const revealFocused = (target?: Element | null) => {
+	const scroller = textEditor.value?.$el as HTMLElement | undefined
+	const editor = textEditor.value?.editor
+	if (!isMobile.value || !scroller) return
+
+	const node = target ?? document.activeElement
+	if (!node || !scroller.contains(node)) return
+
+	// The body's element spans the whole composition, so its box says nothing about where the caret
+	// is; ask ProseMirror. Every other field is small enough to use its own.
+	const rect =
+		editor && node === editor.view.dom
+			? editor.view.coordsAtPos(editor.state.selection.head)
+			: node.getBoundingClientRect()
+
+	const view = scroller.getBoundingClientRect()
+	const margin = 24
+
+	if (rect.bottom > view.bottom - margin) scroller.scrollTop += rect.bottom - view.bottom + margin
+	else if (rect.top < view.top + margin) scroller.scrollTop -= view.top + margin - rect.top
+}
+
+const onFocusIn = (event: FocusEvent) => revealFocused(event.target as Element | null)
+
+// The keyboard opening shrinks the pane under whatever is already focused, which puts it back within
+// reach of iOS's reveal — so do it again once the new size has landed.
+const onViewportResize = () => requestAnimationFrame(() => revealFocused())
+
+onMounted(() => window.visualViewport?.addEventListener('resize', onViewportResize))
+onUnmounted(() => window.visualViewport?.removeEventListener('resize', onViewportResize))
+
 const appendEmoji = (emoji: string) => {
 	textEditor.value.editor.commands.insertContent(emoji)
 	textEditor.value.editor.commands.focus()
 }
-
-const editorHeight = useVisualViewport(
-	(viewport) => `${viewport.height - viewport.offsetTop - 113}px`,
-)
 
 // Mentions
 

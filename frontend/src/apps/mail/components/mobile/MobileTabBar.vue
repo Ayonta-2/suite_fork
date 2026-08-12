@@ -16,7 +16,7 @@
 		variant="solid"
 		class="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-10 !h-14 !w-14 !rounded-full shadow-lg"
 		:aria-label="__('Compose')"
-		@click="showSendModal = true"
+		@click="openCompose"
 	>
 		<template #icon>
 			<FeatherIcon name="edit" class="h-6 w-6" />
@@ -77,7 +77,6 @@
 		</div>
 	</nav>
 
-	<SendMail v-model="showSendModal" />
 	<SearchModal v-model="showSearchModal" />
 	<MobileFolderSheet />
 </template>
@@ -91,8 +90,8 @@ import { Icon } from 'frappe-ui/icons'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useFolderSheet, useMobileSelection } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
+import { setPendingCompose } from '@/apps/mail/composables/composeHandoff'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
-import SendMail from '@/apps/mail/components/SendMail.vue'
 import MobileFolderSheet from '@/apps/mail/components/mobile/MobileFolderSheet.vue'
 
 import type { MailboxData } from '@/apps/mail/types'
@@ -118,8 +117,14 @@ const currentFolder = computed(() => {
 	return mailbox ? { label: getMailboxName(mailbox), icon: getIcon(mailbox) } : null
 })
 
-const showSendModal = ref(false)
 const showSearchModal = ref(false)
+
+// Compose is a route now, not an overlay, so the back gesture closes it and the composer owns a
+// whole screen to lay itself out in rather than floating over this one.
+const openCompose = () => {
+	setPendingCompose(undefined)
+	router.push({ name: 'mail-compose', params: { accountId: store.accountId } })
+}
 
 const MAIL_ROUTES = ['mail-mailbox', 'mail-all-inboxes']
 const isThreadOpen = computed(() => !!route.params.threadID)
