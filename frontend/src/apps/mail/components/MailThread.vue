@@ -232,7 +232,7 @@
 									class="mb-4"
 								/>
 
-								<div v-show="isCollapsed(mail)" class="truncate">
+								<div v-show="isCollapsed(mail)" class="truncate text-base">
 									{{ mail.preview }}
 								</div>
 
@@ -454,6 +454,7 @@ import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vu
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
+import { setPendingCompose } from '@/apps/mail/composables/composeHandoff'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
@@ -1084,6 +1085,17 @@ const showSendModal = ref(false)
 
 const popOutDraft = (mail: ComposeMailData) => {
 	draftMails[mail.name as string] = mail
+
+	// Mobile composes on a page of its own rather than in an overlay — see ComposeView. Nothing has
+	// to be handed back on the way out: leaving the compose route remounts this thread, so the reply
+	// that was just sent is there in the refetch, and a local draft that was discarded is gone with
+	// the component that was holding it.
+	if (isMobile.value) {
+		setPendingCompose(mail)
+		router.push({ name: 'mail-compose', params: { accountId: scopeAccountId.value } })
+		return
+	}
+
 	focusedDraft.value = mail.name
 	showSendModal.value = true
 }
