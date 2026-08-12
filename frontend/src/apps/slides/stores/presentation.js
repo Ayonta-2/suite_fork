@@ -334,7 +334,6 @@ const templateList = ref([])
 const templateListResource = createResource({
 	url: 'suite.slides.doctype.presentation.presentation.get_templates',
 	method: 'GET',
-	cache: 'templates',
 	onSuccess: (data) => {
 		templateList.value = data
 	},

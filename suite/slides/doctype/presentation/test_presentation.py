@@ -12,6 +12,7 @@ from suite.slides.doctype.presentation.presentation import (
     delete_presentation,
     get_composite_presentation,
     get_public_presentation,
+    get_templates,
     get_updated_json,
     save_base64_image,
     save_presentation_thumbnail,
@@ -190,6 +191,40 @@ class TestPresentationSecurity(IntegrationTestCase):
             result = get_composite_presentation(composite.name)
 
         self.assertEqual(result["slides"], [])
+
+
+class TestTemplates(IntegrationTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(OWNER)
+
+        with cls.set_user(OWNER):
+            cls.one_layout = make_presentation("One Layout Template")
+
+            cls.three_layouts = make_presentation("Three Layout Template")
+            cls.three_layouts.append("slides", {"elements": "[]"})
+            cls.three_layouts.append("slides", {"elements": "[]"})
+            cls.three_layouts.save()
+
+        for template in (cls.one_layout, cls.three_layouts):
+            frappe.db.set_value("Presentation", template.name, "is_template", 1)
+
+    def test_layouts_are_grouped_per_template_in_idx_order(self):
+        # one bulk query feeds every template, so a grouping slip shows up only when the
+        # templates differ in size
+        by_name = {template["name"]: template for template in get_templates()}
+
+        self.assertEqual(len(by_name[self.one_layout.name]["layouts"]), 1)
+
+        layouts = by_name[self.three_layouts.name]["layouts"]
+        self.assertEqual([layout["idx"] for layout in layouts], [1, 2, 3])
+        self.assertEqual(
+            [layout["name"] for layout in layouts],
+            [slide.name for slide in self.three_layouts.slides],
+        )
+        # the editor spreads a layout into a new child row, which needs its doctype
+        self.assertEqual({layout["doctype"] for layout in layouts}, {"Slide"})
 
 
 class TestSlideRows(IntegrationTestCase):
