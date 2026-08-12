@@ -17,15 +17,18 @@
 </template>
 
 <script setup>
-import { computed, inject, ref } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 
 import { EditorContent } from '@tiptap/vue-3'
 
 import { sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 import { isBackgroundColorDark } from '@/apps/slides/utils/color'
+import { getColumnWidths, getTableWidth } from '@/apps/slides/utils/tableWidths'
 import { selectionColor } from '@/apps/slides/utils/constants'
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
+import { markDirty } from '@/apps/slides/stores/saving'
+import { interactionOffset } from '@/apps/slides/stores/interaction'
 
 import {
 	focusElementId,
@@ -73,11 +76,73 @@ const elementStyles = computed(() => ({
 
 const sanitizedContent = computed(() => sanitizeSlideHTML(element.value.content || ''))
 
+// dragging a column border widens the table without touching the frame, and every
+// consumer of element.width - handles, snapping, alignment, export - would drift
+// from what is on screen. Undo restores the old columns and this follows them back,
+// so the two agree at every point in history without recording anything itself.
+watch(
+	() => element.value.content,
+	(content) => {
+		if (props.mode !== 'editor') return
+
+		const width = getTableWidth(content)
+		if (!width || width === element.value.width) return
+
+		element.value.width = width
+		markDirty()
+	},
+)
+
+const getTable = () => activeEditor.value?.view.dom.querySelector('table')
+
+// a column drag previews itself by writing widths straight onto the table, so the
+// frame around it has to follow within the drag rather than at mouseup. Nothing else
+// in here moves the table, so a text selection drag reads the same width every time.
 const handleMouseDown = (e) => {
 	if (!isEditable.value || inReadonlyMode.value) return
 
 	e.stopPropagation()
+
+	const table = getTable()
+	if (!table) return
+
+	const followTableWidth = () => {
+		const width = parseFloat(table.style.width)
+		if (width && width !== element.value.width) element.value.width = width
+	}
+
+	window.addEventListener('mousemove', followTableWidth)
+	window.addEventListener(
+		'mouseup',
+		() => window.removeEventListener('mousemove', followTableWidth),
+		{ once: true },
+	)
 }
+
+// the frame follows the cursor within a resize, and the columns carry the width, so
+// they have to follow it too. Percentages hand that to the browser for the length of
+// the gesture; the commit writes pixels back, and the editor redraws the colgroup.
+watch(
+	() => Boolean(interactionOffset.width),
+	(resizing) => {
+		if (!showEditor.value) return
+
+		const table = getTable()
+		const row = table?.querySelector('tr')
+		if (!row) return
+
+		const cols = Array.from(table.querySelectorAll('col'))
+		const widths = Array.from(row.children).flatMap(getColumnWidths)
+		if (cols.length !== widths.length || widths.some((width) => !width)) return
+
+		const total = widths.reduce((sum, width) => sum + width, 0)
+
+		table.style.width = resizing ? '100%' : `${total}px`
+		cols.forEach((col, index) => {
+			col.style.width = resizing ? `${(widths[index] / total) * 100}%` : `${widths[index]}px`
+		})
+	},
+)
 
 const handleDoubleClick = (e) => {
 	e.stopPropagation()

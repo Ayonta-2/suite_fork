@@ -116,6 +116,7 @@ import {
 	getMinSizeForElement,
 	isAspectLocked,
 } from '@/apps/slides/utils/resize'
+import { getMinTableWidth } from '@/apps/slides/utils/tableWidths'
 
 const emit = defineEmits(['update:hasOngoingInteraction'])
 
@@ -408,6 +409,12 @@ const startElementResize = (e, resizer) => {
 		height: selectionBounds.height,
 		rotation: activeElement.value?.rotation || 0,
 		type: activeElement.value?.type,
+		// a table's columns have minimums of their own, which the static size map
+		// has no way to express
+		minWidth: Math.max(
+			getMinSizeForElement(activeElement.value?.type).width,
+			getMinTableWidth(activeElement.value?.content),
+		),
 	}
 
 	startResize(e, resizer)
@@ -451,7 +458,7 @@ const resizeText = (cursorMovement) => {
 	const box = getResizedTextBox(resizeStartBounds, currentResizer.value, cursorMovement)
 	const snappedBox = snapForResize(box, { axes: ['x'] })
 
-	const minWidth = getMinSizeForElement(resizeStartBounds.type).width
+	const minWidth = resizeStartBounds.minWidth
 	if (snappedBox.width < minWidth) {
 		if (currentResizer.value === 'text-left') {
 			snappedBox.left = snappedBox.left + snappedBox.width - minWidth

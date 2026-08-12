@@ -47,7 +47,7 @@ const { currentResizer, startResize } = inject('resizer', {})
 const { isHovered, isRounding } = inject('cornerRadius', {})
 
 const showRotateHandle = computed(() => {
-	return !['line', 'text', 'video'].includes(props.elementType)
+	return !['line', 'text', 'table', 'video'].includes(props.elementType)
 })
 
 const isResizeHandleVisible = (resizer) => {
@@ -72,7 +72,8 @@ const resizeHandles = computed(() => {
 		directions = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
 	} else if (props.elementType === 'line') {
 		directions = ['line-left', 'line-right']
-	} else if (props.elementType === 'text') {
+	} else if (['text', 'table'].includes(props.elementType)) {
+		// rows size themselves to their content, so a table resizes on width alone
 		directions = ['text-left', 'text-right']
 	} else {
 		directions = [
@@ -140,7 +141,7 @@ const getMediaIndicatorPosition = () => {
 }
 
 const getPositionStyles = () => {
-	if (props.elementType === 'text') {
+	if (['text', 'table'].includes(props.elementType)) {
 		return getTextIndicatorPosition()
 	} else if (props.elementType === 'line') {
 		return getLineIndicatorPosition()
