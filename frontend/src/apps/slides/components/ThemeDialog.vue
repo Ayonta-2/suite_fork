@@ -12,7 +12,7 @@
 			<div class="grid max-h-[32rem] grid-cols-2 gap-6 overflow-y-auto">
 				<div
 					v-for="(theme, idx) in templateList"
-					:key="theme.idx"
+					:key="theme.name"
 					class="flex flex-col gap-3"
 				>
 					<div
