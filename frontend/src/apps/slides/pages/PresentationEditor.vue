@@ -1,6 +1,7 @@
 <template>
+	<!-- clip so the caret can't scroll the editor; hidden is the fallback -->
 	<div
-		class="isolate flex h-screen w-screen select-none flex-col overflow-hidden"
+		class="isolate flex h-screen w-screen select-none flex-col overflow-hidden overflow-clip"
 		@click="focusedSlide = null"
 	>
 		<EditorNavbar
