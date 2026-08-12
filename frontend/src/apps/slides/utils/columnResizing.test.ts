@@ -39,15 +39,25 @@ const schema = new Schema({
 })
 
 describe('scaleAwareColumnResizing', () => {
-	// the wrapper only replaces mousedown. An upstream move to pointer events would
-	// add a handler that starts the drag first, leaving the wrapper's mousedown to
-	// bail and resizing silently back on unscaled math
+	// an upstream move to pointer events would add a handler that finds the column
+	// first, taking resizing back to unscaled math behind an editable-only gate
 	it('replaces every drag entry point the stock plugin has', () => {
 		expect(Object.keys(columnResizing().spec.props!.handleDOMEvents!).sort()).toEqual([
 			'mousedown',
 			'mouseleave',
 			'mousemove',
 		])
+	})
+
+	// the spread carries stock's handlers, and each one of them refuses to resize
+	// anything the editor is not editing
+	it('leaves none of the stock handlers in place', () => {
+		const stock = columnResizing().spec.props!.handleDOMEvents!
+		const scaled = scaleAwareColumnResizing().spec.props!.handleDOMEvents!
+
+		Object.keys(stock).forEach((event) => {
+			expect(scaled[event as keyof typeof scaled]).not.toBe(stock[event as keyof typeof stock])
+		})
 	})
 
 	// stock's state.init writes the node view into the same nodeViews object the

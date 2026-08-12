@@ -3,11 +3,16 @@
 // The math sits in a closure the plugin exposes no way into, so the mousedown
 // handler that reaches it is copied from 1.8.5 with one division added; everything
 // else, including the plugin key and its state machine, is the stock plugin's own.
+//
+// The hover handlers are copied for a second reason: stock refuses to resize unless
+// the editor is editable, and a selected table is only editable once it is being
+// typed in. The condition they carry instead is the one this app actually means.
 
 import { Plugin } from 'prosemirror-state'
 import type { EditorView } from 'prosemirror-view'
 import {
 	TableMap,
+	cellAround,
 	columnResizing,
 	columnResizingPluginKey,
 	updateColumnsOnResize,
@@ -143,10 +148,71 @@ const displayColumnWidth = (
 	)
 }
 
+// stock's handle width, the distance from a cell edge that counts as a grab
+const handleWidth = 5
+
+// the host marks the editor when its element may be resized, which is what stock
+// reads view.editable for. A table is resizable while merely selected, and never
+// while it is locked or the presentation is open read only.
+const canResize = (view: EditorView) => Boolean(view.dom.closest('[data-resizable-columns]'))
+
+const setActiveHandle = (view: EditorView, cell: number) =>
+	view.dispatch(view.state.tr.setMeta(columnResizingPluginKey, { setHandle: cell }))
+
+const domCellAround = (target: EventTarget | null) => {
+	let node = target as HTMLElement | null
+	while (node && node.nodeName != 'TD' && node.nodeName != 'TH')
+		node = node.classList?.contains('ProseMirror') ? null : (node.parentNode as HTMLElement | null)
+	return node
+}
+
+// a right edge is the cell's own column, a left edge belongs to the column before it
+const edgeCell = (view: EditorView, event: MouseEvent, side: 'left' | 'right') => {
+	const offset = side == 'right' ? -handleWidth : handleWidth
+	const found = view.posAtCoords({ left: event.clientX + offset, top: event.clientY })
+	if (!found) return -1
+
+	const $cell = cellAround(view.state.doc.resolve(found.pos))
+	if (!$cell) return -1
+	if (side == 'right') return $cell.pos
+
+	const map = TableMap.get($cell.node(-1))
+	const start = $cell.start(-1)
+	const index = map.map.indexOf($cell.pos - start)
+	return index % map.width == 0 ? -1 : start + map.map[index - 1]
+}
+
+const handleMouseMove = (view: EditorView, event: MouseEvent) => {
+	const pluginState = columnResizingPluginKey.getState(view.state)
+	if (!pluginState || pluginState.dragging) return
+
+	const cellDOM = canResize(view) ? domCellAround(event.target) : null
+	let cell = -1
+
+	if (cellDOM) {
+		const { left, right } = cellDOM.getBoundingClientRect()
+		if (event.clientX - left <= handleWidth) cell = edgeCell(view, event, 'left')
+		else if (right - event.clientX <= handleWidth) cell = edgeCell(view, event, 'right')
+	}
+
+	if (cell != pluginState.activeHandle) setActiveHandle(view, cell)
+}
+
+const handleMouseLeave = (view: EditorView) => {
+	const pluginState = columnResizingPluginKey.getState(view.state)
+	if (pluginState && pluginState.activeHandle > -1 && !pluginState.dragging)
+		setActiveHandle(view, -1)
+}
+
+// the element carries the drag, so it has to know one started rather than reading it
+// back off a width that has not moved yet
+export const isResizingColumn = (view?: EditorView) =>
+	Boolean(view && columnResizingPluginKey.getState(view.state)?.dragging)
+
 const buildMouseDown =
 	(cellMinWidth: number, defaultCellMinWidth: number) =>
 	(view: EditorView, event: MouseEvent) => {
-		if (!view.editable) return false
+		if (!canResize(view)) return false
 
 		const win = view.dom.ownerDocument.defaultView ?? window
 		const pluginState = columnResizingPluginKey.getState(view.state)
@@ -208,6 +274,8 @@ export const scaleAwareColumnResizing = (
 			...stock.spec.props,
 			handleDOMEvents: {
 				...stock.spec.props!.handleDOMEvents,
+				mousemove: handleMouseMove,
+				mouseleave: handleMouseLeave,
 				mousedown: buildMouseDown(cellMinWidth, defaultCellMinWidth),
 			},
 		},

@@ -3,6 +3,7 @@
 		v-if="showEditor"
 		:editor="activeEditor"
 		class="tableElement"
+		:data-resizable-columns="canResizeColumns || null"
 		:style="elementStyles"
 		@mousedown="handleMouseDown"
 		@dblclick="handleDoubleClick"
@@ -24,6 +25,7 @@ import { EditorContent } from '@tiptap/vue-3'
 import { sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 import { isBackgroundColorDark } from '@/apps/slides/utils/color'
 import { getColumnWidths, getTableWidth } from '@/apps/slides/utils/tableWidths'
+import { isResizingColumn } from '@/apps/slides/utils/columnResizing'
 import { selectionColor } from '@/apps/slides/utils/constants'
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
@@ -59,6 +61,9 @@ const showEditor = computed(
 )
 
 const isEditable = computed(() => focusElementId.value == element.value.id)
+
+// columns resize on a selected table, so this can't wait for the editable state
+const canResizeColumns = computed(() => !inReadonlyMode.value && !element.value.locked)
 
 // element.color tracks the slide background, so light text means a dark slide.
 // The same tint reads far weaker against near-black, so it needs more of it there.
@@ -98,8 +103,11 @@ const getTable = () => activeEditor.value?.view.dom.querySelector('table')
 // a column drag previews itself by writing widths straight onto the table, so the
 // frame around it has to follow within the drag rather than at mouseup. Nothing else
 // in here moves the table, so a text selection drag reads the same width every time.
+// The plugin has already claimed the event by now, and the element must not drag
+// out from under a resize that started on it.
 const handleMouseDown = (e) => {
-	if (!isEditable.value || inReadonlyMode.value) return
+	if (inReadonlyMode.value) return
+	if (!isEditable.value && !isResizingColumn(activeEditor.value?.view)) return
 
 	e.stopPropagation()
 
