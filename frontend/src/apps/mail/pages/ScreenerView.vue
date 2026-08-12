@@ -441,6 +441,7 @@ import {
 	Popover,
 	call,
 	createResource,
+	toast,
 	usePageMeta,
 } from 'frappe-ui'
 
@@ -451,6 +452,7 @@ import {
 	useScreenSize,
 	useSettings,
 	useSwipeNav,
+	useUndo,
 } from '@/apps/mail/utils/composables'
 import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/utils/splitPane'
 import { userStore } from '@/apps/mail/stores/user'
@@ -476,6 +478,10 @@ const { isMobile } = useScreenSize()
 const { openSettings } = useSettings()
 
 const showReadingPane = useReadingPane()
+
+// The same undo the thread lists hang Cmd/Ctrl+Z off — one shared slot, so the last thing you did in
+// mail is the thing that key takes back, wherever you did it.
+const { setUndoAction, undo } = useUndo()
 
 // The Screener only exists when screening is enabled. If it's off, render nothing and send the user to
 // their inbox (the route is still reachable by URL even though the sidebar hides it).
@@ -582,6 +588,16 @@ const senders = createResource({
 })
 
 /**
+ * Senders this view has just judged, held only until the route stops naming them.
+ *
+ * A verdict drops the row from the list and navigates to the next sender in the same breath, but the
+ * navigation resolves a tick later than the list changes. In between, the route still names someone
+ * the list can no longer find — which is exactly the shape of a stale URL, and the watcher below
+ * would bounce it back to the list, cancelling the advance that was already in flight.
+ */
+const justActed = new Set<string>()
+
+/**
  * The route names a sender; this finds them in the list and opens them. A sender who has already been
  * allowed or denied is simply gone — normal here rather than exceptional, since the queue empties as
  * you work — so that lands quietly back on the list instead of erroring.
@@ -590,6 +606,7 @@ watch(
 	[() => senderEmail, () => senders.data],
 	([email, list]) => {
 		if (!email) {
+			justActed.clear()
 			openSender.value = null
 			return
 		}
@@ -598,8 +615,13 @@ watch(
 		const sender = (list as ScreeningSender[]).find(
 			(s: ScreeningSender) => s.from_email === email,
 		)
-		if (sender) openSenderFromRoute(sender)
-		else router.replace({ name: 'mail-screener', params: { accountId: store.accountId } })
+		if (sender) {
+			// The route has caught up with the list, so nothing is still in flight.
+			justActed.clear()
+			openSenderFromRoute(sender)
+		} else if (!justActed.has(email)) {
+			router.replace({ name: 'mail-screener', params: { accountId: store.accountId } })
+		}
 	},
 	{ immediate: true },
 )
@@ -635,8 +657,16 @@ watch(openSender, (sender) => {
 // Once a mail is open: ↑/↓ (or k/j) step senders, E and Delete allow the sender straight to Archive
 // or Trash, and Esc closes. Else inert.
 const handleKeydown = (e: KeyboardEvent) => {
-	if (!openSender.value || shouldIgnoreKeypress(e)) return
 	const key = e.key.toLowerCase()
+
+	// Above the guard below: a verdict is just as often given from a list row with nothing open, and
+	// that is exactly when you'd reach for undo — the row is gone and there is nothing else to press.
+	if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
+		e.preventDefault()
+		return undo()
+	}
+
+	if (!openSender.value || shouldIgnoreKeypress(e)) return
 
 	if (key === 'escape') {
 		e.preventDefault()
@@ -695,6 +725,8 @@ onMounted(() => {
 
 onUnmounted(() => {
 	window.removeEventListener('keydown', handleKeydown)
+	// Don't leave a verdict undoable from a view that can't show what came back.
+	setUndoAction(undefined)
 	clearInterval(pollInterval)
 	// Don't strand a queued batch on navigation — the acted rows were already removed optimistically.
 	if (flushTimer) {
@@ -752,6 +784,33 @@ const pending = { allow: new Map<string, AllowDestination>(), screenOut: new Set
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 let flushChain: Promise<void> = Promise.resolve()
 
+/**
+ * Which mail a verdict actually moved, resolved once the flush that carried it comes back.
+ *
+ * Both endpoints answer with the ids they filed, keyed by sender, because afterwards there is no
+ * finding that mail from the sender again — the server's lookup only searches the Screener, which the
+ * verdict has just emptied of them. Undo is the only caller.
+ */
+const idsBySender = new Map<string, (ids: string[]) => void>()
+
+const awaitVerdictIds = (fromEmail: string) =>
+	new Promise<string[]>((resolve) => {
+		// A second verdict on the same sender before the flush replaces the first, whose toast has been
+		// replaced too — settle it empty rather than leaving an unresolvable promise behind.
+		idsBySender.get(fromEmail)?.([])
+		idsBySender.set(fromEmail, resolve)
+	})
+
+/** Hands each sender in a landed batch the ids that came back for them (none, if the call failed). */
+const resolveVerdictIds = (fromEmails: string[], moved: Record<string, string[]> | undefined) => {
+	for (const email of fromEmails) {
+		const resolve = idsBySender.get(email)
+		if (!resolve) continue
+		idsBySender.delete(email)
+		resolve(moved?.[email] ?? [])
+	}
+}
+
 const flushScreening = () => {
 	flushTimer = null
 	const allowGroups = new Map<AllowDestination, string[]>()
@@ -773,18 +832,22 @@ const flushScreening = () => {
 		let firstError: unknown
 		for (const [destination, from_emails] of allowGroups) {
 			try {
-				await allowResource.submit({ from_emails, destination })
+				const moved = await allowResource.submit({ from_emails, destination })
+				resolveVerdictIds(from_emails, moved)
 				submitted = true
 			} catch (error) {
 				firstError ??= error
+				resolveVerdictIds(from_emails, undefined)
 			}
 		}
 		if (screenOutEmails.length) {
 			try {
-				await screenOutResource.submit({ from_emails: screenOutEmails })
+				const junked = await screenOutResource.submit({ from_emails: screenOutEmails })
+				resolveVerdictIds(screenOutEmails, junked)
 				submitted = true
 			} catch (error) {
 				firstError ??= error
+				resolveVerdictIds(screenOutEmails, undefined)
 			}
 		}
 		// Allowing/screening senders changes inbox/junk counts too.
@@ -836,8 +899,9 @@ const runAction = (
 	}
 
 	// Optimistically drop the acted senders so the rows leave immediately and every other row stays
-	// interactive. The row leaving is the only success feedback (no toast); only failures are surfaced
-	// — with a resync to bring the rows back.
+	// interactive. Their names are remembered until the advance below lands, so the route naming one
+	// of them for that tick isn't mistaken for a stale URL (see `justActed`).
+	list.filter(matchSender).forEach((s: ScreeningSender) => justActed.add(s.from_email))
 	senders.data = list.filter((s: ScreeningSender) => !matchSender(s))
 
 	// Advance to the next sender (or close the preview if there's nothing below).
@@ -846,47 +910,128 @@ const runAction = (
 		else closeSender()
 	}
 
+	// Line up the ids this verdict will move, so the toast can offer to put that mail back. Every
+	// shape has them: a domain rule answers under its own `@domain` key, a bulk action under one key
+	// per sender — what comes back is what moved, whether or not this list showed it.
+	const movedIds = Promise.all(fromEmails.map(awaitVerdictIds)).then((groups) => groups.flat())
+
+	// `list`, not `senders.data`: the row has just been dropped from the list, and the toast still
+	// wants to name the sender the way the row did. A domain target matches nobody, which is right.
+	const acted =
+		fromEmails.length === 1
+			? list.find((s: ScreeningSender) => s.from_email === fromEmails[0])
+			: undefined
+
 	queueScreening(action, fromEmails, destination)
-	announce(action, fromEmails, destination)
+	announce(action, fromEmails, destination, movedIds, acted?.from_name)
 }
 
 /**
- * A plain verdict on one sender needs no toast — the row leaving is the feedback, and a toast per
- * row would be noise on a triage pass. These three do:
+ * Run the queued verdicts now, then hand back the ids the verdict moved.
  *
- * - a domain action reaches senders that were never on screen, so the rows that vanish don't account
- *   for what happened;
- * - Archive and Trash file the mail somewhere this list can't show, and "allowed" alone would leave
- *   you looking for it in the Inbox.
+ * Undo acts on mail the batched flush is still holding a decision about, so the flush goes first — a
+ * move that overtook it would simply be moved again by it. Forcing the timer only saves the wait; the
+ * ids resolve from inside the flush either way.
+ */
+const settledVerdictIds = async (movedIds: Promise<string[]>) => {
+	if (flushTimer) {
+		clearTimeout(flushTimer)
+		flushScreening()
+	}
+	await flushChain
+	return movedIds
+}
+
+/**
+ * Take a verdict back: drop the rules it wrote and return the mail to the Screener, so the senders are
+ * waiting to be decided about again exactly as they were.
+ */
+const undoVerdict = async (fromEmails: string[], undone: string, movedIds: Promise<string[]>) => {
+	// The verdict's own toast has served its purpose. Sonner clears it when its button is what was
+	// pressed, but not when the keyboard was, so say so either way rather than leave it beside the
+	// line about to replace it.
+	toast.dismiss()
+
+	try {
+		const ids = await settledVerdictIds(movedIds)
+		// One call so the rules are dropped and the mail comes home together: a half-undone verdict —
+		// the mail back in the Screener but the rule still standing — would let the senders past it.
+		await call('suite.mail.api.mail.undo_screening_verdict', {
+			account: store.accountId,
+			from_emails: fromEmails,
+			ids,
+		})
+		senders.reload()
+		store.mailboxes.reload()
+		raiseToast(undone)
+	} catch (error) {
+		senders.reload()
+		raiseToast((error as Error).message || __('Could not undo that.'), 'error')
+	}
+}
+
+// Long enough to read the line and reach for Undo, short enough not to sit over the next sender.
+const VERDICT_TOAST_MS = 9000
+
+/**
+ * Say what a verdict did, and offer to take it back.
+ *
+ * A verdict used to pass in silence unless it filed mail somewhere the list couldn't show — the row
+ * leaving was the feedback, and a toast per row is noise on a triage pass. It earns the interruption
+ * now that it carries an Undo: a misfire on a list of strangers is the one mistake here you can't
+ * spot afterwards, because the sender is gone from the list and their mail is filed somewhere you
+ * weren't looking. The wider the verdict, the more that holds — a domain rule and Allow All clear
+ * rows in one press and reach mail that was never on screen.
  */
 const announce = (
 	action: 'allow' | 'screenOut',
 	fromEmails: string[],
 	destination: AllowDestination,
+	movedIds: Promise<string[]>,
+	senderName?: string,
 ) => {
 	const target = fromEmails[0] ?? ''
+	if (!target) return
 
-	if (target.startsWith('@')) {
-		const domain = target.slice(1)
-		raiseToast(
-			action === 'allow'
-				? __('Allowed everyone at {0}.', [domain])
-				: __('Denied everyone at {0}.', [domain]),
-		)
-		return
-	}
+	// Name what was decided about the way you saw it: the sender, as the row read them, falling back
+	// to their address when they sent no name. A domain rule has no sender to name, so it keeps the
+	// `@domain` the rule is written as; a sweep over the whole queue has no one name, so it counts.
+	const count = fromEmails.length
+	const subject = count > 1 ? __('{0} senders', [String(count)]) : senderName || target
 
-	if (action !== 'allow' || destination === 'inbox') return
+	const verdict =
+		action === 'allow' ? __('{0} allowed.', [subject]) : __('{0} denied.', [subject])
 
-	const senderCount = fromEmails.length
-	const subject =
-		senderCount > 1 ? __('{0} senders allowed.', [String(senderCount)]) : __('Sender allowed.')
+	// Archive and Trash file the mail somewhere this list can't show, and the verdict alone would
+	// leave you looking for it in the Inbox. Phrased as the thread lists phrase the same two moves —
+	// "archived" reads as a verb where "trashed" doesn't, so that one names the folder. "Mail" rather
+	// than a count of messages: it is right whether one was waiting or nine.
+	const message =
+		action === 'allow' && destination === 'archive'
+			? __('{0} Mail archived.', [verdict])
+			: action === 'allow' && destination === 'trash'
+				? __('{0} Mail moved to Trash.', [verdict])
+				: verdict
 
-	raiseToast(
-		destination === 'archive'
-			? __('{0} Their mail moved to Archive.', [subject])
-			: __('{0} Their mail moved to Trash.', [subject]),
-	)
+	// Undoing lands somewhere the list can't show either, so it says so in the same terms.
+	const undone =
+		count > 1
+			? __('{0} are back in the Screener.', [subject])
+			: __('{0} is back in the Screener.', [subject])
+
+	// Cmd/Ctrl+Z reaches the same verdict as the toast's button, and only the latest one: a triage
+	// pass is a run of decisions, and each replaces the last as the one still in reach.
+	setUndoAction(() => undoVerdict(fromEmails, undone, movedIds))
+
+	// One toast at a time. A run of verdicts would otherwise stack them over the list they are about,
+	// and only the newest is still undoable — the rest would offer a button that took back someone
+	// else's verdict. Every other undoable action in mail clears the same way, inside
+	// raiseOptimisticToast; this one raises a plain toast, so it does its own.
+	toast.dismiss()
+
+	// Through `undo`, not the closure directly: it is what clears the slot, so pressing the button
+	// leaves nothing behind for Cmd+Z to run a second time.
+	raiseToast(message, 'success', { label: __('Undo'), onClick: () => undo() }, VERDICT_TOAST_MS)
 }
 
 const allow = (fromEmails: string[], destination: AllowDestination = 'inbox') =>
