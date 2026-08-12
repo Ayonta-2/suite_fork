@@ -75,12 +75,18 @@ class TestPresentationSecurity(IntegrationTestCase):
                 with self.assertRaises(frappe.DoesNotExistError):
                     create_presentation(template=template)
 
-    def test_create_from_template_requires_read(self):
-        # a presentation that is not a template is not a template to copy from either,
-        # whoever names it
-        with self.set_user(OTHER_USER):
-            with self.assertRaises(frappe.PermissionError):
-                create_presentation(template=self.owner_presentation)
+    def test_create_rejects_a_presentation_that_is_not_a_template(self):
+        # readable is not enough. `theme` has to name a template or the editor cannot
+        # resolve layouts for the slides added later, and the same throw covers a deck
+        # the caller cannot read so neither answer leaks whether it exists
+        with self.set_user(OWNER):
+            own = make_presentation("Not A Template").name
+
+        for presentation in (own, self.other_presentation):
+            with self.subTest(presentation=presentation):
+                with self.set_user(OWNER):
+                    with self.assertRaises(frappe.DoesNotExistError):
+                        create_presentation(template=presentation)
 
     def test_updated_json_blocks_file_exfil(self):
         exfil = [{"type": "image", "src": self.private_file.file_url}]
