@@ -14,6 +14,7 @@ import { Selection } from '@tiptap/extensions'
 
 import { Fragment, Slice } from 'prosemirror-model'
 import { Plugin, PluginKey, TextSelection } from 'prosemirror-state'
+import { Decoration, DecorationSet } from 'prosemirror-view'
 import { joinBackward } from 'prosemirror-commands'
 import { liftListItem } from 'prosemirror-schema-list'
 
@@ -242,17 +243,10 @@ const handleListItemEnterKey = (editor, pos, marks) => {
 }
 
 const addEmptyLineBefore = (state, view, pos, marks) => {
-	const startOfCurrentPos = pos.start()
-	const $before = state.doc.resolve(startOfCurrentPos - 1)
-	const prevNode = $before.nodeBefore
-
-	if (prevNode && !prevNode.isTextblock) return false
-
 	let tr = view.state.tr
-	const prevEnd = startOfCurrentPos - 1
-	// insert ZWSP inside previous node as placeholder so
-	// <br class="ProseMirror-trailingBreak"> is not added
-	tr.insert(prevEnd + 1, state.schema.text(ZWSP, marks))
+	// the split moved the text down, so this lands in the blank line it left behind.
+	// a ZWSP placeholder keeps <br class="ProseMirror-trailingBreak"> out of it
+	tr.insert(pos.start(), state.schema.text(ZWSP, marks))
 	tr = tr.setStoredMarks(marks)
 	view.dispatch(tr)
 	return true
@@ -457,7 +451,7 @@ const handleBackspaceInListItem = (event, view, $from) => {
 	const text = getTextForSelection($from)
 
 	const lastCharOnLine = text.length === 1 && text !== ZWSP
-	const isEntireParagraphSelected = from === start && to === end
+	const isEntireParagraphSelected = start !== end && from === start && to === end
 
 	// last real character or full selection - replace with ZWSP placeholder
 	if (lastCharOnLine || isEntireParagraphSelected) {
@@ -489,8 +483,10 @@ const handleKeyDown = (view, event) => {
 
 	const { from, to, start, end } = getSelectionRange(selection)
 
+	// an empty paragraph has start === end, so the equality alone reads as a full
+	// selection and swaps a placeholder in instead of joining backward
 	const lastCharOnLine = text.length === 1 && text !== ZWSP
-	const isEntireParagraphSelected = from === start && to === end
+	const isEntireParagraphSelected = start !== end && from === start && to === end
 	const isFullDocSelected = from === 0 && to === view.state.doc.content.size
 
 	if (lastCharOnLine || isEntireParagraphSelected || isFullDocSelected) {
@@ -557,6 +553,72 @@ const handleTextInput = (view, from, to, text) => {
 	return true
 }
 
+const getNearestTextMarks = ($from) => {
+	let start = 0
+	let end = $from.doc.content.size
+
+	for (let depth = $from.depth; depth > 0; depth--) {
+		// a table cell is isolating, and its own styling context
+		if ($from.node(depth).type.spec.isolating) {
+			start = $from.start(depth)
+			end = $from.end(depth)
+			break
+		}
+	}
+
+	let before = null
+	let after = null
+
+	$from.doc.nodesBetween(start, end, (node, pos) => {
+		if (!node.isText) return
+		if (pos < $from.pos) before = node.marks
+		else after = after || node.marks
+	})
+
+	return before || after || []
+}
+
+// a blank line holds no marks of its own, so the properties panel reads null and
+// the next keystroke lands unstyled - carry the nearest text's styles over
+const inheritMarksOnBlankLine = (state) => {
+	const { selection, storedMarks } = state
+	if (storedMarks || !selection.empty || selection.$from.parent.content.size) return null
+
+	const marks = getNearestTextMarks(selection.$from)
+
+	return marks.length ? state.tr.setStoredMarks(marks) : null
+}
+
+const styleForMarks = (marks) =>
+	marks
+		.map((mark) => mark.type.spec.toDOM?.(mark, true)?.[1]?.style)
+		.filter(Boolean)
+		.join('; ')
+
+// an empty line renders as a bare <br>, so it takes the app's font size and color
+// instead of the text's and the caret shows up tiny, or invisible on a dark slide.
+// this has to paint exactly what patchEmptyParagraphs writes on save, or the line
+// changes height the moment the element is deselected
+const blankLineDecorations = (state) => {
+	const decorations = []
+	let prevStyle = null
+
+	state.doc.descendants((node, pos) => {
+		if (node.type.spec.isolating) return false
+		if (node.type.name !== 'paragraph') return
+
+		if (node.content.size) {
+			prevStyle = styleForMarks(node.firstChild?.marks ?? []) || prevStyle
+		} else if (prevStyle) {
+			decorations.push(Decoration.node(pos, pos + node.nodeSize, { style: prevStyle }))
+		}
+
+		return false
+	})
+
+	return DecorationSet.create(state.doc, decorations)
+}
+
 const styledEmptyLinePlugin = new Plugin({
 	key: new PluginKey('styledEmptyLinePlugin'),
 	props: {
@@ -566,7 +628,9 @@ const styledEmptyLinePlugin = new Plugin({
 		// before typing new text to styled empty line
 		// remove the placeholder ZWSP
 		handleTextInput,
+		decorations: blankLineDecorations,
 	},
+	appendTransaction: (transactions, oldState, newState) => inheritMarksOnBlankLine(newState),
 })
 
 const StyledEmptyLine = Extension.create({

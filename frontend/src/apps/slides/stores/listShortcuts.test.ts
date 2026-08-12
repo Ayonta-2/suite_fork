@@ -71,3 +71,37 @@ describe('list shortcuts', () => {
 		])
 	})
 })
+
+const paragraphsAfterList = (editor: Editor) => {
+	const texts: string[] = []
+	editor.state.doc.forEach((node) => {
+		if (node.type.name === 'paragraph') texts.push(node.textContent.replace(/​/g, ''))
+	})
+	return texts
+}
+
+// splitting and then reporting the key as unhandled lets the default Enter split a
+// second time, so one press dropped two lines and left the cursor past both
+describe('enter in a paragraph that follows a list', () => {
+	it('adds one blank line when the paragraph is empty', () => {
+		const editor = mountEditor('<ul><li><p>one</p></li></ul><p></p>')
+		editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+
+		editor.commands.keyboardShortcut('Enter')
+
+		expect(paragraphsAfterList(editor)).toEqual(['', ''])
+	})
+
+	it('adds one blank line above when the cursor is at the start of the text', () => {
+		const editor = mountEditor('<ul><li><p>one</p></li></ul><p>text</p>')
+		let textStart = 0
+		editor.state.doc.descendants((node, pos) => {
+			if (node.isText && node.text === 'text') textStart = pos
+		})
+		editor.commands.setTextSelection(textStart)
+
+		editor.commands.keyboardShortcut('Enter')
+
+		expect(paragraphsAfterList(editor)).toEqual(['', 'text'])
+	})
+})
