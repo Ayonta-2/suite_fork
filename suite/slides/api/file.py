@@ -128,12 +128,40 @@ def get_attached_presentations(src: str, names: set[str]) -> set[str]:
     )
 
 
+def is_template_media(src: str) -> bool:
+    """Layouts are copied into a presentation wholesale, so it shows the file urls of
+    every template it ever drew a slide from without holding a File row for any."""
+    holders = frappe.get_all(
+        "File",
+        filters={"file_url": src, "attached_to_doctype": "Presentation"},
+        pluck="attached_to_name",
+        distinct=True,
+        order_by=None,
+    )
+    if not holders:
+        return False
+
+    return bool(
+        frappe.get_all(
+            "Presentation",
+            filters={"name": ("in", holders), "is_template": 1},
+            limit=1,
+            order_by=None,
+        )
+    )
+
+
 def validate_media_file(src: str, presentation: str | None = None) -> None:
     if presentation:
         shown = {presentation} | get_reference_presentations(presentation)
         for name in get_attached_presentations(src, shown):
             if frappe.has_permission("Presentation", "read", name):
                 return
+
+        # templates are readable by everyone, so the only question left is whether the
+        # caller may see the presentation they claim to be viewing
+        if frappe.has_permission("Presentation", "read", presentation) and is_template_media(src):
+            return
 
     if not frappe.db.exists("File", {"file_url": src}):
         raise NotFound
