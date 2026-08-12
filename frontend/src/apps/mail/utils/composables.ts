@@ -3,6 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { createResource, toast } from 'frappe-ui'
 
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
+import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { COLOR_SCHEME, ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
@@ -244,11 +245,27 @@ export const useKeyboardInsets = () => {
 const keyboardOpen = ref(false)
 let watchingFocus = false
 
-const isEditable = (el: Element | null) =>
-	!!el &&
-	(el.tagName === 'INPUT' ||
-		el.tagName === 'TEXTAREA' ||
-		(el as HTMLElement).isContentEditable === true)
+// Input types that raise no on-screen keyboard: focusing one is not the keyboard coming up, and
+// treating it as such takes the bottom bar away for a tick with nothing covering where it was.
+// `shouldIgnoreKeypress` draws the same line for checkboxes.
+const NON_TEXT_INPUT_TYPES = new Set([
+	'button',
+	'checkbox',
+	'color',
+	'file',
+	'hidden',
+	'image',
+	'radio',
+	'range',
+	'reset',
+	'submit',
+])
+
+const isEditable = (el: Element | null) => {
+	if (!el) return false
+	if (el.tagName === 'INPUT') return !NON_TEXT_INPUT_TYPES.has((el as HTMLInputElement).type)
+	return el.tagName === 'TEXTAREA' || (el as HTMLElement).isContentEditable === true
+}
 
 /**
  * Whether the on-screen keyboard is up, read off what's focused rather than off the viewport.
@@ -272,6 +289,11 @@ export const useKeyboardOpen = () => {
 			requestAnimationFrame(() => (keyboardOpen.value = isEditable(document.activeElement)))
 		document.addEventListener('focusin', sync)
 		document.addEventListener('focusout', sync)
+		// A field torn down with its route never fires focusout — Chrome and Safari move focus to
+		// <body> silently — so this would latch on and stay on. Compose is a page whose editor is
+		// focused on mount and which closes by navigating away, i.e. exactly that shape: leaving it
+		// left the tab bar and its FAB hidden for the rest of the session.
+		router.afterEach(() => sync())
 	}
 	return keyboardOpen
 }
