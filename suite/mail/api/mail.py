@@ -1581,9 +1581,7 @@ def allow_screening_senders(account: str, from_emails: list[str], destination: s
 
     _screen_email_addresses(account, from_emails, action="Accepted")
 
-    mailbox_id = get_mailbox_id_by_role(
-        account, destination, create_if_not_exists=True, raise_exception=True
-    )
+    mailbox_id = get_mailbox_id_by_role(account, destination, create_if_not_exists=True, raise_exception=True)
     for from_email in from_emails:
         ids = _screening_message_ids(account, from_email)
         if ids:
