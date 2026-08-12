@@ -205,7 +205,6 @@ onBeforeMount(() => normalizeContent())
 	width: 100%;
 	white-space: pre-wrap;
 	overflow-wrap: break-word;
-	hyphens: auto;
 }
 
 /* use CSS variable set on container to apply legacy element line-height without
