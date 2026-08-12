@@ -877,7 +877,6 @@ const clampWidthToSlide = (element) => {
 	if (elementDiv.offsetWidth <= availableWidth) return
 
 	element.width = availableWidth
-	markDirty()
 
 	return availableWidth
 }
