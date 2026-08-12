@@ -34,47 +34,17 @@
 				@touch-end="onThreadTouchEnd"
 			>
 				<template #list>
-					<!-- Toolbar — mobile mirrors the mailbox one (h-12, semibold selector in a
-					     bottom sheet, no refresh: pull the tab or reopen instead). -->
-					<div v-if="isMobile" class="relative flex h-12 items-center border-b px-4">
-						<AdaptiveDropdown :options="FILTER_OPTIONS" :title="__('Filter')">
-							<button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
-								<span class="truncate">{{ title }}</span>
-								<ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
-							</button>
-						</AdaptiveDropdown>
-
-						<!-- Loading bar -->
-						<LoadingBar v-if="threads.loading" />
-					</div>
-					<div
-						v-else
-						class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
-					>
-						<Dropdown :options="FILTER_OPTIONS">
-							<button
-								class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded px-2 py-1"
-							>
-								<span class="truncate">{{ title }}</span>
-								<ChevronDown class="text-ink-gray-5 icon shrink-0" />
-							</button>
-						</Dropdown>
-						<div class="-mr-1.5 ml-auto flex items-center space-x-1.5 sm:space-x-3">
-							<Button
-								variant="ghost"
-								:tooltip="__('Refresh')"
-								:disabled="isFetching"
-								@click="refreshThreads()"
-							>
-								<template #icon>
-									<RefreshCw class="icon" />
-								</template>
-							</Button>
-						</div>
-
-						<!-- Loading bar -->
-						<LoadingBar v-if="threads.loading" />
-					</div>
+					<!-- The toolbar itself carries the bottom border here: unlike the mailbox
+					     list, the merged one has no header block above the row for it to sit
+					     under (its mobile title header is a sibling of ThreadPane). -->
+					<MailListToolbar
+						class="border-b"
+						:title="title"
+						:filter-options="FILTER_OPTIONS"
+						:fetching="isFetching"
+						:loading="threads.loading"
+						@refresh="refreshThreads()"
+					/>
 
 					<!-- Mail list -->
 					<div ref="mailList" class="h-full overflow-y-auto overscroll-contain max-sm:pb-20">
@@ -201,8 +171,8 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronDown, LoaderCircle, RefreshCw } from 'lucide-vue-next'
-import { Breadcrumbs, Button, Dropdown, call, createResource, usePageMeta } from 'frappe-ui'
+import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
+import { Breadcrumbs, Button, call, createResource, usePageMeta } from 'frappe-ui'
 
 import {
 	isMac,
@@ -229,9 +199,8 @@ import {
 import { userStore } from '@/apps/mail/stores/user'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
-import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
+import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'

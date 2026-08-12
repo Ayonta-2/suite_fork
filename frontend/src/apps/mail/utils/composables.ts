@@ -3,6 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { createResource, toast } from 'frappe-ui'
 
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
+import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { COLOR_SCHEME, ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
@@ -24,6 +25,42 @@ export const useScreenSize = () => ({ isMobile })
 export const useReadingPane = () => {
 	const { userResource } = userStore()
 	return computed(() => !!userResource.data?.show_reading_pane)
+}
+
+/**
+ * Flipping Split View from the list toolbar. Appearance settings writes the same field behind a
+ * Save button; this one is a layout switch, so it applies on click — the local value flips first
+ * and the whole split re-lays out from it, then rolls back if the write doesn't land.
+ */
+export const useToggleReadingPane = () => {
+	const { userResource } = userStore()
+
+	const setReadingPane = createResource({
+		url: 'frappe.client.set_value',
+		makeParams: ({ value }: { value: 0 | 1 }) => ({
+			doctype: 'User Settings',
+			name: userResource.data?.user_settings,
+			fieldname: 'show_reading_pane',
+			value,
+		}),
+	})
+
+	return () => {
+		const user = userResource.data
+		if (!user?.user_settings) return
+
+		const next = user.show_reading_pane ? 0 : 1
+		user.show_reading_pane = next
+		setReadingPane.submit(
+			{ value: next },
+			{
+				onError: () => {
+					user.show_reading_pane = next ? 0 : 1
+					raiseToast(__('Unable to update Split View.'), 'error')
+				},
+			},
+		)
+	}
 }
 
 /**
@@ -203,6 +240,62 @@ export const useKeyboardInsets = () => {
 	})
 
 	return { top, bottom, height }
+}
+
+const keyboardOpen = ref(false)
+let watchingFocus = false
+
+// Input types that raise no on-screen keyboard: focusing one is not the keyboard coming up, and
+// treating it as such takes the bottom bar away for a tick with nothing covering where it was.
+// `shouldIgnoreKeypress` draws the same line for checkboxes.
+const NON_TEXT_INPUT_TYPES = new Set([
+	'button',
+	'checkbox',
+	'color',
+	'file',
+	'hidden',
+	'image',
+	'radio',
+	'range',
+	'reset',
+	'submit',
+])
+
+const isEditable = (el: Element | null) => {
+	if (!el) return false
+	if (el.tagName === 'INPUT') return !NON_TEXT_INPUT_TYPES.has((el as HTMLInputElement).type)
+	return el.tagName === 'TEXTAREA' || (el as HTMLElement).isContentEditable === true
+}
+
+/**
+ * Whether the on-screen keyboard is up, read off what's focused rather than off the viewport.
+ *
+ * The viewport can't answer this under `interactive-widget=resizes-content` (index.html): the
+ * keyboard shrinks the layout viewport itself, so the visual and layout viewports stay the same
+ * size and `useKeyboardInsets` measures zero — the very case this is for. What the shrink DOES do
+ * is pull anything anchored to the bottom of the shell up above the keyboard, which is why the
+ * bottom bar has to be told to step aside.
+ *
+ * Mobile only: desktop has no on-screen keyboard, so a focused field there means nothing and the
+ * listeners aren't worth attaching.
+ */
+export const useKeyboardOpen = () => {
+	if (!watchingFocus && isMobile.value) {
+		watchingFocus = true
+		// Re-read the focus on the next frame rather than trusting the event: moving between two
+		// fields fires focusout before focusin, and acting on the focusout would flash the bar back
+		// in between them.
+		const sync = () =>
+			requestAnimationFrame(() => (keyboardOpen.value = isEditable(document.activeElement)))
+		document.addEventListener('focusin', sync)
+		document.addEventListener('focusout', sync)
+		// A field torn down with its route never fires focusout — Chrome and Safari move focus to
+		// <body> silently — so this would latch on and stay on. Compose is a page whose editor is
+		// focused on mount and which closes by navigating away, i.e. exactly that shape: leaving it
+		// left the tab bar and its FAB hidden for the rest of the session.
+		router.afterEach(() => sync())
+	}
+	return keyboardOpen
 }
 
 const undoAction = ref<() => void>()

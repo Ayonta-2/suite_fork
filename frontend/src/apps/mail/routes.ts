@@ -139,6 +139,15 @@ export const routes: RouteRecordRaw[] = [
 				component: () => import('@/apps/mail/pages/ScreenerView.vue'),
 				props: true,
 			},
+			// The open sender lives in the URL, as the open thread does: on mobile the preview is a
+			// full-screen overlay, so the back gesture has to close it rather than leave the screener.
+			// Same component — the param only says which sender is open.
+			{
+				path: 'account/:accountId/screener/:senderEmail',
+				name: 'mail-screener-sender',
+				component: () => import('@/apps/mail/pages/ScreenerView.vue'),
+				props: true,
+			},
 			{
 				path: 'account/:accountId/scheduled',
 				name: 'mail-scheduled',

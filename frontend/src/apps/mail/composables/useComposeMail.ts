@@ -273,11 +273,17 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 					: undefined,
 			)
 		else if (status === 'Scheduled' && sendMode.value === 'undo')
+			// Two buttons, and they are not equals: Undo expires with the toast, so it takes the
+			// urgent slot; View is an aside you could reach any time from Sent, offered only when the
+			// thread isn't already the one in front of you.
 			raiseToast(
 				__('Message sent.'),
 				'success',
 				{ label: __('Undo'), onClick: () => undoSend.submit({ name }) },
 				UNDO_SEND_WINDOW_MS,
+				thread_id && route.params.threadID !== thread_id
+					? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
+					: undefined,
 			)
 		else if (status === 'Scheduled')
 			raiseToast(__('Send scheduled.'), 'success', {

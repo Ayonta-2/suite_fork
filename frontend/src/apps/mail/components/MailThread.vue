@@ -473,7 +473,19 @@ import type {
 	ScreenedAddress,
 } from '@/apps/mail/types'
 
-const { mailbox, threadID, threads, messages, canGoNext, readonly, slide, account } =
+const {
+	mailbox,
+	threadID,
+	threads,
+	messages,
+	canGoNext,
+	readonly,
+	// Explicit default: Vue casts an absent Boolean prop to `false`, so this cannot be left to a
+	// `?? !readonly` fallback — every caller that didn't pass it would silently stop marking read.
+	marksSeen = true,
+	slide,
+	account,
+} =
 	defineProps<{
 		mailbox: string
 		threadID?: string
@@ -488,6 +500,8 @@ const { mailbox, threadID, threads, messages, canGoNext, readonly, slide, accoun
 		// Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
 		// toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.
 		readonly?: boolean
+		/** Marks the conversation seen on open. On by default; a view that only previews can opt out. */
+		marksSeen?: boolean
 		// Transition name for the mobile swipe paging ('page-next' / 'page-prev', styled in
 		// MailLayout); the owner arms it per swipe and clears it on slideDone, so other thread
 		// changes swap instantly.
@@ -693,8 +707,10 @@ const loadThread = () => {
 	})
 
 	// Opening a thread marks every message in the whole conversation read — including copies in other
-	// mailboxes (e.g. Sent) that aren't shown in this view. Read-only views (the Screener) never do this.
-	if (!readonly && source.some((mail) => !mail.seen)) setThreadSeen(true)
+	// mailboxes (e.g. Sent) that aren't shown in this view. The Screener included: reading there is
+	// still reading, and leaving it unread left the "waiting to be screened" dot burning after you had
+	// looked and simply not decided yet.
+	if (marksSeen && source.some((mail) => !mail.seen)) setThreadSeen(true)
 }
 
 // Mark the whole conversation seen/unseen — every message across all mailboxes, not just the ones
