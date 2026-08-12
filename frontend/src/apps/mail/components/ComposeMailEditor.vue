@@ -7,18 +7,12 @@
 	<TextEditor
 		ref="textEditor"
 		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
-		:extensions="[CustomImageExtension, CustomParagraphExtension, ...MentionExtensions]"
-		:content="mail.html_body.replaceAll('<div><br></div>', '<div></div>')"
-		:upload-function
-		class="flex flex-col max-sm:min-h-0 max-sm:flex-1 max-sm:overflow-y-auto max-sm:overscroll-contain"
+		:extensions="[CustomImageExtension, CustomParagraphExtension, ...mentionExtensions]"
+		:content="editorContent"
+		:upload-function="uploadFunction"
+		class="flex flex-col"
 		:class="{ 'pointer-events-none opacity-50': !show, 'sm:h-[75vh]': !isInThread }"
-		@focusin="onFocusIn"
-		@change="
-			(val: string) => {
-				mail.html_body = val.replaceAll('<div></div>', '<div><br></div>')
-				dropUnmentionedRecipients()
-			}
-		"
+		@change="onEditorChange"
 		@dragenter.prevent="handleDragEnter"
 		@dragover.prevent="handleDragOver"
 		@dragleave.prevent="handleDragLeave"
@@ -225,20 +219,8 @@
 </template>
 
 <script setup lang="ts">
-import {
-	computed,
-	inject,
-	nextTick,
-	onMounted,
-	onUnmounted,
-	reactive,
-	ref,
-	useTemplateRef,
-	watch,
-} from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { EditorContent } from '@tiptap/vue-3'
-import { watchDebounced } from '@vueuse/core'
 import {
 	ChevronDown,
 	ChevronUp,
@@ -253,31 +235,23 @@ import {
 	Combobox,
 	Dropdown,
 	FeatherIcon,
-	ImageExtension,
 	Progress,
 	TextEditor,
 	Tooltip,
-	createResource,
 	useFileUpload,
 } from 'frappe-ui'
-import { Mention } from 'frappe-ui/editor'
 
-import { getAttachmentUrl } from '@/apps/mail/resources'
-import {
-	formatBytes,
-	isOverlayPresent,
-	processInlineImages,
-	raiseToast,
-	randomString,
-} from '@/apps/mail/utils'
+import { formatBytes, isOverlayPresent, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
-import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
-import { injectAccountScope } from '@/apps/mail/utils/accountScope'
+import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
+import {
+	CustomImageExtension,
+	CustomParagraphExtension,
+	uploadFunction,
+} from '@/apps/mail/utils/text-editor'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
 
-import type { Attachment, ComposeMailData, File as FileDoc, Identity, UserResource } from '@/apps/mail/types'
-import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
+import type { Attachment, ComposeMailData, File as FileDoc, Identity } from '@/apps/mail/types'
 
 import RecipientInput from './Controls/RecipientInput.vue'
 import ContactsModal from './Modals/ContactsModal.vue'
@@ -297,31 +271,53 @@ const {
 
 const emit = defineEmits(['discardMail', 'reply', 'replyAll', 'forward', 'popOut'])
 
-const router = useRouter()
-const route = useRoute()
-// The editor sends as the enclosing pane's account (the thread's owning account in
-// All Inboxes, the active one everywhere else): identities, the account's default
-// outgoing email and every create/draft call resolve through this scope.
-const scope = injectAccountScope()
-const { accountId: scopeAccountId, identities, mailboxIds } = scope
-
-const viewSentMessage = (threadID: string) =>
-	router.push({
-		name: 'mail-mail',
-		params: { accountId: scopeAccountId.value, mailbox: mailboxIds.value.sent, threadID },
-	})
-
-const getIdentity = (email: string) =>
-	identities.value.data?.find((identity: Identity) => identity.email === email)
-
-// Editor
-
 const { isMobile } = useScreenSize()
 
 const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef('toInput')
 const ccInput = useTemplateRef('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
+
+// What the composition *is* — draft state, autosave, send, schedule, discard, attachments, mentions
+// — lives in the composable, shared with the phone composer (ComposeView). Only what is particular
+// to this dialog stays here: the contact picker, drag-and-drop, and the in-thread draft actions.
+const {
+	mail,
+	identities,
+	isLoading,
+	isDraftUpdated,
+	isRecipientsEmpty,
+	updateOriginalMail,
+	saveDraft,
+	sendMail,
+	discardMail,
+	onClosed,
+	showScheduleModal,
+	openScheduleModal,
+	scheduleSend,
+	openQuotedContent,
+	openAttachment,
+	mentionExtensions,
+	appendEmoji,
+	editorContent,
+	onEditorChange,
+} = useComposeMail({
+	mailDetails,
+	isInThread,
+	reloadMails,
+	close: () => (show.value = false),
+	isOpen: () => !!show.value,
+	onDiscardUnsaved: () => emit('discardMail'),
+	host: () => textEditor.value,
+	// The dialog holds the rest of the page inert, so the mention dropdown has to render inside it
+	// rather than at <body>, where it would be unreachable.
+	mentionContainer: () =>
+		(textEditor.value?.$el as HTMLElement | undefined)?.closest<HTMLElement>('[role="dialog"]') ??
+		null,
+})
+
+// The composer stays mounted when it closes, so the in-flight flags have to be cleared on the way out.
+watch(show, (open) => !open && onClosed())
 
 const showContactsModal = ref(false)
 const insertContactsInto = ref('')
@@ -337,353 +333,25 @@ const toggleCcBcc = () => {
 	if (showCcBcc.value) nextTick(() => ccInput.value?.setFocus())
 }
 
-// Pre-empt iOS's focus reveal. When focus moves to a field it thinks the keyboard covers, iOS scrolls
-// the page itself to bring it up — and a fixed pane can only chase that pan a frame behind, which is
-// the sheet lurching up and settling back on every hop between the body and the fields above.
-//
-// Putting the caret somewhere comfortable ourselves, synchronously as focus lands, leaves iOS with
-// nothing to reveal and so nothing to pan. Scrolling the pane we already own is invisible by
-// comparison — it's the scroll the reader asked for.
-const revealFocused = (target?: Element | null) => {
-	const scroller = textEditor.value?.$el as HTMLElement | undefined
-	const editor = textEditor.value?.editor
-	if (!isMobile.value || !scroller) return
-
-	const node = target ?? document.activeElement
-	if (!node || !scroller.contains(node)) return
-
-	// The body's element spans the whole composition, so its box says nothing about where the caret
-	// is; ask ProseMirror. Every other field is small enough to use its own.
-	const rect =
-		editor && node === editor.view.dom
-			? editor.view.coordsAtPos(editor.state.selection.head)
-			: node.getBoundingClientRect()
-
-	const view = scroller.getBoundingClientRect()
-	const margin = 24
-
-	if (rect.bottom > view.bottom - margin) scroller.scrollTop += rect.bottom - view.bottom + margin
-	else if (rect.top < view.top + margin) scroller.scrollTop -= view.top + margin - rect.top
-}
-
-const onFocusIn = (event: FocusEvent) => revealFocused(event.target as Element | null)
-
-// The keyboard opening shrinks the pane under whatever is already focused, which puts it back within
-// reach of iOS's reveal — so do it again once the new size has landed.
-const onViewportResize = () => requestAnimationFrame(() => revealFocused())
-
-onMounted(() => window.visualViewport?.addEventListener('resize', onViewportResize))
-onUnmounted(() => window.visualViewport?.removeEventListener('resize', onViewportResize))
-
-const appendEmoji = (emoji: string) => {
-	textEditor.value.editor.commands.insertContent(emoji)
-	textEditor.value.editor.commands.focus()
-}
-
-// Mentions
-
-// Picking a mention adds that person to To — reaching back up to the recipient fields
-// is the trip the shortcut exists to save. Only the pick adds, so a mention arriving
-// with pasted or forwarded content doesn't quietly address the mail to anyone.
-//
-// Recipients this composer added that way, and only those: deleting the mention takes
-// them back out again, while someone typed into To by hand and then mentioned stays
-// put — the mention didn't put them there and doesn't get to remove them.
-const mentionedRecipients = new Set<string>()
-
-const addMentionedRecipient = ({ email, display_name, image }: MentionCandidate) => {
-	if ([...mail.to, ...mail.cc, ...mail.bcc].some((r) => r.email === email)) return
-
-	mail.to.push({ email, display_name, image })
-	mentionedRecipients.add(email)
-}
-
-const dropUnmentionedRecipients = () => {
-	const editor = textEditor.value?.editor
-	if (!editor || !mentionedRecipients.size) return
-
-	const mentioned = new Set<string>()
-	editor.state.doc.descendants((node) => {
-		if (node.type.name === 'mention' && node.attrs.id) mentioned.add(node.attrs.id)
-	})
-
-	for (const email of mentionedRecipients) {
-		// Still named somewhere in the body — mentioning someone twice and deleting one
-		// of the two keeps them addressed.
-		if (mentioned.has(email)) continue
-
-		mail.to = mail.to.filter((recipient) => recipient.email !== email)
-		mentionedRecipients.delete(email)
-	}
-}
-
-const MentionExtensions = [
-	// The inline node. Its own `@` suggester stays inert with no item source of its
-	// own — the search below is the one wired up.
-	Mention,
-	createMentionSuggestion({
-		account: () => scopeAccountId.value,
-		onSelect: addMentionedRecipient,
-		// Null in a thread or the mobile sheet, where nothing is holding the rest of
-		// the page inert and the default <body> is fine.
-		container: () =>
-			(textEditor.value?.$el as HTMLElement | undefined)?.closest<HTMLElement>(
-				'[role="dialog"]',
-			) ?? null,
-	}),
-]
-
-// Setup & hooks
-
-const user = inject('$user') as UserResource
-
-const getDefaultFromEmail = () => {
-	const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
-	// The default outgoing email is per-account; pick the scope account's.
-	const defaultOutgoingEmail = scope.account.value?.default_outgoing_email
-
-	return (
-		identityEmails.find((e) => e === mailDetails?.from_email) ??
-		identityEmails.find((e) => e === defaultOutgoingEmail) ??
-		identityEmails[0] ??
-		user.data.name
-	)
-}
-
-const mail = reactive<ComposeMailData>({
-	name: mailDetails?.name || '',
-	id: mailDetails?.id || '',
-	from_email: getDefaultFromEmail(),
-	to: mailDetails?.to || [],
-	cc: mailDetails?.cc || [],
-	bcc: mailDetails?.bcc || [],
-	attachments: mailDetails?.attachments || [],
-	subject: mailDetails?.subject || '',
-	html_body: mailDetails?.html_body || '',
-	quoted_content: mailDetails?.quoted_content || '',
-	in_reply_to: mailDetails?.in_reply_to || '',
-	in_reply_to_id: mailDetails?.in_reply_to_id || '',
-	forwarded_from_id: mailDetails?.forwarded_from_id || '',
-})
-
-const originalMail = ref<ComposeMailData>()
-const updateOriginalMail = () => (originalMail.value = JSON.parse(JSON.stringify(mail)))
-const isDraftUpdated = computed(() => JSON.stringify(mail) !== JSON.stringify(originalMail.value))
-
-// Start where there is still something to write: the body on a reply (recipients and
-// subject come with the thread), the subject when the draft arrived addressed but
-// unnamed — a `mailto:` link, or a calendar invite's participants — and the To field
-// otherwise. The delay is the dialog's: focusing during its transition doesn't take.
+// Start where there is still something to write: the body on a reply (recipients and subject come
+// with the thread), the subject when the draft arrived addressed but unnamed — a `mailto:` link, or
+// a calendar invite's participants — and the To field otherwise. The delay is the dialog's: focusing
+// during its transition doesn't take.
 onMounted(() => {
 	updateOriginalMail()
 	if (mailDetails?.in_reply_to) return textEditor.value.editor.commands.focus()
 
-	// Deferred, and the choice made from inside: TextEditor renders nothing until it has
-	// built its editor on its own mounted hook, so neither field exists yet at this point.
+	// Deferred, and the choice made from inside: TextEditor renders nothing until it has built its
+	// editor on its own mounted hook, so neither field exists yet at this point.
 	setTimeout(() => {
-		if (!isRecipientsEmpty.value && !mail.subject && subjectInput.value)
-			subjectInput.value.focus()
+		if (!isRecipientsEmpty.value && !mail.subject && subjectInput.value) subjectInput.value.focus()
 		else toInput.value?.setFocus()
 	}, 50)
 })
 
 onUnmounted(() => saveDraft())
 
-watchDebounced(mail, () => saveDraft(), { debounce: 2000 })
-
-// Actions
-
-const isSavingDraft = ref(false)
-
-const saveDraft = async () => {
-	if (!isDraftUpdated.value || isLoading.value || isDiscarding.value) return
-
-	isSavingDraft.value = true
-	if (mail.id) await updateDraft.submit({ submit: false })
-	else if (!isMailEmpty.value) await createMail.submit({ save_as_draft: true })
-	isSavingDraft.value = false
-}
-
-// Mirrors UNDO_SEND_WINDOW_SECONDS in api/mail.py; the server holds delivery a few
-// seconds longer than this so a last-moment Undo still lands in time.
-const UNDO_SEND_WINDOW_MS = 10000
-
-// A plain Send holds delivery for the undo window ('undo'); the Schedule send flow
-// passes an explicit time ('scheduled'). Both come back with status 'Scheduled', so
-// the toast has to know which one it is confirming.
-const sendMode = ref<'undo' | 'scheduled'>('undo')
-
-const sendMail = async (sendAt?: string) => {
-	if (deleteMail.loading) return
-
-	if (isRecipientsEmpty.value)
-		return raiseToast(__('Please add at least one recipient.'), 'error')
-
-	sendMode.value = sendAt ? 'scheduled' : 'undo'
-	isSavingDraft.value = false
-	show.value = false
-	if (createMail.loading) await createMail.promise
-	if (updateDraft.loading) await updateDraft.promise
-
-	if (mail.id) updateDraft.submit({ submit: true, send_at: sendAt, undo_send: !sendAt })
-	else createMail.submit({ save_as_draft: false, send_at: sendAt, undo_send: !sendAt })
-}
-
-// Undo send: Send actually scheduled delivery a few seconds out (server-side hold), so
-// undoing is just cancelling that schedule — the message lands back in Drafts.
-
-const undoSend = createResource({
-	url: 'suite.mail.api.mail.cancel_scheduled_mail',
-	makeParams: ({ name }: { name: string }) => ({ account: scopeAccountId.value, name }),
-	onSuccess: () => {
-		reloadMails()
-		raiseToast(__('Sending undone. The message is back in your drafts.'))
-	},
-	onError: (error) => raiseToast(error.message, 'error'),
-})
-
-// Schedule send (FUTURERELEASE)
-
-const showScheduleModal = ref(false)
-
-const openScheduleModal = () => {
-	if (isRecipientsEmpty.value)
-		return raiseToast(__('Please add at least one recipient.'), 'error')
-
-	showScheduleModal.value = true
-}
-
-const scheduleSend = (sendAt: string) => sendMail(sendAt)
-
-const isDiscarding = ref(false)
-
-const discardMail = async () => {
-	if (deleteMail.loading) return
-
-	isDiscarding.value = true
-	show.value = false
-	if (createMail.loading) await createMail.promise
-	if (updateDraft.loading) await updateDraft.promise
-	if (mail.id) deleteMail.submit()
-	else emit('discardMail')
-}
-
-watch(show, (val) => {
-	if (val) return
-	isDiscarding.value = false
-	isSavingDraft.value = false
-})
-
 defineExpose({ sendMail, discardMail, openScheduleModal })
-
-const onMailUpdateSuccess = ({
-	name,
-	id,
-	status,
-	error,
-	thread_id,
-}: {
-	name: string
-	id: string
-	status: string
-	error: string
-	thread_id?: string
-}) => {
-	if (id) mail.id = id
-	updateOriginalMail()
-	if (error) return raiseToast(error, 'error')
-	if (isDiscarding.value) return
-
-	if (!isInThread || status === 'Submitted' || status === 'Scheduled') reloadMails()
-	if (show.value) return
-
-	if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
-	else if (status === 'Submitted')
-		raiseToast(
-			__('Message sent.'),
-			'success',
-			// No View action when the sent mail's thread is already open in front of the user.
-			thread_id && route.params.threadID !== thread_id
-				? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
-				: undefined,
-		)
-	else if (status === 'Scheduled' && sendMode.value === 'undo')
-		raiseToast(
-			__('Message sent.'),
-			'success',
-			{ label: __('Undo'), onClick: () => undoSend.submit({ name }) },
-			UNDO_SEND_WINDOW_MS,
-		)
-	else if (status === 'Scheduled')
-		raiseToast(__('Send scheduled.'), 'success', {
-			label: __('View'),
-			onClick: () =>
-				router.push({
-					name: 'mail-scheduled',
-					params: { accountId: scopeAccountId.value },
-				}),
-		})
-}
-
-// Resources
-
-const createMail = createResource({
-	url: 'suite.mail.api.mail.create_mail',
-	makeParams: ({
-		save_as_draft,
-		send_at,
-		undo_send,
-	}: {
-		save_as_draft: boolean
-		send_at?: string
-		undo_send?: boolean
-	}) => ({
-		account: scopeAccountId.value,
-		...mail,
-		...processInlineImages(mail, { sending: !save_as_draft }),
-		from_name: getIdentity(mail.from_email!)._name,
-		save_as_draft,
-		send_at,
-		undo_send,
-	}),
-	onSuccess: onMailUpdateSuccess,
-	onError: (error) => raiseToast(error.message, 'error'),
-})
-
-const updateDraft = createResource({
-	url: 'suite.mail.api.mail.update_draft_mail',
-	makeParams: ({
-		submit,
-		send_at,
-		undo_send,
-	}: {
-		submit: boolean
-		send_at?: string
-		undo_send?: boolean
-	}) => ({
-		account: scopeAccountId.value,
-		...mail,
-		...processInlineImages(mail, { sending: submit }),
-		from_name: getIdentity(mail.from_email!)._name,
-		submit,
-		send_at,
-		undo_send,
-	}),
-	onSuccess: onMailUpdateSuccess,
-	onError: (error) => raiseToast(error.message, 'error'),
-})
-
-const deleteMail = createResource({
-	url: 'suite.mail.api.mail.delete_mail',
-	makeParams: () => ({ account: scopeAccountId.value, id: mail.id }),
-	onSuccess: () => {
-		reloadMails()
-		raiseToast(__('Draft discarded.'))
-	},
-	onError: (error) => raiseToast(error.message, 'error'),
-})
-
-const isLoading = computed(() => createMail.loading || updateDraft.loading || deleteMail.loading)
 
 // Local draft actions
 
@@ -692,16 +360,8 @@ const localDraftActions = computed(() => [
 		group: '',
 		items: [
 			{ label: __('Reply'), icon: Reply, onClick: () => emit('reply') },
-			{
-				label: __('Reply All'),
-				icon: ReplyAll,
-				onClick: () => emit('replyAll'),
-			},
-			{
-				label: __('Forward'),
-				icon: Forward,
-				onClick: () => emit('forward'),
-			},
+			{ label: __('Reply All'), icon: ReplyAll, onClick: () => emit('replyAll') },
+			{ label: __('Forward'), icon: Forward, onClick: () => emit('forward') },
 		],
 	},
 	{
@@ -716,121 +376,6 @@ const localDraftActions = computed(() => [
 		],
 	},
 ])
-
-// Mail content
-
-const isRecipientsEmpty = computed(() => [mail.to, mail.cc, mail.bcc].every((d) => !d.length))
-
-const isBodyEmpty = computed(() => {
-	if (!mail.html_body) return true
-
-	const element = document.createElement('div')
-	element.innerHTML = mail.html_body
-
-	const hasText = element.textContent?.trim()
-	const hasMedia = element.querySelector('img, video, svg') !== null
-
-	return !hasText && !hasMedia
-})
-
-const isMailEmpty = computed(() => {
-	const isSubjectEmpty = !mail.subject
-	const isQuotedContentEmpty = !mail.quoted_content
-	const isAttachmentsEmpty = !mail.attachments?.length
-
-	return (
-		isSubjectEmpty &&
-		isQuotedContentEmpty &&
-		isRecipientsEmpty.value &&
-		isAttachmentsEmpty &&
-		isBodyEmpty.value
-	)
-})
-
-const openQuotedContent = () => {
-	mail.html_body += `<br>${mail.quoted_content}`
-	mail.quoted_content = ''
-}
-
-const buildSignature = (email?: string) => {
-	const identity = getIdentity(email!)
-	return identity?.text_signature
-		? `<div><br></div><div><br></div>${identity.html_signature}`
-		: ''
-}
-
-const bodyText = (html: string) => {
-	const element = document.createElement('div')
-	element.innerHTML = html || ''
-	return element.textContent?.trim() ?? ''
-}
-
-// Swap the signature when the From identity changes — but only while the body is still the
-// auto-inserted signature (or empty), so a message the user has written isn't overwritten.
-// Compared by text so the editor's HTML normalization doesn't defeat the match.
-watch(
-	() => mail.from_email,
-	(val, oldVal) => {
-		if (isBodyEmpty.value || bodyText(mail.html_body) === bodyText(buildSignature(oldVal))) {
-			mail.html_body = buildSignature(val)
-		}
-	},
-	{ immediate: true },
-)
-
-// Attachments
-
-const openAttachment = async (blob_id?: string, type?: string) => {
-	if (!blob_id) return
-
-	// Opened up front, while the click's user activation is still live: Safari blocks
-	// window.open() once the gesture has expired, which it has by the time the
-	// attachment has been fetched. A null tab means the popup blocker got it —
-	// retrying after the fetch would hit the same block, so just say so.
-	const tab = window.open('', '_blank')
-	if (!tab) return raiseToast(__('Allow popups to open attachments.'), 'error')
-
-	try {
-		tab.location.href = await getAttachmentUrl(blob_id, type, scopeAccountId.value)
-	} catch {
-		tab.close()
-	}
-}
-
-// Custom Extensions
-
-const uploadFunction = async (file: File) => {
-	const fileUpload = useFileUpload()
-	return fileUpload.upload(file, {
-		private: true,
-		folder: 'Home/Frappe Mail',
-		upload_endpoint: '/api/method/suite.mail.api.mail.upload_file',
-	})
-}
-
-const CustomImageExtension = ImageExtension.extend({
-	addAttributes() {
-		return {
-			...this.parent?.(),
-			'data-cid': {
-				default: null,
-				parseHTML: (element) => element.getAttribute('data-cid'),
-				renderHTML: (attributes) => {
-					const src = attributes.src || ''
-					if (
-						!attributes['data-cid'] &&
-						(src.startsWith('/files') || src.startsWith('/private/files'))
-					)
-						attributes['data-cid'] = randomString(10)
-					return { 'data-cid': attributes['data-cid'] }
-				},
-			},
-		}
-	},
-}).configure({
-	HTMLAttributes: { width: '600', style: 'max-width:100%; height:auto' },
-	uploadFunction,
-})
 
 const TYPE_ICON_MAP = {
 	reply: Reply,

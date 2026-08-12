@@ -1,4 +1,4 @@
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, inject, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import { createResource } from 'frappe-ui'
@@ -9,7 +9,7 @@ import { processInlineImages, raiseToast } from '@/apps/mail/utils'
 import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 
-import type { ComposeMailData, Identity } from '@/apps/mail/types'
+import type { ComposeMailData, Identity, UserResource } from '@/apps/mail/types'
 import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 
 /** The mounted TextEditor instance, as far as this composable cares about it. */
@@ -59,6 +59,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	// Sends as the enclosing pane's account (the thread's owning account in All Inboxes, the active
 	// one everywhere else): identities, the default outgoing address and every draft call resolve
 	// through this scope.
+	const user = inject('$user') as UserResource
 	const scope = injectAccountScope()
 	const { accountId: scopeAccountId, identities, mailboxIds } = scope
 
@@ -78,7 +79,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		return (
 			identityEmails.find((e) => e === mailDetails?.from_email) ??
 			identityEmails.find((e) => e === defaultOutgoingEmail) ??
-			identityEmails[0]
+			identityEmails[0] ??
+			// An account with no identities at all still has to send as somebody.
+			user.data.name
 		)
 	}
 
