@@ -141,7 +141,10 @@ const isSearchRoute = computed(
 const mailActive = computed(
 	() => MAIL_ROUTES.includes(route.name as string) && !isSearchRoute.value,
 )
-const screenerActive = computed(() => route.name === 'mail-screener')
+// Either screener route: with a sender open the tab is still the screener's.
+const screenerActive = computed(() =>
+	['mail-screener', 'mail-screener-sender'].includes(route.name as string),
+)
 const searchActive = computed(() => showSearchModal.value || isSearchRoute.value)
 const profileActive = computed(() => route.name === 'mail-profile')
 

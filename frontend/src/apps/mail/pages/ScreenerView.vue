@@ -294,7 +294,18 @@
 									{{ openSender.subject || __('[No subject]') }}
 								</h2>
 							</div>
-							<div class="flex shrink-0 gap-2">
+							<!-- The phone's counterpart to the desktop split-buttons: the bar below answers yes or
+							     no, and everything narrower than that — Archive, Trash, the whole domain — lives
+							     here, where the thread view keeps its overflow too. -->
+							<AdaptiveDropdown v-if="isMobile" :options="moreOptions(openSender)">
+								<Button variant="ghost" :aria-label="__('More actions')">
+									<template #icon><Ellipsis class="icon" /></template>
+								</Button>
+							</AdaptiveDropdown>
+							<!-- Desktop only: on a phone the verdict moves to a bar at the bottom, where
+							     the thread view puts Reply and Forward — the reachable edge, and the same
+							     place the same kind of decision is made everywhere else in the app. -->
+							<div v-if="!isMobile" class="flex shrink-0 gap-2">
 								<div class="flex items-center">
 									<Button
 										variant="outline"
@@ -356,6 +367,30 @@
 									/>
 								</div>
 							</Transition>
+
+							<!-- Mirrors the thread's reply bar: full-bleed, split down the middle, tall enough to
+							     hit without looking. The preview already reserves pb-16 on mobile for exactly this.
+							     Deny carries no destination; Allow files to the Inbox, the split menus on desktop
+							     covering the rest. -->
+							<div
+								v-if="isMobile"
+								class="bg-surface-base absolute bottom-0 left-0 right-0 z-20 flex items-stretch border-t"
+							>
+								<Button
+									variant="ghost"
+									:icon-left="X"
+									:label="__('Deny')"
+									class="!h-16 flex-1 rounded-none"
+									@click="screenOut([openSender.from_email])"
+								/>
+								<Button
+									variant="ghost"
+									:icon-left="Check"
+									:label="__('Allow')"
+									class="!h-16 flex-1 rounded-none"
+									@click="allow([openSender.from_email])"
+								/>
+							</div>
 						</div>
 					</template>
 
@@ -386,8 +421,9 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
 	Archive,
-	AtSign,
 	Check,
+	Globe,
+	GlobeOff,
 	ChevronDown,
 	ChevronLeft,
 	CircleHelp,
@@ -430,6 +466,11 @@ import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
 import type { Mail, MailboxData, ScreeningSender } from '@/apps/mail/types'
 
 const store = userStore()
+const { senderEmail } = defineProps<{
+	/** The open sender, from the route. Absent on the plain screener route — the list, nothing open. */
+	senderEmail?: string
+}>()
+
 const router = useRouter()
 const { isMobile } = useScreenSize()
 const { openSettings } = useSettings()
@@ -470,7 +511,23 @@ const previewMails = ref<Mail[]>()
 const previewLoading = ref(false)
 let previewToken = 0
 
-const selectSender = (sender: ScreeningSender) => {
+/**
+ * Which sender is open is the URL's business, so opening one is a navigation and the back gesture
+ * closes it — on mobile the preview is a full-screen overlay, and without this back left the screener
+ * entirely. `replace` for the steps that aren't a new decision to open something (paging with j/k,
+ * and the hop to the next sender after a verdict), so a triage run doesn't stack an entry per sender.
+ */
+const selectSender = (sender: ScreeningSender, replace = false) => {
+	if (openSender.value?.from_email === sender.from_email) return
+	const to = {
+		name: 'mail-screener-sender',
+		params: { accountId: store.accountId, senderEmail: sender.from_email },
+	}
+	replace ? router.replace(to) : router.push(to)
+}
+
+/** Loads the preview for whichever sender the route names. */
+const openSenderFromRoute = (sender: ScreeningSender) => {
 	if (openSender.value?.from_email === sender.from_email) return
 	openSender.value = sender
 
@@ -489,7 +546,12 @@ const selectSender = (sender: ScreeningSender) => {
 }
 
 const closeSender = () => {
-	openSender.value = null
+	if (!openSender.value) return
+	// Back where there is something to go back to, so opening and closing leaves no residue in the
+	// history; a sender opened straight from a pasted URL has nothing behind it, so replace instead.
+	const list = { name: 'mail-screener', params: { accountId: store.accountId } }
+	if (router.options.history.state.back) router.back()
+	else router.replace(list)
 }
 
 /**
@@ -519,6 +581,29 @@ const senders = createResource({
 	auto: true,
 })
 
+/**
+ * The route names a sender; this finds them in the list and opens them. A sender who has already been
+ * allowed or denied is simply gone — normal here rather than exceptional, since the queue empties as
+ * you work — so that lands quietly back on the list instead of erroring.
+ */
+watch(
+	[() => senderEmail, () => senders.data],
+	([email, list]) => {
+		if (!email) {
+			openSender.value = null
+			return
+		}
+		if (!list) return
+
+		const sender = (list as ScreeningSender[]).find(
+			(s: ScreeningSender) => s.from_email === email,
+		)
+		if (sender) openSenderFromRoute(sender)
+		else router.replace({ name: 'mail-screener', params: { accountId: store.accountId } })
+	},
+	{ immediate: true },
+)
+
 // Swipe on the open preview (mobile): left → next sender, right → previous — the
 // screener counterpart of the mailbox thread swipe.
 const { onTouchStart: onPreviewTouchStart, onTouchEnd: onPreviewTouchEnd } = useSwipeNav(
@@ -533,7 +618,7 @@ const { onTouchStart: onPreviewTouchStart, onTouchEnd: onPreviewTouchEnd } = use
 		// Arms the paging animation for this navigation only — row taps and the allow/deny
 		// auto-advance keep swapping instantly.
 		senderSlide.value = offset > 0 ? 'page-next' : 'page-prev'
-		selectSender(next)
+		selectSender(next, true)
 	},
 )
 
@@ -580,7 +665,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 	const next = list[cur + offset]
 	if (!next) return
 
-	selectSender(next)
+	selectSender(next, true)
 	nextTick(() =>
 		document
 			.querySelector(`[data-sender-email="${next.from_email}"]`)
@@ -757,7 +842,7 @@ const runAction = (
 
 	// Advance to the next sender (or close the preview if there's nothing below).
 	if (actingOnOpen) {
-		if (nextSender) selectSender(nextSender)
+		if (nextSender) selectSender(nextSender, true)
 		else closeSender()
 	}
 
@@ -820,21 +905,51 @@ const runDomainAction = (action: 'allow' | 'screenOut', sender: ScreeningSender)
 	runAction(action, [`@${domain}`], (s: ScreeningSender) => domainOf(s.from_email) === domain)
 }
 
-// AtSign, not the verdict's own Check/X: what sets this entry apart from the button it hangs off
-// is its reach — the whole @domain rather than this one address.
+// A globe, not the verdict's own Check/X: what sets this entry apart from the button it hangs off is
+// its reach — the whole @domain rather than this one address. Same pair the phone's overflow uses.
 const domainOption = (action: 'allow' | 'screenOut', sender: ScreeningSender) => ({
 	label:
 		action === 'allow'
 			? __('Allow all emails from {0}', [domainOf(sender.from_email)])
 			: __('Deny all emails from {0}', [domainOf(sender.from_email)]),
-	icon: AtSign,
+	icon: action === 'allow' ? Globe : GlobeOff,
 	onClick: () => runDomainAction(action, sender),
 })
 
 // Two label-less groups, so the menu draws a separator: above it the sender is allowed and their
 // waiting mail — already read right here — is filed away instead of asking to be triaged again in
 // the Inbox; below it the decision widens to everyone at their domain.
+// Desktop only (the split buttons this hangs off are), so the keys are worth naming: there is a
+// keyboard to press them on, and a menu you had to open to find the action is the place someone
+// learns they needn't open it next time. The phone's overflow leaves them out.
 const allowOptions = (sender: ScreeningSender) => [
+	{
+		group: '',
+		items: [
+			{
+				label: __('Allow and Archive ({0})', ['E']),
+				icon: Archive,
+				onClick: () => allow([sender.from_email], 'archive'),
+			},
+			{
+				label: __('Allow and Move to Trash ({0})', ['Delete']),
+				icon: Trash2,
+				onClick: () => allow([sender.from_email], 'trash'),
+			},
+		],
+	},
+	{ group: '', items: [domainOption('allow', sender)] },
+]
+
+const denyOptions = (sender: ScreeningSender) => [domainOption('screenOut', sender)]
+
+// Everything the desktop split-buttons hold, in one menu — the phone's verdict bar carries only the
+// two plain answers, so without this the destinations and the domain-wide calls would be reachable
+// by keyboard alone. Grouped by verdict, in the order the bar below reads: deny, then allow.
+const moreOptions = (sender: ScreeningSender) => [
+	// Grouped by reach, matching the desktop allow menu: what happens to this one sender's mail,
+	// then the calls that cover everyone at their domain. The divider marks that widening — the two
+	// domain rows read as a pair (same phrasing, same globes) and shouldn't be split from each other.
 	{
 		group: '',
 		items: [
@@ -850,10 +965,26 @@ const allowOptions = (sender: ScreeningSender) => [
 			},
 		],
 	},
-	{ group: '', items: [domainOption('allow', sender)] },
+	// A globe, not the bar's tick: these are the only entries reaching past this one sender, and
+	// reusing the verdict icons would say nothing about that. Deny is red, which sets it apart
+	// without a divider of its own — it is the only row here that shuts someone out.
+	{
+		group: '',
+		items: [
+			{
+				label: __('Allow all emails from {0}', [domainOf(sender.from_email)]),
+				icon: Globe,
+				onClick: () => runDomainAction('allow', sender),
+			},
+			{
+				label: __('Deny all emails from {0}', [domainOf(sender.from_email)]),
+				icon: GlobeOff,
+				theme: 'red',
+				onClick: () => runDomainAction('screenOut', sender),
+			},
+		],
+	},
 ]
-
-const denyOptions = (sender: ScreeningSender) => [domainOption('screenOut', sender)]
 
 // Clear All empties the queue without judging anyone: it moves all screened mail to the inbox but
 // creates no Deny/Allow rule, so a mixed queue can't accidentally whitelist spam or block a real sender.
