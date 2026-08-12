@@ -167,7 +167,20 @@
 						>
 							<div class="min-w-0 flex-1 space-y-1">
 								<div class="flex min-w-0 items-baseline gap-2">
-									<span class="text-ink-gray-8 truncate text-[15px] !font-semibold sm:text-base">
+									<!-- Same dot the mail lists use for unread, meaning the same thing here: nobody
+									     has looked yet. It clears on reading the preview; the sender stays until
+									     allowed or denied, seen not being a decision. -->
+									<span
+										v-if="sender.unread"
+										class="bg-blue-500 size-2 shrink-0 self-center rounded-full"
+										:aria-label="__('Unread')"
+									/>
+									<!-- Weights follow the mail rows: medium once read, semibold while unread,
+									     so a screened sender reads the same as anything else in a list. -->
+									<span
+										class="text-ink-gray-8 truncate text-[15px] !font-medium sm:text-base"
+										:class="{ '!font-semibold': sender.unread }"
+									>
 										{{ sender.from_name || sender.from_email }}
 									</span>
 									<span class="text-ink-gray-5 flex-1 truncate text-[13px]">{{ sender.from_email }}</span>
@@ -178,7 +191,10 @@
 										class="text-ink-gray-4 shrink-0 whitespace-nowrap text-xs tabular-nums"
 									/>
 								</div>
-								<div class="text-ink-gray-8 truncate text-sm !font-semibold !leading-[1.5]">
+								<div
+									class="text-ink-gray-8 truncate text-sm !leading-[1.5]"
+									:class="{ '!font-semibold': sender.unread }"
+								>
 									{{ sender.subject || __('[No subject]') }}
 								</div>
 								<div
@@ -287,7 +303,7 @@
 										@click="screenOut([openSender.from_email])"
 									/>
 									<AdaptiveDropdown
-										:options="domainOptions('screenOut', openSender)"
+										:options="denyOptions(openSender)"
 										placement="bottom-end"
 									>
 										<Button variant="outline" class="-ml-px !rounded-l-none !px-1.5">
@@ -303,7 +319,7 @@
 										@click="allow([openSender.from_email])"
 									/>
 									<AdaptiveDropdown
-										:options="domainOptions('allow', openSender)"
+										:options="allowOptions(openSender)"
 										placement="bottom-end"
 									>
 										<Button
@@ -324,6 +340,10 @@
 							<Transition :name="senderSlide" @after-enter="senderSlide = ''">
 								<div :key="senderPaneKey" class="flex h-full flex-col">
 									<MailThreadSkeleton v-if="previewLoading" />
+									<!-- readonly for the actions (this is a decision about a sender, not a
+									     conversation to act on), but marks-seen because reading is reading:
+									     the Inbox banner counts unread here, so leaving it unread nagged
+									     people who had looked and were deferring the decision. -->
 									<MailThread
 										v-else-if="previewMails?.length"
 										class="min-h-0 flex-1"
@@ -332,6 +352,7 @@
 										:thread-i-d="openSender.from_email"
 										:threads="[]"
 										:messages="previewMails"
+										@set-seen="markSenderSeen"
 									/>
 								</div>
 							</Transition>
@@ -364,6 +385,8 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+	Archive,
+	AtSign,
 	Check,
 	ChevronDown,
 	ChevronLeft,
@@ -371,6 +394,7 @@ import {
 	Ellipsis,
 	Inbox,
 	LoaderCircle,
+	Trash2,
 	X,
 } from 'lucide-vue-next'
 import {
@@ -379,6 +403,7 @@ import {
 	Dialog,
 	Dropdown,
 	Popover,
+	call,
 	createResource,
 	usePageMeta,
 } from 'frappe-ui'
@@ -465,6 +490,27 @@ const selectSender = (sender: ScreeningSender) => {
 
 const closeSender = () => {
 	openSender.value = null
+}
+
+/**
+ * Reading a sender's mail in the preview marks it seen on the server, and clears their unread count
+ * here without waiting for a refetch — the row's dot and the Inbox's "waiting to be screened" banner
+ * both read off that number, and neither should linger after you have looked.
+ *
+ * The sender stays in the list: seen is not a decision. They leave when allowed or denied.
+ */
+const markSenderSeen = (seen: boolean, ids: string[]) => {
+	if (!seen || !ids.length) return
+
+	call('suite.mail.api.mail.set_mails_seen', { account: store.accountId, ids, seen: true })
+		.then(() => store.mailboxes.reload())
+		.catch((error) => raiseToast(error?.messages?.[0] || error?.message, 'error'))
+
+	const sender = senders.data?.find(
+		(s: ScreeningSender) => s.from_email === openSender.value?.from_email,
+	)
+	if (sender) sender.unread = 0
+	previewMails.value?.forEach((mail) => (mail.seen = 1))
 }
 
 const senders = createResource({
@@ -571,11 +617,23 @@ const waitingLabel = computed(() => {
 	return n === 1 ? __('1 new sender') : __('{0} new senders', [String(n)])
 })
 
+// Allowing a sender always lets their future mail through; the destination only decides where the
+// mail already waiting in the Screener is filed — Inbox, or straight to Archive/Trash when you've
+// read it here and don't want to triage it again.
+type AllowDestination = 'inbox' | 'archive' | 'trash'
+
 const allowResource = createResource({
 	url: 'suite.mail.api.mail.allow_screening_senders',
-	makeParams: ({ from_emails }: { from_emails: string[] }) => ({
+	makeParams: ({
+		from_emails,
+		destination,
+	}: {
+		from_emails: string[]
+		destination: AllowDestination
+	}) => ({
 		account: store.accountId,
 		from_emails,
+		destination,
 	}),
 })
 
@@ -593,17 +651,23 @@ const screenOutResource = createResource({
 // already accepts a list, so we just accumulate the burst and submit it once. A sender's latest action
 // wins if both buttons are hit before the flush.
 const SCREEN_FLUSH_DELAY = 500
-const pending = { allow: new Set<string>(), screenOut: new Set<string>() }
+// Allows carry their destination, so they batch per destination rather than as one set.
+const pending = { allow: new Map<string, AllowDestination>(), screenOut: new Set<string>() }
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 let flushChain: Promise<void> = Promise.resolve()
 
 const flushScreening = () => {
 	flushTimer = null
-	const allowEmails = [...pending.allow]
+	const allowGroups = new Map<AllowDestination, string[]>()
+	for (const [email, destination] of pending.allow) {
+		const group = allowGroups.get(destination)
+		if (group) group.push(email)
+		else allowGroups.set(destination, [email])
+	}
 	const screenOutEmails = [...pending.screenOut]
 	pending.allow.clear()
 	pending.screenOut.clear()
-	if (!allowEmails.length && !screenOutEmails.length) return
+	if (!allowGroups.size && !screenOutEmails.length) return
 
 	// Chain onto the previous flush so requests never overlap (overlapping rebuilds are the bug).
 	flushChain = flushChain.then(async () => {
@@ -611,9 +675,9 @@ const flushScreening = () => {
 		// allow and screen-out across different senders, and all were already optimistically removed.
 		let submitted = false
 		let firstError: unknown
-		if (allowEmails.length) {
+		for (const [destination, from_emails] of allowGroups) {
 			try {
-				await allowResource.submit({ from_emails: allowEmails })
+				await allowResource.submit({ from_emails, destination })
 				submitted = true
 			} catch (error) {
 				firstError ??= error
@@ -636,11 +700,19 @@ const flushScreening = () => {
 	})
 }
 
-const queueScreening = (action: 'allow' | 'screenOut', fromEmails: string[]) => {
-	const other = action === 'allow' ? pending.screenOut : pending.allow
+const queueScreening = (
+	action: 'allow' | 'screenOut',
+	fromEmails: string[],
+	destination: AllowDestination,
+) => {
 	for (const email of fromEmails) {
-		other.delete(email)
-		pending[action].add(email)
+		if (action === 'allow') {
+			pending.screenOut.delete(email)
+			pending.allow.set(email, destination)
+		} else {
+			pending.allow.delete(email)
+			pending.screenOut.add(email)
+		}
 	}
 	if (!flushTimer) flushTimer = setTimeout(flushScreening, SCREEN_FLUSH_DELAY)
 }
@@ -651,6 +723,7 @@ const runAction = (
 	action: 'allow' | 'screenOut',
 	fromEmails: string[],
 	matchSender: (s: ScreeningSender) => boolean = (s) => fromEmails.includes(s.from_email),
+	destination: AllowDestination = 'inbox',
 ) => {
 	if (!fromEmails.length) return
 
@@ -677,10 +750,11 @@ const runAction = (
 		else closeSender()
 	}
 
-	queueScreening(action, fromEmails)
+	queueScreening(action, fromEmails, destination)
 }
 
-const allow = (fromEmails: string[]) => runAction('allow', fromEmails)
+const allow = (fromEmails: string[], destination: AllowDestination = 'inbox') =>
+	runAction('allow', fromEmails, undefined, destination)
 const screenOut = (fromEmails: string[]) => runAction('screenOut', fromEmails)
 
 // Domain-level triage. Screening rules accept an `@domain` value: it covers all future mail from the
@@ -695,16 +769,40 @@ const runDomainAction = (action: 'allow' | 'screenOut', sender: ScreeningSender)
 	runAction(action, [`@${domain}`], (s: ScreeningSender) => domainOf(s.from_email) === domain)
 }
 
-const domainOptions = (action: 'allow' | 'screenOut', sender: ScreeningSender) => [
+// AtSign, not the verdict's own Check/X: what sets this entry apart from the button it hangs off
+// is its reach — the whole @domain rather than this one address.
+const domainOption = (action: 'allow' | 'screenOut', sender: ScreeningSender) => ({
+	label:
+		action === 'allow'
+			? __('Allow all emails from {0}', [domainOf(sender.from_email)])
+			: __('Deny all emails from {0}', [domainOf(sender.from_email)]),
+	icon: AtSign,
+	onClick: () => runDomainAction(action, sender),
+})
+
+// Two label-less groups, so the menu draws a separator: above it the sender is allowed and their
+// waiting mail — already read right here — is filed away instead of asking to be triaged again in
+// the Inbox; below it the decision widens to everyone at their domain.
+const allowOptions = (sender: ScreeningSender) => [
 	{
-		label:
-			action === 'allow'
-				? __('Allow all emails from {0}', [domainOf(sender.from_email)])
-				: __('Deny all emails from {0}', [domainOf(sender.from_email)]),
-		icon: action === 'allow' ? Check : X,
-		onClick: () => runDomainAction(action, sender),
+		group: '',
+		items: [
+			{
+				label: __('Allow and Archive'),
+				icon: Archive,
+				onClick: () => allow([sender.from_email], 'archive'),
+			},
+			{
+				label: __('Allow and Move to Trash'),
+				icon: Trash2,
+				onClick: () => allow([sender.from_email], 'trash'),
+			},
+		],
 	},
+	{ group: '', items: [domainOption('allow', sender)] },
 ]
+
+const denyOptions = (sender: ScreeningSender) => [domainOption('screenOut', sender)]
 
 // Clear All empties the queue without judging anyone: it moves all screened mail to the inbox but
 // creates no Deny/Allow rule, so a mixed queue can't accidentally whitelist spam or block a real sender.

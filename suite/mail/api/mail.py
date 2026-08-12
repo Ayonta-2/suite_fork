@@ -1562,20 +1562,32 @@ def get_screening_sender_mails(account: str, from_email: str) -> list[dict]:
     return add_user_images_to_emails(account, mails, is_thread=True)
 
 
+# Where a sender's already-screened mail is filed when you allow them in. The decision itself is the
+# same either way — future mail always reaches the inbox — this only says what happens to what's
+# waiting, so mail already read in the Screener needn't be triaged a second time in the Inbox.
+ALLOW_DESTINATION_ROLES = ("inbox", "archive", "trash")
+
+
 @frappe.whitelist()
-def allow_screening_senders(account: str, from_emails: list[str]) -> None:
-    """Allow senders in: accept them (future mail reaches the inbox) and move their screened mail there."""
+def allow_screening_senders(account: str, from_emails: list[str], destination: str = "inbox") -> None:
+    """Allow senders in: accept them (future mail reaches the inbox) and file their screened mail into
+    `destination` — the inbox by default, or straight to Archive/Trash."""
 
     if not from_emails:
         return
 
+    if destination not in ALLOW_DESTINATION_ROLES:
+        frappe.throw(_("Invalid destination: {0}").format(destination))
+
     _screen_email_addresses(account, from_emails, action="Accepted")
 
-    inbox_id = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
+    mailbox_id = get_mailbox_id_by_role(
+        account, destination, create_if_not_exists=True, raise_exception=True
+    )
     for from_email in from_emails:
         ids = _screening_message_ids(account, from_email)
         if ids:
-            move_mails(account, ids, inbox_id, clear_junk=True)
+            move_mails(account, ids, mailbox_id, clear_junk=True)
 
 
 @frappe.whitelist()
