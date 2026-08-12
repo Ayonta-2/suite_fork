@@ -454,7 +454,7 @@ import {
 	useSwipeNav,
 	useUndo,
 } from '@/apps/mail/utils/composables'
-import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/utils/splitPane'
+import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'

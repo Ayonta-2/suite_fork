@@ -1,6 +1,6 @@
 <template>
 	<!-- The list column. With Split View on it's a share of the viewport and the pane
-	     takes the rest (see utils/splitPane, shared with the screener); otherwise it
+	     takes the rest (see constants.ts, shared with the screener); otherwise it
 	     fills the width and the pane overlays it (or, on mobile, slides in over it). -->
 	<!-- border-r only in Split View: full-width mode has nothing of its own to
 	     the right, and anything that does sit there (the event detail sidebar)
@@ -47,7 +47,7 @@
 
 <script setup lang="ts">
 import { useReadingPane, useScreenSize } from '@/apps/mail/utils/composables'
-import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/utils/splitPane'
+import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/constants'
 
 /**
  * The two halves of a thread list view: the list column, and the reading pane beside/over it.
