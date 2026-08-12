@@ -92,7 +92,7 @@
 				<!-- Sender list -->
 				<div
 					class="flex flex-col overflow-y-auto"
-					:class="!isMobile && showReadingPane ? 'w-1/3 border-r' : 'w-full'"
+					:class="!isMobile && showReadingPane ? SPLIT_LIST_CLASS : 'w-full'"
 				>
 					<div class="pb-20">
 						<!-- Count bar — matches the mailbox "All Mails" toolbar height/style. -->
@@ -145,12 +145,13 @@
 									</template>
 								</Popover>
 							</div>
-							<div class="-mr-2 flex shrink-0 items-center gap-1">
+							<div class="-mr-2 flex shrink-0 items-center space-x-2">
 								<Dropdown :options="bulkOptions" placement="bottom-end">
 									<Button variant="ghost" class="!px-1.5">
 										<template #icon><Ellipsis class="icon" /></template>
 									</Button>
 								</Dropdown>
+								<SplitViewToggle />
 							</div>
 						</div>
 
@@ -247,7 +248,7 @@
 				<div
 					class="bg-surface-base flex flex-col"
 					:class="{
-						'w-2/3': !isMobile && showReadingPane,
+						[SPLIT_PANE_CLASS]: !isMobile && showReadingPane,
 						'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
 						'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
 							isMobile,
@@ -384,7 +385,13 @@ import {
 
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { isNavigationKey, navigationOffset } from '@/apps/mail/utils/listNavigation'
-import { useScreenSize, useSettings, useSwipeNav } from '@/apps/mail/utils/composables'
+import {
+	useReadingPane,
+	useScreenSize,
+	useSettings,
+	useSwipeNav,
+} from '@/apps/mail/utils/composables'
+import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/utils/splitPane'
 import { userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
@@ -392,6 +399,7 @@ import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import SplitViewToggle from '@/apps/mail/components/SplitViewToggle.vue'
 import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
 
 import type { Mail, MailboxData, ScreeningSender } from '@/apps/mail/types'
@@ -401,7 +409,7 @@ const router = useRouter()
 const { isMobile } = useScreenSize()
 const { openSettings } = useSettings()
 
-const showReadingPane = computed(() => !!store.userResource?.data?.show_reading_pane)
+const showReadingPane = useReadingPane()
 
 // The Screener only exists when screening is enabled. If it's off, render nothing and send the user to
 // their inbox (the route is still reachable by URL even though the sidebar hides it).

@@ -7,6 +7,7 @@
 	<Button
 		v-if="
 			!isThreadOpen &&
+			!keyboardOpen &&
 			!isMobileSelectionActive &&
 			!isSearchRoute &&
 			!showSearchModal &&
@@ -26,9 +27,12 @@
 	<!-- Bottom tab bar — Raven-inspired: translucent bar with a hairline top border
 	     and faint upward shadow; lucide icons, tint-only active state. -->
 	<!-- Stays mounted during selection mode — the selection action bar overlays it at
-	     identical geometry, so the layout never shifts. -->
+	     identical geometry, so the layout never shifts. Steps aside for the on-screen
+	     keyboard, though: the shell is sized in dvh and the keyboard shrinks that, so a
+	     bar left mounted rides up and sits on top of the keyboard (worst in search, where
+	     the field is focused the whole time). -->
 	<nav
-		v-if="!isThreadOpen"
+		v-if="!isThreadOpen && !keyboardOpen"
 		class="bg-surface-base/80 z-10 shrink-0 border-t pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_5px_rgba(0,0,0,0.03)] backdrop-blur-lg"
 	>
 		<div class="flex h-15 items-stretch">
@@ -88,7 +92,7 @@ import { Avatar, Button, FeatherIcon } from 'frappe-ui'
 import { Icon } from 'frappe-ui/icons'
 
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
-import { useFolderSheet, useMobileSelection } from '@/apps/mail/utils/composables'
+import { useFolderSheet, useKeyboardOpen, useMobileSelection } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import { setPendingCompose } from '@/apps/mail/composables/composeHandoff'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
@@ -103,6 +107,7 @@ const user = inject('$user') as { data: Record<string, any> }
 const { mailboxes, allInboxesUnread } = store
 const { openFolderSheet } = useFolderSheet()
 const { isMobileSelectionActive } = useMobileSelection()
+const keyboardOpen = useKeyboardOpen()
 
 const activeAccountName = computed(
 	() => store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)?._name ?? '',
