@@ -81,6 +81,16 @@ const shortcutGroups = computed(() => [
 	],
 	[
 		{
+			// Same keys as the Actions above, because they are the same intent — allowing the sender is
+			// implied, and the key says where their waiting mail goes.
+			title: __('Screener'),
+			shortcuts: [
+				[['E'], __('Allow Sender, Archive Their Mail')],
+				[['Delete'], __('Allow Sender, Trash Their Mail')],
+			],
+		},
+
+		{
 			title: __('Navigation'),
 			shortcuts: [
 				[['↓', __('or'), 'J'], __('Go to Next Mail')],

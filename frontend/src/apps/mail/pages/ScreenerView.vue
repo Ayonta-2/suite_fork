@@ -547,7 +547,8 @@ watch(openSender, (sender) => {
 	if (sender) senderPaneKey.value = sender.from_email
 })
 
-// Once a mail is open, ↑/↓ (or k/j) step to the previous/next sender and Esc closes it. Else inert.
+// Once a mail is open: ↑/↓ (or k/j) step senders, E and Delete allow the sender straight to Archive
+// or Trash, and Esc closes. Else inert.
 const handleKeydown = (e: KeyboardEvent) => {
 	if (!openSender.value || shouldIgnoreKeypress(e)) return
 	const key = e.key.toLowerCase()
@@ -555,6 +556,16 @@ const handleKeydown = (e: KeyboardEvent) => {
 	if (key === 'escape') {
 		e.preventDefault()
 		closeSender()
+		return
+	}
+
+	// The mailbox's Archive and Trash keys, doing the screener's version of the same thing: the
+	// sender is allowed in — that decision is what the screener is for — and the mail already waiting
+	// is filed away rather than landing in the inbox to be triaged a second time. `runAction` steps to
+	// the next sender, so a keyboard pass down the list keeps its place.
+	if (key === 'e' || key === 'delete' || key === 'backspace') {
+		e.preventDefault()
+		runAction('allow', [openSender.value.from_email], undefined, key === 'e' ? 'archive' : 'trash')
 		return
 	}
 
@@ -751,6 +762,46 @@ const runAction = (
 	}
 
 	queueScreening(action, fromEmails, destination)
+	announce(action, fromEmails, destination)
+}
+
+/**
+ * A plain verdict on one sender needs no toast — the row leaving is the feedback, and a toast per
+ * row would be noise on a triage pass. These three do:
+ *
+ * - a domain action reaches senders that were never on screen, so the rows that vanish don't account
+ *   for what happened;
+ * - Archive and Trash file the mail somewhere this list can't show, and "allowed" alone would leave
+ *   you looking for it in the Inbox.
+ */
+const announce = (
+	action: 'allow' | 'screenOut',
+	fromEmails: string[],
+	destination: AllowDestination,
+) => {
+	const target = fromEmails[0] ?? ''
+
+	if (target.startsWith('@')) {
+		const domain = target.slice(1)
+		raiseToast(
+			action === 'allow'
+				? __('Allowed everyone at {0}.', [domain])
+				: __('Denied everyone at {0}.', [domain]),
+		)
+		return
+	}
+
+	if (action !== 'allow' || destination === 'inbox') return
+
+	const senderCount = fromEmails.length
+	const subject =
+		senderCount > 1 ? __('{0} senders allowed.', [String(senderCount)]) : __('Sender allowed.')
+
+	raiseToast(
+		destination === 'archive'
+			? __('{0} Their mail moved to Archive.', [subject])
+			: __('{0} Their mail moved to Trash.', [subject]),
+	)
 }
 
 const allow = (fromEmails: string[], destination: AllowDestination = 'inbox') =>
