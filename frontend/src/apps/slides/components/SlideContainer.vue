@@ -314,16 +314,34 @@ const duplicateAndDrag = (e, id) => {
 	})
 }
 
+// the multi-selection box covers its whole bounding rect, so an unselected
+// element inside it never receives the press
+const findElementUnderPointer = (e) => {
+	if (!e.target?.matches?.('[data-selection-box]')) return null
+
+	for (const node of document.elementsFromPoint(e.clientX, e.clientY)) {
+		if (!slideRef.value?.contains(node)) continue
+
+		const id = node.closest('[data-index]')?.getAttribute('data-index')
+		if (!id) continue
+
+		return activeElementIds.value.includes(id) ? null : id
+	}
+	return null
+}
+
 const handleMouseDown = (e, element) => {
 	if (inReadonlyMode.value || e.button == 2) return
-	const id = element?.id
 
 	e.stopPropagation()
 	e.preventDefault()
 
 	dragOccurred.value = false
 
-	if (e.altKey) return duplicateAndDrag(e, id)
+	// alt-drag duplicates the whole selection, so it ignores what is under the pointer
+	if (e.altKey) return duplicateAndDrag(e, element?.id)
+
+	const id = element?.id ?? findElementUnderPointer(e)
 
 	// start dragging once the pointer moves past a small threshold
 	watchForDragIntent(e, id)
