@@ -1,5 +1,9 @@
 <template>
-	<div :class="{ 'fixed left-0 right-0 z-20': isMobile }" :style="{ bottom: toolbarBottom }">
+	<!-- Sticky rather than fixed: fixed positions against the layout viewport, which on iOS still spans
+	     the screen with the keyboard up, so the toolbar had to be chased into place with a JS-computed
+	     `bottom` — a frame behind every pan, which is what made it judder. Sticking to the bottom of the
+	     scroller needs no measuring: the scroller already ends at the keyboard. -->
+	<div :class="{ 'bg-surface-base sticky bottom-0 z-20': isMobile }">
 		<div
 			class="flex flex-wrap justify-between gap-2 overflow-hidden pt-2.5"
 			:class="{ 'pb-2.5': isMobile }"
@@ -74,7 +78,7 @@ import { CalendarClock, ChevronDown, Laugh, Paperclip, SendHorizontal, Trash2 } 
 import { Button, Dropdown, TextEditorFixedMenu } from 'frappe-ui'
 
 import { isMac } from '@/apps/mail/utils'
-import { useScreenSize, useTextEditorButtons, useVisualViewport } from '@/apps/mail/utils/composables'
+import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 
 const { isRecipientsEmpty } = defineProps<{
@@ -93,14 +97,8 @@ const sendOptions = [
 	},
 ]
 
-// Make toolbar hover over keyboard on mobile
-
 const { isMobile } = useScreenSize()
 const { buttons } = useTextEditorButtons()
-
-const toolbarBottom = useVisualViewport(
-	(viewport) => `${window.innerHeight - viewport.height - viewport.offsetTop}px`,
-)
 
 const fileInput = useTemplateRef('fileInput')
 
