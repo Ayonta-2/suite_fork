@@ -22,24 +22,30 @@
 		:style="{ top: `${keyboardTop}px`, height: `${viewportHeight}px` }"
 	>
 		<header
-			class="bg-surface-base z-20 flex shrink-0 items-center gap-1 border-b px-2 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)]"
+			class="bg-surface-base z-20 flex shrink-0 items-center gap-1 border-b pb-2.5 pl-2 pr-4 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
 		>
 			<Button variant="ghost" :label="__('Close')" @click="closeCompose">
 				<template #icon>
-					<X class="text-ink-gray-5 h-4 w-4" />
+					<X class="text-ink-gray-5 size-5" />
 				</template>
 			</Button>
 			<h2 class="text-ink-gray-8 flex-1 text-base font-medium">{{ __('Compose Mail') }}</h2>
 			<AdaptiveDropdown :options="ACTIONS">
 				<Button variant="ghost" :label="__('More actions')">
 					<template #icon>
-						<EllipsisVertical class="text-ink-gray-5 h-4 w-4" />
+						<EllipsisVertical class="text-ink-gray-5 size-5" />
 					</template>
 				</Button>
 			</AdaptiveDropdown>
-			<Button variant="ghost" :label="__('Send')" :disabled="isRecipientsEmpty" @click="sendMail()">
+			<Button
+				variant="ghost"
+				class="ml-2"
+				:label="__('Send')"
+				:disabled="isRecipientsEmpty"
+				@click="sendMail()"
+			>
 				<template #icon>
-					<SendHorizontal class="text-ink-gray-5 h-4 w-4" />
+					<SendHorizontal class="text-ink-gray-5 size-5" />
 				</template>
 			</Button>
 		</header>
@@ -75,11 +81,16 @@
 					<div class="flex flex-col divide-y border-b" @click.stop>
 						<div class="flex min-h-13 items-center gap-2 px-4 py-2">
 							<span class="text-ink-gray-4 shrink-0 text-sm">{{ __('From') }}</span>
+							<!-- Button trigger, not the default input one: you pick an identity here, you don't
+							     type one. It also makes the control content-sized — a text input carries a
+							     fixed intrinsic width of its own, so sizing to content around one cut the
+							     address off rather than fitting it. min-w-0 keeps a long address shrinking
+							     inside the row instead of pushing it wide. -->
 							<Combobox
 								v-model="mail.from_email"
 								:options="identityOptions"
-								:open-on-click="true"
-								class="min-w-0 flex-1"
+								trigger="button"
+								class="min-w-0"
 							/>
 						</div>
 
@@ -210,7 +221,18 @@
 					v-if="isBodyFocused"
 					class="bg-surface-base z-20 shrink-0 border-t pb-[env(safe-area-inset-bottom)]"
 				>
-					<div class="flex items-center gap-1 overflow-x-auto px-2 py-2">
+					<!-- The formatting buttons come from frappe-ui's TextEditorMenu at desktop scale: a
+					     16px icon in 4px of padding, a 24px target for a thumb. Sized up from here with
+					     arbitrary variants, the markup being the menu's rather than ours — and on this
+					     row only, so the same menu keeps its desktop size in the composer dialog.
+
+					     `items-center` is not optional once the buttons are taller than their contents:
+					     the menu's buttons are `flex` with no cross-axis alignment, so the default
+					     stretch left everything sitting at the top of the new height. It showed worst on
+					     H₂, which is text rather than an icon and so a different height again. -->
+					<div
+						class="flex items-center gap-1 overflow-x-auto px-2 py-1 [&_button]:min-h-9 [&_button]:min-w-9 [&_button]:items-center [&_button]:justify-center [&_svg]:size-4"
+					>
 						<TextEditorFixedMenu :buttons class="!bg-inherit" />
 						<Button variant="ghost" :label="__('Attach files')" @click="fileInput?.click()">
 							<template #icon>
