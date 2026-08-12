@@ -19,6 +19,7 @@ import { joinBackward } from 'prosemirror-commands'
 import { liftListItem } from 'prosemirror-schema-list'
 
 import { getDocFromHTML } from '@/apps/slides/utils/helpers'
+import { scaleAwareColumnResizing } from '@/apps/slides/utils/columnResizing'
 
 const parseElementStyle = (attribute, value) => {
 	if (!value) return null
@@ -749,6 +750,21 @@ const LineHeight = Extension.create({
 	},
 })
 
+const ScaledColumnResizing = Extension.create({
+	name: 'scaledColumnResizing',
+
+	// resize drags have to be seen before tableEditing turns them into cell
+	// selections. Array position decides that today only by way of tiptap
+	// reversing the list, which a reorder would silently undo
+	priority: 200,
+
+	addProseMirrorPlugins() {
+		// mirrors what tiptap's own resizable wiring passes, so a column with no
+		// width of its own can shrink as far in the editor as it does once saved
+		return [scaleAwareColumnResizing({ cellMinWidth: 25, defaultCellMinWidth: 25 })]
+	},
+})
+
 export const extensions = [
 	StarterKit.configure({
 		// the app's command history owns undo now
@@ -778,11 +794,10 @@ export const extensions = [
 	StyledEmptyLine,
 	LineHeight,
 	Selection.configure({ className: 'persisted-selection' }),
-	// resizing is app-level: prosemirror's column resizing math ignores canvas scale.
-	// dropping the View with it keeps the editor's DOM identical to the static
-	// render, which has no .tableWrapper for frappe-ui's leaked overflow rules to hit
+	// resizing is app-level: prosemirror's column resizing math ignores canvas scale
 	Table.configure({ resizable: false, View: null }),
 	TableRow,
 	TableCell,
 	TableHeader,
+	ScaledColumnResizing,
 ]

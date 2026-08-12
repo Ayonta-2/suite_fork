@@ -23,6 +23,7 @@ import { EditorContent } from '@tiptap/vue-3'
 
 import { sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 import { isBackgroundColorDark } from '@/apps/slides/utils/color'
+import { selectionColor } from '@/apps/slides/utils/constants'
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
@@ -67,6 +68,7 @@ const elementStyles = computed(() => ({
 	cursor: isEditable.value ? 'text' : '',
 	userSelect: isEditable.value ? 'text' : 'none',
 	'--table-header-tint': headerTint.value,
+	'--table-resize-color': `${selectionColor}80`,
 }))
 
 const sanitizedContent = computed(() => sanitizeSlideHTML(element.value.content || ''))
@@ -112,6 +114,24 @@ const handleDoubleClick = (e) => {
 	vertical-align: top;
 	overflow-wrap: break-word;
 	background-color: transparent;
+	/* the resize handle is a widget inside the cell it sits at the edge of */
+	position: relative;
+}
+
+/* one per cell in the hovered column, stacking into a continuous line */
+.tableElement .column-resize-handle {
+	position: absolute;
+	right: -1px;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	z-index: 20;
+	background-color: var(--table-resize-color);
+	pointer-events: none;
+}
+
+.tableElement .ProseMirror.resize-cursor {
+	cursor: col-resize;
 }
 
 .tableElement table th {
