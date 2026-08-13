@@ -44,6 +44,27 @@ export const getTableSize = (content: string) => {
 	}
 }
 
+// a cell seeded with a zero-width space holds nothing the user put there
+const isCellFilled = (cell: Element) => !!cell.textContent?.replace(/\u200b/g, '').trim()
+
+// the row and column counters stop here, so a spinner can never take content with it.
+// dropping a filled row or column stays deliberate, through the context menu
+export const getMinTableSize = (content: string) => {
+	const size = { rows: 1, columns: 1 }
+
+	Array.from(getDocFromHTML(content || '').body.querySelectorAll('tr')).forEach((row, index) => {
+		let column = 0
+		Array.from(row.children).forEach((cell) => {
+			column += parseInt(cell.getAttribute('colspan') || '', 10) || 1
+			if (!isCellFilled(cell)) return
+			size.rows = Math.max(size.rows, index + 1)
+			size.columns = Math.max(size.columns, column)
+		})
+	})
+
+	return size
+}
+
 const isHeaderCell = (cell: Element | null) => cell?.tagName === 'TH'
 
 // a header is on when the whole row or column is header cells, the same rule

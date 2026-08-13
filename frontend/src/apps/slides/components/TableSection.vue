@@ -3,7 +3,7 @@
 		<NumberControl
 			:modelValue="tableSize.rows"
 			label="Rows"
-			:min="1"
+			:min="minSize.rows"
 			:max="20"
 			:max-digits="2"
 			:step="1"
@@ -12,7 +12,7 @@
 		<NumberControl
 			:modelValue="tableSize.columns"
 			label="Columns"
-			:min="1"
+			:min="minSize.columns"
 			:max="20"
 			:max-digits="2"
 			:step="1"
@@ -45,7 +45,7 @@ import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
-import { getTableSize, getTableHeaders } from '@/apps/slides/utils/tableWidths'
+import { getTableSize, getMinTableSize, getTableHeaders } from '@/apps/slides/utils/tableWidths'
 import {
 	setRowCount,
 	setColumnCount,
@@ -54,6 +54,8 @@ import {
 } from '@/apps/slides/utils/tableStructure'
 
 const tableSize = computed(() => getTableSize(activeElement.value.content))
+
+const minSize = computed(() => getMinTableSize(activeElement.value.content))
 
 const headers = computed(() => getTableHeaders(activeElement.value.content))
 

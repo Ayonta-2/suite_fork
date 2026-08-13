@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
-const { getMinTableWidth, getTableWidth, rescaleColumnWidths } = await import('./tableWidths')
+const { getMinTableWidth, getMinTableSize, getTableWidth, rescaleColumnWidths } = await import(
+	'./tableWidths',
+)
 
 // what tiptap serializes: the widths on the cells, everything else derived from them
 const table = (widths: number[], total = widths.reduce((sum, width) => sum + width, 0)) =>
@@ -58,5 +60,34 @@ describe('getMinTableWidth', () => {
 		expect(
 			getMinTableWidth('<table><tbody><tr><td colspan="3"><p>a</p></td></tr></tbody></table>'),
 		).toBe(75)
+	})
+})
+
+describe('getMinTableSize', () => {
+	const grid = (cells: string[][]) =>
+		`<table><tbody>${cells
+			.map((row) => `<tr>${row.map((text) => `<td><p>${text}</p></td>`).join('')}</tr>`)
+			.join('')}</tbody></table>`
+
+	it('stops at the last row and column holding content', () => {
+		expect(getMinTableSize(grid([['a', 'b', ''], ['c', '', ''], ['', '', '']]))).toEqual({
+			rows: 2,
+			columns: 2,
+		})
+	})
+
+	// every cell is seeded with a zero-width space so the panel's marks have something to sit on
+	it('reads a seeded cell as empty', () => {
+		expect(getMinTableSize(grid([['​', '​'], ['​', '​']]))).toEqual({
+			rows: 1,
+			columns: 1,
+		})
+	})
+
+	it('counts a column per colspan', () => {
+		const content =
+			'<table><tbody><tr><td colspan="2"><p>a</p></td><td><p></p></td></tr></tbody></table>'
+
+		expect(getMinTableSize(content).columns).toBe(2)
 	})
 })
