@@ -117,7 +117,7 @@ const BLOCK_TAGS = new Set([
   'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'VIDEO', 'IFRAME',
 ])
 
-function cssColorToDocx(c) {
+export function cssColorToDocx(c) {
   if (!c) return
   const t = c.trim()
   if (COLOR_MAP[t]) return COLOR_MAP[t]
@@ -132,14 +132,14 @@ function cssColorToDocx(c) {
       .toUpperCase()
 }
 
-function cssBackgroundToDocx(c) {
+export function cssBackgroundToDocx(c) {
   if (!c) return
   const t = c.trim()
   if (HIGHLIGHT_COLOR_MAP[t]) return HIGHLIGHT_COLOR_MAP[t]
   return cssColorToDocx(t)
 }
 
-function cssFontToDocx(f) {
+export function cssFontToDocx(f) {
   if (!f) return
   const t = f.trim()
   if (FONT_MAP[t]) return FONT_MAP[t]
@@ -148,7 +148,7 @@ function cssFontToDocx(f) {
   return first || undefined
 }
 
-function pxToDocxSize(px) {
+export function pxToDocxSize(px) {
   if (!px) return
   const n = parseFloat(px)
   if (!Number.isFinite(n)) return
@@ -156,22 +156,22 @@ function pxToDocxSize(px) {
   return Math.round(pt * 2)
 }
 
-function cssFontWeightToBold(weight) {
+export function cssFontWeightToBold(weight) {
   if (!weight) return false
   const w = typeof weight === 'string' ? parseInt(weight) : weight
   return w >= 600
 }
 
-function resolveAlignment(el) {
+export function resolveAlignment(el) {
   return ALIGN_MAP[(el?.style?.textAlign || '').toLowerCase()]
 }
 
-function clampSpan(v) {
+export function clampSpan(v) {
   const n = parseInt(v || '1', 10)
   return Number.isFinite(n) && n > 0 ? n : 1
 }
 
-function resolveHref(href) {
+export function resolveHref(href) {
   if (!href) return null
   try {
     return new URL(href, window.location.origin).href
@@ -187,7 +187,7 @@ async function dataFromUrl(url) {
 }
 
 /** Natural size from the img's width/height attrs, scaled down to fit maxWidthPx. */
-function fitImageSize(el, maxWidthPx) {
+export function fitImageSize(el, maxWidthPx) {
   let width = parseFloat(el.getAttribute('width') || '560')
   let height = parseFloat(el.getAttribute('height') || '315')
   if (!Number.isFinite(width) || width <= 0) width = 560
@@ -311,7 +311,7 @@ async function inlineToRunsChildren(node, style, ctx) {
 
 // Mirror what the editor renders: spacing comes from the document settings, and
 // a paragraph's own inline style wins over them.
-function paragraphSpacing(el, defaults) {
+export function paragraphSpacing(el, defaults) {
   const style = el?.style || {}
   return {
     before: style.marginTop ? pxToTwips(style.marginTop) : defaults.before,
@@ -376,7 +376,7 @@ const ORDERED_LEVELS = [
 ]
 const MAX_LIST_LEVEL = 3
 
-function buildListLevels(reference, kind, defaultFont) {
+export function buildListLevels(reference, kind, defaultFont) {
   const levels = []
   for (let level = 0; level <= MAX_LIST_LEVEL; level++) {
     const indent = { left: 720 * (level + 1), hanging: 360 }
@@ -407,7 +407,7 @@ function uniqueListRef(kind) {
   return `${kind}-${randomId()}`
 }
 
-function randomId() {
+export function randomId() {
   // `typeof crypto` (not `crypto?.x`) is required here: optional chaining
   // only guards a null/undefined *value*, not a wholly undeclared global —
   // referencing the bare `crypto` identifier still throws a ReferenceError
@@ -762,7 +762,7 @@ async function blocksForImageGroup(el, ctx) {
   ]
 }
 
-function countCols(tr) {
+export function countCols(tr) {
   let c = 0
   tr.querySelectorAll(':scope > th, :scope > td').forEach((td) => {
     c += clampSpan(td.getAttribute('colspan'))
@@ -771,7 +771,7 @@ function countCols(tr) {
 }
 
 /** Distributes column widths from the table's resized colwidth attrs when every column reports one, else splits evenly. */
-function computeColumnWidths(trs, totalCols, tableWidthDxa) {
+export function computeColumnWidths(trs, totalCols, tableWidthDxa) {
   const widthsPx = new Array(totalCols).fill(null)
   trs.forEach((tr) => {
     let col = 0
