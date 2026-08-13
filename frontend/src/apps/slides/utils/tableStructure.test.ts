@@ -104,6 +104,17 @@ describe('setColumnCount', () => {
 
 		expect(html().match(/Inter/g)).toHaveLength(6)
 	})
+
+	// a bare paragraph carries no alignment, which a header cell reads as the
+	// browser's centred default and the rest of the table reads as left
+	it('seeds a new cell with the alignment the others carry', () => {
+		openTable(2, 2)
+		activeEditor.value.chain().selectAll().setTextAlign('center').run()
+
+		setColumnCount(3, 2)
+
+		expect(html().match(/text-align: center/g)).toHaveLength(6)
+	})
 })
 
 describe('mergeCells', () => {
