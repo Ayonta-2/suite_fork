@@ -1,22 +1,22 @@
 <template>
 	<Section label="Table">
 		<NumberControl
-			:modelValue="tableSize.rows"
+			:modelValue="table.size.rows"
 			label="Rows"
-			:min="minSize.rows"
+			:min="table.minSize.rows"
 			:max="20"
 			:max-digits="2"
 			:step="1"
-			@update:modelValue="(value) => setRowCount(value, tableSize.rows)"
+			@update:modelValue="(value) => setRowCount(value, table.size.rows)"
 		/>
 		<NumberControl
-			:modelValue="tableSize.columns"
+			:modelValue="table.size.columns"
 			label="Columns"
-			:min="minSize.columns"
+			:min="table.minSize.columns"
 			:max="20"
 			:max-digits="2"
 			:step="1"
-			@update:modelValue="(value) => setColumnCount(value, tableSize.columns)"
+			@update:modelValue="(value) => setColumnCount(value, table.size.columns)"
 		/>
 		<PropertyRow label="Headers">
 			<Select
@@ -64,14 +64,10 @@ import { activeElement } from '@/apps/slides/stores/element'
 import { setElementProperty, useElementProperty } from '@/apps/slides/composables/editProperty'
 import { getDefaultBandColor } from '@/apps/slides/utils/color'
 import { chevronClasses } from '@/apps/slides/utils/constants'
-import { getTableSize, getMinTableSize, getTableHeaders } from '@/apps/slides/utils/tableWidths'
+import { getTableInfo } from '@/apps/slides/utils/tableWidths'
 import { setRowCount, setColumnCount, setTableHeaders } from '@/apps/slides/utils/tableStructure'
 
-const tableSize = computed(() => getTableSize(activeElement.value.content))
-
-const minSize = computed(() => getMinTableSize(activeElement.value.content))
-
-const headers = computed(() => getTableHeaders(activeElement.value.content))
+const table = computed(() => getTableInfo(activeElement.value.content))
 
 const headerOptions = [
 	{ label: 'None', value: 'none' },
@@ -81,7 +77,7 @@ const headerOptions = [
 ]
 
 const headerMode = computed(() => {
-	const { row, column } = headers.value
+	const { row, column } = table.value.headers
 	if (row && column) return 'both'
 	if (row) return 'row'
 	if (column) return 'column'

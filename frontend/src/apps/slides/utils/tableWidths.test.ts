@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
-const { getMinTableWidth, getMinTableSize, getTableWidth, rescaleColumnWidths } = await import(
+const { getMinTableWidth, getTableInfo, getTableWidth, rescaleColumnWidths } = await import(
 	'./tableWidths',
 )
 
@@ -63,14 +63,14 @@ describe('getMinTableWidth', () => {
 	})
 })
 
-describe('getMinTableSize', () => {
+describe('the smallest the counters go', () => {
 	const grid = (cells: string[][]) =>
 		`<table><tbody>${cells
 			.map((row) => `<tr>${row.map((text) => `<td><p>${text}</p></td>`).join('')}</tr>`)
 			.join('')}</tbody></table>`
 
 	it('stops at the last row and column holding content', () => {
-		expect(getMinTableSize(grid([['a', 'b', ''], ['c', '', ''], ['', '', '']]))).toEqual({
+		expect(getTableInfo(grid([['a', 'b', ''], ['c', '', ''], ['', '', '']])).minSize).toEqual({
 			rows: 2,
 			columns: 2,
 		})
@@ -78,7 +78,7 @@ describe('getMinTableSize', () => {
 
 	// every cell is seeded with a zero-width space so the panel's marks have something to sit on
 	it('reads a seeded cell as empty', () => {
-		expect(getMinTableSize(grid([['​', '​'], ['​', '​']]))).toEqual({
+		expect(getTableInfo(grid([['​', '​'], ['​', '​']])).minSize).toEqual({
 			rows: 1,
 			columns: 1,
 		})
@@ -88,6 +88,6 @@ describe('getMinTableSize', () => {
 		const content =
 			'<table><tbody><tr><td colspan="2"><p>a</p></td><td><p></p></td></tr></tbody></table>'
 
-		expect(getMinTableSize(content).columns).toBe(2)
+		expect(getTableInfo(content).minSize.columns).toBe(2)
 	})
 })

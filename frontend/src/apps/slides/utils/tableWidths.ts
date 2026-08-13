@@ -34,25 +34,23 @@ export const getMinTableWidth = (content: string, cellMinWidth = 25) => {
 	return firstRow ? countColumns(firstRow) * cellMinWidth : 0
 }
 
-export const getTableSize = (content: string) => {
-	const body = getDocFromHTML(content || '').body
-	const firstRow = body.querySelector('tr')
+const getRows = (content: string) =>
+	Array.from(getDocFromHTML(content || '').body.querySelectorAll('tr'))
 
-	return {
-		rows: body.querySelectorAll('tr').length,
-		columns: firstRow ? countColumns(firstRow) : 0,
-	}
-}
+const readSize = (rows: Element[]) => ({
+	rows: rows.length,
+	columns: rows[0] ? countColumns(rows[0]) : 0,
+})
 
 // a cell seeded with a zero-width space holds nothing the user put there
 const isCellFilled = (cell: Element) => !!cell.textContent?.replace(/\u200b/g, '').trim()
 
 // the row and column counters stop here, so a spinner can never take content with it.
 // dropping a filled row or column stays deliberate, through the context menu
-export const getMinTableSize = (content: string) => {
+const readMinSize = (rows: Element[]) => {
 	const size = { rows: 1, columns: 1 }
 
-	Array.from(getDocFromHTML(content || '').body.querySelectorAll('tr')).forEach((row, index) => {
+	rows.forEach((row, index) => {
 		let column = 0
 		Array.from(row.children).forEach((cell) => {
 			column += parseInt(cell.getAttribute('colspan') || '', 10) || 1
@@ -68,12 +66,11 @@ export const getMinTableSize = (content: string) => {
 const isHeaderCell = (cell: Element | null) => cell?.tagName === 'TH'
 
 // a header is on when the whole row or column is header cells
-export const getTableHeaders = (content: string) => {
-	const rows = Array.from(getDocFromHTML(content || '').body.querySelectorAll('tr'))
+const readHeaders = (rows: Element[]) => {
 	const firstRowCells = Array.from(rows[0]?.children || [])
 
 	const row = firstRowCells.length > 0 && firstRowCells.every(isHeaderCell)
-	const column = rows.length > 0 && rows.every((row) => isHeaderCell(row.firstElementChild))
+	const column = rows.length > 0 && rows.every((r) => isHeaderCell(r.firstElementChild))
 
 	// one row deep or one column wide, and either header paints the very same cells.
 	// It reads as the one running the length of the table, so the panel names a state
@@ -84,6 +81,16 @@ export const getTableHeaders = (content: string) => {
 	}
 
 	return { row, column }
+}
+
+export const getTableSize = (content: string) => readSize(getRows(content))
+
+// the panel reads all three off the same table on every keystroke, so they share
+// the one parse rather than taking the html apart three times over
+export const getTableInfo = (content: string) => {
+	const rows = getRows(content)
+
+	return { size: readSize(rows), minSize: readMinSize(rows), headers: readHeaders(rows) }
 }
 
 const setColgroup = (table: HTMLTableElement, widths: number[]) => {

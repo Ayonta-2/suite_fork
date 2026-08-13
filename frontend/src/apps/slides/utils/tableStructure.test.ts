@@ -14,7 +14,7 @@ const {
 	mergeCells,
 	getCells,
 } = await import('./tableStructure')
-const { getTableSize, getTableWidth, getTableHeaders } = await import('./tableWidths')
+const { getTableSize, getTableWidth, getTableInfo } = await import('./tableWidths')
 const { CellSelection } = await import('prosemirror-tables')
 
 const { activeEditor, initTextEditor } = useTextEditor()
@@ -169,19 +169,19 @@ describe('setTableHeaders', () => {
 	// a new table already comes with its first row as headers
 	it('reaches every combination from any other', () => {
 		openTable(2, 2)
-		expect(getTableHeaders(html())).toEqual({ row: true, column: false })
+		expect(getTableInfo(html()).headers).toEqual({ row: true, column: false })
 
 		setTableHeaders({ row: true, column: true })
-		expect(getTableHeaders(html())).toEqual({ row: true, column: true })
+		expect(getTableInfo(html()).headers).toEqual({ row: true, column: true })
 
 		setTableHeaders({ row: false, column: true })
-		expect(getTableHeaders(html())).toEqual({ row: false, column: true })
+		expect(getTableInfo(html()).headers).toEqual({ row: false, column: true })
 
 		setTableHeaders({ row: false, column: false })
-		expect(getTableHeaders(html())).toEqual({ row: false, column: false })
+		expect(getTableInfo(html()).headers).toEqual({ row: false, column: false })
 
 		setTableHeaders({ row: true, column: false })
-		expect(getTableHeaders(html())).toEqual({ row: true, column: false })
+		expect(getTableInfo(html()).headers).toEqual({ row: true, column: false })
 	})
 
 	it('keeps the width a header cell carries', () => {
@@ -196,20 +196,20 @@ describe('setTableHeaders', () => {
 	// they were given, so a header could neither be turned off nor named honestly
 	it('turns the header off on a table one row deep', () => {
 		openTable(1, 3)
-		expect(getTableHeaders(html())).toEqual({ row: true, column: false })
+		expect(getTableInfo(html()).headers).toEqual({ row: true, column: false })
 
 		setTableHeaders({ row: false, column: false })
 
-		expect(getTableHeaders(html())).toEqual({ row: false, column: false })
+		expect(getTableInfo(html()).headers).toEqual({ row: false, column: false })
 	})
 
 	it('turns the header off on a table one column wide', () => {
 		openTable(3, 1)
 		setTableHeaders({ row: false, column: true })
-		expect(getTableHeaders(html())).toEqual({ row: false, column: true })
+		expect(getTableInfo(html()).headers).toEqual({ row: false, column: true })
 
 		setTableHeaders({ row: false, column: false })
 
-		expect(getTableHeaders(html())).toEqual({ row: false, column: false })
+		expect(getTableInfo(html()).headers).toEqual({ row: false, column: false })
 	})
 })
