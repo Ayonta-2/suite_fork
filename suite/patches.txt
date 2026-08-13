@@ -13,7 +13,7 @@ suite.drive.patches.update_roles
 suite.drive.patches.remove_personal #3
 suite.drive.patches.integrate_with_framework
 # --- mail ---
-execute:frappe.db.delete("Mail Cluster Store") if frappe.db.table_exists("Mail Cluster Store") else None
+suite.mail.patches.delete_stale_cluster_stores
 # --- writer ---
 suite.writer.patches.remove_frappe_writer_module
 
