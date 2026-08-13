@@ -129,12 +129,11 @@ const handleMouseDown = (e) => {
 	)
 }
 
-// the frame follows the cursor within a resize, and the columns carry the width, so
-// they have to follow it too. Percentages hand that to the browser for the length of
-// the gesture; the commit writes pixels back, and the editor redraws the colgroup.
+// the editor redraws the colgroup from the document on any update, so the preview
+// widths have to be rewritten at every step of the drag
 watch(
-	() => Boolean(interactionOffset.width),
-	(resizing) => {
+	() => interactionOffset.width,
+	(offset) => {
 		if (!showEditor.value) return
 
 		const table = getTable()
@@ -145,6 +144,7 @@ watch(
 		const widths = Array.from(row.children).flatMap(getColumnWidths)
 		if (cols.length !== widths.length || widths.some((width) => !width)) return
 
+		const resizing = Boolean(offset)
 		const total = widths.reduce((sum, width) => sum + width, 0)
 
 		table.style.width = resizing ? '100%' : `${total}px`
