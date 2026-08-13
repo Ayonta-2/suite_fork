@@ -16,17 +16,29 @@ def execute() -> None:
     if not frappe.db.table_exists("Mail Cluster Store"):
         return
 
-    referenced = set()
-    if frappe.db.table_exists("Mail Cluster"):
-        for field in STORE_FIELDS:
-            if frappe.db.has_column("Mail Cluster", field):
-                referenced.update(
-                    frappe.db.sql_list(
-                        f"select distinct `{field}` from `tabMail Cluster` where ifnull(`{field}`, '') != ''"
-                    )
-                )
+    referenced = get_referenced_store_names()
 
     if referenced:
-        frappe.db.delete("Mail Cluster Store", {"name": ("not in", list(referenced))})
+        frappe.db.delete("Mail Cluster Store", {"name": ("not in", sorted(referenced))})
     else:
+        # Nothing links to any store, so every row predates the new schema.
+        # Old suite sites, where the DocType was removed before any cluster
+        # could reference it, land here and get the original full cleanup.
         frappe.db.delete("Mail Cluster Store")
+
+
+def get_referenced_store_names() -> set[str]:
+    if not frappe.db.table_exists("Mail Cluster"):
+        return set()
+
+    cluster = frappe.qb.DocType("Mail Cluster")
+    referenced = set()
+
+    for field in STORE_FIELDS:
+        if not frappe.db.has_column("Mail Cluster", field):
+            continue
+
+        stores = frappe.qb.from_(cluster).select(cluster[field]).distinct().run(pluck=True)
+        referenced.update(store for store in stores if store)
+
+    return referenced
