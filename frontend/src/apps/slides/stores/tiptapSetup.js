@@ -181,7 +181,7 @@ const CustomListItem = ListItem.extend({
 	},
 })
 
-const ZWSP = '\u200B'
+export const ZWSP = '\u200B'
 
 const isInList = ($pos) => {
 	// intentional since <li> is not direct parent of text node

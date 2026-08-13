@@ -22,7 +22,7 @@ import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from '
 import { commandHistory } from './historyMeta'
 
 import { generateHTML } from '@tiptap/core'
-import { extensions, hasTableNode, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
+import { ZWSP, extensions, hasTableNode, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
 import {
 	editElementCommand,
 	batchCommand,
@@ -148,11 +148,20 @@ const getElementContent = (element) => {
 	return generateHTML(contentJSON, extensions)
 }
 
-const getInitialTableContent = (rows, cols, columnWidth) => {
+const getInitialTableContent = (rows, cols, columnWidth, cellStyles) => {
+	// marks need text to sit on, so an empty cell has nothing to style
+	const placeholder = {
+		type: 'text',
+		text: ZWSP,
+		marks: [{ type: 'textStyle', attrs: cellStyles }],
+	}
+
 	const getCell = (type) => ({
 		type,
 		attrs: { colspan: 1, rowspan: 1, colwidth: [columnWidth] },
-		content: [{ type: 'paragraph', attrs: { textAlign: 'left', lineHeight: 1.5 } }],
+		content: [
+			{ type: 'paragraph', attrs: { textAlign: 'left', lineHeight: 1.5 }, content: [placeholder] },
+		],
 	})
 
 	const getRow = (cellType) => ({
@@ -410,6 +419,14 @@ const addTableElement = async (rows = 3, cols = 3) => {
 	// rows size themselves to their content, so this only places the new element
 	const position = getLeftTopForCenteredElement(width, rows * 40)
 
+	const cellStyles = {
+		fontSize: 18,
+		fontFamily: 'Inter',
+		color: guessTextColorFromBackground(currentSlide.value.background),
+		letterSpacing: 0,
+		opacity: 100,
+	}
+
 	const element = {
 		id: generateUniqueId(),
 		zIndex: currentSlide.value.elements.length + 1,
@@ -418,8 +435,8 @@ const addTableElement = async (rows = 3, cols = 3) => {
 		width,
 		opacity: 100,
 		type: 'table',
-		color: guessTextColorFromBackground(currentSlide.value.background),
-		content: getInitialTableContent(rows, cols, columnWidth),
+		color: cellStyles.color,
+		content: getInitialTableContent(rows, cols, columnWidth, cellStyles),
 	}
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
@@ -1240,6 +1257,7 @@ export {
 	flipElements,
 	findSlideElement,
 	getInitialShapeTextContent,
+	getInitialTableContent,
 	cropSelectionToFitContent,
 	getElementCenter,
 }

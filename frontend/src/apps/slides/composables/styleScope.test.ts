@@ -4,10 +4,10 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
 // element.js reaches back into this composable, so it has to pull it in
-await import('@/apps/slides/stores/element')
+const { getInitialTableContent } = await import('@/apps/slides/stores/element')
 const { useTextEditor } = await import('./useTextEditor')
 
-const { activeEditor, initTextEditor, toggleMark } = useTextEditor()
+const { activeEditor, initTextEditor, toggleMark, updateProperty, editorStyles } = useTextEditor()
 
 const table = '<table><tbody><tr><td><p>one</p></td><td><p>two</p></td></tr></tbody></table>'
 
@@ -47,6 +47,17 @@ describe('what an empty selection styles', () => {
 		const html = activeEditor.value.getHTML()
 		expect(html).toContain('<strong>one</strong>')
 		expect(html).toContain('<strong>two</strong>')
+	})
+
+	// a mark needs text to sit on, so empty cells read as unstyled
+	it('styles a table that has not been typed in yet', () => {
+		initTextEditor('t1', getInitialTableContent(2, 2, 150, { fontFamily: 'Inter', fontSize: 18 }))
+
+		expect(editorStyles.fontFamily).toBe('Inter')
+
+		updateProperty('fontFamily', 'Arial')
+
+		expect(activeEditor.value.getHTML().match(/Arial/g)).toHaveLength(4)
 	})
 
 	it('styles the whole text box, cursor or not', () => {
