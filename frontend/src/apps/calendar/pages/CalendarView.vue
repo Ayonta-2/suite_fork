@@ -221,17 +221,35 @@ const emailParticipants = (emails: string[]) => {
 	router.push({ path: '/mail', query: { compose: '1', to: emails.join(',') } })
 }
 
+// A deep link can only be built from the ids its author has. The grid's own
+// events come out of a recurrence-expanded query, so each carries a synthetic
+// per-instance id and wears the real event's id as `master_id` — but mail's
+// invite strip resolves an invite's UID to that master id, which matches
+// nothing here. So a link that misses on id falls back to the master, narrowed
+// to the instance covering the routed day (the day the link itself picked).
+const findLinkedEvent = (data, id, recurrence) => {
+	if (!data || !id) return null
+
+	const rec = (recurrence as string) ?? ''
+	const exact = data.find((e) => e.id === id && (e.recurrence_id ?? '') === rec)
+	if (exact) return exact
+
+	const instances = data.filter((e) => e.master_id === id)
+	if (!instances.length) return null
+	if (rec) return instances.find((e) => (e.recurrence_id ?? '') === rec) ?? null
+
+	const { year, month, day } = route.params
+	const routed = year && month && day ? dayjs(`${year}-${month}-${day}`, 'YYYY-M-D') : null
+	if (!routed?.isValid()) return instances[0]
+
+	const routedDay = routed.format('YYYY-MM-DD')
+	return instances.find((e) => e.fromDate <= routedDay && routedDay <= e.toDate) ?? instances[0]
+}
+
 watch(
 	[() => events.data, () => route.query.event, () => route.query.recurrence],
 	([data, id, recurrence]) => {
-		if (!id) {
-			selectedCalendarEvent.value = null
-			return
-		}
-		selectedCalendarEvent.value =
-			data?.find(
-				(e) => e.id === id && (e.recurrence_id ?? '') === ((recurrence as string) ?? ''),
-			) ?? null
+		selectedCalendarEvent.value = findLinkedEvent(data, id, recurrence)
 	},
 	{ immediate: true },
 )
@@ -261,9 +279,7 @@ watch(
 			return
 		}
 		if (showEditEvent.value) return
-		const match = data?.find(
-			(e) => e.id === id && (e.recurrence_id ?? '') === ((recurrence as string) ?? ''),
-		)
+		const match = findLinkedEvent(data, id, recurrence)
 		if (match) handleOpenEvent({ calendarEvent: match })
 	},
 	{ immediate: true },

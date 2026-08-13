@@ -51,7 +51,12 @@ import { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils'
 import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
 import { useComposeMail, useTheme } from '@/apps/mail/utils/composables'
 import { parseMailto } from '@/apps/mail/utils/mailto'
-import { isArtDirected, normalizeToLightScheme, remapEmailForDarkMode } from '@/apps/mail/utils/darkMail'
+import {
+	declaresFixedPalette,
+	isArtDirected,
+	normalizeToLightScheme,
+	remapEmailForDarkMode,
+} from '@/apps/mail/utils/darkMail'
 
 const {
 	content,
@@ -155,18 +160,19 @@ const srcdoc = computed(() => {
 	let sanitized = DOMPurify.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
 	if (effectiveBlock.value) sanitized = blockRemoteAssets(sanitized)
 	const doc = new DOMParser().parseFromString(sanitized, 'text/html')
-	// Art-directed emails — the author claimed the full canvas and painted with
-	// color — render exactly as authored, dark theme or not; remapping them
-	// would second-guess a deliberate design. Everything else (plain mail,
-	// floating cards, replies quoting either kind) adapts to the dark canvas.
-	// Note this is a DOM-shape check, not "does it declare dark support" — the
-	// email's own dark-scheme rules are dropped up front (sanitization guts the
-	// selectors they rely on, and half a dark design is worse than none), so
-	// every email is judged and remapped as its light-scheme self. Remap runs
-	// before collapseQuotes so the toggle buttons it inserts keep their exact
-	// theme colors.
+	// Two kinds of email render exactly as authored, dark theme or not: those
+	// declaring a fixed palette (suite's own templates), and art-directed ones
+	// — the author claimed the full canvas and painted with color — where
+	// remapping would second-guess a deliberate design. Everything else (plain
+	// mail, floating cards, replies quoting either kind) adapts to the dark
+	// canvas. Art direction is a DOM-shape check, not "does it declare dark
+	// support" — the email's own dark-scheme rules are dropped up front
+	// (sanitization guts the selectors they rely on, and half a dark design is
+	// worse than none), so every email is judged and remapped as its
+	// light-scheme self. Remap runs before collapseQuotes so the toggle buttons
+	// it inserts keep their exact theme colors.
 	normalizeToLightScheme(doc)
-	const remapped = dataTheme.value === 'dark' && !isArtDirected(doc)
+	const remapped = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
 	if (remapped) remapEmailForDarkMode(doc)
 	collapseQuotes(doc)
 	const transformedContent = doc.documentElement.outerHTML
@@ -197,7 +203,9 @@ const srcdoc = computed(() => {
 
 				/* Emails routinely hardcode widths (width attrs, inline styles); clamp them to the
 				   viewport so the message reflows instead of scrolling sideways. max-width wins over
-				   both the width attribute and inline width, covering every fixed-width variant. */
+				   both the width attribute and inline width, covering every fixed-width variant.
+				   An author's own narrower cap is handed back by normalizeWidths() below, which
+				   re-asserts it inline — the one declaration that outranks this one. */
 				table, td, th, div {
 					max-width: 100% !important;
 				}
@@ -269,8 +277,21 @@ const srcdoc = computed(() => {
 						if (parseInt(el.getAttribute('width'), 10) > limit) el.setAttribute('width', '100%');
 						const style = el.style;
 						if (style.width.endsWith('px') && parseFloat(style.width) > limit) style.width = '100%';
-						if (style.maxWidth.endsWith('px') && parseFloat(style.maxWidth) > limit) style.maxWidth = '100%';
 						if (style.minWidth.endsWith('px') && parseFloat(style.minWidth) > limit) style.minWidth = '0';
+
+						// A percentage width capped by a pixel max-width is how every responsive
+						// email builds its centered column. The sheet's blanket clamp outranks that
+						// cap (stylesheet !important beats a plain inline declaration) and flattens
+						// the column across the pane, so hand it back as inline !important — the one
+						// declaration that outranks the sheet. Only while it is narrower than the
+						// viewport: any wider and the clamp is what stops sideways scrolling. The
+						// author's value is stashed on first pass, since writing to max-width
+						// destroys it and a resize back to a wide pane has to restore it.
+						if (el.dataset.authorMaxWidth === undefined && style.maxWidth.endsWith('px'))
+							el.dataset.authorMaxWidth = style.maxWidth;
+						const cap = parseFloat(el.dataset.authorMaxWidth);
+						if (cap > 0)
+							style.setProperty('max-width', cap > limit ? '100%' : el.dataset.authorMaxWidth, 'important');
 					});
 				};
 				normalizeWidths();
@@ -416,6 +437,9 @@ const DOMPURIFY_CONFIG = {
 		'data-label',
 		'data-list',
 		'data-email-footer',
+		// Suite's own templates opt out of the dark-mode remap with this (see
+		// declaresFixedPalette); stripping it would silently re-enable remapping.
+		'data-fixed-palette',
 		'xmlns',
 		'content',
 		'name',
