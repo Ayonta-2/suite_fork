@@ -21,6 +21,7 @@ import TableElement from '@/apps/slides/components/TableElement.vue'
 
 import { activeElementIds } from '@/apps/slides/stores/element'
 
+import { getTransitionKey } from '@/apps/slides/stores/transition'
 import { slideBounds } from '@/apps/slides/stores/slide'
 import { interactionOffset } from '@/apps/slides/stores/interaction'
 
@@ -42,10 +43,7 @@ const props = defineProps({
 	},
 })
 
-const getElementKey = (element) => {
-	const id = element.refId || element.id
-	return `${props.mode}-${id}`
-}
+const getElementKey = (element) => `${props.mode}-${getTransitionKey(element)}`
 
 const isActive = computed(() => {
 	return activeElementIds.value.includes(element.value.id)

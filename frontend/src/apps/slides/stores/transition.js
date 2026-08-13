@@ -152,6 +152,7 @@ const isAffectedByMagicMove = (slideIndex) => {
 const getCommandsToUpdateElementRefId = (element) => {
 	// TODO: add refId handling for shape elements
 	if (element.type == 'shape') return []
+	if (element.type == 'table') return []
 	const index = slideIndex.value
 	const commands = []
 	const needsUpdate = isAffectedByMagicMove(index)
@@ -215,8 +216,12 @@ const isSrcSlideInMagicMove = (srcSlide) => {
 		: currentSlide.value?.transition === 'Magic Move'
 }
 
+// a table's columns are pinned in pixels, so it cannot follow a frame that tweens.
+// Without a refId it cuts with the slide instead of half-morphing
 const getCommandsToInitElementRefId = (newElement, src, srcSlide) => {
 	const commands = []
+	if (newElement.type == 'table') return commands
+
 	const index = slideIndex.value
 
 	// only init refs when src is adjacent (prev or next)
@@ -327,7 +332,13 @@ const getCommandsToSetTransition = (slide, index, settings) => {
 	return commands
 }
 
+// elements sharing a key across slides get one reused node, which is what magic move
+// tweens. A table keeps its own id so it cuts with the slide, refId or not
+const getTransitionKey = (element) =>
+	element.type == 'table' ? element.id : element.refId || element.id
+
 export {
+	getTransitionKey,
 	isAffectedByMagicMove,
 	getCommandsToAddMagicMove,
 	getCommandsToRemoveMagicMove,

@@ -84,6 +84,7 @@ import {
 import { applyReverseTransition, initPresentationDoc, inReadonlyMode } from '@/apps/slides/stores/presentation'
 import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
 import { resetFocus } from '@/apps/slides/stores/element'
+import { getTransitionKey } from '@/apps/slides/stores/transition'
 
 const slideContainerRef = useTemplateRef('slideContainer')
 
@@ -111,9 +112,7 @@ const clipPath = computed(() => {
 	return `inset(${inset}px 0px ${inset}px 0px)`
 })
 
-const getElementKey = (element) => {
-	return element.refId || element.id
-}
+const getElementKey = (element) => getTransitionKey(element)
 
 const slideCursor = ref('none')
 
