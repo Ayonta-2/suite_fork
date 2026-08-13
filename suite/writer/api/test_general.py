@@ -25,7 +25,7 @@ class IntegrationTestGetDriveFileMeta(IntegrationTestCase):
         }
 
     def tearDown(self):
-        frappe.cache().delete_value(f"search:drive_file:{self.file_name}")
+        frappe.cache().delete_value(f"search:drive_file:{self.content_docname}")
         super().tearDown()
 
     def test_second_lookup_is_served_from_cache(self):
