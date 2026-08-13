@@ -13,6 +13,7 @@ import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table
 import { Selection } from '@tiptap/extensions'
 
 import { Fragment, Slice } from 'prosemirror-model'
+import { cellAround, CellSelection } from 'prosemirror-tables'
 import { Plugin, PluginKey, TextSelection } from 'prosemirror-state'
 import { Decoration, DecorationSet } from 'prosemirror-view'
 import { joinBackward } from 'prosemirror-commands'
@@ -83,8 +84,58 @@ export const hasTableNode = (doc) => {
 	return false
 }
 
+const allCellPositions = (doc) => {
+	const positions = []
+	doc.descendants((node, pos) => {
+		if (['tableCell', 'tableHeader'].includes(node.type.name)) positions.push(pos)
+	})
+	return positions
+}
+
+const cellsToClear = ({ selection, doc }) => {
+	if (selection instanceof CellSelection) return selection
+	if (!hasTableNode(doc) || selection.from !== 0 || selection.to !== doc.content.size) return null
+
+	const cells = allCellPositions(doc)
+	return cells.length ? CellSelection.create(doc, cells[0], cells[cells.length - 1]) : null
+}
+
+// marks need text to sit on, so a cleared cell keeps the placeholder and the marks
+// the panel styles through
+const emptiedCell = (cell, schema) => {
+	let marks = []
+	cell.descendants((node) => {
+		if (!marks.length && node.isText) marks = node.marks
+	})
+	return schema.nodes.paragraph.create(cell.firstChild?.attrs, schema.text(ZWSP, marks))
+}
+
+// emptying a table clears its cells: taking the table node out would leave the
+// element holding an empty paragraph
+const clearSelectedCells = ({ editor }) => {
+	const { state, dispatch } = editor.view
+	const selection = cellsToClear(state)
+	if (!selection) return false
+
+	const cells = []
+	selection.forEachCell((cell, pos) => cells.push({ cell, pos }))
+
+	const { tr } = state
+	tr.setSelection(selection)
+	cells.reverse().forEach(({ cell, pos }) => {
+		tr.replaceWith(pos + 1, pos + cell.nodeSize - 1, emptiedCell(cell, state.schema))
+	})
+
+	dispatch(tr)
+	return true
+}
+
 const PastePlainText = Extension.create({
 	name: 'pastePlainText',
+
+	// a copied cell block carries text/plain too, so this has to yield to
+	// tableEditing's handlePaste or pasting cells into a table flattens them
+	priority: 90,
 
 	addProseMirrorPlugins() {
 		const pasteWithInheritedStyles = (view, event) => {
@@ -474,8 +525,12 @@ const handleKeyDown = (view, event) => {
 
 	if (event.key !== 'Backspace') return false
 
-	const { selection } = view.state
+	const { selection, doc } = view.state
 	const $from = selection.$from
+
+	// the table keymap empties cells instead of swapping the table for a placeholder
+	const spansWholeDoc = selection.from === 0 && selection.to === doc.content.size
+	if (selection instanceof CellSelection || (hasTableNode(doc) && spansWholeDoc)) return false
 
 	if (isInList($from)) return handleBackspaceInListItem(event, view, $from)
 
@@ -768,6 +823,93 @@ const withCellAttributes = (extension) =>
 		},
 	})
 
+const getWidthPerColumn = (table) => {
+	const widths = []
+	table.forEach((row) =>
+		row.forEach((cell, _offset, index) => {
+			if (!widths[index] && cell.attrs.colwidth) widths[index] = cell.attrs.colwidth[0]
+		}),
+	)
+	return widths
+}
+
+const hasBareCell = (doc) => {
+	let bare = false
+	doc.descendants((node) => {
+		if (['tableCell', 'tableHeader'].includes(node.type.name) && !node.attrs.colwidth) bare = true
+	})
+	return bare
+}
+
+// a paste grows the table with bare cells, and one width-less column stops the table
+// stating how wide it is, which is what the element frame follows
+const ColumnWidths = Extension.create({
+	name: 'columnWidths',
+
+	addProseMirrorPlugins() {
+		return [
+			new Plugin({
+				appendTransaction: (transactions, oldState, state) => {
+					if (!transactions.some((transaction) => transaction.docChanged)) return null
+					// a table that stated no widths lays itself out inside its frame, and a
+					// drag on one of its columns must not hand that width to all the others
+					if (hasBareCell(oldState.doc)) return null
+
+					const { tr } = state
+					let seeded = false
+
+					state.doc.descendants((table, tablePos) => {
+						if (table.type.name !== 'table') return
+						const widths = getWidthPerColumn(table)
+						const fallback = widths.find(Boolean)
+						if (!fallback) return false
+
+						table.forEach((row, rowOffset) => {
+							row.forEach((cell, cellOffset, index) => {
+								if (cell.attrs.colwidth) return
+
+								tr.setNodeAttribute(
+									tablePos + 2 + rowOffset + cellOffset,
+									'colwidth',
+									Array(cell.attrs.colspan).fill(widths[index] || fallback),
+								)
+								seeded = true
+							})
+						})
+
+						return false
+					})
+
+					return seeded ? tr : null
+				},
+			}),
+		]
+	},
+})
+
+// Tab selects the content of the cell it lands in, and an untouched cell holds only
+// the placeholder: a selection one zero-width character wide shows nothing at all
+const EmptyCellCaret = Extension.create({
+	name: 'emptyCellCaret',
+
+	addProseMirrorPlugins() {
+		return [
+			new Plugin({
+				appendTransaction: (_transactions, _oldState, state) => {
+					const { selection, doc } = state
+					if (selection.empty || !(selection instanceof TextSelection)) return null
+					if (!cellAround(selection.$from)) return null
+					// a range the user drew across lines is theirs, however little text it holds
+					if (!selection.$from.sameParent(selection.$to)) return null
+					if (doc.textBetween(selection.from, selection.to) !== ZWSP) return null
+
+					return state.tr.setSelection(TextSelection.create(doc, selection.to))
+				},
+			}),
+		]
+	},
+})
+
 const ScaledColumnResizing = Extension.create({
 	name: 'scaledColumnResizing',
 
@@ -813,9 +955,23 @@ export const extensions = [
 	LineHeight,
 	Selection.configure({ className: 'persisted-selection' }),
 	// resizing is app-level: prosemirror's column resizing math ignores canvas scale
-	Table.configure({ resizable: false, View: null }),
+	Table.extend({
+		// stock deletes the table once every cell is selected, leaving the element
+		// holding an empty paragraph
+		addKeyboardShortcuts() {
+			return {
+				...this.parent?.(),
+				Backspace: clearSelectedCells,
+				'Mod-Backspace': clearSelectedCells,
+				Delete: clearSelectedCells,
+				'Mod-Delete': clearSelectedCells,
+			}
+		},
+	}).configure({ resizable: false, View: null }),
 	TableRow,
 	withCellAttributes(TableCell),
 	withCellAttributes(TableHeader),
 	ScaledColumnResizing,
+	EmptyCellCaret,
+	ColumnWidths,
 ]

@@ -1,5 +1,6 @@
 import { ref, reactive, watch } from 'vue'
 import { Editor } from '@tiptap/vue-3'
+import { createDocument } from '@tiptap/core'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
 import { TextSelection } from 'prosemirror-state'
 import { cellAround } from 'prosemirror-tables'
@@ -51,7 +52,29 @@ const reconcileEditorContent = (html) => {
 
 	if (patchedHTML(editor.getHTML()) === html) return
 
-	withRecordingSuppressed(() => editor.commands.setContent(html, { emitUpdate: false }))
+	// setContent replaces the whole doc, mapping the selection to its end. the two
+	// documents differ over one range, so a caret past it moves by the size change
+	const incoming = createDocument(html, editor.schema)
+	const { content } = editor.state.doc
+	const start = content.findDiffStart(incoming.content)
+	const { a: endHere, b: endThere } = start == null ? {} : content.findDiffEnd(incoming.content)
+
+	const { from, to } = editor.state.selection
+	const [carriedFrom, carriedTo] = [from, to].map((pos) => {
+		if (start == null || pos <= start) return pos
+		return pos >= endHere ? pos + endThere - endHere : start
+	})
+
+	withRecordingSuppressed(() => {
+		editor.commands.setContent(html, { emitUpdate: false })
+		// between, so that endpoints a cell selection left on cell boundaries come back
+		// as the nearest position that can hold a caret
+		editor.commands.command(({ tr }) => {
+			const { doc } = tr
+			tr.setSelection(TextSelection.between(doc.resolve(carriedFrom), doc.resolve(carriedTo)))
+			return true
+		})
+	})
 }
 
 const editorStyles = reactive({
@@ -159,7 +182,7 @@ export const useTextEditor = () => {
 		const $cell = editor.isEditable ? cellAround(editor.state.selection.$head) : null
 		if (!$cell) return chain.selectAll()
 
-		chain.setTextSelection({
+		return chain.setTextSelection({
 			from: $cell.pos + 1,
 			to: $cell.pos + $cell.nodeAfter.nodeSize - 1,
 		})

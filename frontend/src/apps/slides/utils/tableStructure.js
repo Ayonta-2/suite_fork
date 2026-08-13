@@ -70,9 +70,18 @@ const setEvenColumnWidths = ({ tr }) => {
 const resizeTable = (command, times) => {
 	if (times < 1 || !activeEditor.value) return
 
+	// selectLastCell borrows the caret, and the user wants it back where they left it
+	const caret = activeEditor.value.state.selection.from
+
 	const chain = activeEditor.value.chain()
 	for (let index = 0; index < times; index++) chain.command(selectLastCell)[command]()
-	chain.command(seedNewCells).run()
+	chain
+		.command(seedNewCells)
+		.command(({ tr }) => {
+			tr.setSelection(TextSelection.near(tr.doc.resolve(tr.mapping.map(caret))))
+			return true
+		})
+		.run()
 }
 
 // the context menu runs on the focused editor, so the commands land where the caret
