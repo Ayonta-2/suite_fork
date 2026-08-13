@@ -100,3 +100,4 @@ execute:frappe.db.set_single_value("Mail Settings", "max_mailing_list_participan
 # Existing, already-set-up sites shouldn't be sent through Suite's onboarding.
 execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frappe.is_setup_complete() else None
 suite.suite_core.patches.move_blob_store_out_of_private
+suite.suite_core.patches.align_owner_with_user
