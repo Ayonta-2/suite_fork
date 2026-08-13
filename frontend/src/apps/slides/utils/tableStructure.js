@@ -53,6 +53,12 @@ const resizeTable = (command, times) => {
 	chain.command(seedNewCells).run()
 }
 
+// unlike the row and column commands these act on the whole first row or column
+// wherever the selection sits, so an unfocused editor needs no help
+export const toggleHeaderRow = () => activeEditor.value?.commands.toggleHeaderRow()
+
+export const toggleHeaderColumn = () => activeEditor.value?.commands.toggleHeaderColumn()
+
 export const setRowCount = (count, current) =>
 	count > current
 		? resizeTable('addRowAfter', count - current)

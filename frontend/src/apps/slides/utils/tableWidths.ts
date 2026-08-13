@@ -44,6 +44,20 @@ export const getTableSize = (content: string) => {
 	}
 }
 
+const isHeaderCell = (cell: Element | null) => cell?.tagName === 'TH'
+
+// a header is on when the whole row or column is header cells, the same rule
+// prosemirror goes by when deciding which way its toggle turns
+export const getTableHeaders = (content: string) => {
+	const rows = Array.from(getDocFromHTML(content || '').body.querySelectorAll('tr'))
+	const firstRowCells = Array.from(rows[0]?.children || [])
+
+	return {
+		row: firstRowCells.length > 0 && firstRowCells.every(isHeaderCell),
+		column: rows.length > 0 && rows.every((row) => isHeaderCell(row.firstElementChild)),
+	}
+}
+
 const setColgroup = (table: HTMLTableElement, widths: number[]) => {
 	const colgroup = table.querySelector('colgroup') || table.insertBefore(
 		table.ownerDocument.createElement('colgroup'),

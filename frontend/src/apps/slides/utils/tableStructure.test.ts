@@ -5,8 +5,10 @@ vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolv
 
 const { getInitialTableContent } = await import('@/apps/slides/stores/element')
 const { useTextEditor } = await import('@/apps/slides/composables/useTextEditor')
-const { setRowCount, setColumnCount } = await import('./tableStructure')
-const { getTableSize, getTableWidth } = await import('./tableWidths')
+const { setRowCount, setColumnCount, toggleHeaderRow, toggleHeaderColumn } = await import(
+	'./tableStructure'
+)
+const { getTableSize, getTableWidth, getTableHeaders } = await import('./tableWidths')
 
 const { activeEditor, initTextEditor } = useTextEditor()
 
@@ -62,5 +64,31 @@ describe('setColumnCount', () => {
 		setColumnCount(3, 2)
 
 		expect(html().match(/Inter/g)).toHaveLength(6)
+	})
+})
+
+describe('header toggles', () => {
+	// a new table already comes with its first row as headers
+	it('turns each header on and off independently', () => {
+		openTable(2, 2)
+		expect(getTableHeaders(html())).toEqual({ row: true, column: false })
+
+		toggleHeaderColumn()
+		expect(getTableHeaders(html())).toEqual({ row: true, column: true })
+
+		toggleHeaderRow()
+		expect(getTableHeaders(html())).toEqual({ row: false, column: true })
+
+		toggleHeaderColumn()
+		expect(getTableHeaders(html())).toEqual({ row: false, column: false })
+	})
+
+	// a cell keeps the width it carried, or the table would forget how wide it is
+	it('keeps the column widths', () => {
+		openTable(2, 2)
+
+		toggleHeaderRow()
+
+		expect(getTableWidth(html())).toBe(300)
 	})
 })
