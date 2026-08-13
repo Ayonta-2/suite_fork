@@ -73,6 +73,8 @@ const headerTint = computed(() =>
 
 const elementStyles = computed(() => ({
 	color: element.value.color,
+	opacity: (element.value.opacity ?? 100) / 100,
+	transform: `scale(${element.value.invertX || 1}, ${element.value.invertY || 1})`,
 	cursor: isEditable.value ? 'text' : '',
 	userSelect: isEditable.value ? 'text' : 'none',
 	'--table-header-tint': headerTint.value,

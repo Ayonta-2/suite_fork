@@ -9,7 +9,7 @@
 			<LayoutSection />
 			<Divider flexItem />
 			<ElementSection />
-			<template v-if="activeElement?.type === 'text' || isEditingShapeText">
+			<template v-if="['text', 'table'].includes(activeElement?.type) || isEditingShapeText">
 				<Divider flexItem />
 				<TypographySection />
 			</template>

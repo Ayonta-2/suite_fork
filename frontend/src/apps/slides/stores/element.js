@@ -416,6 +416,7 @@ const addTableElement = async (rows = 3, cols = 3) => {
 		left: position.left,
 		top: position.top,
 		width,
+		opacity: 100,
 		type: 'table',
 		color: guessTextColorFromBackground(currentSlide.value.background),
 		content: getInitialTableContent(rows, cols, columnWidth),
