@@ -12,6 +12,7 @@ const {
 	toggleHeaderColumn,
 	runTableCommand,
 	distributeColumns,
+	mergeCells,
 	getCells,
 } = await import('./tableStructure')
 const { getTableSize, getTableWidth, getTableHeaders } = await import('./tableWidths')
@@ -41,6 +42,12 @@ const selectCells = (first: number, last: number) => {
 			return true
 		})
 		.run()
+}
+
+const typeInFirstCell = (text: string) => {
+	activeEditor.value.setEditable(true)
+	const [first] = getCells(activeEditor.value.state.doc)
+	activeEditor.value.chain().setTextSelection(first.pos + 2).insertContent(text).run()
 }
 
 const setColumnWidth = (column: number, width: number, columns: number) =>
@@ -99,16 +106,38 @@ describe('setColumnCount', () => {
 	})
 })
 
-describe('runTableCommand', () => {
+describe('mergeCells', () => {
 	// prosemirror zeroes the absorbed column's width and repairs it from the rows below,
 	// so the table forgets how wide it is if the merge leaves no row to repair from
 	it('keeps the table width when cells merge', () => {
 		openTable(2, 2)
 		selectCells(0, 1)
 
-		runTableCommand('mergeCells')
+		mergeCells()
 
 		expect(getTableWidth(html())).toBe(300)
+	})
+
+	// prosemirror only drops a cell's content when the cell is truly empty, and a
+	// seeded one is not, so its paragraph used to land in the merge as a blank line
+	it('leaves the merged cell a single paragraph', () => {
+		openTable(2, 2)
+		selectCells(0, 1)
+
+		mergeCells()
+
+		expect(html().match(/<p/g)).toHaveLength(3)
+	})
+
+	it('keeps the text when a filled cell merges with an empty one', () => {
+		openTable(2, 2)
+		typeInFirstCell('one')
+		selectCells(0, 1)
+
+		mergeCells()
+
+		expect(html()).toContain('one')
+		expect(html().match(/<p/g)).toHaveLength(3)
 	})
 })
 

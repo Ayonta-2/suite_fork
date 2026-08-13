@@ -84,6 +84,29 @@ const resizeTable = (command, times) => {
 		.run()
 }
 
+// prosemirror carries a cell's content into the merge unless the cell is truly empty,
+// and a seeded cell holds a zero-width space, so the blank ones stack up as blank lines
+const dropSeededParagraphs = ({ tr }) => {
+	const $cell = tr.selection.$anchorCell
+	if (!$cell) return true
+
+	const cell = $cell.nodeAfter
+	const blanks = []
+	cell.forEach((child, offset) => {
+		if (child.textContent === ZWSP) blanks.push({ from: $cell.pos + 1 + offset, size: child.nodeSize })
+	})
+
+	blanks
+		.reverse()
+		.slice(0, cell.childCount - 1)
+		.forEach(({ from, size }) => tr.delete(from, from + size))
+
+	return true
+}
+
+export const mergeCells = () =>
+	activeEditor.value?.chain().focus().mergeCells().command(dropSeededParagraphs).run()
+
 // the context menu runs on the focused editor, so the commands land where the caret
 // is and only the cells they leave behind need seeding. The menu holds the focus while
 // it is open and hands it back to whatever it took it from, which leaves the caret

@@ -1,5 +1,5 @@
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
-import { runTableCommand, distributeColumns } from '@/apps/slides/utils/tableStructure'
+import { runTableCommand, distributeColumns, mergeCells } from '@/apps/slides/utils/tableStructure'
 import { getTableSize } from '@/apps/slides/utils/tableWidths'
 
 // the delete options go with the last row or column, matching the panel's count of 1
@@ -34,7 +34,7 @@ export const buildTableContextOptions = () => {
 			label: 'Merge cells',
 			icon: 'lucide-table-cells-merge',
 			condition: () => activeEditor.value.can().mergeCells(),
-			onClick: () => runTableCommand('mergeCells'),
+			onClick: () => mergeCells(),
 		},
 		{
 			label: 'Split cell',
