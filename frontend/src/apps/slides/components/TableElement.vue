@@ -205,6 +205,15 @@ const handleDoubleClick = (e) => {
 	pointer-events: none;
 }
 
+/* prosemirror-tables tags the cells, the stylesheet that draws them ships elsewhere */
+.tableElement .selectedCell::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background-color: color-mix(in srgb, var(--table-resize-color) 30%, transparent);
+	pointer-events: none;
+}
+
 .tableElement .ProseMirror.resize-cursor {
 	cursor: col-resize;
 }
