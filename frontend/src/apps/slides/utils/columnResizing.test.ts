@@ -19,6 +19,11 @@ describe('draggedWidth', () => {
 		expect(draggedWidth(dragging(0.5), 50, 25)).toBe(100)
 	})
 
+	it('lands on a whole pixel whatever the scale', () => {
+		expect(draggedWidth(dragging(0.55), 150, 25)).toBe(291)
+		expect(draggedWidth(dragging(0.3), 233, 25)).toBe(643)
+	})
+
 	it('never returns less than the minimum width', () => {
 		expect(draggedWidth(dragging(1), -1000, 25)).toBe(25)
 	})

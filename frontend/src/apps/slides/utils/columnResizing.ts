@@ -68,10 +68,11 @@ const getRenderedScale = (view: EditorView) => {
 	return rendered && layout ? rendered / layout : 1
 }
 
-// the one delta from stock: the mouse offset is screen pixels, the width is layout
+// the one delta from stock: the mouse offset is screen pixels, the width is layout,
+// and a fractional width can't survive the parseInt read of colwidth
 export const draggedWidth = (dragging: Dragging, clientX: number, resizeMinWidth: number) => {
 	const offset = (clientX - dragging.startX) / (dragging.scale || 1)
-	return Math.max(resizeMinWidth, dragging.startWidth + offset)
+	return Math.max(resizeMinWidth, Math.round(dragging.startWidth + offset))
 }
 
 const zeroes = (n: number) => Array(n).fill(0)
