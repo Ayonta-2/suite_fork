@@ -2,6 +2,7 @@ import { ref, reactive, watch } from 'vue'
 import { Editor } from '@tiptap/vue-3'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
 import { TextSelection } from 'prosemirror-state'
+import { cellAround } from 'prosemirror-tables'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { markDirty } from '@/apps/slides/stores/saving'
 import {
@@ -147,13 +148,25 @@ export const useTextEditor = () => {
 		underline: 'toggleUnderline',
 	}
 
+	// a cursor in a cell styles that cell, the whole element otherwise
+	const selectStyleTarget = (chain) => {
+		const editor = activeEditor.value
+		const $cell = editor.isEditable ? cellAround(editor.state.selection.$head) : null
+		if (!$cell) return chain.selectAll()
+
+		chain.setTextSelection({
+			from: $cell.pos + 1,
+			to: $cell.pos + $cell.nodeAfter.nodeSize - 1,
+		})
+	}
+
 	const toggleMark = (property) => {
 		const currentEditor = activeEditor.value
 
 		const chain = currentEditor.chain()
 
 		const { empty } = currentEditor.state.selection
-		if (empty) chain.selectAll()
+		if (empty) selectStyleTarget(chain)
 
 		chain[markCommands[property]](property).run()
 	}
@@ -227,7 +240,7 @@ export const useTextEditor = () => {
 		if (property == 'list') return setListProperty(value)
 
 		const { empty } = currentEditor.state.selection
-		if (empty) chain.selectAll()
+		if (empty) selectStyleTarget(chain)
 
 		switch (property) {
 			case 'textAlign':

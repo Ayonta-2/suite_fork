@@ -1,0 +1,62 @@
+import { describe, it, expect, afterEach, vi } from 'vitest'
+
+vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
+vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
+
+// element.js reaches back into this composable, so it has to pull it in
+await import('@/apps/slides/stores/element')
+const { useTextEditor } = await import('./useTextEditor')
+
+const { activeEditor, initTextEditor, toggleMark } = useTextEditor()
+
+const table = '<table><tbody><tr><td><p>one</p></td><td><p>two</p></td></tr></tbody></table>'
+
+const cursorInFirstCell = () => {
+	const editor = activeEditor.value
+	let pos = -1
+	editor.state.doc.descendants((node: any, nodePos: number) => {
+		if (node.type.name === 'tableCell' && pos === -1) pos = nodePos + 2
+	})
+	editor.commands.setTextSelection(pos)
+}
+
+afterEach(() => {
+	activeEditor.value?.destroy()
+	activeEditor.value = null
+})
+
+describe('what an empty selection styles', () => {
+	it('styles only the cell the cursor is in', () => {
+		initTextEditor('t1', table, true)
+		cursorInFirstCell()
+
+		toggleMark('bold')
+
+		const html = activeEditor.value.getHTML()
+		expect(html).toContain('<strong>one</strong>')
+		expect(html).not.toContain('<strong>two</strong>')
+	})
+
+	// the unfocused editor's cursor sits in the first cell
+	it('styles every cell when the table is selected but not being edited', () => {
+		initTextEditor('t1', table, false)
+		cursorInFirstCell()
+
+		toggleMark('bold')
+
+		const html = activeEditor.value.getHTML()
+		expect(html).toContain('<strong>one</strong>')
+		expect(html).toContain('<strong>two</strong>')
+	})
+
+	it('styles the whole text box, cursor or not', () => {
+		initTextEditor('t1', '<p>one</p><p>two</p>', true)
+		activeEditor.value.commands.setTextSelection(2)
+
+		toggleMark('bold')
+
+		const html = activeEditor.value.getHTML()
+		expect(html).toContain('<strong>one</strong>')
+		expect(html).toContain('<strong>two</strong>')
+	})
+})
