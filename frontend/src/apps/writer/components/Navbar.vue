@@ -91,14 +91,17 @@
         }"
       />
     </div>
-    <input
-      ref="docxInputRef"
-      name="docx-import"
-      type="file"
-      accept=".docx"
-      style="display: none"
-      @change="onImportDocx"
-    />
+    <!-- Kept out of the navbar DOM: the rename field is meant to be the only <input> in there, and e2e locates it as such. -->
+    <Teleport to="body">
+      <input
+        ref="docxInputRef"
+        name="docx-import"
+        type="file"
+        accept=".docx"
+        style="display: none"
+        @change="onImportDocx"
+      />
+    </Teleport>
     <Dialogs v-model="dialog" :docs="file?.doc && [file]" />
   </nav>
 </template>
