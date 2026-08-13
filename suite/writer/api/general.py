@@ -163,7 +163,7 @@ def get_drive_file_meta(names, ttl=3600):
     cache = frappe.cache()
 
     keys = {name: f"search:drive_file:{name}" for name in names}
-    cached = {"name": cache.get_value(k) for k in keys.values()}
+    cached = {k: cache.get_value(k) for k in keys.values()}
 
     result = {}
     missing = []
@@ -186,7 +186,7 @@ def get_drive_file_meta(names, ttl=3600):
                 "title": r["file_name"],
                 "name": r["name"],
             }
-            key = f"search:drive_file:{r['name']}"
+            key = f"search:drive_file:{r['content_docname']}"
             cache.set_value(key, meta, expires_in_sec=ttl)
             result[r["content_docname"]] = meta
 
