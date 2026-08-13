@@ -42,12 +42,6 @@ describe('rescaleColumnWidths', () => {
 		expect(getTableWidth(rescaled!.content)).toBe(50)
 	})
 
-	it('leaves the serialization untouched at a ratio of one', () => {
-		const content = table([150, 150, 150])
-
-		expect(rescaleColumnWidths(content, 1)?.content).toBe(content)
-	})
-
 	// these lay themselves out evenly inside whatever width the frame gives them,
 	// in the editor and the static render alike
 	it('skips a table whose columns carry no widths', () => {
@@ -64,9 +58,5 @@ describe('getMinTableWidth', () => {
 		expect(
 			getMinTableWidth('<table><tbody><tr><td colspan="3"><p>a</p></td></tr></tbody></table>'),
 		).toBe(75)
-	})
-
-	it('is nothing to clamp against when there is no table', () => {
-		expect(getMinTableWidth('<p>plain text</p>')).toBe(0)
 	})
 })

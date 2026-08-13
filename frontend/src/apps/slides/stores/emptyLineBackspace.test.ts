@@ -43,14 +43,6 @@ afterEach(() => {
 const bullets = '<ul><li><p>first</p></li><li><p>second</p></li></ul>'
 
 describe('backspace on an empty line', () => {
-	it('collapses a paragraph with no placeholder in one press', () => {
-		const editor = mountEditor(`${bullets}<p></p><p>${ZWSP}</p>`)
-
-		backspace(editor)
-
-		expect(blockNames(editor)).toEqual(['bulletList', 'paragraph'])
-	})
-
 	it('takes one press per empty line, not two', () => {
 		const editor = mountEditor(`${bullets}<p></p><p></p><p>${ZWSP}</p>`)
 

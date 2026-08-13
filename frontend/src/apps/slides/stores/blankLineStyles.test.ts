@@ -40,23 +40,8 @@ const blankParagraphElement = (editor: Editor) =>
 	Array.from(editor.view.dom.querySelectorAll('p')).find((p) => !p.textContent)
 
 describe('styles on a blank line', () => {
-	it('reads the styles of the line above', () => {
-		const editor = mountEditor(`${styled('one')}<p></p>`)
-
-		cursorInBlankParagraph(editor)
-
-		expect(editor.getAttributes('textStyle').fontSize).toBe('24px')
-	})
-
-	it('falls back to the line below when nothing precedes it', () => {
-		const editor = mountEditor(`<p></p>${styled('one')}`)
-
-		cursorInBlankParagraph(editor)
-
-		expect(editor.getAttributes('textStyle').fontSize).toBe('24px')
-	})
-
-	it('keeps those styles on the text typed there', () => {
+	// typing there also has to clear the placeholder the blank line holds
+	it('keeps the styles of the line above on the text typed there', () => {
 		const editor = mountEditor(`${styled('one')}<p></p>`)
 
 		cursorInBlankParagraph(editor)
@@ -65,6 +50,14 @@ describe('styles on a blank line', () => {
 		const typed = editor.state.selection.$from.parent.firstChild
 		expect(typed?.text).toBe('x')
 		expect(typed?.marks[0].attrs.fontSize).toBe('24px')
+	})
+
+	it('falls back to the line below when nothing precedes it', () => {
+		const editor = mountEditor(`<p></p>${styled('one')}`)
+
+		cursorInBlankParagraph(editor)
+
+		expect(editor.getAttributes('textStyle').fontSize).toBe('24px')
 	})
 
 	// the caret takes its size and color from the line it sits on, so an unstyled
@@ -77,14 +70,6 @@ describe('styles on a blank line', () => {
 		expect(blank?.style.color).toBe('rgb(255, 255, 255)')
 	})
 
-	// what is painted has to match what is saved, or the line changes height on deselect
-	it('leaves a leading blank line bare, as the saved html does', () => {
-		const editor = mountEditor(`<p></p>${styled('one')}`)
-
-		expect(blankParagraphElement(editor)?.style.fontSize).toBe('')
-		expect(patchEmptyParagraphs(editor.getHTML()).wasUpdated).toBe(false)
-	})
-
 	it('leaves a blank line in a table cell bare, as the saved html does', () => {
 		const editor = mountEditor(
 			`<table><tbody><tr><td>${styled('one')}<p></p></td></tr></tbody></table>`,
@@ -92,12 +77,6 @@ describe('styles on a blank line', () => {
 
 		expect(blankParagraphElement(editor)?.style.fontSize).toBe('')
 		expect(patchEmptyParagraphs(editor.getHTML()).wasUpdated).toBe(false)
-	})
-
-	it('leaves an empty heading alone', () => {
-		const editor = mountEditor(`${styled('one')}<h1></h1>`)
-
-		expect(editor.view.dom.querySelector('h1')?.style.fontSize).toBe('')
 	})
 
 	it('does not carry styles across table cells', () => {

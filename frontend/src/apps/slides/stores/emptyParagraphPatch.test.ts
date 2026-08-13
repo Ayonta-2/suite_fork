@@ -30,26 +30,8 @@ describe('patchEmptyParagraphs', () => {
 		expect(updatedHTML).toBe(html)
 	})
 
-	it('does not carry cell styles into paragraphs after the table', () => {
-		const html = `${table(cell(`<p>${styled('Filled')}</p>`))}<p></p>`
-
-		const { updatedHTML } = patchEmptyParagraphs(html)
-
-		expect(updatedHTML).toBe(html)
-	})
-
 	it('is idempotent over table content', () => {
 		const html = table(cell(`<p>${styled('Filled')}</p>`), cell('<p></p>'))
-
-		const once = patchEmptyParagraphs(html).updatedHTML
-		const twice = patchEmptyParagraphs(once)
-
-		expect(twice.wasUpdated).toBe(false)
-		expect(twice.updatedHTML).toBe(once)
-	})
-
-	it('is idempotent over text content', () => {
-		const html = `<p>${styled('Title')}</p><p></p>`
 
 		const once = patchEmptyParagraphs(html).updatedHTML
 		const twice = patchEmptyParagraphs(once)

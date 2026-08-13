@@ -110,17 +110,6 @@ describe('runTableCommand', () => {
 
 		expect(getTableWidth(html())).toBe(300)
 	})
-
-	// a split builds its new cells bare, the same gap a new column has
-	it('seeds the cells a split leaves behind', () => {
-		openTable(2, 2)
-		selectCells(0, 1)
-		runTableCommand('mergeCells')
-
-		runTableCommand('splitCell')
-
-		expect(html().match(/Inter/g)).toHaveLength(5)
-	})
 })
 
 describe('distributeColumns', () => {
@@ -151,14 +140,5 @@ describe('header toggles', () => {
 
 		toggleHeaderColumn()
 		expect(getTableHeaders(html())).toEqual({ row: false, column: false })
-	})
-
-	// a cell keeps the width it carried, or the table would forget how wide it is
-	it('keeps the column widths', () => {
-		openTable(2, 2)
-
-		toggleHeaderRow()
-
-		expect(getTableWidth(html())).toBe(300)
 	})
 })

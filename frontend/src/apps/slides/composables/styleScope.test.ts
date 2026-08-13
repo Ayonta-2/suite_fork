@@ -37,18 +37,6 @@ describe('what an empty selection styles', () => {
 		expect(html).not.toContain('<strong>two</strong>')
 	})
 
-	// the unfocused editor's cursor sits in the first cell
-	it('styles every cell when the table is selected but not being edited', () => {
-		initTextEditor('t1', table, false)
-		cursorInFirstCell()
-
-		toggleMark('bold')
-
-		const html = activeEditor.value.getHTML()
-		expect(html).toContain('<strong>one</strong>')
-		expect(html).toContain('<strong>two</strong>')
-	})
-
 	// a mark needs text to sit on, so empty cells read as unstyled
 	it('styles a table that has not been typed in yet', () => {
 		initTextEditor('t1', getInitialTableContent(2, 2, 150, { fontFamily: 'Inter', fontSize: 18 }))

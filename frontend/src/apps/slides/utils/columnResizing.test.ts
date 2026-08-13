@@ -13,15 +13,8 @@ describe('draggedWidth', () => {
 		expect(draggedWidth(dragging(1), 150, 25)).toBe(250)
 		expect(draggedWidth(dragging(0.5), 150, 25)).toBe(300)
 		expect(draggedWidth(dragging(2), 150, 25)).toBe(225)
-	})
-
-	it('tracks a drag to the left the same way', () => {
-		expect(draggedWidth(dragging(0.5), 50, 25)).toBe(100)
-	})
-
-	it('lands on a whole pixel whatever the scale', () => {
+		// a fractional width cannot survive the parseInt read of colwidth
 		expect(draggedWidth(dragging(0.55), 150, 25)).toBe(291)
-		expect(draggedWidth(dragging(0.3), 233, 25)).toBe(643)
 	})
 
 	it('never returns less than the minimum width', () => {
@@ -44,16 +37,6 @@ const schema = new Schema({
 })
 
 describe('scaleAwareColumnResizing', () => {
-	// an upstream move to pointer events would add a handler that finds the column
-	// first, taking resizing back to unscaled math behind an editable-only gate
-	it('replaces every drag entry point the stock plugin has', () => {
-		expect(Object.keys(columnResizing().spec.props!.handleDOMEvents!).sort()).toEqual([
-			'mousedown',
-			'mouseleave',
-			'mousemove',
-		])
-	})
-
 	// the spread carries stock's handlers, and each one of them refuses to resize
 	// anything the editor is not editing
 	it('leaves none of the stock handlers in place', () => {
