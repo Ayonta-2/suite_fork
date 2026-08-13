@@ -8,8 +8,7 @@ const { useTextEditor } = await import('@/apps/slides/composables/useTextEditor'
 const {
 	setRowCount,
 	setColumnCount,
-	toggleHeaderRow,
-	toggleHeaderColumn,
+	setTableHeaders,
 	runTableCommand,
 	distributeColumns,
 	mergeCells,
@@ -166,19 +165,51 @@ describe('distributeColumns', () => {
 	})
 })
 
-describe('header toggles', () => {
+describe('setTableHeaders', () => {
 	// a new table already comes with its first row as headers
-	it('turns each header on and off independently', () => {
+	it('reaches every combination from any other', () => {
 		openTable(2, 2)
 		expect(getTableHeaders(html())).toEqual({ row: true, column: false })
 
-		toggleHeaderColumn()
+		setTableHeaders({ row: true, column: true })
 		expect(getTableHeaders(html())).toEqual({ row: true, column: true })
 
-		toggleHeaderRow()
+		setTableHeaders({ row: false, column: true })
 		expect(getTableHeaders(html())).toEqual({ row: false, column: true })
 
-		toggleHeaderColumn()
+		setTableHeaders({ row: false, column: false })
+		expect(getTableHeaders(html())).toEqual({ row: false, column: false })
+
+		setTableHeaders({ row: true, column: false })
+		expect(getTableHeaders(html())).toEqual({ row: true, column: false })
+	})
+
+	it('keeps the width a header cell carries', () => {
+		openTable(2, 2)
+
+		setTableHeaders({ row: false, column: false })
+
+		expect(getTableWidth(html())).toBe(300)
+	})
+
+	// prosemirror's toggles skip the corner cell, which on these tables is every cell
+	// they were given, so a header could neither be turned off nor named honestly
+	it('turns the header off on a table one row deep', () => {
+		openTable(1, 3)
+		expect(getTableHeaders(html())).toEqual({ row: true, column: false })
+
+		setTableHeaders({ row: false, column: false })
+
+		expect(getTableHeaders(html())).toEqual({ row: false, column: false })
+	})
+
+	it('turns the header off on a table one column wide', () => {
+		openTable(3, 1)
+		setTableHeaders({ row: false, column: true })
+		expect(getTableHeaders(html())).toEqual({ row: false, column: true })
+
+		setTableHeaders({ row: false, column: false })
+
 		expect(getTableHeaders(html())).toEqual({ row: false, column: false })
 	})
 })

@@ -65,12 +65,7 @@ import { setElementProperty, useElementProperty } from '@/apps/slides/composable
 import { getDefaultBandColor } from '@/apps/slides/utils/color'
 import { chevronClasses } from '@/apps/slides/utils/constants'
 import { getTableSize, getMinTableSize, getTableHeaders } from '@/apps/slides/utils/tableWidths'
-import {
-	setRowCount,
-	setColumnCount,
-	toggleHeaderRow,
-	toggleHeaderColumn,
-} from '@/apps/slides/utils/tableStructure'
+import { setRowCount, setColumnCount, setTableHeaders } from '@/apps/slides/utils/tableStructure'
 
 const tableSize = computed(() => getTableSize(activeElement.value.content))
 
@@ -93,12 +88,11 @@ const headerMode = computed(() => {
 	return 'none'
 })
 
-// each toggle rewrites the content the other one is read from, so both are read first
-const setHeaderMode = (value) => {
-	const { row, column } = headers.value
-	if ((value === 'row' || value === 'both') !== row) toggleHeaderRow()
-	if ((value === 'column' || value === 'both') !== column) toggleHeaderColumn()
-}
+const setHeaderMode = (value) =>
+	setTableHeaders({
+		row: value === 'row' || value === 'both',
+		column: value === 'column' || value === 'both',
+	})
 
 // the switch handles its own clicks; the rest of the row forwards to it
 const toggleFromRow = (e, toggle) => {

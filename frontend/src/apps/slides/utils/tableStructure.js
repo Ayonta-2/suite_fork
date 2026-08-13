@@ -128,11 +128,36 @@ export const runTableCommand = (command) =>
 export const distributeColumns = () =>
 	activeEditor.value?.chain().focus().command(setEvenColumnWidths).run()
 
-// unlike the row and column commands these act on the whole first row or column
-// wherever the selection sits, so an unfocused editor needs no help
-export const toggleHeaderRow = () => activeEditor.value?.commands.toggleHeaderRow()
+const getRows = (doc) => {
+	const rows = []
+	doc.descendants((node, pos) => {
+		if (node.type.name !== 'tableRow') return
+		const cells = []
+		node.forEach((cell, offset) => cells.push({ pos: pos + 1 + offset, node: cell }))
+		rows.push(cells)
+		return false
+	})
+	return rows
+}
 
-export const toggleHeaderColumn = () => activeEditor.value?.commands.toggleHeaderColumn()
+// prosemirror's own header toggles read the cells to decide which way they turn, and
+// skip the corner cell so the two headers don't fight over it. On a table one row deep
+// or one column wide that leaves them nothing to act on. Naming the target outright
+// reaches every state instead, and needs no focused editor either
+export const setTableHeaders = ({ row, column }) =>
+	activeEditor.value?.commands.command(({ tr }) => {
+		const { tableHeader, tableCell } = tr.doc.type.schema.nodes
+
+		getRows(tr.doc).forEach((cells, rowIndex) =>
+			cells.forEach(({ pos, node }, cellIndex) => {
+				const type =
+					(row && rowIndex === 0) || (column && cellIndex === 0) ? tableHeader : tableCell
+				if (node.type !== type) tr.setNodeMarkup(pos, type, node.attrs)
+			}),
+		)
+
+		return true
+	})
 
 export const setRowCount = (count, current) =>
 	count > current

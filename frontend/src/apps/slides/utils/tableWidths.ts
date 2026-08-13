@@ -67,16 +67,23 @@ export const getMinTableSize = (content: string) => {
 
 const isHeaderCell = (cell: Element | null) => cell?.tagName === 'TH'
 
-// a header is on when the whole row or column is header cells, the same rule
-// prosemirror goes by when deciding which way its toggle turns
+// a header is on when the whole row or column is header cells
 export const getTableHeaders = (content: string) => {
 	const rows = Array.from(getDocFromHTML(content || '').body.querySelectorAll('tr'))
 	const firstRowCells = Array.from(rows[0]?.children || [])
 
-	return {
-		row: firstRowCells.length > 0 && firstRowCells.every(isHeaderCell),
-		column: rows.length > 0 && rows.every((row) => isHeaderCell(row.firstElementChild)),
+	const row = firstRowCells.length > 0 && firstRowCells.every(isHeaderCell)
+	const column = rows.length > 0 && rows.every((row) => isHeaderCell(row.firstElementChild))
+
+	// one row deep or one column wide, and either header paints the very same cells.
+	// It reads as the one running the length of the table, so the panel names a state
+	// the user can leave again instead of a permanent Both
+	if (row && column) {
+		if (rows.length === 1) return { row: true, column: false }
+		if (countColumns(rows[0]) === 1) return { row: false, column: true }
 	}
+
+	return { row, column }
 }
 
 const setColgroup = (table: HTMLTableElement, widths: number[]) => {
