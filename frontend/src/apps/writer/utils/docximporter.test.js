@@ -22,7 +22,7 @@ vi.mock('mammoth', () => ({
   convertToHtml: (...args) => convertToHtmlMock(...args),
 }))
 
-const { _normaliseHtml, importDocx } = await import('./docximporter')
+const { _normaliseHtml, _convertDocxToHtml, importDocx } = await import('./docximporter')
 
 function parse(html) {
   const div = document.createElement('div')
@@ -103,6 +103,98 @@ describe('_normaliseHtml', () => {
     expect(out.querySelector('script, iframe')).toBeNull()
     expect(out.textContent).toContain('safe')
   })
+
+  it('leaves ordinary text formatting and structure outside tables untouched', () => {
+    const input =
+      '<h1>Title</h1><p><strong>bold</strong> and <em>italic</em></p><ul><li>one</li><li>two</li></ul>'
+
+    // Bold-stripping only applies inside table cells; everywhere else is
+    // passed through as mammoth produced it.
+    expect(_normaliseHtml(input)).toBe(input)
+  })
+})
+
+describe('_convertDocxToHtml', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('converts a docx to normalised HTML and returns mammoth messages', async () => {
+    convertToHtmlMock.mockResolvedValue({
+      value: '<p><strong>hi</strong></p><table><tr><td>A</td></tr></table>',
+      messages: [{ type: 'warning', message: "A cross-reference could not be resolved" }],
+    })
+
+    const { html, messages } = await _convertDocxToHtml(fakeFile('sample.docx'), 'file-1', [])
+
+    // Paragraph formatting is untouched; the table went through normalisation
+    // (its lone cell became a header row), proving this really is the same
+    // pipeline _normaliseHtml is tested against above.
+    expect(html).toContain('<strong>hi</strong>')
+    expect(parse(html).querySelector('th')).not.toBeNull()
+    expect(messages).toEqual([{ type: 'warning', message: "A cross-reference could not be resolved" }])
+  })
+
+  it('passes the file bytes to mammoth as an arrayBuffer', async () => {
+    convertToHtmlMock.mockResolvedValue({ value: '<p>x</p>', messages: [] })
+    const file = fakeFile('sample.docx')
+
+    await _convertDocxToHtml(file, 'file-1', [])
+
+    const [input] = convertToHtmlMock.mock.calls[0]
+    expect(input.arrayBuffer).toBeInstanceOf(ArrayBuffer)
+  })
+
+  it('uploads each embedded image and rewrites its src into the returned HTML', async () => {
+    uploadMock.mockResolvedValue({
+      file_url: '/api/method/suite.writer.api.embed.get?id=embed-1',
+    })
+    const uploaded = []
+    convertToHtmlMock.mockImplementation(async (_input, options) => {
+      const { src } = await options.convertImage({
+        readAsArrayBuffer: async () => new ArrayBuffer(1),
+        contentType: 'image/png',
+      })
+      return { value: `<p><img src="${src}"></p>`, messages: [] }
+    })
+
+    const { html } = await _convertDocxToHtml(fakeFile('sample.docx'), 'file-1', uploaded)
+
+    expect(uploadMock).toHaveBeenCalledWith(
+      expect.any(File),
+      expect.objectContaining({
+        params: { file_id: 'file-1' },
+        upload_endpoint: '/api/method/suite.writer.api.embed.add',
+      }),
+    )
+    expect(html).toContain('src="/api/method/suite.writer.api.embed.get?id=embed-1"')
+    // The embed id is recorded so a later failure could still roll it back.
+    expect(uploaded).toEqual(['embed-1'])
+  })
+
+  it('names the uploaded file using the image content type', async () => {
+    uploadMock.mockResolvedValue({ file_url: '/api/method/suite.writer.api.embed.get?id=embed-2' })
+    convertToHtmlMock.mockImplementation(async (_input, options) => {
+      await options.convertImage({
+        readAsArrayBuffer: async () => new ArrayBuffer(1),
+        contentType: 'image/jpeg',
+      })
+      return { value: '<p>done</p>', messages: [] }
+    })
+
+    await _convertDocxToHtml(fakeFile('sample.docx'), 'file-1', [])
+
+    const [uploadedFile] = uploadMock.mock.calls[0]
+    expect(uploadedFile.name).toBe('image.jpg')
+  })
+
+  it('propagates a conversion failure for a malformed/invalid docx', async () => {
+    convertToHtmlMock.mockRejectedValue(new Error('End of central directory record signature not found'))
+
+    await expect(_convertDocxToHtml(fakeFile('corrupt.docx'), 'file-1', [])).rejects.toThrow(
+      'End of central directory record signature not found',
+    )
+  })
 })
 
 describe('importDocx', () => {
@@ -141,6 +233,62 @@ describe('importDocx', () => {
     expect(toastMock.error).toHaveBeenCalled()
     expect(tabsIn(editor.state.doc)).toHaveLength(0)
     expect(editor.getText()).toBe('Original text')
+  })
+
+  it('inserts the converted HTML into the document, preserving structure and order', async () => {
+    convertToHtmlMock.mockResolvedValue({
+      value: '<p>First imported paragraph</p><p>Second imported paragraph</p>',
+      messages: [],
+    })
+    const editor = makeEditor('')
+
+    await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+
+    const texts = [...parse(editor.getHTML()).querySelectorAll('p')]
+      .map((p) => p.textContent)
+      .filter(Boolean)
+    expect(texts).toEqual(['First imported paragraph', 'Second imported paragraph'])
+  })
+
+  it('shows an error and makes no changes for a malformed or invalid docx file', async () => {
+    convertToHtmlMock.mockRejectedValue(new Error('End of central directory record signature not found'))
+    const editor = makeEditor('<p>Original text</p>')
+
+    await importDocx(fakeFile('corrupt.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+
+    expect(toastMock.error).toHaveBeenCalled()
+    expect(callMock).not.toHaveBeenCalled() // nothing was uploaded, so nothing to roll back
+    expect(tabsIn(editor.state.doc)).toHaveLength(0)
+    expect(editor.getText()).toBe('Original text')
+  })
+
+  it('reports success when mammoth only returns non-error messages', async () => {
+    convertToHtmlMock.mockResolvedValue({
+      value: '<p>Imported text</p>',
+      messages: [{ type: 'warning', message: 'A style was not mapped and was ignored' }],
+    })
+    const editor = makeEditor('')
+
+    await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+
+    expect(toastMock.success).toHaveBeenCalled()
+    expect(toastMock.error).not.toHaveBeenCalled()
+  })
+
+  it('reports a partial import when mammoth returns an error message', async () => {
+    convertToHtmlMock.mockResolvedValue({
+      value: '<p>Imported text</p>',
+      messages: [{ type: 'error', message: "Could not find image file 'media/image1.png'" }],
+    })
+    const editor = makeEditor('')
+
+    await importDocx(fakeFile('sample.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+
+    // The content mammoth did manage to convert is still inserted...
+    expect(editor.getText()).toContain('Imported text')
+    // ...but the user is told the import was incomplete, not a full success.
+    expect(toastMock.error).toHaveBeenCalled()
+    expect(toastMock.success).not.toHaveBeenCalled()
   })
 
   it('deletes already-uploaded images when the import fails partway through', async () => {

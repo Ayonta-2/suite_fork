@@ -118,7 +118,7 @@ export function _normaliseHtml(html) {
 }
 
 // Parses a .docx into HTML entirely in the browser (via mammoth).
-async function _convertDocxToHtml(file, fileId, uploaded) {
+export async function _convertDocxToHtml(file, fileId, uploaded) {
   const mammoth = await import('mammoth')
   const arrayBuffer = await file.arrayBuffer()
   const { value: html, messages } = await mammoth.convertToHtml(
