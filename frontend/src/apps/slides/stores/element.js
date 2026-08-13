@@ -414,7 +414,10 @@ const addTextElement = async (text, position) => {
 }
 
 const addTableElement = async (rows = 3, cols = 3) => {
-	const columnWidth = 150
+	// a table states its own width, so one wider than the slide is placed hanging
+	// off both edges instead of being fitted to it
+	const slideWidth = slideBounds.width / slideBounds.scale
+	const columnWidth = Math.min(150, Math.floor(slideWidth / cols))
 	const width = cols * columnWidth
 
 	// rows size themselves to their content, so this only places the new element
