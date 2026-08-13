@@ -18,19 +18,19 @@
 			:step="1"
 			@update:modelValue="(value) => setColumnCount(value, tableSize.columns)"
 		/>
-		<PropertyRow
-			label="Header Row"
-			class="cursor-pointer"
-			@click="toggleFromRow($event, toggleHeaderRow)"
-		>
-			<Switch :modelValue="headers.row" @update:modelValue="toggleHeaderRow" />
-		</PropertyRow>
-		<PropertyRow
-			label="Header Column"
-			class="cursor-pointer"
-			@click="toggleFromRow($event, toggleHeaderColumn)"
-		>
-			<Switch :modelValue="headers.column" @update:modelValue="toggleHeaderColumn" />
+		<PropertyRow label="Headers">
+			<Select
+				:modelValue="headerMode"
+				variant="ghost"
+				:options="headerOptions"
+				class="-me-1"
+				@update:modelValue="setHeaderMode"
+			>
+				<template #trigger="{ selectedOption }">
+					<span :class="valueClasses">{{ selectedOption?.label }}</span>
+					<span :class="chevronClasses" />
+				</template>
+			</Select>
 		</PropertyRow>
 	</Section>
 </template>
@@ -38,13 +38,14 @@
 <script setup>
 import { computed } from 'vue'
 
-import { Switch } from 'frappe-ui'
+import { Select } from 'frappe-ui'
 
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
+import { chevronClasses } from '@/apps/slides/utils/constants'
 import { getTableSize, getMinTableSize, getTableHeaders } from '@/apps/slides/utils/tableWidths'
 import {
 	setRowCount,
@@ -59,8 +60,27 @@ const minSize = computed(() => getMinTableSize(activeElement.value.content))
 
 const headers = computed(() => getTableHeaders(activeElement.value.content))
 
-// the switch handles its own clicks; the rest of the row forwards to it
-const toggleFromRow = (e, toggle) => {
-	if (!e.target.closest('button')) toggle()
+const headerOptions = [
+	{ label: 'None', value: 'none' },
+	{ label: 'Row', value: 'row' },
+	{ label: 'Column', value: 'column' },
+	{ label: 'Both', value: 'both' },
+]
+
+const headerMode = computed(() => {
+	const { row, column } = headers.value
+	if (row && column) return 'both'
+	if (row) return 'row'
+	if (column) return 'column'
+	return 'none'
+})
+
+// each toggle rewrites the content the other one is read from, so both are read first
+const setHeaderMode = (value) => {
+	const { row, column } = headers.value
+	if ((value === 'row' || value === 'both') !== row) toggleHeaderRow()
+	if ((value === 'column' || value === 'both') !== column) toggleHeaderColumn()
 }
+
+const valueClasses = 'block font-text text-base text-ink-gray-8'
 </script>
