@@ -1,7 +1,7 @@
-import { reactive, ref } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 
 import { currentSlide } from './slide'
-import { activeElements, activeElementIds } from './element'
+import { activeElements, activeElementIds, cropSelectionToFitContent } from './element'
 import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
 import { normalizeRotation } from '@/apps/slides/utils/helpers'
@@ -24,6 +24,7 @@ const getColumnRescale = (element) => {
 // extraCommands join the same batched history entry as the offset commands
 const commitInteraction = (extraCommands = []) => {
 	const commands = []
+	let rescaled = false
 
 	activeElements.value.forEach((element) => {
 		const addCommand = (property, oldValue, newValue) => {
@@ -50,7 +51,10 @@ const commitInteraction = (extraCommands = []) => {
 			addCommand(key, element[key], key === 'width' && rescale ? rescale.width : resized)
 		})
 
-		if (rescale) addCommand('content', element.content, rescale.content)
+		if (rescale) {
+			addCommand('content', element.content, rescale.content)
+			rescaled = true
+		}
 
 		if (rotationDelta.value && ['shape', 'image'].includes(element.type)) {
 			const rotation = element.rotation || 0
@@ -73,6 +77,9 @@ const commitInteraction = (extraCommands = []) => {
 
 	resetInteractionOffset()
 	rotationDelta.value = 0
+
+	// the box is drawn at the dragged width, the table lands on its rounded columns
+	if (rescaled) nextTick(() => cropSelectionToFitContent(activeElementIds.value))
 }
 
 const resetInteractionOffset = () => {
