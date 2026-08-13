@@ -17,12 +17,14 @@ async function expectParticipantsAndVideo(
 	guestPage: Page,
 	guestName: string,
 ): Promise<void> {
-	await expect(hostPage.locator("[data-participant-id]")).toHaveCount(2, {
-		timeout: 30_000,
-	});
-	await expect(guestPage.locator("[data-participant-id]")).toHaveCount(2, {
-		timeout: 30_000,
-	});
+	await Promise.all([
+		expect(hostPage.locator("[data-participant-id]")).toHaveCount(2, {
+			timeout: 30_000,
+		}),
+		expect(guestPage.locator("[data-participant-id]")).toHaveCount(2, {
+			timeout: 30_000,
+		}),
+	]);
 	await expectRemoteVideoReceiving(guestPage, meetHostName);
 	await expectRemoteVideoReceiving(hostPage, guestName);
 }
@@ -45,11 +47,13 @@ async function enableE2EEInSettings(page: Page): Promise<void> {
 			timeout: 30_000,
 		});
 	}
-	await page.keyboard.press("Escape");
-	if (await toggle.isVisible()) {
-		await page.keyboard.press("Escape");
-	}
-	await expect(toggle).not.toBeVisible();
+	const settingsDialog = page.getByRole("dialog", { name: "Settings" });
+	await expect(async () => {
+		if (await settingsDialog.isVisible()) {
+			await page.keyboard.press("Escape");
+		}
+		await expect(settingsDialog).not.toBeVisible({ timeout: 1_000 });
+	}).toPass({ timeout: 10_000 });
 }
 
 async function openMeetingInformation(page: Page): Promise<void> {
@@ -127,10 +131,9 @@ test.describe("E2EE", () => {
 	});
 
 	test.describe("heavy coverage", () => {
-		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
-		test.describe.configure({ timeout: 180_000 });
+		test.describe.configure({ timeout: 90_000 });
 
-	test("active participants keep receiving streams after E2EE is enabled mid-call", async ({
+	test("active participants keep receiving streams after E2EE is enabled mid-call", { tag: "@meet-group-2" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -152,7 +155,7 @@ test.describe("E2EE", () => {
 		await expectRemoteVideoReceiving(hostPage, guestName);
 	});
 
-	test("a participant can rejoin an E2EE meeting after leaving", async ({
+	test("a participant can rejoin an E2EE meeting after leaving", { tag: "@meet-group-2" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -193,7 +196,7 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("the host can leave and rejoin an E2EE meeting while a guest stays", async ({
+	test("the host can leave and rejoin an E2EE meeting while a guest stays", { tag: "@meet-group-2" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -245,7 +248,7 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("screen share streams stay healthy in an E2EE meeting", async ({
+	test("screen share streams stay healthy in an E2EE meeting", { tag: "@meet-group-1" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -272,11 +275,12 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("multiple participants can join an active E2EE meeting and see the same fingerprint", async ({
+	test("multiple participants can join an active E2EE meeting and see the same fingerprint", { tag: "@meet-group-1" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
 	}) => {
+		test.setTimeout(180_000);
 		const meetingId = await createMeeting();
 		const guestAName = "Guest Fingerprint A";
 		const guestBName = "Guest Fingerprint B";
@@ -298,18 +302,20 @@ test.describe("E2EE", () => {
 		await guestB.joinAsGuest(meetingId, guestBName);
 		await guestC.joinAsGuest(meetingId, guestCName);
 
-		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(4, {
-			timeout: 45_000,
-		});
-		await expect(guestA.page.locator("[data-participant-id]")).toHaveCount(4, {
-			timeout: 45_000,
-		});
-		await expect(guestB.page.locator("[data-participant-id]")).toHaveCount(4, {
-			timeout: 45_000,
-		});
-		await expect(guestC.page.locator("[data-participant-id]")).toHaveCount(4, {
-			timeout: 45_000,
-		});
+		await Promise.all([
+			expect(hostPage.locator("[data-participant-id]")).toHaveCount(4, {
+				timeout: 45_000,
+			}),
+			expect(guestA.page.locator("[data-participant-id]")).toHaveCount(4, {
+				timeout: 45_000,
+			}),
+			expect(guestB.page.locator("[data-participant-id]")).toHaveCount(4, {
+				timeout: 45_000,
+			}),
+			expect(guestC.page.locator("[data-participant-id]")).toHaveCount(4, {
+				timeout: 45_000,
+			}),
+		]);
 
 		await expectRemoteVideoReceiving(hostPage, guestAName);
 		await expectRemoteVideoReceiving(hostPage, guestBName);
@@ -318,9 +324,14 @@ test.describe("E2EE", () => {
 		await expectRemoteVideoReceiving(guestB.page, meetHostName);
 		await expectRemoteVideoReceiving(guestC.page, meetHostName);
 
-		const guestAFingerprint = await readFingerprint(guestA.page);
-		expect(await readFingerprint(guestB.page)).toBe(guestAFingerprint);
-		expect(await readFingerprint(guestC.page)).toBe(guestAFingerprint);
+		const [guestAFingerprint, guestBFingerprint, guestCFingerprint] =
+			await Promise.all([
+				readFingerprint(guestA.page),
+				readFingerprint(guestB.page),
+				readFingerprint(guestC.page),
+			]);
+		expect(guestBFingerprint).toBe(guestAFingerprint);
+		expect(guestCFingerprint).toBe(guestAFingerprint);
 	});
 	});
 
@@ -329,6 +340,7 @@ test.describe("E2EE", () => {
 		createMeeting,
 		createParticipant,
 	}) => {
+		test.setTimeout(90_000);
 		const meetingId = await createMeeting();
 		const guestName = "Guest Reconnect E2EE";
 		const guest = await createParticipant();

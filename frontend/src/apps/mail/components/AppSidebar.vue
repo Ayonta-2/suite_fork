@@ -467,7 +467,7 @@ const mailboxItems = computed(
 								params: { accountId: store.accountId, mailbox: mailbox.id },
 							},
 					suffix: mailbox.unread_threads ? String(mailbox.unread_threads) : '',
-					activeFor: isScreener ? ['mail-screener'] : [mailbox.id],
+					activeFor: isScreener ? ['mail-screener', 'mail-screener-sender'] : [mailbox.id],
 					menuOptions: isScreener
 						? undefined
 						: [

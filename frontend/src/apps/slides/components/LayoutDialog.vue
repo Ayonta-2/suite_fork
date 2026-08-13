@@ -33,7 +33,8 @@ import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 import { presentationTheme, templateList } from '@/apps/slides/stores/presentation'
 import { getThumbnailCardStyles } from '@/apps/slides/utils/helpers'
 
-const LAYOUT_PREVIEW_SCALE = 270 / 960
+// card width: 4xl dialog (896) - px-6 (48) - two gap-6 (48), divided by 3
+const LAYOUT_PREVIEW_SCALE = 800 / 3 / 960
 
 const emit = defineEmits(['insert'])
 

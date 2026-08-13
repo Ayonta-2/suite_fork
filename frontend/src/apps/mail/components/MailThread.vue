@@ -159,9 +159,13 @@
 												>
 													{{ mail.from_name || mail.from_email }}
 												</span>
+												<!-- leading-4: truncate is overflow-hidden, and the preset's 1.15 puts 13px
+												     text in a 14.95px box while Inter's glyph box wants ~15.7 — so the
+												     descenders of a g or a p were shaved off. 16px still sits under the
+												     sender name beside it, so the row does not grow. -->
 												<span
 													v-if="!isMobile"
-													class="text-ink-gray-5 truncate"
+													class="text-ink-gray-5 truncate leading-4"
 												>
 													<span>&lt;</span>
 													<Tooltip :text="__('Filter messages from this sender')">
@@ -192,7 +196,8 @@
 													<MailDetailsPopover v-else :mail />
 												</template>
 											</div>
-											<div class="truncate">
+											<!-- Same 13px truncate, same shaved descenders. -->
+											<div class="truncate leading-4">
 												{{ getFormattedRecipients(mail.recipients) }}
 											</div>
 										</div>
@@ -232,7 +237,7 @@
 									class="mb-4"
 								/>
 
-								<div v-show="isCollapsed(mail)" class="truncate">
+								<div v-show="isCollapsed(mail)" class="truncate text-base">
 									{{ mail.preview }}
 								</div>
 
@@ -297,10 +302,16 @@
 											@trust="trustSender.submit(mail.from_email)"
 										/>
 
+										<!-- font-sans is the system stack, not Inter: the preset leaves
+										     fontFamily.sans alone and puts InterVar on <html> instead. So this is
+										     deliberately off the variable font — and text-base's 420 then has no
+										     face to land on, which CSS resolves upward to the system Medium,
+										     rendering the body bolder than everything around it. font-normal pins
+										     it to Regular. -->
 										<LinkifiedText
 											v-else
 											:text="getPlainTextBody(mail)"
-											class="pt-4 font-sans text-base !leading-5 sm:text-sm"
+											class="pt-4 font-sans !font-normal text-base !leading-5 sm:text-sm"
 										/>
 									</template>
 
@@ -454,6 +465,7 @@ import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vu
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
+import { setPendingCompose } from '@/apps/mail/composables/composeHandoff'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
@@ -472,7 +484,19 @@ import type {
 	ScreenedAddress,
 } from '@/apps/mail/types'
 
-const { mailbox, threadID, threads, messages, canGoNext, readonly, slide, account } =
+const {
+	mailbox,
+	threadID,
+	threads,
+	messages,
+	canGoNext,
+	readonly,
+	// Explicit default: Vue casts an absent Boolean prop to `false`, so this cannot be left to a
+	// `?? !readonly` fallback — every caller that didn't pass it would silently stop marking read.
+	marksSeen = true,
+	slide,
+	account,
+} =
 	defineProps<{
 		mailbox: string
 		threadID?: string
@@ -487,6 +511,8 @@ const { mailbox, threadID, threads, messages, canGoNext, readonly, slide, accoun
 		// Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
 		// toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.
 		readonly?: boolean
+		/** Marks the conversation seen on open. On by default; a view that only previews can opt out. */
+		marksSeen?: boolean
 		// Transition name for the mobile swipe paging ('page-next' / 'page-prev', styled in
 		// MailLayout); the owner arms it per swipe and clears it on slideDone, so other thread
 		// changes swap instantly.
@@ -692,8 +718,10 @@ const loadThread = () => {
 	})
 
 	// Opening a thread marks every message in the whole conversation read — including copies in other
-	// mailboxes (e.g. Sent) that aren't shown in this view. Read-only views (the Screener) never do this.
-	if (!readonly && source.some((mail) => !mail.seen)) setThreadSeen(true)
+	// mailboxes (e.g. Sent) that aren't shown in this view. The Screener included: reading there is
+	// still reading, and leaving it unread left the "waiting to be screened" dot burning after you had
+	// looked and simply not decided yet.
+	if (marksSeen && source.some((mail) => !mail.seen)) setThreadSeen(true)
 }
 
 // Mark the whole conversation seen/unseen — every message across all mailboxes, not just the ones
@@ -1084,6 +1112,17 @@ const showSendModal = ref(false)
 
 const popOutDraft = (mail: ComposeMailData) => {
 	draftMails[mail.name as string] = mail
+
+	// Mobile composes on a page of its own rather than in an overlay — see ComposeView. Nothing has
+	// to be handed back on the way out: leaving the compose route remounts this thread, so the reply
+	// that was just sent is there in the refetch, and a local draft that was discarded is gone with
+	// the component that was holding it.
+	if (isMobile.value) {
+		setPendingCompose(mail)
+		router.push({ name: 'mail-compose', params: { accountId: scopeAccountId.value } })
+		return
+	}
+
 	focusedDraft.value = mail.name
 	showSendModal.value = true
 }

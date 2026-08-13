@@ -12,7 +12,7 @@
 			<div class="grid max-h-[32rem] grid-cols-2 gap-6 overflow-y-auto">
 				<div
 					v-for="(theme, idx) in templateList"
-					:key="theme.idx"
+					:key="theme.name"
 					class="flex flex-col gap-3"
 				>
 					<div
@@ -50,7 +50,8 @@ import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 import { getThumbnailCardStyles } from '@/apps/slides/utils/helpers'
 import { presentationTheme, templateList } from '@/apps/slides/stores/presentation'
 
-const THEME_PREVIEW_SCALE = 310 / 960
+// card width: 2xl dialog (672) - px-6 (48) - gap-6 (24), halved, - m-1 (8)
+const THEME_PREVIEW_SCALE = 292 / 960
 
 const props = defineProps({
 	update: {

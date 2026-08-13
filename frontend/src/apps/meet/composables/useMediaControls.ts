@@ -664,7 +664,65 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			}
 		}
 
-		const stream = await navigator.mediaDevices.getUserMedia(constraints);
+		let stream: MediaStream;
+		try {
+			stream = await navigator.mediaDevices.getUserMedia(constraints);
+		} catch (error) {
+			const isMissingDeviceError = (candidate: unknown) => {
+				const mediaError = candidate as Error & { constraint?: string };
+				return (
+					mediaError.name === "NotFoundError" ||
+					(mediaError.name === "OverconstrainedError" &&
+						mediaError.constraint === "deviceId")
+				);
+			};
+			const audioConstraints =
+				typeof constraints.audio === "object" ? constraints.audio : null;
+			const videoConstraints =
+				typeof constraints.video === "object" ? constraints.video : null;
+			const audioDeviceId = audioConstraints?.deviceId;
+			const videoDeviceId = videoConstraints?.deviceId;
+
+			if (!isMissingDeviceError(error) || (!audioDeviceId && !videoDeviceId)) {
+				throw error;
+			}
+
+			if (audioDeviceId && videoDeviceId) {
+				delete audioConstraints.deviceId;
+				try {
+					stream = await navigator.mediaDevices.getUserMedia(constraints);
+					setSelectedMicId("");
+					return { stream, constraints };
+				} catch (audioFallbackError) {
+					if (!isMissingDeviceError(audioFallbackError)) {
+						throw audioFallbackError;
+					}
+					audioConstraints.deviceId = audioDeviceId;
+					delete videoConstraints.deviceId;
+				}
+
+				try {
+					stream = await navigator.mediaDevices.getUserMedia(constraints);
+					setSelectedCameraId("");
+					return { stream, constraints };
+				} catch (videoFallbackError) {
+					if (!isMissingDeviceError(videoFallbackError)) {
+						throw videoFallbackError;
+					}
+					delete audioConstraints.deviceId;
+					setSelectedMicId("");
+					setSelectedCameraId("");
+				}
+			} else if (audioDeviceId) {
+				delete audioConstraints?.deviceId;
+				setSelectedMicId("");
+			} else {
+				delete videoConstraints?.deviceId;
+				setSelectedCameraId("");
+			}
+
+			stream = await navigator.mediaDevices.getUserMedia(constraints);
+		}
 		return { stream, constraints };
 	};
 

@@ -2,19 +2,18 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createResource, toast } from 'frappe-ui'
 
+import { useScreenSize } from '@/composables/useScreenSize'
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
+import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { COLOR_SCHEME, ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
 
-// Decided once, at load, and deliberately not reactive to resize. Mobile and desktop are
-// separate component trees here, not one tree restyled: crossing 640px mid-session swaps
-// them and unmounts whatever they were holding — a half-written mail vanished this way
-// (#38), and every other open surface has the same exposure. A resized window therefore
-// keeps the layout it started with until the page is reloaded.
-const isMobile = ref(window.innerWidth < 640)
-
-export const useScreenSize = () => ({ isMobile })
+// Re-exported from the suite-wide composable so mail's many callers keep one import, and so the
+// calendar reads the same ref rather than a second copy of the same window width. Imported at the
+// top rather than `export ... from`, which would re-export the name without binding it here — this
+// file calls it too.
+export { useScreenSize }
 
 /**
  * Split View: the reading pane sits beside the list rather than over it. One user setting, read the
@@ -24,6 +23,42 @@ export const useScreenSize = () => ({ isMobile })
 export const useReadingPane = () => {
 	const { userResource } = userStore()
 	return computed(() => !!userResource.data?.show_reading_pane)
+}
+
+/**
+ * Flipping Split View from the list toolbar. Appearance settings writes the same field behind a
+ * Save button; this one is a layout switch, so it applies on click — the local value flips first
+ * and the whole split re-lays out from it, then rolls back if the write doesn't land.
+ */
+export const useToggleReadingPane = () => {
+	const { userResource } = userStore()
+
+	const setReadingPane = createResource({
+		url: 'frappe.client.set_value',
+		makeParams: ({ value }: { value: 0 | 1 }) => ({
+			doctype: 'User Settings',
+			name: userResource.data?.user_settings,
+			fieldname: 'show_reading_pane',
+			value,
+		}),
+	})
+
+	return () => {
+		const user = userResource.data
+		if (!user?.user_settings) return
+
+		const next = user.show_reading_pane ? 0 : 1
+		user.show_reading_pane = next
+		setReadingPane.submit(
+			{ value: next },
+			{
+				onError: () => {
+					user.show_reading_pane = next ? 0 : 1
+					raiseToast(__('Unable to update Split View.'), 'error')
+				},
+			},
+		)
+	}
 }
 
 /**
@@ -153,28 +188,114 @@ export const useTextEditorButtons = () => {
 	return { buttons }
 }
 
-export const useVisualViewport = (calc: (viewport: VisualViewport) => string) => {
-	const value = ref('0px')
+/**
+ * How much of the on-screen keyboard is covering the layout viewport, as insets for holding a
+ * full-screen pane clear of it.
+ *
+ * iOS leaves the layout viewport full-height when the keyboard opens and slides the visible part
+ * around underneath it, so `position: fixed; inset: 0` runs on behind the keyboard and has to be
+ * held off it by hand:
+ *
+ * - `bottom` is the strip the keyboard covers, so a pane ends where the keyboard starts.
+ * - `top` is how far iOS has panned to reveal a focused field, so the pane rides that pan instead of
+ *   being dragged off the top of the screen.
+ *
+ * `interactive-widget=resizes-content` (index.html) is supposed to make both of these unnecessary by
+ * shrinking the layout viewport itself. It did not, on the iOS this was built against: dropping the
+ * `bottom` inset put the toolbar straight back behind the keyboard. Treat these as load-bearing.
+ */
+export const useKeyboardInsets = () => {
+	const top = ref(0)
+	const bottom = ref(0)
+	/** The visible height — what's left of the screen once the keyboard has taken its share. */
+	const height = ref(window.innerHeight)
 
 	const update = () => {
-		if (window.visualViewport) value.value = calc(window.visualViewport)
+		const viewport = window.visualViewport
+		if (!viewport) return
+
+		height.value = viewport.height
+		top.value = viewport.offsetTop
+		// Against the layout viewport, not innerHeight: innerHeight tracks the visual viewport on iOS,
+		// which would make this always 0 and the fallback a no-op on the browsers that need it.
+		const covered = document.documentElement.clientHeight - viewport.height - viewport.offsetTop
+		bottom.value = Math.max(0, Math.round(covered))
 	}
 
 	onMounted(() => {
-		if (!window.visualViewport) return
-		window.visualViewport.addEventListener('resize', update)
-		window.visualViewport.addEventListener('scroll', update)
-
 		update()
-
-		onUnmounted(() => {
-			if (!window.visualViewport) return
-			window.visualViewport.removeEventListener('resize', update)
-			window.visualViewport.removeEventListener('scroll', update)
-		})
+		// `resize` is the keyboard opening and closing; `scroll` is iOS panning what's left of the
+		// viewport. Missing the second is what lets a pane drift off the top of the screen.
+		window.visualViewport?.addEventListener('resize', update)
+		window.visualViewport?.addEventListener('scroll', update)
+		window.addEventListener('resize', update)
 	})
 
-	return value
+	onUnmounted(() => {
+		window.visualViewport?.removeEventListener('resize', update)
+		window.visualViewport?.removeEventListener('scroll', update)
+		window.removeEventListener('resize', update)
+	})
+
+	return { top, bottom, height }
+}
+
+const keyboardOpen = ref(false)
+let watchingFocus = false
+
+// Input types that raise no on-screen keyboard: focusing one is not the keyboard coming up, and
+// treating it as such takes the bottom bar away for a tick with nothing covering where it was.
+// `shouldIgnoreKeypress` draws the same line for checkboxes.
+const NON_TEXT_INPUT_TYPES = new Set([
+	'button',
+	'checkbox',
+	'color',
+	'file',
+	'hidden',
+	'image',
+	'radio',
+	'range',
+	'reset',
+	'submit',
+])
+
+const isEditable = (el: Element | null) => {
+	if (!el) return false
+	if (el.tagName === 'INPUT') return !NON_TEXT_INPUT_TYPES.has((el as HTMLInputElement).type)
+	return el.tagName === 'TEXTAREA' || (el as HTMLElement).isContentEditable === true
+}
+
+/**
+ * Whether the on-screen keyboard is up, read off what's focused rather than off the viewport.
+ *
+ * The viewport can't answer this under `interactive-widget=resizes-content` (index.html): the
+ * keyboard shrinks the layout viewport itself, so the visual and layout viewports stay the same
+ * size and `useKeyboardInsets` measures zero — the very case this is for. What the shrink DOES do
+ * is pull anything anchored to the bottom of the shell up above the keyboard, which is why the
+ * bottom bar has to be told to step aside.
+ *
+ * Mobile only: desktop has no on-screen keyboard, so a focused field there means nothing and the
+ * listeners aren't worth attaching.
+ */
+export const useKeyboardOpen = () => {
+	const { isMobile } = useScreenSize()
+
+	if (!watchingFocus && isMobile.value) {
+		watchingFocus = true
+		// Re-read the focus on the next frame rather than trusting the event: moving between two
+		// fields fires focusout before focusin, and acting on the focusout would flash the bar back
+		// in between them.
+		const sync = () =>
+			requestAnimationFrame(() => (keyboardOpen.value = isEditable(document.activeElement)))
+		document.addEventListener('focusin', sync)
+		document.addEventListener('focusout', sync)
+		// A field torn down with its route never fires focusout — Chrome and Safari move focus to
+		// <body> silently — so this would latch on and stay on. Compose is a page whose editor is
+		// focused on mount and which closes by navigating away, i.e. exactly that shape: leaving it
+		// left the tab bar and its FAB hidden for the rest of the session.
+		router.afterEach(() => sync())
+	}
+	return keyboardOpen
 }
 
 const undoAction = ref<() => void>()

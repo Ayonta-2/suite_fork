@@ -8,10 +8,11 @@ import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { markDirty } from '@/apps/slides/stores/saving'
 import {
 	activeElement,
+	clampWidthToSlide,
 	findSlideElement,
 	getInitialShapeTextContent,
 } from '@/apps/slides/stores/element'
-import { editElementCommand } from '@/apps/slides/stores/commands'
+import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
 import { currentSlide } from '@/apps/slides/stores/slide'
 
 export const activeEditor = ref(null)
@@ -84,7 +85,7 @@ const editorStyles = reactive({
 	italic: false,
 	strike: false,
 	underline: false,
-	uppercase: false,
+	textTransform: 'none',
 	fontSize: null,
 	fontFamily: null,
 	color: null,
@@ -110,7 +111,7 @@ export const useTextEditor = () => {
 			underline: editor.isActive('underline'),
 			bulletList: editor.isActive('bulletList'),
 			orderedList: editor.isActive('orderedList'),
-			uppercase: activeStyles.textTransform == 'uppercase',
+			textTransform: activeStyles.textTransform || 'none',
 			fontSize: parseInt(activeStyles.fontSize, 10) || null,
 			fontFamily: activeStyles.fontFamily || null,
 			color: activeStyles.color || null,
@@ -129,7 +130,7 @@ export const useTextEditor = () => {
 		markDirty()
 	}
 
-	const recordContentEdit = (oldValue, transaction) => {
+	const recordContentEdit = (oldValue, transaction, clampedWidth) => {
 		const compositionId = transaction.getMeta('composition')
 		// an IME candidate pause routinely outlasts the coalesce window
 		const forceCoalesce = compositionId != null && compositionId === lastCompositionId
@@ -138,16 +139,32 @@ export const useTextEditor = () => {
 		const newValue = editorElement.content
 		if (!commandHistory || oldValue === newValue) return
 
+		const contentCommand = editElementCommand({
+			slideId: editorSlideId,
+			elementIds: [editorElement.id],
+			property: 'content',
+			oldValue,
+			newValue,
+			coalesceKey: `content:${editorSlideId}:${editorElement.id}`,
+		})
+
+		if (!clampedWidth) return commandHistory.record(contentCommand, { forceCoalesce })
+
+		// the clamp has to undo with the edit that triggered it
+		const widthCommand = editElementCommand({
+			slideId: editorSlideId,
+			elementIds: [editorElement.id],
+			property: 'width',
+			oldValue: null,
+			newValue: clampedWidth,
+		})
+
 		commandHistory.record(
-			editElementCommand({
+			batchCommand({
 				slideId: editorSlideId,
 				elementIds: [editorElement.id],
-				property: 'content',
-				oldValue,
-				newValue,
-				coalesceKey: `content:${editorSlideId}:${editorElement.id}`,
+				commands: [contentCommand, widthCommand],
 			}),
-			{ forceCoalesce },
 		)
 	}
 
@@ -164,9 +181,10 @@ export const useTextEditor = () => {
 		const oldValue = patchedHTML(editorElement.content)
 
 		updateElementContent(editor)
+		const clampedWidth = clampWidthToSlide(editorElement)
 		setEditorStyles(editor)
 
-		recordContentEdit(oldValue, transaction)
+		recordContentEdit(oldValue, transaction, clampedWidth)
 	}
 
 	const markCommands = {
