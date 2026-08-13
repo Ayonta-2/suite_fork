@@ -32,6 +32,21 @@
 		>
 			<Switch :modelValue="headers.column" @update:modelValue="toggleHeaderColumn" />
 		</PropertyRow>
+		<PropertyRow
+			label="Banded Rows"
+			class="cursor-pointer"
+			@click="toggleFromRow($event, () => setBandedRows(!activeElement.bandedRows))"
+		>
+			<Switch :modelValue="activeElement.bandedRows || false" @update:modelValue="setBandedRows" />
+		</PropertyRow>
+		<PropertyRow v-if="activeElement.bandedRows" label="Band Color">
+			<ColorPicker
+				:modelValue="activeElement.bandColor || getDefaultBandColor(activeElement.color)"
+				@update:modelValue="bandColor.set"
+				@colordown="bandColor.begin"
+				@colorup="bandColor.commit"
+			/>
+		</PropertyRow>
 		<PropertyRow label="Grid Color">
 			<ColorPicker
 				:modelValue="activeElement.gridColor || getDefaultGridColor(activeElement.color)"
@@ -66,8 +81,8 @@ import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
-import { useElementProperty } from '@/apps/slides/composables/editProperty'
-import { getDefaultGridColor } from '@/apps/slides/utils/color'
+import { setElementProperty, useElementProperty } from '@/apps/slides/composables/editProperty'
+import { getDefaultBandColor, getDefaultGridColor } from '@/apps/slides/utils/color'
 import { getTableSize, getTableHeaders } from '@/apps/slides/utils/tableWidths'
 import {
 	setRowCount,
@@ -84,6 +99,10 @@ const headers = computed(() => getTableHeaders(activeElement.value.content))
 const toggleFromRow = (e, toggle) => {
 	if (!e.target.closest('button')) toggle()
 }
+
+const setBandedRows = (value) => setElementProperty('bandedRows', value)
+
+const bandColor = useElementProperty('bandColor')
 
 const gridColor = useElementProperty('gridColor')
 

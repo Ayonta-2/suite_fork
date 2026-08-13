@@ -23,7 +23,11 @@ import { computed, inject, ref, watch } from 'vue'
 import { EditorContent } from '@tiptap/vue-3'
 
 import { sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
-import { getDefaultGridColor, isBackgroundColorDark } from '@/apps/slides/utils/color'
+import {
+	getDefaultBandColor,
+	getDefaultGridColor,
+	isBackgroundColorDark,
+} from '@/apps/slides/utils/color'
 import { getColumnWidths, getTableWidth } from '@/apps/slides/utils/tableWidths'
 import { isResizingColumn } from '@/apps/slides/utils/columnResizing'
 import { selectionColor } from '@/apps/slides/utils/constants'
@@ -80,6 +84,9 @@ const elementStyles = computed(() => ({
 	'--table-header-tint': headerTint.value,
 	'--table-grid-color': element.value.gridColor || getDefaultGridColor(element.value.color),
 	'--table-grid-width': `${element.value.gridWidth ?? 1}px`,
+	'--table-band-color': element.value.bandedRows
+		? element.value.bandColor || getDefaultBandColor(element.value.color)
+		: 'transparent',
 	'--table-resize-color': `${selectionColor}80`,
 }))
 
@@ -223,6 +230,11 @@ const handleDoubleClick = (e) => {
 .tableElement table th {
 	font-weight: 600;
 	background-color: color-mix(in srgb, currentColor var(--table-header-tint, 5%), transparent);
+}
+
+/* a header row or column keeps its own tint, so only plain cells band */
+.tableElement table tr:nth-child(even) td {
+	background-color: var(--table-band-color);
 }
 
 .tableElement p {
