@@ -39,6 +39,23 @@ const styled = (text: string) =>
 const blankParagraphElement = (editor: Editor) =>
 	Array.from(editor.view.dom.querySelectorAll('p')).find((p) => !p.textContent)
 
+describe('a style the mark does not carry', () => {
+	it('goes unwritten rather than out as a value of its own', () => {
+		const editor = mountEditor('<p><span style="font-size: 24px">one</span></p>')
+
+		const html = editor.getHTML()
+		expect(html).toContain('font-size: 24px')
+		expect(html).not.toContain('opacity')
+		expect(html).not.toContain('null')
+	})
+
+	it('still writes an opacity the mark does carry', () => {
+		const editor = mountEditor('<p><span style="font-size: 24px; opacity: 0">one</span></p>')
+
+		expect(editor.getHTML()).toContain('opacity: 0')
+	})
+})
+
 describe('styles on a blank line', () => {
 	// typing there also has to clear the placeholder the blank line holds
 	it('keeps the styles of the line above on the text typed there', () => {
@@ -77,6 +94,14 @@ describe('styles on a blank line', () => {
 
 		expect(blankParagraphElement(editor)?.style.fontSize).toBe('')
 		expect(patchEmptyParagraphs(editor.getHTML()).wasUpdated).toBe(false)
+	})
+
+	// a style the span left out parses back as null, and the blank line paints
+	// whatever the mark above it renders
+	it('leaves the line visible when the mark above carries no opacity', () => {
+		const editor = mountEditor('<p><span style="font-size: 24px">one</span></p><p></p>')
+
+		expect(blankParagraphElement(editor)?.style.opacity).toBe('')
 	})
 
 	it('does not carry styles across table cells', () => {

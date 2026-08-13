@@ -34,6 +34,10 @@ const parseElementStyle = (attribute, value) => {
 }
 
 const renderAttributeHTML = (attribute, value) => {
+	// every attribute renders, carried or not, and a style the span left out parses
+	// back as null. Written out it reads as opacity: 0 and takes the text with it
+	if (value == null) return {}
+
 	const suffixes = {
 		fontSize: 'px',
 		letterSpacing: 'px',
