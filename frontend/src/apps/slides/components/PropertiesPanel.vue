@@ -13,9 +13,9 @@
 				<Divider flexItem />
 				<TableSection />
 				<Divider flexItem />
-				<TableCellSection />
-				<Divider flexItem />
 				<TableGridSection />
+				<Divider flexItem />
+				<TableCellSection />
 			</template>
 			<template v-if="['text', 'table'].includes(activeElement?.type) || isEditingShapeText">
 				<Divider flexItem />
