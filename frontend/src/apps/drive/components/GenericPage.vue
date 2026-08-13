@@ -78,6 +78,7 @@ import { move } from '@/apps/drive/resources/files'
 import DriveListSkeleton from '@/apps/drive/components/DriveListSkeleton.vue'
 import { settings } from '@/apps/drive/resources/permissions'
 import emitter from '@/apps/drive/emitter'
+import { useEmitter } from '@/apps/drive/utils/useEmitter'
 import { getFileLink } from '@/apps/drive/ui/drive/js/utils'
 
 import LucideClock from '~icons/lucide/clock'
@@ -329,7 +330,7 @@ watch(
   },
   { immediate: true, deep: false }
 )
-emitter.on('refresh', refreshData)
+useEmitter('refresh', refreshData)
 
 // Removes entities from the currently rendered list once a confirm-dialog
 // write (remove/restore/delete forever) succeeds server-side. Provided so
@@ -343,7 +344,7 @@ function removeFromList(entities) {
 }
 provide('removeFromList', removeFromList)
 
-emitter.on('remove-file', (item) => {
+useEmitter('remove-file', (item) => {
   const names = Array.isArray(item) ? item : [item]
   const entities = allRows.value.filter((e) => names.includes(e.name))
   if (!entities.length) return
@@ -385,7 +386,7 @@ const onDrop = (targetFile, draggedItem) => {
     refreshFolder(targetFile.name, sortOrder.value)
   selections.value = new Set()
 }
-emitter.on('remove-file-ui', removeFile)
+useEmitter('remove-file-ui', removeFile)
 
 // Auto-scroll the file area while dragging near its top/bottom edge, so files
 // can be dropped into folders that aren't currently in view.
