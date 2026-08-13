@@ -197,7 +197,9 @@ const srcdoc = computed(() => {
 
 				/* Emails routinely hardcode widths (width attrs, inline styles); clamp them to the
 				   viewport so the message reflows instead of scrolling sideways. max-width wins over
-				   both the width attribute and inline width, covering every fixed-width variant. */
+				   both the width attribute and inline width, covering every fixed-width variant.
+				   An author's own narrower cap is handed back by normalizeWidths() below, which
+				   re-asserts it inline — the one declaration that outranks this one. */
 				table, td, th, div {
 					max-width: 100% !important;
 				}
@@ -269,8 +271,21 @@ const srcdoc = computed(() => {
 						if (parseInt(el.getAttribute('width'), 10) > limit) el.setAttribute('width', '100%');
 						const style = el.style;
 						if (style.width.endsWith('px') && parseFloat(style.width) > limit) style.width = '100%';
-						if (style.maxWidth.endsWith('px') && parseFloat(style.maxWidth) > limit) style.maxWidth = '100%';
 						if (style.minWidth.endsWith('px') && parseFloat(style.minWidth) > limit) style.minWidth = '0';
+
+						// A percentage width capped by a pixel max-width is how every responsive
+						// email builds its centered column. The sheet's blanket clamp outranks that
+						// cap (stylesheet !important beats a plain inline declaration) and flattens
+						// the column across the pane, so hand it back as inline !important — the one
+						// declaration that outranks the sheet. Only while it is narrower than the
+						// viewport: any wider and the clamp is what stops sideways scrolling. The
+						// author's value is stashed on first pass, since writing to max-width
+						// destroys it and a resize back to a wide pane has to restore it.
+						if (el.dataset.authorMaxWidth === undefined && style.maxWidth.endsWith('px'))
+							el.dataset.authorMaxWidth = style.maxWidth;
+						const cap = parseFloat(el.dataset.authorMaxWidth);
+						if (cap > 0)
+							style.setProperty('max-width', cap > limit ? '100%' : el.dataset.authorMaxWidth, 'important');
 					});
 				};
 				normalizeWidths();
