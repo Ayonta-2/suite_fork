@@ -45,6 +45,28 @@ const seedNewCells = ({ tr }) => {
 	return true
 }
 
+const getFirstRow = (doc) => {
+	const [first] = getCells(doc)
+	return first ? doc.resolve(first.pos).parent : null
+}
+
+// a column states its width on every cell in it, so evening the columns out means
+// writing the same number into all of them
+const setEvenColumnWidths = ({ tr }) => {
+	const firstRow = getFirstRow(tr.doc)
+	if (!firstRow) return false
+
+	const widths = []
+	firstRow.forEach((cell) => widths.push(...(cell.attrs.colwidth || [])))
+	if (!widths.length || widths.some((width) => !width)) return false
+
+	const even = Math.round(widths.reduce((total, width) => total + width, 0) / widths.length)
+	getCells(tr.doc).forEach(({ pos, node }) => {
+		tr.setNodeAttribute(pos, 'colwidth', Array(node.attrs.colspan).fill(even))
+	})
+	return true
+}
+
 const resizeTable = (command, times) => {
 	if (times < 1 || !activeEditor.value) return
 
@@ -52,6 +74,14 @@ const resizeTable = (command, times) => {
 	for (let index = 0; index < times; index++) chain.command(selectLastCell)[command]()
 	chain.command(seedNewCells).run()
 }
+
+// the context menu runs on the focused editor, so the commands land where the caret
+// is and only the cells they leave behind need seeding
+export const runTableCommand = (command) =>
+	activeEditor.value?.chain()[command]().command(seedNewCells).run()
+
+export const distributeColumns = () =>
+	activeEditor.value?.chain().command(setEvenColumnWidths).run()
 
 // unlike the row and column commands these act on the whole first row or column
 // wherever the selection sits, so an unfocused editor needs no help
