@@ -105,7 +105,7 @@ function _ensureCellContent(table) {
 // Clean the converted HTML, and give imported tables the same structure as
 // manually created ones: one header row, no bold, no width attributes. The
 // theme then styles them the same.
-function _normaliseHtml(html) {
+export function _normaliseHtml(html) {
   const container = document.createElement('div')
   container.innerHTML = html
   _sanitise(container)
