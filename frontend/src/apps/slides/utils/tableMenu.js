@@ -29,7 +29,7 @@ export const buildTableContextOptions = () => {
 		},
 	]
 
-	const tableOptions = [
+	const modifyOptions = [
 		{
 			label: 'Merge cells',
 			icon: 'lucide-table-cells-merge',
@@ -47,6 +47,9 @@ export const buildTableContextOptions = () => {
 			icon: 'lucide-align-horizontal-distribute-center',
 			onClick: () => distributeColumns(),
 		},
+	]
+
+	const deleteOptions = [
 		{
 			label: 'Delete row',
 			icon: 'lucide-rows-3',
@@ -63,6 +66,7 @@ export const buildTableContextOptions = () => {
 
 	return [
 		{ group: 'Insert', options: insertOptions },
-		{ group: '', options: tableOptions },
+		{ group: 'Modify', options: modifyOptions },
+		{ group: '', options: deleteOptions },
 	]
 }
