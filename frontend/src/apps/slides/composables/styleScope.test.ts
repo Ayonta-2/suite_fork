@@ -37,6 +37,20 @@ describe('what an empty selection styles', () => {
 		expect(html).not.toContain('<strong>two</strong>')
 	})
 
+	// a scrub is a burst of updates, and the first one used to push the selection
+	// out of the cell it had just styled
+	it('keeps a repeated update on the cell the cursor started in', () => {
+		initTextEditor('t1', table, true)
+		cursorInFirstCell()
+
+		updateProperty('fontSize', 20)
+		updateProperty('fontSize', 25)
+
+		const html = activeEditor.value.getHTML()
+		expect(html).toContain('font-size: 25px')
+		expect(html.match(/font-size/g)).toHaveLength(1)
+	})
+
 	// a mark needs text to sit on, so empty cells read as unstyled
 	it('styles a table that has not been typed in yet', () => {
 		initTextEditor('t1', getInitialTableContent(2, 2, 150, { fontFamily: 'Inter', fontSize: 18 }))

@@ -2,7 +2,7 @@ import { ref, reactive, watch } from 'vue'
 import { Editor } from '@tiptap/vue-3'
 import { createDocument } from '@tiptap/core'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
-import { TextSelection } from 'prosemirror-state'
+import { Selection, TextSelection } from 'prosemirror-state'
 import { cellAround } from 'prosemirror-tables'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { markDirty } from '@/apps/slides/stores/saving'
@@ -200,9 +200,12 @@ export const useTextEditor = () => {
 		const $cell = editor.isEditable ? cellAround(editor.state.selection.$head) : null
 		if (!$cell) return chain.selectAll()
 
+		// the cell's own boundaries can't hold a caret, and endpoints left on them
+		// get normalised outwards into the next cell
+		const { doc } = editor.state
 		return chain.setTextSelection({
-			from: $cell.pos + 1,
-			to: $cell.pos + $cell.nodeAfter.nodeSize - 1,
+			from: Selection.near(doc.resolve($cell.pos + 1), 1).from,
+			to: Selection.near(doc.resolve($cell.pos + $cell.nodeAfter.nodeSize - 1), -1).to,
 		})
 	}
 
