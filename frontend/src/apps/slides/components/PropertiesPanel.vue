@@ -9,6 +9,10 @@
 			<LayoutSection />
 			<Divider flexItem />
 			<ElementSection />
+			<template v-if="activeElement?.type === 'table'">
+				<Divider flexItem />
+				<TableSection />
+			</template>
 			<template v-if="['text', 'table'].includes(activeElement?.type) || isEditingShapeText">
 				<Divider flexItem />
 				<TypographySection />
@@ -63,6 +67,7 @@ import PositionSection from './PositionSection.vue'
 import LayoutSection from './LayoutSection.vue'
 import ElementSection from './ElementSection.vue'
 import AppearanceSection from './AppearanceSection.vue'
+import TableSection from './TableSection.vue'
 import TypographySection from './TypographySection.vue'
 import ShapeStyleSection from './ShapeStyleSection.vue'
 import ImageSection from './ImageSection.vue'

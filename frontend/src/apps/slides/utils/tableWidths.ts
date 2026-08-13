@@ -21,17 +21,27 @@ export const getTableWidth = (content: string) => {
 	return widths.reduce((total, width) => total + width, 0)
 }
 
+const countColumns = (row: Element) =>
+	Array.from(row.children).reduce(
+		(total, cell) => total + (parseInt(cell.getAttribute('colspan') || '', 10) || 1),
+		0,
+	)
+
 // a column renders at least this wide whether or not it has a width of its own, so
 // the table simply cannot draw inside a frame narrower than their sum
 export const getMinTableWidth = (content: string, cellMinWidth = 25) => {
 	const firstRow = getFirstRow(content)
-	if (!firstRow) return 0
+	return firstRow ? countColumns(firstRow) * cellMinWidth : 0
+}
 
-	const columns = Array.from(firstRow.children).reduce(
-		(total, cell) => total + (parseInt(cell.getAttribute('colspan') || '', 10) || 1),
-		0,
-	)
-	return columns * cellMinWidth
+export const getTableSize = (content: string) => {
+	const body = getDocFromHTML(content || '').body
+	const firstRow = body.querySelector('tr')
+
+	return {
+		rows: body.querySelectorAll('tr').length,
+		columns: firstRow ? countColumns(firstRow) : 0,
+	}
 }
 
 const setColgroup = (table: HTMLTableElement, widths: number[]) => {
