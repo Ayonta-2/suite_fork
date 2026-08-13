@@ -69,6 +69,7 @@ const editorStyles = reactive({
 	opacity: null,
 	bulletList: false,
 	orderedList: false,
+	cellFill: null,
 })
 
 export const useTextEditor = () => {
@@ -92,6 +93,10 @@ export const useTextEditor = () => {
 			color: activeStyles.color || null,
 			letterSpacing: parseInt(activeStyles.letterSpacing, 10),
 			opacity: activeStyles.opacity,
+			cellFill:
+				editor.getAttributes('tableCell').backgroundColor ||
+				editor.getAttributes('tableHeader').backgroundColor ||
+				null,
 		})
 	}
 

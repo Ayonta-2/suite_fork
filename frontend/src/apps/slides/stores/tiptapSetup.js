@@ -750,6 +750,24 @@ const LineHeight = Extension.create({
 	},
 })
 
+// any CSS color, not the palette names frappe-ui's cell extensions gate on, so a theme
+// token can be stored through the same attribute later
+const cellAttributes = {
+	backgroundColor: {
+		default: null,
+		parseHTML: (element) => element.style.backgroundColor || null,
+		renderHTML: ({ backgroundColor }) =>
+			backgroundColor ? { style: `background-color: ${backgroundColor}` } : {},
+	},
+}
+
+const withCellAttributes = (extension) =>
+	extension.extend({
+		addAttributes() {
+			return { ...this.parent?.(), ...cellAttributes }
+		},
+	})
+
 const ScaledColumnResizing = Extension.create({
 	name: 'scaledColumnResizing',
 
@@ -797,7 +815,7 @@ export const extensions = [
 	// resizing is app-level: prosemirror's column resizing math ignores canvas scale
 	Table.configure({ resizable: false, View: null }),
 	TableRow,
-	TableCell,
-	TableHeader,
+	withCellAttributes(TableCell),
+	withCellAttributes(TableHeader),
 	ScaledColumnResizing,
 ]

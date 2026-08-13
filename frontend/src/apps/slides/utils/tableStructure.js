@@ -3,7 +3,7 @@ import { TextSelection } from 'prosemirror-state'
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
 import { ZWSP } from '@/apps/slides/stores/tiptapSetup'
 
-const getCells = (doc) => {
+export const getCells = (doc) => {
 	const cells = []
 	doc.descendants((node, pos) => {
 		if (!['tableCell', 'tableHeader'].includes(node.type.name)) return

@@ -47,6 +47,9 @@
 				@colorup="bandColor.commit"
 			/>
 		</PropertyRow>
+		<PropertyRow label="Cell Fill">
+			<ColorPicker :modelValue="editorStyles.cellFill" @update:modelValue="setCellFill" />
+		</PropertyRow>
 		<PropertyRow label="Grid Color">
 			<ColorPicker
 				:modelValue="activeElement.gridColor || getDefaultGridColor(activeElement.color)"
@@ -81,6 +84,8 @@ import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
+import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
+import { setCellFill } from '@/apps/slides/utils/tableCells'
 import { setElementProperty, useElementProperty } from '@/apps/slides/composables/editProperty'
 import { getDefaultBandColor, getDefaultGridColor } from '@/apps/slides/utils/color'
 import { getTableSize, getTableHeaders } from '@/apps/slides/utils/tableWidths'
@@ -90,6 +95,8 @@ import {
 	toggleHeaderRow,
 	toggleHeaderColumn,
 } from '@/apps/slides/utils/tableStructure'
+
+const { editorStyles } = useTextEditor()
 
 const tableSize = computed(() => getTableSize(activeElement.value.content))
 
