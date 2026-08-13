@@ -76,12 +76,14 @@ const resizeTable = (command, times) => {
 }
 
 // the context menu runs on the focused editor, so the commands land where the caret
-// is and only the cells they leave behind need seeding
+// is and only the cells they leave behind need seeding. The menu holds the focus while
+// it is open and hands it back to whatever it took it from, which leaves the caret
+// nowhere, so each op focuses again on its way out.
 export const runTableCommand = (command) =>
-	activeEditor.value?.chain()[command]().command(seedNewCells).run()
+	activeEditor.value?.chain().focus()[command]().command(seedNewCells).run()
 
 export const distributeColumns = () =>
-	activeEditor.value?.chain().command(setEvenColumnWidths).run()
+	activeEditor.value?.chain().focus().command(setEvenColumnWidths).run()
 
 // unlike the row and column commands these act on the whole first row or column
 // wherever the selection sits, so an unfocused editor needs no help
