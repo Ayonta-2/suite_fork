@@ -149,23 +149,34 @@ const PastePlainText = Extension.create({
 			return true
 		}
 
-		// only table elements hold tables, and a text element left holding nothing
-		// but a table reads as empty and gets deleted on blur
-		const dropTables = (slice, view) => {
+		// only table elements hold tables, and a text element left holding nothing but a
+		// table reads as empty and gets deleted on blur. The cells hold the user's own
+		// text though, so they come out as the lines they are rather than going with it
+		const unwrapTables = (slice, view) => {
 			if (hasTableNode(view.state.doc)) return slice
 
 			const nodes = []
+			let unwrapped = false
+
 			slice.content.forEach((node) => {
-				if (node.type.name !== 'table') nodes.push(node)
+				if (node.type.name !== 'table') {
+					nodes.push(node)
+					return
+				}
+
+				unwrapped = true
+				node.descendants((child) => {
+					if (!child.isTextblock) return true
+					nodes.push(child)
+					return false
+				})
 			})
 
-			if (nodes.length === slice.content.childCount) return slice
-
-			return Slice.maxOpen(Fragment.fromArray(nodes))
+			return unwrapped ? Slice.maxOpen(Fragment.fromArray(nodes)) : slice
 		}
 
 		const pastePlugin = new Plugin({
-			props: { handlePaste: pasteWithInheritedStyles, transformPasted: dropTables },
+			props: { handlePaste: pasteWithInheritedStyles, transformPasted: unwrapTables },
 		})
 
 		return [pastePlugin]
