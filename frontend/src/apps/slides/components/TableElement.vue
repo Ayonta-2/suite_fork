@@ -23,7 +23,7 @@ import { computed, inject, ref, watch } from 'vue'
 import { EditorContent } from '@tiptap/vue-3'
 
 import { sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
-import { isBackgroundColorDark } from '@/apps/slides/utils/color'
+import { getDefaultGridColor, isBackgroundColorDark } from '@/apps/slides/utils/color'
 import { getColumnWidths, getTableWidth } from '@/apps/slides/utils/tableWidths'
 import { isResizingColumn } from '@/apps/slides/utils/columnResizing'
 import { selectionColor } from '@/apps/slides/utils/constants'
@@ -78,6 +78,8 @@ const elementStyles = computed(() => ({
 	cursor: isEditable.value ? 'text' : '',
 	userSelect: isEditable.value ? 'text' : 'none',
 	'--table-header-tint': headerTint.value,
+	'--table-grid-color': element.value.gridColor || getDefaultGridColor(element.value.color),
+	'--table-grid-width': `${element.value.gridWidth ?? 1}px`,
 	'--table-resize-color': `${selectionColor}80`,
 }))
 
@@ -184,7 +186,7 @@ const handleDoubleClick = (e) => {
    which would otherwise style the editor render but not the static one */
 .tableElement table td,
 .tableElement table th {
-	border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+	border: var(--table-grid-width, 1px) solid var(--table-grid-color, currentColor);
 	padding: 6px 8px;
 	vertical-align: top;
 	overflow-wrap: break-word;

@@ -31,6 +31,13 @@ export const guessShapeColorsFromBackground = (colorString) => {
 		: { fillColor: '#EEEEEEFF', strokeColor: '#595959FF' }
 }
 
+// grid lines read as a tint of the text color, which already tracks the slide
+// background, so they stay visible on a white slide and on a near-black one
+export const getDefaultGridColor = (textColor) =>
+	tinycolor(textColor || '#000000')
+		.setAlpha(0.35)
+		.toHex8String()
+
 export const getColorAndOpacity = (colorString = '#000000ff') => {
 	if (!colorString?.startsWith('#') || colorString.length !== 9) {
 		return {
