@@ -1,25 +1,7 @@
 import { TextSelection } from 'prosemirror-state'
 
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
-import { ZWSP } from '@/apps/slides/stores/tiptapSetup'
-
-export const getCells = (doc) => {
-	const cells = []
-	doc.descendants((node, pos) => {
-		if (!['tableCell', 'tableHeader'].includes(node.type.name)) return
-		cells.push({ pos, node })
-		return false
-	})
-	return cells
-}
-
-const getCellMarks = (doc) => {
-	let marks = []
-	doc.descendants((node) => {
-		if (!marks.length && node.isText) marks = node.marks
-	})
-	return marks
-}
+import { ZWSP, getCells, getFirstMarks } from '@/apps/slides/stores/tiptapSetup'
 
 const getCellAlign = (doc) => {
 	let align = null
@@ -45,7 +27,7 @@ const selectLastCell = ({ tr }) => {
 const seedNewCells = ({ tr }) => {
 	const cells = getCells(tr.doc)
 	const width = cells[0]?.node.attrs.colwidth?.[0]
-	const marks = getCellMarks(tr.doc)
+	const marks = getFirstMarks(tr.doc)
 	const align = getCellAlign(tr.doc)
 
 	cells.reverse().forEach(({ pos, node }) => {

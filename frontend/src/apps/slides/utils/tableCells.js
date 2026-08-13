@@ -1,7 +1,7 @@
 import { CellSelection } from 'prosemirror-tables'
 
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
-import { getCells } from '@/apps/slides/utils/tableStructure'
+import { getCells } from '@/apps/slides/stores/tiptapSetup'
 
 // a table selected but not focused has its selection parked in the first cell, so the
 // attribute would land on that one alone. Styling reads as whole-table there, the same

@@ -88,29 +88,36 @@ export const hasTableNode = (doc) => {
 	return false
 }
 
-const allCellPositions = (doc) => {
-	const positions = []
+export const getCells = (doc) => {
+	const cells = []
 	doc.descendants((node, pos) => {
-		if (['tableCell', 'tableHeader'].includes(node.type.name)) positions.push(pos)
+		if (!['tableCell', 'tableHeader'].includes(node.type.name)) return
+		cells.push({ pos, node })
+		return false
 	})
-	return positions
+	return cells
 }
 
 const cellsToClear = ({ selection, doc }) => {
 	if (selection instanceof CellSelection) return selection
 	if (!hasTableNode(doc) || selection.from !== 0 || selection.to !== doc.content.size) return null
 
-	const cells = allCellPositions(doc)
-	return cells.length ? CellSelection.create(doc, cells[0], cells[cells.length - 1]) : null
+	const cells = getCells(doc)
+	return cells.length ? CellSelection.create(doc, cells[0].pos, cells[cells.length - 1].pos) : null
+}
+
+export const getFirstMarks = (node) => {
+	let marks = []
+	node.descendants((child) => {
+		if (!marks.length && child.isText) marks = child.marks
+	})
+	return marks
 }
 
 // marks need text to sit on, so a cleared cell keeps the placeholder and the marks
 // the panel styles through
 const emptiedCell = (cell, schema) => {
-	let marks = []
-	cell.descendants((node) => {
-		if (!marks.length && node.isText) marks = node.marks
-	})
+	const marks = getFirstMarks(cell)
 	return schema.nodes.paragraph.create(cell.firstChild?.attrs, schema.text(ZWSP, marks))
 }
 
