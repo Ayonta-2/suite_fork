@@ -25,8 +25,10 @@ async function expectParticipantsAndVideo(
 			timeout: 30_000,
 		}),
 	]);
-	await expectRemoteVideoReceiving(guestPage, meetHostName);
-	await expectRemoteVideoReceiving(hostPage, guestName);
+	await Promise.all([
+		expectRemoteVideoReceiving(guestPage, meetHostName),
+		expectRemoteVideoReceiving(hostPage, guestName),
+	]);
 }
 
 async function openMeetingAccessSettings(page: Page): Promise<void> {
@@ -125,35 +127,15 @@ test.describe("E2EE", () => {
 		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 		await expectParticipantsAndVideo(hostPage, guest.page, guestName);
 
+		const hostErrors = capturePageErrors(hostPage);
 		await enableE2EEInSettings(hostPage);
 
 		await expectParticipantsAndVideo(hostPage, guest.page, guestName);
+		hostErrors.assertNoErrors();
 	});
 
 	test.describe("heavy coverage", () => {
 		test.describe.configure({ timeout: 90_000 });
-
-	test("active participants keep receiving streams after E2EE is enabled mid-call", { tag: "@meet-group-2" }, async ({
-		hostPage,
-		createMeeting,
-		createParticipant,
-	}) => {
-		const meetingId = await createMeeting();
-		const guestName = "Guest Convert E2EE";
-		const guest = await createParticipant();
-
-		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
-
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
-
-		const hostErrors = capturePageErrors(hostPage);
-		await enableE2EEInSettings(hostPage);
-		hostErrors.assertNoErrors();
-
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
-	});
 
 	test("a participant can rejoin an E2EE meeting after leaving", { tag: "@meet-group-2" }, async ({
 		hostPage,
@@ -291,13 +273,17 @@ test.describe("E2EE", () => {
 
 		await joinHostAndGuest(hostPage, guestA, meetingId, guestAName);
 
-		await expectRemoteVideoReceiving(guestA.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestAName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guestA.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestAName),
+		]);
 
 		await enableE2EEInSettings(hostPage);
 
-		await expectRemoteVideoReceiving(guestA.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestAName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guestA.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestAName),
+		]);
 
 		await guestB.joinAsGuest(meetingId, guestBName);
 		await guestC.joinAsGuest(meetingId, guestCName);
@@ -317,12 +303,14 @@ test.describe("E2EE", () => {
 			}),
 		]);
 
-		await expectRemoteVideoReceiving(hostPage, guestAName);
-		await expectRemoteVideoReceiving(hostPage, guestBName);
-		await expectRemoteVideoReceiving(hostPage, guestCName);
-		await expectRemoteVideoReceiving(guestA.page, meetHostName);
-		await expectRemoteVideoReceiving(guestB.page, meetHostName);
-		await expectRemoteVideoReceiving(guestC.page, meetHostName);
+		await Promise.all([
+			expectRemoteVideoReceiving(hostPage, guestAName),
+			expectRemoteVideoReceiving(hostPage, guestBName),
+			expectRemoteVideoReceiving(hostPage, guestCName),
+			expectRemoteVideoReceiving(guestA.page, meetHostName),
+			expectRemoteVideoReceiving(guestB.page, meetHostName),
+			expectRemoteVideoReceiving(guestC.page, meetHostName),
+		]);
 
 		const [guestAFingerprint, guestBFingerprint, guestCFingerprint] =
 			await Promise.all([
