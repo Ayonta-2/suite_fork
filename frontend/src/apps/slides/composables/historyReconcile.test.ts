@@ -61,6 +61,15 @@ describe('the caret when history rewrites the content underneath the editor', ()
 		expect(caret()).toEqual({ text: 'two', offset: 1 })
 	})
 
+	it('carries a caret at the change over what the change added', async () => {
+		await editText()
+		activeEditor.value.commands.setTextSelection(4)
+
+		await rewriteContent('<p>oneAB</p><p>two</p>')
+
+		expect(caret()).toEqual({ text: 'oneAB', offset: 5 })
+	})
+
 	it('pulls a caret inside the change back to the start of it', async () => {
 		await editText()
 		activeEditor.value.commands.setTextSelection(3)

@@ -16,6 +16,12 @@ const element = (id: string, type: string) => ({
 	content: '<p>hello</p>',
 })
 
+// pairing writes one new refId onto both elements, failing to pair clears the one
+const pairedRefId = (element: any) => {
+	const [own, ref] = getCommandsToUpdateElementRefId(element)
+	return own?.newValue && own.newValue === ref?.newValue ? own.newValue : null
+}
+
 describe('magic move refIds', () => {
 	beforeEach(() => {
 		slides.value = [
@@ -26,7 +32,16 @@ describe('magic move refIds', () => {
 	})
 
 	it('pairs a text element across the transition', () => {
-		expect(getCommandsToUpdateElementRefId(slides.value[1].elements[0]).length).toBeGreaterThan(0)
+		expect(pairedRefId(slides.value[1].elements[0])).toBeTruthy()
+	})
+
+	// the placeholder only shows up on a blank line something has edited, so it must
+	// not be what decides that two copies of the same text stopped matching
+	it('pairs across a blank line that grew a placeholder on one side', () => {
+		slides.value[0].elements[0].content = '<p>hello</p><p></p>'
+		slides.value[1].elements[0].content = '<p>hello</p><p>​</p>'
+
+		expect(pairedRefId(slides.value[1].elements[0])).toBeTruthy()
 	})
 
 	// a table's columns are pinned in pixels and cannot follow a tweening frame,

@@ -62,8 +62,11 @@ const reconcileEditorContent = (html) => {
 
 	const { from, to } = editor.state.selection
 	const [carriedFrom, carriedTo] = [from, to].map((pos) => {
-		if (start == null || pos <= start) return pos
-		return pos >= endHere ? pos + endThere - endHere : start
+		if (start == null) return pos
+		// the tail first: text inserted at the caret ends up behind it, the way
+		// it does when you type it
+		if (pos >= endHere) return pos + endThere - endHere
+		return pos <= start ? pos : start
 	})
 
 	withRecordingSuppressed(() => {

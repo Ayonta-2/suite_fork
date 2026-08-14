@@ -1,6 +1,11 @@
 import { slides, slideIndex, currentSlide } from '@/apps/slides/stores/slide'
 import { generateUniqueId } from '@/apps/slides/utils/helpers'
+import { ZWSP } from '@/apps/slides/stores/tiptapSetup'
 import { editElementCommand, editSlideCommand } from './commands'
+
+// a blank line carries a ZWSP placeholder only once something has edited it, so
+// comparing it would stop two identical lines from pairing
+const blockText = (block) => block.textContent.replaceAll(ZWSP, '')
 
 const canCreateTextConnection = (currentContent, nextContent) => {
 	const parser = new DOMParser()
@@ -15,7 +20,7 @@ const canCreateTextConnection = (currentContent, nextContent) => {
 
 	for (let i = 0; i < currentBlocks.length; i++) {
 		// within each block, compare text content only (ignore styles and tags)
-		if (currentBlocks[i].textContent != nextBlocks[i].textContent) {
+		if (blockText(currentBlocks[i]) != blockText(nextBlocks[i])) {
 			return false
 		}
 	}

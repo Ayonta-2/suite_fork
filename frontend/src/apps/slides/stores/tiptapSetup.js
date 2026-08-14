@@ -209,8 +209,9 @@ const getItemAttributes = (node) => {
 	if (textNode?.marks) {
 		for (const mark of textNode.marks) {
 			if (mark.type.name == 'textStyle') {
-				const styleAttrs = mark.attrs
-				styleAttrs.fontSize = parseInt(styleAttrs.fontSize)
+				// a copy: attrs belong to the live doc, and rewriting 28px to 28 there
+				// leaves it unequal to its own parsed HTML
+				const styleAttrs = { ...mark.attrs, fontSize: parseInt(mark.attrs.fontSize) }
 				Object.assign(attrs, styleAttrs)
 				return attrs
 			}
