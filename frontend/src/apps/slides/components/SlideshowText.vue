@@ -15,10 +15,10 @@ const props = defineProps({
 
 const textRef = ref(null)
 
+// spaces stay real: &nbsp; forbids soft wraps, so a fixed-width element
+// would overflow its box on one line instead of wrapping like its editor render
 const encodeCharForHtml = (c) => {
 	switch (c) {
-		case ' ':
-			return '&nbsp;'
 		case '&':
 			return '&amp;'
 		case '<':
