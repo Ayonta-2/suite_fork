@@ -57,6 +57,9 @@
 			class="pointer-events-none absolute left-0 top-0 size-full overflow-hidden"
 			:style="{ borderRadius: `${element.borderRadius || 0}px` }"
 		>
+			<div v-if="persistControls && !isPlaying" :class="toggleButtonClasses">
+				<Play size="16" class="stroke-[1.5] ps-[0.5px] text-white" />
+			</div>
 			<div
 				ref="progressBar"
 				:class="`${progressBarClasses} bg-black-overlay-300 transition-opacity duration-200 ease-in-out`"
