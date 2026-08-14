@@ -28,6 +28,8 @@
 		</Tooltip>
 
 		<ShapesDropdown />
+
+		<TableDropdown />
 	</div>
 </template>
 
@@ -42,6 +44,7 @@ import { addTextElement, addMediaElement } from '@/apps/slides/stores/element'
 import { allowedImageFileTypes } from '@/apps/slides/utils/constants'
 
 import ShapesDropdown from '@/apps/slides/components/ShapesDropdown.vue'
+import TableDropdown from '@/apps/slides/components/TableDropdown.vue'
 
 import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
 

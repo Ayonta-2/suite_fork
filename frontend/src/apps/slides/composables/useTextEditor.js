@@ -1,7 +1,9 @@
 import { ref, reactive, watch } from 'vue'
 import { Editor } from '@tiptap/vue-3'
+import { createDocument } from '@tiptap/core'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
-import { TextSelection } from 'prosemirror-state'
+import { Selection, TextSelection } from 'prosemirror-state'
+import { cellAround } from 'prosemirror-tables'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { markDirty } from '@/apps/slides/stores/saving'
 import {
@@ -51,7 +53,32 @@ const reconcileEditorContent = (html) => {
 
 	if (patchedHTML(editor.getHTML()) === html) return
 
-	withRecordingSuppressed(() => editor.commands.setContent(html, { emitUpdate: false }))
+	// setContent replaces the whole doc, mapping the selection to its end. the two
+	// documents differ over one range, so a caret past it moves by the size change
+	const incoming = createDocument(html, editor.schema)
+	const { content } = editor.state.doc
+	const start = content.findDiffStart(incoming.content)
+	const { a: endHere, b: endThere } = start == null ? {} : content.findDiffEnd(incoming.content)
+
+	const { from, to } = editor.state.selection
+	const [carriedFrom, carriedTo] = [from, to].map((pos) => {
+		if (start == null) return pos
+		// the tail first: text inserted at the caret ends up behind it, the way
+		// it does when you type it
+		if (pos >= endHere) return pos + endThere - endHere
+		return pos <= start ? pos : start
+	})
+
+	withRecordingSuppressed(() => {
+		editor.commands.setContent(html, { emitUpdate: false })
+		// between, so that endpoints a cell selection left on cell boundaries come back
+		// as the nearest position that can hold a caret
+		editor.commands.command(({ tr }) => {
+			const { doc } = tr
+			tr.setSelection(TextSelection.between(doc.resolve(carriedFrom), doc.resolve(carriedTo)))
+			return true
+		})
+	})
 }
 
 const editorStyles = reactive({
@@ -69,6 +96,7 @@ const editorStyles = reactive({
 	opacity: null,
 	bulletList: false,
 	orderedList: false,
+	cellFill: null,
 })
 
 export const useTextEditor = () => {
@@ -92,6 +120,10 @@ export const useTextEditor = () => {
 			color: activeStyles.color || null,
 			letterSpacing: parseInt(activeStyles.letterSpacing, 10),
 			opacity: activeStyles.opacity,
+			cellFill:
+				editor.getAttributes('tableCell').backgroundColor ||
+				editor.getAttributes('tableHeader').backgroundColor ||
+				null,
 		})
 	}
 
@@ -165,13 +197,28 @@ export const useTextEditor = () => {
 		underline: 'toggleUnderline',
 	}
 
+	// a cursor in a cell styles that cell, the whole element otherwise
+	const selectStyleTarget = (chain) => {
+		const editor = activeEditor.value
+		const $cell = editor.isEditable ? cellAround(editor.state.selection.$head) : null
+		if (!$cell) return chain.selectAll()
+
+		// the cell's own boundaries can't hold a caret, and endpoints left on them
+		// get normalised outwards into the next cell
+		const { doc } = editor.state
+		return chain.setTextSelection({
+			from: Selection.near(doc.resolve($cell.pos + 1), 1).from,
+			to: Selection.near(doc.resolve($cell.pos + $cell.nodeAfter.nodeSize - 1), -1).to,
+		})
+	}
+
 	const toggleMark = (property) => {
 		const currentEditor = activeEditor.value
 
 		const chain = currentEditor.chain()
 
 		const { empty } = currentEditor.state.selection
-		if (empty) chain.selectAll()
+		if (empty) selectStyleTarget(chain)
 
 		chain[markCommands[property]](property).run()
 	}
@@ -245,7 +292,7 @@ export const useTextEditor = () => {
 		if (property == 'list') return setListProperty(value)
 
 		const { empty } = currentEditor.state.selection
-		if (empty) chain.selectAll()
+		if (empty) selectStyleTarget(chain)
 
 		switch (property) {
 			case 'textAlign':
@@ -281,8 +328,9 @@ export const useTextEditor = () => {
 				editable: isEditable,
 				content: content,
 				// focus only lands once EditorContent has adopted the view, so tiptap
-				// has to do it itself after mounting
-				autofocus: isEditable ? 'all' : false,
+				// has to do it itself after mounting. 'all' inside a table would
+				// select every cell, so tables start with a cursor in the first one
+				autofocus: isEditable ? (editorElement?.type === 'table' ? 'start' : 'all') : false,
 				// to update styles in sidebar based on cursor position
 				onSelectionUpdate: ({ editor }) => setEditorStyles(editor),
 				// to update element content on every change

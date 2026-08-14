@@ -91,6 +91,11 @@ const getNewChildrenHTML = (blockNode) => {
 	return childrenHTML
 }
 
+// an <li> holding a nested list has blocks of its own inside it: splitting that
+// one would flatten the nesting away, and the walker reaches its inner blocks anyway
+const isTextBlock = (node) =>
+	['P', 'LI'].includes(node.tagName) && !node.querySelector('p, ul, ol')
+
 const getHTMLForContent = (content = props.content) => {
 	const doc = getDocFromHTML(content)
 
@@ -103,7 +108,7 @@ const getHTMLForContent = (content = props.content) => {
 
 	while (walker.nextNode()) {
 		const node = walker.currentNode
-		if (['P', 'LI'].includes(node.tagName)) {
+		if (isTextBlock(node)) {
 			const nodeCopy = node.cloneNode(true)
 			// replace current html with new html having split spans
 			node.innerHTML = getNewChildrenHTML(nodeCopy)
@@ -122,8 +127,10 @@ const getCurrentAndNewBlocks = (html) => {
 	const container = textRef.value
 	const selector = 'p, li'
 
-	const currentBlocks = container ? Array.from(container.querySelectorAll(selector)) : []
-	const newBlocks = Array.from(newDoc.body.querySelectorAll(selector))
+	const currentBlocks = container
+		? Array.from(container.querySelectorAll(selector)).filter(isTextBlock)
+		: []
+	const newBlocks = Array.from(newDoc.body.querySelectorAll(selector)).filter(isTextBlock)
 
 	return { currentBlocks, newBlocks }
 }

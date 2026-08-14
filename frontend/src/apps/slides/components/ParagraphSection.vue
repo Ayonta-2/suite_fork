@@ -7,7 +7,7 @@
 				@update:modelValue="(value) => updateProperty('textAlign', value)"
 			/>
 		</PropertyRow>
-		<PropertyRow label="List Style">
+		<PropertyRow v-if="showListStyle" label="List Style">
 			<TabButtons
 				:modelValue="listStyle"
 				:options="listStyleOptions"
@@ -26,8 +26,14 @@ import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
+import { activeElement, focusElementId } from '@/apps/slides/stores/element'
 
 const { editorStyles, updateProperty } = useTextEditor()
+
+// a list wraps the block the caret is in, and a table selected as a whole has no caret
+const showListStyle = computed(
+	() => activeElement.value?.type !== 'table' || focusElementId.value === activeElement.value.id,
+)
 
 const alignOptions = [
 	{ value: 'left', tooltip: 'Align left', icon: 'lucide-align-left' },

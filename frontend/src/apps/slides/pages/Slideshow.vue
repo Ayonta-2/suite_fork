@@ -91,6 +91,7 @@ import {
 } from '@/apps/slides/stores/presentation'
 import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
 import { resetFocus } from '@/apps/slides/stores/element'
+import { getTransitionKey } from '@/apps/slides/stores/transition'
 
 const props = defineProps({
 	presentationId: {
@@ -116,9 +117,7 @@ const clipPath = computed(() => {
 	return `inset(${inset}px 0px ${inset}px 0px)`
 })
 
-const getElementKey = (element) => {
-	return element.refId || element.id
-}
+const getElementKey = (element) => getTransitionKey(element)
 
 const cursorHidden = ref(true)
 
