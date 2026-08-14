@@ -65,7 +65,7 @@
 
 <script setup>
 import { computed, onActivated, onDeactivated, ref, watch, provide } from 'vue'
-import { toast, useShortcut } from 'frappe-ui'
+import { toast, useShortcut, usePageMeta } from 'frappe-ui'
 
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import SlideshowEndScreen from '@/apps/slides/components/SlideshowEndScreen.vue'
@@ -83,7 +83,12 @@ import {
 	performPreviousStep,
 } from '@/apps/slides/stores/slideshow'
 
-import { applyReverseTransition, initPresentationDoc, inReadonlyMode } from '@/apps/slides/stores/presentation'
+import {
+	applyReverseTransition,
+	initPresentationDoc,
+	inReadonlyMode,
+	pageTitle,
+} from '@/apps/slides/stores/presentation'
 import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
 import { resetFocus } from '@/apps/slides/stores/element'
 
@@ -312,7 +317,11 @@ const updateWindowSize = () => {
 	windowHeight.value = window.innerHeight
 }
 
+usePageMeta(() => ({ title: pageTitle() }))
+
 onActivated(() => {
+	// kept alive, so re-entering the slideshow leaves the router's app title in place
+	document.title = pageTitle()
 	resetFocus()
 	loadPresentation()
 	initFullscreenMode()

@@ -182,17 +182,26 @@ router.beforeEach(async (to) => {
   return true
 })
 
-router.afterEach((to, _from, failure) => {
+router.afterEach((to, from, failure) => {
   // A failed navigation (e.g. re-clicking the current folder, which vue-router reports
   // as duplicated but still runs afterEach for) leaves the page untouched — resetting
   // the title here would clobber the one the view set via usePageMeta.
   if (failure) return
-  setDocumentTitle(to)
+  setDocumentTitle(to, from)
   setFavicon(to)
   setPwaTags(to)
 })
 
-function setDocumentTitle(to: RouteLocationNormalizedLoaded) {
+export function setDocumentTitle(
+  to: RouteLocationNormalizedLoaded,
+  from: RouteLocationNormalizedLoaded,
+) {
+  // The app-level title only covers entering a view; from then on the view owns it via
+  // usePageMeta. A same-route replace (slides' ?slide=N, its slug rewrite) leaves that view
+  // mounted, so resetting here would clobber the document name it put in the tab.
+  const view = to.matched.at(-1)
+  if (view && view === from.matched.at(-1)) return
+
   if (to.meta.title) {
     document.title = to.meta.title
   }
