@@ -367,7 +367,7 @@ const getTextElementDimensions = (presets) => {
 
 const addTextElement = async (text, position) => {
 	const elementPresets = {
-		textAlign: 'left',
+		textAlign: 'center',
 		fontSize: 28,
 		fontFamily: 'Inter',
 		color: guessTextColorFromBackground(currentSlide.value.background),
