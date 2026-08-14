@@ -54,8 +54,7 @@ import { activeElementIds } from '@/apps/slides/stores/element'
 import {
 	alignElement,
 	arrangeElements,
-	getAlignmentPositions,
-	isHorizontalDirection,
+	getAlignedDirections,
 } from '@/apps/slides/stores/placement'
 import { useInteractionScrub } from '@/apps/slides/composables/useInteractionScrub'
 
@@ -88,14 +87,7 @@ const alignVerticalOptions = [
 	{ value: 'bottom', label: 'Align bottom', icon: AlignBottom },
 ]
 
-const alignedDirections = computed(() => {
-	const positions = getAlignmentPositions()
-
-	return Object.keys(positions).filter((direction) => {
-		const current = isHorizontalDirection(direction) ? selectionBounds.left : selectionBounds.top
-		return Math.round(positions[direction]) == Math.round(current)
-	})
-})
+const alignedDirections = computed(() => getAlignedDirections())
 
 const alignGuideMap = {
 	left: 'leftEdge',

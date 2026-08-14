@@ -342,23 +342,18 @@ const addShapeElement = async (shapeType, bounds = null) => {
 const getTextElementDimensions = (presets) => {
 	const tempTextElement = document.createElement('div')
 
+	// the element's own markup and CSS, or the measurement drifts by sub-pixels
+	tempTextElement.className = 'textElement text-auto-width'
 	Object.assign(tempTextElement.style, {
 		position: 'absolute',
 		visibility: 'hidden',
-		height: 'auto',
-		width: 'auto',
-		whiteSpace: 'pre',
-		fontSize: `${presets.fontSize}px`,
-		fontFamily: presets.fontFamily,
-		letterSpacing: `${presets.letterSpacing}px`,
-		color: presets.color || '#000000',
 	})
-	tempTextElement.innerHTML = presets.innerText || 'Text'
+	tempTextElement.innerHTML = getElementContent(presets)
 
 	document.body.appendChild(tempTextElement)
 
-	const elementWidth = tempTextElement.offsetWidth
-	const elementHeight = tempTextElement.offsetHeight
+	// fractional, to agree with the selection bounds the resize observer writes
+	const { width: elementWidth, height: elementHeight } = tempTextElement.getBoundingClientRect()
 
 	document.body.removeChild(tempTextElement)
 
