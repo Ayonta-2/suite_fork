@@ -942,27 +942,6 @@ const addFixedWidthToElement = () => {
 	}
 }
 
-// cap an auto-width box at the room left to the slide edge so it wraps instead of growing off
-const clampWidthToSlide = (element) => {
-	if (element?.type != 'text' || element.width) return
-
-	const elementDiv = getElementDiv(element.id)
-	if (!elementDiv) return
-
-	// offsetParent is the containing block, so the slide border is already excluded
-	const slideWidth = elementDiv.offsetParent?.clientWidth
-	if (!slideWidth) return
-
-	const availableWidth = slideWidth - element.left
-	if (availableWidth < getMinSizeForElement('text').width) return
-
-	if (elementDiv.offsetWidth <= availableWidth) return
-
-	element.width = availableWidth
-
-	return availableWidth
-}
-
 // the stored number equals what auto-height already renders, so no markDirty
 const ensureExplicitHeight = (element) => {
 	if (!element || !['image', 'video'].includes(element.type)) return
@@ -1272,7 +1251,6 @@ export {
 	selectableIds,
 	getElementPosition,
 	addFixedWidthToElement,
-	clampWidthToSlide,
 	ensureExplicitHeight,
 	getNaturalAspectRatio,
 	setEditableState,
