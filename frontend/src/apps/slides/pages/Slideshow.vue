@@ -320,7 +320,6 @@ const updateWindowSize = () => {
 usePageMeta(() => ({ title: pageTitle() }))
 
 onActivated(() => {
-	// kept alive, so re-entering the slideshow leaves the router's app title in place
 	document.title = pageTitle()
 	resetFocus()
 	loadPresentation()
@@ -375,7 +374,7 @@ useShortcut([
 </script>
 
 <style>
-/* elements set their own cursor (videos are cursor-pointer), so the idle hide has to win over them */
+/* has to beat the cursor elements set on themselves */
 .slideshow-hide-cursor,
 .slideshow-hide-cursor * {
 	cursor: none !important;

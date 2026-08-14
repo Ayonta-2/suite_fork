@@ -184,7 +184,6 @@ usePageMeta(() => {
 	}
 })
 
-// the editor is kept alive, so returning from the slideshow leaves the router's title in place
 onActivated(() => (document.title = pageTitle()))
 
 const handleAutoSave = () => {

@@ -165,7 +165,7 @@ const inViewerMode = computed(() => inReadonlyMode.value || inSlideShowMode.valu
 
 const isPlayable = computed(() => inViewerMode.value || isActive.value)
 
-// the shared view has no other affordance, so a paused video keeps its bar
+// the shared view has no other play affordance
 const persistControls = computed(() => inReadonlyMode.value && !inSlideShowMode.value)
 
 const controlsVisible = computed(() => {
@@ -180,13 +180,11 @@ let hideTimeout = null
 const revealControls = () => {
 	clearTimeout(hideTimeout)
 	if (!inViewerMode.value) return
-	// in the slideshow a playing video shows nothing at all
 	if (isPlaying.value && !persistControls.value) return
 	hoverRevealed.value = true
 	hideTimeout = setTimeout(() => (hoverRevealed.value = false), controlsHideDelay)
 }
 
-// the bar must not fade while the pointer is aiming at it
 const cancelHide = () => clearTimeout(hideTimeout)
 
 const hideControls = () => {
@@ -207,7 +205,7 @@ const togglePlaying = () => {
 
 const handleVideoClick = (e) => {
 	if (!isPlayable.value) return
-	// in the editor a click on the backdrop selects, only the button toggles
+	// in the editor only the play button toggles, the backdrop selects
 	if (!inViewerMode.value && e.target === overlay.value) return
 	e.stopPropagation()
 	togglePlaying()

@@ -196,9 +196,7 @@ export function setDocumentTitle(
   to: RouteLocationNormalizedLoaded,
   from: RouteLocationNormalizedLoaded,
 ) {
-  // The app-level title only covers entering a view; from then on the view owns it via
-  // usePageMeta. A same-route replace (slides' ?slide=N, its slug rewrite) leaves that view
-  // mounted, so resetting here would clobber the document name it put in the tab.
+  // a same-view replace leaves the view mounted, so its usePageMeta title stands
   const view = to.matched.at(-1)
   if (view && view === from.matched.at(-1)) return
 
