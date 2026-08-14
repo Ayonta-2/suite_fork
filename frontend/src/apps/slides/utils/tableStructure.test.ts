@@ -203,6 +203,27 @@ describe('setTableHeaders', () => {
 		expect(getTableInfo(html()).headers).toEqual({ row: false, column: false })
 	})
 
+	// a merged cell covers column 0 from the row above, so the row below has no cell of
+	// its own there and the one it does have belongs to column 1
+	it('reads a column of merged header cells as a column header', () => {
+		openTable(2, 2)
+		selectCells(0, 2)
+		mergeCells()
+
+		expect(getTableInfo(html()).headers).toEqual({ row: true, column: true })
+	})
+
+	it('writes a column header onto the cell that covers column 0', () => {
+		openTable(2, 2)
+		selectCells(0, 2)
+		mergeCells()
+
+		setTableHeaders({ row: false, column: true })
+
+		expect(html().match(/<th/g)).toHaveLength(1)
+		expect(getTableInfo(html()).headers).toEqual({ row: false, column: true })
+	})
+
 	it('turns the header off on a table one column wide', () => {
 		openTable(3, 1)
 		setTableHeaders({ row: false, column: true })

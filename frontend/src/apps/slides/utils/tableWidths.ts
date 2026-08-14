@@ -65,12 +65,35 @@ const readMinSize = (rows: Element[]) => {
 
 const isHeaderCell = (cell: Element | null) => cell?.tagName === 'TH'
 
+// a cell merged downwards covers column 0 in the rows below it, and those rows hold no
+// cell of their own there, so their first child is column 1
+const getFirstColumnCells = (rows: Element[]) => {
+	const cells: Element[] = []
+	let covered = 0
+
+	rows.forEach((row) => {
+		if (covered > 0) {
+			covered -= 1
+			return
+		}
+
+		const cell = row.firstElementChild
+		if (!cell) return
+
+		cells.push(cell)
+		covered = (parseInt(cell.getAttribute('rowspan') || '', 10) || 1) - 1
+	})
+
+	return cells
+}
+
 // a header is on when the whole row or column is header cells
 const readHeaders = (rows: Element[]) => {
 	const firstRowCells = Array.from(rows[0]?.children || [])
+	const firstColumnCells = getFirstColumnCells(rows)
 
 	const row = firstRowCells.length > 0 && firstRowCells.every(isHeaderCell)
-	const column = rows.length > 0 && rows.every((r) => isHeaderCell(r.firstElementChild))
+	const column = firstColumnCells.length > 0 && firstColumnCells.every(isHeaderCell)
 
 	// one row deep or one column wide, and either header paints the very same cells.
 	// It reads as the one running the length of the table, so the panel names a state

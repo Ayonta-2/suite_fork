@@ -1,4 +1,5 @@
 import { TextSelection } from 'prosemirror-state'
+import { TableMap } from 'prosemirror-tables'
 
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
 import { ZWSP, getCells, getFirstMarks } from '@/apps/slides/stores/tiptapSetup'
@@ -110,33 +111,34 @@ export const runTableCommand = (command) =>
 export const distributeColumns = () =>
 	activeEditor.value?.chain().focus().command(setEvenColumnWidths).run()
 
-const getRows = (doc) => {
-	const rows = []
-	doc.descendants((node, pos) => {
-		if (node.type.name !== 'tableRow') return
-		const cells = []
-		node.forEach((cell, offset) => cells.push({ pos: pos + 1 + offset, node: cell }))
-		rows.push(cells)
-		return false
-	})
-	return rows
-}
-
 // prosemirror's own header toggles read the cells to decide which way they turn, and
 // skip the corner cell so the two headers don't fight over it. On a table one row deep
 // or one column wide that leaves them nothing to act on. Naming the target outright
-// reaches every state instead, and needs no focused editor either
+// reaches every state instead, and needs no focused editor either.
+// Which cell sits in row 0 or column 0 is a question a merged cell makes non-obvious,
+// so the table's own map answers it rather than the cell's index in its row
 export const setTableHeaders = ({ row, column }) =>
 	activeEditor.value?.commands.command(({ tr }) => {
 		const { tableHeader, tableCell } = tr.doc.type.schema.nodes
 
-		getRows(tr.doc).forEach((cells, rowIndex) =>
-			cells.forEach(({ pos, node }, cellIndex) => {
-				const type =
-					(row && rowIndex === 0) || (column && cellIndex === 0) ? tableHeader : tableCell
-				if (node.type !== type) tr.setNodeMarkup(pos, type, node.attrs)
-			}),
-		)
+		tr.doc.descendants((node, pos) => {
+			if (node.type.name !== 'table') return
+
+			const map = TableMap.get(node)
+			const headers = new Set()
+			map.map.forEach((offset, index) => {
+				if ((row && index < map.width) || (column && index % map.width === 0)) headers.add(offset)
+			})
+
+			// setNodeMarkup leaves the doc the same size, so the offsets stay good
+			new Set(map.map).forEach((offset) => {
+				const cell = tr.doc.nodeAt(pos + 1 + offset)
+				const type = headers.has(offset) ? tableHeader : tableCell
+				if (cell.type !== type) tr.setNodeMarkup(pos + 1 + offset, type, cell.attrs)
+			})
+
+			return false
+		})
 
 		return true
 	})
