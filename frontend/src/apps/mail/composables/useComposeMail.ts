@@ -1,4 +1,4 @@
-import { computed, inject, reactive, ref, watch } from 'vue'
+import { computed, inject, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import { createResource } from 'frappe-ui'
@@ -33,6 +33,13 @@ export interface ComposeMailOptions {
 	isOpen: () => boolean
 	/** Called instead of a server delete when discarding something never saved. */
 	onDiscardUnsaved?: () => void
+	/**
+	 * Fired the moment Discard is pressed, before the composer comes off screen — unlike
+	 * `onDiscardUnsaved`, which reports the outcome once the network is done. A host that shows the
+	 * draft somewhere else needs the earlier signal: `discardMail` closes first and deletes after,
+	 * so anything keyed on the composer being open takes the draft back for the moment in between.
+	 */
+	onDiscardStarted?: () => void
 	/** The mounted TextEditor, for mention bookkeeping and emoji insertion. */
 	host: () => EditorHost | null | undefined
 	/**
@@ -52,6 +59,23 @@ export interface ComposeMailOptions {
  */
 export const useComposeMail = (options: ComposeMailOptions) => {
 	const { mailDetails, isInThread = false, reloadMails, close, isOpen, host } = options
+
+	// A composer that has gone away must not still be writing drafts of its own accord. Saving is
+	// debounced by two seconds, and the timer outlives the component: pop a draft out inside that
+	// window and the editor left behind in the thread would wake up and create a second draft, next
+	// to the one the composer window creates. The window's copy is the only one that should land.
+	//
+	// Stopping the watcher is not enough to arrange that. @vueuse's debounceFilter keeps its timer
+	// in a closure and returns only the watch handle, so a call already pending arrives whether or
+	// not anything is still listening — which is why the guard is a flag read at the last moment.
+	//
+	// It gates the debounced callback and nothing else. An explicit save is a decision, not a
+	// leftover timer, and the composer makes one on the way out: Vue's unmountComponent stops the
+	// effect scope — running this hook — before it so much as queues `onUnmounted`, which is a
+	// post-render effect on top of that, so a `saveDraft` gated on disposal would be a no-op exactly
+	// when it is needed most, and everything typed since the last tick would go with the component.
+	let disposed = false
+	onScopeDispose(() => (disposed = true))
 
 	const router = useRouter()
 	const route = useRoute()
@@ -147,12 +171,22 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		return element.textContent?.trim() ?? ''
 	}
 
+	// A draft that already exists on the server arrives with the body it was left with, and an empty
+	// one is a decision: the signature was deleted and the draft saved that way. So nothing is put
+	// back into it — not on the way in (this watcher is immediate, and a composer starts afresh every
+	// time a draft is opened), and not when the identity changes later.
+	//
+	// A composition that has never been saved is the other case entirely: its empty body is merely
+	// empty, and is where a signature belongs.
+	const isSavedDraft = !!mailDetails?.id
+
 	// Swap the signature when the From identity changes — but only while the body is still the
 	// auto-inserted signature (or empty), so a message the user has written isn't overwritten.
 	// Compared by text so the editor's HTML normalization doesn't defeat the match.
 	watch(
 		() => mail.from_email,
 		(val, oldVal) => {
+			if (isBodyEmpty.value && isSavedDraft) return
 			if (isBodyEmpty.value || bodyText(mail.html_body) === bodyText(buildSignature(oldVal)))
 				mail.html_body = buildSignature(val)
 		},
@@ -164,8 +198,31 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	const isSavingDraft = ref(false)
 	const isDiscarding = ref(false)
 
+	// Discarding is the end of this composition, and nothing may save after it. `isDiscarding` cannot
+	// say that on its own: the host clears it through `onClosed` as soon as the composer is off
+	// screen, which is well before the component is torn down — so the save on the way out would find
+	// the flag down and write back a draft that is already being deleted, or worse, create one for a
+	// message that was never saved in the first place. This one is not cleared, because there is
+	// nothing to come back to.
+	let discarded = false
+
+	// Set by a draft save made inside a thread, cleared by paying it. See onMailUpdateSuccess.
+	let listOwesReload = false
+
+	/**
+	 * Bring the list up to date with the draft, once the editor is done with it.
+	 *
+	 * Called on the way out, after the last save has landed — earlier and the reload would fetch the
+	 * draft as it was a keystroke ago and put that back on screen.
+	 */
+	const payListDebt = () => {
+		if (!listOwesReload) return
+		listOwesReload = false
+		reloadMails()
+	}
+
 	const saveDraft = async () => {
-		if (!isDraftUpdated.value || isLoading.value || isDiscarding.value) return
+		if (discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value) return
 
 		isSavingDraft.value = true
 		if (mail.id) await updateDraft.submit({ submit: false })
@@ -173,7 +230,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		isSavingDraft.value = false
 	}
 
-	watchDebounced(mail, () => saveDraft(), { debounce: 2000 })
+	watchDebounced(
+		mail,
+		() => {
+			if (disposed) return
+			saveDraft()
+		},
+		{ debounce: 2000 },
+	)
 
 	// Mirrors UNDO_SEND_WINDOW_SECONDS in api/mail.py; the server holds delivery a few seconds
 	// longer than this so a last-moment Undo still lands in time.
@@ -202,7 +266,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	const discardMail = async () => {
 		if (deleteMail.loading) return
 
+		discarded = true
 		isDiscarding.value = true
+		// Before close(), and synchronously: the host has to learn the draft is going while it is
+		// still on screen. Told afterwards, it sees the composer close first and puts the draft
+		// back for as long as the delete takes.
+		options.onDiscardStarted?.()
 		close()
 		if (createMail.loading) await createMail.promise
 		if (updateDraft.loading) await updateDraft.promise
@@ -260,6 +329,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		if (isDiscarding.value) return
 
 		if (!isInThread || status === 'Submitted' || status === 'Scheduled') reloadMails()
+		// In a thread the list is where the messages come from — the pane is built from the rows the
+		// list is holding, not from a fetch of its own. So a draft saved in here goes to the server
+		// and the list goes on holding the version from before this sitting: leave the thread, open
+		// it again, and the edits are not there. Nothing was lost; the list simply never asked again.
+		//
+		// It cannot be a reload on each autosave, which is why this is a debt and not a call: that
+		// rebuilds the thread around the reader every couple of seconds, mid-sentence. It is settled
+		// when the editor goes — see `payListDebt`.
+		else if (status === 'Drafted') listOwesReload = true
+
 		if (isOpen()) return
 
 		if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
@@ -451,6 +530,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		isSavingDraft,
 		isDiscarding,
 		saveDraft,
+		payListDebt,
 		sendMail,
 		discardMail,
 		onClosed,
