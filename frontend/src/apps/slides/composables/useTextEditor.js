@@ -1,4 +1,4 @@
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, nextTick } from 'vue'
 import { Editor } from '@tiptap/vue-3'
 import { createDocument } from '@tiptap/core'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
@@ -11,7 +11,8 @@ import {
 	findSlideElement,
 	getInitialShapeTextContent,
 } from '@/apps/slides/stores/element'
-import { editElementCommand } from '@/apps/slides/stores/commands'
+import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
+import { getElementDiv } from '@/apps/slides/stores/elementRegistry'
 import { currentSlide } from '@/apps/slides/stores/slide'
 
 export const activeEditor = ref(null)
@@ -20,6 +21,7 @@ export const activeEditor = ref(null)
 let editorElement = null
 let editorSlideId = null
 let lastCompositionId = null
+let lastRenderedWidth = null
 let stopContentWatch = null
 
 let suppressRecording = false
@@ -132,7 +134,41 @@ export const useTextEditor = () => {
 		markDirty()
 	}
 
-	const recordContentEdit = (oldValue, transaction) => {
+	const growthAnchor = (editor) => {
+		const aligns = new Set()
+		editor.state.doc.descendants((node) => {
+			if (node.isTextblock) aligns.add(node.attrs.textAlign || 'left')
+		})
+		return aligns.size === 1 ? aligns.values().next().value : 'left'
+	}
+
+	// only auto-width text is worth the forced layout of an offsetWidth read;
+	// until EditorContent adopts the view the div is an empty shell, not a width
+	const measuredAutoWidth = (editor) => {
+		if (editorElement?.type !== 'text' || editorElement.width) return null
+		const div = getElementDiv(editorElement.id)
+		if (!div || !editor?.view || !div.contains(editor.view.dom)) return null
+		return div.offsetWidth
+	}
+
+	// centered and right-aligned text holds its anchor by paying growth out of left
+	const applyGrowthShift = (editor) => {
+		const width = measuredAutoWidth(editor)
+		const previousWidth = lastRenderedWidth
+		lastRenderedWidth = width
+
+		if (width == null || previousWidth == null || width === previousWidth) return null
+
+		const anchor = growthAnchor(editor)
+		if (anchor !== 'center' && anchor !== 'right') return null
+
+		const delta = width - previousWidth
+		const oldValue = editorElement.left
+		editorElement.left = oldValue - (anchor === 'center' ? delta / 2 : delta)
+		return { oldValue, newValue: editorElement.left }
+	}
+
+	const recordContentEdit = (oldValue, transaction, leftShift) => {
 		const compositionId = transaction.getMeta('composition')
 		// an IME candidate pause routinely outlasts the coalesce window
 		const forceCoalesce = compositionId != null && compositionId === lastCompositionId
@@ -150,25 +186,58 @@ export const useTextEditor = () => {
 			coalesceKey: `content:${editorSlideId}:${editorElement.id}`,
 		})
 
-		commandHistory.record(contentCommand, { forceCoalesce })
+		if (editorElement.type !== 'text' || editorElement.width)
+			return commandHistory.record(contentCommand, { forceCoalesce })
+
+		// always the batch shape, so shifted and unshifted keystrokes coalesce
+		const leftCommand = editElementCommand({
+			slideId: editorSlideId,
+			elementIds: [editorElement.id],
+			property: 'left',
+			oldValue: leftShift?.oldValue ?? editorElement.left,
+			newValue: leftShift?.newValue ?? editorElement.left,
+		})
+
+		const command = batchCommand({
+			slideId: editorSlideId,
+			elementIds: [editorElement.id],
+			commands: [contentCommand, leftCommand],
+		})
+		// a side-handle drag can fix the width mid-burst, so the shapes must not coalesce
+		command.coalesceKey = `content+left:${editorSlideId}:${editorElement.id}`
+		command.coalesceWith = (incoming) => {
+			contentCommand.coalesceWith(incoming.commands[0])
+			leftCommand.newValue = incoming.commands[1].newValue
+		}
+		// record() pops a burst that coalesces back to where it started
+		Object.defineProperty(command, 'oldValue', { get: () => contentCommand.oldValue })
+		Object.defineProperty(command, 'newValue', { get: () => contentCommand.newValue })
+
+		commandHistory.record(command, { forceCoalesce })
 	}
 
 	const handleOnTransaction = (editor, transaction) => {
+		// a caret placed in the mounted editor is the first sure chance to seed
+		if (lastRenderedWidth == null) lastRenderedWidth = measuredAutoWidth(editor)
 		if (!transaction.docChanged) return
 
 		// purposefully using onTransaction + docChanged instead of onUpdate
 		// since onUpdate also triggers when activeEditor changes from one text box to another
 		// leading to overwriting content for second one with first one's content
 
-		// history and init pushes must leave no trace at all
-		if (suppressRecording || !editorElement) return setEditorStyles(editor)
+		// history and init pushes still change the width, so the baseline follows
+		if (suppressRecording || !editorElement) {
+			lastRenderedWidth = measuredAutoWidth(editor)
+			return setEditorStyles(editor)
+		}
 
 		const oldValue = patchedHTML(editorElement.content)
 
 		updateElementContent(editor)
+		const leftShift = applyGrowthShift(editor)
 		setEditorStyles(editor)
 
-		recordContentEdit(oldValue, transaction)
+		recordContentEdit(oldValue, transaction, leftShift)
 	}
 
 	const markCommands = {
@@ -299,6 +368,11 @@ export const useTextEditor = () => {
 		editorElement = findSlideElement(id)
 		editorSlideId = currentSlide.value?.clientId
 		lastCompositionId = null
+		// two ticks: EditorContent reacts to the new editor, then adopts its view
+		lastRenderedWidth = null
+		nextTick(() =>
+			nextTick(() => (lastRenderedWidth ??= measuredAutoWidth(activeEditor.value))),
+		)
 
 		stopContentWatch?.()
 		stopContentWatch = watch(() => activeElement.value?.content, reconcileEditorContent)
