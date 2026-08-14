@@ -846,6 +846,31 @@ const withCellAttributes = (extension) =>
 		},
 	})
 
+const getCellAlign = (doc) => {
+	let align = null
+	doc.descendants((node) => {
+		if (!align && node.type.name === 'paragraph') align = node.attrs.textAlign
+	})
+	return align
+}
+
+// prosemirror builds a new cell bare: no width of its own, which would leave the table
+// unable to state how wide it is, no text for the panel's marks to sit on, and no
+// alignment, which a header cell then reads as the browser's centred default
+export const seedNewCells = ({ tr }) => {
+	const cells = getCells(tr.doc)
+	const width = cells[0]?.node.attrs.colwidth?.[0]
+	const marks = getFirstMarks(tr.doc)
+	const align = getCellAlign(tr.doc)
+
+	cells.reverse().forEach(({ pos, node }) => {
+		if (!node.textContent) tr.insert(pos + 2, tr.doc.type.schema.text(ZWSP, marks))
+		if (width && !node.attrs.colwidth) tr.setNodeAttribute(pos, 'colwidth', [width])
+		if (align && !node.firstChild?.attrs.textAlign) tr.setNodeAttribute(pos + 1, 'textAlign', align)
+	})
+	return true
+}
+
 const getWidthPerColumn = (table) => {
 	const widths = []
 	table.forEach((row) =>
@@ -988,6 +1013,18 @@ export const extensions = [
 				'Mod-Backspace': clearSelectedCells,
 				Delete: clearSelectedCells,
 				'Mod-Delete': clearSelectedCells,
+				// stock adds the row bare, so a row tabbed into existence has none of
+				// what the panel and the context menu seed theirs with
+				Tab: () => {
+					if (this.editor.commands.goToNextCell()) return true
+					if (!this.editor.can().addRowAfter()) return false
+					return this.editor
+						.chain()
+						.addRowAfter()
+						.command(seedNewCells)
+						.goToNextCell()
+						.run()
+				},
 			}
 		},
 	}).configure({ resizable: false, View: null }),

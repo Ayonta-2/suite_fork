@@ -2,15 +2,7 @@ import { TextSelection } from 'prosemirror-state'
 import { TableMap } from 'prosemirror-tables'
 
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
-import { ZWSP, getCells, getFirstMarks } from '@/apps/slides/stores/tiptapSetup'
-
-const getCellAlign = (doc) => {
-	let align = null
-	doc.descendants((node) => {
-		if (!align && node.type.name === 'paragraph') align = node.attrs.textAlign
-	})
-	return align
-}
+import { ZWSP, getCells, seedNewCells } from '@/apps/slides/stores/tiptapSetup'
 
 // the row and column commands act on the cell the selection is in, and an editor
 // nobody has typed in leaves it in the first one
@@ -19,23 +11,6 @@ const selectLastCell = ({ tr }) => {
 	if (!cells.length) return false
 
 	tr.setSelection(TextSelection.create(tr.doc, cells[cells.length - 1].pos + 2))
-	return true
-}
-
-// prosemirror builds a new cell bare: no width of its own, which would leave the table
-// unable to state how wide it is, no text for the panel's marks to sit on, and no
-// alignment, which a header cell then reads as the browser's centred default
-const seedNewCells = ({ tr }) => {
-	const cells = getCells(tr.doc)
-	const width = cells[0]?.node.attrs.colwidth?.[0]
-	const marks = getFirstMarks(tr.doc)
-	const align = getCellAlign(tr.doc)
-
-	cells.reverse().forEach(({ pos, node }) => {
-		if (!node.textContent) tr.insert(pos + 2, tr.doc.type.schema.text(ZWSP, marks))
-		if (width && !node.attrs.colwidth) tr.setNodeAttribute(pos, 'colwidth', [width])
-		if (align && !node.firstChild?.attrs.textAlign) tr.setNodeAttribute(pos + 1, 'textAlign', align)
-	})
 	return true
 }
 

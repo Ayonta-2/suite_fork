@@ -46,10 +46,10 @@ const selectCells = (from: number, to: number) => {
 	view.dispatch(view.state.tr.setSelection(CellSelection.create(view.state.doc, from, to)))
 }
 
-// the binding under test is Table's own, so the press has to reach the keymap
-const pressBackspace = () =>
+// the bindings under test are Table's own, so the press has to reach the keymap
+const pressKey = (key: string) =>
 	activeEditor.value.view.someProp('handleKeyDown', (handler: any) =>
-		handler(activeEditor.value.view, new KeyboardEvent('keydown', { key: 'Backspace' })),
+		handler(activeEditor.value.view, new KeyboardEvent('keydown', { key })),
 	)
 
 const typedText = () => activeEditor.value.state.doc.textContent.replaceAll(ZWSP, '')
@@ -110,6 +110,19 @@ describe('where Tab leaves the caret', () => {
 
 		const { from, to } = activeEditor.value.state.selection
 		expect(activeEditor.value.state.doc.textBetween(from, to)).toBe('two')
+	})
+
+	// stock adds the row bare, and a cell with no alignment of its own reads the
+	// browser's centred default the moment it is made a header
+	it('seeds the row it appends at the last cell', async () => {
+		await mountTable(seeded())
+		caretInCell(-1)
+
+		pressKey('Tab')
+
+		const html = activeEditor.value.getHTML()
+		expect(html.match(/text-align: left/g)).toHaveLength(6)
+		expect(html.match(/font-size: 18px/g)).toHaveLength(6)
 	})
 
 	// a range drawn across lines holds only the blank one's placeholder, and collapsing
@@ -213,7 +226,7 @@ describe('backspace over a whole table', () => {
 		const cells = cellPositions()
 		selectCells(cells[0], cells.at(-1))
 
-		pressBackspace()
+		pressKey('Backspace')
 
 		expect(hasTableNode(activeEditor.value.state.doc)).toBe(true)
 		expect(typedText()).toBe('')
@@ -224,7 +237,7 @@ describe('backspace over a whole table', () => {
 		const { view } = activeEditor.value
 		view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
 
-		pressBackspace()
+		pressKey('Backspace')
 
 		expect(hasTableNode(activeEditor.value.state.doc)).toBe(true)
 		expect(typedText()).toBe('')
@@ -235,7 +248,7 @@ describe('backspace over a whole table', () => {
 		const cells = cellPositions()
 		selectCells(cells[0], cells[1])
 
-		pressBackspace()
+		pressKey('Backspace')
 
 		expect(typedText()).toBe('threefour')
 	})
@@ -247,7 +260,7 @@ describe('backspace over a whole table', () => {
 		const cells = cellPositions()
 		selectCells(cells[0], cells.at(-1))
 
-		pressBackspace()
+		pressKey('Backspace')
 
 		expect(typedText()).toBe('')
 		expect(activeEditor.value.getHTML().match(/font-size: 18px/g)).toHaveLength(4)
