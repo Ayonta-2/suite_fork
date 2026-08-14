@@ -81,6 +81,7 @@ import {
 	ref,
 	watch,
 	onMounted,
+	onActivated,
 	onBeforeUnmount,
 	provide,
 	nextTick,
@@ -113,6 +114,7 @@ import {
 	deletePresentation,
 	presentationTheme,
 	resetEditorState,
+	pageTitle,
 } from '@/apps/slides/stores/presentation'
 import {
 	slides,
@@ -178,9 +180,11 @@ useShortcuts(inReadonlyMode, inSlideShowMode)
 
 usePageMeta(() => {
 	return {
-		title: presentationDoc.value?.title || 'Slides',
+		title: pageTitle(),
 	}
 })
+
+onActivated(() => (document.title = pageTitle()))
 
 const handleAutoSave = () => {
 	if (isSlideInteractionActive.value || focusElementId.value != null) return

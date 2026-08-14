@@ -360,6 +360,12 @@ const duplicatePresentation = async (presentation) => {
 	return newPresentation.name
 }
 
+const pageTitle = () => {
+	const appTitle = router.currentRoute.value.meta.title || 'Frappe Slides'
+	const title = presentationDoc.value?.title
+	return title ? `${title} - ${appTitle}` : appTitle
+}
+
 const resetEditorState = () => {
 	presentationDoc.value = null
 	slides.value = []
@@ -385,4 +391,5 @@ export {
 	deletePresentation,
 	duplicatePresentation,
 	resetEditorState,
+	pageTitle,
 }
