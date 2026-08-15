@@ -11,6 +11,14 @@ const interactionOffset = reactive({ left: 0, top: 0, width: 0, height: 0 })
 
 const rotationDelta = ref(0)
 
+// a text box turns fixed on the first move of the gesture that resizes it, so the
+// width has to be recorded from auto for undo to reach the other side of it
+let turnedFixedId = null
+
+const markTurnedFixed = (elementId) => {
+	turnedFixedId = elementId
+}
+
 // a table's frame can't move without its columns: they carry the width. Both callers
 // commit bare, so this belongs here rather than in an extraCommands argument, which
 // also gets a multi-selection right - each table rescales by its own ratio.
@@ -43,12 +51,14 @@ const commitInteraction = (extraCommands = []) => {
 		const rescale = getColumnRescale(element)
 
 		;['left', 'top', 'width', 'height'].forEach((key) => {
-			if (!interactionOffset[key]) return
+			const turnedFixed = key === 'width' && element.id === turnedFixedId
+			if (!interactionOffset[key] && !turnedFixed) return
 
 			// rounded columns land the table on a width of its own, and the frame
 			// has to be recorded at that width rather than where the cursor stopped
 			const resized = element[key] + interactionOffset[key]
-			addCommand(key, element[key], key === 'width' && rescale ? rescale.width : resized)
+			const oldValue = turnedFixed ? null : element[key]
+			addCommand(key, oldValue, key === 'width' && rescale ? rescale.width : resized)
 		})
 
 		if (rescale) {
@@ -87,6 +97,13 @@ const resetInteractionOffset = () => {
 	interactionOffset.top = 0
 	interactionOffset.width = 0
 	interactionOffset.height = 0
+	turnedFixedId = null
 }
 
-export { interactionOffset, rotationDelta, commitInteraction, resetInteractionOffset }
+export {
+	interactionOffset,
+	rotationDelta,
+	commitInteraction,
+	resetInteractionOffset,
+	markTurnedFixed,
+}

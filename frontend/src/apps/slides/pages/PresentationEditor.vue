@@ -1,5 +1,5 @@
 <template>
-	<!-- clip so the caret can't scroll the editor; hidden is the fallback -->
+	<!-- clip, not just hidden: a hidden root still scrolls when a caret lands past its edge -->
 	<div
 		class="isolate flex h-screen w-screen select-none flex-col overflow-hidden overflow-clip"
 		@click="focusedSlide = null"

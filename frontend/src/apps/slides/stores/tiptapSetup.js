@@ -395,14 +395,26 @@ const getMarksForPlaceholder = (state) => {
 	return marks
 }
 
+const getFirstTextblockAttrs = (doc) => {
+	let attrs = null
+	doc.descendants((node) => {
+		if (!attrs && node.isTextblock) attrs = node.attrs
+		return !attrs
+	})
+	return attrs
+}
+
 const addPlaceholderAndRetainMarks = (event, view, start, end) => {
 	event.preventDefault()
 
 	const state = view.state
 	const marks = getMarksForPlaceholder(state)
+	// a doc-wide replace rebuilds the paragraph bare, dropping alignment and line height
+	const blockAttrs = state.doc.resolve(start).depth ? null : getFirstTextblockAttrs(state.doc)
 
 	let tr = state.tr
 	tr = tr.replaceWith(start, end, state.schema.text(ZWSP, marks))
+	if (blockAttrs) tr = tr.setNodeMarkup(start, undefined, blockAttrs)
 	tr = tr.setStoredMarks(marks)
 	tr = tr.setSelection(TextSelection.create(tr.doc, start + 1))
 	view.dispatch(tr)

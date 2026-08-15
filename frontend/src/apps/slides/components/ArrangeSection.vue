@@ -1,18 +1,6 @@
 <template>
-	<Section label="Position">
-		<NumberControl
-			v-for="field in positionFields"
-			:key="field.axis"
-			:modelValue="Math.round(selectionBounds[field.property])"
-			:label="field.label"
-			suffix="px"
-			:max-digits="4"
-			:step="1"
-			@update:modelValue="(value) => previewPosition(field.axis, value)"
-			@change-start="positionScrub.begin"
-			@change-end="positionScrub.commit"
-		/>
-		<ButtonGroup label="Arrange" :options="arrangeOptions" @select="arrangeElements" />
+	<Section label="Arrange">
+		<ButtonGroup label="Order" :options="orderOptions" @select="arrangeElements" />
 		<ButtonGroup
 			label="Align Horizontal"
 			:options="alignHorizontalOptions"
@@ -27,11 +15,13 @@
 			@select="alignElement"
 			@hover="onAlignHover"
 		/>
+		<ButtonGroup label="Flip" :options="flipOptions" @select="flipElements" />
 	</Section>
 </template>
 
 <script setup>
-import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
+import { computed } from 'vue'
+
 import ButtonGroup from '@/apps/slides/components/controls/ButtonGroup.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
@@ -47,29 +37,18 @@ import AlignTop from '@/apps/slides/icons/AlignTop.vue'
 import AlignCenterVertical from '@/apps/slides/icons/AlignCenterVertical.vue'
 import AlignBottom from '@/apps/slides/icons/AlignBottom.vue'
 
-import { computed } from 'vue'
+import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
+import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
 
-import { selectionBounds, guideVisibilityMap } from '@/apps/slides/stores/slide'
-import { activeElementIds } from '@/apps/slides/stores/element'
+import { guideVisibilityMap } from '@/apps/slides/stores/slide'
+import { activeElementIds, flipElements } from '@/apps/slides/stores/element'
 import {
 	alignElement,
 	arrangeElements,
-	getAlignmentPositions,
-	isHorizontalDirection,
+	getAlignedDirections,
 } from '@/apps/slides/stores/placement'
-import { useInteractionScrub } from '@/apps/slides/composables/useInteractionScrub'
 
-const positionScrub = useInteractionScrub(['left', 'top'])
-
-const previewPosition = (axis, value) =>
-	positionScrub.preview(axis == 'X' ? 'left' : 'top', value)
-
-const positionFields = [
-	{ axis: 'X', property: 'left', label: 'Left' },
-	{ axis: 'Y', property: 'top', label: 'Top' },
-]
-
-const arrangeOptions = [
+const orderOptions = [
 	{ value: 'front', label: 'Bring to front', icon: BringToFront },
 	{ value: 'back', label: 'Send to back', icon: SendToBack },
 	{ value: 'forward', label: 'Bring forward', icon: Forward },
@@ -88,14 +67,12 @@ const alignVerticalOptions = [
 	{ value: 'bottom', label: 'Align bottom', icon: AlignBottom },
 ]
 
-const alignedDirections = computed(() => {
-	const positions = getAlignmentPositions()
+const flipOptions = [
+	{ value: 'horizontal', label: 'Flip horizontal', icon: FlipHorizontal },
+	{ value: 'vertical', label: 'Flip vertical', icon: FlipVertical },
+]
 
-	return Object.keys(positions).filter((direction) => {
-		const current = isHorizontalDirection(direction) ? selectionBounds.left : selectionBounds.top
-		return Math.round(positions[direction]) == Math.round(current)
-	})
-})
+const alignedDirections = computed(() => getAlignedDirections())
 
 const alignGuideMap = {
 	left: 'leftEdge',

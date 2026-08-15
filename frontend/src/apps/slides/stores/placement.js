@@ -69,9 +69,20 @@ const alignElementsToEachOther = (direction) => {
 	nextTick(() => cropSelectionToFitContent(activeElementIds.value))
 }
 
+// bounds mix fractional and integer measurements, so exact comparison flickers
+const getAlignedDirections = () => {
+	const positions = getAlignmentPositions()
+
+	return Object.keys(positions).filter((direction) => {
+		const current = isHorizontalDirection(direction) ? selectionBounds.left : selectionBounds.top
+		return Math.abs(positions[direction] - current) < 1
+	})
+}
+
 const alignElement = (direction) => {
 	if (isSelectionLocked.value) return
 	if (activeElementIds.value.length > 1) return alignElementsToEachOther(direction)
+	if (getAlignedDirections().includes(direction)) return
 
 	const axis = isHorizontalDirection(direction) ? 'X' : 'Y'
 	updatePosition(axis, Math.round(getAlignmentPositions()[direction]))
@@ -205,4 +216,4 @@ const arrangeElements = (action) => {
 	)
 }
 
-export { alignElement, arrangeElements, getAlignmentPositions, isHorizontalDirection }
+export { alignElement, arrangeElements, getAlignedDirections, getAlignmentPositions }

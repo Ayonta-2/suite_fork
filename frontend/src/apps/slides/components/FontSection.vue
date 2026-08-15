@@ -1,6 +1,6 @@
 <template>
-	<Section label="Typography">
-		<PropertyRow label="Font">
+	<Section label="Font">
+		<PropertyRow label="Family">
 			<Combobox
 				trigger="button"
 				variant="ghost"
@@ -28,6 +28,12 @@
 				@update:modelValue="(value) => updateProperty('color', value)"
 			/>
 		</PropertyRow>
+		<ToggleGroup
+			label="Style"
+			:modelValue="decorValues"
+			:options="decorOptions"
+			@update:modelValue="onDecorToggle"
+		/>
 		<PropertyRow label="Case">
 			<TabButtons
 				:modelValue="editorStyles.textTransform"
@@ -35,12 +41,6 @@
 				@update:modelValue="(value) => updateProperty('textTransform', value)"
 			/>
 		</PropertyRow>
-		<ToggleGroup
-			label="Decor"
-			:modelValue="decorValues"
-			:options="decorOptions"
-			@update:modelValue="onDecorToggle"
-		/>
 	</Section>
 </template>
 
@@ -80,17 +80,17 @@ const textFonts = [
 	'Inter',
 ]
 
-const caseOptions = [
-	{ value: 'none', tooltip: 'As typed', icon: 'lucide-ban' },
-	{ value: 'uppercase', tooltip: 'Uppercase', icon: 'lucide-case-upper' },
-	{ value: 'lowercase', tooltip: 'Lowercase', icon: 'lucide-case-lower' },
-]
-
 const decorOptions = [
 	{ value: 'bold', label: 'Bold', icon: Bold },
 	{ value: 'italic', label: 'Italic', icon: Italic },
 	{ value: 'underline', label: 'Underline', icon: Underline },
 	{ value: 'strike', label: 'Strikethrough', icon: Strikethrough },
+]
+
+const caseOptions = [
+	{ value: 'none', tooltip: 'As typed', icon: 'lucide-ban' },
+	{ value: 'uppercase', tooltip: 'Uppercase', icon: 'lucide-case-upper' },
+	{ value: 'lowercase', tooltip: 'Lowercase', icon: 'lucide-case-lower' },
 ]
 
 const displayFont = computed(() => editorStyles.fontFamily?.replace(/['"]/g, ''))

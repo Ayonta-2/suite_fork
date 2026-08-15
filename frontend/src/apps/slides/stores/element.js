@@ -9,7 +9,7 @@ import {
 	currentSlide,
 	slideIndex,
 } from './slide'
-import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
+import { useTextEditor, resetGrowthBaseline } from '@/apps/slides/composables/useTextEditor'
 
 import { getElementDiv } from './elementRegistry'
 import { markDirty } from './saving'
@@ -30,7 +30,7 @@ import {
 	addElementCommand,
 	removeElementCommand,
 } from '@/apps/slides/stores/commands'
-import { interactionOffset } from '@/apps/slides/stores/interaction'
+import { interactionOffset, markTurnedFixed } from '@/apps/slides/stores/interaction'
 
 const findSlideElement = (id) => currentSlide.value?.elements.find((el) => el.id === id)
 
@@ -342,23 +342,18 @@ const addShapeElement = async (shapeType, bounds = null) => {
 const getTextElementDimensions = (presets) => {
 	const tempTextElement = document.createElement('div')
 
+	// the element's own markup and CSS, or the measurement drifts by sub-pixels
+	tempTextElement.className = 'textElement text-auto-width'
 	Object.assign(tempTextElement.style, {
 		position: 'absolute',
 		visibility: 'hidden',
-		height: 'auto',
-		width: 'auto',
-		whiteSpace: 'pre',
-		fontSize: `${presets.fontSize}px`,
-		fontFamily: presets.fontFamily,
-		letterSpacing: `${presets.letterSpacing}px`,
-		color: presets.color || '#000000',
 	})
-	tempTextElement.innerHTML = presets.innerText || 'Text'
+	tempTextElement.innerHTML = getElementContent(presets)
 
 	document.body.appendChild(tempTextElement)
 
-	const elementWidth = tempTextElement.offsetWidth
-	const elementHeight = tempTextElement.offsetHeight
+	// fractional, to agree with the selection bounds the resize observer writes
+	const { width: elementWidth, height: elementHeight } = tempTextElement.getBoundingClientRect()
 
 	document.body.removeChild(tempTextElement)
 
@@ -367,7 +362,7 @@ const getTextElementDimensions = (presets) => {
 
 const addTextElement = async (text, position) => {
 	const elementPresets = {
-		textAlign: 'left',
+		textAlign: 'center',
 		fontSize: 28,
 		fontFamily: 'Inter',
 		color: guessTextColorFromBackground(currentSlide.value.background),
@@ -933,34 +928,92 @@ const isWithinOverlappingBounds = (outer, inner) => {
 	return withinWidth && withinHeight
 }
 
-const addFixedWidthToElement = () => {
-	const elementDiv = getElementDiv(activeElement.value.id)
-	if (elementDiv) {
-		const rect = elementDiv.getBoundingClientRect()
-		activeElement.value.width = rect.width / slideBounds.scale
-		markDirty()
-	}
+const getRenderedWidth = (elementId) => {
+	const elementDiv = getElementDiv(elementId)
+	if (!elementDiv) return null
+	return elementDiv.getBoundingClientRect().width / slideBounds.scale
 }
 
-// cap an auto-width box at the room left to the slide edge so it wraps instead of growing off
-const clampWidthToSlide = (element) => {
-	if (element?.type != 'text' || element.width) return
+// the gesture that triggered this records the conversion, so undo reaches auto
+const addFixedWidthToElement = () => {
+	const width = getRenderedWidth(activeElement.value.id)
+	if (width == null) return
 
+	markTurnedFixed(activeElement.value.id)
+	activeElement.value.width = width
+	markDirty()
+}
+
+// only centered and right-aligned text pays a width change out of its left
+const getAnchorFactor = (elementDiv) => {
+	const blocks = [...elementDiv.querySelectorAll('p')]
+	const aligns = new Set(blocks.map((block) => getComputedStyle(block).textAlign))
+	if (aligns.size !== 1) return 0
+
+	const align = aligns.values().next().value
+	if (align === 'center') return 0.5
+	return align === 'right' ? 1 : 0
+}
+
+const setFixedWidth = () => {
+	const element = activeElement.value
+	if (!element || element.width) return
+
+	const width = getRenderedWidth(element.id)
+	if (width == null) return
+
+	commandHistory.execute(
+		editElementCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: [element.id],
+			property: 'width',
+			oldValue: null,
+			newValue: width,
+		}),
+	)
+	resetGrowthBaseline()
+}
+
+const setAutoWidth = async () => {
+	const element = activeElement.value
+	if (!element?.width) return
+
+	const slideId = currentSlide.value.clientId
 	const elementDiv = getElementDiv(element.id)
-	if (!elementDiv) return
+	const width = element.width
+	const commands = [
+		editElementCommand({
+			slideId,
+			elementIds: [element.id],
+			property: 'width',
+			oldValue: width,
+			newValue: null,
+		}),
+	]
 
-	// offsetParent is the containing block, so the slide border is already excluded
-	const slideWidth = elementDiv.offsetParent?.clientWidth
-	if (!slideWidth) return
+	const anchorFactor = elementDiv ? getAnchorFactor(elementDiv) : 0
+	if (anchorFactor) {
+		// the auto width is only knowable from the element itself, so borrow it
+		// for a tick; the command below is what actually applies the change
+		const left = element.left
+		element.width = null
+		await nextTick()
+		const autoWidth = getRenderedWidth(element.id) ?? width
+		element.width = width
 
-	const availableWidth = slideWidth - element.left
-	if (availableWidth < getMinSizeForElement('text').width) return
+		commands.push(
+			editElementCommand({
+				slideId,
+				elementIds: [element.id],
+				property: 'left',
+				oldValue: left,
+				newValue: left + (width - autoWidth) * anchorFactor,
+			}),
+		)
+	}
 
-	if (elementDiv.offsetWidth <= availableWidth) return
-
-	element.width = availableWidth
-
-	return availableWidth
+	commandHistory.execute(batchCommand({ slideId, elementIds: [element.id], commands }))
+	await resetGrowthBaseline()
 }
 
 // the stored number equals what auto-height already renders, so no markDirty
@@ -1272,7 +1325,8 @@ export {
 	selectableIds,
 	getElementPosition,
 	addFixedWidthToElement,
-	clampWidthToSlide,
+	setFixedWidth,
+	setAutoWidth,
 	ensureExplicitHeight,
 	getNaturalAspectRatio,
 	setEditableState,

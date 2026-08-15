@@ -1,4 +1,4 @@
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, nextTick } from 'vue'
 import { Editor } from '@tiptap/vue-3'
 import { createDocument } from '@tiptap/core'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
@@ -8,11 +8,11 @@ import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { markDirty } from '@/apps/slides/stores/saving'
 import {
 	activeElement,
-	clampWidthToSlide,
 	findSlideElement,
 	getInitialShapeTextContent,
 } from '@/apps/slides/stores/element'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
+import { getElementDiv } from '@/apps/slides/stores/elementRegistry'
 import { currentSlide } from '@/apps/slides/stores/slide'
 
 export const activeEditor = ref(null)
@@ -21,9 +21,27 @@ export const activeEditor = ref(null)
 let editorElement = null
 let editorSlideId = null
 let lastCompositionId = null
+let lastRenderedWidth = null
 let stopContentWatch = null
 
 let suppressRecording = false
+
+// only auto-width text is worth the forced layout of an offsetWidth read;
+// until EditorContent adopts the view the div is an empty shell, not a width
+const measuredAutoWidth = (editor) => {
+	if (editorElement?.type !== 'text' || editorElement.width) return null
+	const div = getElementDiv(editorElement.id)
+	if (!div || !editor?.view || !div.contains(editor.view.dom)) return null
+	return div.offsetWidth
+}
+
+// a width the panel changed makes the stored baseline a lie, and the next transaction can
+// only measure after the keystroke it should have anchored, so reseed off the settled DOM
+export const resetGrowthBaseline = async () => {
+	lastRenderedWidth = null
+	await nextTick()
+	lastRenderedWidth = measuredAutoWidth(activeEditor.value)
+}
 
 const withRecordingSuppressed = (fn) => {
 	suppressRecording = true
@@ -133,7 +151,32 @@ export const useTextEditor = () => {
 		markDirty()
 	}
 
-	const recordContentEdit = (oldValue, transaction, clampedWidth) => {
+	const growthAnchor = (editor) => {
+		const aligns = new Set()
+		editor.state.doc.descendants((node) => {
+			if (node.isTextblock) aligns.add(node.attrs.textAlign || 'left')
+		})
+		return aligns.size === 1 ? aligns.values().next().value : 'left'
+	}
+
+	// centered and right-aligned text holds its anchor by paying growth out of left
+	const applyGrowthShift = (editor) => {
+		const width = measuredAutoWidth(editor)
+		const previousWidth = lastRenderedWidth
+		lastRenderedWidth = width
+
+		if (width == null || previousWidth == null || width === previousWidth) return null
+
+		const anchor = growthAnchor(editor)
+		if (anchor !== 'center' && anchor !== 'right') return null
+
+		const delta = width - previousWidth
+		const oldValue = editorElement.left
+		editorElement.left = oldValue - (anchor === 'center' ? delta / 2 : delta)
+		return { oldValue, newValue: editorElement.left }
+	}
+
+	const recordContentEdit = (oldValue, transaction, leftShift) => {
 		const compositionId = transaction.getMeta('composition')
 		// an IME candidate pause routinely outlasts the coalesce window
 		const forceCoalesce = compositionId != null && compositionId === lastCompositionId
@@ -151,43 +194,51 @@ export const useTextEditor = () => {
 			coalesceKey: `content:${editorSlideId}:${editorElement.id}`,
 		})
 
-		if (!clampedWidth) return commandHistory.record(contentCommand, { forceCoalesce })
+		if (editorElement.type !== 'text' || editorElement.width)
+			return commandHistory.record(contentCommand, { forceCoalesce })
 
-		// the clamp has to undo with the edit that triggered it
-		const widthCommand = editElementCommand({
+		// always the batch shape, so shifted and unshifted keystrokes coalesce
+		const leftCommand = editElementCommand({
 			slideId: editorSlideId,
 			elementIds: [editorElement.id],
-			property: 'width',
-			oldValue: null,
-			newValue: clampedWidth,
+			property: 'left',
+			oldValue: leftShift?.oldValue ?? editorElement.left,
+			newValue: leftShift?.newValue ?? editorElement.left,
 		})
 
-		commandHistory.record(
-			batchCommand({
-				slideId: editorSlideId,
-				elementIds: [editorElement.id],
-				commands: [contentCommand, widthCommand],
-			}),
-		)
+		const command = batchCommand({
+			slideId: editorSlideId,
+			elementIds: [editorElement.id],
+			commands: [contentCommand, leftCommand],
+			// a side-handle drag can fix the width mid-burst, so the shapes must not coalesce
+			coalesceKey: `content+left:${editorSlideId}:${editorElement.id}`,
+		})
+
+		commandHistory.record(command, { forceCoalesce })
 	}
 
 	const handleOnTransaction = (editor, transaction) => {
+		// a caret placed in the mounted editor is the first sure chance to seed
+		if (lastRenderedWidth == null) lastRenderedWidth = measuredAutoWidth(editor)
 		if (!transaction.docChanged) return
 
 		// purposefully using onTransaction + docChanged instead of onUpdate
 		// since onUpdate also triggers when activeEditor changes from one text box to another
 		// leading to overwriting content for second one with first one's content
 
-		// history and init pushes must leave no trace at all
-		if (suppressRecording || !editorElement) return setEditorStyles(editor)
+		// history and init pushes still change the width, so the baseline follows
+		if (suppressRecording || !editorElement) {
+			lastRenderedWidth = measuredAutoWidth(editor)
+			return setEditorStyles(editor)
+		}
 
 		const oldValue = patchedHTML(editorElement.content)
 
 		updateElementContent(editor)
-		const clampedWidth = clampWidthToSlide(editorElement)
+		const leftShift = applyGrowthShift(editor)
 		setEditorStyles(editor)
 
-		recordContentEdit(oldValue, transaction, clampedWidth)
+		recordContentEdit(oldValue, transaction, leftShift)
 	}
 
 	const markCommands = {
@@ -318,6 +369,11 @@ export const useTextEditor = () => {
 		editorElement = findSlideElement(id)
 		editorSlideId = currentSlide.value?.clientId
 		lastCompositionId = null
+		// two ticks: EditorContent reacts to the new editor, then adopts its view
+		lastRenderedWidth = null
+		nextTick(() =>
+			nextTick(() => (lastRenderedWidth ??= measuredAutoWidth(activeEditor.value))),
+		)
 
 		stopContentWatch?.()
 		stopContentWatch = watch(() => activeElement.value?.content, reconcileEditorContent)

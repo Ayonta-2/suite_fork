@@ -1,5 +1,17 @@
 <template>
-	<Section label="Layout">
+	<Section label="Frame">
+		<NumberControl
+			v-for="field in positionFields"
+			:key="field.axis"
+			:modelValue="Math.round(selectionBounds[field.property])"
+			:label="field.label"
+			suffix="px"
+			:max-digits="4"
+			:step="1"
+			@update:modelValue="(value) => previewPosition(field.axis, value)"
+			@change-start="positionScrub.begin"
+			@change-end="positionScrub.commit"
+		/>
 		<template v-if="!isMultiSelect">
 			<NumberControl
 				v-for="field in sizeFields"
@@ -11,10 +23,18 @@
 				:max-digits="4"
 				:step="1"
 				:disabled="field.property == 'height' && !canEditHeight"
+				:derived="field.property == 'width' && widthMode == 'auto'"
 				@update:modelValue="(value) => sizeScrub.preview(field.property, value)"
 				@change-start="sizeScrub.begin"
 				@change-end="sizeScrub.commit"
 			/>
+			<PropertyRow v-if="canSetWidthMode" label="Width Mode">
+				<TabButtons
+					:modelValue="widthMode"
+					:options="widthModes"
+					@update:modelValue="setWidthMode"
+				/>
+			</PropertyRow>
 		</template>
 		<NumberControl
 			v-if="canRotate"
@@ -27,34 +47,37 @@
 			@change-start="beginRotateChange"
 			@change-end="commitRotateChange"
 		/>
-		<ButtonGroup label="Flip" :options="flipOptions" @select="flipElements" />
 	</Section>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 
-import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
-import ButtonGroup from '@/apps/slides/components/controls/ButtonGroup.vue'
-import Section from '@/apps/slides/components/controls/Section.vue'
+import { TabButtons } from 'frappe-ui'
 
-import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
-import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
+import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
+import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
+import Section from '@/apps/slides/components/controls/Section.vue'
 
 import {
 	activeElement,
 	activeElementIds,
 	addFixedWidthToElement,
-	flipElements,
+	setAutoWidth,
+	setFixedWidth,
 } from '@/apps/slides/stores/element'
 import { selectionBounds } from '@/apps/slides/stores/slide'
-import { commitInteraction } from '@/apps/slides/stores/interaction'
-import { rotationDelta } from '@/apps/slides/stores/interaction'
+import { commitInteraction, rotationDelta } from '@/apps/slides/stores/interaction'
 import { normalizeRotation } from '@/apps/slides/utils/helpers'
 import { isAspectLocked } from '@/apps/slides/utils/resize'
 import { useInteractionScrub } from '@/apps/slides/composables/useInteractionScrub'
 
 const isMultiSelect = computed(() => activeElementIds.value?.length > 1)
+
+const positionScrub = useInteractionScrub(['left', 'top'])
+
+const previewPosition = (axis, value) =>
+	positionScrub.preview(axis == 'X' ? 'left' : 'top', value)
 
 const canEditHeight = computed(() => {
 	if (isMultiSelect.value) return false
@@ -62,8 +85,21 @@ const canEditHeight = computed(() => {
 	return activeElement.value?.shapeType != 'line'
 })
 
+const canSetWidthMode = computed(() => {
+	if (isMultiSelect.value) return false
+	return activeElement.value?.type == 'text'
+})
+
+const widthMode = computed(() => (activeElement.value?.width ? 'fixed' : 'auto'))
+
+const setWidthMode = (mode) => {
+	if (mode == widthMode.value) return
+	if (mode == 'auto') return setAutoWidth()
+	setFixedWidth()
+}
+
 const canRotate = computed(() => {
-	if (activeElementIds.value?.length > 1) return false
+	if (isMultiSelect.value) return false
 	return ['shape', 'image'].includes(activeElement.value?.type)
 })
 
@@ -109,13 +145,18 @@ const commitRotateChange = () => {
 	commitInteraction()
 }
 
+const positionFields = [
+	{ axis: 'X', property: 'left', label: 'Left' },
+	{ axis: 'Y', property: 'top', label: 'Top' },
+]
+
 const sizeFields = [
 	{ property: 'width', label: 'Width' },
 	{ property: 'height', label: 'Height' },
 ]
 
-const flipOptions = [
-	{ value: 'horizontal', label: 'Flip horizontal', icon: FlipHorizontal },
-	{ value: 'vertical', label: 'Flip vertical', icon: FlipVertical },
+const widthModes = [
+	{ value: 'auto', label: 'Auto', tooltip: 'Grows with the text' },
+	{ value: 'fixed', label: 'Fixed', tooltip: 'Stays the width you set' },
 ]
 </script>
