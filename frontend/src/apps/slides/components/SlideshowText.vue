@@ -81,11 +81,20 @@ const createSpansForTextNode = (blockNode, textNode) => {
 const getNewChildrenHTML = (blockNode) => {
 	let childrenHTML = ''
 
-	const walker = document.createTreeWalker(blockNode, NodeFilter.SHOW_TEXT)
+	const walker = document.createTreeWalker(
+		blockNode,
+		NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+	)
 	while (walker.nextNode()) {
-		// for every text node, apply span styling to chars
-		const splitSpansHTML = createSpansForTextNode(blockNode, walker.currentNode)
-		childrenHTML += splitSpansHTML
+		const node = walker.currentNode
+
+		if (node.nodeType === Node.TEXT_NODE) {
+			// for every text node, apply span styling to chars
+			childrenHTML += createSpansForTextNode(blockNode, node)
+		} else if (node.tagName === 'BR') {
+			// a hard break carries no text, so a text-only walk drops it and the line merges
+			childrenHTML += '<br>'
+		}
 	}
 
 	return childrenHTML
@@ -142,6 +151,13 @@ const getSpansFromBlocks = (currentBlocks, newBlocks, i) => {
 	return { currSpans, newSpans }
 }
 
+// only spans get updated in place, so a block whose breaks moved needs the full
+// replace even when its span count is unchanged
+const getBlockStructure = (block) =>
+	Array.from(block.children)
+		.map((node) => node.tagName)
+		.join(',')
+
 const updateSpanStyles = (span, newSpan) => {
 	const style = newSpan.getAttribute('style') || ''
 	span.setAttribute('style', style)
@@ -159,7 +175,10 @@ const updateStylesForExistingContent = (newHTML) => {
 	for (let i = 0; i < currentBlocks.length; i++) {
 		const { currSpans, newSpans } = getSpansFromBlocks(currentBlocks, newBlocks, i)
 
-		if (currSpans.length !== newSpans.length) {
+		if (
+			currSpans.length !== newSpans.length ||
+			getBlockStructure(currentBlocks[i]) !== getBlockStructure(newBlocks[i])
+		) {
 			textHTML.value = newHTML
 			return
 		}
