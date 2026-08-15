@@ -94,7 +94,11 @@ import {
 	isSelectionLocked,
 } from '@/apps/slides/stores/element'
 
-import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
+import {
+	interactionOffset,
+	commitInteraction,
+	resetInteractionOffset,
+} from '@/apps/slides/stores/interaction'
 
 import { handleCopy, handlePaste } from '@/apps/slides/stores/copyPaste'
 
@@ -599,6 +603,9 @@ const applyInteractionOffsets = () => {
 watch(
 	() => hasOngoingInteraction.value,
 	(newVal, oldVal) => {
+		// a gesture torn down before it commits leaves its offsets and its
+		// auto-to-fixed mark behind, and the next commit would record them as its own
+		if (!oldVal && newVal) resetInteractionOffset()
 		if (oldVal && !newVal) applyInteractionOffsets()
 		emit('update:hasOngoingInteraction', newVal)
 	},
