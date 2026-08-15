@@ -2,68 +2,68 @@
 	<div class="flex h-full w-72 flex-col border-l bg-surface-base" @mousedown="keepEditorFocus">
 		<!-- outside every Section, so locking can never disable the way back out -->
 		<template v-if="activeElementIds.length">
-			<div class="flex h-11 shrink-0 items-center px-4">
-				<span :class="labelClasses">{{ selectionLabel }}</span>
-				<button
-					type="button"
-					class="ms-auto"
-					:title="isSelectionLocked ? 'Unlock' : 'Lock'"
-					:class="lockClasses"
-					@click="toggleLock()"
-				>
-					<lucide-lock v-if="isSelectionLocked" class="size-3.5" />
-					<lucide-lock-open v-else class="size-3.5" />
-				</button>
+			<div class="shrink-0 px-4 py-3">
+				<PropertyRow :label="selectionLabel">
+					<button
+						type="button"
+						:title="isSelectionLocked ? 'Unlock' : 'Lock'"
+						:class="lockClasses"
+						@click="toggleLock()"
+					>
+						<lucide-lock v-if="isSelectionLocked" class="size-3.5" />
+						<lucide-lock-open v-else class="size-3.5" />
+					</button>
+				</PropertyRow>
 			</div>
-			<Divider flexItem />
+			<hr class="border-t" />
 		</template>
 		<div class="no-scrollbar flex-1 overflow-y-auto px-4">
 			<div v-if="activeElementIds.length">
 				<FrameSection />
-				<Divider flexItem />
+				<hr class="border-t" />
 				<ArrangeSection />
 				<template v-if="activeElement?.type === 'table'">
-					<Divider flexItem />
+					<hr class="border-t" />
 					<TableSection />
-					<Divider flexItem />
+					<hr class="border-t" />
 					<TableGridSection />
-					<Divider flexItem />
+					<hr class="border-t" />
 					<TableCellSection />
 				</template>
 				<template v-if="['text', 'table'].includes(activeElement?.type) || isEditingShapeText">
-					<Divider flexItem />
+					<hr class="border-t" />
 					<FontSection />
-					<Divider flexItem />
+					<hr class="border-t" />
 					<ParagraphSection />
 				</template>
 				<template v-if="activeElement?.type === 'shape' && !isEditingShapeText">
-					<Divider flexItem />
+					<hr class="border-t" />
 					<ShapeStyleSection />
 				</template>
 				<template v-if="activeElement?.type === 'image'">
-					<Divider flexItem />
+					<hr class="border-t" />
 					<ImageSection />
 				</template>
 				<template v-if="activeElement?.type === 'video'">
-					<Divider flexItem />
+					<hr class="border-t" />
 					<PlaybackSection />
 				</template>
 				<template v-if="['image', 'video'].includes(activeElement?.type)">
-					<Divider flexItem />
+					<hr class="border-t" />
 					<BorderSection :key="activeElement?.id" />
 				</template>
 				<template v-if="['image', 'video', 'shape'].includes(activeElement?.type)">
-					<Divider flexItem />
+					<hr class="border-t" />
 					<ShadowSection :key="activeElement?.id" />
 				</template>
 				<template v-if="activeElement">
-					<Divider flexItem />
+					<hr class="border-t" />
 					<AppearanceSection />
 				</template>
 			</div>
 			<div v-else-if="currentSlide">
 				<BackgroundSection />
-				<Divider flexItem />
+				<hr class="border-t" />
 				<TransitionSection />
 			</div>
 		</div>
@@ -81,9 +81,8 @@ import {
 	toggleLock,
 } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
-import { labelClasses } from '@/apps/slides/utils/constants'
 
-import { Divider } from 'frappe-ui'
+import PropertyRow from './controls/PropertyRow.vue'
 
 import FrameSection from './FrameSection.vue'
 import ArrangeSection from './ArrangeSection.vue'

@@ -122,7 +122,7 @@ const SHADE_RECT_HEIGHT = 130
 
 const sliderClasses = 'h-1/5 rounded cursor-pointer'
 const sliderCursorClasses =
-	'relative size-[0.8rem] rounded shadow border border-outline-gray-2 bg-white hover:scale-[1.1] transition-transform duration-200 ease-in-out'
+	'relative size-[0.8rem] rounded shadow border bg-white hover:scale-[1.1] transition-transform duration-200 ease-in-out'
 
 const currentColor = defineModel()
 
