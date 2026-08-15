@@ -26,6 +26,23 @@ let stopContentWatch = null
 
 let suppressRecording = false
 
+// only auto-width text is worth the forced layout of an offsetWidth read;
+// until EditorContent adopts the view the div is an empty shell, not a width
+const measuredAutoWidth = (editor) => {
+	if (editorElement?.type !== 'text' || editorElement.width) return null
+	const div = getElementDiv(editorElement.id)
+	if (!div || !editor?.view || !div.contains(editor.view.dom)) return null
+	return div.offsetWidth
+}
+
+// a width the panel changed makes the stored baseline a lie, and the next transaction can
+// only measure after the keystroke it should have anchored, so reseed off the settled DOM
+export const resetGrowthBaseline = async () => {
+	lastRenderedWidth = null
+	await nextTick()
+	lastRenderedWidth = measuredAutoWidth(activeEditor.value)
+}
+
 const withRecordingSuppressed = (fn) => {
 	suppressRecording = true
 	try {
@@ -140,15 +157,6 @@ export const useTextEditor = () => {
 			if (node.isTextblock) aligns.add(node.attrs.textAlign || 'left')
 		})
 		return aligns.size === 1 ? aligns.values().next().value : 'left'
-	}
-
-	// only auto-width text is worth the forced layout of an offsetWidth read;
-	// until EditorContent adopts the view the div is an empty shell, not a width
-	const measuredAutoWidth = (editor) => {
-		if (editorElement?.type !== 'text' || editorElement.width) return null
-		const div = getElementDiv(editorElement.id)
-		if (!div || !editor?.view || !div.contains(editor.view.dom)) return null
-		return div.offsetWidth
 	}
 
 	// centered and right-aligned text holds its anchor by paying growth out of left

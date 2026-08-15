@@ -11,10 +11,18 @@
 				:max-digits="4"
 				:step="1"
 				:disabled="field.property == 'height' && !canEditHeight"
+				:derived="field.property == 'width' && widthMode == 'auto'"
 				@update:modelValue="(value) => sizeScrub.preview(field.property, value)"
 				@change-start="sizeScrub.begin"
 				@change-end="sizeScrub.commit"
 			/>
+			<PropertyRow v-if="canSetWidthMode" label="Sizing">
+				<TabButtons
+					:modelValue="widthMode"
+					:options="widthModes"
+					@update:modelValue="setWidthMode"
+				/>
+			</PropertyRow>
 		</template>
 		<NumberControl
 			v-if="canRotate"
@@ -34,8 +42,11 @@
 <script setup>
 import { computed } from 'vue'
 
+import { TabButtons } from 'frappe-ui'
+
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import ButtonGroup from '@/apps/slides/components/controls/ButtonGroup.vue'
+import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
@@ -45,6 +56,8 @@ import {
 	activeElement,
 	activeElementIds,
 	addFixedWidthToElement,
+	setAutoWidth,
+	setFixedWidth,
 	flipElements,
 } from '@/apps/slides/stores/element'
 import { selectionBounds } from '@/apps/slides/stores/slide'
@@ -61,6 +74,19 @@ const canEditHeight = computed(() => {
 	if (activeElement.value?.type != 'shape') return false
 	return activeElement.value?.shapeType != 'line'
 })
+
+const canSetWidthMode = computed(() => {
+	if (isMultiSelect.value) return false
+	return activeElement.value?.type == 'text'
+})
+
+const widthMode = computed(() => (activeElement.value?.width ? 'fixed' : 'auto'))
+
+const setWidthMode = (mode) => {
+	if (mode == widthMode.value) return
+	if (mode == 'auto') return setAutoWidth()
+	setFixedWidth()
+}
 
 const canRotate = computed(() => {
 	if (activeElementIds.value?.length > 1) return false
@@ -112,6 +138,11 @@ const commitRotateChange = () => {
 const sizeFields = [
 	{ property: 'width', label: 'Width' },
 	{ property: 'height', label: 'Height' },
+]
+
+const widthModes = [
+	{ value: 'auto', label: 'Auto', tooltip: 'Grows with the text' },
+	{ value: 'fixed', label: 'Fixed', tooltip: 'Stays the width you set' },
 ]
 
 const flipOptions = [

@@ -5,14 +5,25 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
 // the growth math runs off the rendered width, which jsdom can't lay out
-const { fakeDiv } = vi.hoisted(() => ({ fakeDiv: { offsetWidth: 100, contains: () => true } }))
+const { fakeDiv, renderedWidth } = vi.hoisted(() => {
+	const renderedWidth = { measure: () => 100 }
+	const fakeDiv = document.createElement('div')
+	Object.defineProperty(fakeDiv, 'offsetWidth', {
+		get: () => renderedWidth.measure(),
+		set: (width) => (renderedWidth.measure = () => width),
+	})
+	fakeDiv.getBoundingClientRect = () => ({ width: renderedWidth.measure() }) as DOMRect
+	return { fakeDiv, renderedWidth }
+})
 vi.mock('@/apps/slides/stores/elementRegistry', () => ({
 	registerElementDiv: () => {},
 	getElementDiv: () => fakeDiv,
 }))
 
-const { slides, slideIndex } = await import('@/apps/slides/stores/slide')
-const { focusElementId } = await import('@/apps/slides/stores/element')
+const { slides, slideIndex, slideBounds } = await import('@/apps/slides/stores/slide')
+const { activeElementIds, focusElementId, setAutoWidth } = await import(
+	'@/apps/slides/stores/element'
+)
 const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
 const { useCommandHistory } = await import('./useCommandHistory')
 const { useTextEditor } = await import('./useTextEditor')
@@ -35,6 +46,7 @@ const editText = async (content: string, overrides = {}) => {
 	]
 	slideIndex.value = 0
 	focusElementId.value = 't1'
+	fakeDiv.innerHTML = content
 	await nextTick()
 	await nextTick()
 	await nextTick()
@@ -47,6 +59,7 @@ const typeAtEnd = (text: string, renderedWidth: number) => {
 }
 
 beforeEach(() => {
+	slideBounds.scale = 1
 	fakeDiv.offsetWidth = 100
 	fakeDiv.contains = () => true
 	history = useCommandHistory(slides, { actionOrder, actions: {} })
@@ -57,7 +70,29 @@ afterEach(() => {
 	activeEditor.value?.destroy()
 	activeEditor.value = null
 	focusElementId.value = null
+	activeElementIds.value = []
 	slides.value = []
+})
+
+describe('growth right after the panel switches back to auto', () => {
+	// the box renders at its stored width until the switch clears it
+	const switchToAuto = async (autoWidth: number) => {
+		renderedWidth.measure = () => element().width ?? autoWidth
+		activeElementIds.value = ['t1']
+		await setAutoWidth()
+		await nextTick()
+	}
+
+	it('anchors the first keystroke on the width it collapsed to', async () => {
+		await editText('<p style="text-align: center">one</p>', { width: 300 })
+
+		await switchToAuto(100)
+		expect(element().left).toBe(500)
+
+		typeAtEnd('x', 120)
+
+		expect(element().left).toBe(490)
+	})
 })
 
 describe('alignment-anchored growth of auto-width text', () => {

@@ -9,7 +9,7 @@ import {
 	currentSlide,
 	slideIndex,
 } from './slide'
-import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
+import { useTextEditor, resetGrowthBaseline } from '@/apps/slides/composables/useTextEditor'
 
 import { getElementDiv } from './elementRegistry'
 import { markDirty } from './saving'
@@ -30,7 +30,7 @@ import {
 	addElementCommand,
 	removeElementCommand,
 } from '@/apps/slides/stores/commands'
-import { interactionOffset } from '@/apps/slides/stores/interaction'
+import { interactionOffset, markTurnedFixed } from '@/apps/slides/stores/interaction'
 
 const findSlideElement = (id) => currentSlide.value?.elements.find((el) => el.id === id)
 
@@ -928,13 +928,92 @@ const isWithinOverlappingBounds = (outer, inner) => {
 	return withinWidth && withinHeight
 }
 
+const getRenderedWidth = (elementId) => {
+	const elementDiv = getElementDiv(elementId)
+	if (!elementDiv) return null
+	return elementDiv.getBoundingClientRect().width / slideBounds.scale
+}
+
+// the gesture that triggered this records the conversion, so undo reaches auto
 const addFixedWidthToElement = () => {
-	const elementDiv = getElementDiv(activeElement.value.id)
-	if (elementDiv) {
-		const rect = elementDiv.getBoundingClientRect()
-		activeElement.value.width = rect.width / slideBounds.scale
-		markDirty()
+	const width = getRenderedWidth(activeElement.value.id)
+	if (width == null) return
+
+	markTurnedFixed(activeElement.value.id)
+	activeElement.value.width = width
+	markDirty()
+}
+
+// only centered and right-aligned text pays a width change out of its left
+const getAnchorFactor = (elementDiv) => {
+	const blocks = [...elementDiv.querySelectorAll('p')]
+	const aligns = new Set(blocks.map((block) => getComputedStyle(block).textAlign))
+	if (aligns.size !== 1) return 0
+
+	const align = aligns.values().next().value
+	if (align === 'center') return 0.5
+	return align === 'right' ? 1 : 0
+}
+
+const setFixedWidth = () => {
+	const element = activeElement.value
+	if (!element || element.width) return
+
+	const width = getRenderedWidth(element.id)
+	if (width == null) return
+
+	commandHistory.execute(
+		editElementCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: [element.id],
+			property: 'width',
+			oldValue: null,
+			newValue: width,
+		}),
+	)
+	resetGrowthBaseline()
+}
+
+const setAutoWidth = async () => {
+	const element = activeElement.value
+	if (!element?.width) return
+
+	const slideId = currentSlide.value.clientId
+	const elementDiv = getElementDiv(element.id)
+	const width = element.width
+	const commands = [
+		editElementCommand({
+			slideId,
+			elementIds: [element.id],
+			property: 'width',
+			oldValue: width,
+			newValue: null,
+		}),
+	]
+
+	const anchorFactor = elementDiv ? getAnchorFactor(elementDiv) : 0
+	if (anchorFactor) {
+		// the auto width is only knowable from the element itself, so borrow it
+		// for a tick; the command below is what actually applies the change
+		const left = element.left
+		element.width = null
+		await nextTick()
+		const autoWidth = getRenderedWidth(element.id) ?? width
+		element.width = width
+
+		commands.push(
+			editElementCommand({
+				slideId,
+				elementIds: [element.id],
+				property: 'left',
+				oldValue: left,
+				newValue: left + (width - autoWidth) * anchorFactor,
+			}),
+		)
 	}
+
+	commandHistory.execute(batchCommand({ slideId, elementIds: [element.id], commands }))
+	await resetGrowthBaseline()
 }
 
 // the stored number equals what auto-height already renders, so no markDirty
@@ -1246,6 +1325,8 @@ export {
 	selectableIds,
 	getElementPosition,
 	addFixedWidthToElement,
+	setFixedWidth,
+	setAutoWidth,
 	ensureExplicitHeight,
 	getNaturalAspectRatio,
 	setEditableState,

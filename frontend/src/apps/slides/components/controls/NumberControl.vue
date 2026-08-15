@@ -52,6 +52,8 @@ const props = defineProps({
 		default: 1,
 	},
 	disabled: Boolean,
+	// a measured value rather than a stored one, dimmed so it reads as such
+	derived: Boolean,
 })
 
 const live = ref(null)
@@ -155,7 +157,10 @@ const plainTextInput = [
 	'[&::-webkit-outer-spin-button]:appearance-none',
 ]
 
-const textColor = computed(() => (props.disabled ? 'text-ink-gray-4' : 'text-ink-gray-7'))
+const textColor = computed(() => {
+	if (props.disabled) return 'text-ink-gray-4'
+	return props.derived ? 'text-ink-gray-5' : 'text-ink-gray-7'
+})
 
 const rowClasses = computed(() => [
 	'flex h-7 w-full items-center justify-between',
