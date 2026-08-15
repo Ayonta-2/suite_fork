@@ -2,9 +2,14 @@ import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
-const { getMinTableWidth, getTableInfo, getTableWidth, rescaleColumnWidths } = await import(
-	'./tableWidths',
-)
+const {
+	getMinTableWidth,
+	getTableInfo,
+	getTableWidth,
+	rescaleColumnWidths,
+	restoreColumnWidths,
+	stretchColumnsToFrame,
+} = await import('./tableWidths')
 
 // what tiptap serializes: the widths on the cells, everything else derived from them
 const table = (widths: number[], total = widths.reduce((sum, width) => sum + width, 0)) =>
@@ -51,6 +56,48 @@ describe('rescaleColumnWidths', () => {
 
 		expect(rescaleColumnWidths(content, 1.5)).toBe(null)
 		expect(getTableWidth(content)).toBe(null)
+	})
+})
+
+describe('the frame resize preview', () => {
+	const render = (content: string) => {
+		const host = document.createElement('div')
+		host.innerHTML = content
+		return host.querySelector('table')!
+	}
+
+	const colWidths = (rendered: HTMLTableElement) =>
+		Array.from(rendered.querySelectorAll('col')).map((col) => col.style.width)
+
+	it('hands every column its share of the frame', () => {
+		const rendered = render(table([100, 300]))
+
+		stretchColumnsToFrame(rendered)
+
+		expect(rendered.style.width).toBe('100%')
+		expect(colWidths(rendered)).toEqual(['25%', '75%'])
+	})
+
+	it('puts the pixels the document states back', () => {
+		const rendered = render(table([100, 300]))
+
+		stretchColumnsToFrame(rendered)
+		restoreColumnWidths(rendered)
+
+		expect(rendered.style.width).toBe('400px')
+		expect(colWidths(rendered)).toEqual(['100px', '300px'])
+	})
+
+	it('leaves a table whose columns carry no widths alone', () => {
+		const rendered = render(
+			'<table><colgroup><col></colgroup><tbody><tr><td>a</td></tr></tbody></table>',
+		)
+
+		stretchColumnsToFrame(rendered)
+		restoreColumnWidths(rendered)
+
+		expect(rendered.style.width).toBe('')
+		expect(colWidths(rendered)).toEqual([''])
 	})
 })
 
