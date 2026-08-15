@@ -210,16 +210,9 @@ export const useTextEditor = () => {
 			slideId: editorSlideId,
 			elementIds: [editorElement.id],
 			commands: [contentCommand, leftCommand],
+			// a side-handle drag can fix the width mid-burst, so the shapes must not coalesce
+			coalesceKey: `content+left:${editorSlideId}:${editorElement.id}`,
 		})
-		// a side-handle drag can fix the width mid-burst, so the shapes must not coalesce
-		command.coalesceKey = `content+left:${editorSlideId}:${editorElement.id}`
-		command.coalesceWith = (incoming) => {
-			contentCommand.coalesceWith(incoming.commands[0])
-			leftCommand.newValue = incoming.commands[1].newValue
-		}
-		// record() pops a burst that coalesces back to where it started
-		Object.defineProperty(command, 'oldValue', { get: () => contentCommand.oldValue })
-		Object.defineProperty(command, 'newValue', { get: () => contentCommand.newValue })
 
 		commandHistory.record(command, { forceCoalesce })
 	}
