@@ -740,6 +740,82 @@ const StyledEmptyLine = Extension.create({
 	},
 })
 
+const INDENT = '\t'
+
+const getSelectedTextblocks = (state) => {
+	const blocks = []
+	state.doc.nodesBetween(state.selection.from, state.selection.to, (node, pos) => {
+		if (node.isTextblock) blocks.push({ node, pos })
+	})
+	return blocks
+}
+
+// the indent goes after a blank line's placeholder, which holds its styles
+const readLineStart = (node, pos) => {
+	const heldByPlaceholder = node.textContent.startsWith(ZWSP)
+
+	return {
+		pos: pos + 1 + (heldByPlaceholder ? 1 : 0),
+		text: heldByPlaceholder ? node.textContent.slice(1) : node.textContent,
+	}
+}
+
+const addIndent = ({ editor }) => {
+	const { state, dispatch } = editor.view
+	// a list item nests instead, and the one that cannot nest keeps its place
+	if (isInList(state.selection.$from)) return true
+
+	const { tr, selection, schema } = state
+	const blocks = getSelectedTextblocks(state)
+
+	if (blocks.length < 2) {
+		tr.replaceWith(selection.from, selection.to, schema.text(INDENT, getMarksForPlaceholder(state)))
+	} else {
+		blocks.reverse().forEach(({ node, pos }) => {
+			tr.insert(readLineStart(node, pos).pos, schema.text(INDENT, getFirstMarks(node)))
+		})
+	}
+
+	dispatch(tr)
+	return true
+}
+
+const removeIndent = ({ editor }) => {
+	const { state, dispatch } = editor.view
+	if (isInList(state.selection.$from)) return true
+
+	const { tr } = state
+	let outdented = false
+
+	getSelectedTextblocks(state)
+		.reverse()
+		.forEach(({ node, pos }) => {
+			const line = readLineStart(node, pos)
+			if (!line.text.startsWith(INDENT)) return
+
+			tr.delete(line.pos, line.pos + 1)
+			outdented = true
+		})
+
+	if (outdented) dispatch(tr)
+
+	// swallow the key even when there was nothing to outdent, else focus leaves the element
+	return true
+}
+
+// runs last of the tab bindings, so tables and lists keep theirs
+const LineIndent = Extension.create({
+	name: 'lineIndent',
+	priority: 50,
+
+	addKeyboardShortcuts() {
+		return {
+			Tab: addIndent,
+			'Shift-Tab': removeIndent,
+		}
+	},
+})
+
 const updateParagraphHTML = (doc, p, prevSpanStyles) => {
 	p.innerHTML = ''
 
@@ -1021,6 +1097,7 @@ export const extensions = [
 		keepMarks: true,
 	}),
 	StyledEmptyLine,
+	LineIndent,
 	LineHeight,
 	Selection.configure({ className: 'persisted-selection' }),
 	// resizing is app-level: prosemirror's column resizing math ignores canvas scale
