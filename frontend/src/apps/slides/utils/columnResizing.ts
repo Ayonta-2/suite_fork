@@ -19,6 +19,8 @@ import {
 } from 'prosemirror-tables'
 import type { Node as ProseMirrorNode } from 'prosemirror-model'
 
+import { frameResizeAttribute, stretchColumnsToFrame } from './tableWidths'
+
 interface Dragging {
 	startX: number
 	startWidth: number
@@ -44,10 +46,13 @@ class BareTableView {
 		this.contentDOM = this.dom.appendChild(document.createElement('tbody'))
 	}
 
+	// hovering a column edge is an update of its own, so a redraw lands mid frame drag
+	// and writes the document's pixels over the preview
 	update(node: ProseMirrorNode) {
 		if (node.type != this.node.type) return false
 		this.node = node
 		updateColumnsOnResize(node, this.colgroup, this.dom, this.defaultCellMinWidth)
+		if (this.dom.hasAttribute(frameResizeAttribute)) stretchColumnsToFrame(this.dom)
 		return true
 	}
 

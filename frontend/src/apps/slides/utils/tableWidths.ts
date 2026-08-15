@@ -4,7 +4,7 @@
 
 import { getDocFromHTML } from './helpers'
 
-export const getColumnWidths = (cell: Element) =>
+const getColumnWidths = (cell: Element) =>
 	(cell.getAttribute('colwidth') || '').split(',').map((width) => parseInt(width, 10))
 
 const getFirstRow = (content: string) => getDocFromHTML(content || '').body.querySelector('tr')
@@ -160,4 +160,40 @@ export const rescaleColumnWidths = (content: string, ratio: number, cellMinWidth
 	table.style.minWidth = ''
 
 	return { content: doc.body.innerHTML, width: parseFloat(table.style.width) }
+}
+
+// on the table for as long as its frame is being dragged
+export const frameResizeAttribute = 'data-frame-resizing'
+
+const readRenderedColumns = (table: HTMLTableElement) => {
+	const row = table.querySelector('tr')
+	if (!row) return null
+
+	const cols = Array.from(table.querySelectorAll('col'))
+	const widths = Array.from(row.children).flatMap(getColumnWidths)
+	if (!widths.length || widths.length !== cols.length) return null
+	if (widths.some((width) => !width)) return null
+
+	return { cols, widths, total: widths.reduce((sum, width) => sum + width, 0) }
+}
+
+// pixel columns would hold the table at its old size inside a moving frame, shares follow it
+export const stretchColumnsToFrame = (table: HTMLTableElement) => {
+	const columns = readRenderedColumns(table)
+	if (!columns) return
+
+	table.style.width = '100%'
+	columns.cols.forEach((col, index) => {
+		col.style.width = `${(columns.widths[index] / columns.total) * 100}%`
+	})
+}
+
+export const restoreColumnWidths = (table: HTMLTableElement) => {
+	const columns = readRenderedColumns(table)
+	if (!columns) return
+
+	table.style.width = `${columns.total}px`
+	columns.cols.forEach((col, index) => {
+		col.style.width = `${columns.widths[index]}px`
+	})
 }

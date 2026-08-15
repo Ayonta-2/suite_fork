@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
 import { Schema } from 'prosemirror-model'
+import type { Node as ProseMirrorNode } from 'prosemirror-model'
 import { EditorState } from 'prosemirror-state'
 import { columnResizing, tableNodes } from 'prosemirror-tables'
 
@@ -56,5 +59,60 @@ describe('scaleAwareColumnResizing', () => {
 		EditorState.create({ schema, plugins: [plugin] })
 
 		expect(typeof plugin.spec.props!.nodeViews!.table).toBe('function')
+	})
+})
+
+type TableNodeView = {
+	dom: HTMLTableElement
+	contentDOM: HTMLElement
+	update: (node: ProseMirrorNode) => boolean
+}
+
+describe('the table node view', () => {
+	const cell = (width: number) =>
+		schema.nodes.table_cell.create({ colwidth: [width] }, schema.nodes.paragraph.create())
+
+	const tableNode = (widths: number[]) =>
+		schema.nodes.table.create(null, schema.nodes.table_row.create(null, widths.map(cell)))
+
+	const buildNodeView = (widths: number[]) => {
+		const plugin = scaleAwareColumnResizing({ cellMinWidth: 25, defaultCellMinWidth: 25 })
+		EditorState.create({ schema, plugins: [plugin] })
+
+		const buildView = plugin.spec.props!.nodeViews!.table as never as (
+			node: ProseMirrorNode,
+		) => TableNodeView
+
+		const node = tableNode(widths)
+		const nodeView = buildView(node)
+
+		// the cells the editor would fill the tbody with
+		nodeView.contentDOM.innerHTML = `<tr>${widths
+			.map((width) => `<td colwidth="${width}"><p>a</p></td>`)
+			.join('')}</tr>`
+
+		return { node, nodeView }
+	}
+
+	const colWidths = (dom: HTMLTableElement) =>
+		Array.from(dom.querySelectorAll('col')).map((col) => col.style.width)
+
+	it('draws the widths the document states', () => {
+		const { node, nodeView } = buildNodeView([100, 300])
+
+		nodeView.update(node)
+
+		expect(nodeView.dom.style.width).toBe('400px')
+		expect(colWidths(nodeView.dom)).toEqual(['100px', '300px'])
+	})
+
+	it('keeps the frame resize preview through a redraw', () => {
+		const { node, nodeView } = buildNodeView([100, 300])
+		nodeView.dom.setAttribute('data-frame-resizing', '')
+
+		nodeView.update(node)
+
+		expect(nodeView.dom.style.width).toBe('100%')
+		expect(colWidths(nodeView.dom)).toEqual(['25%', '75%'])
 	})
 })

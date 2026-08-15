@@ -28,7 +28,12 @@ import {
 	getDefaultGridColor,
 	isBackgroundColorDark,
 } from '@/apps/slides/utils/color'
-import { getColumnWidths, getTableWidth } from '@/apps/slides/utils/tableWidths'
+import {
+	frameResizeAttribute,
+	getTableWidth,
+	restoreColumnWidths,
+	stretchColumnsToFrame,
+} from '@/apps/slides/utils/tableWidths'
 import { isResizingColumn } from '@/apps/slides/utils/columnResizing'
 import { selectionColor } from '@/apps/slides/utils/constants'
 
@@ -138,28 +143,22 @@ const handleMouseDown = (e) => {
 	)
 }
 
-// the editor redraws the colgroup from the document on any update, so the preview
-// widths have to be rewritten at every step of the drag
+// the mark and the preview go on together, so a redraw between them can put it back
 watch(
 	() => interactionOffset.width,
 	(offset) => {
 		if (!showEditor.value) return
 
 		const table = getTable()
-		const row = table?.querySelector('tr')
-		if (!row) return
+		if (!table) return
 
-		const cols = Array.from(table.querySelectorAll('col'))
-		const widths = Array.from(row.children).flatMap(getColumnWidths)
-		if (cols.length !== widths.length || widths.some((width) => !width)) return
-
-		const resizing = Boolean(offset)
-		const total = widths.reduce((sum, width) => sum + width, 0)
-
-		table.style.width = resizing ? '100%' : `${total}px`
-		cols.forEach((col, index) => {
-			col.style.width = resizing ? `${(widths[index] / total) * 100}%` : `${widths[index]}px`
-		})
+		if (offset) {
+			table.setAttribute(frameResizeAttribute, '')
+			stretchColumnsToFrame(table)
+		} else {
+			table.removeAttribute(frameResizeAttribute)
+			restoreColumnWidths(table)
+		}
 	},
 )
 
