@@ -184,9 +184,11 @@ const inputWidth = computed(() => {
 	}
 	const text = String(current.value ?? '')
 	const whole = text.split('.')[0]
-	const wholeDigits = whole.length || 1
+	// the sign is not a digit, so maxDigits must not spend a slot on it
+	const sign = whole.startsWith('-') ? 1 : 0
+	const wholeDigits = whole.length - sign || 1
 	const capped = props.maxDigits ? Math.min(wholeDigits, props.maxDigits) : wholeDigits
 	const fractionDigits = text.length - whole.length
-	return `${capped + fractionDigits}ch`
+	return `${capped + sign + fractionDigits}ch`
 })
 </script>
