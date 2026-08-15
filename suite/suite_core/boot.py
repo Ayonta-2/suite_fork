@@ -13,6 +13,31 @@ Imports are performed lazily inside each dispatcher so that importing
 """
 
 import frappe
+from frappe import _
+
+# The standalone apps that were consolidated into Suite. Suite ships the same
+# modules and DocTypes, so it cannot coexist with any of them on one site.
+CONSOLIDATED_STANDALONE_APPS = (
+    "calendar_app",
+    "drive",
+    "mail",
+    "meet",
+    "sheets",
+    "slides",
+    "writer",
+)
+
+
+def before_install():
+    """Abort installing Suite on a site that still has a standalone suite app."""
+    conflicting = [app for app in CONSOLIDATED_STANDALONE_APPS if app in frappe.get_installed_apps()]
+    if conflicting:
+        frappe.throw(
+            _(
+                "Cannot install Frappe Suite because the following standalone app(s) are installed on this site: {0}. "
+                "Frappe Suite already includes them. Please uninstall these app(s) first, then install Frappe Suite."
+            ).format(", ".join(frappe.bold(app) for app in conflicting))
+        )
 
 
 def _run(label, func, *args, **kwargs):
