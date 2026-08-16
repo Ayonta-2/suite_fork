@@ -5,12 +5,16 @@ import { canonicalMediaKey } from './utils/canonicalMediaKey'
 const MEDIA_CACHE_NAME = 'slides-media'
 const API_CACHE_NAME = 'slides-api'
 const ASSETS_CACHE_NAME = 'slides-assets'
+const SHELL_CACHE_NAME = 'slides-shell'
+// one document serves every slides url, so the entry has a fixed key
+const SHELL_CACHE_KEY = '/slides'
 // outside CACHE_MAX_AGE: a pinned copy must survive the sweep
 const PINNED_CACHE_NAME = 'slides-pinned'
 
 const PIN_HEADER = 'x-slides-pin'
 
 const DAY = 24 * 60 * 60 * 1000
+const NETWORK_TIMEOUT = 5000
 
 // membership is what makes a cache expiring; the sweep reads straight off this
 const CACHE_MAX_AGE = {
@@ -74,10 +78,12 @@ self.addEventListener('activate', (event) => {
 	event.waitUntil(handleSWActivate())
 })
 
-const getModifiedResponse = (response) => {
+const getModifiedResponse = (response, type) => {
 	const responseToCache = response.clone()
 	const headers = new Headers(responseToCache.headers)
 	headers.set('x-cached-time', Date.now().toString())
+	// matched by a fixed key, so nothing may make the hit conditional
+	if (type === 'shell') headers.delete('Vary')
 
 	return new Response(responseToCache.body, {
 		status: responseToCache.status,
@@ -103,10 +109,11 @@ const isSlidesStatic = (url) => url.pathname.startsWith('/assets/suite/slides/')
 
 // the bundle path is shared by every suite app; the referrer is the requesting
 // page's url and is the only ownership signal available before respondWith
+const isSlidesPath = (pathname) => pathname === '/slides' || pathname.startsWith('/slides/')
+
 const isFromSlidesPage = (request) => {
 	if (!request.referrer) return false
-	const { pathname } = new URL(request.referrer)
-	return pathname === '/slides' || pathname.startsWith('/slides/')
+	return isSlidesPath(new URL(request.referrer).pathname)
 }
 
 // a switch out of slides imports the next app's whole graph before the url changes
@@ -122,6 +129,11 @@ self.addEventListener('message', (event) => {
 const isSlidesBundleRequest = (event, url) =>
 	isBundleAsset(url) && isFromSlidesPage(event.request) && !leftSlidesClients.has(event.clientId)
 
+// the pin action stores the shell through the same route
+const isShell = (request, url) =>
+	isSlidesPath(url.pathname) &&
+	(request.mode === 'navigate' || request.headers.get(PIN_HEADER) === 'shell')
+
 const isCacheable = (type, response) => {
 	const contentType = response.headers.get('Content-Type') || ''
 	if (type === 'media') {
@@ -131,6 +143,10 @@ const isCacheable = (type, response) => {
 	if (type === 'asset') {
 		return !response.redirected && !contentType.startsWith('text/html')
 	}
+	// a login redirect stored as the shell would be replayed offline as the app
+	if (type === 'shell') {
+		return !response.redirected && contentType.startsWith('text/html')
+	}
 	// a redirected or HTML body under an API key would be replayed as data
 	return !response.redirected && contentType.includes('application/json')
 }
@@ -139,8 +155,9 @@ const addCacheEntry = async (type, cache, request, response) => {
 	if (!isCacheable(type, response)) return
 
 	// clone response and add cache timestamp header
-	const modifiedResponse = getModifiedResponse(response)
-	await cache.put(request, modifiedResponse)
+	const modifiedResponse = getModifiedResponse(response, type)
+	const key = type === 'shell' ? SHELL_CACHE_KEY : request
+	await cache.put(key, modifiedResponse)
 }
 
 const fetchAndCache = async (event, type, cache) => {
@@ -155,16 +172,23 @@ const fetchAndCache = async (event, type, cache) => {
 	return response
 }
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 // network-first: serve the live response (preserving its real headers) and fall
-// back to cache only when the network is unavailable
-const networkFirst = async (event, cache) => {
+// back to cache only when the network fails, or stalls past the timeout with a
+// stored copy to fall back on; with nothing stored the network error surfaces
+const networkFirst = async (event, type, cache, { key = event.request, timeout } = {}) => {
+	const network = fetchAndCache(event, type, cache)
 	try {
-		return await fetchAndCache(event, 'api', cache)
-	} catch {
-		const cached = await matchCache(cache, event.request)
-		if (cached) return cached
-		throw new Error('No cached response available')
-	}
+		const response = timeout ? await Promise.race([network, delay(timeout)]) : await network
+		if (response) return response
+	} catch {}
+
+	const cached = await matchCache(cache, key)
+	if (!cached) return network
+
+	event.waitUntil(network.catch(() => {}))
+	return cached
 }
 
 // the cache holds whole bodies, so a seek is sliced out of the stored 200
@@ -223,20 +247,29 @@ const getAssetResponse = async (event, url) => {
 	return staleWhileRevalidate(event, cache)
 }
 
+const getShellResponse = async (event) => {
+	const cache = await openCache(SHELL_CACHE_NAME)
+	if (!cache) return fetch(event.request)
+
+	return networkFirst(event, 'shell', cache, { key: SHELL_CACHE_KEY, timeout: NETWORK_TIMEOUT })
+}
+
 const getResponseForRequest = async (event, type, url) => {
 	if (type === 'media') return getMediaResponse(event)
 	if (type === 'asset') return getAssetResponse(event, url)
+	if (type === 'shell') return getShellResponse(event)
 
 	const cache = await openCache(API_CACHE_NAME)
 	if (!cache) return fetch(event.request)
 
-	return networkFirst(event, cache)
+	return networkFirst(event, 'api', cache)
 }
 
 const getRequestType = (event, url) => {
 	if (isMedia(url)) return 'media'
 	if (isAPI(url)) return 'api'
 	if (isSlidesStatic(url) || isSlidesBundleRequest(event, url)) return 'asset'
+	if (isShell(event.request, url)) return 'shell'
 	return 'other'
 }
 
