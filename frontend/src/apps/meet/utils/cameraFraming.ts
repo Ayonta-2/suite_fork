@@ -68,6 +68,7 @@ export class CameraFramingTracker {
 	private pendingSizeDirection = 0;
 	private pendingSizeSamples = 0;
 	private paused = false;
+	private enabled = true;
 	private awaitingResumeDetection = false;
 	private hasTrackedFace = false;
 	private hasAcquiredCrop = false;
@@ -79,7 +80,7 @@ export class CameraFramingTracker {
 	}
 
 	updateFaces(faces: NormalizedFaceBox[], now: number): void {
-		if (this.paused) return;
+		if (this.paused || !this.enabled) return;
 		const wasAwaitingResumeDetection = this.awaitingResumeDetection;
 		this.awaitingResumeDetection = false;
 		const face = faces.reduce<NormalizedFaceBox | null>((largest, candidate) => {
@@ -186,12 +187,35 @@ export class CameraFramingTracker {
 	setPaused(paused: boolean): void {
 		if (this.paused === paused) return;
 		this.paused = paused;
-		this.awaitingResumeDetection = !paused;
+		this.awaitingResumeDetection = !paused && this.enabled;
+		this.resetPendingSize();
+	}
+
+	setEnabled(enabled: boolean): void {
+		if (this.enabled === enabled) return;
+		this.enabled = enabled;
+		if (enabled) return;
+		this.paused = false;
+		this.awaitingResumeDetection = false;
+		this.target = { ...FULL_FRAME };
+		this.lastFaceAt = null;
+		this.hasAcquiredCrop = false;
 		this.resetPendingSize();
 	}
 
 	getNormalizedCrop(): NormalizedCrop | null {
 		return this.hasAcquiredCrop ? { ...this.current } : null;
+	}
+
+	isAtFullFrame(): boolean {
+		return (
+			!this.enabled &&
+			Math.max(
+				Math.abs(this.current.x),
+				Math.abs(this.current.y),
+				Math.abs(1 - this.current.size),
+			) <= CROP_CONVERGENCE_EPSILON
+		);
 	}
 
 	restoreCrop(crop: NormalizedCrop): void {
@@ -226,6 +250,7 @@ export class CameraFramingTracker {
 		this.lastFaceAt = null;
 		this.lastFrameAt = null;
 		this.paused = false;
+		this.enabled = true;
 		this.awaitingResumeDetection = false;
 		this.hasTrackedFace = false;
 		this.hasAcquiredCrop = false;
@@ -278,6 +303,7 @@ export class CameraFramingProcessor {
 	private nextDetectionAt = 0;
 	private disposed = false;
 	private paused = false;
+	private enabled = true;
 
 	constructor({
 		detectorFactory = createFaceDetector,
@@ -327,7 +353,12 @@ export class CameraFramingProcessor {
 			this.detectionError = null;
 			throw error;
 		}
-		if (!this.paused && !this.detectionPromise && now >= this.nextDetectionAt) {
+		if (
+			this.enabled &&
+			!this.paused &&
+			!this.detectionPromise &&
+			now >= this.nextDetectionAt
+		) {
 			this.nextDetectionAt = now + this.detectionIntervalMs;
 			const generation = this.detectionGeneration;
 			const input = typeof image === "function" ? image() : image;
@@ -365,8 +396,18 @@ export class CameraFramingProcessor {
 		if (!paused) this.nextDetectionAt = 0;
 	}
 
+	setEnabled(enabled: boolean): void {
+		if (this.enabled === enabled) return;
+		this.enabled = enabled;
+		this.tracker.setEnabled(enabled);
+	}
+
 	getNormalizedCrop(): NormalizedCrop | null {
 		return this.tracker.getNormalizedCrop();
+	}
+
+	isAtFullFrame(): boolean {
+		return this.tracker.isAtFullFrame();
 	}
 
 	restoreCrop(crop: NormalizedCrop): void {
