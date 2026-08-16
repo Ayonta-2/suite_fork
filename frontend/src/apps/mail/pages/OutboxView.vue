@@ -85,6 +85,15 @@
 			<DashboardListSkeleton v-else :columns="4" />
 		</div>
 
+		<DashboardPager
+			v-if="submissions.data && !refetching"
+			class="border-t px-3 sm:px-5"
+			:page="page"
+			:page-length="PAGE_LENGTH"
+			:total="total"
+			@update:page="(p: number) => (page = p)"
+		/>
+
 		<ScheduleSendModal
 			v-model="showReschedule"
 			:title="__('Reschedule delivery')"
@@ -140,6 +149,7 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
+import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import OutboxFilters from '@/apps/mail/components/OutboxFilters.vue'
@@ -172,6 +182,9 @@ const hasActiveFilters = computed(() => activeSubmissionFilterCount(filters) > 0
 // empty flashes the (wrong) empty state before the response arrives.
 const refetching = ref(false)
 
+const PAGE_LENGTH = 50
+const page = ref(1)
+
 const submissions = createResource({
 	url: 'suite.mail.api.scheduled.get_submissions',
 	auto: true,
@@ -185,6 +198,8 @@ const submissions = createResource({
 		// instants that day spans.
 		after: filters.after ? utcDayStart(filters.after) : undefined,
 		before: filters.before ? utcDayEnd(filters.before) : undefined,
+		page: page.value,
+		page_length: PAGE_LENGTH,
 	}),
 	onSuccess: () => (refetching.value = false),
 	onError: (error: { message?: string }) => {
@@ -198,14 +213,25 @@ const applyFilters = () => {
 	submissions.reload()
 }
 
+// A filter change restarts from the first page; when the page actually moves, its own
+// watcher does the refetch (avoiding a double request).
+const applyFiltersFromStart = () => {
+	if (page.value !== 1) page.value = 1
+	else applyFilters()
+}
+
+watch(page, applyFilters)
 watch(
 	() => store.accountId,
-	() => store.accountId && applyFilters(),
+	() => store.accountId && applyFiltersFromStart(),
 )
 
 // The id filters are typed; the rest change atomically.
-watchDebounced(() => [filters.emailId, filters.threadId], applyFilters, { debounce: 300 })
-watch(() => [filters.undoStatus, filters.identityId, filters.after, filters.before], applyFilters)
+watchDebounced(() => [filters.emailId, filters.threadId], applyFiltersFromStart, { debounce: 300 })
+watch(
+	() => [filters.undoStatus, filters.identityId, filters.after, filters.before],
+	applyFiltersFromStart,
+)
 
 // Kept current the way mailboxes are — a periodic poll (holds release, retries advance, and
 // other clients schedule/cancel without any local signal) plus the new-mail socket (an undo
@@ -224,7 +250,8 @@ onUnmounted(() => {
 	socket.off('new_mail_created', onNewMail)
 })
 
-const rows = computed<Submission[]>(() => submissions.data || [])
+const rows = computed<Submission[]>(() => submissions.data?.rows || [])
+const total = computed<number>(() => submissions.data?.total || 0)
 
 const recipientLabel = (row: Submission) => {
 	const emails = [

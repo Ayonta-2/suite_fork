@@ -70,14 +70,21 @@ def get_submissions(
     thread_id: str | None = None,
     before: str | None = None,
     after: str | None = None,
-) -> list[dict]:
-    """Browses the account's EmailSubmission objects, newest sendAt first.
+    page: int = 1,
+    page_length: int = 50,
+) -> dict:
+    """Browses one page of the account's EmailSubmission objects, newest sendAt first —
+    returned as {"rows", "total"} so the listing can paginate past the server's single-query
+    cap (maxObjectsInGet).
 
     The filters are the RFC 8621 §7.3 FilterCondition properties: `undo_status` is one of
     pending/final/canceled, `before`/`after` bound sendAt (UTC `...Z` timestamps)."""
 
     if undo_status and undo_status not in UNDO_STATUSES:
         frappe.throw(_("undoStatus must be one of {0}.").format(", ".join(UNDO_STATUSES)))
+
+    page = max(cint(page), 1)
+    page_length = min(max(cint(page_length), 1), 100)
 
     filter = {
         "undoStatus": undo_status,
@@ -90,9 +97,14 @@ def get_submissions(
     filter = {key: value for key, value in filter.items() if value}
 
     service = get_email_submission_service(account)
-    ids = service.query(filter or None, sort=[{"property": "sentAt", "isAscending": False}])
+    ids, total = service.query(
+        filter or None,
+        position=(page - 1) * page_length,
+        limit=page_length,
+        sort=[{"property": "sentAt", "isAscending": False}],
+    )
     if not ids:
-        return []
+        return {"rows": [], "total": total}
 
     fetched = service.get(ids, properties=[*SUBMISSION_PROPERTIES, "deliveryStatus"])
     queue_by_envid = _queue_messages_by_envid(fetched)
@@ -117,7 +129,7 @@ def get_submissions(
     for row in rows:
         _add_email_fields(row, emails_by_id.get(row["email_id"]))
 
-    return rows
+    return {"rows": rows, "total": total}
 
 
 @frappe.whitelist()

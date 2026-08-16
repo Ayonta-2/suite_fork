@@ -86,7 +86,7 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
 
     def _outbox_rows(self, account: str, **filters) -> list[dict]:
         with self.set_user(self.sender.email):
-            return get_submissions(account, **filters)
+            return get_submissions(account, **filters)["rows"]
 
     def _get_details(self, account: str, submission_id: str) -> dict:
         with self.set_user(self.sender.email):
@@ -227,6 +227,28 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
 
         with self.set_user(self.sender.email), self.assertRaises(frappe.ValidationError):
             get_submissions(account, undo_status="bogus")
+
+    def test_listing_pagination(self):
+        # The server caps a single query at maxObjectsInGet, so the listing pages: every
+        # submission must stay reachable through page/page_length, without overlap.
+        account = self.personal_account(self.sender)
+        first = self._schedule(minutes=120)
+        second = self._schedule(minutes=180)
+
+        with self.set_user(self.sender.email):
+            result = get_submissions(account, undo_status="pending", page=1, page_length=1)
+        self.assertEqual(len(result["rows"]), 1)
+        self.assertGreaterEqual(result["total"], 2)
+
+        seen = []
+        for page in range(1, result["total"] + 1):
+            with self.set_user(self.sender.email):
+                rows = get_submissions(account, undo_status="pending", page=page, page_length=1)["rows"]
+            seen.extend(row["id"] for row in rows)
+
+        self.assertEqual(len(seen), len(set(seen)), "Pages overlap.")
+        for submission_id in (first.submission_id, second.submission_id):
+            self.assertIn(submission_id, seen)
 
     def test_cancel_reverts_to_draft(self):
         scheduled = self._schedule(minutes=120)

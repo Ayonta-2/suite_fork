@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import ClassVar
 
 from suite import __version__
@@ -65,7 +65,7 @@ class EmailSubmissionService(CoreService):
 
         if hold_until:
             # RFC 4865 requires an RFC 3339 date-time; Stalwart >= 0.16.17 rejects epoch seconds.
-            parameters["HOLDUNTIL"] = datetime.fromtimestamp(hold_until, tz=timezone.utc).strftime(
+            parameters["HOLDUNTIL"] = datetime.fromtimestamp(hold_until, tz=UTC).strftime(
                 "%Y-%m-%dT%H:%M:%SZ"
             )
 
@@ -87,17 +87,28 @@ class EmailSubmissionService(CoreService):
         }
 
     def query(
-        self, filter: dict | None = None, limit: int | None = None, sort: list[dict] | None = None
-    ) -> list[str]:
-        """Returns ids of submissions matching `filter` (e.g. {"undoStatus": "pending"}), in
-        `sort` order (e.g. [{"property": "sentAt", "isAscending": False}])."""
+        self,
+        filter: dict | None = None,
+        position: int = 0,
+        limit: int | None = None,
+        sort: list[dict] | None = None,
+    ) -> tuple[list[str], int]:
+        """Returns one page of ids of submissions matching `filter` (e.g. {"undoStatus":
+        "pending"}), in `sort` order (e.g. [{"property": "sentAt", "isAscending": False}]),
+        plus the server's total match count."""
 
-        response = self._query(filter=filter, limit=limit or self.max_objects_in_get, sort=sort)
+        response = self._query(
+            filter=filter, position=position, limit=limit or self.max_objects_in_get, sort=sort
+        )
 
         if method_responses := response.get("methodResponses"):
-            return method_responses[0][1].get("ids", [])
+            body = method_responses[0][1]
+            ids = body.get("ids", [])
+            # calculateTotal is requested, but RFC 8620 §5.5 lets a server omit total; the
+            # page's own bound is then the best available floor.
+            return ids, int(body.get("total") or position + len(ids))
 
-        return []
+        return [], 0
 
     def get(self, ids: list[str], properties: list[str] | None = None) -> list[dict]:
         """Public method to get email submissions by ids, handling batching if the number of ids exceeds the server's maximum allowed in a single 'get' call."""
