@@ -62,80 +62,90 @@
 		</header>
 
 		<div v-if="data" class="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
-			<div class="mx-auto grid max-w-5xl grid-cols-1 gap-5 lg:grid-cols-2">
-				<DashboardCard :title="__('Delivery')">
-					<!-- Status is the raw JMAP undoStatus, as on the list page; the merged
-					delivery state is not shown but still drives the header actions. -->
-					<InformationField :label="__('Status')">
-						<Badge
-							:label="undoStatusLabel(data.undo_status)"
-							:theme="undoStatusTheme(data.undo_status)"
+			<!-- Two independent stacks, not a grid: rows in a grid stretch to the tallest
+			card, leaving dead space under the shorter one. md, not lg — the page should
+			pair up as soon as two cards fit. -->
+			<div class="mx-auto flex max-w-5xl flex-col gap-5 md:flex-row md:items-start">
+				<div class="flex min-w-0 flex-1 flex-col gap-5">
+					<DashboardCard :title="__('Delivery')">
+						<!-- Status is the raw JMAP undoStatus, as on the list page; the merged
+						delivery state is not shown but still drives the header actions. -->
+						<InformationField :label="__('Status')">
+							<Badge
+								:label="undoStatusLabel(data.undo_status)"
+								:theme="undoStatusTheme(data.undo_status)"
+							/>
+						</InformationField>
+						<InformationField
+							:label="data.status === 'scheduled' ? __('Scheduled for') : __('Released at')"
+							:value="sendAtLabel"
 						/>
-					</InformationField>
-					<InformationField
-						:label="data.status === 'scheduled' ? __('Scheduled for') : __('Released at')"
-						:value="sendAtLabel"
-					/>
-					<InformationField :label="__('Retries')" :value="String(data.retries ?? '—')" />
-					<InformationField :label="__('Next retry')" :value="formatDateTime(data.next_retry)" />
-					<InformationField :label="__('Priority')" :value="priorityLabel" />
-					<InformationField :label="__('Delivery reports')" :value="String(data.dsn_count)" />
-					<InformationField :label="__('Read receipts')" :value="String(data.mdn_count)" />
-				</DashboardCard>
+						<InformationField :label="__('Retries')" :value="String(data.retries ?? '—')" />
+						<InformationField :label="__('Next retry')" :value="formatDateTime(data.next_retry)" />
+						<InformationField :label="__('Priority')" :value="priorityLabel" />
+						<InformationField :label="__('Delivery reports')" :value="String(data.dsn_count)" />
+						<InformationField :label="__('Read receipts')" :value="String(data.mdn_count)" />
+					</DashboardCard>
 
-				<DashboardCard :title="__('Message')">
-					<InformationField :label="__('Subject')" :value="subjectLabel(data)" />
-					<InformationField :label="__('From')" :value="fromLabel" />
-					<InformationField
-						v-for="type in ['To', 'Cc', 'Bcc']"
-						:key="type"
-						:label="__(type)"
-						:value="recipientsOfType(type)"
-					/>
-					<div v-if="data.email_deleted" class="text-ink-gray-5 px-5 py-3.5 text-sm">
-						{{
-							__(
-								'The original message was deleted after scheduling, so only the envelope details remain.',
-							)
-						}}
-					</div>
-				</DashboardCard>
-
-				<DashboardCard :title="__('Recipients')">
-					<template v-if="data.recipients_status.length">
-						<div
-							v-for="r in data.recipients_status"
-							:key="r.email"
-							class="flex items-start gap-3 border-b px-5 py-3 last:border-b-0"
-						>
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-base">{{ r.email }}</p>
-								<!-- The server's raw SMTP reply, whatever the outcome. -->
-								<p v-if="r.smtp_reply || r.reason" class="text-ink-gray-6 mt-0.5 text-xs break-words">
-									{{ r.smtp_reply || r.reason }}
-								</p>
-								<p v-if="deliverySummary(r)" class="text-ink-gray-5 mt-0.5 text-xs">
-									{{ deliverySummary(r) }}
-								</p>
+					<DashboardCard :title="__('Recipients')">
+						<template v-if="data.recipients_status.length">
+							<div
+								v-for="r in data.recipients_status"
+								:key="r.email"
+								class="flex items-start gap-3 border-b px-5 py-3 last:border-b-0"
+							>
+								<div class="min-w-0 flex-1">
+									<p class="truncate text-base">{{ r.email }}</p>
+									<!-- The server's raw SMTP reply, whatever the outcome. -->
+									<p
+										v-if="r.smtp_reply || r.reason"
+										class="text-ink-gray-6 mt-0.5 text-xs break-words"
+									>
+										{{ r.smtp_reply || r.reason }}
+									</p>
+									<p v-if="deliverySummary(r)" class="text-ink-gray-5 mt-0.5 text-xs">
+										{{ deliverySummary(r) }}
+									</p>
+								</div>
 							</div>
+						</template>
+						<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
+							{{ __('No recipients.') }}
 						</div>
-					</template>
-					<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
-						{{ __('No recipients.') }}
-					</div>
-				</DashboardCard>
+					</DashboardCard>
+				</div>
 
-				<DashboardCard :title="__('References')">
-					<InformationField :label="__('Submission ID')" :value="data.id" />
-					<InformationField :label="__('Email ID')" :value="data.email_id" />
-					<InformationField :label="__('Thread ID')" :value="data.thread_id" />
-					<InformationField :label="__('Identity')" :value="data.identity_email" />
-					<InformationField :label="__('Envelope sender')" :value="data.envelope_from" />
-					<InformationField
-						:label="__('Envelope recipients')"
-						:value="data.envelope_recipients.join(', ')"
-					/>
-				</DashboardCard>
+				<div class="flex min-w-0 flex-1 flex-col gap-5">
+					<DashboardCard :title="__('Message')">
+						<InformationField :label="__('Subject')" :value="subjectLabel(data)" />
+						<InformationField :label="__('From')" :value="fromLabel" />
+						<InformationField
+							v-for="type in ['To', 'Cc', 'Bcc']"
+							:key="type"
+							:label="__(type)"
+							:value="recipientsOfType(type)"
+						/>
+						<div v-if="data.email_deleted" class="text-ink-gray-5 px-5 py-3.5 text-sm">
+							{{
+								__(
+									'The original message was deleted after scheduling, so only the envelope details remain.',
+								)
+							}}
+						</div>
+					</DashboardCard>
+
+					<DashboardCard :title="__('References')">
+						<InformationField :label="__('Submission ID')" :value="data.id" />
+						<InformationField :label="__('Email ID')" :value="data.email_id" />
+						<InformationField :label="__('Thread ID')" :value="data.thread_id" />
+						<InformationField :label="__('Identity')" :value="data.identity_email" />
+						<InformationField :label="__('Envelope sender')" :value="data.envelope_from" />
+						<InformationField
+							:label="__('Envelope recipients')"
+							:value="data.envelope_recipients.join(', ')"
+						/>
+					</DashboardCard>
+				</div>
 			</div>
 		</div>
 		<div v-else class="flex flex-1 items-center justify-center">
