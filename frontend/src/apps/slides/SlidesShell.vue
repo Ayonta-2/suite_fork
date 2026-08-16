@@ -9,10 +9,11 @@
 </template>
 
 <script setup>
-import { h, onMounted, onUnmounted, provide, ref } from 'vue'
+import { h, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { toast, FrappeUIProvider } from 'frappe-ui'
 import { Wifi, WifiOff } from 'lucide-vue-next'
 import { saveCurrentState } from '@/apps/slides/stores/saving'
+import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
 import { setupTheme } from '@/utils/setupTheme'
 import '@/apps/slides/styles/fonts.css'
 
@@ -37,6 +38,7 @@ const preloadBundledFonts = () => {
 
 const handleOffline = () => {
   isOnline.value = false
+  if (inSlideShowMode.value) return
   toast('Lost internet connection.', {
     icon: () => h(WifiOff, { class: 'size-4' }),
   })
@@ -45,6 +47,7 @@ const handleOffline = () => {
 const handleOnline = () => {
   isOnline.value = true
   saveCurrentState()
+  if (inSlideShowMode.value) return
   toast('You are back online.', {
     icon: () => h(Wifi, { class: 'size-4' }),
   })
@@ -56,6 +59,10 @@ const registerServiceWorker = () => {
     console.warn('Slides Service Worker registration failed:', err)
   })
 }
+
+watch(inSlideShowMode, (presenting) => {
+  document.body.classList.toggle('slides-presenting', presenting)
+})
 
 onMounted(() => {
   isOnline.value = navigator?.onLine
@@ -70,6 +77,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('online', handleOnline)
   window.removeEventListener('offline', handleOffline)
+  document.body.classList.remove('slides-presenting')
   document.documentElement.style.overscrollBehavior = ''
 })
 
@@ -77,6 +85,10 @@ provide('isOnline', isOnline)
 </script>
 
 <style>
+body.slides-presenting [data-sonner-toaster] {
+  display: none;
+}
+
 .no-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
