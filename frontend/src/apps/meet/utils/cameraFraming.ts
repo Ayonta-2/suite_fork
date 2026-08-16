@@ -19,7 +19,7 @@ export interface CropRect {
 	height: number;
 }
 
-interface NormalizedCrop {
+export interface NormalizedCrop {
 	x: number;
 	y: number;
 	size: number;
@@ -50,6 +50,7 @@ const SMOOTHING_TIME_MS = 420;
 const CENTER_DEAD_ZONE = 0.035;
 const SIZE_DEAD_ZONE = 0.05;
 const SIZE_CONFIRMATION_SAMPLES = 5;
+const CROP_CONVERGENCE_EPSILON = 0.02;
 
 const clamp = (value: number, min: number, max: number) =>
 	Math.min(max, Math.max(min, value));
@@ -68,6 +69,8 @@ export class CameraFramingTracker {
 	private pendingSizeSamples = 0;
 	private paused = false;
 	private awaitingResumeDetection = false;
+	private hasTrackedFace = false;
+	private hasAcquiredCrop = false;
 
 	private resetPendingSize(): void {
 		this.pendingSize = 0;
@@ -86,7 +89,9 @@ export class CameraFramingTracker {
 				: largest;
 		}, null);
 		if (!face) {
-			if (wasAwaitingResumeDetection) this.lastFaceAt = now;
+			if (wasAwaitingResumeDetection && this.hasAcquiredCrop) {
+				this.lastFaceAt = now;
+			}
 			return;
 		}
 
@@ -141,6 +146,7 @@ export class CameraFramingTracker {
 			size,
 		};
 		this.lastFaceAt = now;
+		this.hasTrackedFace = true;
 	}
 
 	getCrop(sourceWidth: number, sourceHeight: number, now: number): CropRect {
@@ -151,6 +157,7 @@ export class CameraFramingTracker {
 		if (this.lastFaceAt === null || now - this.lastFaceAt > FACE_HOLD_MS) {
 			this.target = { ...FULL_FRAME };
 			this.lastFaceAt = null;
+			this.hasAcquiredCrop = false;
 			this.resetPendingSize();
 		}
 
@@ -160,6 +167,18 @@ export class CameraFramingTracker {
 		this.current.y += (this.target.y - this.current.y) * blend;
 		this.current.size += (this.target.size - this.current.size) * blend;
 		this.lastFrameAt = now;
+		const maxDrift = Math.max(
+			Math.abs(this.target.x - this.current.x),
+			Math.abs(this.target.y - this.current.y),
+			Math.abs(this.target.size - this.current.size),
+		);
+		if (
+			this.hasTrackedFace &&
+			this.lastFaceAt !== null &&
+			maxDrift <= CROP_CONVERGENCE_EPSILON
+		) {
+			this.hasAcquiredCrop = true;
+		}
 
 		return this.toCropRect(sourceWidth, sourceHeight);
 	}
@@ -168,6 +187,25 @@ export class CameraFramingTracker {
 		if (this.paused === paused) return;
 		this.paused = paused;
 		this.awaitingResumeDetection = !paused;
+		this.resetPendingSize();
+	}
+
+	getNormalizedCrop(): NormalizedCrop | null {
+		return this.hasAcquiredCrop ? { ...this.current } : null;
+	}
+
+	restoreCrop(crop: NormalizedCrop): void {
+		const size = clamp(crop.size, 0, 1);
+		this.current = {
+			x: clamp(crop.x, 0, 1 - size),
+			y: clamp(crop.y, 0, 1 - size),
+			size,
+		};
+		this.target = { ...this.current };
+		this.lastFaceAt = null;
+		this.lastFrameAt = null;
+		this.hasTrackedFace = true;
+		this.hasAcquiredCrop = true;
 		this.resetPendingSize();
 	}
 
@@ -189,6 +227,8 @@ export class CameraFramingTracker {
 		this.lastFrameAt = null;
 		this.paused = false;
 		this.awaitingResumeDetection = false;
+		this.hasTrackedFace = false;
+		this.hasAcquiredCrop = false;
 		this.resetPendingSize();
 	}
 }
@@ -323,6 +363,14 @@ export class CameraFramingProcessor {
 		this.detectionGeneration++;
 		this.tracker.setPaused(paused);
 		if (!paused) this.nextDetectionAt = 0;
+	}
+
+	getNormalizedCrop(): NormalizedCrop | null {
+		return this.tracker.getNormalizedCrop();
+	}
+
+	restoreCrop(crop: NormalizedCrop): void {
+		this.tracker.restoreCrop(crop);
 	}
 
 	async dispose(): Promise<void> {

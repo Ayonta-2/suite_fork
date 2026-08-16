@@ -1,7 +1,11 @@
 import type { SelfieSegmentation } from "@mediapipe/selfie_segmentation";
 import { toast } from "frappe-ui";
 import { onUnmounted, type Ref, ref } from "vue";
-import { availableBackgroundImages } from "../data/backgroundEffects";
+import {
+	availableBackgroundImages,
+	framingCrop,
+	setFramingCrop,
+} from "../data/backgroundEffects";
 import { CameraFramingProcessor } from "../utils/cameraFraming";
 import {
 	applyBlurEffect,
@@ -504,6 +508,9 @@ export function useBackgroundEffects({
 					try {
 						if (!cameraFraming && !cameraFramingDisposal) {
 							cameraFraming = new CameraFramingProcessor();
+							if (settings.autoFramingPaused && framingCrop.value) {
+								cameraFraming.restoreCrop(framingCrop.value);
+							}
 						}
 						if (!cameraFraming) {
 							ctx.clearRect(0, 0, width, height);
@@ -1022,7 +1029,18 @@ export function useBackgroundEffects({
 				}
 				if ("autoFramingEnabled" in normalizedOptions) {
 					framingUnavailable = false;
-					if (!settings.autoFramingEnabled) stopCameraFraming();
+					if (!settings.autoFramingEnabled) {
+						stopCameraFraming();
+						setFramingCrop(null);
+					}
+				}
+				if ("autoFramingPaused" in normalizedOptions) {
+					if (settings.autoFramingPaused) {
+						const crop = cameraFraming?.getNormalizedCrop();
+						if (crop) setFramingCrop(crop);
+					} else {
+						setFramingCrop(null);
+					}
 				}
 
 				if (

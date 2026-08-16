@@ -157,6 +157,100 @@ describe("CameraFramingTracker", () => {
 
 		expect(tracker.getCrop(1280, 720, 5500).x).toBeGreaterThan(fixed.x);
 	});
+
+	it("restores a persisted crop snapshot and resumes tracking from it", () => {
+		const tracker = new CameraFramingTracker();
+		const face = (xCenter: number) => [
+			{ xCenter, yCenter: 0.3, width: 0.2, height: 0.24 },
+		];
+		tracker.updateFaces(face(0.35), 0);
+		for (let now = 0; now <= 1000; now += 20) {
+			tracker.getCrop(1280, 720, now);
+		}
+		const snapshot = tracker.getNormalizedCrop();
+		tracker.setPaused(true);
+		const locked = tracker.getCrop(1280, 720, 1000);
+
+		const restored = new CameraFramingTracker();
+		restored.restoreCrop(snapshot);
+		restored.setPaused(true);
+		expect(restored.getCrop(1280, 720, 5000)).toEqual(locked);
+
+		restored.setPaused(false);
+		expect(restored.getCrop(1280, 720, 5020)).toEqual(locked);
+		restored.updateFaces(face(0.75), 5200);
+		for (let now = 5200; now <= 6500; now += 20) {
+			restored.getCrop(1280, 720, now);
+		}
+
+		expect(restored.getCrop(1280, 720, 6500).x).toBeGreaterThan(locked.x);
+	});
+
+	it("does not report a crop before the first detection or restore", () => {
+		const tracker = new CameraFramingTracker();
+
+		expect(tracker.getNormalizedCrop()).toBeNull();
+		tracker.getCrop(1280, 720, 0);
+		tracker.getCrop(1280, 720, 500);
+		expect(tracker.getNormalizedCrop()).toBeNull();
+
+		tracker.setPaused(true);
+		tracker.setPaused(false);
+		tracker.updateFaces([], 600);
+		tracker.getCrop(1280, 720, 620);
+		tracker.getCrop(1280, 720, 640);
+		expect(tracker.getNormalizedCrop()).toBeNull();
+
+		tracker.updateFaces(
+			[{ xCenter: 0.5, yCenter: 0.3, width: 0.2, height: 0.24 }],
+			0,
+		);
+		expect(tracker.getNormalizedCrop()).toBeNull();
+
+		tracker.restoreCrop({ x: 0.1, y: 0.1, size: 0.5 });
+		expect(tracker.getNormalizedCrop()).toEqual({
+			x: 0.1,
+			y: 0.1,
+			size: 0.5,
+		});
+	});
+
+	it("clamps an out-of-bounds restored crop into the frame", () => {
+		const tracker = new CameraFramingTracker();
+		tracker.restoreCrop({ x: -0.5, y: 2, size: 1.5 });
+
+		const crop = tracker.getCrop(1280, 720, 0);
+
+		expect(crop.x).toBe(0);
+		expect(crop.y).toBe(0);
+		expect(crop.width).toBe(1280);
+		expect(crop.height).toBe(720);
+	});
+
+	it("stops reporting a crop after face loss falls back to the full frame", () => {
+		const tracker = new CameraFramingTracker();
+		const face = [{ xCenter: 0.5, yCenter: 0.3, width: 0.2, height: 0.24 }];
+		tracker.updateFaces(face, 0);
+		for (let now = 0; now <= 2000; now += 20) {
+			if (now % 200 === 0) tracker.updateFaces(face, now);
+			tracker.getCrop(1280, 720, now);
+		}
+		expect(tracker.getNormalizedCrop()).not.toBeNull();
+
+		for (let now = 2000; now <= 8000; now += 20) {
+			tracker.getCrop(1280, 720, now);
+		}
+
+		expect(tracker.getNormalizedCrop()).toBeNull();
+
+		tracker.setPaused(true);
+		tracker.setPaused(false);
+		tracker.updateFaces([], 8100);
+		tracker.getCrop(1280, 720, 8120);
+		tracker.getCrop(1280, 720, 8140);
+
+		expect(tracker.getNormalizedCrop()).toBeNull();
+	});
 });
 
 describe("CameraFramingProcessor", () => {
