@@ -27,11 +27,11 @@ export type RecipientState = {
 	next_retry?: string
 }
 
-// One row per EmailSubmission — the server is the source of truth, so emails scheduled by
+// One row per EmailSubmission — the server is the source of truth, so emails submitted by
 // other clients appear too. `id` is the submission id every action is keyed on.
 // `email_deleted` marks a submission whose Email was deleted after scheduling: it cannot be
 // resubmitted, and its recipients come from the SMTP envelope.
-export type ScheduledMail = {
+export type Submission = {
 	id: string
 	email_id?: string
 	thread_id?: string
@@ -50,7 +50,7 @@ export type ScheduledMail = {
 	email_deleted: boolean
 }
 
-export type SubmissionDetails = ScheduledMail & {
+export type SubmissionDetails = Submission & {
 	identity_email?: string
 	envelope_from?: string
 	envelope_recipients: string[]
@@ -59,6 +59,33 @@ export type SubmissionDetails = ScheduledMail & {
 	dsn_count: number
 	mdn_count: number
 }
+
+// The RFC 8621 §7.3 EmailSubmission/query filters the Outbox browses with. undoStatus is
+// always applied (the status tabs have no "all" state); for the rest an empty string means
+// "not filtering on this". after/before hold local calendar days from date inputs.
+export type SubmissionFilters = {
+	undoStatus: 'pending' | 'final' | 'canceled'
+	identityId: string
+	emailId: string
+	threadId: string
+	after: string
+	before: string
+}
+
+export const emptySubmissionFilters = (): SubmissionFilters => ({
+	undoStatus: 'pending',
+	identityId: '',
+	emailId: '',
+	threadId: '',
+	after: '',
+	before: '',
+})
+
+/** How many optional filters are set — undoStatus doesn't count, it always has a value. */
+export const activeSubmissionFilterCount = (filters: SubmissionFilters) =>
+	[filters.identityId, filters.emailId, filters.threadId, filters.after, filters.before].filter(
+		Boolean,
+	).length
 
 export const statusLabel = (status: SubmissionStatus | string) =>
 	({
@@ -80,9 +107,24 @@ export const statusTheme = (status: SubmissionStatus | string) => {
 	return 'gray'
 }
 
+// The list page badges the raw JMAP undoStatus; the merged delivery state stays on the
+// details page (and still drives which actions a row offers).
+export const undoStatusLabel = (undoStatus: string) =>
+	({
+		pending: __('Pending'),
+		final: __('Final'),
+		canceled: __('Cancelled'),
+	})[undoStatus] || undoStatus
+
+export const undoStatusTheme = (undoStatus: string) => {
+	if (undoStatus === 'pending') return 'blue'
+	if (undoStatus === 'final') return 'green'
+	return 'gray'
+}
+
 /** The per-recipient failure detail, for the status hover. */
-export const deliveryErrorTitle = (row: ScheduledMail) =>
+export const deliveryErrorTitle = (row: Submission) =>
 	row.delivery_errors.map((e) => `${e.email}: ${e.reason}`).join('\n')
 
-export const subjectLabel = (row: ScheduledMail) =>
+export const subjectLabel = (row: Submission) =>
 	row.email_deleted ? __('(Message deleted)') : row.subject || __('(No subject)')

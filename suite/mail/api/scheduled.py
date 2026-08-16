@@ -1,11 +1,13 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-"""Scheduled send, read and acted on through JMAP EmailSubmission objects.
+"""The Outbox: JMAP EmailSubmission objects, browsed and acted on directly.
 
-The server's held (FUTURERELEASE) submissions are the source of truth: listing queries them
-directly, so emails scheduled by other clients appear too, and nothing is reconciled into the
-Mail Queue — its rows are only a log of what this app submitted. Every action is keyed on the
+The server's submissions are the source of truth: the listing browses all of them — held
+(FUTURERELEASE), in flight, and concluded — through EmailSubmission/query with the RFC 8621
+§7.3 filters (undoStatus, identity, email, thread, and a sendAt window), newest sends first.
+Emails submitted by other clients appear too, and nothing is reconciled into the Mail Queue —
+its rows are only a log of what this app submitted. Every action is keyed on the
 EmailSubmission id. Since undoStatus is a submission's only mutable property (RFC 8621 §7.5),
 reschedule and send-now cancel the held submission and create a replacement.
 
@@ -23,7 +25,8 @@ dangling emailId): such a delivery can still be cancelled — there is just no m
 back to Drafts — but not resubmitted, so the resubmitting actions refuse it. Held releases that
 failed (permanently or between retries) stay on the listing so the user learns the send never
 landed — until they are retried or dismissed, or the server expunges the submission record
-(how long finalized submissions are kept is the server's policy alone).
+(how long finalized submissions are kept is the server's policy alone); the same goes for
+every other concluded row.
 """
 
 from datetime import datetime, timezone
@@ -55,35 +58,54 @@ DETAIL_PROPERTIES = [*SUBMISSION_PROPERTIES, "deliveryStatus", "identityId", "ds
 EMAIL_SUMMARY_PROPERTIES = ["id", "threadId", "subject", "from", "to", "cc", "bcc"]
 
 
+UNDO_STATUSES = ("pending", "final", "canceled")
+
+
 @frappe.whitelist()
-def get_scheduled_mails(account: str) -> list[dict]:
-    """Returns the account's held (FUTURERELEASE) submissions plus released ones whose delivery
-    has not succeeded, soonest first — problem rows have a past sendAt, so they lead."""
+def get_submissions(
+    account: str,
+    undo_status: str | None = None,
+    identity_id: str | None = None,
+    email_id: str | None = None,
+    thread_id: str | None = None,
+    before: str | None = None,
+    after: str | None = None,
+) -> list[dict]:
+    """Browses the account's EmailSubmission objects, newest sendAt first.
+
+    The filters are the RFC 8621 §7.3 FilterCondition properties: `undo_status` is one of
+    pending/final/canceled, `before`/`after` bound sendAt (UTC `...Z` timestamps)."""
+
+    if undo_status and undo_status not in UNDO_STATUSES:
+        frappe.throw(_("undoStatus must be one of {0}.").format(", ".join(UNDO_STATUSES)))
+
+    filter = {
+        "undoStatus": undo_status,
+        "identityIds": [identity_id] if identity_id else None,
+        "emailIds": [email_id] if email_id else None,
+        "threadIds": [thread_id] if thread_id else None,
+        "before": before,
+        "after": after,
+    }
+    filter = {key: value for key, value in filter.items() if value}
 
     service = get_email_submission_service(account)
-
-    pending_ids = service.query({"undoStatus": "pending"})
-    final_ids = service.query({"undoStatus": "final"})
-    if not pending_ids and not final_ids:
+    ids = service.query(filter or None, sort=[{"property": "sentAt", "isAscending": False}])
+    if not ids:
         return []
 
-    # Re-read undoStatus from the get: a submission can go final between query and get. A final
-    # one is kept only when it was actually held (HOLDUNTIL) and its delivery is still troubled —
-    # otherwise this page would grow into a delivery log of every send.
-    fetched = service.get(
-        list(dict.fromkeys(pending_ids + final_ids)), properties=[*SUBMISSION_PROPERTIES, "deliveryStatus"]
-    )
+    fetched = service.get(ids, properties=[*SUBMISSION_PROPERTIES, "deliveryStatus"])
     queue_by_envid = _queue_messages_by_envid(fetched)
 
-    rows = []
-    for submission in fetched:
-        if submission.get("undoStatus") not in ("pending", "final"):
-            continue
-        row = _serialize_submission(submission, None, queue_by_envid.get(_envid(submission)))
-        if row["status"] == "scheduled" or (_was_held(submission) and row["status"] in PROBLEM_STATUSES):
-            rows.append(row)
+    # The query's order (sentAt desc) is the listing's order; get() does not guarantee it.
+    submissions_by_id = {s["id"]: s for s in fetched}
+    rows = [
+        _serialize_submission(submission, None, queue_by_envid.get(_envid(submission)))
+        for id in ids
+        if (submission := submissions_by_id.get(id))
+    ]
 
-    email_ids = [row["email_id"] for row in rows if row["email_id"]]
+    email_ids = list(dict.fromkeys(row["email_id"] for row in rows if row["email_id"]))
     emails_by_id = {
         e["id"]: e
         for e in (
@@ -95,7 +117,6 @@ def get_scheduled_mails(account: str) -> list[dict]:
     for row in rows:
         _add_email_fields(row, emails_by_id.get(row["email_id"]))
 
-    rows.sort(key=lambda row: row["send_at"] or "")
     return rows
 
 
@@ -227,7 +248,7 @@ def retry_failed_mail(account: str, id: str) -> dict:
 
 @frappe.whitelist()
 def dismiss_failed_mail(account: str, id: str) -> None:
-    """Drops a finalized submission's record from the Scheduled listing."""
+    """Drops a finalized submission's record from the Outbox listing."""
 
     service = get_email_submission_service(account)
     _get_final_submission(service, id)
@@ -244,7 +265,7 @@ PROBLEM_STATUSES = ("failed", "retrying", "queued")
 
 
 def _serialize_submission(submission: dict, email: dict | None, queue_message: dict | None) -> dict:
-    """One Scheduled-page row: the submission itself plus its merged delivery state."""
+    """One Outbox row: the submission itself plus its merged delivery state."""
 
     recipients_status = _recipient_states(submission, queue_message)
     retries = [r["retries"] for r in recipients_status if r["retries"] is not None]
@@ -387,14 +408,6 @@ def _hold_active(submission: dict) -> bool:
         return False
 
     return datetime.fromisoformat(send_at.replace("Z", "+00:00")) > datetime.now(timezone.utc)
-
-
-def _was_held(submission: dict) -> bool:
-    """Whether the submission's delivery was held (scheduled or undo-send) — marked by the
-    RFC 4865 HOLDUNTIL parameter in its stored envelope."""
-
-    parameters = ((submission.get("envelope") or {}).get("mailFrom") or {}).get("parameters") or {}
-    return any(key.upper() == "HOLDUNTIL" for key in parameters)
 
 
 def _envid(submission: dict) -> str | None:

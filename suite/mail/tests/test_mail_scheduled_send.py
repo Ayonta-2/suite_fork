@@ -5,9 +5,10 @@
 
 Scheduling submits immediately with a HOLDUNTIL envelope parameter, so the server holds
 delivery; the Mail Queue row is only a log (status ``Submitted``, ``send_at`` recording the
-hold). The server's EmailSubmission objects are the source of truth: the Scheduled page lists
-them via ``EmailSubmission/query`` (``undoStatus: "pending"``), so submissions created by
-other clients appear too, and every action is keyed on the submission id. Reschedule and
+hold). The server's EmailSubmission objects are the source of truth: the Outbox browses all
+of them via ``EmailSubmission/query`` with the RFC 8621 §7.3 filters (undoStatus, identity,
+email, thread, sendAt window), newest sends first, so submissions created by other clients
+appear too, and every action is keyed on the submission id. Reschedule and
 send-now cancel the held submission and create a new one (undoStatus is the only mutable
 submission property); cancel reverts the message to Drafts. An Email deleted after scheduling
 leaves a dangling emailId — such a delivery can only be cancelled.
@@ -29,7 +30,7 @@ from suite.mail.api.scheduled import (
     cancel_scheduled_mail,
     dismiss_failed_mail,
     get_scheduled_mail,
-    get_scheduled_mails,
+    get_submissions,
     reschedule_mail,
     retry_delivery_now,
     retry_failed_mail,
@@ -83,9 +84,9 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
             submissions = get_email_submission_service(account).get([submission_id])
         return submissions[0] if submissions else None
 
-    def _scheduled_rows(self, account: str) -> list[dict]:
+    def _outbox_rows(self, account: str, **filters) -> list[dict]:
         with self.set_user(self.sender.email):
-            return get_scheduled_mails(account)
+            return get_submissions(account, **filters)
 
     def _get_details(self, account: str, submission_id: str) -> dict:
         with self.set_user(self.sender.email):
@@ -129,10 +130,10 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         scheduled = self._schedule(minutes=120)
         account = self.personal_account(self.sender)
 
-        rows = self._scheduled_rows(account)
+        rows = self._outbox_rows(account)
         row = next((r for r in rows if r["id"] == scheduled.submission_id), None)
 
-        self.assertIsNotNone(row, "The held submission is missing from the Scheduled listing.")
+        self.assertIsNotNone(row, "The held submission is missing from the Outbox listing.")
         self.assertEqual(row["email_id"], scheduled.id)
         self.assertEqual(row["subject"], scheduled.subject)
         self.assertFalse(row["email_deleted"])
@@ -147,14 +148,15 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         recipient_states = {r["email"]: r["status"] for r in row["recipients_status"]}
         self.assertEqual(recipient_states.get(self.recipient.email), "scheduled")
 
-        # Soonest first.
+        # Newest sends first (sentAt desc).
         send_ats = [r["send_at"] for r in rows]
-        self.assertEqual(send_ats, sorted(send_ats))
+        self.assertEqual(send_ats, sorted(send_ats, reverse=True))
 
-    def test_delivered_submission_drops_out_of_listing(self):
-        # Held only briefly: once the hold elapses and the delivery concludes, the listing
-        # must drop the row. Between release and conclusion the row may legitimately linger
-        # as "queued", so the check waits on the listing itself.
+    def test_delivered_submission_goes_final_in_listing(self):
+        # Held only briefly: once the hold elapses and the delivery concludes, the row leaves
+        # the pending filter but stays browsable — the Outbox is a log of every submission,
+        # narrowed only by the filters. Between release and conclusion the submission may
+        # legitimately linger as pending, so the check waits on the filtered listing itself.
         subject = f"Delivered {unique_name('subject')}"
         result = self.send_mail(
             self.sender,
@@ -166,14 +168,65 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
 
         account = self.personal_account(self.sender)
         self.wait_until(
-            lambda: result["submission_id"] not in [row["id"] for row in self._scheduled_rows(account)],
+            lambda: result["submission_id"]
+            not in [row["id"] for row in self._outbox_rows(account, undo_status="pending")],
             timeout=90,
-            message="The delivered submission never left the Scheduled listing.",
+            message="The delivered submission never left the pending filter.",
         )
+
+        row = next((r for r in self._outbox_rows(account) if r["id"] == result["submission_id"]), None)
+        self.assertIsNotNone(row, "The delivered submission is missing from the Outbox listing.")
+        self.assertEqual(row["undo_status"], "final")
 
         details = self._get_details(account, result["submission_id"])
         self.assertIn(details["status"], ("delivered", "sent"))
         self.assertEqual(details["undo_status"], "final")
+
+    def test_listing_filters(self):
+        scheduled = self._schedule(minutes=120)
+        account = self.personal_account(self.sender)
+
+        row = next(r for r in self._outbox_rows(account) if r["id"] == scheduled.submission_id)
+
+        # Each RFC 8621 §7.3 filter matches the held submission...
+        for filters in [
+            {"undo_status": "pending"},
+            {"email_id": row["email_id"]},
+            {"thread_id": row["thread_id"]},
+            {
+                "after": to_utc_z(add_to_date(now(), minutes=60)),
+                "before": to_utc_z(add_to_date(now(), minutes=180)),
+            },
+        ]:
+            ids = [r["id"] for r in self._outbox_rows(account, **filters)]
+            self.assertIn(scheduled.submission_id, ids, filters)
+
+        # ...and excludes it when it doesn't.
+        for filters in [
+            {"undo_status": "canceled"},
+            {"before": to_utc_z(add_to_date(now(), minutes=30))},
+            {"after": to_utc_z(add_to_date(now(), minutes=180))},
+        ]:
+            ids = [r["id"] for r in self._outbox_rows(account, **filters)]
+            self.assertNotIn(scheduled.submission_id, ids, filters)
+
+        # The identity filter keys on the JMAP Identity id.
+        with self.set_user(self.sender.email):
+            identities = get_email_submission_service(account).identities
+        identity_id = next(i["id"] for i in identities if i["email"] == self.sender.email)
+        ids = [r["id"] for r in self._outbox_rows(account, identity_id=identity_id)]
+        self.assertIn(scheduled.submission_id, ids)
+
+        # A cancelled submission stays browsable, under its own undoStatus.
+        with self.set_user(self.sender.email):
+            cancel_scheduled_mail(account, scheduled.submission_id)
+        canceled_ids = [r["id"] for r in self._outbox_rows(account, undo_status="canceled")]
+        self.assertIn(scheduled.submission_id, canceled_ids)
+        pending_ids = [r["id"] for r in self._outbox_rows(account, undo_status="pending")]
+        self.assertNotIn(scheduled.submission_id, pending_ids)
+
+        with self.set_user(self.sender.email), self.assertRaises(frappe.ValidationError):
+            get_submissions(account, undo_status="bogus")
 
     def test_cancel_reverts_to_draft(self):
         scheduled = self._schedule(minutes=120)
@@ -289,9 +342,9 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         with self.set_user(self.sender.email):
             get_email_service(account).delete([scheduled.id])
 
-        rows = self._scheduled_rows(account)
+        rows = self._outbox_rows(account)
         row = next((r for r in rows if r["id"] == scheduled.submission_id), None)
-        self.assertIsNotNone(row, "A dangling submission is missing from the Scheduled listing.")
+        self.assertIsNotNone(row, "A dangling submission is missing from the Outbox listing.")
         self.assertTrue(row["email_deleted"])
         self.assertIn(self.recipient.email, [r["email"] for r in row["recipients"]])
 
@@ -401,17 +454,9 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         self.assertEqual(details["dsn_count"], 0)
         self.assertEqual(details["mdn_count"], 0)
 
-    def test_status_sifting_helpers(self):
-        # The listing keeps a finalized submission only when it was held and troubled;
-        # these helpers are that sieve.
-        from suite.mail.api.scheduled import _hold_active, _recipient_status, _was_held
-
-        held = {"envelope": {"mailFrom": {"email": "a@x.test", "parameters": {"HOLDUNTIL": "..."}}}}
-        self.assertTrue(_was_held(held))
-        self.assertFalse(_was_held({"envelope": None}))
-        self.assertFalse(
-            _was_held({"envelope": {"mailFrom": {"email": "a@x.test", "parameters": {"ENVID": "e"}}}})
-        )
+    def test_status_helpers(self):
+        # The merged delivery state every row reports is computed by these helpers.
+        from suite.mail.api.scheduled import _hold_active, _recipient_status
 
         # A hold is active only while pending AND before sendAt: Stalwart keeps a released
         # message pending for as long as it can still be cancelled from the queue.

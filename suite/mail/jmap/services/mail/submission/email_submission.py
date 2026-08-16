@@ -86,10 +86,13 @@ class EmailSubmissionService(CoreService):
             ],
         }
 
-    def query(self, filter: dict | None = None, limit: int | None = None) -> list[str]:
-        """Returns ids of submissions matching `filter` (e.g. {"undoStatus": "pending"})."""
+    def query(
+        self, filter: dict | None = None, limit: int | None = None, sort: list[dict] | None = None
+    ) -> list[str]:
+        """Returns ids of submissions matching `filter` (e.g. {"undoStatus": "pending"}), in
+        `sort` order (e.g. [{"property": "sentAt", "isAscending": False}])."""
 
-        response = self._query(filter=filter, limit=limit or self.max_objects_in_get)
+        response = self._query(filter=filter, limit=limit or self.max_objects_in_get, sort=sort)
 
         if method_responses := response.get("methodResponses"):
             return method_responses[0][1].get("ids", [])
@@ -124,7 +127,7 @@ class EmailSubmissionService(CoreService):
 
     def destroy(self, submission_id: str) -> None:
         """Destroys a submission object (its record, not the message) — used to drop a finalized
-        failed delivery from the Scheduled listing."""
+        delivery from the Outbox listing."""
 
         from suite.mail.jmap import get_jmap_set_error_message
 

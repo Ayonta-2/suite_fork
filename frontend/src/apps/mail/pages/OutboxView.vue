@@ -6,12 +6,14 @@
 			<MobileTitleHeader v-if="isMobile" class="min-w-0 flex-1" :title="__('Outbox')" />
 			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
 			<Breadcrumbs v-else :items="[{ label: __('Outbox') }]" class="-ml-0.5" />
-			<HeaderActions @reload-mails="scheduledMails.reload()" />
+			<HeaderActions @reload-mails="submissions.reload()" />
 		</header>
+
+		<OutboxFilters :filters="filters" />
 
 		<div class="flex-1 overflow-y-auto px-3 py-2.5 sm:px-5">
 			<ListView
-				v-if="scheduledMails.data"
+				v-if="submissions.data && !refetching"
 				class="flex-1"
 				:columns="LIST_COLUMNS"
 				:rows="rows"
@@ -43,16 +45,16 @@
 									{{ formatDateTime(row.send_at) }}
 									<span class="text-ink-gray-5">({{ fromNow(row.send_at) }})</span>
 								</span>
-								<span v-else-if="column.key === 'retries'" class="text-ink-gray-7">
-									{{ row.retries ?? '—' }}
-								</span>
 								<div
 									v-else-if="column.key === 'status'"
 									class="flex w-full items-center justify-between gap-2"
 								>
 									<!-- The failure detail rides on the badge's hover title. -->
 									<span :title="deliveryErrorTitle(row) || undefined">
-										<Badge :label="statusLabel(row.status)" :theme="statusTheme(row.status)" />
+										<Badge
+											:label="undoStatusLabel(row.undo_status)"
+											:theme="undoStatusTheme(row.undo_status)"
+										/>
 									</span>
 									<div class="flex items-center">
 										<Button
@@ -80,7 +82,7 @@
 					<ListEmptyState v-else />
 				</ListRows>
 			</ListView>
-			<DashboardListSkeleton v-else :columns="5" />
+			<DashboardListSkeleton v-else :columns="4" />
 		</div>
 
 		<ScheduleSendModal
@@ -96,8 +98,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { watchDebounced } from '@vueuse/core'
 import {
 	CalendarClock,
 	EllipsisVertical,
@@ -122,13 +125,16 @@ import {
 } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
-import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
+import { formatDateTime, fromNow, utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
 import {
+	activeSubmissionFilterCount,
 	deliveryErrorTitle,
-	statusLabel,
-	statusTheme,
+	emptySubmissionFilters,
 	subjectLabel,
-	type ScheduledMail,
+	undoStatusLabel,
+	undoStatusTheme,
+	type Submission,
+	type SubmissionFilters,
 } from '@/apps/mail/utils/submission'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
@@ -136,6 +142,7 @@ import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import OutboxFilters from '@/apps/mail/components/OutboxFilters.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 
 usePageMeta(() => ({ title: __('Outbox') }))
@@ -148,31 +155,64 @@ const socket = inject('$socket') as {
 }
 const { isMobile } = useScreenSize()
 
-const selected = ref<ScheduledMail | null>(null)
+const selected = ref<Submission | null>(null)
 const showReschedule = ref(false)
 const showSendNow = ref(false)
 const showRetry = ref(false)
 const showCancel = ref(false)
 
-const scheduledMails = createResource({
-	url: 'suite.mail.api.scheduled.get_scheduled_mails',
+const filters = reactive(emptySubmissionFilters())
+// The status tabs always narrow the list; only the optional filters make an empty result
+// mean "no matches" rather than "nothing with this status".
+const hasActiveFilters = computed(() => activeSubmissionFilterCount(filters) > 0)
+
+// A filter or account change makes the current rows a different query's answer, so the list
+// waits on the skeleton until the server responds — unlike the background refreshes below,
+// which keep the rows in place. Without this, switching tabs while the previous result was
+// empty flashes the (wrong) empty state before the response arrives.
+const refetching = ref(false)
+
+const submissions = createResource({
+	url: 'suite.mail.api.scheduled.get_submissions',
 	auto: true,
-	makeParams: () => ({ account: store.accountId }),
-	onError: (error: { message?: string }) =>
-		raiseToast(error.message || __('Request failed.'), 'error'),
+	makeParams: () => ({
+		account: store.accountId,
+		undo_status: filters.undoStatus,
+		identity_id: filters.identityId || undefined,
+		email_id: filters.emailId.trim() || undefined,
+		thread_id: filters.threadId.trim() || undefined,
+		// The date pickers select local calendar days; sendAt is bounded by the UTC
+		// instants that day spans.
+		after: filters.after ? utcDayStart(filters.after) : undefined,
+		before: filters.before ? utcDayEnd(filters.before) : undefined,
+	}),
+	onSuccess: () => (refetching.value = false),
+	onError: (error: { message?: string }) => {
+		refetching.value = false
+		raiseToast(error.message || __('Request failed.'), 'error')
+	},
 })
+
+const applyFilters = () => {
+	refetching.value = true
+	submissions.reload()
+}
 
 watch(
 	() => store.accountId,
-	() => store.accountId && scheduledMails.reload(),
+	() => store.accountId && applyFilters(),
 )
+
+// The id filters are typed; the rest change atomically.
+watchDebounced(() => [filters.emailId, filters.threadId], applyFilters, { debounce: 300 })
+watch(() => [filters.undoStatus, filters.identityId, filters.after, filters.before], applyFilters)
 
 // Kept current the way mailboxes are — a periodic poll (holds release, retries advance, and
 // other clients schedule/cancel without any local signal) plus the new-mail socket (an undo
 // or schedule cancel publishes it). reload() keeps the previous rows while fetching, so the
 // list never flickers back to the skeleton.
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
-const onNewMail = () => scheduledMails.reload()
+const onNewMail = () => submissions.reload()
 
 onMounted(() => {
 	reloadInterval.value = setInterval(onNewMail, 30000)
@@ -184,9 +224,9 @@ onUnmounted(() => {
 	socket.off('new_mail_created', onNewMail)
 })
 
-const rows = computed<ScheduledMail[]>(() => scheduledMails.data || [])
+const rows = computed<Submission[]>(() => submissions.data || [])
 
-const recipientLabel = (row: ScheduledMail) => {
+const recipientLabel = (row: Submission) => {
 	const emails = [
 		...row.recipients.filter((r) => r.type === 'To'),
 		...row.recipients.filter((r) => r.type !== 'To'),
@@ -200,10 +240,26 @@ const recipientLabel = (row: ScheduledMail) => {
 const LIST_COLUMNS = [
 	{ label: __('To'), key: 'recipients' },
 	{ label: __('Subject'), key: 'subject' },
-	{ label: __('Scheduled for'), key: 'send_at' },
-	{ label: __('Retries'), key: 'retries', width: '80px' },
+	{ label: __('Send at'), key: 'send_at' },
 	{ label: __('Status'), key: 'status' },
 ]
+
+// What an empty result means depends on the status tab being viewed.
+const EMPTY_STATES: Record<SubmissionFilters['undoStatus'], { title: string; description: string }> =
+	{
+		pending: {
+			title: __('No pending submissions'),
+			description: __('Scheduled emails and deliveries still in flight will wait here.'),
+		},
+		final: {
+			title: __('No final submissions'),
+			description: __('Concluded deliveries — delivered, sent, or failed — will appear here.'),
+		},
+		canceled: {
+			title: __('No cancelled submissions'),
+			description: __('Deliveries you cancel will appear here.'),
+		},
+	}
 
 const listOptions = computed(() => ({
 	showTooltip: false,
@@ -211,18 +267,20 @@ const listOptions = computed(() => ({
 	rowHeight: 50,
 	// The row opens the submission's details page; the message itself is behind the
 	// explicit Open-email button instead.
-	getRowRoute: (row: ScheduledMail) => ({
+	getRowRoute: (row: Submission) => ({
 		name: 'mail-submission',
 		params: { accountId: store.accountId, submissionId: row.id },
 	}),
-	emptyState: {
-		title: __('No scheduled emails'),
-		description: __('Emails you schedule from the composer will wait here until they are sent.'),
-	},
+	emptyState: hasActiveFilters.value
+		? {
+				title: __('No matching submissions'),
+				description: __('Try adjusting the filters.'),
+			}
+		: EMPTY_STATES[filters.undoStatus],
 }))
 
 // A held message sits in Sent until delivery, so its thread opens there.
-const openEmail = (row: ScheduledMail) => {
+const openEmail = (row: Submission) => {
 	if (!row.thread_id || !store.mailboxIds.sent) return
 	router.push({
 		name: 'mail-mail',
@@ -234,7 +292,7 @@ const openEmail = (row: ScheduledMail) => {
 	})
 }
 
-const rowOptions = (row: ScheduledMail) => {
+const rowOptions = (row: Submission) => {
 	const open = (dialog?: { value: boolean }, submit?: { submit: () => void }) => () => {
 		selected.value = row
 		if (dialog) dialog.value = true
@@ -255,15 +313,24 @@ const rowOptions = (row: ScheduledMail) => {
 		// A released delivery stays cancellable for as long as its submission is pending.
 		return row.undo_status === 'pending' ? [retry, cancel] : [retry]
 	}
-	// A deleted message can't be resubmitted (send now / reschedule recreate the
-	// submission from it) — cancelling the pending delivery is all that's left.
-	if (row.email_deleted) return [cancel]
 
-	return [
-		{ label: __('Send now'), icon: SendHorizontal, onClick: open(showSendNow) },
-		{ label: __('Reschedule'), icon: CalendarClock, onClick: open(showReschedule) },
-		cancel,
-	]
+	if (row.status === 'scheduled') {
+		// A deleted message can't be resubmitted (send now / reschedule recreate the
+		// submission from it) — cancelling the pending delivery is all that's left.
+		if (row.email_deleted) return [cancel]
+
+		return [
+			{ label: __('Send now'), icon: SendHorizontal, onClick: open(showSendNow) },
+			{ label: __('Reschedule'), icon: CalendarClock, onClick: open(showReschedule) },
+			cancel,
+		]
+	}
+
+	// Concluded (sent/delivered/read) or cancelled rows: resubmit and/or drop the record.
+	const remove = { label: __('Remove'), icon: X, onClick: open(undefined, dismissMail) }
+	if (row.status === 'cancelled' || row.email_deleted) return [remove]
+
+	return [{ label: __('Send again'), icon: RefreshCw, onClick: open(showRetry) }, remove]
 }
 
 const openDrafts = () => {
@@ -281,7 +348,7 @@ const onActionError = (error: { messages?: string[]; message?: string }) => {
 	raiseToast(error.messages?.[0] || error.message || __('Request failed.'), 'error')
 	// The action may have failed because the email already went out; reflect the
 	// reconciled state either way.
-	scheduledMails.reload()
+	submissions.reload()
 }
 
 const rescheduleMail = createResource({
@@ -292,7 +359,7 @@ const rescheduleMail = createResource({
 		send_at,
 	}),
 	onSuccess: (data: { send_at: string }) => {
-		scheduledMails.reload()
+		submissions.reload()
 		raiseToast(__('Delivery rescheduled to {0}.', [formatDateTime(data.send_at)]))
 	},
 	onError: onActionError,
@@ -303,7 +370,7 @@ const sendNow = createResource({
 	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
 	onSuccess: () => {
 		showSendNow.value = false
-		scheduledMails.reload()
+		submissions.reload()
 		raiseToast(__('Message sent.'))
 	},
 	onError: onActionError,
@@ -314,7 +381,7 @@ const retryMail = createResource({
 	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
 	onSuccess: () => {
 		showRetry.value = false
-		scheduledMails.reload()
+		submissions.reload()
 		raiseToast(__('Message sent.'))
 	},
 	onError: onActionError,
@@ -324,7 +391,7 @@ const retryNow = createResource({
 	url: 'suite.mail.api.scheduled.retry_delivery_now',
 	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
 	onSuccess: () => {
-		scheduledMails.reload()
+		submissions.reload()
 		raiseToast(__('Delivery attempt scheduled.'))
 	},
 	onError: onActionError,
@@ -333,7 +400,7 @@ const retryNow = createResource({
 const dismissMail = createResource({
 	url: 'suite.mail.api.scheduled.dismiss_failed_mail',
 	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
-	onSuccess: () => scheduledMails.reload(),
+	onSuccess: () => submissions.reload(),
 	onError: onActionError,
 })
 
@@ -342,7 +409,7 @@ const cancelSchedule = createResource({
 	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
 	onSuccess: (data: { id?: string }) => {
 		showCancel.value = false
-		scheduledMails.reload()
+		submissions.reload()
 		// No message was moved when the email had been deleted — don't point at Drafts.
 		if (!data.id) return raiseToast(__('Delivery cancelled.'), 'success')
 		raiseToast(
@@ -371,7 +438,10 @@ const sendNowOptions = computed(() => ({
 
 const retryOptions = computed(() => ({
 	title: __('Send Again'),
-	message: __('The delivery failed. Try to send this email again now?'),
+	message:
+		selected.value?.status === 'failed'
+			? __('The delivery failed. Try to send this email again now?')
+			: __('Send this email again now?'),
 	actions: [
 		{
 			label: __('Send'),

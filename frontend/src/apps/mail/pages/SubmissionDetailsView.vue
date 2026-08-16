@@ -44,9 +44,11 @@
 						@click="showCancel = true"
 					/>
 				</template>
-				<template v-else-if="data.status === 'failed'">
+				<!-- Failed, concluded (sent/delivered/read), or cancelled: the submission is done —
+				it can be resubmitted (when its message still exists) and its record dropped. -->
+				<template v-else>
 					<Button
-						v-if="!data.email_deleted"
+						v-if="!data.email_deleted && data.status !== 'cancelled'"
 						:label="__('Send again')"
 						@click="showRetry = true"
 					/>
@@ -367,7 +369,10 @@ const sendNowOptions = computed(() => ({
 
 const retryOptions = computed(() => ({
 	title: __('Send Again'),
-	message: __('The delivery failed. Try to send this email again now?'),
+	message:
+		data.value?.status === 'failed'
+			? __('The delivery failed. Try to send this email again now?')
+			: __('Send this email again now?'),
 	actions: [
 		{ label: __('Send'), variant: 'solid', loading: retryMail.loading, onClick: retryMail.submit },
 	],
