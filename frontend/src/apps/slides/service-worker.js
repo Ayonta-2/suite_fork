@@ -4,14 +4,20 @@ import { canonicalMediaKey } from './utils/canonicalMediaKey'
 
 const MEDIA_CACHE_NAME = 'slides-media'
 const API_CACHE_NAME = 'slides-api'
-// outside EXPIRING_CACHE_NAMES: a pinned copy must survive the sweep
+const ASSETS_CACHE_NAME = 'slides-assets'
+// outside CACHE_MAX_AGE: a pinned copy must survive the sweep
 const PINNED_CACHE_NAME = 'slides-pinned'
 
 const PIN_HEADER = 'x-slides-pin'
 
-const EXPIRING_CACHE_NAMES = { media: MEDIA_CACHE_NAME, api: API_CACHE_NAME }
+const DAY = 24 * 60 * 60 * 1000
 
-const MAX_AGE = 24 * 60 * 60 * 1000 // 1 day
+// membership is what makes a cache expiring; the sweep reads straight off this
+const CACHE_MAX_AGE = {
+	[MEDIA_CACHE_NAME]: DAY,
+	[API_CACHE_NAME]: DAY,
+	[ASSETS_CACHE_NAME]: 30 * DAY,
+}
 
 self.addEventListener('install', () => {
 	self.skipWaiting()
@@ -21,7 +27,7 @@ self.addEventListener('install', () => {
 const openCache = (name) => caches.open(name).catch(() => null)
 const matchCache = (cache, request) => cache.match(request).catch(() => null)
 
-const cleanupOldCacheEntry = async (cache, request, response) => {
+const cleanupOldCacheEntry = async (cache, request, response, maxAge) => {
 	const now = Date.now()
 
 	const cachedTimeHeader = response.headers.get('x-cached-time')
@@ -32,12 +38,12 @@ const cleanupOldCacheEntry = async (cache, request, response) => {
 
 	const age = now - cachedTime
 
-	if (age > MAX_AGE) {
+	if (age > maxAge) {
 		await cache.delete(request)
 	}
 }
 
-const cleanupOldCacheEntries = async (name) => {
+const cleanupOldCacheEntries = async (name, maxAge) => {
 	const cache = await openCache(name)
 	if (!cache) return
 
@@ -48,7 +54,7 @@ const cleanupOldCacheEntries = async (name) => {
 			const response = await matchCache(cache, request)
 			if (!response) return
 
-			return cleanupOldCacheEntry(cache, request, response)
+			return cleanupOldCacheEntry(cache, request, response, maxAge)
 		}),
 	)
 }
@@ -56,7 +62,9 @@ const cleanupOldCacheEntries = async (name) => {
 const handleSWActivate = async () => {
 	// a failed sweep must not block activation
 	await Promise.all(
-		Object.values(EXPIRING_CACHE_NAMES).map((name) => cleanupOldCacheEntries(name).catch(() => {})),
+		Object.entries(CACHE_MAX_AGE).map(([name, maxAge]) =>
+			cleanupOldCacheEntries(name, maxAge).catch(() => {}),
+		),
 	)
 	// this takes control of all client pages that are already open
 	await self.clients.claim()
@@ -87,10 +95,41 @@ const isMedia = (url) =>
 	(url.pathname.startsWith('/private/files/') && url.searchParams.has('slides_media'))
 const isAPI = (url) => url.pathname.startsWith('/api/method/suite.slides.')
 
+// every file under the bundle path is content-hashed, so a hit can never be stale
+const isBundleAsset = (url) =>
+	url.pathname.startsWith('/assets/suite/frontend/assets/') && !url.pathname.endsWith('.map')
+// fonts, served under stable names
+const isSlidesStatic = (url) => url.pathname.startsWith('/assets/suite/slides/')
+
+// the bundle path is shared by every suite app; the referrer is the requesting
+// page's url and is the only ownership signal available before respondWith
+const isFromSlidesPage = (request) => {
+	if (!request.referrer) return false
+	const { pathname } = new URL(request.referrer)
+	return pathname === '/slides' || pathname.startsWith('/slides/')
+}
+
+// a switch out of slides imports the next app's whole graph before the url changes
+const leftSlidesClients = new Set()
+
+self.addEventListener('message', (event) => {
+	const clientId = event.source?.id
+	if (!clientId) return
+	if (event.data === 'slides-left') leftSlidesClients.add(clientId)
+	if (event.data === 'slides-entered') leftSlidesClients.delete(clientId)
+})
+
+const isSlidesBundleRequest = (event, url) =>
+	isBundleAsset(url) && isFromSlidesPage(event.request) && !leftSlidesClients.has(event.clientId)
+
 const isCacheable = (type, response) => {
 	const contentType = response.headers.get('Content-Type') || ''
 	if (type === 'media') {
 		return ['image/', 'video/'].some((ct) => contentType.startsWith(ct))
+	}
+	// a login or 404 page stored under an asset key would be replayed as the asset
+	if (type === 'asset') {
+		return !response.redirected && !contentType.startsWith('text/html')
 	}
 	// a redirected or HTML body under an API key would be replayed as data
 	return !response.redirected && contentType.includes('application/json')
@@ -139,6 +178,16 @@ const rangeFromCache = async (event, cached) => {
 const respondFromCache = (event, cached) =>
 	event.request.headers.has('range') ? rangeFromCache(event, cached) : cached
 
+// serve the stored copy at once and refresh it behind the page
+const staleWhileRevalidate = async (event, cache) => {
+	const cached = await matchCache(cache, event.request)
+	const network = fetchAndCache(event, 'asset', cache)
+	if (!cached) return network
+
+	event.waitUntil(network.catch(() => {}))
+	return cached
+}
+
 const cacheFirst = async (event, type, cache) => {
 	const cached = await matchCache(cache, event.request)
 	if (cached) return respondFromCache(event, cached)
@@ -166,8 +215,17 @@ const getMediaResponse = async (event) => {
 	return cacheFirst(event, 'media', cache)
 }
 
-const getResponseForRequest = async (event, type) => {
+const getAssetResponse = async (event, url) => {
+	const cache = await openCache(ASSETS_CACHE_NAME)
+	if (!cache) return fetch(event.request)
+
+	if (isBundleAsset(url)) return cacheFirst(event, 'asset', cache)
+	return staleWhileRevalidate(event, cache)
+}
+
+const getResponseForRequest = async (event, type, url) => {
 	if (type === 'media') return getMediaResponse(event)
+	if (type === 'asset') return getAssetResponse(event, url)
 
 	const cache = await openCache(API_CACHE_NAME)
 	if (!cache) return fetch(event.request)
@@ -175,9 +233,10 @@ const getResponseForRequest = async (event, type) => {
 	return networkFirst(event, cache)
 }
 
-const getRequestType = (url) => {
+const getRequestType = (event, url) => {
 	if (isMedia(url)) return 'media'
 	if (isAPI(url)) return 'api'
+	if (isSlidesStatic(url) || isSlidesBundleRequest(event, url)) return 'asset'
 	return 'other'
 }
 
@@ -188,8 +247,8 @@ self.addEventListener('fetch', (event) => {
 
 	if (request.method !== 'GET' || url.origin !== self.location.origin) return
 
-	const requestType = getRequestType(url)
+	const requestType = getRequestType(event, url)
 	if (requestType === 'other') return
 
-	event.respondWith(getResponseForRequest(event, requestType))
+	event.respondWith(getResponseForRequest(event, requestType, url))
 })
