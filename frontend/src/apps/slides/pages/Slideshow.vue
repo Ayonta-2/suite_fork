@@ -76,6 +76,8 @@ import {
 	showSlideshowEndScreen,
 	requestFullscreen,
 	exitFullscreen,
+	requestWakeLock,
+	releaseWakeLock,
 	endSlideShow,
 	prefetchNextSlide,
 	changeSlideInSlideshow,
@@ -281,10 +283,16 @@ const stopCursorTracking = () => {
 const handleFullScreenChange = () => {
 	if (document.fullscreenElement) {
 		inSlideShowMode.value = true
+		requestWakeLock()
 	} else {
 		stopCursorTracking()
 		if (inSlideShowMode.value) endSlideShow()
 	}
+}
+
+// the lock is dropped when the tab is hidden
+const handleVisibilityChange = () => {
+	if (document.visibilityState === 'visible' && inSlideShowMode.value) requestWakeLock()
 }
 
 const slideContainerStyles = computed(() => {
@@ -324,6 +332,7 @@ onActivated(() => {
 	loadPresentation()
 	initFullscreenMode()
 	document.addEventListener('fullscreenchange', handleFullScreenChange)
+	document.addEventListener('visibilitychange', handleVisibilityChange)
 	document.addEventListener('mousemove', resetCursorVisibility)
 	window.addEventListener('resize', updateWindowSize)
 
@@ -335,8 +344,10 @@ onActivated(() => {
 
 onDeactivated(() => {
 	document.removeEventListener('fullscreenchange', handleFullScreenChange)
+	document.removeEventListener('visibilitychange', handleVisibilityChange)
 	window.removeEventListener('resize', updateWindowSize)
 	stopCursorTracking()
+	releaseWakeLock()
 
 	// leaving by any route other than endSlideShow would strand the editor in fullscreen
 	if (inSlideShowMode.value) {

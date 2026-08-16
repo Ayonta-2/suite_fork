@@ -35,6 +35,31 @@ const exitFullscreen = () => {
 	if (document.fullscreenElement) document.exitFullscreen()
 }
 
+let wakeLock = null
+let pendingWakeLock = null
+
+const requestWakeLock = () => {
+	if (pendingWakeLock) return pendingWakeLock
+	if (wakeLock && !wakeLock.released) return Promise.resolve()
+	if (!navigator.wakeLock) return Promise.resolve()
+
+	pendingWakeLock = navigator.wakeLock
+		.request('screen')
+		.then((lock) => {
+			wakeLock = lock
+			if (!inSlideShowMode.value) releaseWakeLock()
+		})
+		.catch((error) => console.warn('Could not keep the screen awake:', error))
+		.finally(() => (pendingWakeLock = null))
+
+	return pendingWakeLock
+}
+
+const releaseWakeLock = () => {
+	wakeLock?.release().catch(() => {})
+	wakeLock = null
+}
+
 const startSlideShow = () => {
 	requestFullscreen()
 	router.replace({
@@ -46,6 +71,7 @@ const startSlideShow = () => {
 
 const endSlideShow = () => {
 	exitFullscreen()
+	releaseWakeLock()
 	inSlideShowMode.value = false
 	focusedSlide.value = null
 	const slide =
@@ -164,6 +190,8 @@ export {
 	showSlideshowEndScreen,
 	requestFullscreen,
 	exitFullscreen,
+	requestWakeLock,
+	releaseWakeLock,
 	startSlideShow,
 	endSlideShow,
 	prefetchNextSlide,
