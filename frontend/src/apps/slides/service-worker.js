@@ -1,3 +1,5 @@
+import { createPartialResponse } from 'workbox-range-requests'
+
 const MEDIA_CACHE_NAME = 'slides-media'
 const API_CACHE_NAME = 'slides-api'
 
@@ -120,9 +122,19 @@ const networkFirst = async (event, cache) => {
 	}
 }
 
+// the cache holds whole bodies, so a seek has to be sliced out of the stored 200
+const rangeFromCache = async (event, cached) => {
+	const partial = await createPartialResponse(event.request, cached)
+	// a range we can't satisfy shouldn't beat a working network
+	if (partial.status === 416) return fetch(event.request)
+	return partial
+}
+
 const cacheFirst = async (event, type, cache) => {
 	const cached = await matchCache(cache, event.request)
-	if (cached) return cached
+	if (cached) {
+		return event.request.headers.has('range') ? rangeFromCache(event, cached) : cached
+	}
 	return fetchAndCache(event, type, cache)
 }
 
