@@ -5,6 +5,7 @@ import { createResource } from 'frappe-ui'
 import { router, setEditorAccess, setPreviousRoute } from '@/apps/slides/router'
 import SlidesShell from '@/apps/slides/SlidesShell.vue'
 import { useSessionStore } from '@/boot/session'
+import { postToServiceWorker } from '@/apps/slides/utils/serviceWorker'
 
 /**
  * Slides route module — mounted by the suite router under the '/slides' prefix.
@@ -31,6 +32,10 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '',
     component: SlidesShell,
+    // before the route components resolve, so the whole graph loads as slides
+    beforeEnter: () => {
+      postToServiceWorker('slides-entered')
+    },
     children: [
       {
         path: '',

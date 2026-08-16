@@ -16,6 +16,7 @@ import { Wifi, WifiOff } from 'lucide-vue-next'
 import { saveCurrentState } from '@/apps/slides/stores/saving'
 import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
 import { setupTheme } from '@/utils/setupTheme'
+import { postToServiceWorker } from '@/apps/slides/utils/serviceWorker'
 import '@/apps/slides/styles/fonts.css'
 
 const isOnline = ref(navigator?.onLine ?? true)
@@ -54,11 +55,6 @@ const handleOnline = () => {
   })
 }
 
-// the worker owns bundle requests by referrer, which lags the url during a switch
-const postToServiceWorker = (message) => {
-  navigator.serviceWorker?.controller?.postMessage(message)
-}
-
 onBeforeRouteLeave(() => {
   postToServiceWorker('slides-left')
 })
@@ -81,7 +77,6 @@ onMounted(() => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   registerServiceWorker()
-  postToServiceWorker('slides-entered')
   preloadBundledFonts()
   setupTheme()
   document.documentElement.style.overscrollBehavior = 'none'

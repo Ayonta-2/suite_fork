@@ -116,18 +116,24 @@ const isFromSlidesPage = (request) => {
 	return isSlidesPath(new URL(request.referrer).pathname)
 }
 
-// a switch out of slides imports the next app's whole graph before the url changes
-const leftSlidesClients = new Set()
+// the page reports itself because the referrer alone misleads both ways: a switch
+// out of slides imports the next app's graph before the url changes, and a font
+// requested by a stylesheet carries the stylesheet's url
+const slidesClientState = new Map()
 
 self.addEventListener('message', (event) => {
 	const clientId = event.source?.id
 	if (!clientId) return
-	if (event.data === 'slides-left') leftSlidesClients.add(clientId)
-	if (event.data === 'slides-entered') leftSlidesClients.delete(clientId)
+	if (event.data === 'slides-entered') slidesClientState.set(clientId, 'entered')
+	if (event.data === 'slides-left') slidesClientState.set(clientId, 'left')
 })
 
-const isSlidesBundleRequest = (event, url) =>
-	isBundleAsset(url) && isFromSlidesPage(event.request) && !leftSlidesClients.has(event.clientId)
+const isSlidesBundleRequest = (event, url) => {
+	if (!isBundleAsset(url)) return false
+	const state = slidesClientState.get(event.clientId)
+	if (state === 'entered') return true
+	return isFromSlidesPage(event.request) && state !== 'left'
+}
 
 // the pin action stores the shell through the same route
 const isShell = (request, url) =>
