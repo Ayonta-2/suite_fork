@@ -1065,8 +1065,9 @@ const updateElementContent = (element) => {
 const isEditorEmpty = (element) => {
 	if (element.type === 'table') return !hasTableNode(activeEditor.value.state.doc)
 	// indentation survives the parse now, so a box holding nothing else has to keep
-	// reading as the empty one it looks like
-	return !activeEditor.value.getText().replace(/\u200B/g, '').trim()
+	// reading as the empty one it looks like. the line breaks stay, or a box of
+	// blank lines starts reading as empty too
+	return !activeEditor.value.getText().replace(/[\u200B\t ]/g, '')
 }
 
 const blurAndSaveContent = (element) => {
