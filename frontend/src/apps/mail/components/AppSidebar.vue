@@ -545,8 +545,8 @@ const sidebarItems = computed(() => {
 		to: { name: 'mail-mailbox', params: { accountId: store.accountId, mailbox: 'starred' } },
 		activeFor: ['starred'],
 	}
-	// Synthetic like Starred, but backed by the Mail Queue's held (FUTURERELEASE)
-	// submissions rather than a mailbox, so it opens a dedicated page.
+	// Synthetic like Starred, but backed by the server's held (FUTURERELEASE)
+	// EmailSubmissions rather than a mailbox, so it opens a dedicated page.
 	const scheduledItem = {
 		label: __('Scheduled'),
 		icon: CalendarClock,

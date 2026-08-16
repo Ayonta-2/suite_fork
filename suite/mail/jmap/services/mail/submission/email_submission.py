@@ -86,6 +86,16 @@ class EmailSubmissionService(CoreService):
             ],
         }
 
+    def query(self, filter: dict | None = None, limit: int | None = None) -> list[str]:
+        """Returns ids of submissions matching `filter` (e.g. {"undoStatus": "pending"})."""
+
+        response = self._query(filter=filter, limit=limit or self.max_objects_in_get)
+
+        if method_responses := response.get("methodResponses"):
+            return method_responses[0][1].get("ids", [])
+
+        return []
+
     def get(self, ids: list[str], properties: list[str] | None = None) -> list[dict]:
         """Public method to get email submissions by ids, handling batching if the number of ids exceeds the server's maximum allowed in a single 'get' call."""
 

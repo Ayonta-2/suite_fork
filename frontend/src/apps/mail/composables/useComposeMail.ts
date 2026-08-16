@@ -244,7 +244,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	const UNDO_SEND_WINDOW_MS = 10000
 
 	// A plain Send holds delivery for the undo window ('undo'); Schedule send passes an explicit time
-	// ('scheduled'). Both come back as 'Scheduled', so the toast has to know which one it confirms.
+	// ('scheduled'). Both come back as 'Submitted' with a send_at, so the toast has to know which one
+	// it confirms.
 	const sendMode = ref<'undo' | 'scheduled'>('undo')
 
 	const sendMail = async (sendAt?: string) => {
@@ -299,10 +300,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	const scheduleSend = (sendAt: string) => sendMail(sendAt)
 
 	// Undo send: Send actually scheduled delivery a few seconds out (a server-side hold), so undoing
-	// is just cancelling that schedule — the message lands back in Drafts.
+	// is just cancelling that submission — the message lands back in Drafts.
 	const undoSend = createResource({
-		url: 'suite.mail.api.mail.cancel_scheduled_mail',
-		makeParams: ({ name }: { name: string }) => ({ account: scopeAccountId.value, name }),
+		url: 'suite.mail.api.scheduled.cancel_scheduled_mail',
+		makeParams: ({ id }: { id: string }) => ({ account: scopeAccountId.value, id }),
 		onSuccess: () => {
 			reloadMails()
 			raiseToast(__('Sending undone. The message is back in your drafts.'))
@@ -311,24 +312,29 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	})
 
 	const onMailUpdateSuccess = ({
-		name,
 		id,
 		status,
 		error,
 		thread_id,
+		submission_id,
+		send_at,
 	}: {
 		name: string
 		id: string
 		status: string
 		error: string
 		thread_id?: string
+		/** The held delivery's EmailSubmission id — what Undo cancels. */
+		submission_id?: string
+		/** Set when the server is holding delivery (undo window or scheduled send). */
+		send_at?: string
 	}) => {
 		if (id) mail.id = id
 		updateOriginalMail()
 		if (error) return raiseToast(error, 'error')
 		if (isDiscarding.value) return
 
-		if (!isInThread || status === 'Submitted' || status === 'Scheduled') reloadMails()
+		if (!isInThread || status === 'Submitted') reloadMails()
 		// In a thread the list is where the messages come from — the pane is built from the rows the
 		// list is holding, not from a fetch of its own. So a draft saved in here goes to the server
 		// and the list goes on holding the version from before this sitting: leave the thread, open
@@ -342,6 +348,28 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		if (isOpen()) return
 
 		if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
+		else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
+			// Two buttons, and they are not equals: Undo expires with the toast, so it takes the
+			// urgent slot; View is an aside you could reach any time from Sent, offered only when the
+			// thread isn't already the one in front of you.
+			raiseToast(
+				__('Message sent.'),
+				'success',
+				{ label: __('Undo'), onClick: () => undoSend.submit({ id: submission_id }) },
+				UNDO_SEND_WINDOW_MS,
+				thread_id && route.params.threadID !== thread_id
+					? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
+					: undefined,
+			)
+		else if (status === 'Submitted' && send_at && sendMode.value === 'scheduled')
+			raiseToast(__('Send scheduled.'), 'success', {
+				label: __('View'),
+				onClick: () =>
+					router.push({
+						name: 'mail-scheduled',
+						params: { accountId: scopeAccountId.value },
+					}),
+			})
 		else if (status === 'Submitted')
 			raiseToast(
 				__('Message sent.'),
@@ -351,28 +379,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 					? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
 					: undefined,
 			)
-		else if (status === 'Scheduled' && sendMode.value === 'undo')
-			// Two buttons, and they are not equals: Undo expires with the toast, so it takes the
-			// urgent slot; View is an aside you could reach any time from Sent, offered only when the
-			// thread isn't already the one in front of you.
-			raiseToast(
-				__('Message sent.'),
-				'success',
-				{ label: __('Undo'), onClick: () => undoSend.submit({ name }) },
-				UNDO_SEND_WINDOW_MS,
-				thread_id && route.params.threadID !== thread_id
-					? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
-					: undefined,
-			)
-		else if (status === 'Scheduled')
-			raiseToast(__('Send scheduled.'), 'success', {
-				label: __('View'),
-				onClick: () =>
-					router.push({
-						name: 'mail-scheduled',
-						params: { accountId: scopeAccountId.value },
-					}),
-			})
 	}
 
 	// ── Resources ───────────────────────────────────────────────────────────────────────────────

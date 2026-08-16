@@ -16,14 +16,14 @@
 				:columns="LIST_COLUMNS"
 				:rows="rows"
 				:options="listOptions"
-				row-key="name"
+				row-key="id"
 			>
 				<ListHeader />
 				<ListRows>
 					<template v-if="rows.length">
 						<ListRow
 							v-for="row in rows"
-							:key="row.name"
+							:key="row.id"
 							v-slot="{ column, item }"
 							:row="row"
 							class="hover:!bg-surface-gray-1"
@@ -32,8 +32,12 @@
 								<span v-if="column.key === 'recipients'" class="truncate">
 									{{ recipientLabel(row) }}
 								</span>
-								<span v-else-if="column.key === 'subject'" class="truncate">
-									{{ row.subject || __('(No subject)') }}
+								<span
+									v-else-if="column.key === 'subject'"
+									class="truncate"
+									:class="{ 'text-ink-gray-5 italic': row.email_deleted }"
+								>
+									{{ subjectLabel(row) }}
 								</span>
 								<div
 									v-else-if="column.key === 'send_at'"
@@ -99,16 +103,20 @@ import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 
+// One row per held EmailSubmission — the server is the source of truth, so emails
+// scheduled by other clients appear too. `id` is the submission id every action is keyed
+// on. `email_deleted` marks a submission whose Email was deleted after scheduling: it can
+// only be cancelled, and its recipients come from the SMTP envelope.
 type ScheduledMail = {
-	name: string
 	id: string
+	email_id?: string
 	thread_id?: string
 	subject?: string
+	from_name?: string
 	from_email?: string
 	recipients: { type: string; email: string; display_name?: string }[]
 	send_at: string
-	submission_id?: string
-	creation?: string
+	email_deleted: boolean
 }
 
 usePageMeta(() => ({ title: __('Scheduled') }))
@@ -123,7 +131,7 @@ const showSendNow = ref(false)
 const showCancel = ref(false)
 
 const scheduledMails = createResource({
-	url: 'suite.mail.api.mail.get_scheduled_mails',
+	url: 'suite.mail.api.scheduled.get_scheduled_mails',
 	auto: true,
 	makeParams: () => ({ account: store.accountId }),
 	onError: (error: { message?: string }) =>
@@ -136,6 +144,9 @@ watch(
 )
 
 const rows = computed<ScheduledMail[]>(() => scheduledMails.data || [])
+
+const subjectLabel = (row: ScheduledMail) =>
+	row.email_deleted ? __('(Message deleted)') : row.subject || __('(No subject)')
 
 const recipientLabel = (row: ScheduledMail) => {
 	const emails = [
@@ -158,30 +169,27 @@ const listOptions = computed(() => ({
 	showTooltip: false,
 	selectable: false,
 	rowHeight: 50,
+	// A held message sits in Sent until delivery, so the row opens its thread there. A
+	// falsy route renders the row as a plain div — deleted-email rows stay non-clickable.
+	getRowRoute: (row: ScheduledMail) =>
+		!row.email_deleted && row.thread_id && store.mailboxIds.sent
+			? {
+					name: 'mail-mail',
+					params: {
+						accountId: store.accountId,
+						mailbox: store.mailboxIds.sent,
+						threadID: row.thread_id,
+					},
+				}
+			: undefined,
 	emptyState: {
 		title: __('No scheduled emails'),
 		description: __('Emails you schedule from the composer will wait here until they are sent.'),
 	},
 }))
 
-const rowOptions = (row: ScheduledMail) => [
-	{
-		label: __('Send now'),
-		icon: SendHorizontal,
-		onClick: () => {
-			selected.value = row
-			showSendNow.value = true
-		},
-	},
-	{
-		label: __('Reschedule'),
-		icon: CalendarClock,
-		onClick: () => {
-			selected.value = row
-			showReschedule.value = true
-		},
-	},
-	{
+const rowOptions = (row: ScheduledMail) => {
+	const cancel = {
 		label: __('Cancel delivery'),
 		icon: X,
 		theme: 'red',
@@ -189,8 +197,31 @@ const rowOptions = (row: ScheduledMail) => [
 			selected.value = row
 			showCancel.value = true
 		},
-	},
-]
+	}
+	// A deleted message can't be resubmitted (send now / reschedule recreate the
+	// submission from it) — cancelling the pending delivery is all that's left.
+	if (row.email_deleted) return [cancel]
+
+	return [
+		{
+			label: __('Send now'),
+			icon: SendHorizontal,
+			onClick: () => {
+				selected.value = row
+				showSendNow.value = true
+			},
+		},
+		{
+			label: __('Reschedule'),
+			icon: CalendarClock,
+			onClick: () => {
+				selected.value = row
+				showReschedule.value = true
+			},
+		},
+		cancel,
+	]
+}
 
 const openDrafts = () => {
 	if (!store.mailboxIds.drafts) return
@@ -210,10 +241,10 @@ const onActionError = (error: { messages?: string[]; message?: string }) => {
 }
 
 const rescheduleMail = createResource({
-	url: 'suite.mail.api.mail.reschedule_mail',
+	url: 'suite.mail.api.scheduled.reschedule_mail',
 	makeParams: ({ send_at }: { send_at: string }) => ({
 		account: store.accountId,
-		name: selected.value?.name,
+		id: selected.value?.id,
 		send_at,
 	}),
 	onSuccess: (data: { send_at: string }) => {
@@ -224,8 +255,8 @@ const rescheduleMail = createResource({
 })
 
 const sendNow = createResource({
-	url: 'suite.mail.api.mail.send_scheduled_mail_now',
-	makeParams: () => ({ account: store.accountId, name: selected.value?.name }),
+	url: 'suite.mail.api.scheduled.send_scheduled_mail_now',
+	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
 	onSuccess: () => {
 		showSendNow.value = false
 		scheduledMails.reload()
@@ -235,11 +266,13 @@ const sendNow = createResource({
 })
 
 const cancelSchedule = createResource({
-	url: 'suite.mail.api.mail.cancel_scheduled_mail',
-	makeParams: () => ({ account: store.accountId, name: selected.value?.name }),
-	onSuccess: () => {
+	url: 'suite.mail.api.scheduled.cancel_scheduled_mail',
+	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
+	onSuccess: (data: { id?: string }) => {
 		showCancel.value = false
 		scheduledMails.reload()
+		// No message was moved when the email had been deleted — don't point at Drafts.
+		if (!data.id) return raiseToast(__('Delivery cancelled.'), 'success')
 		raiseToast(
 			__('Delivery cancelled. The message is back in your drafts.'),
 			'success',
@@ -266,7 +299,9 @@ const sendNowOptions = computed(() => ({
 
 const cancelOptions = computed(() => ({
 	title: __('Cancel Delivery'),
-	message: __('Cancel the scheduled delivery and move the message back to Drafts?'),
+	message: selected.value?.email_deleted
+		? __('Cancel the scheduled delivery?')
+		: __('Cancel the scheduled delivery and move the message back to Drafts?'),
 	icon: { name: 'alert-triangle', appearance: 'warning' },
 	actions: [
 		{
