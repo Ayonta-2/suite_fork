@@ -551,7 +551,7 @@ const sidebarItems = computed(() => {
 		label: __('Scheduled'),
 		icon: CalendarClock,
 		to: { name: 'mail-scheduled', params: { accountId: store.accountId } },
-		activeFor: ['mail-scheduled'],
+		activeFor: ['mail-scheduled', 'mail-submission'],
 	}
 	const defaultItems = [...defaultMailboxes, starredItem, scheduledItem]
 

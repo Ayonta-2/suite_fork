@@ -111,7 +111,7 @@ const groups = computed(() => {
 		icon: 'calendar-clock',
 		iconColor: '',
 		count: 0,
-		active: route.name === 'mail-scheduled',
+		active: route.name === 'mail-scheduled' || route.name === 'mail-submission',
 		to: {
 			name: 'mail-scheduled',
 			params: { accountId: store.accountId },

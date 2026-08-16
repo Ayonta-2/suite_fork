@@ -11,6 +11,13 @@ other clients appear too, and every action is keyed on the submission id. Resche
 send-now cancel the held submission and create a new one (undoStatus is the only mutable
 submission property); cancel reverts the message to Drafts. An Email deleted after scheduling
 leaves a dangling emailId — such a delivery can only be cancelled.
+
+Delivery state is computed from the submission's deliveryStatus (delivered, displayed,
+smtpReply), refined by the MTA queue (correlated via the envelope's ENVID): the listing and
+the details endpoint report a status (scheduled, queued, retrying, failed, delivered,
+displayed, sent) plus retry counts. A real delivery failure can't be
+provoked reliably against the test server, so the failure sieve is covered at the helper level
+and retry/dismiss against delivered (final) submissions.
 """
 
 from datetime import datetime
@@ -20,8 +27,12 @@ from frappe.utils import add_to_date, get_datetime, get_datetime_str, now, time_
 
 from suite.mail.api.scheduled import (
     cancel_scheduled_mail,
+    dismiss_failed_mail,
+    get_scheduled_mail,
     get_scheduled_mails,
     reschedule_mail,
+    retry_delivery_now,
+    retry_failed_mail,
     send_scheduled_mail_now,
 )
 from suite.mail.jmap import get_email_service, get_email_submission_service
@@ -76,6 +87,10 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         with self.set_user(self.sender.email):
             return get_scheduled_mails(account)
 
+    def _get_details(self, account: str, submission_id: str) -> dict:
+        with self.set_user(self.sender.email):
+            return get_scheduled_mail(account, submission_id)
+
     # --- tests --------------------------------------------------------------
 
     def test_schedule_holds_delivery(self):
@@ -124,13 +139,22 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         self.assertIn(self.recipient.email, [r["email"] for r in row["recipients"]])
         self.assertTrue(row["send_at"])
 
+        # The merged delivery state: a held submission is "scheduled", with no attempts yet
+        # (retries comes off the MTA queue message, correlated via ENVID) and no errors.
+        self.assertEqual(row["status"], "scheduled")
+        self.assertFalse(row["retries"])
+        self.assertEqual(row["delivery_errors"], [])
+        recipient_states = {r["email"]: r["status"] for r in row["recipients_status"]}
+        self.assertEqual(recipient_states.get(self.recipient.email), "scheduled")
+
         # Soonest first.
         send_ats = [r["send_at"] for r in rows]
         self.assertEqual(send_ats, sorted(send_ats))
 
     def test_delivered_submission_drops_out_of_listing(self):
-        # Held only briefly: once the hold elapses the submission goes final and the
-        # listing — driven by EmailSubmission/query on undoStatus — must drop it.
+        # Held only briefly: once the hold elapses and the delivery concludes, the listing
+        # must drop the row. Between release and conclusion the row may legitimately linger
+        # as "queued", so the check waits on the listing itself.
         subject = f"Delivered {unique_name('subject')}"
         result = self.send_mail(
             self.sender,
@@ -142,14 +166,14 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
 
         account = self.personal_account(self.sender)
         self.wait_until(
-            lambda: (self._get_submission(account, result["submission_id"]) or {}).get("undoStatus")
-            == "final",
+            lambda: result["submission_id"] not in [row["id"] for row in self._scheduled_rows(account)],
             timeout=90,
-            message="The held submission never went final.",
+            message="The delivered submission never left the Scheduled listing.",
         )
 
-        rows = self._scheduled_rows(account)
-        self.assertNotIn(result["submission_id"], [row["id"] for row in rows])
+        details = self._get_details(account, result["submission_id"])
+        self.assertIn(details["status"], ("delivered", "sent"))
+        self.assertEqual(details["undo_status"], "final")
 
     def test_cancel_reverts_to_draft(self):
         scheduled = self._schedule(minutes=120)
@@ -348,6 +372,123 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
 
         submission = self._get_submission(account, result["submission_id"])
         self.assertEqual(submission["undoStatus"], "canceled")
+
+    def test_submission_details(self):
+        scheduled = self._schedule(minutes=120)
+        account = self.personal_account(self.sender)
+
+        details = self._get_details(account, scheduled.submission_id)
+
+        self.assertEqual(details["id"], scheduled.submission_id)
+        self.assertEqual(details["subject"], scheduled.subject)
+        self.assertEqual(details["status"], "scheduled")
+        self.assertEqual(details["undo_status"], "pending")
+        self.assertFalse(details["email_deleted"])
+
+        # The envelope this app submitted with, echoed back by the server.
+        self.assertEqual(details["envelope_from"], self.sender.email)
+        self.assertIn(self.recipient.email, details["envelope_recipients"])
+        self.assertIsInstance(details["priority"], int)
+        self.assertEqual(details["identity_email"], self.sender.email)
+
+        recipient_states = {r["email"]: r for r in details["recipients_status"]}
+        state = recipient_states[self.recipient.email]
+        self.assertEqual(state["status"], "scheduled")
+        # The raw DeliveryStatus rides along for the details page.
+        for key in ("smtp_reply", "delivered", "displayed"):
+            self.assertIn(key, state)
+
+        self.assertEqual(details["dsn_count"], 0)
+        self.assertEqual(details["mdn_count"], 0)
+
+    def test_status_sifting_helpers(self):
+        # The listing keeps a finalized submission only when it was held and troubled;
+        # these helpers are that sieve.
+        from suite.mail.api.scheduled import _hold_active, _recipient_status, _was_held
+
+        held = {"envelope": {"mailFrom": {"email": "a@x.test", "parameters": {"HOLDUNTIL": "..."}}}}
+        self.assertTrue(_was_held(held))
+        self.assertFalse(_was_held({"envelope": None}))
+        self.assertFalse(
+            _was_held({"envelope": {"mailFrom": {"email": "a@x.test", "parameters": {"ENVID": "e"}}}})
+        )
+
+        # A hold is active only while pending AND before sendAt: Stalwart keeps a released
+        # message pending for as long as it can still be cancelled from the queue.
+        future = to_utc_z(add_to_date(now(), minutes=60))
+        past = to_utc_z(add_to_date(now(), minutes=-60))
+        self.assertTrue(_hold_active({"undoStatus": "pending", "sendAt": future}))
+        self.assertFalse(_hold_active({"undoStatus": "pending", "sendAt": past}))
+        self.assertFalse(_hold_active({"undoStatus": "final", "sendAt": future}))
+        self.assertFalse(_hold_active({"undoStatus": "pending"}))
+
+        # (hold active, DeliveryStatus, queue status, retries) → status. DeliveryStatus drives
+        # the state; the queue tells a first attempt apart from one awaiting a retry.
+        for expected, args in [
+            ("scheduled", (True, {}, None, 0)),
+            ("displayed", (False, {"delivered": "yes", "displayed": "yes"}, None, 0)),
+            ("failed", (False, {"delivered": "no", "smtpReply": "550 5.1.1"}, None, 0)),
+            ("delivered", (False, {"delivered": "yes", "displayed": "unknown"}, None, 0)),
+            ("retrying", (False, {"delivered": "queued"}, "TemporaryFailure", 0)),
+            ("retrying", (False, {"delivered": "queued"}, "Scheduled", 1)),
+            ("queued", (False, {"delivered": "queued"}, None, 0)),
+            ("queued", (False, {"delivered": "queued"}, "Scheduled", 0)),
+            ("queued", (False, {}, "Scheduled", 0)),
+            ("sent", (False, {"delivered": "unknown"}, None, 0)),
+            ("sent", (False, {}, None, 0)),
+        ]:
+            self.assertEqual(_recipient_status(*args), expected, args)
+
+    def test_retry_and_dismiss_finalized_submissions(self):
+        account = self.personal_account(self.sender)
+
+        # All three refuse a submission whose delivery is still pending.
+        pending = self._schedule(minutes=120)
+        with self.set_user(self.sender.email):
+            for action in (retry_failed_mail, retry_delivery_now, dismiss_failed_mail):
+                with self.assertRaises(frappe.ValidationError):
+                    action(account, pending.submission_id)
+
+        subject = f"Retry {unique_name('subject')}"
+        result = self.send_mail(
+            self.sender,
+            self.recipient.email,
+            subject=subject,
+            send_at=to_utc_z(add_to_date(now(), seconds=15)),
+        )
+        self.assertEqual(result["status"], "Submitted", result.get("error"))
+        self.wait_until(
+            lambda: (self._get_submission(account, result["submission_id"]) or {}).get("undoStatus")
+            == "final",
+            timeout=90,
+            message="The held submission never went final.",
+        )
+
+        # A concluded delivery has left the MTA queue — nothing there to poke.
+        self.wait_until(
+            lambda: self._get_details(account, result["submission_id"])["status"] in ("delivered", "sent"),
+            timeout=90,
+            message="The released delivery never concluded.",
+        )
+        with self.set_user(self.sender.email):
+            with self.assertRaises(frappe.ValidationError):
+                retry_delivery_now(account, result["submission_id"])
+
+        # Retry replaces the finalized record with a fresh immediate submission.
+        with self.set_user(self.sender.email):
+            retried = retry_failed_mail(account, result["submission_id"])
+        self.assertTrue(retried["id"])
+        self.assertIsNone(self._get_submission(account, result["submission_id"]))
+
+        # Dismiss destroys the record outright.
+        self.wait_until(
+            lambda: (self._get_submission(account, retried["id"]) or {}).get("undoStatus") == "final",
+            timeout=90,
+            message="The retried submission never went final.",
+        )
+        with self.set_user(self.sender.email):
+            dismiss_failed_mail(account, retried["id"])
+        self.assertIsNone(self._get_submission(account, retried["id"]))
 
     def test_stale_action_cannot_resurrect_a_cancelled_schedule(self):
         # Reschedule/send-now on a submission that was cancelled in the meantime must not

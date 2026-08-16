@@ -9,16 +9,36 @@ Mail Queue — its rows are only a log of what this app submitted. Every action 
 EmailSubmission id. Since undoStatus is a submission's only mutable property (RFC 8621 §7.5),
 reschedule and send-now cancel the held submission and create a replacement.
 
+Where the delivery actually stands is computed per recipient from the submission's
+deliveryStatus — delivered (queued/yes/no/unknown), displayed (unknown/yes, a read receipt),
+and the raw smtpReply — refined, while the message is still in the MTA queue, by Stalwart's
+management queue API, correlated through the ENVID this app writes into every envelope. The
+queue side contributes what JMAP cannot: retry counts, the next retry time, the last error of
+a temporarily failing delivery, and whether "queued" means a first attempt or a retry wait. It is read
+best-effort with the admin connection, exposing only messages matching the account's own
+submissions; without it rows just lack the retry detail.
+
 The referenced Email may have been deleted after scheduling (EmailSubmission/get then returns a
 dangling emailId): such a delivery can still be cancelled — there is just no message to move
-back to Drafts — but not resubmitted, so reschedule and send-now refuse it.
+back to Drafts — but not resubmitted, so the resubmitting actions refuse it. Held releases that
+failed (permanently or between retries) stay on the listing so the user learns the send never
+landed — until they are retried or dismissed, or the server expunges the submission record
+(how long finalized submissions are kept is the server's policy alone).
 """
 
+from datetime import datetime, timezone
 from uuid import uuid7
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, get_datetime_str, now, now_datetime, time_diff_in_seconds
+from frappe.utils import (
+    cint,
+    get_datetime,
+    get_datetime_str,
+    now,
+    now_datetime,
+    time_diff_in_seconds,
+)
 
 from suite.mail.jmap import (
     get_email_service,
@@ -28,36 +48,91 @@ from suite.mail.jmap import (
 )
 from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
 from suite.mail.utils import log_mail_error
-from suite.mail.utils.dt import from_utc_z, to_utc_z
+from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
 
 SUBMISSION_PROPERTIES = ["id", "emailId", "threadId", "undoStatus", "sendAt", "envelope"]
+DETAIL_PROPERTIES = [*SUBMISSION_PROPERTIES, "deliveryStatus", "identityId", "dsnBlobIds", "mdnBlobIds"]
 EMAIL_SUMMARY_PROPERTIES = ["id", "threadId", "subject", "from", "to", "cc", "bcc"]
 
 
 @frappe.whitelist()
 def get_scheduled_mails(account: str) -> list[dict]:
-    """Returns the account's held (FUTURERELEASE) submissions, soonest first."""
+    """Returns the account's held (FUTURERELEASE) submissions plus released ones whose delivery
+    has not succeeded, soonest first — problem rows have a past sendAt, so they lead."""
 
     service = get_email_submission_service(account)
 
-    ids = service.query({"undoStatus": "pending"})
-    if not ids:
+    pending_ids = service.query({"undoStatus": "pending"})
+    final_ids = service.query({"undoStatus": "final"})
+    if not pending_ids and not final_ids:
         return []
 
-    # Re-read undoStatus from the get: a submission can go final between query and get.
-    submissions = [
-        s for s in service.get(ids, properties=SUBMISSION_PROPERTIES) if s.get("undoStatus") == "pending"
-    ]
-
-    email_ids = [s["emailId"] for s in submissions if s.get("emailId")]
-    emails = (
-        get_email_service(account).get(email_ids, properties=EMAIL_SUMMARY_PROPERTIES) if email_ids else []
+    # Re-read undoStatus from the get: a submission can go final between query and get. A final
+    # one is kept only when it was actually held (HOLDUNTIL) and its delivery is still troubled —
+    # otherwise this page would grow into a delivery log of every send.
+    fetched = service.get(
+        list(dict.fromkeys(pending_ids + final_ids)), properties=[*SUBMISSION_PROPERTIES, "deliveryStatus"]
     )
-    emails_by_id = {e["id"]: e for e in emails}
+    queue_by_envid = _queue_messages_by_envid(fetched)
 
-    rows = [_serialize_submission(s, emails_by_id.get(s.get("emailId"))) for s in submissions]
+    rows = []
+    for submission in fetched:
+        if submission.get("undoStatus") not in ("pending", "final"):
+            continue
+        row = _serialize_submission(submission, None, queue_by_envid.get(_envid(submission)))
+        if row["status"] == "scheduled" or (_was_held(submission) and row["status"] in PROBLEM_STATUSES):
+            rows.append(row)
+
+    email_ids = [row["email_id"] for row in rows if row["email_id"]]
+    emails_by_id = {
+        e["id"]: e
+        for e in (
+            get_email_service(account).get(email_ids, properties=EMAIL_SUMMARY_PROPERTIES)
+            if email_ids
+            else []
+        )
+    }
+    for row in rows:
+        _add_email_fields(row, emails_by_id.get(row["email_id"]))
+
     rows.sort(key=lambda row: row["send_at"] or "")
     return rows
+
+
+@frappe.whitelist()
+def get_scheduled_mail(account: str, id: str) -> dict:
+    """Returns one submission with everything EmailSubmission/get knows about it, enriched with
+    the referenced Email's summary and the MTA queue's live delivery state."""
+
+    service = get_email_submission_service(account)
+    submissions = service.get([id], properties=DETAIL_PROPERTIES)
+    if not submissions:
+        frappe.throw(_("This submission no longer exists."))
+
+    submission = submissions[0]
+    queue_message = _queue_messages_by_envid([submission]).get(_envid(submission))
+
+    row = _serialize_submission(submission, None, queue_message)
+    email_id = submission.get("emailId")
+    emails = (
+        get_email_service(account).get([email_id], properties=EMAIL_SUMMARY_PROPERTIES) if email_id else []
+    )
+    _add_email_fields(row, emails[0] if emails else None)
+
+    envelope = submission.get("envelope") or {}
+    mail_from = envelope.get("mailFrom") or {}
+    row.update(
+        {
+            "identity_email": _identity_email(service, submission.get("identityId")),
+            "envelope_from": mail_from.get("email"),
+            "envelope_recipients": [r.get("email") for r in envelope.get("rcptTo") or []],
+            "priority": cint((mail_from.get("parameters") or {}).get("MT-PRIORITY")),
+            "next_retry": normalize_utc_z((queue_message or {}).get("nextRetry")),
+            "dsn_count": len(submission.get("dsnBlobIds") or []),
+            "mdn_count": len(submission.get("mdnBlobIds") or []),
+        }
+    )
+    return row
 
 
 @frappe.whitelist()
@@ -82,7 +157,7 @@ def send_scheduled_mail_now(account: str, id: str) -> dict:
     submission = _get_pending_submission(service, id)
 
     created = _replace_submission(account, service, submission, hold_until=None)
-    _sync_queue_log(id, submission_id=created["id"], status="Submitted", submitted_at=now(), send_at=None)
+    _sync_queue_log(id, submission_id=created["id"], submitted_at=now(), send_at=None)
 
     return {"id": created["id"], "thread_id": submission.get("threadId")}
 
@@ -108,9 +183,96 @@ def cancel_scheduled_mail(account: str, id: str) -> dict:
     return {"id": email_id}
 
 
-def _serialize_submission(submission: dict, email: dict | None) -> dict:
-    """One Scheduled-page row. Display fields come from the referenced Email; when it was deleted
-    after scheduling, the envelope's SMTP recipients are all that is left to show."""
+@frappe.whitelist()
+def retry_delivery_now(account: str, id: str) -> None:
+    """Tells the MTA to attempt a released, still-queued (retrying) delivery again right away.
+
+    A release mid-retry is still undoStatus "pending" (it can be cancelled until it concludes),
+    so this gates on the hold — not on the submission being final; an unreleased hold must go
+    through send-now instead, which replaces the submission."""
+
+    service = get_email_submission_service(account)
+    submission = _get_submission(service, id)
+
+    if submission.get("undoStatus") == "canceled":
+        frappe.throw(_("This scheduled delivery has been cancelled."))
+    if _hold_active(submission):
+        frappe.throw(_("This delivery is still scheduled — use send now instead."))
+
+    queue_message = _queue_messages_by_envid([submission]).get(_envid(submission))
+    if not queue_message:
+        frappe.throw(_("This delivery is no longer waiting in the outbound queue."))
+
+    from suite.mail.stalwart import get_queued_message_service
+
+    get_queued_message_service().retry([queue_message["id"]])
+
+
+@frappe.whitelist()
+def retry_failed_mail(account: str, id: str) -> dict:
+    """Resubmits a finalized submission's email for immediate delivery, replacing the failed
+    record so the listing shows only the live attempt."""
+
+    service = get_email_submission_service(account)
+    submission = _get_final_submission(service, id)
+
+    created = service.resubmit(
+        **_resubmit_args(account, submission), envelope_id=str(uuid7()), hold_until=None
+    )
+    service.destroy(id)
+    _sync_queue_log(id, submission_id=created["id"], submitted_at=now(), send_at=None)
+
+    return {"id": created["id"]}
+
+
+@frappe.whitelist()
+def dismiss_failed_mail(account: str, id: str) -> None:
+    """Drops a finalized submission's record from the Scheduled listing."""
+
+    service = get_email_submission_service(account)
+    _get_final_submission(service, id)
+    service.destroy(id)
+
+
+# --- delivery state ------------------------------------------------------------------------------
+
+# Recipient/overall statuses, worst first. "queued" is a released delivery the MTA has not
+# concluded yet (first attempt or between retries); "sent" is relayed with no confirmation;
+# "displayed" means a read receipt (MDN) arrived — the furthest a delivery can get.
+STATUS_SEVERITY = ("failed", "retrying", "queued", "scheduled", "cancelled", "sent", "delivered", "displayed")
+PROBLEM_STATUSES = ("failed", "retrying", "queued")
+
+
+def _serialize_submission(submission: dict, email: dict | None, queue_message: dict | None) -> dict:
+    """One Scheduled-page row: the submission itself plus its merged delivery state."""
+
+    recipients_status = _recipient_states(submission, queue_message)
+    retries = [r["retries"] for r in recipients_status if r["retries"] is not None]
+
+    row = {
+        "id": submission["id"],
+        "email_id": submission.get("emailId"),
+        "thread_id": submission.get("threadId"),
+        "send_at": submission.get("sendAt"),
+        # A released delivery can be cancelled for as long as it is pending; the actions
+        # offered for a retrying row depend on this, not on the display status.
+        "undo_status": submission.get("undoStatus"),
+        "status": _overall_status(submission, recipients_status),
+        "retries": max(retries) if retries else None,
+        "recipients_status": recipients_status,
+        "delivery_errors": [
+            {"email": r["email"], "reason": r["reason"]}
+            for r in recipients_status
+            if r["status"] in PROBLEM_STATUSES and r["reason"]
+        ],
+    }
+    _add_email_fields(row, email)
+    return row
+
+
+def _add_email_fields(row: dict, email: dict | None) -> None:
+    """Fills a row's display fields from the referenced Email; when it was deleted after
+    scheduling, the envelope recipients already collected in recipients_status remain."""
 
     if email:
         recipients = [
@@ -119,24 +281,177 @@ def _serialize_submission(submission: dict, email: dict | None) -> dict:
             for a in email.get(rcpt_type.lower()) or []
         ]
     else:
-        envelope = submission.get("envelope") or {}
         recipients = [
-            {"type": "To", "email": r.get("email"), "display_name": None}
-            for r in envelope.get("rcptTo") or []
+            {"type": "To", "email": r["email"], "display_name": None} for r in row["recipients_status"]
         ]
 
     sender = (email.get("from") or [{}])[0] if email else {}
-    return {
-        "id": submission["id"],
-        "email_id": submission.get("emailId"),
-        "thread_id": (email or {}).get("threadId") or submission.get("threadId"),
-        "subject": (email or {}).get("subject"),
-        "from_name": sender.get("name"),
-        "from_email": sender.get("email"),
-        "recipients": recipients,
-        "send_at": submission.get("sendAt"),
-        "email_deleted": email is None,
+    row.update(
+        {
+            "thread_id": (email or {}).get("threadId") or row.get("thread_id"),
+            "subject": (email or {}).get("subject"),
+            "from_name": sender.get("name"),
+            "from_email": sender.get("email"),
+            "recipients": recipients,
+            "email_deleted": email is None,
+        }
+    )
+
+
+def _recipient_states(submission: dict, queue_message: dict | None) -> list[dict]:
+    """Merges deliveryStatus and MTA-queue state into one row per recipient."""
+
+    delivery = submission.get("deliveryStatus") or {}
+    queue_recipients = (queue_message or {}).get("recipients") or {}
+    envelope_emails = [r.get("email") for r in (submission.get("envelope") or {}).get("rcptTo") or []]
+
+    emails = list(dict.fromkeys([*envelope_emails, *delivery, *queue_recipients]))
+    held = _hold_active(submission)
+
+    states = []
+    for email in emails:
+        status = delivery.get(email) or {}
+        queued = queue_recipients.get(email) or {}
+        queue_status = queued.get("status") or {}
+
+        states.append(
+            {
+                "email": email,
+                "status": _recipient_status(
+                    held, status, queue_status.get("@type"), queued.get("retryCount")
+                ),
+                "reason": queue_status.get("errorMessage")
+                or queue_status.get("responseMessage")
+                or status.get("smtpReply"),
+                # The raw DeliveryStatus, so the details page can show the exact server state.
+                "smtp_reply": status.get("smtpReply"),
+                "delivered": status.get("delivered"),
+                "displayed": status.get("displayed"),
+                "retries": queued.get("retryCount"),
+                "next_retry": normalize_utc_z(queued.get("retryDue")),
+            }
+        )
+
+    return states
+
+
+def _recipient_status(
+    held: bool, delivery: dict, queue_status: str | None, retry_count: int | None = 0
+) -> str:
+    """One recipient's latest place in the lifecycle, computed from the submission's
+    DeliveryStatus (delivered: queued/yes/no/unknown, displayed: unknown/yes). The MTA
+    queue's live state only refines what "queued" currently means — a first attempt in
+    flight or a failed one waiting to retry."""
+
+    if held:
+        return "scheduled"
+
+    if delivery.get("displayed") == "yes":
+        return "displayed"  # a read receipt (MDN) arrived — implies delivery
+
+    delivered = delivery.get("delivered")
+    if delivered == "no":
+        return "failed"
+    if delivered == "yes":
+        return "delivered"
+    if delivered == "queued" or (delivered is None and queue_status):
+        return "retrying" if queue_status == "TemporaryFailure" or cint(retry_count) else "queued"
+    return "sent"  # "unknown": relayed with no delivery confirmation
+
+
+def _overall_status(submission: dict, recipients_status: list[dict]) -> str:
+    """The submission's single-word state: the worst of its recipients' states."""
+
+    if submission.get("undoStatus") == "canceled":
+        return "cancelled"
+    if _hold_active(submission):
+        return "scheduled"
+
+    statuses = {r["status"] for r in recipients_status}
+    return next((s for s in STATUS_SEVERITY if s in statuses), "sent")
+
+
+def _hold_active(submission: dict) -> bool:
+    """Whether the FUTURERELEASE hold is still in effect — pending with sendAt in the future.
+
+    Stalwart keeps undoStatus "pending" for as long as a released message can still be pulled
+    back from the queue, so pending alone does not mean scheduled: a release mid-retry is
+    pending too, and must show its real delivery state.
+    """
+
+    if submission.get("undoStatus") != "pending":
+        return False
+
+    send_at = submission.get("sendAt")
+    if not send_at:
+        return False
+
+    return datetime.fromisoformat(send_at.replace("Z", "+00:00")) > datetime.now(timezone.utc)
+
+
+def _was_held(submission: dict) -> bool:
+    """Whether the submission's delivery was held (scheduled or undo-send) — marked by the
+    RFC 4865 HOLDUNTIL parameter in its stored envelope."""
+
+    parameters = ((submission.get("envelope") or {}).get("mailFrom") or {}).get("parameters") or {}
+    return any(key.upper() == "HOLDUNTIL" for key in parameters)
+
+
+def _envid(submission: dict) -> str | None:
+    """The submission envelope's ENVID — the key that ties it to its MTA queue message."""
+
+    parameters = ((submission.get("envelope") or {}).get("mailFrom") or {}).get("parameters") or {}
+    return parameters.get("ENVID")
+
+
+def _queue_messages_by_envid(submissions: list[dict]) -> dict[str, dict]:
+    """The MTA queue messages behind the given submissions, keyed by ENVID.
+
+    Read with the admin management connection but exposing only messages whose ENVID matches
+    one of the account's own submissions. Best-effort: without the management API the rows
+    just lack retry counts and live queue state.
+    """
+
+    envids = {envid for s in submissions if (envid := _envid(s))}
+    senders = {
+        email
+        for s in submissions
+        if _envid(s) and (email := ((s.get("envelope") or {}).get("mailFrom") or {}).get("email"))
     }
+    if not envids:
+        return {}
+
+    try:
+        from suite.mail.stalwart import get_queued_message_service
+
+        service = get_queued_message_service()
+        messages = []
+        for sender in senders:
+            messages.extend(
+                service.get_all(
+                    filter={"returnPath": sender},
+                    properties=["id", "envId", "recipients", "nextRetry"],
+                )
+            )
+    except Exception:
+        log_mail_error(
+            _("Failed to read the MTA queue for scheduled mails"), frappe.get_traceback(with_context=True)
+        )
+        return {}
+
+    return {m["envId"]: m for m in messages if m.get("envId") in envids}
+
+
+def _identity_email(service: EmailSubmissionService, identity_id: str | None) -> str | None:
+    """The sending identity's email address, when the id still resolves."""
+
+    if not identity_id:
+        return None
+
+    return next((i.get("email") for i in service.identities if i.get("id") == identity_id), None)
+
+
+# --- submission plumbing -------------------------------------------------------------------------
 
 
 def _get_submission(service: EmailSubmissionService, id: str) -> dict:
@@ -155,6 +470,16 @@ def _get_pending_submission(service: EmailSubmissionService, id: str) -> dict:
         frappe.throw(_("This scheduled delivery has been cancelled."))
     if undo_status != "pending":
         frappe.throw(_("This email has already been delivered and can no longer be changed."))
+
+    return submission
+
+
+def _get_final_submission(service: EmailSubmissionService, id: str) -> dict:
+    """A submission the server is done with — what the retry and dismiss actions operate on."""
+
+    submission = _get_submission(service, id)
+    if submission.get("undoStatus") == "pending":
+        frappe.throw(_("This delivery is still pending — cancel or reschedule it instead."))
 
     return submission
 
@@ -181,10 +506,9 @@ def _hold_until(send_at: str) -> int:
     return int(convert_to_utc(get_datetime(send_at)).timestamp())
 
 
-def _replace_submission(
-    account: str, service: EmailSubmissionService, submission: dict, hold_until: int | None
-) -> dict:
-    """Cancels the held submission and creates its replacement (reschedule / send-now)."""
+def _resubmit_args(account: str, submission: dict) -> dict:
+    """The resubmit() arguments recoverable from a submission; throws when its Email is gone
+    (a message that no longer exists cannot be resubmitted)."""
 
     email_id = submission.get("emailId")
     emails = (
@@ -193,25 +517,32 @@ def _replace_submission(
         else []
     )
     if not emails:
-        frappe.throw(_("The scheduled message no longer exists, so its delivery can only be cancelled."))
+        frappe.throw(_("The original message no longer exists, so it cannot be resubmitted."))
 
     from_email, rcpt_emails, priority = _envelope_args(submission, emails[0])
+    return {
+        "email_id": email_id,
+        "from_email": from_email,
+        "rcpt_emails": rcpt_emails,
+        "priority": priority,
+    }
+
+
+def _replace_submission(
+    account: str, service: EmailSubmissionService, submission: dict, hold_until: int | None
+) -> dict:
+    """Cancels the held submission and creates its replacement (reschedule / send-now)."""
+
+    args = _resubmit_args(account, submission)
 
     service.cancel(submission["id"])
     try:
-        return service.resubmit(
-            email_id=email_id,
-            from_email=from_email,
-            rcpt_emails=rcpt_emails,
-            envelope_id=str(uuid7()),
-            priority=priority,
-            hold_until=hold_until,
-        )
+        return service.resubmit(**args, envelope_id=str(uuid7()), hold_until=hold_until)
     except Exception:
         # The old submission is already canceled: fail closed as a cancellation, so the
         # message lands back in Drafts instead of sitting in Sent never sending.
         log_mail_error(_("Failed to resubmit scheduled email"), frappe.get_traceback(with_context=True))
-        _move_email_to_drafts(account, email_id)
+        _move_email_to_drafts(account, args["email_id"])
         _sync_queue_log(submission["id"], cancelled_at=now())
         frappe.throw(
             _(
