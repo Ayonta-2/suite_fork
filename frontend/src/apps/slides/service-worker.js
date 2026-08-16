@@ -100,6 +100,10 @@ const isMedia = (url) =>
 	url.pathname.startsWith('/api/method/suite.slides.api.file.get_media_file') ||
 	(url.pathname.startsWith('/private/files/') && url.searchParams.has('slides_media'))
 const isAPI = (url) => url.pathname.startsWith('/api/method/suite.slides.')
+// the owner's editor loads the document itself through the generic client
+const isPresentationDoc = (url) =>
+	url.pathname === '/api/method/frappe.client.get' &&
+	url.searchParams.get('doctype') === 'Presentation'
 
 // every file under the bundle path is content-hashed, so a hit can never be stale
 const isBundleAsset = (url) =>
@@ -268,12 +272,14 @@ const getResponseForRequest = async (event, type, url) => {
 	const cache = await openCache(API_CACHE_NAME)
 	if (!cache) return fetch(event.request)
 
-	return networkFirst(event, 'api', cache)
+	// the editable document must not be replaced by a stale copy over a slow network
+	const timeout = isPresentationDoc(url) ? undefined : NETWORK_TIMEOUT
+	return networkFirst(event, 'api', cache, { timeout })
 }
 
 const getRequestType = (event, url) => {
 	if (isMedia(url)) return 'media'
-	if (isAPI(url)) return 'api'
+	if (isAPI(url) || isPresentationDoc(url)) return 'api'
 	if (isSlidesStatic(url) || isSlidesBundleRequest(event, url)) return 'asset'
 	if (isShell(event.request, url)) return 'shell'
 	return 'other'
