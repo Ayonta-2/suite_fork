@@ -213,6 +213,11 @@ onBeforeMount(() => normalizeContent())
 	overflow-wrap: break-word;
 }
 
+/* the browser's own stop is 8 characters, which on a slide reads as a gap */
+.textElement {
+	tab-size: 4;
+}
+
 /* use CSS variable set on container to apply legacy element line-height without
    mutating inner HTML. Inline styles on <p> will still take precedence. */
 .textElement p,

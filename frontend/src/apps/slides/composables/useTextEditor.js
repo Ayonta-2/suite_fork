@@ -17,6 +17,10 @@ import { currentSlide } from '@/apps/slides/stores/slide'
 
 export const activeEditor = ref(null)
 
+// the default parse drops a line's leading spaces, so indentation lasts only until the
+// content is read back. 'full' would turn the gaps in pretty-printed HTML into lines
+const parseOptions = { preserveWhitespace: true }
+
 // the element this editor was built for: activeElement flips a tick earlier
 let editorElement = null
 let editorSlideId = null
@@ -65,7 +69,9 @@ const reconcileEditorContent = (html) => {
 	if (html == null) {
 		if (activeElement.value?.type !== 'shape') return
 		const seed = getInitialShapeTextContent(activeElement.value)
-		withRecordingSuppressed(() => editor.commands.setContent(seed, { emitUpdate: false }))
+		withRecordingSuppressed(() =>
+			editor.commands.setContent(seed, { emitUpdate: false, parseOptions }),
+		)
 		return
 	}
 
@@ -73,7 +79,7 @@ const reconcileEditorContent = (html) => {
 
 	// setContent replaces the whole doc, mapping the selection to its end. the two
 	// documents differ over one range, so a caret past it moves by the size change
-	const incoming = createDocument(html, editor.schema)
+	const incoming = createDocument(html, editor.schema, parseOptions)
 	const { content } = editor.state.doc
 	const start = content.findDiffStart(incoming.content)
 	const { a: endHere, b: endThere } = start == null ? {} : content.findDiffEnd(incoming.content)
@@ -88,7 +94,7 @@ const reconcileEditorContent = (html) => {
 	})
 
 	withRecordingSuppressed(() => {
-		editor.commands.setContent(html, { emitUpdate: false })
+		editor.commands.setContent(html, { emitUpdate: false, parseOptions })
 		// between, so that endpoints a cell selection left on cell boundaries come back
 		// as the nearest position that can hold a caret
 		editor.commands.command(({ tr }) => {
@@ -383,6 +389,7 @@ export const useTextEditor = () => {
 				extensions: extensions,
 				editable: isEditable,
 				content: content,
+				parseOptions,
 				// focus only lands once EditorContent has adopted the view, so tiptap
 				// has to do it itself after mounting. 'all' inside a table would
 				// select every cell, so tables start with a cursor in the first one

@@ -1064,7 +1064,10 @@ const updateElementContent = (element) => {
 // empty cells are still a table, only a deleted one leaves nothing to edit
 const isEditorEmpty = (element) => {
 	if (element.type === 'table') return !hasTableNode(activeEditor.value.state.doc)
-	return !activeEditor.value.getText().replace(/\u200B/g, '')
+	// indentation survives the parse now, so a box holding nothing else has to keep
+	// reading as the empty one it looks like. the line breaks stay, or a box of
+	// blank lines starts reading as empty too
+	return !activeEditor.value.getText().replace(/[\u200B\t ]/g, '')
 }
 
 const blurAndSaveContent = (element) => {
