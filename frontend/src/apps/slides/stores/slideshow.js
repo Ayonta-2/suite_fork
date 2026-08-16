@@ -36,17 +36,23 @@ const exitFullscreen = () => {
 }
 
 let wakeLock = null
+let pendingWakeLock = null
 
-const requestWakeLock = async () => {
-	if (!navigator.wakeLock) return
-	if (wakeLock && !wakeLock.released) return
+const requestWakeLock = () => {
+	if (pendingWakeLock) return pendingWakeLock
+	if (wakeLock && !wakeLock.released) return Promise.resolve()
+	if (!navigator.wakeLock) return Promise.resolve()
 
-	try {
-		wakeLock = await navigator.wakeLock.request('screen')
-		if (!inSlideShowMode.value) releaseWakeLock()
-	} catch (error) {
-		console.warn('Could not keep the screen awake:', error)
-	}
+	pendingWakeLock = navigator.wakeLock
+		.request('screen')
+		.then((lock) => {
+			wakeLock = lock
+			if (!inSlideShowMode.value) releaseWakeLock()
+		})
+		.catch((error) => console.warn('Could not keep the screen awake:', error))
+		.finally(() => (pendingWakeLock = null))
+
+	return pendingWakeLock
 }
 
 const releaseWakeLock = () => {
