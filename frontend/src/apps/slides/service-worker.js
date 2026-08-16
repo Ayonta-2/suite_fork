@@ -9,6 +9,10 @@ self.addEventListener('install', () => {
 	self.skipWaiting()
 })
 
+// an unavailable or broken cache must degrade to "no service worker", never to "no slides"
+const openCache = (name) => caches.open(name).catch(() => null)
+const matchCache = (cache, request) => cache.match(request).catch(() => null)
+
 const cleanupOldCacheEntry = async (cache, request, response) => {
 	const now = Date.now()
 
@@ -25,13 +29,15 @@ const cleanupOldCacheEntry = async (cache, request, response) => {
 	}
 }
 
-const cleanupOldMediaCache = async () => {
-	const cache = await caches.open(MEDIA_CACHE_NAME)
+const cleanupOldCacheEntries = async (name) => {
+	const cache = await openCache(name)
+	if (!cache) return
+
 	const keys = await cache.keys()
 
 	await Promise.all(
 		keys.map(async (request) => {
-			const response = await cache.match(request)
+			const response = await matchCache(cache, request)
 			if (!response) return
 
 			return cleanupOldCacheEntry(cache, request, response)
@@ -40,7 +46,10 @@ const cleanupOldMediaCache = async () => {
 }
 
 const handleSWActivate = async () => {
-	await cleanupOldMediaCache()
+	// a failed sweep must not stop the worker from activating
+	await Promise.all(
+		Object.values(CACHE_NAMES).map((name) => cleanupOldCacheEntries(name).catch(() => {})),
+	)
 	// this takes control of all client pages that are already open
 	await self.clients.claim()
 }
@@ -70,51 +79,58 @@ const isMedia = (url) =>
 	(url.pathname.startsWith('/private/files/') && url.searchParams.has('slides_media'))
 const isAPI = (url) => url.pathname.startsWith('/api/method/suite.slides.')
 
-const addCacheEntry = async (type, cache, request, response) => {
+const isCacheable = (type, response) => {
+	const contentType = response.headers.get('Content-Type') || ''
 	if (type === 'media') {
-		const contentType = response.headers.get('Content-Type') || ''
-		const validContentTypes = ['image/', 'video/']
-		if (!validContentTypes.some((ct) => contentType.startsWith(ct))) return
+		return ['image/', 'video/'].some((ct) => contentType.startsWith(ct))
 	}
+	// a redirected or HTML response stored under an API key would be replayed as data
+	return !response.redirected && contentType.includes('application/json')
+}
+
+const addCacheEntry = async (type, cache, request, response) => {
+	if (!isCacheable(type, response)) return
 
 	// clone response and add cache timestamp header
 	const modifiedResponse = getModifiedResponse(response)
 	await cache.put(request, modifiedResponse)
 }
 
-const fetchAndCache = async (request, type, cache) => {
-	const response = await fetch(request)
+const fetchAndCache = async (event, type, cache) => {
+	const response = await fetch(event.request)
 	if (response.ok && response.status === 200) {
-		try {
-			await addCacheEntry(type, cache, request, response)
-		} catch (err) {
+		const written = addCacheEntry(type, cache, event.request, response).catch((err) => {
 			console.warn('Slides SW cache write failed:', err)
-		}
+		})
+		// hand the body to the page now, let the copy land in the cache behind it
+		event.waitUntil(written)
 	}
 	return response
 }
 
 // network-first: serve the live response (preserving its real headers) and fall
 // back to cache only when the network is unavailable
-const networkFirst = async (request, cache) => {
+const networkFirst = async (event, cache) => {
 	try {
-		return await fetchAndCache(request, 'api', cache)
+		return await fetchAndCache(event, 'api', cache)
 	} catch {
-		const cached = await cache.match(request)
+		const cached = await matchCache(cache, event.request)
 		if (cached) return cached
 		throw new Error('No cached response available')
 	}
 }
 
-const cacheFirst = async (request, type, cache) => {
-	const cached = await cache.match(request)
+const cacheFirst = async (event, type, cache) => {
+	const cached = await matchCache(cache, event.request)
 	if (cached) return cached
-	return fetchAndCache(request, type, cache)
+	return fetchAndCache(event, type, cache)
 }
 
-const getResponseForRequest = async (request, type) => {
-	const cache = await caches.open(CACHE_NAMES[type])
-	return type === 'api' ? networkFirst(request, cache) : cacheFirst(request, type, cache)
+const getResponseForRequest = async (event, type) => {
+	const cache = await openCache(CACHE_NAMES[type])
+	if (!cache) return fetch(event.request)
+
+	return type === 'api' ? networkFirst(event, cache) : cacheFirst(event, type, cache)
 }
 
 const getRequestType = (url) => {
@@ -123,20 +139,15 @@ const getRequestType = (url) => {
 	return 'other'
 }
 
-const handleSWFetch = async (event) => {
+// respondWith has to be called synchronously in the event, so nothing here may await
+self.addEventListener('fetch', (event) => {
 	const request = event.request
 	const url = new URL(request.url)
 
 	if (request.method !== 'GET' || url.origin !== self.location.origin) return
 
 	const requestType = getRequestType(url)
-	const isAffectedByCache = ['media', 'api'].includes(requestType)
-	if (!isAffectedByCache) return
+	if (requestType === 'other') return
 
-	const response = getResponseForRequest(request, requestType)
-	event.respondWith(response)
-}
-
-self.addEventListener('fetch', (event) => {
-	handleSWFetch(event)
+	event.respondWith(getResponseForRequest(event, requestType))
 })
