@@ -35,8 +35,18 @@ def before_install():
         frappe.throw(
             _(
                 "Cannot install Frappe Suite because the following standalone app(s) are installed on this site: {0}. "
-                "Frappe Suite already includes them. Please uninstall these app(s) first, then install Frappe Suite."
-            ).format(", ".join(frappe.bold(app) for app in conflicting))
+                "Frappe Suite already includes them.\n\n"
+                "To migrate this site to Frappe Suite:\n"
+                "1. Take a backup of the site, including files.\n"
+                "2. Uninstall the standalone app(s) listed above. This deletes their data on the site, which is why the backup comes first.\n"
+                "3. Install Frappe Suite.\n"
+                "4. Restore the backup, then follow the post-restore steps in the migration guide.\n\n"
+                "The same steps apply to sites hosted on Frappe Cloud. "
+                "See {1} for the full commands."
+            ).format(
+                ", ".join(frappe.bold(app) for app in conflicting),
+                "https://github.com/frappe/suite#migrating-from-the-standalone-apps",
+            )
         )
 
 
