@@ -29,7 +29,7 @@ landed — until they are retried or dismissed, or the server expunges the submi
 every other concluded row.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid7
 
 import frappe
@@ -407,7 +407,7 @@ def _hold_active(submission: dict) -> bool:
     if not send_at:
         return False
 
-    return datetime.fromisoformat(send_at.replace("Z", "+00:00")) > datetime.now(timezone.utc)
+    return datetime.fromisoformat(send_at.replace("Z", "+00:00")) > datetime.now(UTC)
 
 
 def _envid(submission: dict) -> str | None:
@@ -525,9 +525,7 @@ def _resubmit_args(account: str, submission: dict) -> dict:
 
     email_id = submission.get("emailId")
     emails = (
-        get_email_service(account).get([email_id], properties=["from", "to", "cc", "bcc"])
-        if email_id
-        else []
+        get_email_service(account).get([email_id], properties=["from", "to", "cc", "bcc"]) if email_id else []
     )
     if not emails:
         frappe.throw(_("The original message no longer exists, so it cannot be resubmitted."))

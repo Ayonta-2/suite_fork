@@ -359,9 +359,7 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
                     action()
 
             # Refusing to resubmit must leave the hold untouched.
-            self.assertEqual(
-                self._get_submission(account, scheduled.submission_id)["undoStatus"], "pending"
-            )
+            self.assertEqual(self._get_submission(account, scheduled.submission_id)["undoStatus"], "pending")
 
             result = cancel_scheduled_mail(account, scheduled.submission_id)
 
@@ -554,6 +552,4 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
                 with self.assertRaises(frappe.ValidationError):
                     action(scheduled.submission_id)
 
-            self.assertEqual(
-                self._get_submission(account, scheduled.submission_id)["undoStatus"], "canceled"
-            )
+            self.assertEqual(self._get_submission(account, scheduled.submission_id)["undoStatus"], "canceled")
