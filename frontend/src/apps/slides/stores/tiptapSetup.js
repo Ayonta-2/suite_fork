@@ -742,11 +742,19 @@ const StyledEmptyLine = Extension.create({
 
 const INDENT = '\t'
 
+// nodesBetween reaches a block the selection only touches the edge of, which is
+// one the user never selected any of
 const getSelectedTextblocks = (state) => {
+	const { from, to, empty } = state.selection
 	const blocks = []
-	state.doc.nodesBetween(state.selection.from, state.selection.to, (node, pos) => {
-		if (node.isTextblock) blocks.push({ node, pos })
+
+	state.doc.nodesBetween(from, to, (node, pos) => {
+		if (!node.isTextblock) return
+
+		const start = pos + 1
+		if (empty || (start < to && start + node.content.size > from)) blocks.push({ node, pos })
 	})
+
 	return blocks
 }
 
