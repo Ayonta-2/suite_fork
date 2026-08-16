@@ -96,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
 	CalendarClock,
@@ -142,6 +142,10 @@ usePageMeta(() => ({ title: __('Scheduled') }))
 
 const store = userStore()
 const router = useRouter()
+const socket = inject('$socket') as {
+	on: (event: string, handler: () => void) => void
+	off: (event: string, handler: () => void) => void
+}
 const { isMobile } = useScreenSize()
 
 const selected = ref<ScheduledMail | null>(null)
@@ -162,6 +166,23 @@ watch(
 	() => store.accountId,
 	() => store.accountId && scheduledMails.reload(),
 )
+
+// Kept current the way mailboxes are — a periodic poll (holds release, retries advance, and
+// other clients schedule/cancel without any local signal) plus the new-mail socket (an undo
+// or schedule cancel publishes it). reload() keeps the previous rows while fetching, so the
+// list never flickers back to the skeleton.
+const reloadInterval = ref<ReturnType<typeof setInterval>>()
+const onNewMail = () => scheduledMails.reload()
+
+onMounted(() => {
+	reloadInterval.value = setInterval(onNewMail, 30000)
+	socket.on('new_mail_created', onNewMail)
+})
+
+onUnmounted(() => {
+	if (reloadInterval.value) clearInterval(reloadInterval.value)
+	socket.off('new_mail_created', onNewMail)
+})
 
 const rows = computed<ScheduledMail[]>(() => scheduledMails.data || [])
 
