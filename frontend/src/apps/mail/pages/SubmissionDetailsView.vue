@@ -9,7 +9,7 @@
 				v-else
 				:items="[
 					{ label: __('Outbox'), route: { name: 'mail-outbox', params: { accountId } } },
-					{ label: title },
+					...(title ? [{ label: title }] : []),
 				]"
 				class="-ml-0.5 min-w-0"
 			/>
@@ -148,8 +148,30 @@
 				</div>
 			</div>
 		</div>
-		<div v-else class="flex flex-1 items-center justify-center">
-			<LoadingIndicator class="text-ink-gray-5 h-5 w-5" />
+		<!-- Mirrors the settled layout so list → details (and details → replacement) transitions
+		without a blank frame. -->
+		<div
+			v-else
+			class="flex-1 overflow-y-auto px-3 py-4 sm:px-5"
+			:aria-label="__('Loading')"
+			role="status"
+		>
+			<div class="mx-auto flex max-w-5xl flex-col gap-5 md:flex-row md:items-start">
+				<div v-for="stack in 2" :key="stack" class="flex min-w-0 flex-1 flex-col gap-5">
+					<div v-for="card in 2" :key="card" class="rounded-md border">
+						<div class="flex h-13 items-center border-b px-4">
+							<Skeleton class="h-3.5 w-24 rounded" />
+						</div>
+						<div v-for="row in 5" :key="row" class="flex items-center px-5 py-4">
+							<Skeleton class="h-3 w-1/4 rounded" />
+							<Skeleton
+								class="ml-12 h-3 rounded"
+								:style="{ width: `${20 + ((stack * 5 + card * 7 + row * 13) % 25)}%` }"
+							/>
+						</div>
+					</div>
+				</div>
+			</div>
 		</div>
 
 		<ScheduleSendModal
@@ -173,7 +195,7 @@ import {
 	Breadcrumbs,
 	Button,
 	Dialog,
-	LoadingIndicator,
+	Skeleton,
 	createResource,
 	usePageMeta,
 } from 'frappe-ui'
@@ -196,8 +218,6 @@ import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.v
 
 const { accountId, submissionId } = defineProps<{ accountId: string; submissionId: string }>()
 
-usePageMeta(() => ({ title: __('Outbox email') }))
-
 const store = userStore()
 const router = useRouter()
 const { isMobile } = useScreenSize()
@@ -207,11 +227,19 @@ const showSendNow = ref(false)
 const showRetry = ref(false)
 const showCancel = ref(false)
 
+// An id change makes the loaded details another submission's answer, so the page drops to
+// the skeleton until the server responds — reload() alone would keep showing the previous
+// submission's content under the new URL. In-place refreshes (the actions below) keep the
+// content in place instead.
+const refetching = ref(false)
+
 const submission = createResource({
 	url: 'suite.mail.api.scheduled.get_scheduled_mail',
 	auto: true,
 	makeParams: () => ({ account: accountId, id: submissionId }),
+	onSuccess: () => (refetching.value = false),
 	onError: (error: { messages?: string[]; message?: string }) => {
+		refetching.value = false
 		raiseToast(error.messages?.[0] || error.message || __('Submission not found.'), 'error')
 		backToList()
 	},
@@ -220,12 +248,22 @@ const submission = createResource({
 // Actions that replace the submission land on the successor's id (see below).
 watch(
 	() => submissionId,
-	() => submission.reload(),
+	() => {
+		refetching.value = true
+		submission.reload()
+	},
 )
 
-const data = computed<SubmissionDetails | null>(() => submission.data || null)
+const data = computed<SubmissionDetails | null>(() =>
+	refetching.value ? null : submission.data || null,
+)
 
-const title = computed(() => (data.value ? subjectLabel(data.value) : __('Outbox email')))
+// The subject once known; until then the tab keeps saying "Outbox" (where the user came
+// from) and the breadcrumb/mobile header render no second crumb — a placeholder title
+// would just flash and be replaced.
+const title = computed(() => (data.value ? subjectLabel(data.value) : ''))
+
+usePageMeta(() => ({ title: title.value || __('Outbox') }))
 
 const canOpenEmail = computed(
 	() => !!data.value && !data.value.email_deleted && !!data.value.thread_id,
