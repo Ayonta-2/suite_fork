@@ -25,10 +25,19 @@ vi.mock("../data/mediaPreferences", () => ({
 	setSelectedSpeakerId: vi.fn(),
 }));
 
+const webglSpies = vi.hoisted(() => ({
+	construct: vi.fn(),
+	dispose: vi.fn(),
+	initializeShaders: vi.fn(),
+}));
+
 vi.mock("../utils/webglShaders", () => ({
 	WebGLManager: class {
-		initializeShaders() {}
-		dispose() {}
+		constructor() {
+			webglSpies.construct();
+		}
+		initializeShaders = webglSpies.initializeShaders;
+		dispose = webglSpies.dispose;
 	},
 }));
 
@@ -42,6 +51,7 @@ import {
 	setSelectedCameraId,
 	setSelectedMicId,
 } from "../data/mediaPreferences";
+import { setAutoFramingPaused } from "../data/backgroundEffects";
 
 class FakeMediaStream {
 	id = "fake-media-stream";
@@ -291,6 +301,7 @@ describe("useMediaControls", () => {
 		localStorage.clear();
 		cameraEnabled.value = false;
 		selectedCameraId.value = "";
+		setAutoFramingPaused(false);
 	});
 
 	it("falls back to the default microphone when Firefox cannot find the selected device", async () => {
@@ -708,6 +719,69 @@ describe("useMediaControls", () => {
 		expect(replaceTrack).toHaveBeenCalledTimes(1);
 		expect(replaceTrack).toHaveBeenCalledWith({ track: processed });
 		expect(setLocalMediaTrack).toHaveBeenCalledWith("video", processed);
+	});
+
+	it("publishes auto-framed output without requiring a background effect", async () => {
+		localStorage.setItem("backgroundEffects.autoFraming", "1");
+		const raw = videoTrack("raw");
+		const framed = videoTrack("framed");
+		const replaceTrack = vi.fn().mockResolvedValue(undefined);
+		const applyBackgroundEffects = vi.fn().mockResolvedValue({
+			stream: new FakeMediaStream([framed]),
+			cleanup: vi.fn(),
+			updateOptions: vi.fn(),
+		});
+		const { controls, setLocalMediaTrack } = createCameraHarness({
+			getUserMedia: vi.fn().mockResolvedValue(new FakeMediaStream([raw])),
+			videoProducer: {
+				id: "camera-producer",
+				track: videoTrack("old"),
+				replaceTrack,
+			},
+			applyBackgroundEffects,
+		});
+
+		await controls.toggleCamera();
+
+		expect(applyBackgroundEffects).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				autoFramingEnabled: true,
+				backgroundBlurEnabled: false,
+				backgroundImageEnabled: false,
+			}),
+			expect.any(AbortSignal),
+		);
+		expect(replaceTrack).toHaveBeenCalledWith({ track: framed });
+		expect(setLocalMediaTrack).toHaveBeenCalledWith("video", framed);
+	});
+
+	it("pauses an active auto-framing session without replacing its track", async () => {
+		localStorage.setItem("backgroundEffects.autoFraming", "1");
+		const raw = videoTrack("raw");
+		const framed = videoTrack("framed");
+		const updateOptions = vi.fn().mockResolvedValue(undefined);
+		const applyBackgroundEffects = vi.fn().mockResolvedValue({
+			stream: new FakeMediaStream([framed]),
+			cleanup: vi.fn(),
+			updateOptions,
+		});
+		const { controls } = createCameraHarness({
+			mediaState: {
+				isCameraOn: true,
+				localStream: new FakeMediaStream([raw]),
+			},
+			applyBackgroundEffects,
+		});
+		await controls.applyBackgroundEffectsToLocalStream();
+
+		setAutoFramingPaused(true);
+		await controls.applyBackgroundEffectsToLocalStream();
+
+		expect(applyBackgroundEffects).toHaveBeenCalledOnce();
+		expect(updateOptions).toHaveBeenCalledWith(
+			expect.objectContaining({ autoFramingPaused: true }),
+		);
 	});
 
 	it("falls back to live raw video when processed output has ended", async () => {
@@ -2239,14 +2313,119 @@ describe("useMediaControls", () => {
 		app.unmount();
 	});
 
+	it("draws each source frame once when auto framing is disabled", async () => {
+		const frame = { close: vi.fn() } as unknown as VideoFrame;
+		const bitmap = { close: vi.fn() };
+		const read = vi
+			.fn()
+			.mockResolvedValueOnce({ done: false, value: frame })
+			.mockImplementation(() => new Promise(() => {}));
+		class FakeTrackProcessor {
+			readable = {
+				getReader: () => ({
+					cancel: vi.fn().mockResolvedValue(undefined),
+					read,
+				}),
+			};
+		}
+		const processingContext = { drawImage: vi.fn(), clearRect: vi.fn() };
+		const outputContext = { drawImage: vi.fn(), clearRect: vi.fn() };
+		const outputTrack = videoTrack("output");
+		vi.stubGlobal("MediaStreamTrackProcessor", FakeTrackProcessor);
+		vi.stubGlobal("OffscreenCanvas", undefined);
+		vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue(bitmap));
+		vi.spyOn(HTMLCanvasElement.prototype, "getContext")
+			.mockReturnValueOnce(processingContext as never)
+			.mockReturnValueOnce(outputContext as never);
+		Object.defineProperty(HTMLCanvasElement.prototype, "captureStream", {
+			configurable: true,
+			value: vi.fn(() => new FakeMediaStream([outputTrack])),
+		});
+		const inputTrack = Object.assign(videoTrack("input"), {
+			getSettings: () => ({ width: 640, height: 480 }),
+		});
+		let effects!: ReturnType<typeof useBackgroundEffects>;
+		const app = createApp(
+			defineComponent({
+				setup() {
+					effects = useBackgroundEffects({ autoCleanupOnUnmount: false });
+					return () => null;
+				},
+			}),
+		);
+		app.mount(document.createElement("div"));
+
+		const session = await effects.applyBackgroundEffects(
+			new FakeMediaStream([inputTrack]) as never,
+			{ autoFramingEnabled: false },
+		);
+		await vi.waitFor(() => expect(bitmap.close).toHaveBeenCalledOnce());
+
+		expect(
+			processingContext.drawImage.mock.calls.filter(([source]) => source === bitmap),
+		).toHaveLength(1);
+		session.cleanup();
+		await effects.dispose();
+		app.unmount();
+	});
+
+	it("initializes WebGL only when a background effect is enabled", async () => {
+		class FakeTrackProcessor {
+			readable = {
+				getReader: () => ({
+					cancel: vi.fn().mockResolvedValue(undefined),
+					read: vi.fn(() => new Promise(() => {})),
+				}),
+			};
+		}
+		const context = { drawImage: vi.fn(), clearRect: vi.fn() };
+		const outputTrack = videoTrack("output");
+		vi.stubGlobal("MediaStreamTrackProcessor", FakeTrackProcessor);
+		vi.stubGlobal("OffscreenCanvas", undefined);
+		vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+			context as never,
+		);
+		Object.defineProperty(HTMLCanvasElement.prototype, "captureStream", {
+			configurable: true,
+			value: vi.fn(() => new FakeMediaStream([outputTrack])),
+		});
+		const inputTrack = Object.assign(videoTrack("input"), {
+			getSettings: () => ({ width: 640, height: 480 }),
+		});
+		let effects!: ReturnType<typeof useBackgroundEffects>;
+		const app = createApp(
+			defineComponent({
+				setup() {
+					effects = useBackgroundEffects({ autoCleanupOnUnmount: false });
+					return () => null;
+				},
+			}),
+		);
+		app.mount(document.createElement("div"));
+
+		const session = await effects.applyBackgroundEffects(
+			new FakeMediaStream([inputTrack]) as never,
+			{ autoFramingEnabled: true },
+		);
+		expect(webglSpies.construct).not.toHaveBeenCalled();
+
+		await session.updateOptions({ backgroundBlurEnabled: true });
+		expect(webglSpies.construct).toHaveBeenCalledOnce();
+		expect(webglSpies.initializeShaders).toHaveBeenCalledOnce();
+		session.cleanup();
+		await effects.dispose();
+		app.unmount();
+	});
+
 	it("closes every provisional stream resource when allocation aborts", async () => {
 		const operation = new AbortController();
+		const lateFrame = { close: vi.fn() } as unknown as VideoFrame;
 		const releaseRead = deferred<{
 			done: boolean;
 			value?: VideoFrame;
 		}>();
 		const cancel = vi.fn(() => {
-			releaseRead.resolve({ done: true });
+			releaseRead.resolve({ done: false, value: lateFrame });
 			return Promise.reject(new Error("reader cancel rejected"));
 		});
 		const closeWriter = vi
@@ -2336,6 +2515,7 @@ describe("useMediaControls", () => {
 		).rejects.toMatchObject({ name: "AbortError" });
 
 		expect(cancel).toHaveBeenCalledOnce();
+		expect(lateFrame.close).toHaveBeenCalledOnce();
 		expect(closeWriter).toHaveBeenCalledOnce();
 		expect(generatedTrack.stop).toHaveBeenCalledOnce();
 		expect(consoleError).not.toHaveBeenCalled();

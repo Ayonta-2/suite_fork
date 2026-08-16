@@ -2,6 +2,7 @@ import type { SelfieSegmentation } from "@mediapipe/selfie_segmentation";
 import { toast } from "frappe-ui";
 import { onUnmounted, type Ref, ref } from "vue";
 import { availableBackgroundImages } from "../data/backgroundEffects";
+import { CameraFramingProcessor } from "../utils/cameraFraming";
 import {
 	applyBlurEffect,
 	applyVirtualBackground,
@@ -12,6 +13,8 @@ import { WebGLManager } from "../utils/webglShaders";
 
 // Types and interfaces
 export interface BackgroundEffectOptions {
+	autoFramingEnabled?: boolean;
+	autoFramingPaused?: boolean;
 	backgroundBlurEnabled?: boolean;
 	backgroundImageEnabled?: boolean;
 	selectedBackgroundImage?: string | null;
@@ -117,10 +120,31 @@ export function useBackgroundEffects({
 	activeInstanceCount++;
 
 	let animationId: number | null = null;
+	let activeSessionCleanup: (() => void) | null = null;
+	let cameraFramingDisposal: Promise<void> | null = null;
 
 	let webglManager: WebGLManager | null = null;
+	const ensureWebGL = (): void => {
+		if (webglManager) return;
+		let manager: WebGLManager | null = null;
+		try {
+			const webglCanvas = document.createElement("canvas");
+			manager = new WebGLManager(webglCanvas);
+			manager.initializeShaders();
+			webglManager = manager;
+		} catch (error) {
+			manager?.dispose();
+			console.warn("WebGL initialization failed:", error);
+			toast.warning(
+				"WebGL is not available. Background blur effects will be disabled.",
+			);
+			webglManager = null;
+		}
+	};
 
 	const defaultOptions: Required<BackgroundEffectOptions> = {
+		autoFramingEnabled: false,
+		autoFramingPaused: false,
 		backgroundBlurEnabled: false,
 		backgroundImageEnabled: false,
 		selectedBackgroundImage: null,
@@ -349,10 +373,25 @@ export function useBackgroundEffects({
 		let trackWriter: WritableStreamDefaultWriter | null = null;
 		let processedVideoTrack: MediaStreamTrack | null = null;
 		let resultStream: MediaStream | null = null;
+		let cameraFraming: CameraFramingProcessor | null = null;
+		let framingUnavailable = false;
+		const stopCameraFraming = () => {
+			const framing = cameraFraming;
+			cameraFraming = null;
+			if (!framing) return;
+			const disposal = framing.dispose().catch(() => {});
+			cameraFramingDisposal = disposal;
+			void disposal.finally(() => {
+				if (cameraFramingDisposal === disposal) cameraFramingDisposal = null;
+			});
+		};
 		let provisionalResourcesCleaned = false;
 		const cleanupProvisionalResources = (): void => {
 			if (provisionalResourcesCleaned) return;
 			provisionalResourcesCleaned = true;
+			if (activeSessionCleanup === cleanupProvisionalResources) {
+				activeSessionCleanup = null;
+			}
 			if (video) {
 				video.srcObject = null;
 				video = null;
@@ -382,37 +421,37 @@ export function useBackgroundEffects({
 			processedVideoTrack = null;
 			resultStream = null;
 			trackGenerator = null;
+			stopCameraFraming();
 		};
+		activeSessionCleanup = cleanupProvisionalResources;
 
 		try {
 			isProcessing.value = true;
 			error.value = null;
 
-			if (!webglManager) {
-				try {
-					const webglCanvas = document.createElement("canvas");
-					webglManager = new WebGLManager(webglCanvas);
-					webglManager.initializeShaders();
-				} catch (error) {
-					console.warn("WebGL initialization failed:", error);
-					toast.warning(
-						"WebGL is not available. Background blur effects will be disabled.",
-					);
-					webglManager = null;
-				}
+			if (settings.backgroundBlurEnabled || settings.backgroundImageEnabled) {
+				ensureWebGL();
 			}
 
-			let model = await loadModel(signal);
-			assertOwnerActive(signal);
+			let model: SelfieSegmentation | null = null;
 			let sessionId = ++instanceSessionCounter;
 			activeSessionId = sessionId;
 			const adoptCurrentModel = async () => {
-				if (model === selfieSegmentation) return;
+				if (
+					!settings.backgroundBlurEnabled &&
+					!settings.backgroundImageEnabled
+				) {
+					model = null;
+					return;
+				}
+				if (model && model === selfieSegmentation) return;
 				model = await loadModel(signal);
 				assertOwnerActive(signal);
 				sessionId = ++instanceSessionCounter;
 				activeSessionId = sessionId;
 			};
+			await adoptCurrentModel();
+			assertOwnerActive(signal);
 			const videoTrack = inputStream.getVideoTracks()[0];
 
 			if (!videoTrack) {
@@ -436,6 +475,72 @@ export function useBackgroundEffects({
 
 			canvas.width = width;
 			canvas.height = height;
+			let detectionCanvas: HTMLCanvasElement | null = null;
+			let detectionContext: CanvasRenderingContext2D | null = null;
+			const getDetectionImage = (source: CanvasImageSource): HTMLCanvasElement => {
+				if (!detectionCanvas) {
+					detectionCanvas = document.createElement("canvas");
+					detectionCanvas.width = Math.min(width, 320);
+					detectionCanvas.height = Math.round(
+						(height * detectionCanvas.width) / width,
+					);
+					detectionContext = detectionCanvas.getContext("2d");
+					if (!detectionContext) {
+						throw new Error("Failed to get face detection canvas context");
+					}
+				}
+				detectionContext?.drawImage(
+					source,
+					0,
+					0,
+					detectionCanvas.width,
+					detectionCanvas.height,
+				);
+				return detectionCanvas;
+			};
+			const drawCameraFrame = async (source: CanvasImageSource) => {
+				let crop = { x: 0, y: 0, width, height };
+				if (settings.autoFramingEnabled && !framingUnavailable) {
+					try {
+						if (!cameraFraming && !cameraFramingDisposal) {
+							cameraFraming = new CameraFramingProcessor();
+						}
+						if (!cameraFraming) {
+							ctx.clearRect(0, 0, width, height);
+							ctx.drawImage(source, 0, 0, width, height);
+							return;
+						}
+						cameraFraming.setPaused(settings.autoFramingPaused);
+						crop = await cameraFraming.process(
+							() => getDetectionImage(source),
+							width,
+							height,
+							performance.now(),
+						);
+						assertOwnerActive(signal);
+					} catch (framingError) {
+						if (isDisposed || signal?.aborted) throw framingError;
+						console.warn(
+							"Auto framing unavailable; using the full camera frame:",
+							framingError,
+						);
+						framingUnavailable = true;
+						stopCameraFraming();
+					}
+				}
+				ctx.clearRect(0, 0, width, height);
+				ctx.drawImage(
+					source,
+					crop.x,
+					crop.y,
+					crop.width,
+					crop.height,
+					0,
+					0,
+					width,
+					height,
+				);
+			};
 
 			if ("MediaStreamTrackProcessor" in window) {
 				const MediaStreamTrackProcessor = (
@@ -559,8 +664,8 @@ export function useBackgroundEffects({
 			}
 
 			// Helper to apply background effects (blur or virtual background)
-			const applyEffectsToFrame = async (maskBitmap: ImageBitmap) => {
-				if (settings.backgroundBlurEnabled) {
+			const applyEffectsToFrame = async (maskBitmap?: ImageBitmap) => {
+				if (settings.backgroundBlurEnabled && maskBitmap) {
 					if (webglManager) {
 						try {
 							const resultCanvas = applyBlurEffect(
@@ -599,7 +704,7 @@ export function useBackgroundEffects({
 					} else {
 						outputCtx.drawImage(canvas, 0, 0);
 					}
-				} else if (backgroundImageData) {
+				} else if (backgroundImageData && maskBitmap) {
 					if (webglManager) {
 						try {
 							const resultCanvas = applyVirtualBackground(
@@ -650,25 +755,31 @@ export function useBackgroundEffects({
 				if (trackProcessor) {
 					while (shouldContinueProcessing(sessionId)) {
 						let videoFrame: VideoFrame | null = null;
+						let bitmap: ImageBitmap | null = null;
 						try {
 							const result = await trackProcessor.read();
-							assertOwnerActive(signal);
 							if (result.done || !result.value) {
 								break;
 							}
 							videoFrame = result.value;
+							assertOwnerActive(signal);
 
-							const bitmap = await createImageBitmap(videoFrame, {
+							bitmap = await createImageBitmap(videoFrame, {
 								resizeWidth: canvas.width,
 								resizeHeight: canvas.height,
 							});
 							assertOwnerActive(signal);
-							ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+							await drawCameraFrame(bitmap);
 							bitmap.close();
+							bitmap = null;
 
 							await adoptCurrentModel();
-							await model.send({ image: canvas });
-							assertOwnerActive(signal);
+							if (model) {
+								await model.send({ image: canvas });
+								assertOwnerActive(signal);
+							} else {
+								latestResults = null;
+							}
 
 							videoFrame.close();
 							videoFrame = null;
@@ -685,7 +796,7 @@ export function useBackgroundEffects({
 									outputCanvas.width,
 									outputCanvas.height,
 								);
-								outputCtx.drawImage(canvas, 0, 0);
+								await applyEffectsToFrame();
 								continue;
 							}
 
@@ -698,6 +809,7 @@ export function useBackgroundEffects({
 							await applyEffectsToFrame(results.segmentationMask);
 							assertOwnerActive(signal);
 						} catch (err) {
+							if (bitmap) bitmap.close();
 							if (videoFrame) videoFrame.close();
 							if (isDisposed || signal?.aborted) break;
 							console.error("Frame processing error:", err);
@@ -712,7 +824,7 @@ export function useBackgroundEffects({
 								errorMessage.includes("BindingError") ||
 								errorMessage.includes("index out of bounds");
 
-							if (isFatalError) {
+							if (isFatalError && model) {
 								try {
 									const resetSucceeded = await resetSegmentationState(model);
 									assertOwnerActive(signal);
@@ -766,11 +878,15 @@ export function useBackgroundEffects({
 						animationId = requestAnimationFrame(processFrameWithRAF);
 						return;
 					}
-					ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+					await drawCameraFrame(video);
 
 					await adoptCurrentModel();
-					await model.send({ image: canvas });
-					assertOwnerActive(signal);
+					if (model) {
+						await model.send({ image: canvas });
+						assertOwnerActive(signal);
+					} else {
+						latestResults = null;
+					}
 
 					if (!shouldContinueProcessing(sessionId)) {
 						return;
@@ -809,7 +925,7 @@ export function useBackgroundEffects({
 						errorMessage.includes("BindingError") ||
 						errorMessage.includes("index out of bounds");
 
-					if (isFatalError) {
+					if (isFatalError && model) {
 						try {
 							const resetSucceeded = await resetSegmentationState(model);
 							assertOwnerActive(signal);
@@ -901,6 +1017,13 @@ export function useBackgroundEffects({
 				}
 
 				Object.assign(settings, normalizedOptions);
+				if (settings.backgroundBlurEnabled || settings.backgroundImageEnabled) {
+					ensureWebGL();
+				}
+				if ("autoFramingEnabled" in normalizedOptions) {
+					framingUnavailable = false;
+					if (!settings.autoFramingEnabled) stopCameraFraming();
+				}
 
 				if (
 					"backgroundImageEnabled" in normalizedOptions ||
@@ -948,6 +1071,9 @@ export function useBackgroundEffects({
 		options: HaltProcessingOptions = {},
 	): Promise<void> {
 		const { disposeWebGL = false } = options;
+		const cleanupSession = activeSessionCleanup;
+		activeSessionCleanup = null;
+		cleanupSession?.();
 		if (!isProcessing.value && !processedStream.value && !animationId) {
 			if (disposeWebGL && webglManager) {
 				webglManager.dispose();
