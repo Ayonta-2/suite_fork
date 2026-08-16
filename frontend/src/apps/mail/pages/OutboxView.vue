@@ -301,7 +301,7 @@ const rowOptions = (row: Submission) => {
 
 	if (row.status === 'failed') {
 		const retry = { label: __('Send again'), icon: RefreshCw, onClick: open(showRetry) }
-		const dismiss = { label: __('Dismiss'), icon: X, onClick: open(undefined, dismissMail) }
+		const dismiss = { label: __('Remove'), icon: X, onClick: open(undefined, dismissMail) }
 		// A deleted message can't be resubmitted — dropping the failed record is all that's left.
 		return row.email_deleted ? [dismiss] : [retry, dismiss]
 	}

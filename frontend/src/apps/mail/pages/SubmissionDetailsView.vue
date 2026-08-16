@@ -53,7 +53,7 @@
 						@click="showRetry = true"
 					/>
 					<Button
-						:label="__('Dismiss')"
+						:label="__('Remove')"
 						:loading="dismissMail.loading"
 						@click="dismissMail.submit()"
 					/>
@@ -64,12 +64,14 @@
 		<div v-if="data" class="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
 			<div class="mx-auto grid max-w-5xl grid-cols-1 gap-5 lg:grid-cols-2">
 				<DashboardCard :title="__('Delivery')">
-					<div class="even:bg-surface-gray-1 flex items-center px-5 py-3.5 text-base">
-						<div class="text-ink-gray-5 w-1/3">{{ __('Status') }}</div>
-						<div class="w-2/3">
-							<Badge :label="statusLabel(data.status)" :theme="statusTheme(data.status)" />
-						</div>
-					</div>
+					<!-- Status is the raw JMAP undoStatus, as on the list page; the merged
+					delivery state is not shown but still drives the header actions. -->
+					<InformationField :label="__('Status')">
+						<Badge
+							:label="undoStatusLabel(data.undo_status)"
+							:theme="undoStatusTheme(data.undo_status)"
+						/>
+					</InformationField>
 					<InformationField
 						:label="data.status === 'scheduled' ? __('Scheduled for') : __('Released at')"
 						:value="sendAtLabel"
@@ -116,7 +118,6 @@
 									{{ deliverySummary(r) }}
 								</p>
 							</div>
-							<Badge :label="statusLabel(r.status)" :theme="statusTheme(r.status)" />
 						</div>
 					</template>
 					<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
@@ -170,9 +171,9 @@ import {
 import { raiseToast } from '@/apps/mail/utils'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import {
-	statusLabel,
-	statusTheme,
 	subjectLabel,
+	undoStatusLabel,
+	undoStatusTheme,
 	type RecipientState,
 	type SubmissionDetails,
 } from '@/apps/mail/utils/submission'

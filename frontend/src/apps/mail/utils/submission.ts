@@ -107,8 +107,8 @@ export const statusTheme = (status: SubmissionStatus | string) => {
 	return 'gray'
 }
 
-// The list page badges the raw JMAP undoStatus; the merged delivery state stays on the
-// details page (and still drives which actions a row offers).
+// Both pages badge the raw JMAP undoStatus as the submission's status; the merged delivery
+// state is a separate detail (and still drives which actions a row offers).
 export const undoStatusLabel = (undoStatus: string) =>
 	({
 		pending: __('Pending'),
