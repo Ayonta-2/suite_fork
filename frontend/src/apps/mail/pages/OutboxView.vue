@@ -3,9 +3,9 @@
 		<header
 			class="flex items-center justify-between border-b px-3 py-2.5 max-sm:p-0 sm:px-5"
 		>
-			<MobileTitleHeader v-if="isMobile" class="min-w-0 flex-1" :title="__('Scheduled')" />
+			<MobileTitleHeader v-if="isMobile" class="min-w-0 flex-1" :title="__('Outbox')" />
 			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
-			<Breadcrumbs v-else :items="[{ label: __('Scheduled') }]" class="-ml-0.5" />
+			<Breadcrumbs v-else :items="[{ label: __('Outbox') }]" class="-ml-0.5" />
 			<HeaderActions @reload-mails="scheduledMails.reload()" />
 		</header>
 
@@ -138,7 +138,7 @@ import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 
-usePageMeta(() => ({ title: __('Scheduled') }))
+usePageMeta(() => ({ title: __('Outbox') }))
 
 const store = userStore()
 const router = useRouter()

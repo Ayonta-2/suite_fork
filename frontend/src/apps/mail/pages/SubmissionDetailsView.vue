@@ -8,7 +8,7 @@
 			<Breadcrumbs
 				v-else
 				:items="[
-					{ label: __('Scheduled'), route: { name: 'mail-scheduled', params: { accountId } } },
+					{ label: __('Outbox'), route: { name: 'mail-outbox', params: { accountId } } },
 					{ label: title },
 				]"
 				class="-ml-0.5 min-w-0"
@@ -183,7 +183,7 @@ import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.v
 
 const { accountId, submissionId } = defineProps<{ accountId: string; submissionId: string }>()
 
-usePageMeta(() => ({ title: __('Scheduled email') }))
+usePageMeta(() => ({ title: __('Outbox email') }))
 
 const store = userStore()
 const router = useRouter()
@@ -212,7 +212,7 @@ watch(
 
 const data = computed<SubmissionDetails | null>(() => submission.data || null)
 
-const title = computed(() => (data.value ? subjectLabel(data.value) : __('Scheduled email')))
+const title = computed(() => (data.value ? subjectLabel(data.value) : __('Outbox email')))
 
 const canOpenEmail = computed(
 	() => !!data.value && !data.value.email_deleted && !!data.value.thread_id,
@@ -274,7 +274,7 @@ const openEmail = () => {
 	})
 }
 
-const backToList = () => router.replace({ name: 'mail-scheduled', params: { accountId } })
+const backToList = () => router.replace({ name: 'mail-outbox', params: { accountId } })
 
 /** Follow an action that replaced this submission to its successor's page. */
 const followReplacement = (id: string) =>

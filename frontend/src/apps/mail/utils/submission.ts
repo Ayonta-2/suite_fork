@@ -1,4 +1,4 @@
-// Shared shapes and display helpers for EmailSubmission rows — the Scheduled list and the
+// Shared shapes and display helpers for EmailSubmission rows — the Outbox list and the
 // submission details page render the same server-derived state.
 
 // The submission's merged delivery state, worst recipient wins: 'queued' is a released

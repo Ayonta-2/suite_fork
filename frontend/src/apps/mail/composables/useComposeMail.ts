@@ -366,7 +366,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 				label: __('View'),
 				onClick: () =>
 					router.push({
-						name: 'mail-scheduled',
+						name: 'mail-outbox',
 						params: { accountId: scopeAccountId.value },
 					}),
 			})

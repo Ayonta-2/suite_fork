@@ -547,13 +547,13 @@ const sidebarItems = computed(() => {
 	}
 	// Synthetic like Starred, but backed by the server's held (FUTURERELEASE)
 	// EmailSubmissions rather than a mailbox, so it opens a dedicated page.
-	const scheduledItem = {
-		label: __('Scheduled'),
+	const outboxItem = {
+		label: __('Outbox'),
 		icon: CalendarClock,
-		to: { name: 'mail-scheduled', params: { accountId: store.accountId } },
-		activeFor: ['mail-scheduled', 'mail-submission'],
+		to: { name: 'mail-outbox', params: { accountId: store.accountId } },
+		activeFor: ['mail-outbox', 'mail-submission'],
 	}
-	const defaultItems = [...defaultMailboxes, starredItem, scheduledItem]
+	const defaultItems = [...defaultMailboxes, starredItem, outboxItem]
 
 	const secondaryItems = mailboxItems.value
 		.filter((item) => {
