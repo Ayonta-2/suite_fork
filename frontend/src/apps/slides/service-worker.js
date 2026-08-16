@@ -1,9 +1,15 @@
 import { createPartialResponse } from 'workbox-range-requests'
 
+import { canonicalMediaKey } from './utils/canonicalMediaKey'
+
 const MEDIA_CACHE_NAME = 'slides-media'
 const API_CACHE_NAME = 'slides-api'
+// outside EXPIRING_CACHE_NAMES: a pinned copy must survive the sweep
+const PINNED_CACHE_NAME = 'slides-pinned'
 
-const CACHE_NAMES = { media: MEDIA_CACHE_NAME, api: API_CACHE_NAME }
+const PIN_HEADER = 'x-slides-pin'
+
+const EXPIRING_CACHE_NAMES = { media: MEDIA_CACHE_NAME, api: API_CACHE_NAME }
 
 const MAX_AGE = 24 * 60 * 60 * 1000 // 1 day
 
@@ -11,7 +17,7 @@ self.addEventListener('install', () => {
 	self.skipWaiting()
 })
 
-// an unavailable or broken cache must degrade to "no service worker", never to "no slides"
+// a broken cache degrades to "no service worker", never "no slides"
 const openCache = (name) => caches.open(name).catch(() => null)
 const matchCache = (cache, request) => cache.match(request).catch(() => null)
 
@@ -48,9 +54,9 @@ const cleanupOldCacheEntries = async (name) => {
 }
 
 const handleSWActivate = async () => {
-	// a failed sweep must not stop the worker from activating
+	// a failed sweep must not block activation
 	await Promise.all(
-		Object.values(CACHE_NAMES).map((name) => cleanupOldCacheEntries(name).catch(() => {})),
+		Object.values(EXPIRING_CACHE_NAMES).map((name) => cleanupOldCacheEntries(name).catch(() => {})),
 	)
 	// this takes control of all client pages that are already open
 	await self.clients.claim()
@@ -86,7 +92,7 @@ const isCacheable = (type, response) => {
 	if (type === 'media') {
 		return ['image/', 'video/'].some((ct) => contentType.startsWith(ct))
 	}
-	// a redirected or HTML response stored under an API key would be replayed as data
+	// a redirected or HTML body under an API key would be replayed as data
 	return !response.redirected && contentType.includes('application/json')
 }
 
@@ -104,7 +110,7 @@ const fetchAndCache = async (event, type, cache) => {
 		const written = addCacheEntry(type, cache, event.request, response).catch((err) => {
 			console.warn('Slides SW cache write failed:', err)
 		})
-		// hand the body to the page now, let the copy land in the cache behind it
+		// don't block the response on the cache write
 		event.waitUntil(written)
 	}
 	return response
@@ -122,27 +128,51 @@ const networkFirst = async (event, cache) => {
 	}
 }
 
-// the cache holds whole bodies, so a seek has to be sliced out of the stored 200
+// the cache holds whole bodies, so a seek is sliced out of the stored 200
 const rangeFromCache = async (event, cached) => {
 	const partial = await createPartialResponse(event.request, cached)
-	// a range we can't satisfy shouldn't beat a working network
+	// an unsatisfiable range shouldn't beat a working network
 	if (partial.status === 416) return fetch(event.request)
 	return partial
 }
 
+const respondFromCache = (event, cached) =>
+	event.request.headers.has('range') ? rangeFromCache(event, cached) : cached
+
 const cacheFirst = async (event, type, cache) => {
 	const cached = await matchCache(cache, event.request)
-	if (cached) {
-		return event.request.headers.has('range') ? rangeFromCache(event, cached) : cached
-	}
+	if (cached) return respondFromCache(event, cached)
 	return fetchAndCache(event, type, cache)
 }
 
-const getResponseForRequest = async (event, type) => {
-	const cache = await openCache(CACHE_NAMES[type])
+// match, not open: never create the cache for a user who doesn't pin
+const matchPinned = (request) => {
+	const key = canonicalMediaKey(request.url)
+	if (!key) return null
+
+	return caches.match(key, { cacheName: PINNED_CACHE_NAME }).catch(() => null)
+}
+
+const getMediaResponse = async (event) => {
+	// the pin action stores the body itself
+	if (event.request.headers.has(PIN_HEADER)) return fetch(event.request)
+
+	const pinned = await matchPinned(event.request)
+	if (pinned) return respondFromCache(event, pinned)
+
+	const cache = await openCache(MEDIA_CACHE_NAME)
 	if (!cache) return fetch(event.request)
 
-	return type === 'api' ? networkFirst(event, cache) : cacheFirst(event, type, cache)
+	return cacheFirst(event, 'media', cache)
+}
+
+const getResponseForRequest = async (event, type) => {
+	if (type === 'media') return getMediaResponse(event)
+
+	const cache = await openCache(API_CACHE_NAME)
+	if (!cache) return fetch(event.request)
+
+	return networkFirst(event, cache)
 }
 
 const getRequestType = (url) => {
@@ -151,7 +181,7 @@ const getRequestType = (url) => {
 	return 'other'
 }
 
-// respondWith has to be called synchronously in the event, so nothing here may await
+// respondWith must be called synchronously, so nothing here may await
 self.addEventListener('fetch', (event) => {
 	const request = event.request
 	const url = new URL(request.url)
