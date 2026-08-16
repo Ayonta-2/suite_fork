@@ -932,15 +932,11 @@ const withCellAttributes = (extension) =>
 		addAttributes() {
 			return { ...this.parent?.(), ...cellAttributes }
 		},
-		// a cell is laid out by the browser's table rules, which collapse whitespace in
-		// the static render but not in the editor. Keeping the indentation a text
-		// element now reads back would only make the two disagree
+		// the static render lays a cell out by the browser's table rules, which
+		// collapse whitespace the editor would otherwise keep
 		parseHTML() {
 			return (this.parent?.() || []).map((rule) => ({ ...rule, preserveWhitespace: false }))
 		},
-		// a cell is laid out by the browser's table rules, which collapse whitespace in
-		// the static render but not in the editor. Keeping the indentation a text
-		// element now reads back would only make the two disagree
 	})
 
 const getCellAlign = (doc) => {
