@@ -20,16 +20,26 @@ import { VitePWA } from 'vite-plugin-pwa'
 // `yarn dev:frappe-ui` to point node at the checkout too and keep them in step.
 const frappeUIPath = path.resolve(__dirname, '../frappe-ui/src/index.ts')
 
-const emitSlidesServiceWorker = () => ({
-  name: 'slides-service-worker',
-  apply: 'build' as const,
-  writeBundle() {
-    const swSource = path.resolve(__dirname, 'src/apps/slides/service-worker.js')
-    const swOutput = path.resolve(__dirname, '../suite/www/service-worker.js')
-    fs.mkdirSync(path.dirname(swOutput), { recursive: true })
-    fs.copyFileSync(swSource, swOutput)
-  },
-})
+/** Serve the slides service worker (built by vite.sw.config.ts into suite/www) at the root scope it needs in Vite dev. */
+const serveSlidesServiceWorker = () => {
+  const swPath = path.resolve(__dirname, '../suite/www/service-worker.js')
+  return {
+    name: 'serve-slides-service-worker',
+    apply: 'serve' as const,
+    configureServer(server: { middlewares: { use: (path: string, fn: (req: any, res: any, next: () => void) => void) => void } }) {
+      server.middlewares.use('/service-worker.js', (req, res, next) => {
+        if (!fs.existsSync(swPath)) {
+          next()
+          return
+        }
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'text/javascript')
+        res.setHeader('Cache-Control', 'no-cache')
+        fs.createReadStream(swPath).pipe(res)
+      })
+    },
+  }
+}
 
 /** Serve suite/public/noise-suppression at /noise-suppression in Vite dev (not via publicDir — that would re-emit 17MB into the SPA build). */
 const serveNoiseSuppressionAssets = () => {
@@ -85,6 +95,7 @@ export default defineConfig(({ mode }) => ({
     // Do not reintroduce @workadventure/noise-suppression/vite — that path
     // re-pulls the processor into the Rollup graph via import.meta.url.
     serveNoiseSuppressionAssets(),
+    serveSlidesServiceWorker(),
     frappeui({
       // frappe-ui/vite wires the dev proxy to the local bench, injects the
       // CSRF/boot data, and emits the Jinja-templated index html.
@@ -100,7 +111,6 @@ export default defineConfig(({ mode }) => ({
       },
     }),
     vue(),
-    emitSlidesServiceWorker(),
     // Bundles mail's Firebase Cloud Messaging service worker (src/apps/mail/sw.ts)
     // into sw.js at the build root -> served at /assets/suite/frontend/sw.js, which
     // MailLayout.registerServiceWorker() registers. Scoped to FCM only: precaching

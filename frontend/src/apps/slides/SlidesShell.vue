@@ -54,7 +54,9 @@ const handleOnline = () => {
 }
 
 const registerServiceWorker = () => {
-  if (!('serviceWorker' in navigator) || !import.meta.env.PROD) return
+  // opt-in on the dev server: this worker claims the root scope
+  const enabled = import.meta.env.PROD || import.meta.env.VITE_SLIDES_SW === '1'
+  if (!('serviceWorker' in navigator) || !enabled) return
   navigator.serviceWorker.register('/service-worker.js').catch((err) => {
     console.warn('Slides Service Worker registration failed:', err)
   })
