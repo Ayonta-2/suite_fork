@@ -25,6 +25,7 @@ vi.mock('@/apps/slides/pages/Slideshow.vue', () => {
 
 const {
 	saveOfflineCopy,
+	pruneOfflineCopy,
 	cancelOfflineCopy,
 	removeOfflineCopy,
 	refreshOfflineStatus,
@@ -243,6 +244,49 @@ describe('saveOfflineCopy', () => {
 
 		expect(cache.has('/private/files/a.png')).toBe(false)
 		expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
+	})
+})
+
+describe('pruneOfflineCopy', () => {
+	it('drops the bytes of an image the presentation no longer shows', async () => {
+		await saveOfflineCopy('p1')
+		slides.value = slidesWith(['/files/b.png'])
+
+		await pruneOfflineCopy('p1')
+
+		expect(cache.has('/private/files/a.png')).toBe(false)
+		expect(cache.has('/private/files/b.png')).toBe(true)
+		expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
+		expect(statusOf('p1')).toBe('available')
+	})
+
+	it('keeps bytes another offline copy still lists', async () => {
+		await saveOfflineCopy('p1')
+		await saveOfflineCopy('p2')
+		slides.value = slidesWith(['/files/b.png'])
+
+		await pruneOfflineCopy('p1')
+
+		expect(cache.has('/private/files/a.png')).toBe(true)
+		expect(recordedKeys('p2')).toEqual(['/private/files/a.png', '/private/files/b.png'])
+	})
+
+	it('leaves an unchanged copy alone, without opening the cache', async () => {
+		await saveOfflineCopy('p1')
+		vi.stubGlobal('caches', {
+			open: async () => {
+				throw new Error('should not open the cache')
+			},
+		})
+
+		await pruneOfflineCopy('p1')
+
+		expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
+	})
+
+	it('does nothing for a presentation with no offline copy', async () => {
+		await expect(pruneOfflineCopy('p1')).resolves.toBeUndefined()
+		expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
 	})
 })
 

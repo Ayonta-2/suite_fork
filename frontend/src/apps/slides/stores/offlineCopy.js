@@ -144,6 +144,20 @@ const warmOfflineCopyAssets = (id) => {
 	if (readRecord(id)) warmAssets()
 }
 
+// bytes the presentation no longer shows go, and its ledger stops listing them
+const pruneOfflineCopy = async (id, targets = null) => {
+	const record = readRecord(id)
+	if (!record) return
+
+	const needed = new Set((targets ?? getMediaTargets()).map((target) => target.key))
+	const orphans = new Set(unsharedKeys(id, record.keys.filter((key) => !needed.has(key))))
+	if (!orphans.size) return
+
+	const cache = await openPinnedCache()
+	await Promise.all([...orphans].map((key) => cache.delete(key)))
+	writeRecord(id, { keys: record.keys.filter((key) => !orphans.has(key)) })
+}
+
 const saveOfflineCopy = async (id) => {
 	if (offlineCopyProgress.value.running) return null
 	controller = new AbortController()
@@ -168,11 +182,7 @@ const saveOfflineCopy = async (id) => {
 		const cache = await openPinnedCache()
 		const pinned = new Set((await cache.keys()).map((request) => new URL(request.url).pathname))
 
-		// bytes the presentation no longer shows go, before the ledger stops listing them
-		const needed = new Set(targets.map((target) => target.key))
-		const previous = readRecord(id)?.keys ?? []
-		const stale = unsharedKeys(id, previous.filter((key) => !needed.has(key)))
-		await Promise.all(stale.map((key) => cache.delete(key)))
+		await pruneOfflineCopy(id, targets)
 
 		const record = { keys: targets.map((target) => target.key).filter((key) => pinned.has(key)) }
 		writeRecord(id, record)
@@ -244,6 +254,7 @@ export {
 	offlineCopyProgress,
 	offlineCopyStatus,
 	saveOfflineCopy,
+	pruneOfflineCopy,
 	cancelOfflineCopy,
 	removeOfflineCopy,
 	refreshOfflineStatus,

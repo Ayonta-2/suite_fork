@@ -136,7 +136,11 @@ import {
 
 import { useShortcuts, showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
 import { saveChanges, saveCurrentState, dirty } from '@/apps/slides/stores/saving'
-import { refreshOfflineStatus, warmOfflineCopyAssets } from '@/apps/slides/stores/offlineCopy'
+import {
+	refreshOfflineStatus,
+	warmOfflineCopyAssets,
+	pruneOfflineCopy,
+} from '@/apps/slides/stores/offlineCopy'
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { Layout, Trash } from 'lucide-vue-next'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
@@ -230,6 +234,8 @@ const performBeforeLoadOperations = () => {
 const performAfterLoadOperations = () => {
 	setSlideIndex(props.activeSlideId)
 	updateRoute(presentationDoc.value.slug)
+	// once per open: an image deleted then undone must not cost the copy its bytes
+	pruneOfflineCopy(presentationId.value).catch(() => {})
 
 	if (inReadonlyMode.value) return
 
