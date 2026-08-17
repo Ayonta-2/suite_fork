@@ -93,6 +93,10 @@ const prefetchNextSlide = () => {
 	if (!inSlideShowMode.value) return
 	const nextSlideIndex = slideIndex.value + 1
 	if (nextSlideIndex >= slides.value.length) return
+	// a warm-up must not compete with a video the audience is watching
+	const currentHasVideo = slides.value[slideIndex.value]?.elements?.some(
+		(element) => element.type === 'video',
+	)
 
 	const nextSlide = slides.value[nextSlideIndex]
 	nextSlide?.elements?.forEach((element) => {
@@ -100,7 +104,7 @@ const prefetchNextSlide = () => {
 			prefetchAsset(element.src, 'image')
 		} else if (element.type === 'video') {
 			element.poster && prefetchAsset(element.poster, 'image')
-			element.src && warmVideo(element.src, nextSlideIndex)
+			element.src && !currentHasVideo && warmVideo(element.src, nextSlideIndex)
 		}
 	})
 	releaseVideoWarmers(nextSlideIndex)
