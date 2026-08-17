@@ -272,9 +272,7 @@ const getResponseForRequest = async (event, type, url) => {
 	const cache = await openCache(API_CACHE_NAME)
 	if (!cache) return fetch(event.request)
 
-	// the editable document must not be replaced by a stale copy over a slow network
-	const timeout = isPresentationDoc(url) ? undefined : NETWORK_TIMEOUT
-	return networkFirst(event, 'api', cache, { timeout })
+	return networkFirst(event, 'api', cache)
 }
 
 const getRequestType = (event, url) => {
