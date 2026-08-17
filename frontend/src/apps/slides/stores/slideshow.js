@@ -1,13 +1,9 @@
 import { ref, computed, nextTick } from 'vue'
-import {
-	applyReverseTransition,
-	presentationDoc,
-	presentationId,
-} from '@/apps/slides/stores/presentation'
+import { applyReverseTransition } from '@/apps/slides/stores/presentation'
 import { focusedSlide, slideIndex, slides, setSlideIndex } from '@/apps/slides/stores/slide'
 
 import { router } from '@/apps/slides/router'
-import { session } from '@/boot/session'
+import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 
 const inSlideShowMode = ref(false)
 
@@ -72,6 +68,7 @@ const startSlideShow = () => {
 const endSlideShow = () => {
 	exitFullscreen()
 	releaseWakeLock()
+	releaseVideoWarmers()
 	inSlideShowMode.value = false
 	focusedSlide.value = null
 	const slide =
@@ -100,19 +97,32 @@ const prefetchNextSlide = () => {
 			prefetchAsset(element.src, 'image')
 		} else if (element.type === 'video') {
 			element.poster && prefetchAsset(element.poster, 'image')
+			element.src && warmVideo(element.src, nextSlideIndex)
 		}
 	})
+	releaseVideoWarmers([slideIndex.value, nextSlideIndex])
 }
 
-const getAssetUrl = (url) => {
-	const user = session.user?.sessionUser
-	if (presentationDoc.value?.owner === user || user === 'Administrator') {
-		return url
+// buffers the opening of the next slide's video under the url its element uses
+const videoWarmers = new Map()
+
+const warmVideo = (src, forSlideIndex) => {
+	if (videoWarmers.has(src)) return
+	const video = document.createElement('video')
+	video.preload = 'auto'
+	video.muted = true
+	video.src = getAttachmentUrl(src)
+	video.load()
+	videoWarmers.set(src, { video, forSlideIndex })
+}
+
+const releaseVideoWarmers = (keepSlideIndexes = []) => {
+	for (const [src, { video, forSlideIndex }] of videoWarmers) {
+		if (keepSlideIndexes.includes(forSlideIndex)) continue
+		video.removeAttribute('src')
+		video.load()
+		videoWarmers.delete(src)
 	}
-	if (!presentationId.value) return url
-	return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(
-		url,
-	)}&presentation=${encodeURIComponent(presentationId.value)}`
 }
 
 const prefetchAsset = async (src, type) => {
@@ -120,27 +130,17 @@ const prefetchAsset = async (src, type) => {
 	prefetchedAssets.value.add(src)
 
 	try {
-		const url = buildAssetUrl(src, type)
-
 		if (type === 'image') {
 			// Use link prefetch for images
 			const link = document.createElement('link')
 			link.rel = 'preload'
-			link.href = getAssetUrl(url)
+			link.href = getAttachmentUrl(src)
 			link.as = 'image'
 			document.head.appendChild(link)
 		}
 	} catch (error) {
 		console.warn('Failed to prefetch asset:', src, error)
 	}
-}
-
-const buildAssetUrl = (src, type) => {
-	if (src.startsWith('/private') || src.startsWith('/assets')) {
-		return src
-	}
-
-	return `/private${src}`
 }
 
 const performPreviousStep = () => {
@@ -192,6 +192,7 @@ export {
 	exitFullscreen,
 	requestWakeLock,
 	releaseWakeLock,
+	releaseVideoWarmers,
 	startSlideShow,
 	endSlideShow,
 	prefetchNextSlide,

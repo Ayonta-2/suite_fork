@@ -78,6 +78,7 @@ import {
 	exitFullscreen,
 	requestWakeLock,
 	releaseWakeLock,
+	releaseVideoWarmers,
 	endSlideShow,
 	prefetchNextSlide,
 	changeSlideInSlideshow,
@@ -348,6 +349,7 @@ onDeactivated(() => {
 	window.removeEventListener('resize', updateWindowSize)
 	stopCursorTracking()
 	releaseWakeLock()
+	releaseVideoWarmers()
 
 	// leaving by any route other than endSlideShow would strand the editor in fullscreen
 	if (inSlideShowMode.value) {
