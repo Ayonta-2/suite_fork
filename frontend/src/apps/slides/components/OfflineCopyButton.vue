@@ -8,9 +8,10 @@
 		</template>
 	</Button>
 	<Dialog
-		v-model="showDialog"
-		size="sm"
+		v-model:open="showDialog"
+		size="md"
 		:title="dialog.title"
+		:icon="dialog.icon"
 		:message="dialog.message"
 		:actions="dialog.actions"
 	/>
@@ -99,34 +100,39 @@ const cancel = ({ close }) => {
 	})
 }
 
+const dismissAction = (label = 'Cancel') => ({ label, variant: 'outline' })
 const removeAction = { label: 'Remove copy', variant: 'subtle', onClick: remove }
 
 const dialog = computed(() => {
 	if (progress.value.running) {
 		return {
 			title: 'Saving offline copy',
+			icon: 'lucide-cloud-download',
 			message: `${progress.value.done} of ${progress.value.total} files saved`,
-			actions: [{ label: 'Stop', variant: 'subtle', onClick: cancel }],
+			actions: [dismissAction('Close'), { label: 'Stop', variant: 'solid', onClick: cancel }],
 		}
 	}
 	if (status.value === 'available') {
 		return {
 			title: 'Available offline',
+			icon: { name: 'lucide-cloud-check', theme: 'blue' },
 			message: 'Saved in this browser. Opens and presents without internet.',
-			actions: [removeAction],
+			actions: [dismissAction(), { ...removeAction, variant: 'solid' }],
 		}
 	}
 	if (status.value === 'outdated') {
 		return {
 			title: 'Update offline copy',
+			icon: { name: 'lucide-cloud-alert', theme: 'yellow' },
 			message: 'New images are not saved offline yet.',
-			actions: [removeAction, { label: 'Update', variant: 'solid', onClick: save }],
+			actions: [dismissAction(), removeAction, { label: 'Update', variant: 'solid', onClick: save }],
 		}
 	}
 	return {
 		title: 'Save offline copy',
+		icon: 'lucide-cloud-download',
 		message: 'Opens and presents without internet. Videos still need a connection.',
-		actions: [{ label: 'Save', variant: 'solid', onClick: save }],
+		actions: [dismissAction(), { label: 'Save', variant: 'solid', onClick: save }],
 	}
 })
 </script>
