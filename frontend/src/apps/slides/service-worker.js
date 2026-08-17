@@ -179,17 +179,30 @@ const matchPinned = (request) => {
 	return caches.match(key, { cacheName: PINNED_CACHE_NAME }).catch(() => null)
 }
 
+const getPinnedResponse = async (event) => {
+	const pinned = await matchPinned(event.request)
+	return pinned ? respondFromCache(event, pinned) : null
+}
+
+// keyed by the file path alone, a pinned copy says nothing about who may still see
+// it, so online the file goes the usual way and the copy only covers the gap
 const getMediaResponse = async (event) => {
 	// the pin action stores the body itself
 	if (event.request.headers.has(PIN_HEADER)) return fetch(event.request)
 
-	const pinned = await matchPinned(event.request)
-	if (pinned) return respondFromCache(event, pinned)
+	if (!self.navigator.onLine) {
+		const pinned = await getPinnedResponse(event)
+		if (pinned) return pinned
+	}
 
 	const cache = await openCache(MEDIA_CACHE_NAME)
-	if (!cache) return fetch(event.request)
-
-	return cacheFirst(event, 'media', cache)
+	try {
+		return await (cache ? cacheFirst(event, 'media', cache) : fetch(event.request))
+	} catch (err) {
+		const pinned = await getPinnedResponse(event)
+		if (pinned) return pinned
+		throw err
+	}
 }
 
 const getAssetResponse = async (event, url) => {
