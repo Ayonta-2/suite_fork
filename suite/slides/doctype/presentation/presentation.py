@@ -12,7 +12,6 @@ import frappe
 from frappe.core.doctype.file.file import get_local_image
 from frappe.model.document import Document
 from frappe.query_builder.functions import Count
-from frappe.utils.caching import redis_cache
 
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.overrides.file import File as DriveFile
@@ -163,6 +162,10 @@ def create_thumbnail_file(presentation_name: str, file_name: str, content: bytes
             "doctype": "File",
             "attached_to_doctype": "Presentation",
             "attached_to_name": presentation_name,
+            # thumbnail is an Attach Image field, so the framework's attach hook looks
+            # for a File carrying the fieldname; without it every save of the deck is
+            # treated as an unattached URL and re-creates the File from disk
+            "attached_to_field": "thumbnail",
             "file_name": file_name,
             "is_private": 1,
             "content": content,
@@ -320,7 +323,7 @@ def get_template_cover_thumbnail(template):
     )
 
 
-def set_duplicate_metadata(presentation, duplicate_from):
+def set_duplicate_metadata(presentation, duplicate_from) -> str:
     src_title, src_theme, src_thumbnail = frappe.get_value(
         "Presentation",
         duplicate_from,
@@ -328,13 +331,49 @@ def set_duplicate_metadata(presentation, duplicate_from):
     )
     presentation.title = f"Copy of {src_title}"
     presentation.theme = src_theme
-    presentation.thumbnail = src_thumbnail
+    return src_thumbnail
 
 
-def set_template_metadata(presentation, template):
+def set_template_metadata(presentation, template) -> str:
     presentation.title = "Untitled"
     presentation.theme = template
-    presentation.thumbnail = get_template_cover_thumbnail(template)
+    return get_template_cover_thumbnail(template)
+
+
+def copy_thumbnail_file(presentation_name: str, source_url: str) -> str:
+    source = frappe.db.get_value("File", {"file_url": source_url}, ["name", "file_name"], as_dict=True)
+    if not source:
+        return ""
+
+    try:
+        content = frappe.get_doc("File", source.name).get_content()
+    except FileNotFoundError:
+        # blob is already gone; the editor captures a fresh thumbnail on the next edit
+        return ""
+
+    _, _, ext = source.file_name.rpartition(".")
+    file_name = f"presentation-thumbnail-{presentation_name}.{ext or 'webp'}"
+
+    return create_thumbnail_file(presentation_name, file_name, content)
+
+
+def adopt_thumbnail(presentation: Document, source_url: str) -> None:
+    """Give a new deck its own copy of the thumbnail it started from.
+
+    Sharing the source's URL leaves the field pointing at a File this deck does not
+    own: once the source regenerates or deletes its thumbnail the blob can go with it,
+    and every later save of this deck retries the missing file through frappe's attach
+    hook. System template covers ship with the app, so they have no File to copy.
+    """
+    if not source_url:
+        return
+
+    thumbnail = (
+        copy_thumbnail_file(presentation.name, source_url)
+        if source_url.startswith(("/files/", "/private/files/"))
+        else source_url
+    )
+    presentation.db_set("thumbnail", thumbnail)
 
 
 @frappe.whitelist()
@@ -351,11 +390,18 @@ def create_presentation(
     if duplicate_from:
         if not frappe.has_permission("Presentation", "read", duplicate_from):
             frappe.throw("You cannot duplicate this presentation", frappe.PermissionError)
-        set_duplicate_metadata(presentation, duplicate_from)
+        source_thumbnail = set_duplicate_metadata(presentation, duplicate_from)
     else:
-        set_template_metadata(presentation, template)
+        if not template or not frappe.db.get_value("Presentation", template, "is_template"):
+            frappe.throw(f"Template {template!r} does not exist", frappe.DoesNotExistError)
+        if not frappe.has_permission("Presentation", "read", template):
+            frappe.throw("You cannot create a presentation from this template", frappe.PermissionError)
+        source_thumbnail = set_template_metadata(presentation, template)
     presentation.flags.drive_parent = parent
     presentation.insert()
+
+    # only now does the deck have a name to attach its own thumbnail File to
+    adopt_thumbnail(presentation, source_thumbnail)
 
     presentation.slides = get_slides_from_ref(presentation.name, template, duplicate_from)
 
@@ -443,23 +489,7 @@ def get_public_presentation(name: str):
     return frappe.get_doc("Presentation", name).as_dict()
 
 
-def set_layouts_in_template(template):
-    if template.get("is_template") is not None and not template.get("is_template"):
-        return
-
-    doc = frappe.get_doc("Presentation", template["name"])
-    template["layouts"] = [slide.as_dict() for slide in doc.slides]
-    title = doc.title
-
-    for layout in template["layouts"]:
-        if is_system_template(title):
-            layout["thumbnail"] = get_template_thumbnail(title, layout["idx"])
-        else:
-            layout["thumbnail"] = ""
-
-
 @frappe.whitelist()
-@redis_cache()
 def get_templates():
     templates = frappe.get_all(
         "Presentation",
@@ -468,8 +498,30 @@ def get_templates():
         order_by="creation",
     )
 
+    slides = frappe.get_all(
+        "Slide",
+        filters={
+            "parent": ["in", [t["name"] for t in templates]],
+            "parenttype": "Presentation",
+            "parentfield": "slides",
+        },
+        fields=["*"],
+        order_by="parent asc, idx asc",
+    )
+
+    layouts_by_template: dict[str, list[dict]] = {}
+    for slide in slides:
+        slide["doctype"] = "Slide"
+        layouts_by_template.setdefault(slide["parent"], []).append(slide)
+
     for template in templates:
-        set_layouts_in_template(template)
+        template["layouts"] = layouts_by_template.get(template["name"], [])
+        for layout in template["layouts"]:
+            layout["thumbnail"] = (
+                get_template_thumbnail(template["title"], layout["idx"])
+                if is_system_template(template["title"])
+                else ""
+            )
 
     return templates
 
@@ -522,6 +574,7 @@ def create_new_webp_file_doc(presentation_name, file_url, image, extn):
         new_file = frappe.copy_doc(_file)
         new_file.file_name = f"{_file.file_name.replace(extn, 'webp')}"
         new_file.file_url = f"{_file.file_url.replace(extn, 'webp')}"
+        new_file.mime_type = "image/webp"
         new_file.save()
         _file.delete()
         return new_file

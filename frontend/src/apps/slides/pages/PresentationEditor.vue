@@ -1,6 +1,7 @@
 <template>
+	<!-- clip, not just hidden: a hidden root still scrolls when a caret lands past its edge -->
 	<div
-		class="isolate flex h-screen w-screen select-none flex-col overflow-hidden"
+		class="isolate flex h-screen w-screen select-none flex-col overflow-hidden overflow-clip"
 		@click="focusedSlide = null"
 	>
 		<EditorNavbar
@@ -80,6 +81,7 @@ import {
 	ref,
 	watch,
 	onMounted,
+	onActivated,
 	onBeforeUnmount,
 	provide,
 	nextTick,
@@ -112,6 +114,7 @@ import {
 	deletePresentation,
 	presentationTheme,
 	resetEditorState,
+	pageTitle,
 } from '@/apps/slides/stores/presentation'
 import {
 	slides,
@@ -177,9 +180,11 @@ useShortcuts(inReadonlyMode, inSlideShowMode)
 
 usePageMeta(() => {
 	return {
-		title: presentationDoc.value?.title || 'Slides',
+		title: pageTitle(),
 	}
 })
+
+onActivated(() => (document.title = pageTitle()))
 
 const handleAutoSave = () => {
 	if (isSlideInteractionActive.value || focusElementId.value != null) return

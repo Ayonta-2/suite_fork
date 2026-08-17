@@ -109,6 +109,7 @@
 import { Button, Dropdown } from 'frappe-ui'
 import EditableBreadcrumbs from '@/apps/drive/components/EditableBreadcrumbs.vue'
 import { getFileLink } from '@/apps/drive/sdk'
+import { toggleFav } from '@/apps/drive/resources/files'
 
 import { useSessionStore } from '@/boot/session'
 import emitter from '@/apps/writer/emitter'
@@ -120,6 +121,8 @@ import { dynamicList } from '@/apps/writer/utils/'
 import { downloadZippedHTML, downloadMD } from '@/apps/writer/utils'
 import { downloadDocxFromHtml } from '../utils/docxexporter'
 import { importDocx } from '../utils/docximporter'
+import { orderedTabs } from '@/apps/writer/extensions/tabs'
+import { createDialog } from '@/apps/writer/utils/dialogs'
 
 import LucideUsers from '~icons/lucide/users'
 import LucideBuilding2 from '~icons/lucide/building-2'
@@ -177,6 +180,41 @@ const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const dialog = inject('dialog', ref(''))
 const editor = inject('editor', null)
 const docxInputRef = ref(null)
+
+const exportDocx = () => {
+  if (!editor.value) return
+  const filename = `${props.file.doc.file_name}.docx`
+  const settings = props.document?.doc?.settings
+  const tabs = orderedTabs(editor.value.state.doc)
+
+  if (tabs.length <= 1) {
+    downloadDocxFromHtml(editor.value.getHTML(), filename, settings)
+    return
+  }
+
+  createDialog({
+    title: 'Export DOCX',
+    message: 'This document has multiple tabs. Export just the current tab, or all of them?',
+    actions: [
+      {
+        label: 'All Tabs',
+        variant: 'outline',
+        onClick: ({ close }) => {
+          downloadDocxFromHtml(editor.value.getHTML(), filename, settings)
+          close()
+        },
+      },
+      {
+        label: 'Current Tab',
+        variant: 'solid',
+        onClick: ({ close }) => {
+          downloadDocxFromHtml(editor.value.commands.getCurrentTabHTML(), filename, settings)
+          close()
+        },
+      },
+    ],
+  })
+}
 
 const route = useRoute()
 const formattedCrumbs = computed(() => {
@@ -252,9 +290,18 @@ const fileActions = computed(() =>
               icon: LucideStar,
               onClick: () => {
                 props.file.doc.is_favourite = true
-                toggleFav.submit({ entities: [props.file.doc] })
+                toggleFav.submit(
+                  {
+                    entities: [{ name: props.file.doc.name, is_favourite: true }],
+                  },
+                  {
+                    onError: () => {
+                      props.file.doc.is_favourite = false
+                    },
+                  }
+                )
               },
-              isEnabled: () => !props.file.doc.is_favourite,
+              isEnabled: () => isLoggedIn.value && !props.file.doc.is_favourite,
             },
             {
               label: __('Unfavourite'),
@@ -262,9 +309,18 @@ const fileActions = computed(() =>
               color: 'stroke-amber-500 fill-amber-500',
               onClick: () => {
                 props.file.doc.is_favourite = false
-                toggleFav.submit({ entities: [props.file.doc] })
+                toggleFav.submit(
+                  {
+                    entities: [{ name: props.file.doc.name, is_favourite: false }],
+                  },
+                  {
+                    onError: () => {
+                      props.file.doc.is_favourite = true
+                    },
+                  }
+                )
               },
-              isEnabled: () => props.file.doc.is_favourite,
+              isEnabled: () => isLoggedIn.value && props.file.doc.is_favourite,
             },
           ],
         },
@@ -317,13 +373,7 @@ const fileActions = computed(() =>
                 {
                   label: 'DOCX',
                   icon: LucideFileText,
-                  onClick: () => {
-                    downloadDocxFromHtml(
-                      editor.getHTML(),
-                      `${file.doc.file_name}.docx`,
-                      props.document?.doc?.settings,
-                    )
-                  },
+                  onClick: () => exportDocx(),
                 },
                 {
                   label: 'Folder',

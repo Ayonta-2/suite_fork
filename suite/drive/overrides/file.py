@@ -100,7 +100,10 @@ class File(FrappeFile):
     def before_insert(self):
         # Drive's upload flow owns storage; framework uploads keep core's flow.
         if not self.flags.file_created:
-            return super().before_insert()
+            super().before_insert()
+            if not self.mime_type:
+                self.mime_type = mimemapper.get_mime_type(self.file_name, native_first=False)
+            self.file_type = get_file_type(self.mime_type)
 
     def autoname(self):
         if not self.flags.file_created:
@@ -340,27 +343,6 @@ class File(FrappeFile):
         self.save()
 
         return frappe.get_value("File", new_parent, ["file_name", "name", "folder"], as_dict=True)
-
-    def toggle_favourite(self):
-        existing_doc = frappe.db.exists(
-            {
-                "doctype": "Drive Favourite",
-                "entity": self.name,
-                "user": frappe.session.user,
-            }
-        )
-        if existing_doc:
-            frappe.delete_doc("Drive Favourite", existing_doc)
-            return False
-        else:
-            frappe.get_doc(
-                {
-                    "doctype": "Drive Favourite",
-                    "entity": self.name,
-                    "user": frappe.session.user,
-                }
-            ).insert()
-            return True
 
     @frappe.whitelist()
     @_update_modified

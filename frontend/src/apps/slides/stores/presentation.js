@@ -334,7 +334,6 @@ const templateList = ref([])
 const templateListResource = createResource({
 	url: 'suite.slides.doctype.presentation.presentation.get_templates',
 	method: 'GET',
-	cache: 'templates',
 	onSuccess: (data) => {
 		templateList.value = data
 	},
@@ -359,6 +358,12 @@ const duplicatePresentation = async (presentation) => {
 	})
 
 	return newPresentation.name
+}
+
+const pageTitle = () => {
+	const appTitle = router.currentRoute.value.meta.title || 'Frappe Slides'
+	const title = presentationDoc.value?.title
+	return title ? `${title} - ${appTitle}` : appTitle
 }
 
 const resetEditorState = () => {
@@ -386,4 +391,5 @@ export {
 	deletePresentation,
 	duplicatePresentation,
 	resetEditorState,
+	pageTitle,
 }

@@ -94,7 +94,11 @@ import {
 	isSelectionLocked,
 } from '@/apps/slides/stores/element'
 
-import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
+import {
+	interactionOffset,
+	commitInteraction,
+	resetInteractionOffset,
+} from '@/apps/slides/stores/interaction'
 
 import { handleCopy, handlePaste } from '@/apps/slides/stores/copyPaste'
 
@@ -116,6 +120,7 @@ import {
 	getMinSizeForElement,
 	isAspectLocked,
 } from '@/apps/slides/utils/resize'
+import { getMinTableWidth } from '@/apps/slides/utils/tableWidths'
 
 const emit = defineEmits(['update:hasOngoingInteraction'])
 
@@ -223,7 +228,7 @@ const triggerSelection = (e, id) => {
 	if (!id) return
 
 	if (activeElementIds.value.includes(id)) {
-		if (activeElement.value?.type == 'text' && !activeElement.value.locked) {
+		if (['text', 'table'].includes(activeElement.value?.type) && !activeElement.value.locked) {
 			focusElementId.value = id
 			setEditableState()
 		}
@@ -314,16 +319,34 @@ const duplicateAndDrag = (e, id) => {
 	})
 }
 
+// the multi-selection box covers its whole bounding rect, so an unselected
+// element inside it never receives the press
+const findElementUnderPointer = (e) => {
+	if (!e.target?.matches?.('[data-selection-box]')) return null
+
+	for (const node of document.elementsFromPoint(e.clientX, e.clientY)) {
+		if (!slideRef.value?.contains(node)) continue
+
+		const id = node.closest('[data-index]')?.getAttribute('data-index')
+		if (!id) continue
+
+		return activeElementIds.value.includes(id) ? null : id
+	}
+	return null
+}
+
 const handleMouseDown = (e, element) => {
 	if (inReadonlyMode.value || e.button == 2) return
-	const id = element?.id
 
 	e.stopPropagation()
 	e.preventDefault()
 
 	dragOccurred.value = false
 
-	if (e.altKey) return duplicateAndDrag(e, id)
+	// alt-drag duplicates the whole selection, so it ignores what is under the pointer
+	if (e.altKey) return duplicateAndDrag(e, element?.id)
+
+	const id = element?.id ?? findElementUnderPointer(e)
 
 	// start dragging once the pointer moves past a small threshold
 	watchForDragIntent(e, id)
@@ -408,6 +431,12 @@ const startElementResize = (e, resizer) => {
 		height: selectionBounds.height,
 		rotation: activeElement.value?.rotation || 0,
 		type: activeElement.value?.type,
+		// a table's columns have minimums of their own, which the static size map
+		// has no way to express
+		minWidth: Math.max(
+			getMinSizeForElement(activeElement.value?.type).width,
+			getMinTableWidth(activeElement.value?.content),
+		),
 	}
 
 	startResize(e, resizer)
@@ -451,7 +480,7 @@ const resizeText = (cursorMovement) => {
 	const box = getResizedTextBox(resizeStartBounds, currentResizer.value, cursorMovement)
 	const snappedBox = snapForResize(box, { axes: ['x'] })
 
-	const minWidth = getMinSizeForElement(resizeStartBounds.type).width
+	const minWidth = resizeStartBounds.minWidth
 	if (snappedBox.width < minWidth) {
 		if (currentResizer.value === 'text-left') {
 			snappedBox.left = snappedBox.left + snappedBox.width - minWidth
@@ -574,6 +603,9 @@ const applyInteractionOffsets = () => {
 watch(
 	() => hasOngoingInteraction.value,
 	(newVal, oldVal) => {
+		// a gesture torn down before it commits leaves its offsets and its
+		// auto-to-fixed mark behind, and the next commit would record them as its own
+		if (!oldVal && newVal) resetInteractionOffset()
 		if (oldVal && !newVal) applyInteractionOffsets()
 		emit('update:hasOngoingInteraction', newVal)
 	},

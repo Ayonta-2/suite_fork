@@ -1,18 +1,38 @@
-import { reactive, ref } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 
 import { currentSlide } from './slide'
-import { activeElements, activeElementIds } from './element'
+import { activeElements, activeElementIds, cropSelectionToFitContent } from './element'
 import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
 import { normalizeRotation } from '@/apps/slides/utils/helpers'
+import { rescaleColumnWidths } from '@/apps/slides/utils/tableWidths'
 
 const interactionOffset = reactive({ left: 0, top: 0, width: 0, height: 0 })
 
 const rotationDelta = ref(0)
 
+// a text box turns fixed on the first move of the gesture that resizes it, so the
+// width has to be recorded from auto for undo to reach the other side of it
+let turnedFixedId = null
+
+const markTurnedFixed = (elementId) => {
+	turnedFixedId = elementId
+}
+
+// a table's frame can't move without its columns: they carry the width. Both callers
+// commit bare, so this belongs here rather than in an extraCommands argument, which
+// also gets a multi-selection right - each table rescales by its own ratio.
+const getColumnRescale = (element) => {
+	if (element.type !== 'table' || !interactionOffset.width || !element.width) return null
+
+	const ratio = (element.width + interactionOffset.width) / element.width
+	return rescaleColumnWidths(element.content, ratio)
+}
+
 // extraCommands join the same batched history entry as the offset commands
 const commitInteraction = (extraCommands = []) => {
 	const commands = []
+	let rescaled = false
 
 	activeElements.value.forEach((element) => {
 		const addCommand = (property, oldValue, newValue) => {
@@ -28,9 +48,23 @@ const commitInteraction = (extraCommands = []) => {
 			)
 		}
 
+		const rescale = getColumnRescale(element)
+
 		;['left', 'top', 'width', 'height'].forEach((key) => {
-			if (interactionOffset[key]) addCommand(key, element[key], element[key] + interactionOffset[key])
+			const turnedFixed = key === 'width' && element.id === turnedFixedId
+			if (!interactionOffset[key] && !turnedFixed) return
+
+			// rounded columns land the table on a width of its own, and the frame
+			// has to be recorded at that width rather than where the cursor stopped
+			const resized = element[key] + interactionOffset[key]
+			const oldValue = turnedFixed ? null : element[key]
+			addCommand(key, oldValue, key === 'width' && rescale ? rescale.width : resized)
 		})
+
+		if (rescale) {
+			addCommand('content', element.content, rescale.content)
+			rescaled = true
+		}
 
 		if (rotationDelta.value && ['shape', 'image'].includes(element.type)) {
 			const rotation = element.rotation || 0
@@ -53,6 +87,9 @@ const commitInteraction = (extraCommands = []) => {
 
 	resetInteractionOffset()
 	rotationDelta.value = 0
+
+	// the box is drawn at the dragged width, the table lands on its rounded columns
+	if (rescaled) nextTick(() => cropSelectionToFitContent(activeElementIds.value))
 }
 
 const resetInteractionOffset = () => {
@@ -60,6 +97,13 @@ const resetInteractionOffset = () => {
 	interactionOffset.top = 0
 	interactionOffset.width = 0
 	interactionOffset.height = 0
+	turnedFixedId = null
 }
 
-export { interactionOffset, rotationDelta, commitInteraction, resetInteractionOffset }
+export {
+	interactionOffset,
+	rotationDelta,
+	commitInteraction,
+	resetInteractionOffset,
+	markTurnedFixed,
+}

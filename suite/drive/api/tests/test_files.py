@@ -1,5 +1,7 @@
 from contextlib import contextmanager
 from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 import frappe
@@ -9,7 +11,9 @@ from werkzeug.wrappers import Request
 
 from suite.drive.api.files import (
     create_auth_token,
+    does_entity_exist,
     get_file_content,
+    get_new_title,
     move,
     remove_or_restore,
     rename,
@@ -27,6 +31,7 @@ from suite.drive.api.permissions import (
     user_has_permission,
 )
 from suite.drive.overrides.file import File as DriveFile
+from suite.drive.patches.normalize_attachment_file_types import execute as normalize_attachment_file_types
 from suite.drive.utils import (
     APP_FOLDERS,
     FRAMEWORK_FOLDERS,
@@ -36,7 +41,7 @@ from suite.drive.utils import (
     create_drive_file,
     get_user_folder,
 )
-from suite.drive.utils.files import FileManager
+from suite.drive.utils.files import FileManager, get_s3_url
 from suite.tests.utils import ensure_user
 
 OWNER = "drive-files-owner@example.com"
@@ -80,6 +85,24 @@ class TestDriveFilesAPI(IntegrationTestCase):
             attachments = get_attachments("User", OWNER)
 
         self.assertEqual([attachment["name"] for attachment in attachments], [self.file.name])
+
+    def test_attachment_patch_normalizes_framework_file_type(self):
+        try:
+            self.file.db_set(
+                {
+                    "attached_to_doctype": "User",
+                    "attached_to_name": OWNER,
+                    "file_type": "TXT",
+                }
+            )
+
+            normalize_attachment_file_types()
+
+            self.file.reload()
+            self.assertEqual(self.file.file_type, "Text")
+            self.assertEqual(self.file.mime_type, "text/plain")
+        finally:
+            self.file.db_set({"attached_to_doctype": None, "attached_to_name": None})
 
     def test_track_visit_resolves_backing_file(self):
         self.file.db_set({"content_doctype": "User", "content_docname": OWNER})
@@ -130,6 +153,184 @@ class TestDriveFilesAPI(IntegrationTestCase):
                 total_file_size=total_size if total_size is not None else len(content),
                 parent=self.folder.name,
             )
+
+    def test_upload_rejects_absolute_session_before_writing(self):
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "private" / "files"
+            storage_root.mkdir(parents=True)
+            outside = Path(temp_dir) / "outside"
+            outside.mkdir()
+            session = str(outside / "escaped")
+            escaped_file = outside / "escaped_upload.txt"
+
+            with (
+                self.set_user(OWNER),
+                patch("suite.drive.api.files.frappe.get_site_path", return_value=str(storage_root)),
+                patch(
+                    "suite.drive.api.files.frappe.get_single",
+                    return_value=frappe._dict(root_folder=""),
+                ),
+                self.assertRaises(frappe.ValidationError),
+            ):
+                self.upload(b"partial", session=session, chunk=(0, 2, 0), total_size=20)
+
+            self.assertFalse(escaped_file.exists())
+
+    def test_upload_rejects_parent_session_before_writing(self):
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "private" / "files"
+            storage_root.mkdir(parents=True)
+            outside = Path(temp_dir) / "outside"
+            outside.mkdir()
+            escaped_file = outside / "escaped_upload.txt"
+
+            with (
+                self.set_user(OWNER),
+                patch("suite.drive.api.files.frappe.get_site_path", return_value=str(storage_root)),
+                patch(
+                    "suite.drive.api.files.frappe.get_single",
+                    return_value=frappe._dict(root_folder=""),
+                ),
+                self.assertRaises(frappe.ValidationError),
+            ):
+                self.upload(
+                    b"partial",
+                    session="../../../outside/escaped",
+                    chunk=(0, 2, 0),
+                    total_size=20,
+                )
+
+            self.assertFalse(escaped_file.exists())
+
+    def test_single_upload_without_session_uses_safe_staging_path(self):
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "private" / "files"
+            storage_root.mkdir(parents=True)
+
+            with (
+                self.set_user(OWNER),
+                patch("suite.drive.api.files.frappe.get_site_path", return_value=str(storage_root)),
+                patch(
+                    "suite.drive.api.files.frappe.get_single",
+                    return_value=frappe._dict(root_folder=""),
+                ),
+                self.upload_request(b"partial", "upload.txt", session=None),
+            ):
+                upload_file(total_file_size=20, parent=self.folder.name)
+
+            staged_files = list((storage_root / ".uploads").iterdir())
+            self.assertEqual(len(staged_files), 1)
+            self.assertEqual(staged_files[0].parent, storage_root / ".uploads")
+
+    def test_chunked_upload_without_session_is_rejected_before_writing(self):
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "private" / "files"
+            storage_root.mkdir(parents=True)
+
+            with (
+                self.set_user(OWNER),
+                patch("suite.drive.api.files.frappe.get_site_path", return_value=str(storage_root)),
+                patch(
+                    "suite.drive.api.files.frappe.get_single",
+                    return_value=frappe._dict(root_folder=""),
+                ),
+                self.upload_request(b"partial", "upload.txt", session=None, chunk=(0, 2, 0)),
+                self.assertRaises(frappe.ValidationError),
+            ):
+                upload_file(total_file_size=20, parent=self.folder.name)
+
+            self.assertFalse((storage_root / ".uploads").exists())
+
+    def test_chunked_upload_with_empty_session_is_rejected_before_writing(self):
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "private" / "files"
+            storage_root.mkdir(parents=True)
+
+            with (
+                self.set_user(OWNER),
+                patch("suite.drive.api.files.frappe.get_site_path", return_value=str(storage_root)),
+                patch(
+                    "suite.drive.api.files.frappe.get_single",
+                    return_value=frappe._dict(root_folder=""),
+                ),
+                self.upload_request(b"partial", "upload.txt", session="", chunk=(0, 2, 0)),
+                self.assertRaises(frappe.ValidationError),
+            ):
+                upload_file(total_file_size=20, parent=self.folder.name)
+
+            self.assertFalse((storage_root / ".uploads").exists())
+
+    def test_upload_rejects_backslash_session_before_writing(self):
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "private" / "files"
+            storage_root.mkdir(parents=True)
+
+            with (
+                self.set_user(OWNER),
+                patch("suite.drive.api.files.frappe.get_site_path", return_value=str(storage_root)),
+                patch(
+                    "suite.drive.api.files.frappe.get_single",
+                    return_value=frappe._dict(root_folder=""),
+                ),
+                self.assertRaises(frappe.ValidationError),
+            ):
+                self.upload(
+                    b"partial",
+                    session=r"..\..\outside\escaped",
+                    chunk=(0, 2, 0),
+                    total_size=20,
+                )
+
+            self.assertFalse((storage_root / ".uploads").exists())
+
+    def test_upload_rejects_non_opaque_session_before_writing(self):
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "private" / "files"
+            storage_root.mkdir(parents=True)
+
+            with (
+                self.set_user(OWNER),
+                patch("suite.drive.api.files.frappe.get_site_path", return_value=str(storage_root)),
+                patch(
+                    "suite.drive.api.files.frappe.get_single",
+                    return_value=frappe._dict(root_folder=""),
+                ),
+                self.assertRaises(frappe.ValidationError),
+            ):
+                self.upload(
+                    b"partial",
+                    session="not an opaque id",
+                    chunk=(0, 2, 0),
+                    total_size=20,
+                )
+
+            self.assertFalse((storage_root / ".uploads").exists())
+
+    def test_upload_rejects_staging_symlink_escape_before_writing(self):
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "private" / "files"
+            uploads_root = storage_root / ".uploads"
+            uploads_root.mkdir(parents=True)
+            outside_file = Path(temp_dir) / "outside.txt"
+            (uploads_root / "valid-session_upload.txt").symlink_to(outside_file)
+
+            with (
+                self.set_user(OWNER),
+                patch("suite.drive.api.files.frappe.get_site_path", return_value=str(storage_root)),
+                patch(
+                    "suite.drive.api.files.frappe.get_single",
+                    return_value=frappe._dict(root_folder=""),
+                ),
+                self.assertRaises(frappe.ValidationError),
+            ):
+                self.upload(
+                    b"partial",
+                    session="valid-session",
+                    chunk=(0, 2, 0),
+                    total_size=20,
+                )
+
+            self.assertFalse(outside_file.exists())
 
     def test_owner_can_read_and_unrelated_user_cannot(self):
         with self.set_user(OWNER):
@@ -335,7 +536,7 @@ class TestDriveFilesAPI(IntegrationTestCase):
                 file.save()
 
     def test_ordered_chunks_are_assembled_byte_for_byte(self):
-        session = frappe.generate_hash(12)
+        session = "123e4567-e89b-42d3-a456-426614174000"
         with self.set_user(OWNER):
             self.assertIsNone(self.upload(b"hello ", session=session, chunk=(0, 2, 0), total_size=11))
             uploaded = self.upload(b"world", session=session, chunk=(1, 2, 6), total_size=11)
@@ -352,11 +553,25 @@ class TestDriveFilesAPI(IntegrationTestCase):
         manager.s3_enabled = True
         manager.conn = Mock()
         manager.conn.get_object.return_value = {"Body": BytesIO(b"storage boundary")}
-        self.assertEqual(manager.get_file(uploaded).read(), b"storage boundary")
+        remote = frappe._dict(file_url=get_s3_url(f"team/{uploaded.name}"))
+        self.assertEqual(manager.get_file(remote).read(), b"storage boundary")
         manager.conn.get_object.assert_called_once_with(
             Bucket=manager.bucket,
-            Key=uploaded.file_url.lstrip("/"),
+            Key=f"team/{uploaded.name}",
         )
+
+    def test_framework_attachment_blob_reads_from_disk_even_with_s3(self):
+        # Adopted framework uploads keep their /private/files url and their blob
+        # on the site's disk; enabling S3 must not send their reads to the bucket.
+        with self.set_user(OWNER):
+            uploaded = self.upload(b"disk blob")
+
+        manager = FileManager()
+        manager.s3_enabled = True
+        manager.conn = Mock()
+        with manager.get_file(uploaded) as stored:
+            self.assertEqual(stored.read(), b"disk blob")
+        manager.conn.get_object.assert_not_called()
 
     def test_private_video_range_stream_uses_storage_relative_path(self):
         self.file.file_type = "Video"
@@ -506,3 +721,49 @@ class TestDriveFilesAPI(IntegrationTestCase):
                 rename(self.file.name, "forbidden.txt")
             with self.assertRaises(frappe.PermissionError):
                 move([self.file.name], new_parent=destination.name)
+
+    def test_unrelated_user_cannot_probe_folder_for_filenames(self):
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(frappe.PermissionError):
+                does_entity_exist(name=self.file.file_name, folder=self.folder.name)
+            with self.assertRaises(frappe.PermissionError):
+                get_new_title(self.file.file_name, self.folder.name)
+
+    def test_revoked_user_cannot_probe_folder_for_filenames(self):
+        """The realistic caller: access was granted, the folder ID was learned,
+        then access was taken away. The ID outlives the grant."""
+        with self.set_user(OWNER):
+            update_access(self.folder.name, "share", cmd="share", user=OTHER_USER, read=True)
+
+        with self.set_user(OTHER_USER):
+            # Read alone is not enough - only the upload flow needs these.
+            with self.assertRaises(frappe.PermissionError):
+                does_entity_exist(name=self.file.file_name, folder=self.folder.name)
+
+        with self.set_user(OWNER):
+            update_access(self.folder.name, "unshare", cmd="unshare", user=OTHER_USER)
+
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(frappe.PermissionError):
+                does_entity_exist(name=self.file.file_name, folder=self.folder.name)
+            with self.assertRaises(frappe.PermissionError):
+                get_new_title(self.file.file_name, self.folder.name)
+
+    def test_upload_access_still_answers_both_helpers(self):
+        with self.set_user(OWNER):
+            update_access(self.folder.name, "share", cmd="share", user=OTHER_USER, read=True, upload=True)
+
+        with self.set_user(OTHER_USER):
+            # Answered, not refused. What `get_new_title` answers for a user whose
+            # access is inherited is a separate matter - `get_new_file_name` lists
+            # siblings with `get_list`, whose criterion does not follow inheritance -
+            # so this asserts it returns rather than what it returns.
+            self.assertTrue(does_entity_exist(name=self.file.file_name, folder=self.folder.name))
+            self.assertIsInstance(get_new_title(self.file.file_name, self.folder.name), str)
+
+    def test_owner_can_still_probe_own_folder_and_default_home(self):
+        with self.set_user(OWNER):
+            self.assertTrue(does_entity_exist(name=self.file.file_name, folder=self.folder.name))
+            self.assertFalse(does_entity_exist(name=f"{frappe.generate_hash(8)}.txt"))
+            self.assertNotEqual(get_new_title(self.file.file_name, self.folder.name), self.file.file_name)
+            self.assertEqual(get_new_title("unclaimed.txt", self.folder.name), "unclaimed.txt")

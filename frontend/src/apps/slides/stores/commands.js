@@ -78,24 +78,29 @@ const editElementCommand = ({
 	oldValue,
 	newValue,
 	skipJumpOnExecute,
+	coalesceKey,
 }) => {
-	oldValue = cloneValue(oldValue)
-	newValue = cloneValue(newValue)
-
 	return {
 		key: 'editElement',
 		slideId,
 		elementIds,
 		property,
+		oldValue: cloneValue(oldValue),
+		newValue: cloneValue(newValue),
+		coalesceKey,
 		jumpToSlideId: slideId,
 		jumpToElementIds: elementIds,
 		skipJumpOnExecute,
 		debug: `Edit ${property} of element ${elementIds} on slide ${slideId} to ${newValue}`,
+		coalesceWith(incoming) {
+			this.newValue = incoming.newValue
+			this.debug = incoming.debug
+		},
 		execute(state) {
-			editElements(state, slideId, elementIds, property, newValue)
+			editElements(state, slideId, elementIds, property, this.newValue)
 		},
 		undo(state) {
-			editElements(state, slideId, elementIds, property, oldValue)
+			editElements(state, slideId, elementIds, property, this.oldValue)
 		},
 	}
 }
@@ -190,14 +195,33 @@ const reorderSlidesCommand = ({ oldIndex, newIndex }) => ({
 	},
 })
 
-const batchCommand = ({ slideId, elementIds, focusElementId, commands, skipJumpOnExecute }) => ({
+const batchCommand = ({
+	slideId,
+	elementIds,
+	focusElementId,
+	commands,
+	skipJumpOnExecute,
+	coalesceKey,
+}) => ({
 	key: 'batch',
 	commands,
+	coalesceKey,
 	jumpToSlideId: slideId,
 	jumpToElementIds: elementIds,
 	focusElementId: focusElementId,
 	skipJumpOnExecute,
 	debug: 'Batch edit',
+	// history pops a burst that folds back to where it started, so the batch
+	// reports the leading command's values as its own
+	get oldValue() {
+		return commands[0]?.oldValue
+	},
+	get newValue() {
+		return commands[0]?.newValue
+	},
+	coalesceWith(incoming) {
+		commands.forEach((c, i) => c.coalesceWith(incoming.commands[i]))
+	},
 	execute: (state) => {
 		commands.forEach((c) => c.execute(state))
 	},

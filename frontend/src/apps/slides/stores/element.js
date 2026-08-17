@@ -9,12 +9,13 @@ import {
 	currentSlide,
 	slideIndex,
 } from './slide'
-import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
+import { useTextEditor, resetGrowthBaseline } from '@/apps/slides/composables/useTextEditor'
 
 import { getElementDiv } from './elementRegistry'
 import { markDirty } from './saving'
 import { generateUniqueId, cloneObj, normalizeRotation } from '../utils/helpers'
 import { getBorderInset, getCoverCrop, isFullRect } from '../utils/cropGeometry'
+import { getMinSizeForElement } from '../utils/resize'
 import { getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
 import { presentationId } from './presentation'
@@ -22,13 +23,14 @@ import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from '
 import { commandHistory } from './historyMeta'
 
 import { generateHTML } from '@tiptap/core'
-import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
+import { ZWSP, extensions, hasTableNode, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
 import {
 	editElementCommand,
 	batchCommand,
 	addElementCommand,
 	removeElementCommand,
 } from '@/apps/slides/stores/commands'
+import { interactionOffset, markTurnedFixed } from '@/apps/slides/stores/interaction'
 
 const findSlideElement = (id) => currentSlide.value?.elements.find((el) => el.id === id)
 
@@ -142,6 +144,38 @@ const getElementContent = (element) => {
 				],
 			},
 		],
+	}
+
+	return generateHTML(contentJSON, extensions)
+}
+
+const getInitialTableContent = (rows, cols, columnWidth, cellStyles) => {
+	// marks need text to sit on, so an empty cell has nothing to style
+	const placeholder = {
+		type: 'text',
+		text: ZWSP,
+		marks: [{ type: 'textStyle', attrs: cellStyles }],
+	}
+
+	const getCell = (type) => ({
+		type,
+		attrs: { colspan: 1, rowspan: 1, colwidth: [columnWidth] },
+		content: [
+			{ type: 'paragraph', attrs: { textAlign: 'left', lineHeight: 1.5 }, content: [placeholder] },
+		],
+	})
+
+	const getRow = (cellType) => ({
+		type: 'tableRow',
+		content: Array.from({ length: cols }, () => getCell(cellType)),
+	})
+
+	const tableRows = [getRow('tableHeader')]
+	while (tableRows.length < rows) tableRows.push(getRow('tableCell'))
+
+	const contentJSON = {
+		type: 'doc',
+		content: [{ type: 'table', content: tableRows }],
 	}
 
 	return generateHTML(contentJSON, extensions)
@@ -308,23 +342,18 @@ const addShapeElement = async (shapeType, bounds = null) => {
 const getTextElementDimensions = (presets) => {
 	const tempTextElement = document.createElement('div')
 
+	// the element's own markup and CSS, or the measurement drifts by sub-pixels
+	tempTextElement.className = 'textElement text-auto-width'
 	Object.assign(tempTextElement.style, {
 		position: 'absolute',
 		visibility: 'hidden',
-		height: 'auto',
-		width: 'auto',
-		whiteSpace: 'pre',
-		fontSize: `${presets.fontSize}px`,
-		fontFamily: presets.fontFamily,
-		letterSpacing: `${presets.letterSpacing}px`,
-		color: presets.color || '#000000',
 	})
-	tempTextElement.innerHTML = presets.innerText || 'Text'
+	tempTextElement.innerHTML = getElementContent(presets)
 
 	document.body.appendChild(tempTextElement)
 
-	const elementWidth = tempTextElement.offsetWidth
-	const elementHeight = tempTextElement.offsetHeight
+	// fractional, to agree with the selection bounds the resize observer writes
+	const { width: elementWidth, height: elementHeight } = tempTextElement.getBoundingClientRect()
 
 	document.body.removeChild(tempTextElement)
 
@@ -333,7 +362,7 @@ const getTextElementDimensions = (presets) => {
 
 const addTextElement = async (text, position) => {
 	const elementPresets = {
-		textAlign: 'left',
+		textAlign: 'center',
 		fontSize: 28,
 		fontFamily: 'Inter',
 		color: guessTextColorFromBackground(currentSlide.value.background),
@@ -374,6 +403,56 @@ const addTextElement = async (text, position) => {
 			slideId: currentSlide.value.clientId,
 			elementIds: [element.id],
 			focusElementId: element.id,
+			commands,
+		}),
+	)
+}
+
+const addTableElement = async (rows = 3, cols = 3) => {
+	// a table states its own width, so one wider than the slide is placed hanging
+	// off both edges instead of being fitted to it
+	const slideWidth = slideBounds.width / slideBounds.scale
+	const columnWidth = Math.min(150, Math.floor(slideWidth / cols))
+	const width = cols * columnWidth
+
+	// rows size themselves to their content, so this only places the new element
+	const position = getLeftTopForCenteredElement(width, rows * 40)
+
+	const cellStyles = {
+		fontSize: 18,
+		fontFamily: 'Inter',
+		color: guessTextColorFromBackground(currentSlide.value.background),
+		letterSpacing: 0,
+		opacity: 100,
+	}
+
+	const element = {
+		id: generateUniqueId(),
+		zIndex: currentSlide.value.elements.length + 1,
+		left: position.left,
+		top: position.top,
+		width,
+		opacity: 100,
+		type: 'table',
+		color: cellStyles.color,
+		content: getInitialTableContent(rows, cols, columnWidth, cellStyles),
+	}
+
+	const refCommands = getCommandsToUpdateElementRefId(element) || []
+
+	const commands = [
+		addElementCommand({
+			slideId: currentSlide.value.clientId,
+			element: element,
+		}),
+		...refCommands,
+	]
+
+	// tables open selected, not focused: editing starts on double-click
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: [element.id],
 			commands,
 		}),
 	)
@@ -718,10 +797,10 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 	)
 }
 
-const deleteElements = async (e, ids) => {
+const deleteElements = (e, ids) => {
 	const idsToDelete = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
 	if (!idsToDelete.length) return
-	await resetFocus()
+	resetFocus()
 	let commands = []
 
 	idsToDelete.forEach((id) => {
@@ -810,21 +889,27 @@ const getElementPosition = (elementId) => {
 
 const getElementLayoutPosition = (element) => {
 	const elementDiv = getElementDiv(element.id)
+
+	// a gesture in flight rides on a transform, so the rendered position is
+	// left/top plus the offset, which is what SelectionBox subtracts back out
+	const left = element.left + interactionOffset.left
+	const top = element.top + interactionOffset.top
+
 	// no rendered node yet: fall back to the element's stored bounds
 	if (!elementDiv) {
 		return {
-			left: element.left,
-			top: element.top,
-			right: element.left + (element.width || 0),
-			bottom: element.top + (element.height || 0),
+			left,
+			top,
+			right: left + (element.width || 0),
+			bottom: top + (element.height || 0),
 		}
 	}
 
 	return {
-		left: element.left,
-		top: element.top,
-		right: element.left + elementDiv.offsetWidth,
-		bottom: element.top + elementDiv.offsetHeight,
+		left,
+		top,
+		right: left + elementDiv.offsetWidth,
+		bottom: top + elementDiv.offsetHeight,
 	}
 }
 
@@ -843,13 +928,92 @@ const isWithinOverlappingBounds = (outer, inner) => {
 	return withinWidth && withinHeight
 }
 
+const getRenderedWidth = (elementId) => {
+	const elementDiv = getElementDiv(elementId)
+	if (!elementDiv) return null
+	return elementDiv.getBoundingClientRect().width / slideBounds.scale
+}
+
+// the gesture that triggered this records the conversion, so undo reaches auto
 const addFixedWidthToElement = () => {
-	const elementDiv = getElementDiv(activeElement.value.id)
-	if (elementDiv) {
-		const rect = elementDiv.getBoundingClientRect()
-		activeElement.value.width = rect.width / slideBounds.scale
-		markDirty()
+	const width = getRenderedWidth(activeElement.value.id)
+	if (width == null) return
+
+	markTurnedFixed(activeElement.value.id)
+	activeElement.value.width = width
+	markDirty()
+}
+
+// only centered and right-aligned text pays a width change out of its left
+const getAnchorFactor = (elementDiv) => {
+	const blocks = [...elementDiv.querySelectorAll('p')]
+	const aligns = new Set(blocks.map((block) => getComputedStyle(block).textAlign))
+	if (aligns.size !== 1) return 0
+
+	const align = aligns.values().next().value
+	if (align === 'center') return 0.5
+	return align === 'right' ? 1 : 0
+}
+
+const setFixedWidth = () => {
+	const element = activeElement.value
+	if (!element || element.width) return
+
+	const width = getRenderedWidth(element.id)
+	if (width == null) return
+
+	commandHistory.execute(
+		editElementCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: [element.id],
+			property: 'width',
+			oldValue: null,
+			newValue: width,
+		}),
+	)
+	resetGrowthBaseline()
+}
+
+const setAutoWidth = async () => {
+	const element = activeElement.value
+	if (!element?.width) return
+
+	const slideId = currentSlide.value.clientId
+	const elementDiv = getElementDiv(element.id)
+	const width = element.width
+	const commands = [
+		editElementCommand({
+			slideId,
+			elementIds: [element.id],
+			property: 'width',
+			oldValue: width,
+			newValue: null,
+		}),
+	]
+
+	const anchorFactor = elementDiv ? getAnchorFactor(elementDiv) : 0
+	if (anchorFactor) {
+		// the auto width is only knowable from the element itself, so borrow it
+		// for a tick; the command below is what actually applies the change
+		const left = element.left
+		element.width = null
+		await nextTick()
+		const autoWidth = getRenderedWidth(element.id) ?? width
+		element.width = width
+
+		commands.push(
+			editElementCommand({
+				slideId,
+				elementIds: [element.id],
+				property: 'left',
+				oldValue: left,
+				newValue: left + (width - autoWidth) * anchorFactor,
+			}),
+		)
 	}
+
+	commandHistory.execute(batchCommand({ slideId, elementIds: [element.id], commands }))
+	await resetGrowthBaseline()
 }
 
 // the stored number equals what auto-height already renders, so no markDirty
@@ -870,10 +1034,13 @@ const getEditorHTML = () => {
 }
 
 const updateElementContent = (element) => {
-	const { wasUpdated, updatedHTML } = getEditorHTML()
+	const { updatedHTML } = getEditorHTML()
 	const currentText = activeEditor.value.getText()
 
-	if (editorOldText == currentText && !wasUpdated) return
+	// legacy content keeps needing the patch, so idempotence has to come from
+	// comparing against what is stored, or a second blur-save runs the refId
+	// pairing again after the slide index has already moved on
+	if (editorOldText == currentText && element.content == updatedHTML) return
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
 	if (refCommands.length) {
@@ -894,13 +1061,21 @@ const updateElementContent = (element) => {
 	markDirty()
 }
 
+// empty cells are still a table, only a deleted one leaves nothing to edit
+const isEditorEmpty = (element) => {
+	if (element.type === 'table') return !hasTableNode(activeEditor.value.state.doc)
+	// indentation survives the parse now, so a box holding nothing else has to keep
+	// reading as the empty one it looks like. the line breaks stay, or a box of
+	// blank lines starts reading as empty too
+	return !activeEditor.value.getText().replace(/[\u200B\t ]/g, '')
+}
+
 const blurAndSaveContent = (element) => {
 	activeEditor.value.setEditable(false)
-	activeEditor.value.commands.blur()
+	// blur() drops the window selection, including one this editor never held
+	if (activeEditor.value.isFocused) activeEditor.value.commands.blur()
 
-	const isEmpty = (activeEditor.value?.getText() || '').replace(/\u200B/g, '') === ''
-
-	if (!isEmpty) return updateElementContent(element)
+	if (!isEditorEmpty(element)) return updateElementContent(element)
 
 	if (element.type === 'shape') {
 		if (element.content) {
@@ -912,9 +1087,21 @@ const blurAndSaveContent = (element) => {
 	}
 }
 
+// the watches below only fire after the slide has already changed, so leaving
+// a slide has to save the open editor while its element is still reachable
+const flushPendingBlur = () => {
+	const element = activeElement.value
+	if (!activeEditor.value || !['text', 'table', 'shape'].includes(element?.type)) return
+	blurAndSaveContent(element)
+}
+
 const setEditableState = () => {
 	activeEditor.value.setEditable(true)
 	activeEditor.value.commands.focus()
+
+	// selecting the whole doc of a table selects every cell
+	if (activeElement.value?.type === 'table') return
+
 	activeEditor.value.commands.setTextSelection({
 		from: 0,
 		to: activeEditor.value.state.doc.content.size,
@@ -922,37 +1109,37 @@ const setEditableState = () => {
 }
 
 const initEditorForElement = (element) => {
-	if (element?.type == 'text') {
-		const isEditable = focusElementId.value == element.id
+	if (['text', 'table'].includes(element?.type)) {
 		initTextEditor(
 			element.id,
 			element.content,
-			isEditable,
+			focusElementId.value == element.id,
 			element.locked ? null : element.editorMetadata?.lineHeight,
 		)
-
-		if (isEditable) setEditableState()
 	}
 }
 
-const replaceEditor = (fn) =>
-	nextTick(() => {
-		activeEditor.value?.destroy()
-		activeEditor.value = null
+// dropping the old editor before the next render keeps EditorContent from
+// mounting onto an editor that is about to be destroyed
+const replaceEditor = (fn) => {
+	activeEditor.value?.destroy()
+	activeEditor.value = null
+
+	return nextTick(() => {
 		fn?.()
 		editorOldText = activeEditor.value?.getText()
 	})
+}
 
 const initShapeEditor = (element) =>
-	replaceEditor(() => {
-		initTextEditor(element.id, element.content || getInitialShapeTextContent(element), true)
-		setEditableState()
-	})
+	replaceEditor(() =>
+		initTextEditor(element.id, element.content || getInitialShapeTextContent(element), true),
+	)
 
 watch(
 	() => activeElement.value,
 	(element, oldElement) => {
-		if (['text', 'shape'].includes(oldElement?.type) && activeEditor.value) {
+		if (['text', 'table', 'shape'].includes(oldElement?.type) && activeEditor.value) {
 			blurAndSaveContent(oldElement)
 		}
 		replaceEditor(() => initEditorForElement(element))
@@ -971,7 +1158,7 @@ watch(
 		} else if (oldId && activeEditor.value) {
 			if (activeElement.value?.id !== oldId) return
 			const oldElement = findSlideElement(oldId)
-			if (!['text', 'shape'].includes(oldElement?.type)) return
+			if (!['text', 'table', 'shape'].includes(oldElement?.type)) return
 			blurAndSaveContent(oldElement)
 			if (oldElement.type === 'shape') replaceEditor()
 			else replaceEditor(() => initEditorForElement(findSlideElement(oldId)))
@@ -1009,6 +1196,9 @@ const normalizeZIndices = (elements) => {
 }
 
 const cropSelectionToFitContent = (elementIds) => {
+	// every caller defers this, so the elements it names can be gone by now
+	if (!elementIds.every((id) => findSlideElement(id))) return
+
 	let l = 10000,
 		t = 10000,
 		r = 0,
@@ -1017,7 +1207,8 @@ const cropSelectionToFitContent = (elementIds) => {
 	// crop selection to selected element edges
 	elementIds.forEach((id) => {
 		const element = currentSlide.value.elements.find((el) => el.id === id)
-		const useLayoutBounds = elementIds.length == 1 && ['shape', 'image'].includes(element?.type)
+		// same source the resize observer writes from, so the two never disagree by a sub-pixel
+		const useLayoutBounds = elementIds.length == 1
 
 		const {
 			left: elementLeft,
@@ -1125,16 +1316,20 @@ export {
 	unlockAll,
 	setActiveElements,
 	resetFocus,
+	flushPendingBlur,
 	exitTextEditing,
 	addTextElement,
 	addMediaElement,
 	addShapeElement,
+	addTableElement,
 	duplicateElements,
 	deleteElements,
 	selectAllElements,
 	selectableIds,
 	getElementPosition,
 	addFixedWidthToElement,
+	setFixedWidth,
+	setAutoWidth,
 	ensureExplicitHeight,
 	getNaturalAspectRatio,
 	setEditableState,
@@ -1144,6 +1339,8 @@ export {
 	updatePosition,
 	flipElements,
 	findSlideElement,
+	getInitialShapeTextContent,
+	getInitialTableContent,
 	cropSelectionToFitContent,
 	getElementCenter,
 }
