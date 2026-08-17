@@ -225,6 +225,16 @@ describe('saveOfflineCopy', () => {
 		expect(recordedKeys('p1')).toEqual([])
 	})
 
+	it('surfaces a ledger write failure, so the button can report it', async () => {
+		const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new DOMException('full', 'QuotaExceededError')
+		})
+
+		await expect(saveOfflineCopy('p1')).rejects.toThrow()
+		expect(offlineCopyProgress.value.running).toBe(false)
+		setItem.mockRestore()
+	})
+
 	it('drops the bytes of images the presentation no longer shows', async () => {
 		await saveOfflineCopy('p1')
 		slides.value = slidesWith(['/files/b.png'])

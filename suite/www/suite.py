@@ -69,5 +69,8 @@ def get_boot():
             # Workspace branding for the launcher navbar.
             "suite_workspace_name": workspace["workspace_name"],
             "suite_workspace_logo": workspace["workspace_logo"],
+            # `bench set-config disable_slides_service_worker 1` unregisters the worker
+            # on every slides visit, no deploy needed
+            "disable_slides_service_worker": bool(frappe.conf.get("disable_slides_service_worker")),
         }
     )

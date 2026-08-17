@@ -4,10 +4,12 @@ import { presentationId, presentationDoc } from '../stores/presentation'
 import { addMediaElement, replaceMediaElement } from '../stores/element'
 
 import { session } from '@/boot/session'
+import { SLIDES_MEDIA_PARAM, MEDIA_PROXY_PATH } from './slidesRequests'
 
 const fileUploadHandler = new FileUploadHandler()
 
-export const SLIDES_MEDIA_PARAM = 'slides_media=1'
+// these users read a file straight from /private/files; everyone else goes through the proxy
+export const isMediaOwner = (owner, user) => !!user && (owner === user || user === 'Administrator')
 
 const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
 	if (fileType === 'image') {
@@ -112,19 +114,16 @@ export const getAttachmentUrl = (fileUrl, sourcePresentation) => {
 		const owner = sourcePresentation ? sourcePresentation.owner : presentationDoc.value?.owner
 		const user = session.user?.sessionUser
 
-		// if owner is trying to access just send static path
-		if (owner === user || user === 'Administrator') {
+		if (isMediaOwner(owner, user)) {
 			// a duplicate borrows its source's thumbnail url, so the proxy can't serve it
 			if (sourcePresentation) return fileUrl
 			// Tag the request so the slides service worker can cache it without
 			// touching other apps' /private/files/ traffic (Drive, Mail, ...).
 			// Non-owner media already goes through the slides-namespaced proxy below.
-			return `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}${SLIDES_MEDIA_PARAM}`
+			return `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}${SLIDES_MEDIA_PARAM}=1`
 		}
 		if (!name) return fileUrl
-		return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(
-			fileUrl,
-		)}&presentation=${encodeURIComponent(name)}`
+		return `${MEDIA_PROXY_PATH}?src=${encodeURIComponent(fileUrl)}&presentation=${encodeURIComponent(name)}`
 	}
 
 	return fileUrl

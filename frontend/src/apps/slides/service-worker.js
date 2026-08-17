@@ -1,6 +1,7 @@
 import { createPartialResponse } from 'workbox-range-requests'
 
 import { canonicalMediaKey } from './utils/canonicalMediaKey'
+import { getRequestType, isBundleAsset, isCacheable } from './utils/slidesRequests'
 import {
 	MEDIA_CACHE_NAME,
 	API_CACHE_NAME,
@@ -13,9 +14,6 @@ import {
 
 // one document serves every slides url, so the entry has a fixed key
 const SHELL_CACHE_KEY = '/slides'
-
-// set by suite/www/suite.py on the shell it renders to a logged-out visitor
-const GUEST_HEADER = 'x-suite-guest'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -90,36 +88,7 @@ const getModifiedResponse = (response, type) => {
 	})
 }
 
-// These matchers mirror the URL contract owned by utils/mediaUploads.js: the
-// `slides_media` marker (SLIDES_MEDIA_PARAM) on owner /private/files/ requests
-// and the suite.slides.* proxy path. Keep them in sync if either changes.
-const isMedia = (url) =>
-	url.pathname.startsWith('/api/method/suite.slides.api.file.get_media_file') ||
-	(url.pathname.startsWith('/private/files/') && url.searchParams.has('slides_media'))
-const isAPI = (url) => url.pathname.startsWith('/api/method/suite.slides.')
-// the owner's editor loads the document itself through the generic client
-const isPresentationDoc = (url) =>
-	url.pathname === '/api/method/frappe.client.get' &&
-	url.searchParams.get('doctype') === 'Presentation'
-
-// every file under the bundle path is content-hashed, so a hit can never be stale
-const isBundleAsset = (url) =>
-	url.pathname.startsWith('/assets/suite/frontend/assets/') && !url.pathname.endsWith('.map')
-// fonts, served under stable names
-const isSlidesStatic = (url) => url.pathname.startsWith('/assets/suite/slides/')
-
-// the bundle path is shared by every suite app; the referrer is the requesting
-// page's url and is the only ownership signal available before respondWith
-const isSlidesPath = (pathname) => pathname === '/slides' || pathname.startsWith('/slides/')
-
-const isFromSlidesPage = (request) => {
-	if (!request.referrer) return false
-	return isSlidesPath(new URL(request.referrer).pathname)
-}
-
-// the page reports itself because the referrer alone misleads both ways: a switch
-// out of slides imports the next app's graph before the url changes, and a font
-// requested by a stylesheet carries the stylesheet's url
+// what each open page last said it is, see getRequestType
 const slidesClientState = new Map()
 
 const forgetClosedClients = async () => {
@@ -139,39 +108,6 @@ self.addEventListener('message', (event) => {
 	event.ports[0]?.postMessage(true)
 	event.waitUntil(forgetClosedClients().catch(() => {}))
 })
-
-// only a slides page may be answered from the slides caches
-const isSlidesClient = (event) => {
-	const state = slidesClientState.get(event.clientId)
-	if (state === 'entered') return true
-	return isFromSlidesPage(event.request) && state !== 'left'
-}
-
-// the pin action stores the shell through the same route
-const isShell = (request, url) =>
-	isSlidesPath(url.pathname) &&
-	(request.mode === 'navigate' || request.headers.get(PIN_HEADER) === 'shell')
-
-const isCacheable = (type, response) => {
-	const contentType = response.headers.get('Content-Type') || ''
-	if (type === 'media') {
-		return ['image/', 'video/'].some((ct) => contentType.startsWith(ct))
-	}
-	// a login or 404 page stored under an asset key would be replayed as the asset
-	if (type === 'asset') {
-		return !response.redirected && !contentType.startsWith('text/html')
-	}
-	// a login redirect or the logged-out shell would be replayed offline as the app
-	if (type === 'shell') {
-		return (
-			!response.redirected &&
-			contentType.startsWith('text/html') &&
-			!response.headers.has(GUEST_HEADER)
-		)
-	}
-	// a redirected or HTML body under an API key would be replayed as data
-	return !response.redirected && contentType.includes('application/json')
-}
 
 const addCacheEntry = async (type, cache, request, response) => {
 	if (!isCacheable(type, response)) return
@@ -282,17 +218,6 @@ const getResponseForRequest = async (event, type, url) => {
 	return networkFirst(event, 'api', cache)
 }
 
-const getRequestType = (event, url) => {
-	if (isShell(event.request, url)) return 'shell'
-	// nothing outside slides requests these urls, so they need no client check
-	if (isMedia(url)) return 'media'
-	if (isSlidesStatic(url)) return 'asset'
-	if (!isSlidesClient(event)) return 'other'
-	if (isAPI(url) || isPresentationDoc(url)) return 'api'
-	if (isBundleAsset(url)) return 'asset'
-	return 'other'
-}
-
 // respondWith must be called synchronously, so nothing here may await
 self.addEventListener('fetch', (event) => {
 	const request = event.request
@@ -300,7 +225,7 @@ self.addEventListener('fetch', (event) => {
 
 	if (request.method !== 'GET' || url.origin !== self.location.origin) return
 
-	const requestType = getRequestType(event, url)
+	const requestType = getRequestType(request, slidesClientState.get(event.clientId))
 	if (requestType === 'other') return
 
 	event.respondWith(getResponseForRequest(event, requestType, url))

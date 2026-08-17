@@ -8,6 +8,7 @@ import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
 import { collectMediaSources, presentationLoadRequests } from '@/apps/slides/utils/pinTargets'
 import { loadBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { PINNED_CACHE_NAME, PIN_HEADER, RECORD_PREFIX } from '@/apps/slides/utils/slidesCaches'
+import { isMediaContentType } from '@/apps/slides/utils/slidesRequests'
 
 const CONCURRENCY = 4
 const RETRY_DELAYS = [500, 1500]
@@ -67,10 +68,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const openPinnedCache = () => caches.open(PINNED_CACHE_NAME)
 
-const isMediaResponse = (response) => {
-	const contentType = response.headers.get('Content-Type') || ''
-	return response.status === 200 && ['image/', 'video/'].some((ct) => contentType.startsWith(ct))
-}
+const isMediaResponse = (response) => response.status === 200 && isMediaContentType(response)
 
 // a server error is as transient as a dropped connection
 const fetchWithRetries = async (url, signal) => {

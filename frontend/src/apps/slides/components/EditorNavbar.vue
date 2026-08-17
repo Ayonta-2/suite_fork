@@ -58,6 +58,7 @@ import OfflineCopyButton from '@/apps/slides/components/OfflineCopyButton.vue'
 
 import { presentationDoc } from '@/apps/slides/stores/presentation'
 import { saveFailed } from '@/apps/slides/stores/saving'
+import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { useSessionStore } from '@/boot/session'
 import { useRoute } from 'vue-router'
 
@@ -72,8 +73,7 @@ const sessionStore = useSessionStore()
 // same users getAttachmentUrl serves directly, so pinning never goes through the proxy
 const canPin = computed(() => {
 	if (!('serviceWorker' in navigator) || !('caches' in window)) return false
-	const user = sessionStore.user
-	return !!user && (presentationDoc.value?.owner === user || user === 'Administrator')
+	return isMediaOwner(presentationDoc.value?.owner, sessionStore.user)
 })
 
 const primaryButtonProps = computed(() => ({
