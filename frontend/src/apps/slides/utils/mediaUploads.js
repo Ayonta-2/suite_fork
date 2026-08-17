@@ -9,6 +9,8 @@ const fileUploadHandler = new FileUploadHandler()
 
 export const SLIDES_MEDIA_PARAM = 'slides_media=1'
 
+// Images are converted to WebP, so the returned doc replaces the uploaded one.
+// Pass targetElement to swap that element's media instead of adding a new element.
 export const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
 	if (fileType === 'image') {
 		fileDoc = await getWebPDoc(fileDoc)
