@@ -63,7 +63,7 @@ const showThemeDialog = defineModel('open', { required: true })
 
 const emit = defineEmits(['create'])
 
-const dialogTitle = computed(() => (props.update ? 'Set Theme' : 'Select Theme'))
+const dialogTitle = computed(() => (props.update ? 'Set theme' : 'Select theme'))
 const dialogDescription = computed(() =>
 	props.update
 		? 'Update the theme for this presentation. All newly added slides will use this theme.'

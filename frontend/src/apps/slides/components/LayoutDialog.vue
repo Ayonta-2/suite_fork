@@ -1,5 +1,5 @@
 <template>
-	<Dialog v-model:open="showLayoutDialog" size="4xl" title="Select a Template Layout">
+	<Dialog v-model:open="showLayoutDialog" size="4xl" title="Select a layout">
 		<div class="grid max-h-[32rem] grid-cols-3 gap-6 overflow-y-auto">
 			<div
 				v-for="layout in layouts"
