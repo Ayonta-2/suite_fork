@@ -455,14 +455,16 @@ def _attach_quota_usage(users: list[dict]) -> None:
             pluck="name",
         )
     )
-    personal_by_user: dict[str, list[str]] = {}
+    personal_by_user: dict[str, set[str]] = {}
     for row in user_accounts:
         if row.account in personal_accounts:
-            personal_by_user.setdefault(row.user, []).append(row.account)
+            personal_by_user.setdefault(row.user, set()).add(row.account)
 
-    # Mirror get_user_personal_jmap_account: a user with several personal accounts is ambiguous and
-    # resolves to no account, rather than showing quota for an arbitrary mailbox.
-    account_by_user = {user: accounts[0] for user, accounts in personal_by_user.items() if len(accounts) == 1}
+    # Mirror get_user_personal_jmap_account: a user with several distinct personal accounts is
+    # ambiguous and resolves to no account, rather than showing quota for an arbitrary mailbox.
+    account_by_user = {
+        user: next(iter(accounts)) for user, accounts in personal_by_user.items() if len(accounts) == 1
+    }
     if not account_by_user:
         return
 
