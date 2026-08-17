@@ -1,4 +1,4 @@
-import { RECORD_PREFIX, USER_CACHE_NAMES } from '@/apps/slides/utils/slidesCaches'
+import { DRAFTS_DB_NAME, RECORD_PREFIX, USER_CACHE_NAMES } from '@/apps/slides/utils/slidesCaches'
 
 // a broken worker must not hold up navigation
 const ACK_TIMEOUT = 500
@@ -19,11 +19,11 @@ export const postToServiceWorker = (message: string): Promise<void> => {
   })
 }
 
-// localStorage: the user whose data the slides caches hold
+// localStorage: the user whose slides data this browser holds; it outlives a
+// logout, so the next user in can be told apart from the same one coming back
 const CACHES_USER_KEY = 'slides-caches-user'
 
 export const clearSlidesUserData = async () => {
-  localStorage.removeItem(CACHES_USER_KEY)
   Object.keys(localStorage)
     .filter((k) => k.startsWith(RECORD_PREFIX))
     .forEach((k) => localStorage.removeItem(k))
@@ -33,7 +33,10 @@ export const clearSlidesUserData = async () => {
 
 // the caches are per origin, the data in them is per user
 export const claimSlidesCachesFor = async (user: string) => {
-  if (localStorage.getItem(CACHES_USER_KEY) === user) return
+  const previous = localStorage.getItem(CACHES_USER_KEY)
+  if (previous === user) return
+  // the drafts survive a logout, so only another user arriving may drop them
+  if (previous) indexedDB.deleteDatabase(DRAFTS_DB_NAME)
   await clearSlidesUserData()
   localStorage.setItem(CACHES_USER_KEY, user)
 }
