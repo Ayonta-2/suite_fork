@@ -305,10 +305,6 @@ scheduler_events = {
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
         "suite.mail.doctype.contacts_exchange.contacts_exchange.retry_stuck_contacts_exchanges",
     ],
-    "hourly_long": [
-        # mail
-        "suite.mail.doctype.mail_queue.mail_queue.reconcile_scheduled_emails",
-    ],
     "cron": {
         "* * * * *": ["suite.meet.api.recording.reconcile_pending_recordings"],
         "*/5 * * * *": [
