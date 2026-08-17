@@ -126,7 +126,7 @@ describe('saveOfflineCopy', () => {
 		const result = await run
 		vi.useRealTimers()
 
-		expect(result).toEqual({ ok: false, uncontrolled: true })
+		expect(result).toEqual({ ok: false, uncontrolled: true, registered: false })
 		expect(fetched).toEqual([])
 		expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
 	})

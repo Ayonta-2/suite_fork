@@ -1,12 +1,10 @@
 <template>
-	<Button
-		variant="ghost"
-		:tooltip="statusText"
-		:loading="progress.running"
-		@click="showDialog = true"
-	>
+	<Button variant="ghost" :tooltip="statusText" @click="showDialog = true">
 		<template #icon>
-			<LucideCloudDownload class="size-4 stroke-[1.5]" :class="iconClass" />
+			<LucideCloudDownload
+				class="size-4 stroke-[1.5]"
+				:class="[iconClass, progress.running && 'animate-pulse']"
+			/>
 		</template>
 	</Button>
 	<Dialog
@@ -52,12 +50,21 @@ const save = async ({ close }) => {
 	const result = await saveOfflineCopy(presentationId.value)
 	await refreshOfflineStatus(presentationId.value)
 	if (!result) return
-	if (result.uncontrolled) {
-		toast.error('Reload the page and try again.')
+	if (result.uncontrolled && !result.registered) {
+		toast.error('Offline copies are not enabled on this server')
+	} else if (result.uncontrolled) {
+		toast.error('Could not start saving', {
+			description: 'The offline service has not taken over this page yet. Reload the page and try again.',
+		})
 	} else if (result.failed.length) {
-		toast.warning(`${result.failed.length} files could not be saved for offline.`)
+		toast.warning(`${result.failed.length} of ${result.count} files could not be saved`, {
+			description:
+				'Those images will be missing offline. Check your connection and save again to retry them.',
+		})
 	} else {
-		toast.success('Available offline.')
+		toast.success('Available offline', {
+			description: 'This presentation now opens and presents without internet.',
+		})
 	}
 }
 
@@ -65,7 +72,9 @@ const remove = async ({ close }) => {
 	close()
 	await removeOfflineCopy(presentationId.value)
 	await refreshOfflineStatus(presentationId.value)
-	toast('Offline copy removed.')
+	toast('Offline copy removed', {
+		description: 'This presentation needs internet to open again.',
+	})
 }
 
 const cancel = ({ close }) => {

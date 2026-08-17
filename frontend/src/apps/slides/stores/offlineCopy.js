@@ -150,7 +150,10 @@ const saveOfflineCopy = async (id) => {
 
 	const modified = presentationDoc.value?.modified
 	try {
-		if (!(await waitForController())) return { ok: false, uncontrolled: true }
+		if (!(await waitForController())) {
+			const registered = !!(await navigator.serviceWorker?.getRegistration?.())
+			return { ok: false, uncontrolled: true, registered }
+		}
 		await warmAssets()
 		await warmShellAndApi(id, signal)
 
