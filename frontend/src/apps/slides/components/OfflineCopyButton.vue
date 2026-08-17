@@ -100,7 +100,7 @@ const cancel = ({ close }) => {
 	})
 }
 
-const dismissAction = (label = 'Cancel') => ({ label, variant: 'outline' })
+const cancelAction = { label: 'Cancel', variant: 'outline' }
 const removeAction = { label: 'Remove copy', variant: 'subtle', onClick: remove }
 
 const dialog = computed(() => {
@@ -109,7 +109,7 @@ const dialog = computed(() => {
 			title: 'Saving offline copy',
 			icon: 'lucide-cloud-download',
 			message: `${progress.value.done} of ${progress.value.total} files saved`,
-			actions: [dismissAction('Close'), { label: 'Stop', variant: 'solid', onClick: cancel }],
+			actions: [cancelAction, { label: 'Stop saving', variant: 'solid', onClick: cancel }],
 		}
 	}
 	if (status.value === 'available') {
@@ -117,7 +117,7 @@ const dialog = computed(() => {
 			title: 'Available offline',
 			icon: { name: 'lucide-cloud-check', theme: 'blue' },
 			message: 'Saved in this browser. Opens and presents without internet.',
-			actions: [dismissAction(), { ...removeAction, variant: 'solid' }],
+			actions: [cancelAction, { ...removeAction, variant: 'solid' }],
 		}
 	}
 	if (status.value === 'outdated') {
@@ -125,14 +125,14 @@ const dialog = computed(() => {
 			title: 'Update offline copy',
 			icon: { name: 'lucide-cloud-alert', theme: 'yellow' },
 			message: 'New images are not saved offline yet.',
-			actions: [dismissAction(), removeAction, { label: 'Update', variant: 'solid', onClick: save }],
+			actions: [removeAction, { label: 'Update copy', variant: 'solid', onClick: save }],
 		}
 	}
 	return {
 		title: 'Save offline copy',
 		icon: 'lucide-cloud-download',
 		message: 'Opens and presents without internet. Videos still need a connection.',
-		actions: [dismissAction(), { label: 'Save', variant: 'solid', onClick: save }],
+		actions: [cancelAction, { label: 'Save copy', variant: 'solid', onClick: save }],
 	}
 })
 </script>
