@@ -49,8 +49,8 @@ import TableDropdown from '@/apps/slides/components/TableDropdown.vue'
 import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
 
 const handleUploadSuccess = (file) => {
-	const imageTypes = allowedImageFileTypes.map((type) => type.split('/')[1].toUpperCase())
-	const fileType = imageTypes.includes(file.file_type) ? 'image' : 'video'
+	// file_type is a Drive category ('Image'), not a format; mime_type is what the allowlist speaks
+	const fileType = allowedImageFileTypes.includes(file.mime_type) ? 'image' : 'video'
 
 	const toastProps = {
 		loading: file.file_name ? `Uploading: ${file.file_name}` : 'Uploading...',
