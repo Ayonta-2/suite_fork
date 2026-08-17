@@ -22,7 +22,6 @@ const DAY = 24 * 60 * 60 * 1000
 // membership is what makes a cache expiring; the sweep reads straight off this
 const CACHE_MAX_AGE = {
 	[MEDIA_CACHE_NAME]: DAY,
-	[API_CACHE_NAME]: DAY,
 	[ASSETS_CACHE_NAME]: 30 * DAY,
 }
 
@@ -93,8 +92,7 @@ const getModifiedResponse = (response, type) => {
 
 // These matchers mirror the URL contract owned by utils/mediaUploads.js: the
 // `slides_media` marker (SLIDES_MEDIA_PARAM) on owner /private/files/ requests
-// and the suite.slides.* proxy path. A service worker can't import app modules,
-// so keep these in sync with mediaUploads.js if either changes.
+// and the suite.slides.* proxy path. Keep them in sync if either changes.
 const isMedia = (url) =>
 	url.pathname.startsWith('/api/method/suite.slides.api.file.get_media_file') ||
 	(url.pathname.startsWith('/private/files/') && url.searchParams.has('slides_media'))
@@ -137,6 +135,8 @@ self.addEventListener('message', (event) => {
 	if (!clientId) return
 	if (event.data === 'slides-entered') slidesClientState.set(clientId, 'entered')
 	if (event.data === 'slides-left') slidesClientState.set(clientId, 'left')
+	// the page waits for this before it loads the next route
+	event.ports[0]?.postMessage(true)
 	event.waitUntil(forgetClosedClients().catch(() => {}))
 })
 
@@ -284,10 +284,12 @@ const getResponseForRequest = async (event, type, url) => {
 
 const getRequestType = (event, url) => {
 	if (isShell(event.request, url)) return 'shell'
-	if (!isSlidesClient(event)) return 'other'
+	// nothing outside slides requests these urls, so they need no client check
 	if (isMedia(url)) return 'media'
+	if (isSlidesStatic(url)) return 'asset'
+	if (!isSlidesClient(event)) return 'other'
 	if (isAPI(url) || isPresentationDoc(url)) return 'api'
-	if (isSlidesStatic(url) || isBundleAsset(url)) return 'asset'
+	if (isBundleAsset(url)) return 'asset'
 	return 'other'
 }
 

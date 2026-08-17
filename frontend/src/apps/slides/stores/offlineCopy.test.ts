@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
 const presentationDoc = ref<any>({ is_composite: 0 })
+const presentationId = ref('p1')
 const inReadonlyMode = ref(false)
 const slides = ref<any[]>([])
 const apiCalls: string[] = []
 
-vi.mock('@/apps/slides/stores/presentation', () => ({ presentationDoc, inReadonlyMode }))
+vi.mock('@/apps/slides/stores/presentation', () => ({ presentationDoc, presentationId, inReadonlyMode }))
 vi.mock('@/apps/slides/stores/slide', () => ({ slides }))
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({
 	getAttachmentUrl: (src: string) => `/private${src}?slides_media=1`,
@@ -22,9 +23,21 @@ vi.mock('@/apps/slides/pages/Slideshow.vue', () => {
 	return { default: {} }
 })
 
-const { saveOfflineCopy, removeOfflineCopy, getOfflineStatus, offlineCopyProgress } = await import(
-	'./offlineCopy'
-)
+const {
+	saveOfflineCopy,
+	cancelOfflineCopy,
+	removeOfflineCopy,
+	refreshOfflineStatus,
+	offlineCopyProgress,
+	offlineCopyStatus,
+} = await import('./offlineCopy')
+
+const statusOf = (id: string) => {
+	refreshOfflineStatus(id)
+	return offlineCopyStatus.value
+}
+
+const recordedKeys = (id: string) => JSON.parse(localStorage.getItem(`slides-offline-copy:${id}`)!).keys
 
 class FakeCache {
 	store = new Map<string, Response>()
@@ -67,6 +80,7 @@ beforeEach(() => {
 		serviceWorker: { controller: {}, addEventListener: () => {} },
 	})
 	presentationDoc.value = { is_composite: 0, modified: '2026-08-17 10:00:00' }
+	presentationId.value = 'p1'
 	vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
 		if ((init?.headers as any)?.['x-slides-pin'] === 'shell') return new Response('<html>')
 		fetched.push(url)
@@ -74,6 +88,7 @@ beforeEach(() => {
 		if (!make) return new Response('', { status: 404 })
 		const out = make()
 		if (out instanceof Error) throw out
+		if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError')
 		return out
 	})
 	slides.value = slidesWith(['/files/a.png'], ['/files/b.png'])
@@ -89,13 +104,10 @@ describe('saveOfflineCopy', () => {
 	it('stores every media file under its canonical key and records the run', async () => {
 		const result = await saveOfflineCopy('p1')
 
-		expect(result).toEqual({ ok: true, failed: [], count: 2, bytes: 30 })
+		expect(result).toEqual({ ok: true, failed: [], count: 2 })
 		expect(cache.has('/private/files/a.png')).toBe(true)
 		expect(cache.has('/private/files/b.png')).toBe(true)
-		expect(JSON.parse(localStorage.getItem('slides-offline-copy:p1')!).keys).toEqual([
-			'/private/files/a.png',
-			'/private/files/b.png',
-		])
+		expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
 		expect(offlineCopyProgress.value).toMatchObject({ running: false, done: 2, total: 2 })
 	})
 
@@ -151,6 +163,7 @@ describe('saveOfflineCopy', () => {
 		})
 		expect(cache.has('/private/files/a.png')).toBe(false)
 		expect(cache.has('/private/files/b.png')).toBe(true)
+		expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
 	})
 
 	it('retries a network failure before recording it', async () => {
@@ -169,6 +182,58 @@ describe('saveOfflineCopy', () => {
 		expect(attempts).toBe(3)
 		expect(result?.ok).toBe(true)
 	})
+
+	it('retries a server error like a dropped connection', async () => {
+		vi.useFakeTimers()
+		let attempts = 0
+		responses['/private/files/a.png?slides_media=1'] = () => {
+			attempts += 1
+			return attempts < 2 ? new Response('', { status: 503 }) : image()
+		}
+
+		const run = saveOfflineCopy('p1')
+		await vi.runAllTimersAsync()
+		const result = await run
+		vi.useRealTimers()
+
+		expect(attempts).toBe(2)
+		expect(result?.ok).toBe(true)
+	})
+
+	it('keeps the ledger current when cancelled, so the run can be finished later', async () => {
+		responses['/private/files/b.png?slides_media=1'] = () => {
+			cancelOfflineCopy()
+			return image(20)
+		}
+
+		const result = await saveOfflineCopy('p1')
+
+		expect(result).toBeNull()
+		expect(recordedKeys('p1')).toEqual(['/private/files/a.png'])
+		expect(statusOf('p1')).toBe('outdated')
+	})
+
+	it('stops at the first quota error and reports it', async () => {
+		cache.put = async () => {
+			throw new DOMException('full', 'QuotaExceededError')
+		}
+
+		const result = await saveOfflineCopy('p1')
+
+		expect(result?.ok).toBe(false)
+		expect(result?.failed).toEqual([{ slideIndex: 0, src: '/files/a.png', status: 'quota' }])
+		expect(recordedKeys('p1')).toEqual([])
+	})
+
+	it('drops the bytes of images the presentation no longer shows', async () => {
+		await saveOfflineCopy('p1')
+		slides.value = slidesWith(['/files/b.png'])
+
+		await saveOfflineCopy('p1')
+
+		expect(cache.has('/private/files/a.png')).toBe(false)
+		expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
+	})
 })
 
 describe('removeOfflineCopy', () => {
@@ -184,35 +249,36 @@ describe('removeOfflineCopy', () => {
 		expect(cache.has('/private/files/b.png')).toBe(true)
 		expect(cache.has('/private/files/c.png')).toBe(true)
 		expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
-		expect(await getOfflineStatus('p2')).toBe('available')
+		presentationId.value = 'p2'
+		expect(statusOf('p2')).toBe('available')
 	})
 })
 
-describe('getOfflineStatus', () => {
-	it('is none without a record', async () => {
-		expect(await getOfflineStatus('p1')).toBe('none')
+describe('offline status', () => {
+	it('is none without a record', () => {
+		expect(statusOf('p1')).toBe('none')
 	})
 
 	it('is available after a full run', async () => {
 		await saveOfflineCopy('p1')
-		expect(await getOfflineStatus('p1')).toBe('available')
+		expect(statusOf('p1')).toBe('available')
 	})
 
 	it('is outdated once the presentation points at other files', async () => {
 		await saveOfflineCopy('p1')
 		slides.value = slidesWith(['/files/a.png'], ['/files/new.png'])
-		expect(await getOfflineStatus('p1')).toBe('outdated')
+		expect(statusOf('p1')).toBe('outdated')
 	})
 
-	it('is outdated once the presentation was saved again', async () => {
+	it('stays available when only text changed', async () => {
 		await saveOfflineCopy('p1')
 		presentationDoc.value = { ...presentationDoc.value, modified: '2026-08-17 11:00:00' }
-		expect(await getOfflineStatus('p1')).toBe('outdated')
+		expect(statusOf('p1')).toBe('available')
 	})
 
-	it('is outdated when a recorded key is gone from the cache', async () => {
+	it('answers only for the open presentation', async () => {
 		await saveOfflineCopy('p1')
-		await cache.delete('/private/files/b.png')
-		expect(await getOfflineStatus('p1')).toBe('outdated')
+		presentationId.value = 'p2'
+		expect(statusOf('p1')).toBe('none')
 	})
 })

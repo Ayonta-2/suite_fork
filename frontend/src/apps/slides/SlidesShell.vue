@@ -39,9 +39,7 @@ const handleOnline = () => {
   })
 }
 
-onBeforeRouteLeave(() => {
-  postToServiceWorker('slides-left')
-})
+onBeforeRouteLeave(() => postToServiceWorker('slides-left'))
 
 const registerServiceWorker = () => {
   // opt-in on the dev server: this worker claims the root scope

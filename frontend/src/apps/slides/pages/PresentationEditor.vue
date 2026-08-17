@@ -136,7 +136,7 @@ import {
 
 import { useShortcuts, showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
 import { saveChanges, saveCurrentState, dirty } from '@/apps/slides/stores/saving'
-import { refreshOfflineStatus } from '@/apps/slides/stores/offlineCopy'
+import { refreshOfflineStatus, warmOfflineCopyAssets } from '@/apps/slides/stores/offlineCopy'
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { Layout, Trash } from 'lucide-vue-next'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
@@ -273,9 +273,11 @@ const handleBeforeUnmount = () => {
 	window.removeEventListener('popstate', hideOpenDialogs)
 }
 
-// slides land after the load resolves
-watch([slides, dirty], () => {
-	refreshOfflineStatus(slides.value.length ? presentationId.value : null)
+// slides land after the load resolves; a save is when new media shows up in them
+watch([slides, () => presentationDoc.value?.modified], () => {
+	const id = slides.value.length ? presentationId.value : null
+	refreshOfflineStatus(id)
+	warmOfflineCopyAssets(id)
 })
 
 watch(

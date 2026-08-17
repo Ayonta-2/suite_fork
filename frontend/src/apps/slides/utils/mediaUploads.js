@@ -126,4 +126,6 @@ export const getAttachmentUrl = (fileUrl, sourcePresentation) => {
 			fileUrl,
 		)}&presentation=${encodeURIComponent(name)}`
 	}
+
+	return fileUrl
 }

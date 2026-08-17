@@ -3,14 +3,17 @@ import { describe, expect, it } from 'vitest'
 import { collectMediaSources, presentationLoadRequests } from '@/apps/slides/utils/pinTargets'
 
 describe('collectMediaSources', () => {
-	it('walks image src and video poster with the slide index, never a video body', () => {
+	it('walks image src and poster and video poster with the slide index, never a video body', () => {
 		const slides = [
 			{ elements: [{ type: 'text' }, { type: 'image', src: '/files/a.png' }] },
 			{ elements: [{ type: 'video', src: '/files/b.mp4', poster: '/files/b.png' }] },
+			{ elements: [{ type: 'image', src: '/files/c.gif', poster: '/files/c.png' }] },
 		]
 		expect(collectMediaSources(slides)).toEqual([
 			{ slideIndex: 0, src: '/files/a.png' },
 			{ slideIndex: 1, src: '/files/b.png' },
+			{ slideIndex: 2, src: '/files/c.gif' },
+			{ slideIndex: 2, src: '/files/c.png' },
 		])
 	})
 

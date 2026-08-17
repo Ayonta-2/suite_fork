@@ -3,9 +3,9 @@ type Slide = { elements?: MediaElement[] }
 
 export type MediaSource = { slideIndex: number; src: string }
 
-// video bodies stay online, posters come along
+// video bodies stay online, posters come along; a GIF's poster is its sidebar thumbnail
 const imageSources = (element: MediaElement): string[] => {
-	if (element.type === 'image') return [element.src ?? '']
+	if (element.type === 'image') return [element.src ?? '', element.poster ?? '']
 	if (element.type === 'video') return [element.poster ?? '']
 	return []
 }

@@ -45,16 +45,16 @@ const statusText = computed(() => {
 	return 'Not available offline'
 })
 
-const save = async ({ close }) => {
-	close()
-	const result = await saveOfflineCopy(presentationId.value)
-	await refreshOfflineStatus(presentationId.value)
-	if (!result) return
+const reportSave = (result) => {
 	if (result.uncontrolled && !result.registered) {
 		toast.error('Offline copies are not enabled on this server')
 	} else if (result.uncontrolled) {
 		toast.error('Could not start saving', {
 			description: 'The offline service has not taken over this page yet. Reload the page and try again.',
+		})
+	} else if (result.failed.some((failure) => failure.status === 'quota')) {
+		toast.error('This browser is out of space', {
+			description: 'Free up storage or remove other offline copies, then choose Update to finish.',
 		})
 	} else if (result.failed.length) {
 		toast.warning(`${result.failed.length} of ${result.count} files could not be saved`, {
@@ -68,18 +68,36 @@ const save = async ({ close }) => {
 	}
 }
 
+const save = async ({ close }) => {
+	close()
+	try {
+		const result = await saveOfflineCopy(presentationId.value)
+		if (result) reportSave(result)
+	} catch {
+		toast.error('Could not save the offline copy')
+	}
+	refreshOfflineStatus(presentationId.value)
+}
+
 const remove = async ({ close }) => {
 	close()
-	await removeOfflineCopy(presentationId.value)
-	await refreshOfflineStatus(presentationId.value)
-	toast('Offline copy removed', {
-		description: 'This presentation needs internet to open again.',
-	})
+	try {
+		await removeOfflineCopy(presentationId.value)
+		toast('Offline copy removed', {
+			description: 'This presentation needs internet to open again.',
+		})
+	} catch {
+		toast.error('Could not remove the offline copy')
+	}
+	refreshOfflineStatus(presentationId.value)
 }
 
 const cancel = ({ close }) => {
 	cancelOfflineCopy()
 	close()
+	toast('Saving stopped', {
+		description: 'Images saved so far are kept. Choose Update to finish.',
+	})
 }
 
 const removeAction = { label: 'Remove offline copy', variant: 'subtle', onClick: remove }
@@ -102,7 +120,7 @@ const dialog = computed(() => {
 	if (status.value === 'outdated') {
 		return {
 			title: 'Update offline copy',
-			message: 'This presentation has changed since it was saved for offline.',
+			message: 'Some images added since the last save are not available offline yet.',
 			actions: [removeAction, { label: 'Update', variant: 'solid', onClick: save }],
 		}
 	}

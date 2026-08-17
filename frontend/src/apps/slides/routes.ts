@@ -33,9 +33,7 @@ export const routes: RouteRecordRaw[] = [
     path: '',
     component: SlidesShell,
     // before the route components resolve, so the whole graph loads as slides
-    beforeEnter: () => {
-      postToServiceWorker('slides-entered')
-    },
+    beforeEnter: () => postToServiceWorker('slides-entered'),
     children: [
       {
         path: '',

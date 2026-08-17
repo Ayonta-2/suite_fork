@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { frappeRequest } from 'frappe-ui'
 
-import { presentationDoc, inReadonlyMode } from '@/apps/slides/stores/presentation'
+import { presentationDoc, presentationId, inReadonlyMode } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
@@ -11,16 +11,19 @@ import { PINNED_CACHE_NAME, PIN_HEADER, RECORD_PREFIX } from '@/apps/slides/util
 
 const CONCURRENCY = 4
 const RETRY_DELAYS = [500, 1500]
+const QUOTA = 'quota'
 
-const offlineCopyProgress = ref({ running: false, done: 0, total: 0, bytes: 0, failed: [] })
+const offlineCopyProgress = ref({ running: false, done: 0, total: 0, failed: [] })
 
 let controller = null
 
 const recordKey = (id) => `${RECORD_PREFIX}${id}`
 
+// the record is the ledger: every key in `slides-pinned` is listed by a record
 const readRecord = (id) => {
 	try {
-		return JSON.parse(localStorage.getItem(recordKey(id))) || null
+		const record = JSON.parse(localStorage.getItem(recordKey(id)))
+		return Array.isArray(record?.keys) ? record : null
 	} catch {
 		return null
 	}
@@ -38,6 +41,14 @@ const readAllRecords = () => {
 		if (record) records[id] = record
 	}
 	return records
+}
+
+// keys no copy other than `id` lists
+const unsharedKeys = (id, keys) => {
+	const records = readAllRecords()
+	delete records[id]
+	const shared = new Set(Object.values(records).flatMap((record) => record.keys))
+	return keys.filter((key) => !shared.has(key))
 }
 
 // one entry per canonical key
@@ -61,10 +72,14 @@ const isMediaResponse = (response) => {
 	return response.status === 200 && ['image/', 'video/'].some((ct) => contentType.startsWith(ct))
 }
 
+// a server error is as transient as a dropped connection
 const fetchWithRetries = async (url, signal) => {
 	for (let attempt = 0; ; attempt++) {
 		try {
-			return await fetch(url, { headers: { [PIN_HEADER]: '1' }, signal })
+			const response = await fetch(url, { headers: { [PIN_HEADER]: '1' }, signal })
+			if (response.status < 500) return response
+			await response.body?.cancel()
+			throw new Error(`HTTP ${response.status}`)
 		} catch (err) {
 			if (signal.aborted || attempt >= RETRY_DELAYS.length) throw err
 			await delay(RETRY_DELAYS[attempt])
@@ -79,9 +94,8 @@ const pinTarget = async (cache, target, signal) => {
 		await response.body?.cancel()
 		return { ok: false, status: response.status }
 	}
-	const bytes = Number(response.headers.get('Content-Length')) || 0
 	await cache.put(target.key, response)
-	return { ok: true, bytes }
+	return { ok: true }
 }
 
 const recordFailure = (progress, target, status) => {
@@ -117,16 +131,19 @@ const warmAssets = () =>
 		loadBundledFonts().catch(() => {}),
 	])
 
-const warmShellAndApi = async (id, signal) => {
+const warmShellAndApi = async (id, loadOptions, signal) => {
 	await fetch(location.pathname, { headers: { [PIN_HEADER]: 'shell' }, signal }).then(
 		(response) => response.body?.cancel(),
 		() => {},
 	)
-	const readonly = inReadonlyMode.value
-	const composite = !!presentationDoc.value?.is_composite
-	for (const { url, params } of presentationLoadRequests(id, { readonly, composite })) {
+	for (const { url, params } of presentationLoadRequests(id, loadOptions)) {
 		await frappeRequest({ url, method: 'GET', params }).catch(() => {})
 	}
+}
+
+// after a deploy an online visit refreshes everything a copy needs except this
+const warmOfflineCopyAssets = (id) => {
+	if (readRecord(id)) warmAssets()
 }
 
 const saveOfflineCopy = async (id) => {
@@ -135,58 +152,63 @@ const saveOfflineCopy = async (id) => {
 	const { signal } = controller
 
 	const targets = getMediaTargets()
-	offlineCopyProgress.value = {
-		running: true,
-		done: 0,
-		total: targets.length,
-		bytes: 0,
-		failed: [],
+	const loadOptions = {
+		readonly: inReadonlyMode.value,
+		composite: !!presentationDoc.value?.is_composite,
 	}
+	offlineCopyProgress.value = { running: true, done: 0, total: targets.length, failed: [] }
 	const progress = offlineCopyProgress.value
 
-	const modified = presentationDoc.value?.modified
 	try {
 		if (!(await waitForController())) {
 			const registered = !!(await navigator.serviceWorker?.getRegistration?.())
 			return { ok: false, uncontrolled: true, registered }
 		}
 		await warmAssets()
-		await warmShellAndApi(id, signal)
+		await warmShellAndApi(id, loadOptions, signal)
 
 		const cache = await openPinnedCache()
 		const pinned = new Set((await cache.keys()).map((request) => new URL(request.url).pathname))
+
+		// bytes the presentation no longer shows go, before the ledger stops listing them
+		const needed = new Set(targets.map((target) => target.key))
+		const previous = readRecord(id)?.keys ?? []
+		const stale = unsharedKeys(id, previous.filter((key) => !needed.has(key)))
+		await Promise.all(stale.map((key) => cache.delete(key)))
+
+		const record = { keys: targets.map((target) => target.key).filter((key) => pinned.has(key)) }
+		writeRecord(id, record)
+		navigator.storage?.persist?.().catch(() => {})
 
 		await runPool(targets, async (target) => {
 			if (signal.aborted) return
 			if (!pinned.has(target.key)) {
 				try {
 					const result = await pinTarget(cache, target, signal)
-					if (result.ok) progress.bytes += result.bytes
-					else recordFailure(progress, target, result.status)
-				} catch {
+					if (result.ok) {
+						record.keys.push(target.key)
+						writeRecord(id, record)
+					} else {
+						recordFailure(progress, target, result.status)
+					}
+				} catch (err) {
 					if (signal.aborted) return
+					if (err?.name === 'QuotaExceededError') {
+						// every later put fails the same way
+						recordFailure(progress, target, QUOTA)
+						controller.abort(QUOTA)
+						return
+					}
 					recordFailure(progress, target, 'network')
 				}
 			}
 			progress.done += 1
 		})
 
-		if (signal.aborted) return null
+		// the ledger is current, so a cancelled run needs no report
+		if (signal.aborted && signal.reason !== QUOTA) return null
 
-		writeRecord(id, {
-			keys: targets.map((t) => t.key),
-			count: targets.length,
-			bytes: progress.bytes,
-			modified,
-			checkedAt: Date.now(),
-		})
-		navigator.storage?.persist?.().catch(() => {})
-		return {
-			ok: progress.failed.length === 0,
-			failed: [...progress.failed],
-			count: targets.length,
-			bytes: progress.bytes,
-		}
+		return { ok: progress.failed.length === 0, failed: [...progress.failed], count: targets.length }
 	} finally {
 		progress.running = false
 		controller = null
@@ -195,37 +217,29 @@ const saveOfflineCopy = async (id) => {
 
 const cancelOfflineCopy = () => controller?.abort()
 
-// keys shared with another copy stay
+// the record outlives the bytes it lists
 const removeOfflineCopy = async (id) => {
 	const record = readRecord(id)
+	if (record) {
+		const cache = await openPinnedCache()
+		await Promise.all(unsharedKeys(id, record.keys).map((key) => cache.delete(key)))
+	}
 	localStorage.removeItem(recordKey(id))
-	if (!record) return
-
-	const shared = new Set(Object.values(readAllRecords()).flatMap((r) => r.keys))
-	const cache = await openPinnedCache()
-	await Promise.all(record.keys.filter((key) => !shared.has(key)).map((key) => cache.delete(key)))
 }
 
-const getOfflineStatus = async (id) => {
+// the ledger says what is pinned; the cache is only walked when a copy is saved
+const getOfflineStatus = (id) => {
+	if (id !== presentationId.value) return 'none'
 	const record = readRecord(id)
 	if (!record) return 'none'
-	if (record.modified !== presentationDoc.value?.modified) return 'outdated'
-
-	const needed = getMediaTargets().map((t) => t.key)
-	const recorded = new Set(record.keys)
-	if (needed.length !== record.keys.length || needed.some((key) => !recorded.has(key))) {
-		return 'outdated'
-	}
-
-	const cache = await openPinnedCache()
-	const pinned = new Set((await cache.keys()).map((request) => new URL(request.url).pathname))
-	return needed.every((key) => pinned.has(key)) ? 'available' : 'outdated'
+	const pinned = new Set(record.keys)
+	return getMediaTargets().every((target) => pinned.has(target.key)) ? 'available' : 'outdated'
 }
 
 const offlineCopyStatus = ref('none')
 
-const refreshOfflineStatus = async (id) => {
-	offlineCopyStatus.value = id ? await getOfflineStatus(id).catch(() => 'none') : 'none'
+const refreshOfflineStatus = (id) => {
+	offlineCopyStatus.value = id ? getOfflineStatus(id) : 'none'
 }
 
 export {
@@ -234,6 +248,6 @@ export {
 	saveOfflineCopy,
 	cancelOfflineCopy,
 	removeOfflineCopy,
-	getOfflineStatus,
 	refreshOfflineStatus,
+	warmOfflineCopyAssets,
 }

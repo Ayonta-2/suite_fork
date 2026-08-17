@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { claimSlidesCachesFor, clearSlidesUserData } from './serviceWorker'
+import { claimSlidesCachesFor, clearSlidesUserData, postToServiceWorker } from './serviceWorker'
 
 const deleted: string[] = []
 
@@ -8,6 +8,11 @@ beforeEach(() => {
 	deleted.length = 0
 	localStorage.clear()
 	vi.stubGlobal('caches', { delete: async (name: string) => deleted.push(name) })
+})
+
+afterEach(() => {
+	vi.unstubAllGlobals()
+	vi.useRealTimers()
 })
 
 describe('slides caches per user', () => {
@@ -32,5 +37,43 @@ describe('slides caches per user', () => {
 
 		await claimSlidesCachesFor('b@x.com')
 		expect(deleted).toHaveLength(4)
+	})
+})
+
+describe('postToServiceWorker', () => {
+	beforeEach(() => {
+		vi.useFakeTimers()
+	})
+
+	const withController = (postMessage: (message: string, transfer: MessagePort[]) => void) => {
+		vi.stubGlobal('navigator', { serviceWorker: { controller: { postMessage } } })
+	}
+
+	it('resolves at once when no worker controls the page', async () => {
+		vi.stubGlobal('navigator', { serviceWorker: {} })
+		await expect(postToServiceWorker('slides-entered')).resolves.toBeUndefined()
+	})
+
+	it('resolves when the worker acks over the channel', async () => {
+		let sent: string | undefined
+		withController((message, [port]) => {
+			sent = message
+			port.postMessage(true)
+		})
+		const posted = postToServiceWorker('slides-entered')
+		await vi.advanceTimersByTimeAsync(0)
+		await expect(posted).resolves.toBeUndefined()
+		expect(sent).toBe('slides-entered')
+	})
+
+	it('resolves on the timeout when the worker never answers', async () => {
+		let settled = false
+		withController(() => {})
+		const posted = postToServiceWorker('slides-left').then(() => (settled = true))
+		await vi.advanceTimersByTimeAsync(499)
+		expect(settled).toBe(false)
+		await vi.advanceTimersByTimeAsync(1)
+		await posted
+		expect(settled).toBe(true)
 	})
 })

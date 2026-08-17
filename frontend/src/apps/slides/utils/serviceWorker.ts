@@ -1,8 +1,22 @@
 import { RECORD_PREFIX, USER_CACHE_NAMES } from '@/apps/slides/utils/slidesCaches'
 
-// the worker decides asset ownership per client, so the page has to say when it is slides
-export const postToServiceWorker = (message: string) => {
-  navigator.serviceWorker?.controller?.postMessage(message)
+// a broken worker must not hold up navigation
+const ACK_TIMEOUT = 500
+
+// the worker decides asset ownership per client, so the page has to say when it
+// is slides; resolves once the worker has recorded that, or on the timeout
+export const postToServiceWorker = (message: string): Promise<void> => {
+  const controller = navigator.serviceWorker?.controller
+  if (!controller) return Promise.resolve()
+  return new Promise((resolve) => {
+    const channel = new MessageChannel()
+    const timer = setTimeout(resolve, ACK_TIMEOUT)
+    channel.port1.onmessage = () => {
+      clearTimeout(timer)
+      resolve()
+    }
+    controller.postMessage(message, [channel.port2])
+  })
 }
 
 // localStorage: the user whose data the slides caches hold
