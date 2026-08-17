@@ -105,13 +105,19 @@ class EmailSubmissionService(CoreService):
         if method_responses := response.get("methodResponses"):
             body = method_responses[0][1]
             ids = body.get("ids", [])
+            # A server that enforces a lower limit than requested echoes the one it used
+            # (RFC 8620 §5.5) — a clamp at or below the page length swallows the look-ahead.
+            served_limit = min(int(body.get("limit") or limit + 1), limit + 1)
             has_more = len(ids) > limit
             ids = ids[:limit]
 
             total = body.get("total")
             if total is None:
-                # calculateTotal is requested, but RFC 8620 §5.5 lets a server omit total; the
-                # floor then sits one past a full page, so the pager can still advance.
+                # calculateTotal is requested, but RFC 8620 §5.5 also lets a server omit total.
+                # A page filled to a clamped limit is then indistinguishable from "more exist":
+                # keep the floor one past it, so the pager advances rather than strand rows.
+                if not has_more and 0 < served_limit <= limit and len(ids) == served_limit:
+                    has_more = True
                 total = position + len(ids) + (1 if has_more else 0)
 
             return ids, int(total)

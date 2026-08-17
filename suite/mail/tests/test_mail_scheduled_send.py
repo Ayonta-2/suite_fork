@@ -666,3 +666,25 @@ class TestSubmissionQueryTotal(IntegrationTestCase):
 
         ids, total = self._query_page({"ids": ["a", "b", "c"], "total": 7})
         self.assertEqual((ids, total), (["a", "b"], 7))
+
+    def test_clamped_lookahead_keeps_the_pager_advancing(self):
+        # The server clamps the requested limit+1 to the page length, swallowing the
+        # look-ahead (it echoes the limit it used, RFC 8620 §5.5): a page filled to the
+        # clamp is indistinguishable from "more exist", so the floor sits one past it.
+        ids, total = self._query_page({"ids": ["a", "b"], "limit": 2}, position=2)
+        self.assertEqual(ids, ["a", "b"])
+        self.assertEqual(total, 5)
+
+        # A clamp below the page length: the short page filled the clamp, so it is not
+        # the last page either.
+        ids, total = self._query_page({"ids": ["a"], "limit": 1}, position=2)
+        self.assertEqual(ids, ["a"])
+        self.assertEqual(total, 4)
+
+        # A short page under an unclamped (or above-page) limit really is the end.
+        ids, total = self._query_page({"ids": ["a"]}, position=2)
+        self.assertEqual((ids, total), (["a"], 3))
+
+        # The clamp never overrides a total the server did provide.
+        ids, total = self._query_page({"ids": ["a", "b"], "limit": 2, "total": 4}, position=2)
+        self.assertEqual((ids, total), (["a", "b"], 4))
