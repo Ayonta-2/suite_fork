@@ -1,7 +1,8 @@
 <template>
 	<Button variant="ghost" :tooltip="statusText" @click="showDialog = true">
 		<template #icon>
-			<LucideCloudDownload
+			<component
+				:is="icon"
 				class="size-4 stroke-[1.5]"
 				:class="[iconClass, progress.running && 'animate-pulse']"
 			/>
@@ -20,6 +21,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { Dialog, Button, toast } from 'frappe-ui'
+import { CloudAlert, CloudCheck, CloudDownload } from 'lucide-vue-next'
 
 import {
 	offlineCopyProgress as progress,
@@ -33,11 +35,16 @@ import { presentationId } from '@/apps/slides/stores/presentation'
 
 const showDialog = ref(false)
 
-const iconClass = computed(() => {
-	if (status.value === 'available') return 'text-ink-blue-6'
-	if (status.value === 'outdated') return 'text-ink-amber-6'
-	return 'text-ink-gray-6'
+const icon = computed(() => {
+	if (progress.value.running) return CloudDownload
+	if (status.value === 'available') return CloudCheck
+	if (status.value === 'outdated') return CloudAlert
+	return CloudDownload
 })
+
+const iconClass = computed(() =>
+	status.value === 'outdated' ? 'text-ink-amber-6' : 'text-ink-gray-6',
+)
 
 const statusText = computed(() => {
 	if (progress.value.running) return 'Saving offline copy'
