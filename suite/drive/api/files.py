@@ -37,6 +37,7 @@ from suite.drive.utils.files import (
     get_s3_key,
     get_s3_url,
     storage_key,
+    stored_on_disk,
 )
 from suite.drive.utils.users import mark_as_viewed
 
@@ -319,7 +320,7 @@ def _serve_resumable(manager, key, download_name, mime_type=None):
 
     S3 → presigned URL; disk+nginx → X-Accel-Redirect; disk → send_file.
     """
-    if manager.s3_enabled:
+    if manager.s3_enabled and not stored_on_disk(key):
         frappe.local.response["type"] = "redirect"
         frappe.local.response["location"] = manager.presigned_url(key, download_name, mime_type)
         return
@@ -408,7 +409,7 @@ def stream_file_content(entity_name: str):
 
     manager = FileManager()
     data = None
-    if manager.s3_enabled:
+    if manager.s3_enabled and not stored_on_disk(entity.file_url):
         data = manager.get_file(entity, f"bytes={byte1}-{byte1 + length - 1}")
     else:
         with manager.open_file(storage_key(entity.file_url)) as f:

@@ -41,7 +41,7 @@ from suite.drive.utils import (
     create_drive_file,
     get_user_folder,
 )
-from suite.drive.utils.files import FileManager
+from suite.drive.utils.files import FileManager, get_s3_url
 from suite.tests.utils import ensure_user
 
 OWNER = "drive-files-owner@example.com"
@@ -553,11 +553,25 @@ class TestDriveFilesAPI(IntegrationTestCase):
         manager.s3_enabled = True
         manager.conn = Mock()
         manager.conn.get_object.return_value = {"Body": BytesIO(b"storage boundary")}
-        self.assertEqual(manager.get_file(uploaded).read(), b"storage boundary")
+        remote = frappe._dict(file_url=get_s3_url(f"team/{uploaded.name}"))
+        self.assertEqual(manager.get_file(remote).read(), b"storage boundary")
         manager.conn.get_object.assert_called_once_with(
             Bucket=manager.bucket,
-            Key=uploaded.file_url.lstrip("/"),
+            Key=f"team/{uploaded.name}",
         )
+
+    def test_framework_attachment_blob_reads_from_disk_even_with_s3(self):
+        # Adopted framework uploads keep their /private/files url and their blob
+        # on the site's disk; enabling S3 must not send their reads to the bucket.
+        with self.set_user(OWNER):
+            uploaded = self.upload(b"disk blob")
+
+        manager = FileManager()
+        manager.s3_enabled = True
+        manager.conn = Mock()
+        with manager.get_file(uploaded) as stored:
+            self.assertEqual(stored.read(), b"disk blob")
+        manager.conn.get_object.assert_not_called()
 
     def test_private_video_range_stream_uses_storage_relative_path(self):
         self.file.file_type = "Video"
