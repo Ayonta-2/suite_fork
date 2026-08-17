@@ -382,10 +382,13 @@ const performNavbarDropdownAction = async (action) => {
 		const newPresentation = await duplicatePresentation(presentationId.value)
 		navigateToPresentation(newPresentation)
 	} else if (action == 'delete') {
-		confirmDeletePresentation(presentationDoc.value, () => {
-			thumbnailCaptureRef.value?.reset()
-			router.push({ name: 'slides-home' })
-		})
+		confirmDeletePresentation(
+			{ name: presentationId.value, title: presentationDoc.value?.title },
+			() => {
+				thumbnailCaptureRef.value?.reset()
+				router.push({ name: 'slides-home' })
+			},
+		)
 	} else if (action == 'updateTheme') {
 		themeDialogAction.value = 'update'
 		showThemeDialog.value = true
