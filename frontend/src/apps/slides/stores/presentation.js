@@ -228,24 +228,28 @@ const getPresentationResource = (name) => {
 				slide.elements = await transformElements(slide.elements)
 			}
 
-			// restore unsynced local edits, but only if the server hasn't moved past them
+			// the worker may replay a document older than the last save; the copy that
+			// save left behind is then the truth, and unsynced edits ride along in it
 			const local = await getPresentationFromLocalDB(name)
-			if (local?.dirty) {
-				if (local.baseModified === doc.modified) {
-					const restored = JSON.parse(JSON.stringify(local.content))
-					// local content skips the load pipeline; migrate + dedup it here too
-					for (const slide of restored) {
-						slide.background = normalizeColor(slide.background)
-						slide.elements = parseElements(slide.elements, slide)
-					}
-					ensureUniqueClientIds(restored)
-					slides.value = restored
-					slidesLength.value = slides.value.length
-					markDirty()
-					return
+			const servedIsStale = local?.baseModified > doc.modified
+			if (servedIsStale || (local?.dirty && local.baseModified === doc.modified)) {
+				if (servedIsStale) doc.modified = local.baseModified
+				const restored = JSON.parse(JSON.stringify(local.content))
+				// local content skips the load pipeline; migrate + dedup it here too
+				for (const slide of restored) {
+					slide.background = normalizeColor(slide.background)
+					slide.elements = parseElements(slide.elements, slide)
 				}
-				toast.warning('Changes that never reached the server were discarded.')
+				const repaired = ensureUniqueClientIds(restored)
+				slides.value = restored
+				slidesLength.value = slides.value.length
+				// a clean copy is what the last successful save sent, so it is the
+				// server content at baseModified and there is nothing to push
+				if (local.dirty || repaired) markDirty()
+				else markClean()
+				return
 			}
+			if (local?.dirty) toast.warning('Changes that never reached the server were discarded.')
 
 			slides.value = JSON.parse(JSON.stringify(doc.slides || []))
 			markClean()
