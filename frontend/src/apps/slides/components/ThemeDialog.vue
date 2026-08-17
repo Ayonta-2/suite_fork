@@ -8,7 +8,7 @@
 	>
 		<div class="flex flex-col gap-5">
 			<p class="text-p-base text-ink-gray-7">{{ dialogDescription }}</p>
-			<div class="grid max-h-[32rem] grid-cols-2 gap-6 overflow-y-auto">
+			<div class="-m-1 grid max-h-[32rem] grid-cols-2 gap-6 overflow-y-auto p-1">
 				<div
 					v-for="(theme, idx) in templateList"
 					:key="theme.name"
@@ -26,7 +26,7 @@
 							:scale="THEME_PREVIEW_SCALE"
 						/>
 					</div>
-					<div class="flex">
+					<div class="flex gap-2">
 						<LucideCheck
 							v-if="props.update && theme.name == presentationTheme"
 							class="size-4 stroke-[1.5] text-ink-gray-8"
@@ -49,8 +49,8 @@ import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 import { getThumbnailCardStyles } from '@/apps/slides/utils/helpers'
 import { presentationTheme, templateList } from '@/apps/slides/stores/presentation'
 
-// card width: 2xl dialog (672) - px-6 (48) - gap-6 (24), halved, - m-1 (8)
-const THEME_PREVIEW_SCALE = 292 / 960
+// card width: 2xl dialog (672) - px-6 (48) - gap-6 (24), halved
+const THEME_PREVIEW_SCALE = 300 / 960
 
 const props = defineProps({
 	update: {
