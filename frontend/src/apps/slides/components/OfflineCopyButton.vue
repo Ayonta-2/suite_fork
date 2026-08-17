@@ -103,7 +103,7 @@ const dialog = computed(() => {
 		return {
 			title: 'Update offline copy',
 			message: 'This presentation has changed since it was saved for offline.',
-			actions: [{ label: 'Update', variant: 'solid', onClick: save }, removeAction],
+			actions: [removeAction, { label: 'Update', variant: 'solid', onClick: save }],
 		}
 	}
 	return {
