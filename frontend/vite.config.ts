@@ -6,6 +6,8 @@ import frappeui from 'frappe-ui/vite'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+import { slidesBuildId } from './slidesBuildId'
+
 // Local frappe-ui work: when the submodule is checked out, bare `frappe-ui`
 // imports resolve to its source instead of the pinned package, so edits show up
 // without a publish/reinstall. Same wiring as the mail app.
@@ -85,6 +87,7 @@ export default defineConfig(({ mode }) => ({
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
     __SITE_NAME__: JSON.stringify(defaultSite),
     __SOCKETIO_PORT__: JSON.stringify(commonSiteConfig.socketio_port || 9000),
+    __SLIDES_BUILD__: JSON.stringify(slidesBuildId()),
   },
   // Served by Frappe at /assets/suite/frontend/ (build output lands in
   // ../suite/public/frontend -> exposed as /assets/suite/frontend).

@@ -19,6 +19,10 @@ def get_context(context):
     csrf_token = frappe.sessions.get_csrf_token()
     frappe.db.commit()
 
+    # the slides service worker must not keep this shell as the offline app
+    if frappe.session.user == "Guest":
+        frappe.local.response_headers["X-Suite-Guest"] = "1"
+
     context.boot = get_boot()
     context.boot.csrf_token = csrf_token
     context.csrf_token = csrf_token

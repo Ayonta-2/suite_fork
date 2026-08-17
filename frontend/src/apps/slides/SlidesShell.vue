@@ -13,7 +13,7 @@ import { h, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { toast, FrappeUIProvider } from 'frappe-ui'
 import { Wifi, WifiOff } from 'lucide-vue-next'
-import { saveCurrentState } from '@/apps/slides/stores/saving'
+import { dirty, saveCurrentState } from '@/apps/slides/stores/saving'
 import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
 import { setupTheme } from '@/utils/setupTheme'
 import { postToServiceWorker } from '@/apps/slides/utils/serviceWorker'
@@ -21,6 +21,8 @@ import { loadBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import '@/apps/slides/styles/fonts.css'
 
 const isOnline = ref(navigator?.onLine ?? true)
+// a page booted from the cached shell carries that shell's csrf token
+const bootedOffline = !isOnline.value
 
 const handleOffline = () => {
   isOnline.value = false
@@ -30,10 +32,15 @@ const handleOffline = () => {
   })
 }
 
-const handleOnline = () => {
+const handleOnline = async () => {
   isOnline.value = true
-  saveCurrentState()
+  await saveCurrentState()
   if (inSlideShowMode.value) return
+  // edits that failed to reach the server stay in the page rather than behind a leave prompt
+  if (bootedOffline && !dirty.value) {
+    location.reload()
+    return
+  }
   toast('You are back online.', {
     icon: () => h(Wifi, { class: 'size-4' }),
   })

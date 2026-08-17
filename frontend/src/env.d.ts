@@ -34,6 +34,9 @@ declare global {
 
   /** Injected by Vite from sites/common_site_config.json. */
   const __SOCKETIO_PORT__: string | number
+
+  /** Injected by Vite, one id per build (see slidesBuildId.ts). */
+  const __SLIDES_BUILD__: string
 }
 
 export {}

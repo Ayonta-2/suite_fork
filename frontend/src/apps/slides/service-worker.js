@@ -10,11 +10,15 @@ const SHELL_CACHE_NAME = 'slides-shell'
 const SHELL_CACHE_KEY = '/slides'
 // outside CACHE_MAX_AGE: a pinned copy must survive the sweep
 const PINNED_CACHE_NAME = 'slides-pinned'
+// remembers which build filled the shell and asset caches
+const META_CACHE_NAME = 'slides-meta'
+const BUILD_CACHE_KEY = '/slides-build'
 
 const PIN_HEADER = 'x-slides-pin'
+// set by suite/www/suite.py on the shell it renders to a logged-out visitor
+const GUEST_HEADER = 'x-suite-guest'
 
 const DAY = 24 * 60 * 60 * 1000
-const NETWORK_TIMEOUT = 5000
 
 // membership is what makes a cache expiring; the sweep reads straight off this
 const CACHE_MAX_AGE = {
@@ -63,7 +67,20 @@ const cleanupOldCacheEntries = async (name, maxAge) => {
 	)
 }
 
+// a new build's shell references new asset names, so both caches restart together
+const dropPreviousBuild = async () => {
+	const meta = await openCache(META_CACHE_NAME)
+	if (!meta) return
+
+	const stored = await matchCache(meta, BUILD_CACHE_KEY)
+	if (stored && (await stored.text()) === __SLIDES_BUILD__) return
+
+	await meta.put(BUILD_CACHE_KEY, new Response(__SLIDES_BUILD__))
+	await Promise.all([caches.delete(SHELL_CACHE_NAME), caches.delete(ASSETS_CACHE_NAME)])
+}
+
 const handleSWActivate = async () => {
+	await dropPreviousBuild().catch(() => {})
 	// a failed sweep must not block activation
 	await Promise.all(
 		Object.entries(CACHE_MAX_AGE).map(([name, maxAge]) =>
@@ -162,9 +179,13 @@ const isCacheable = (type, response) => {
 	if (type === 'asset') {
 		return !response.redirected && !contentType.startsWith('text/html')
 	}
-	// a login redirect stored as the shell would be replayed offline as the app
+	// a login redirect or the logged-out shell would be replayed offline as the app
 	if (type === 'shell') {
-		return !response.redirected && contentType.startsWith('text/html')
+		return (
+			!response.redirected &&
+			contentType.startsWith('text/html') &&
+			!response.headers.has(GUEST_HEADER)
+		)
 	}
 	// a redirected or HTML body under an API key would be replayed as data
 	return !response.redirected && contentType.includes('application/json')
@@ -191,22 +212,17 @@ const fetchAndCache = async (event, type, cache) => {
 	return response
 }
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
 // network-first: serve the live response (preserving its real headers) and fall
-// back to cache only when the network fails, or stalls past the timeout with a
-// stored copy to fall back on; with nothing stored the network error surfaces
-const networkFirst = async (event, type, cache, { key = event.request, timeout } = {}) => {
+// back to cache only when the network fails; with nothing stored the error surfaces
+const networkFirst = async (event, type, cache, key = event.request) => {
 	const network = fetchAndCache(event, type, cache)
 	try {
-		const response = timeout ? await Promise.race([network, delay(timeout)]) : await network
-		if (response) return response
+		return await network
 	} catch {}
 
 	const cached = await matchCache(cache, key)
 	if (!cached) return network
 
-	event.waitUntil(network.catch(() => {}))
 	return cached
 }
 
@@ -270,7 +286,7 @@ const getShellResponse = async (event) => {
 	const cache = await openCache(SHELL_CACHE_NAME)
 	if (!cache) return fetch(event.request)
 
-	return networkFirst(event, 'shell', cache, { key: SHELL_CACHE_KEY, timeout: NETWORK_TIMEOUT })
+	return networkFirst(event, 'shell', cache, SHELL_CACHE_KEY)
 }
 
 const getResponseForRequest = async (event, type, url) => {
