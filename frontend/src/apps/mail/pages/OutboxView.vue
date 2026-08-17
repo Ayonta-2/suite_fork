@@ -256,6 +256,9 @@ const refresh = async () => {
 	// Refreshes can overlap (poll + socket + post-action); a response may only apply if
 	// it's newer than the last one applied — comparing against the latest *started*
 	// instead would let a newer refresh that failed suppress an older success.
+	// seq is taken in the same synchronous block that starts the fetches (the depth
+	// retry below re-enters and takes a fresh one), so seq order is fetch-start order:
+	// an applied snapshot is only ever replaced by one whose fetches began later.
 	const seq = ++refreshSeq
 	const pages = Math.max(loadedPages.value, 1)
 	try {
