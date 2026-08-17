@@ -151,8 +151,11 @@
 								:isCohost="isCurrentUserCohost"
 								:isGuest="isGuestSession"
 								:hostOnlyChat="chatStore.hostOnlyChat"
+								:pinned-message="chatStore.pinnedMessage"
 								@close="toggleChat"
 								@send="chat.onSendChat"
+								@pin="chat.pinMessage"
+								@unpin="unpinChatMessage"
 							/>
 
 							<!-- People Panel -->
@@ -622,7 +625,13 @@ const chat = useChat({
 	chatStore,
 	currentUser,
 	sfuClient: sfuConnection.sfuClient,
+	canPin: () => isCurrentUserHost.value || isCurrentUserCohost.value,
 });
+
+function unpinChatMessage() {
+	const messageId = chatStore.pinnedMessage?.messageId;
+	if (messageId) chat.pinMessage(messageId, "unpin");
+}
 
 // --- Poll ---
 
