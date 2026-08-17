@@ -1,11 +1,13 @@
 <template>
 	<Dropdown :options="shapeOptions" side="top" align="center" :offset="12">
 		<template #default="{ open }">
-			<Tooltip text="Shapes" :hover-delay="0.7">
-				<div :class="triggerClass(open)">
-					<LucideShapes class="size-4.5 stroke-[1.5] text-ink-gray-7" />
-				</div>
-			</Tooltip>
+			<div>
+				<Tooltip text="Shapes" :hover-delay="0.7">
+					<div :class="triggerClass(open)">
+						<LucideShapes class="size-4 stroke-[1.5] text-ink-gray-7" />
+					</div>
+				</Tooltip>
+			</div>
 		</template>
 	</Dropdown>
 </template>
