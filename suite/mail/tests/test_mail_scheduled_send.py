@@ -624,11 +624,33 @@ class TestOutboxRequestBoundary(IntegrationTestCase):
 
 
 class TestSubmissionQueryTotal(IntegrationTestCase):
-    """The submission query's look-ahead, exercised against a fake server response: the pager
-    must keep advancing even when the server omits total (RFC 8620 §5.5 allows it), and a
-    genuine total of 0 must not be mistaken for an omitted one."""
+    """The submission query, exercised against a fake (possibly clamping) server: the pager
+    must keep advancing even when the server omits total (RFC 8620 §5.5 allows it), a genuine
+    total of 0 must not be mistaken for an omitted one, and a server-enforced limit below the
+    page length must not shrink the page — the pager advances in strides of the full page, so
+    the rows behind the clamp would be stranded."""
 
-    def _query_page(self, body: dict, position: int = 0, limit: int = 2) -> tuple[list[str], int]:
+    def _query_page(
+        self,
+        all_ids: list[str],
+        position: int = 0,
+        limit: int = 2,
+        server_limit: int | None = None,
+        server_total: int | None = None,
+    ) -> tuple[list[str], int, int]:
+        """Runs query() against a fake server holding `all_ids`, which clamps every request to
+        `server_limit` ids (echoing the limit it used, per RFC 8620 §5.5) and reports
+        `server_total` as total when given. Returns (ids, total, request_count)."""
+
+        def respond(filter=None, position=0, limit=50, sort=None):
+            served = limit if server_limit is None else min(server_limit, limit)
+            body = {"ids": all_ids[position : position + served]}
+            if server_total is not None:
+                body["total"] = server_total
+            if served < limit:
+                body["limit"] = served
+            return {"methodResponses": [["EmailSubmission/query", body, "0"]]}
+
         service = EmailSubmissionService(
             "acc",
             SimpleNamespace(
@@ -639,52 +661,55 @@ class TestSubmissionQueryTotal(IntegrationTestCase):
                 ]
             ),
         )
-        response = {"methodResponses": [["EmailSubmission/query", body, "0"]]}
-        with mock.patch.object(service, "_query", return_value=response) as query:
+        with mock.patch.object(service, "_query", side_effect=respond) as query:
             ids, total = service.query(position=position, limit=limit)
 
         # The look-ahead: one id past the page is requested, never returned.
-        self.assertEqual(query.call_args.kwargs["limit"], limit + 1)
-        return ids, total
+        self.assertEqual(query.call_args_list[0].kwargs["limit"], limit + 1)
+        return ids, total, query.call_count
 
     def test_omitted_total_keeps_the_pager_advancing(self):
         # A full page plus the look-ahead id: the floor sits one past the page, so the
         # pager's page count stays ahead of the current page.
-        ids, total = self._query_page({"ids": ["a", "b", "c"]}, position=2)
-        self.assertEqual(ids, ["a", "b"])
+        ids, total, _ = self._query_page(["a", "b", "c", "d", "e"], position=2)
+        self.assertEqual(ids, ["c", "d"])
         self.assertEqual(total, 5)
 
         # A full page with nothing behind it: the floor is exact and Next disables.
-        ids, total = self._query_page({"ids": ["a", "b"]}, position=2)
-        self.assertEqual(ids, ["a", "b"])
+        ids, total, _ = self._query_page(["a", "b", "c", "d"], position=2)
+        self.assertEqual(ids, ["c", "d"])
         self.assertEqual(total, 4)
 
     def test_server_total_is_trusted_even_when_zero(self):
         # total 0 is falsy but real — an out-of-range page must not report phantom pages.
-        ids, total = self._query_page({"ids": [], "total": 0}, position=2)
+        ids, total, _ = self._query_page([], position=2, server_total=0)
         self.assertEqual((ids, total), ([], 0))
 
-        ids, total = self._query_page({"ids": ["a", "b", "c"], "total": 7})
+        ids, total, _ = self._query_page(["a", "b", "c", "d", "e"], server_total=7)
         self.assertEqual((ids, total), (["a", "b"], 7))
 
-    def test_clamped_lookahead_keeps_the_pager_advancing(self):
-        # The server clamps the requested limit+1 to the page length, swallowing the
-        # look-ahead (it echoes the limit it used, RFC 8620 §5.5): a page filled to the
-        # clamp is indistinguishable from "more exist", so the floor sits one past it.
-        ids, total = self._query_page({"ids": ["a", "b"], "limit": 2}, position=2)
-        self.assertEqual(ids, ["a", "b"])
+    def test_clamped_server_still_fills_the_page(self):
+        # The server clamps every query below the page length: the page is filled across
+        # follow-up queries, so no rows are stranded between the pager's strides — and the
+        # look-ahead still lands, keeping the floor one past the page.
+        ids, total, requests = self._query_page(["a", "b", "c", "d", "e", "f"], limit=4, server_limit=1)
+        self.assertEqual(ids, ["a", "b", "c", "d"])
+        self.assertEqual(total, 5)
+        self.assertEqual(requests, 5)
+
+        # A clamp exactly at the page length behaves the same — the look-ahead alone spills
+        # into a follow-up query.
+        ids, total, _ = self._query_page(["a", "b", "c", "d", "e", "f"], position=2, server_limit=2)
+        self.assertEqual(ids, ["c", "d"])
         self.assertEqual(total, 5)
 
-        # A clamp below the page length: the short page filled the clamp, so it is not
-        # the last page either.
-        ids, total = self._query_page({"ids": ["a"], "limit": 1}, position=2)
-        self.assertEqual(ids, ["a"])
-        self.assertEqual(total, 4)
+        # A clamped server that runs dry mid-fill: the results end, exactly.
+        ids, total, _ = self._query_page(["a", "b", "c"], limit=4, server_limit=1)
+        self.assertEqual(ids, ["a", "b", "c"])
+        self.assertEqual(total, 3)
 
-        # A short page under an unclamped (or above-page) limit really is the end.
-        ids, total = self._query_page({"ids": ["a"]}, position=2)
-        self.assertEqual((ids, total), (["a"], 3))
-
-        # The clamp never overrides a total the server did provide.
-        ids, total = self._query_page({"ids": ["a", "b"], "limit": 2, "total": 4}, position=2)
-        self.assertEqual((ids, total), (["a", "b"], 4))
+        # The fill respects a total the server did provide — it stops there and never
+        # overrides it.
+        ids, total, requests = self._query_page(["a", "b", "c", "d"], limit=4, server_limit=2, server_total=4)
+        self.assertEqual((ids, total), (["a", "b", "c", "d"], 4))
+        self.assertEqual(requests, 2)

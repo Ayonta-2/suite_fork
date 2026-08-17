@@ -95,34 +95,51 @@ class EmailSubmissionService(CoreService):
     ) -> tuple[list[str], int]:
         """Returns one page of ids of submissions matching `filter` (e.g. {"undoStatus":
         "pending"}), in `sort` order (e.g. [{"property": "sentAt", "isAscending": False}]),
-        plus the server's total match count."""
+        plus the server's total match count.
+
+        The page is filled across follow-up queries when the server enforces a lower limit
+        than requested (it then echoes the limit it used, RFC 8620 §5.5) — otherwise a clamp
+        below the page length would silently shrink the page and strand the rows behind it,
+        since the pager advances in strides of the full page."""
 
         limit = limit or self.max_objects_in_get
         # One id past the page is a look-ahead: whether more matches exist is then known even
         # when the server's total is missing or zero-valued.
-        response = self._query(filter=filter, position=position, limit=limit + 1, sort=sort)
+        target = limit + 1
 
-        if method_responses := response.get("methodResponses"):
+        ids: list[str] = []
+        total = None
+        while len(ids) < target:
+            remaining = target - len(ids)
+            response = self._query(filter=filter, position=position + len(ids), limit=remaining, sort=sort)
+            if not (method_responses := response.get("methodResponses")):
+                if not ids:
+                    return [], 0
+                break
+
             body = method_responses[0][1]
-            ids = body.get("ids", [])
-            # A server that enforces a lower limit than requested echoes the one it used
-            # (RFC 8620 §5.5) — a clamp at or below the page length swallows the look-ahead.
-            served_limit = min(int(body.get("limit") or limit + 1), limit + 1)
-            has_more = len(ids) > limit
-            ids = ids[:limit]
+            batch = body.get("ids", [])[:remaining]
+            served_limit = min(int(body.get("limit") or remaining), remaining)
+            if total is None and body.get("total") is not None:
+                total = int(body["total"])
 
-            total = body.get("total")
-            if total is None:
-                # calculateTotal is requested, but RFC 8620 §5.5 also lets a server omit total.
-                # A page filled to a clamped limit is then indistinguishable from "more exist":
-                # keep the floor one past it, so the pager advances rather than strand rows.
-                if not has_more and 0 < served_limit <= limit and len(ids) == served_limit:
-                    has_more = True
-                total = position + len(ids) + (1 if has_more else 0)
+            ids.extend(batch)
+            # A batch below the enforced limit is the end of the results; one that merely
+            # filled a clamp is not — loop on for the rest of the page.
+            if not batch or len(batch) < served_limit:
+                break
+            if total is not None and position + len(ids) >= total:
+                break
 
-            return ids, int(total)
+        has_more = len(ids) > limit
+        ids = ids[:limit]
 
-        return [], 0
+        if total is None:
+            # calculateTotal is requested, but RFC 8620 §5.5 lets a server omit total; the
+            # floor then sits one past a full page, so the pager can still advance.
+            total = position + len(ids) + (1 if has_more else 0)
+
+        return ids, int(total)
 
     def get(self, ids: list[str], properties: list[str] | None = None) -> list[dict]:
         """Public method to get email submissions by ids, handling batching if the number of ids exceeds the server's maximum allowed in a single 'get' call."""
