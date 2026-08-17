@@ -7,14 +7,14 @@
 	>
 		<div
 			v-if="slidesLength"
-			class="flex items-center justify-between px-4 py-3 pb-1 font-text text-sm"
+			class="flex items-center justify-between px-4 pt-3"
 		>
-			<span class="text-ink-gray-6">Slide</span>
-			<span class="text-ink-gray-6">{{ (slideIndex ?? 0) + 1 }} of {{ slidesLength }}</span>
+			<span :class="labelClasses">Slide</span>
+			<span :class="labelClasses">{{ (slideIndex ?? 0) + 1 }} of {{ slidesLength }}</span>
 		</div>
 		<div
 			ref="scrollableArea"
-			class="faded-scroll [--fade-length:6px] min-h-0 flex-1 overflow-y-auto p-4 pt-4 no-scrollbar"
+			class="faded-scroll [--fade-length:6px] min-h-0 flex-1 overflow-y-auto p-4 pt-3 no-scrollbar"
 		>
 			<component :is="menuWrapper" v-bind="menuWrapperProps">
 				<div :style="virtualContainerStyles">
@@ -35,7 +35,7 @@
 						/>
 						<div
 							v-if="isSlideActive(orderedSlides[virtualRow.index])"
-							class="pointer-events-none absolute -left-4 top-0 z-10 w-1 rounded-r-lg bg-surface-gray-9"
+							class="pointer-events-none absolute -left-4 top-0 z-10 w-1 rounded-r-lg bg-surface-gray-8 dark:bg-surface-gray-5"
 							:style="{ height: `${thumbnailHeight}px` }"
 						/>
 					</div>
@@ -76,6 +76,7 @@ import { reorderSlidesCommand } from '@/apps/slides/stores/commands'
 import { resetFocus } from '@/apps/slides/stores/element'
 import { slidesLength, presentationDoc } from '@/apps/slides/stores/presentation'
 import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
+import { labelClasses } from '@/apps/slides/utils/constants'
 import { buildSlideContextOptions } from '@/apps/slides/utils/slideMenu'
 
 const attrs = useAttrs()
