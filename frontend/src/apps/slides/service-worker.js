@@ -125,15 +125,24 @@ const isFromSlidesPage = (request) => {
 // requested by a stylesheet carries the stylesheet's url
 const slidesClientState = new Map()
 
+const forgetClosedClients = async () => {
+	const clients = await self.clients.matchAll({ type: 'window' })
+	const open = new Set(clients.map((client) => client.id))
+	for (const clientId of slidesClientState.keys()) {
+		if (!open.has(clientId)) slidesClientState.delete(clientId)
+	}
+}
+
 self.addEventListener('message', (event) => {
 	const clientId = event.source?.id
 	if (!clientId) return
 	if (event.data === 'slides-entered') slidesClientState.set(clientId, 'entered')
 	if (event.data === 'slides-left') slidesClientState.set(clientId, 'left')
+	event.waitUntil(forgetClosedClients().catch(() => {}))
 })
 
-const isSlidesBundleRequest = (event, url) => {
-	if (!isBundleAsset(url)) return false
+// only a slides page may be answered from the slides caches
+const isSlidesClient = (event) => {
 	const state = slidesClientState.get(event.clientId)
 	if (state === 'entered') return true
 	return isFromSlidesPage(event.request) && state !== 'left'
@@ -276,10 +285,11 @@ const getResponseForRequest = async (event, type, url) => {
 }
 
 const getRequestType = (event, url) => {
+	if (isShell(event.request, url)) return 'shell'
+	if (!isSlidesClient(event)) return 'other'
 	if (isMedia(url)) return 'media'
 	if (isAPI(url) || isPresentationDoc(url)) return 'api'
-	if (isSlidesStatic(url) || isSlidesBundleRequest(event, url)) return 'asset'
-	if (isShell(event.request, url)) return 'shell'
+	if (isSlidesStatic(url) || isBundleAsset(url)) return 'asset'
 	return 'other'
 }
 
