@@ -22,6 +22,8 @@ and retry/dismiss against delivered (final) submissions.
 """
 
 from datetime import datetime
+from types import SimpleNamespace
+from unittest import mock
 
 import frappe
 from frappe.exceptions import FrappeTypeError
@@ -39,6 +41,7 @@ from suite.mail.api.scheduled import (
     send_scheduled_mail_now,
 )
 from suite.mail.jmap import get_email_service, get_email_submission_service
+from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 from suite.mail.utils.dt import to_utc_z
 from suite.utils.dt import convert_to_utc
@@ -618,3 +621,48 @@ class TestOutboxRequestBoundary(IntegrationTestCase):
 
         with self.assertRaisesRegex(frappe.ValidationError, "undoStatus must be one of"):
             get_submissions("acc", undo_status="bogus")
+
+
+class TestSubmissionQueryTotal(IntegrationTestCase):
+    """The submission query's look-ahead, exercised against a fake server response: the pager
+    must keep advancing even when the server omits total (RFC 8620 §5.5 allows it), and a
+    genuine total of 0 must not be mistaken for an omitted one."""
+
+    def _query_page(self, body: dict, position: int = 0, limit: int = 2) -> tuple[list[str], int]:
+        service = EmailSubmissionService(
+            "acc",
+            SimpleNamespace(
+                capabilities=[
+                    "urn:ietf:params:jmap:core",
+                    "urn:ietf:params:jmap:mail",
+                    "urn:ietf:params:jmap:submission",
+                ]
+            ),
+        )
+        response = {"methodResponses": [["EmailSubmission/query", body, "0"]]}
+        with mock.patch.object(service, "_query", return_value=response) as query:
+            ids, total = service.query(position=position, limit=limit)
+
+        # The look-ahead: one id past the page is requested, never returned.
+        self.assertEqual(query.call_args.kwargs["limit"], limit + 1)
+        return ids, total
+
+    def test_omitted_total_keeps_the_pager_advancing(self):
+        # A full page plus the look-ahead id: the floor sits one past the page, so the
+        # pager's page count stays ahead of the current page.
+        ids, total = self._query_page({"ids": ["a", "b", "c"]}, position=2)
+        self.assertEqual(ids, ["a", "b"])
+        self.assertEqual(total, 5)
+
+        # A full page with nothing behind it: the floor is exact and Next disables.
+        ids, total = self._query_page({"ids": ["a", "b"]}, position=2)
+        self.assertEqual(ids, ["a", "b"])
+        self.assertEqual(total, 4)
+
+    def test_server_total_is_trusted_even_when_zero(self):
+        # total 0 is falsy but real — an out-of-range page must not report phantom pages.
+        ids, total = self._query_page({"ids": [], "total": 0}, position=2)
+        self.assertEqual((ids, total), ([], 0))
+
+        ids, total = self._query_page({"ids": ["a", "b", "c"], "total": 7})
+        self.assertEqual((ids, total), (["a", "b"], 7))

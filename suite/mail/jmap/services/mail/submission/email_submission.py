@@ -97,16 +97,24 @@ class EmailSubmissionService(CoreService):
         "pending"}), in `sort` order (e.g. [{"property": "sentAt", "isAscending": False}]),
         plus the server's total match count."""
 
-        response = self._query(
-            filter=filter, position=position, limit=limit or self.max_objects_in_get, sort=sort
-        )
+        limit = limit or self.max_objects_in_get
+        # One id past the page is a look-ahead: whether more matches exist is then known even
+        # when the server's total is missing or zero-valued.
+        response = self._query(filter=filter, position=position, limit=limit + 1, sort=sort)
 
         if method_responses := response.get("methodResponses"):
             body = method_responses[0][1]
             ids = body.get("ids", [])
-            # calculateTotal is requested, but RFC 8620 §5.5 lets a server omit total; the
-            # page's own bound is then the best available floor.
-            return ids, int(body.get("total") or position + len(ids))
+            has_more = len(ids) > limit
+            ids = ids[:limit]
+
+            total = body.get("total")
+            if total is None:
+                # calculateTotal is requested, but RFC 8620 §5.5 lets a server omit total; the
+                # floor then sits one past a full page, so the pager can still advance.
+                total = position + len(ids) + (1 if has_more else 0)
+
+            return ids, int(total)
 
         return [], 0
 
