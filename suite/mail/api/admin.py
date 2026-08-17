@@ -424,7 +424,52 @@ def get_members(
         # Stored in system time; the API speaks UTC, like every other timestamp it returns.
         user["last_active"] = to_utc_z(user.get("last_active"))
 
+    _attach_quota_usage(users)
+
     return users
+
+
+def _attach_quota_usage(users: list[dict]) -> None:
+    """Adds each member's Stalwart disk-quota usage to their row as ``quota``.
+
+    All accounts are read in one bulk call rather than one per member. ``quota`` stays ``None``
+    for members without a personal account, and for everyone when Stalwart is unreachable — the
+    members list still loads, just without storage figures.
+    """
+
+    for user in users:
+        user["quota"] = None
+
+    if not users:
+        return
+
+    user_accounts = frappe.get_all(
+        "User Account",
+        filters={"user": ("in", [user["name"] for user in users])},
+        fields=["user", "account"],
+    )
+    personal_accounts = set(
+        frappe.get_all(
+            "JMAP Account",
+            filters={"is_personal": True, "name": ("in", [row.account for row in user_accounts])},
+            pluck="name",
+        )
+    )
+    account_by_user = {row.user: row.account for row in user_accounts if row.account in personal_accounts}
+    if not account_by_user:
+        return
+
+    with suppress(Exception):
+        accounts = {
+            account["id"]: account
+            for account in get_account_service().get_all(properties=["id", "quotas", "usedDiskQuota"])
+        }
+        for user in users:
+            if account := accounts.get(account_by_user.get(user["name"])):
+                user["quota"] = _build_quota_usage(
+                    (account.get("quotas") or {}).get("maxDiskQuota") or 0,
+                    account.get("usedDiskQuota") or 0,
+                )
 
 
 def _build_quota_usage(total: int, used: int) -> dict:
