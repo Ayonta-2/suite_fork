@@ -26,7 +26,7 @@
 					<div class="flex flex-col gap-3">
 						<!-- Presentation Card -->
 						<div
-							class="aspect-[16/9] cursor-pointer overflow-hidden rounded-lg shadow-sm dark:border"
+							class="aspect-[16/9] cursor-pointer overflow-hidden rounded-md shadow-sm dark:border"
 							@click="$emit('navigate', presentation.name)"
 						>
 							<div
