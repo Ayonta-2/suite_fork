@@ -62,6 +62,8 @@
 		</template>
 	</Dialog>
 
+	<OfflineCopyDialog v-model="showOfflineCopyDialog" />
+
 	<teleport to="body">
 		<ExportView v-if="showExportView" :slides="slides" />
 	</teleport>
@@ -100,6 +102,7 @@ import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
 import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import ThemeDialog from '@/apps/slides/components/ThemeDialog.vue'
 import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
+import OfflineCopyDialog from '@/apps/slides/components/OfflineCopyDialog.vue'
 import ThumbnailCapture from '@/apps/slides/components/ThumbnailCapture.vue'
 
 import {
@@ -136,6 +139,7 @@ import {
 
 import { useShortcuts, showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
 import { saveChanges, saveCurrentState, dirty } from '@/apps/slides/stores/saving'
+import { removeOfflineCopy, refreshOfflineStatus } from '@/apps/slides/stores/offlineCopy'
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { Layout, Trash } from 'lucide-vue-next'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
@@ -168,6 +172,7 @@ const showLayoutDialog = ref(false)
 const insertIndex = ref(null)
 const showExportView = ref(false)
 const showDeleteDialog = ref(false)
+const showOfflineCopyDialog = ref(false)
 
 const historyMetaForCommandHistory = {
 	actions: historyMetaActions,
@@ -271,6 +276,11 @@ const handleBeforeUnmount = () => {
 	window.removeEventListener('beforeunload', handleBeforeUnload)
 	window.removeEventListener('popstate', hideOpenDialogs)
 }
+
+// slides land after the load resolves
+watch([slides, dirty], () => {
+	refreshOfflineStatus(slides.value.length ? presentationId.value : null)
+})
 
 watch(
 	() => props.activeSlideId,
@@ -401,6 +411,12 @@ const performNavbarDropdownAction = async (action) => {
 		showThemeDialog.value = true
 	} else if (action == 'export') {
 		exportPdf()
+	} else if (action == 'saveOffline') {
+		showOfflineCopyDialog.value = true
+	} else if (action == 'removeOffline') {
+		await removeOfflineCopy(presentationId.value)
+		await refreshOfflineStatus(presentationId.value)
+		toast('Offline copy removed.')
 	}
 }
 

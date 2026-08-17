@@ -20,17 +20,25 @@
 				<PresentationHeader :title="presentationDoc?.title" />
 			</div>
 		</template>
-		<template v-if="!inReadonlyMode" #right-actions>
-			<Badge v-if="!isOnline" variant="subtle" theme="orange" size="md">
+		<template #right-actions>
+			<Badge v-if="offlineCopyStatus === 'available'" variant="subtle" theme="green" size="md">
+				<LucideCloudDownload class="mr-1 size-3.5 stroke-[1.5]" />
+				<span>Available offline</span>
+			</Badge>
+			<Badge v-else-if="offlineCopyStatus === 'outdated'" variant="subtle" theme="orange" size="md">
+				<LucideCloudDownload class="mr-1 size-3.5 stroke-[1.5]" />
+				<span>Offline copy out of date</span>
+			</Badge>
+			<Badge v-if="!inReadonlyMode && !isOnline" variant="subtle" theme="orange" size="md">
 				<LucideWifiOff class="mr-1 size-3.5 stroke-[1.5]" />
 				<span>Offline</span>
 			</Badge>
-			<Badge v-if="saveFailed && isOnline" variant="subtle" theme="orange" size="md">
+			<Badge v-if="!inReadonlyMode && saveFailed && isOnline" variant="subtle" theme="orange" size="md">
 				<LucideCloudOff class="mr-1 size-3.5 stroke-[1.5]" />
 				<span>Save failed. Keep this tab open.</span>
 			</Badge>
 			<Button
-				v-if="presentationDoc"
+				v-if="!inReadonlyMode && presentationDoc"
 				variant="ghost"
 				tooltip="Export"
 				@click="emit('performDropdownAction', 'export')"
@@ -39,7 +47,7 @@
 					<LucideDownload class="size-4 stroke-[1.5]" />
 				</template>
 			</Button>
-			<SharePopover v-if="presentationDoc" />
+			<SharePopover v-if="!inReadonlyMode && presentationDoc" />
 		</template>
 	</Navbar>
 </template>
@@ -56,6 +64,7 @@ import SharePopover from '@/apps/slides/components/SharePopover.vue'
 
 import { presentationDoc } from '@/apps/slides/stores/presentation'
 import { saveFailed } from '@/apps/slides/stores/saving'
+import { offlineCopyStatus } from '@/apps/slides/stores/offlineCopy'
 import { useRoute } from 'vue-router'
 
 const isOnline = inject('isOnline', ref(false))

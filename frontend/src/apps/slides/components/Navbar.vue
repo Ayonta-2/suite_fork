@@ -49,12 +49,14 @@
 import { ref, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dropdown, Button } from 'frappe-ui'
-import { ArrowLeft, Plus, Copy, Trash, LogOut, Command } from 'lucide-vue-next'
+import { ArrowLeft, Plus, Copy, Trash, LogOut, Command, CloudDownload, CloudOff } from 'lucide-vue-next'
 import slidesLogo from '@/apps/slides/assets/slides-logo.svg'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { useSessionStore } from '@/boot/session'
+import { offlineCopyStatus } from '@/apps/slides/stores/offlineCopy'
+import { presentationDoc } from '@/apps/slides/stores/presentation'
 
 const props = defineProps({
 	dropdown: {
@@ -86,6 +88,13 @@ const getHomeMenuOptions = () => [
 	{ group: '', options: [appsMenuOption.value] },
 	{ group: '', options: [themeMenuOption, getLogoutMenuOption()] },
 ]
+
+// same users getAttachmentUrl serves directly, so pinning never goes through the proxy
+const canPin = () => {
+	if (!('serviceWorker' in navigator) || !('caches' in window)) return false
+	const user = sessionStore.user
+	return !!user && (presentationDoc.value?.owner === user || user === 'Administrator')
+}
 
 const presentationActions = [
 	{ label: 'New', icon: Plus, action: 'create' },
@@ -119,6 +128,24 @@ const getContextMenuOptions = () => {
 				onClick: () => emit('performDropdownAction', action),
 			})),
 		})
+	}
+
+	if (canPin()) {
+		const options = [
+			{
+				label: offlineCopyStatus.value === 'none' ? 'Make available offline' : 'Update offline copy',
+				icon: CloudDownload,
+				onClick: () => emit('performDropdownAction', 'saveOffline'),
+			},
+		]
+		if (offlineCopyStatus.value !== 'none') {
+			options.push({
+				label: 'Remove offline copy',
+				icon: CloudOff,
+				onClick: () => emit('performDropdownAction', 'removeOffline'),
+			})
+		}
+		groups.push({ group: 'Offline', options })
 	}
 
 	groups.push({
