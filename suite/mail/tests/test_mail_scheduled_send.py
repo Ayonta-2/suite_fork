@@ -622,6 +622,21 @@ class TestOutboxRequestBoundary(IntegrationTestCase):
         with self.assertRaisesRegex(frappe.ValidationError, "undoStatus must be one of"):
             get_submissions("acc", undo_status="bogus")
 
+    def test_malformed_identifiers_are_rejected(self):
+        # RFC 8620 §1.2 confines a JMAP Id to 1 to 255 characters of [A-Za-z0-9_-]: any other
+        # string is refused before it can reach a JMAP operation.
+        for call in (
+            lambda: get_submissions("not an account id"),
+            lambda: get_submissions("acc", identity_id="id with spaces"),
+            lambda: get_submissions("acc", email_id="a/../b"),
+            lambda: get_submissions("acc", thread_id='T{"x":1}'),
+            lambda: get_scheduled_mail("acc", id="sub;drop"),
+            lambda: cancel_scheduled_mail("acc", id="x" * 256),
+            lambda: retry_failed_mail("acc", id="sub\nid"),
+        ):
+            with self.assertRaisesRegex(frappe.ValidationError, "not a valid JMAP identifier"):
+                call()
+
 
 class TestSubmissionQueryTotal(IntegrationTestCase):
     """The submission query, exercised against a fake (possibly clamping) server: the pager

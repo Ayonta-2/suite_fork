@@ -29,6 +29,7 @@ landed — until they are retried or dismissed, or the server expunges the submi
 every other concluded row.
 """
 
+import re
 from datetime import UTC, datetime
 from uuid import uuid7
 
@@ -60,6 +61,9 @@ EMAIL_SUMMARY_PROPERTIES = ["id", "threadId", "subject", "from", "to", "cc", "bc
 
 UNDO_STATUSES = ("pending", "final", "canceled")
 
+# RFC 8620 §1.2: a JMAP Id is 1 to 255 characters of [A-Za-z0-9_-].
+JMAP_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,255}\Z")
+
 
 @frappe.whitelist()
 def get_submissions(
@@ -79,6 +83,11 @@ def get_submissions(
 
     The filters are the RFC 8621 §7.3 FilterCondition properties: `undo_status` is one of
     pending/final/canceled, `before`/`after` bound sendAt (UTC `...Z` timestamps)."""
+
+    _validate_jmap_id(account, "account")
+    _validate_jmap_id(identity_id, "identity_id")
+    _validate_jmap_id(email_id, "email_id")
+    _validate_jmap_id(thread_id, "thread_id")
 
     if undo_status and undo_status not in UNDO_STATUSES:
         frappe.throw(_("undoStatus must be one of {0}.").format(", ".join(UNDO_STATUSES)))
@@ -140,6 +149,9 @@ def get_scheduled_mail(account: str, id: str) -> dict:
     """Returns one submission with everything EmailSubmission/get knows about it, enriched with
     the referenced Email's summary and the MTA queue's live delivery state."""
 
+    _validate_jmap_id(account, "account")
+    _validate_jmap_id(id, "id")
+
     service = get_email_submission_service(account)
     submissions = service.get([id], properties=DETAIL_PROPERTIES)
     if not submissions:
@@ -175,6 +187,9 @@ def get_scheduled_mail(account: str, id: str) -> dict:
 def reschedule_mail(account: str, id: str, send_at: str) -> dict:
     """Moves a held submission's delivery time. `send_at` is UTC `...Z`."""
 
+    _validate_jmap_id(account, "account")
+    _validate_jmap_id(id, "id")
+
     service = get_email_submission_service(account)
     submission = _get_pending_submission(service, id)
     send_at = _validate_send_at(service, from_utc_z(send_at))
@@ -189,6 +204,9 @@ def reschedule_mail(account: str, id: str, send_at: str) -> dict:
 def send_scheduled_mail_now(account: str, id: str) -> dict:
     """Delivers a held submission immediately."""
 
+    _validate_jmap_id(account, "account")
+    _validate_jmap_id(id, "id")
+
     service = get_email_submission_service(account)
     submission = _get_pending_submission(service, id)
 
@@ -201,6 +219,9 @@ def send_scheduled_mail_now(account: str, id: str) -> dict:
 @frappe.whitelist()
 def cancel_scheduled_mail(account: str, id: str) -> dict:
     """Cancels a held submission's delivery and moves the message back to Drafts."""
+
+    _validate_jmap_id(account, "account")
+    _validate_jmap_id(id, "id")
 
     service = get_email_submission_service(account)
     submission = _get_submission(service, id)
@@ -227,6 +248,9 @@ def retry_delivery_now(account: str, id: str) -> None:
     so this gates on the hold — not on the submission being final; an unreleased hold must go
     through send-now instead, which replaces the submission."""
 
+    _validate_jmap_id(account, "account")
+    _validate_jmap_id(id, "id")
+
     service = get_email_submission_service(account)
     submission = _get_submission(service, id)
 
@@ -249,6 +273,9 @@ def retry_failed_mail(account: str, id: str) -> dict:
     """Resubmits a finalized submission's email for immediate delivery, replacing the failed
     record so the listing shows only the live attempt."""
 
+    _validate_jmap_id(account, "account")
+    _validate_jmap_id(id, "id")
+
     service = get_email_submission_service(account)
     submission = _get_final_submission(service, id)
 
@@ -264,6 +291,9 @@ def retry_failed_mail(account: str, id: str) -> dict:
 @frappe.whitelist()
 def dismiss_failed_mail(account: str, id: str) -> None:
     """Drops a finalized submission's record from the Outbox listing."""
+
+    _validate_jmap_id(account, "account")
+    _validate_jmap_id(id, "id")
 
     service = get_email_submission_service(account)
     _get_final_submission(service, id)
@@ -510,6 +540,20 @@ def _get_final_submission(service: EmailSubmissionService, id: str) -> dict:
         frappe.throw(_("This delivery is still pending — cancel or reschedule it instead."))
 
     return submission
+
+
+def _validate_jmap_id(value: str | None, label: str) -> str | None:
+    """A client-supplied JMAP identifier: RFC 8620 §1.2 confines an Id to 1 to 255 characters of
+    [A-Za-z0-9_-], so anything else is refused before it reaches a JMAP operation. Empty
+    optional filters pass through (they are dropped, not forwarded)."""
+
+    if not value:
+        return None
+
+    if not JMAP_ID_PATTERN.fullmatch(value):
+        frappe.throw(_("{0} is not a valid JMAP identifier.").format(label))
+
+    return value
 
 
 def _validate_utc_z(value: str | None, label: str) -> str | None:
