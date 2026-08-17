@@ -6,6 +6,7 @@ import { router, setEditorAccess, setPreviousRoute } from '@/apps/slides/router'
 import SlidesShell from '@/apps/slides/SlidesShell.vue'
 import { getSessionUser, useSessionStore } from '@/boot/session'
 import { claimSlidesCachesFor, postToServiceWorker } from '@/apps/slides/utils/serviceWorker'
+import { removeOfflineCopy } from '@/apps/slides/stores/offlineCopy'
 
 /**
  * Slides route module — mounted by the suite router under the '/slides' prefix.
@@ -137,6 +138,10 @@ function installSlidesGuards(r: Router) {
       if (!useSessionStore().isLoggedIn) {
         window.location.href = `/login?redirect-to=${encodeURIComponent(to.fullPath)}`
         return next(false)
+      }
+      // the server has withdrawn this presentation, so the offline copy goes with it
+      if (currentEditorAccess === 'none') {
+        removeOfflineCopy(to.params.presentationId as string).catch(() => {})
       }
       return next({ name: 'slides-not-permitted' })
     }
