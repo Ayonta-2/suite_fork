@@ -73,6 +73,9 @@ export const useSessionStore = defineStore('suite-session', () => {
 
   // the slides worker keeps this user's responses; the next user must not see them
   const clearSlidesCaches = async () => {
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('slides-offline-copy:'))
+      .forEach((k) => localStorage.removeItem(k))
     if (!('caches' in window)) return
     const names = await caches.keys()
     await Promise.all(names.filter((n) => n.startsWith('slides-')).map((n) => caches.delete(n)))
