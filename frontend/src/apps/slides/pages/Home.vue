@@ -1,5 +1,5 @@
 <template>
-	<div class="flex h-screen w-screen flex-col bg-surface-base">
+	<div class="isolate flex h-screen w-screen flex-col bg-surface-base">
 		<Navbar
 			dropdown="home"
 			:primaryButton="{
