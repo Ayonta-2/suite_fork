@@ -40,17 +40,18 @@ import { Type, ImagePlus } from 'lucide-vue-next'
 
 import { Tooltip, FileUploader, toast } from 'frappe-ui'
 import { presentationId } from '@/apps/slides/stores/presentation'
-import { addTextElement, addMediaElement } from '@/apps/slides/stores/element'
+import { addTextElement } from '@/apps/slides/stores/element'
 import { allowedImageFileTypes } from '@/apps/slides/utils/constants'
 
 import ShapesDropdown from '@/apps/slides/components/ShapesDropdown.vue'
 import TableDropdown from '@/apps/slides/components/TableDropdown.vue'
 
 import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
+import { performPostUploadActions } from '@/apps/slides/utils/mediaUploads'
 
 const handleUploadSuccess = (file) => {
-	const imageTypes = allowedImageFileTypes.map((type) => type.split('/')[1].toUpperCase())
-	const fileType = imageTypes.includes(file.file_type) ? 'image' : 'video'
+	// file_type is a Drive category ('Image'), not a format; mime_type is what the allowlist speaks
+	const fileType = allowedImageFileTypes.includes(file.mime_type) ? 'image' : 'video'
 
 	const toastProps = {
 		loading: file.file_name ? `Uploading: ${file.file_name}` : 'Uploading...',
@@ -58,6 +59,6 @@ const handleUploadSuccess = (file) => {
 		error: (data) => 'Upload failed. Please try again.',
 	}
 
-	toast.promise(addMediaElement(file, fileType), toastProps)
+	toast.promise(performPostUploadActions(file, fileType), toastProps)
 }
 </script>
