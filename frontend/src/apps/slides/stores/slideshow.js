@@ -87,7 +87,10 @@ const showSlideshowEndScreen = computed(() => {
 
 const prefetchedAssets = ref(new Set())
 
+// warm-ups exist only during a slideshow: the timers behind the call sites can
+// fire after it ended
 const prefetchNextSlide = () => {
+	if (!inSlideShowMode.value) return
 	const nextSlideIndex = slideIndex.value + 1
 	if (nextSlideIndex >= slides.value.length) return
 
@@ -100,14 +103,19 @@ const prefetchNextSlide = () => {
 			element.src && warmVideo(element.src, nextSlideIndex)
 		}
 	})
-	releaseVideoWarmers([slideIndex.value, nextSlideIndex])
+	releaseVideoWarmers(nextSlideIndex)
 }
 
 // buffers the opening of the next slide's video under the url its element uses
 const videoWarmers = new Map()
 
 const warmVideo = (src, forSlideIndex) => {
-	if (videoWarmers.has(src)) return
+	const warmer = videoWarmers.get(src)
+	if (warmer) {
+		// the same video on the next slide too keeps its warmer
+		warmer.forSlideIndex = forSlideIndex
+		return
+	}
 	const video = document.createElement('video')
 	video.preload = 'auto'
 	video.muted = true
@@ -116,9 +124,10 @@ const warmVideo = (src, forSlideIndex) => {
 	videoWarmers.set(src, { video, forSlideIndex })
 }
 
-const releaseVideoWarmers = (keepSlideIndexes = []) => {
+// the current slide's rendered element does its own loading
+const releaseVideoWarmers = (keepSlideIndex = null) => {
 	for (const [src, { video, forSlideIndex }] of videoWarmers) {
-		if (keepSlideIndexes.includes(forSlideIndex)) continue
+		if (forSlideIndex === keepSlideIndex) continue
 		video.removeAttribute('src')
 		video.load()
 		videoWarmers.delete(src)

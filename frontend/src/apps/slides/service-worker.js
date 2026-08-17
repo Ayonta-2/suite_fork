@@ -1,20 +1,19 @@
 import { createPartialResponse } from 'workbox-range-requests'
 
 import { canonicalMediaKey } from './utils/canonicalMediaKey'
+import {
+	MEDIA_CACHE_NAME,
+	API_CACHE_NAME,
+	ASSETS_CACHE_NAME,
+	SHELL_CACHE_NAME,
+	// outside CACHE_MAX_AGE: a pinned copy must survive the sweep
+	PINNED_CACHE_NAME,
+	PIN_HEADER,
+} from './utils/slidesCaches'
 
-const MEDIA_CACHE_NAME = 'slides-media'
-const API_CACHE_NAME = 'slides-api'
-const ASSETS_CACHE_NAME = 'slides-assets'
-const SHELL_CACHE_NAME = 'slides-shell'
 // one document serves every slides url, so the entry has a fixed key
 const SHELL_CACHE_KEY = '/slides'
-// outside CACHE_MAX_AGE: a pinned copy must survive the sweep
-const PINNED_CACHE_NAME = 'slides-pinned'
-// remembers which build filled the shell and asset caches
-const META_CACHE_NAME = 'slides-meta'
-const BUILD_CACHE_KEY = '/slides-build'
 
-const PIN_HEADER = 'x-slides-pin'
 // set by suite/www/suite.py on the shell it renders to a logged-out visitor
 const GUEST_HEADER = 'x-suite-guest'
 
@@ -55,40 +54,23 @@ const cleanupOldCacheEntries = async (name, maxAge) => {
 	const cache = await openCache(name)
 	if (!cache) return
 
-	const keys = await cache.keys()
+	for (const request of await cache.keys()) {
+		const response = await matchCache(cache, request)
+		if (!response) continue
 
-	await Promise.all(
-		keys.map(async (request) => {
-			const response = await matchCache(cache, request)
-			if (!response) return
-
-			return cleanupOldCacheEntry(cache, request, response, maxAge)
-		}),
-	)
-}
-
-// a new build's shell references new asset names, so both caches restart together
-const dropPreviousBuild = async () => {
-	const meta = await openCache(META_CACHE_NAME)
-	if (!meta) return
-
-	const stored = await matchCache(meta, BUILD_CACHE_KEY)
-	if (stored && (await stored.text()) === __SLIDES_BUILD__) return
-
-	await meta.put(BUILD_CACHE_KEY, new Response(__SLIDES_BUILD__))
-	await Promise.all([caches.delete(SHELL_CACHE_NAME), caches.delete(ASSETS_CACHE_NAME)])
+		await cleanupOldCacheEntry(cache, request, response, maxAge)
+	}
 }
 
 const handleSWActivate = async () => {
-	await dropPreviousBuild().catch(() => {})
+	// this takes control of all client pages that are already open
+	await self.clients.claim()
 	// a failed sweep must not block activation
 	await Promise.all(
 		Object.entries(CACHE_MAX_AGE).map(([name, maxAge]) =>
 			cleanupOldCacheEntries(name, maxAge).catch(() => {}),
 		),
 	)
-	// this takes control of all client pages that are already open
-	await self.clients.claim()
 }
 
 self.addEventListener('activate', (event) => {

@@ -4,8 +4,8 @@ import { createResource } from 'frappe-ui'
 
 import { router, setEditorAccess, setPreviousRoute } from '@/apps/slides/router'
 import SlidesShell from '@/apps/slides/SlidesShell.vue'
-import { useSessionStore } from '@/boot/session'
-import { postToServiceWorker } from '@/apps/slides/utils/serviceWorker'
+import { getSessionUser, useSessionStore } from '@/boot/session'
+import { claimSlidesCachesFor, postToServiceWorker } from '@/apps/slides/utils/serviceWorker'
 
 /**
  * Slides route module — mounted by the suite router under the '/slides' prefix.
@@ -114,6 +114,11 @@ function installSlidesGuards(r: Router) {
     }
 
     setPreviousRoute(from)
+
+    // before the first slides request of this visit is cached; a guest may be
+    // this user with an expired session, so their copy stays
+    const user = getSessionUser()
+    if (user) await claimSlidesCachesFor(user).catch(() => {})
 
     if (!SLIDES_GUARDED.has(to.name)) {
       return next()

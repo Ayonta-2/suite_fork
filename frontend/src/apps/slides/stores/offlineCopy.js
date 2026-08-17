@@ -7,12 +7,8 @@ import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
 import { collectMediaSources, presentationLoadRequests } from '@/apps/slides/utils/pinTargets'
 import { loadBundledFonts } from '@/apps/slides/utils/bundledFonts'
+import { PINNED_CACHE_NAME, PIN_HEADER, RECORD_PREFIX } from '@/apps/slides/utils/slidesCaches'
 
-// must match the service worker
-const PINNED_CACHE_NAME = 'slides-pinned'
-const PIN_HEADER = 'x-slides-pin'
-
-const RECORD_PREFIX = 'slides-offline-copy:'
 const CONCURRENCY = 4
 const RETRY_DELAYS = [500, 1500]
 

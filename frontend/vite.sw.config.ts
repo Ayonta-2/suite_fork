@@ -2,8 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig } from "vite";
 
-import { slidesBuildId } from "./slidesBuildId";
-
 const swOutput = path.resolve(__dirname, "../suite/www/service-worker.js");
 
 // frappe renders files under www/ through Jinja before serving them, so a Jinja
@@ -24,10 +22,7 @@ export default defineConfig({
 	root: __dirname,
 	// suite/www holds hand-written templates: never clear it, never copy public/ into it
 	publicDir: false,
-	define: {
-		"process.env.NODE_ENV": '"production"',
-		__SLIDES_BUILD__: JSON.stringify(slidesBuildId()),
-	},
+	define: { "process.env.NODE_ENV": '"production"' },
 	plugins: [guardServedOutput()],
 	build: {
 		outDir: "../suite/www",

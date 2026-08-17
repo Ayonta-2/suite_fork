@@ -2,6 +2,8 @@ import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { createResource } from 'frappe-ui'
 
+import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
+
 // True when Jinja served the boot globals (window.suite_*); false in the Vite
 // dev server, where callers fetch instead.
 export const hasServerBoot = typeof window.suite_is_onboarded !== 'undefined'
@@ -71,21 +73,12 @@ export const useSessionStore = defineStore('suite-session', () => {
     },
   })
 
-  // the slides worker keeps this user's responses; the next user must not see them
-  const clearSlidesCaches = async () => {
-    Object.keys(localStorage)
-      .filter((k) => k.startsWith('slides-offline-copy:'))
-      .forEach((k) => localStorage.removeItem(k))
-    if (!('caches' in window)) return
-    const names = await caches.keys()
-    await Promise.all(names.filter((n) => n.startsWith('slides-')).map((n) => caches.delete(n)))
-  }
-
   const logout = createResource({
     url: 'logout',
     async onSuccess() {
       user.value = null
-      await clearSlidesCaches().catch(() => {})
+      // the slides worker keeps this user's responses; the next user must not see them
+      await clearSlidesUserData().catch(() => {})
       window.location.reload()
     },
   })
