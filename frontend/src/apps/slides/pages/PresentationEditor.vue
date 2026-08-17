@@ -25,42 +25,16 @@
 	</div>
 
 	<LayoutDialog
-		v-model="showLayoutDialog"
+		v-model:open="showLayoutDialog"
 		@insert="(layoutObj) => handleInsertSlide(insertIndex, layoutObj)"
 	/>
 
 	<ThemeDialog
-		v-model="showThemeDialog"
+		v-model:open="showThemeDialog"
 		@create="(theme) => createPresentation(theme)"
 		@update="(theme) => updatePresentationTheme(theme)"
 		:update="themeDialogAction == 'update'"
 	/>
-
-	<Dialog v-model="showDeleteDialog" class="pb-0" size="sm">
-		<template #title>
-			<div class="font-semibold">Delete Presentation</div>
-		</template>
-		<template #default>
-			<div class="text-base">
-				This action will permanently delete
-				<strong>{{ presentationDoc?.title }}</strong
-				>. Are you sure you want to continue?
-			</div>
-		</template>
-		<template #actions>
-			<Button
-				class="w-full"
-				variant="solid"
-				theme="red"
-				label="Delete Presentation"
-				@click="confirmDelete"
-			>
-				<template #prefix>
-					<Trash size="14" class="stroke-[1.5]" />
-				</template>
-			</Button>
-		</template>
-	</Dialog>
 
 	<teleport to="body">
 		<ExportView v-if="showExportView" :slides="slides" />
@@ -89,7 +63,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 
-import { call, toast, usePageMeta, KeyboardShortcutsModal, Dialog, Button } from 'frappe-ui'
+import { call, toast, usePageMeta, KeyboardShortcutsModal } from 'frappe-ui'
 
 import ExportView from '@/apps/slides/pages/ExportView.vue'
 import EditorNavbar from '@/apps/slides/components/EditorNavbar.vue'
@@ -111,7 +85,7 @@ import {
 	inReadonlyMode,
 	createPresentationResource,
 	duplicatePresentation,
-	deletePresentation,
+	confirmDeletePresentation,
 	presentationTheme,
 	resetEditorState,
 	pageTitle,
@@ -142,7 +116,7 @@ import {
 	pruneOfflineCopy,
 } from '@/apps/slides/stores/offlineCopy'
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
-import { Layout, Trash } from 'lucide-vue-next'
+import { Layout } from 'lucide-vue-next'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 
 
@@ -172,7 +146,7 @@ const isSlideInteractionActive = ref(false)
 const showLayoutDialog = ref(false)
 const insertIndex = ref(null)
 const showExportView = ref(false)
-const showDeleteDialog = ref(false)
+let deleteDialog = null
 
 const historyMetaForCommandHistory = {
 	actions: historyMetaActions,
@@ -265,6 +239,7 @@ const handleMounted = () => {
 const hideOpenDialogs = () => {
 	showThemeDialog.value = false
 	showLayoutDialog.value = false
+	deleteDialog?.close()
 }
 
 const handleBeforeUnmount = () => {
@@ -409,20 +384,19 @@ const performNavbarDropdownAction = async (action) => {
 		const newPresentation = await duplicatePresentation(presentationId.value)
 		navigateToPresentation(newPresentation)
 	} else if (action == 'delete') {
-		showDeleteDialog.value = true
+		deleteDialog = confirmDeletePresentation(
+			{ name: presentationId.value, title: presentationDoc.value?.title },
+			() => {
+				thumbnailCaptureRef.value?.reset()
+				router.push({ name: 'slides-home' })
+			},
+		)
 	} else if (action == 'updateTheme') {
 		themeDialogAction.value = 'update'
 		showThemeDialog.value = true
 	} else if (action == 'export') {
 		exportPdf()
 	}
-}
-
-const confirmDelete = async () => {
-	showDeleteDialog.value = false
-	await deletePresentation(presentationId.value)
-	thumbnailCaptureRef.value?.reset()
-	router.push({ name: 'slides-home' })
 }
 
 const openLayoutDialog = (index) => {

@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { createResource, call, createDocumentResource, frappeRequest, toast } from 'frappe-ui'
+import { createResource, call, createDocumentResource, frappeRequest, toast, dialog } from 'frappe-ui'
 
 import tinycolor from 'tinycolor2'
 
@@ -355,6 +355,24 @@ const deletePresentation = async (presentation) => {
 	})
 }
 
+const confirmDeletePresentation = ({ name, title }, onDeleted) =>
+	dialog.confirm({
+		title: 'Delete presentation',
+		message: `"${title}" will be permanently deleted.`,
+		actions: [
+			{ label: 'Cancel', variant: 'outline' },
+			{
+				label: 'Delete',
+				variant: 'solid',
+				theme: 'red',
+				onClick: async () => {
+					await deletePresentation(name)
+					await onDeleted()
+				},
+			},
+		],
+	})
+
 const duplicatePresentation = async (presentation) => {
 	const newPresentation = await createPresentationResource.submit({
 		duplicateFrom: presentation,
@@ -393,6 +411,7 @@ export {
 	savePresentationDoc,
 	initPresentationDoc,
 	deletePresentation,
+	confirmDeletePresentation,
 	duplicatePresentation,
 	resetEditorState,
 	pageTitle,

@@ -1,16 +1,18 @@
 <template>
 	<Button variant="ghost" :tooltip="statusText" @click="showDialog = true">
 		<template #icon>
-			<LucideCloudDownload
+			<component
+				:is="icon"
 				class="size-4 stroke-[1.5]"
 				:class="[iconClass, progress.running && 'animate-pulse']"
 			/>
 		</template>
 	</Button>
 	<Dialog
-		v-model="showDialog"
-		size="sm"
+		v-model:open="showDialog"
+		size="md"
 		:title="dialog.title"
+		:icon="dialog.icon"
 		:message="dialog.message"
 		:actions="dialog.actions"
 	/>
@@ -19,6 +21,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { Dialog, Button, toast } from 'frappe-ui'
+import { CloudAlert, CloudCheck, CloudDownload } from 'lucide-vue-next'
 
 import {
 	offlineCopyProgress as progress,
@@ -32,11 +35,16 @@ import { presentationId } from '@/apps/slides/stores/presentation'
 
 const showDialog = ref(false)
 
-const iconClass = computed(() => {
-	if (status.value === 'available') return 'text-ink-blue-6'
-	if (status.value === 'outdated') return 'text-ink-amber-6'
-	return 'text-ink-gray-6'
+const icon = computed(() => {
+	if (progress.value.running) return CloudDownload
+	if (status.value === 'available') return CloudCheck
+	if (status.value === 'outdated') return CloudAlert
+	return CloudDownload
 })
+
+const iconClass = computed(() =>
+	status.value === 'outdated' ? 'text-ink-amber-6' : 'text-ink-gray-6',
+)
 
 const statusText = computed(() => {
 	if (progress.value.running) return 'Saving offline copy'
@@ -99,34 +107,39 @@ const cancel = ({ close }) => {
 	})
 }
 
+const cancelAction = { label: 'Cancel', variant: 'outline' }
 const removeAction = { label: 'Remove copy', variant: 'subtle', onClick: remove }
 
 const dialog = computed(() => {
 	if (progress.value.running) {
 		return {
 			title: 'Saving offline copy',
+			icon: 'lucide-cloud-download',
 			message: `${progress.value.done} of ${progress.value.total} files saved`,
-			actions: [{ label: 'Stop', variant: 'subtle', onClick: cancel }],
+			actions: [cancelAction, { label: 'Stop saving', variant: 'solid', onClick: cancel }],
 		}
 	}
 	if (status.value === 'available') {
 		return {
 			title: 'Available offline',
+			icon: { name: 'lucide-cloud-check', theme: 'blue' },
 			message: 'Saved in this browser. Opens and presents without internet.',
-			actions: [removeAction],
+			actions: [cancelAction, { ...removeAction, variant: 'solid' }],
 		}
 	}
 	if (status.value === 'outdated') {
 		return {
 			title: 'Update offline copy',
+			icon: { name: 'lucide-cloud-alert', theme: 'yellow' },
 			message: 'New images are not saved offline yet.',
-			actions: [removeAction, { label: 'Update', variant: 'solid', onClick: save }],
+			actions: [removeAction, { label: 'Update copy', variant: 'solid', onClick: save }],
 		}
 	}
 	return {
 		title: 'Save offline copy',
+		icon: 'lucide-cloud-download',
 		message: 'Opens and presents without internet. Videos still need a connection.',
-		actions: [{ label: 'Save', variant: 'solid', onClick: save }],
+		actions: [cancelAction, { label: 'Save copy', variant: 'solid', onClick: save }],
 	}
 })
 </script>
