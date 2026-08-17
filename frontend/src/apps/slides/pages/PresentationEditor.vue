@@ -25,12 +25,12 @@
 	</div>
 
 	<LayoutDialog
-		v-model="showLayoutDialog"
+		v-model:open="showLayoutDialog"
 		@insert="(layoutObj) => handleInsertSlide(insertIndex, layoutObj)"
 	/>
 
 	<ThemeDialog
-		v-model="showThemeDialog"
+		v-model:open="showThemeDialog"
 		@create="(theme) => createPresentation(theme)"
 		@update="(theme) => updatePresentationTheme(theme)"
 		:update="themeDialogAction == 'update'"
