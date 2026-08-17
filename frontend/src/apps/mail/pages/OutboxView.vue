@@ -250,18 +250,21 @@ const loadMore = async () => {
 /** Background refresh: refetches every loaded page and swaps the rows in place, so the
  * periodic poll, socket events, and post-action reloads never flash the skeleton. */
 let refreshSeq = 0
+let appliedRefreshSeq = 0
 const refresh = async () => {
 	const token = fetchToken
-	// Refreshes can overlap (poll + socket + post-action); only the latest-started one
-	// may apply, or an older response finishing last would restore staler rows.
+	// Refreshes can overlap (poll + socket + post-action); a response may only apply if
+	// it's newer than the last one applied — comparing against the latest *started*
+	// instead would let a newer refresh that failed suppress an older success.
 	const seq = ++refreshSeq
 	const pages = Math.max(loadedPages.value, 1)
 	try {
 		const results = await Promise.all(Array.from({ length: pages }, (_, i) => fetchPage(i + 1)))
-		if (token !== fetchToken || seq !== refreshSeq) return
+		if (token !== fetchToken || seq <= appliedRefreshSeq) return
 		// loadMore appended a page while this refetch was in flight — applying the
 		// shallower snapshot would drop it, so refetch at the new depth instead.
 		if (Math.max(loadedPages.value, 1) !== pages) return refresh()
+		appliedRefreshSeq = seq
 		rows.value = dedupeById(results.flatMap((data) => data.rows))
 		total.value = results[results.length - 1].total
 		loadedPages.value = pages
