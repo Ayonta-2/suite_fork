@@ -1,16 +1,18 @@
 <template>
 	<Dropdown :options="shapeOptions" side="top" align="center" :offset="12">
 		<template #default="{ open }">
-			<div :class="triggerClass(open)">
-				<LucideShapes class="size-4.5 stroke-[1.5] text-ink-gray-7" />
-			</div>
+			<Tooltip text="Shapes" :hover-delay="0.7">
+				<div :class="triggerClass(open)">
+					<LucideShapes class="size-4.5 stroke-[1.5] text-ink-gray-7" />
+				</div>
+			</Tooltip>
 		</template>
 	</Dropdown>
 </template>
 
 <script setup>
 import { h } from 'vue'
-import { Dropdown } from 'frappe-ui'
+import { Dropdown, Tooltip } from 'frappe-ui'
 
 import { pendingShapeType } from '@/apps/slides/stores/element'
 

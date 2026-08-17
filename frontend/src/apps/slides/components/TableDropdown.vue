@@ -1,9 +1,11 @@
 <template>
 	<Popover side="top" align="center" :offset="12">
 		<template #trigger="{ isOpen }">
-			<div :class="triggerClass(isOpen)">
-				<Table class="size-4.5 stroke-[1.5] text-ink-gray-7" />
-			</div>
+			<Tooltip text="Table" :hover-delay="0.7">
+				<div :class="triggerClass(isOpen)">
+					<Table class="size-4.5 stroke-[1.5] text-ink-gray-7" />
+				</div>
+			</Tooltip>
 		</template>
 		<template #default="{ close }">
 			<div class="p-2">
@@ -34,7 +36,7 @@ import { ref, computed } from 'vue'
 
 import { Table } from 'lucide-vue-next'
 
-import { Popover } from 'frappe-ui'
+import { Popover, Tooltip } from 'frappe-ui'
 
 import { addTableElement } from '@/apps/slides/stores/element'
 
