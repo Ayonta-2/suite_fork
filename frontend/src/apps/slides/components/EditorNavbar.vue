@@ -21,14 +21,6 @@
 			</div>
 		</template>
 		<template #right-actions>
-			<Badge v-if="offlineCopyStatus === 'available'" variant="subtle" theme="green" size="md">
-				<LucideCloudDownload class="mr-1 size-3.5 stroke-[1.5]" />
-				<span>Available offline</span>
-			</Badge>
-			<Badge v-else-if="offlineCopyStatus === 'outdated'" variant="subtle" theme="orange" size="md">
-				<LucideCloudDownload class="mr-1 size-3.5 stroke-[1.5]" />
-				<span>Offline copy out of date</span>
-			</Badge>
 			<Badge v-if="!inReadonlyMode && !isOnline" variant="subtle" theme="orange" size="md">
 				<LucideWifiOff class="mr-1 size-3.5 stroke-[1.5]" />
 				<span>Offline</span>
@@ -37,6 +29,7 @@
 				<LucideCloudOff class="mr-1 size-3.5 stroke-[1.5]" />
 				<span>Save failed. Keep this tab open.</span>
 			</Badge>
+			<OfflineCopyButton v-if="canPin" />
 			<Button
 				v-if="!inReadonlyMode && presentationDoc"
 				variant="ghost"
@@ -61,10 +54,11 @@ import { Badge, Button } from 'frappe-ui'
 import Navbar from '@/apps/slides/components/Navbar.vue'
 import PresentationHeader from '@/apps/slides/components/PresentationHeader.vue'
 import SharePopover from '@/apps/slides/components/SharePopover.vue'
+import OfflineCopyButton from '@/apps/slides/components/OfflineCopyButton.vue'
 
 import { presentationDoc } from '@/apps/slides/stores/presentation'
 import { saveFailed } from '@/apps/slides/stores/saving'
-import { offlineCopyStatus } from '@/apps/slides/stores/offlineCopy'
+import { useSessionStore } from '@/boot/session'
 import { useRoute } from 'vue-router'
 
 const isOnline = inject('isOnline', ref(false))
@@ -73,6 +67,14 @@ const inReadonlyMode = inject('inReadonlyMode', ref(false))
 const emit = defineEmits(['startSlideShow', 'performDropdownAction'])
 
 const route = useRoute()
+const sessionStore = useSessionStore()
+
+// same users getAttachmentUrl serves directly, so pinning never goes through the proxy
+const canPin = computed(() => {
+	if (!('serviceWorker' in navigator) || !('caches' in window)) return false
+	const user = sessionStore.user
+	return !!user && (presentationDoc.value?.owner === user || user === 'Administrator')
+})
 
 const primaryButtonProps = computed(() => ({
 	label: 'Present',
