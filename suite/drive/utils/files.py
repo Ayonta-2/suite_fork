@@ -286,7 +286,7 @@ class FileManager:
         - On disk: opens in binary mode, closes automatically.
         - On S3: yields the botocore StreamingBody, closes automatically.
         """
-        if self.s3_enabled:
+        if self.s3_enabled and not stored_on_disk(path):
             obj = self.conn.get_object(Bucket=self.bucket, Key=path)
             body = obj["Body"]
             try:
@@ -522,9 +522,12 @@ def storage_key(file_url):
 
 
 def stored_on_disk(file_url):
-    # Framework-managed blobs (attachments, adopted uploads) keep their
-    # /private/files url and live on the site's disk even when Drive stores its
-    # own blobs on S3 — those always carry S3_URL_PREFIX or a bare bucket key.
+    """Whether a file_url (or storage key) names a blob on the site's disk.
+
+    Framework-managed blobs (attachments, adopted uploads) keep their
+    /private/files url and live on the site's disk even when Drive stores its
+    own blobs on S3 — those always carry S3_URL_PREFIX or a bare bucket key.
+    """
     return storage_key(file_url).startswith("private/files/")
 
 
