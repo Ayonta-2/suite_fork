@@ -146,6 +146,7 @@ const isSlideInteractionActive = ref(false)
 const showLayoutDialog = ref(false)
 const insertIndex = ref(null)
 const showExportView = ref(false)
+let deleteDialog = null
 
 const historyMetaForCommandHistory = {
 	actions: historyMetaActions,
@@ -238,6 +239,7 @@ const handleMounted = () => {
 const hideOpenDialogs = () => {
 	showThemeDialog.value = false
 	showLayoutDialog.value = false
+	deleteDialog?.close()
 }
 
 const handleBeforeUnmount = () => {
@@ -382,7 +384,7 @@ const performNavbarDropdownAction = async (action) => {
 		const newPresentation = await duplicatePresentation(presentationId.value)
 		navigateToPresentation(newPresentation)
 	} else if (action == 'delete') {
-		confirmDeletePresentation(
+		deleteDialog = confirmDeletePresentation(
 			{ name: presentationId.value, title: presentationDoc.value?.title },
 			() => {
 				thumbnailCaptureRef.value?.reset()

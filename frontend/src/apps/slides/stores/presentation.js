@@ -355,7 +355,7 @@ const deletePresentation = async (presentation) => {
 	})
 }
 
-const confirmDeletePresentation = ({ name, title }, onDeleted) => {
+const confirmDeletePresentation = ({ name, title }, onDeleted) =>
 	dialog.confirm({
 		title: 'Delete presentation',
 		message: `"${title}" will be permanently deleted.`,
@@ -372,7 +372,6 @@ const confirmDeletePresentation = ({ name, title }, onDeleted) => {
 			},
 		],
 	})
-}
 
 const duplicatePresentation = async (presentation) => {
 	const newPresentation = await createPresentationResource.submit({
