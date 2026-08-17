@@ -255,6 +255,9 @@ const refresh = async () => {
 	try {
 		const results = await Promise.all(Array.from({ length: pages }, (_, i) => fetchPage(i + 1)))
 		if (token !== fetchToken) return
+		// loadMore appended a page while this refetch was in flight — applying the
+		// shallower snapshot would drop it, so refetch at the new depth instead.
+		if (Math.max(loadedPages.value, 1) !== pages) return refresh()
 		rows.value = dedupeById(results.flatMap((data) => data.rows))
 		total.value = results[results.length - 1].total
 		loadedPages.value = pages
