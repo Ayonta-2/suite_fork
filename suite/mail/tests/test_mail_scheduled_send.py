@@ -24,6 +24,8 @@ and retry/dismiss against delivered (final) submissions.
 from datetime import datetime
 
 import frappe
+from frappe.exceptions import FrappeTypeError
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, get_datetime, get_datetime_str, now, time_diff_in_seconds
 
 from suite.mail.api.scheduled import (
@@ -575,3 +577,44 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
                     action(scheduled.submission_id)
 
             self.assertEqual(self._get_submission(account, scheduled.submission_id)["undoStatus"], "canceled")
+
+
+class TestOutboxRequestBoundary(IntegrationTestCase):
+    """The Outbox endpoints' request boundary, exercised without Stalwart.
+
+    ``frappe.whitelist`` wraps every endpoint in ``validate_argument_types`` (active in requests
+    and tests alike), so a client-supplied complex value — a dict or list where a scalar is
+    annotated — is rejected before the endpoint body runs, i.e. before anything can reach JMAP
+    or the database; the endpoints' own explicit checks then refuse malformed scalars.
+    """
+
+    def test_complex_values_are_rejected_before_the_body_runs(self):
+        for call in (
+            lambda: get_submissions(account={"account": "x"}),
+            lambda: get_submissions("acc", undo_status={"operator": "OR", "conditions": []}),
+            lambda: get_submissions("acc", identity_id=["id-1", "id-2"]),
+            lambda: get_submissions("acc", email_id={"$ne": ""}),
+            lambda: get_submissions("acc", before={"utcDate": "2026-01-01T00:00:00Z"}),
+            lambda: get_submissions("acc", page={"gt": 1}),
+            lambda: get_submissions("acc", page_length=[100]),
+            lambda: get_scheduled_mail("acc", id=["sub-1"]),
+            lambda: reschedule_mail("acc", "sub", send_at=["2026-01-01T00:00:00Z"]),
+            lambda: send_scheduled_mail_now("acc", id=None),
+            lambda: cancel_scheduled_mail("acc", id={"id": "sub"}),
+            lambda: retry_delivery_now("acc", id={}),
+            lambda: retry_failed_mail(["acc"], "sub"),
+            lambda: dismiss_failed_mail("acc", id=42),
+        ):
+            self.assertRaises(FrappeTypeError, call)
+
+    def test_malformed_filter_scalars_are_rejected(self):
+        # Well-typed strings that aren't valid filter values; the endpoint's own explicit
+        # checks refuse them before any account lookup or server contact (asserted on the
+        # message so a later failure — e.g. the unknown account — can't pass for it).
+        for bad in ("yesterday", "31-01-2026", "2026-13-45T99:00:00Z"):
+            for bound in ("before", "after"):
+                with self.assertRaisesRegex(frappe.ValidationError, "must be a UTC timestamp"):
+                    get_submissions("acc", **{bound: bad})
+
+        with self.assertRaisesRegex(frappe.ValidationError, "undoStatus must be one of"):
+            get_submissions("acc", undo_status="bogus")

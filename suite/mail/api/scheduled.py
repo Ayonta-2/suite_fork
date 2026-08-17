@@ -51,7 +51,7 @@ from suite.mail.jmap import (
 )
 from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
 from suite.mail.utils import log_mail_error
-from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
+from suite.mail.utils.dt import UTC_DATETIME_FORMAT, from_utc_z, normalize_utc_z, to_utc_z
 
 SUBMISSION_PROPERTIES = ["id", "emailId", "threadId", "undoStatus", "sendAt", "envelope"]
 DETAIL_PROPERTIES = [*SUBMISSION_PROPERTIES, "deliveryStatus", "identityId", "dsnBlobIds", "mdnBlobIds"]
@@ -82,6 +82,9 @@ def get_submissions(
 
     if undo_status and undo_status not in UNDO_STATUSES:
         frappe.throw(_("undoStatus must be one of {0}.").format(", ".join(UNDO_STATUSES)))
+
+    before = _validate_utc_z(before, "before")
+    after = _validate_utc_z(after, "after")
 
     page = max(cint(page), 1)
     page_length = min(max(cint(page_length), 1), 100)
@@ -507,6 +510,25 @@ def _get_final_submission(service: EmailSubmissionService, id: str) -> dict:
         frappe.throw(_("This delivery is still pending — cancel or reschedule it instead."))
 
     return submission
+
+
+def _validate_utc_z(value: str | None, label: str) -> str | None:
+    """A client-supplied sendAt bound: anything but an ISO timestamp is refused, and a valid
+    one is re-serialized to the canonical UTC ``...Z`` form — the only shape that ever reaches
+    the JMAP filter."""
+
+    if not value:
+        return None
+
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        frappe.throw(_("{0} must be a UTC timestamp like 2026-01-31T09:30:00Z.").format(label))
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+
+    return dt.astimezone(UTC).strftime(UTC_DATETIME_FORMAT)
 
 
 def _validate_send_at(service: EmailSubmissionService, send_at: str) -> str:
