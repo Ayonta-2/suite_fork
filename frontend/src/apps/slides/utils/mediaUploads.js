@@ -9,7 +9,7 @@ const fileUploadHandler = new FileUploadHandler()
 
 export const SLIDES_MEDIA_PARAM = 'slides_media=1'
 
-const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
+export const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
 	if (fileType === 'image') {
 		fileDoc = await getWebPDoc(fileDoc)
 	}
