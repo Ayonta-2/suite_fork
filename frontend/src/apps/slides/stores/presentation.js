@@ -243,6 +243,8 @@ const getPresentationResource = (name) => {
 				const repaired = ensureUniqueClientIds(restored)
 				slides.value = restored
 				slidesLength.value = slides.value.length
+				// a clean copy is what the last successful save sent, so it is the
+				// server content at baseModified and there is nothing to push
 				if (local.dirty || repaired) markDirty()
 				else markClean()
 				return
