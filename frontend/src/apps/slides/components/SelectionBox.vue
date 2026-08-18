@@ -53,7 +53,8 @@ const outline = computed(() => {
 	// a locked line keeps its outline; without handles it would have no affordance left
 	if (isSelectionLocked.value) return `${lockColor} dashed ${1.5 / slideBounds.scale}px`
 
-	if (isLine.value) return `${selectionColor} solid ${1 / slideBounds.scale}px`
+	// a line's endpoints are all the affordance it needs
+	if (isLine.value) return 'none'
 	return `${selectionColor} solid ${1.5 / slideBounds.scale}px`
 })
 

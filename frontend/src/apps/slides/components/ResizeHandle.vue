@@ -5,7 +5,7 @@
 import { computed } from 'vue'
 
 import { slideBounds } from '@/apps/slides/stores/slide'
-import { getHandleBaseStyles, selectionColor } from '@/apps/slides/utils/constants'
+import { getHandleBaseStyles, portColor, selectionColor } from '@/apps/slides/utils/constants'
 
 const props = defineProps({
 	direction: {
@@ -17,6 +17,11 @@ const props = defineProps({
 		default: null,
 	},
 	filled: {
+		type: Boolean,
+		default: false,
+	},
+	// a held end that has found a port shows in the port colour until release
+	snapping: {
 		type: Boolean,
 		default: false,
 	},
@@ -86,12 +91,14 @@ const getDimensionResizerStyles = () => {
 
 const getLineResizerStyles = () => {
 	const resizer = props.direction
+	const snapped = props.snapping && props.filled
 
 	const size = props.currentResizer ? 11 : 9
 	const offset = `-${scaledPx(size / 2)}`
 	return {
 		...getHandleBaseStyles(slideBounds.scale),
-		backgroundColor: props.filled ? selectionColor : '#ffffff',
+		...(snapped ? { border: `${1 / slideBounds.scale}px solid ${portColor}` } : {}),
+		backgroundColor: snapped ? portColor : props.filled ? selectionColor : '#ffffff',
 		borderRadius: '9999px',
 		cursor: 'ew-resize',
 		left: resizer === 'line-left' ? offset : 'auto',

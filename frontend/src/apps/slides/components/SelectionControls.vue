@@ -9,6 +9,7 @@
 			:direction="resizeHandle.direction"
 			:currentResizer="currentResizer"
 			:filled="resizeHandle.filled"
+			:snapping="resizeHandle.snapping"
 			@startResize="(e) => startResize(e, resizeHandle.direction)"
 		/>
 
@@ -95,6 +96,7 @@ const resizeHandles = computed(() => {
 		direction,
 		isVisible: isResizeHandleVisible(direction),
 		filled: isEndBound(direction),
+		snapping: !!pendingConnector.value && currentResizer.value === direction,
 	}))
 })
 

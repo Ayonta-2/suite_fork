@@ -6,8 +6,8 @@
 import { computed } from 'vue'
 
 import { slideBounds } from '@/apps/slides/stores/slide'
-import { bindPreview, getTargetBox } from '@/apps/slides/stores/interaction'
-import { selectionColor } from '@/apps/slides/utils/constants'
+import { bindPreview, getTargetBox, pendingConnector } from '@/apps/slides/stores/interaction'
+import { getHandleBaseStyles, portColor } from '@/apps/slides/utils/constants'
 import { SIDES, getPort } from '@/apps/slides/utils/connectors'
 
 const PORT_SIZE = 8
@@ -18,22 +18,26 @@ const ports = computed(() => {
 	if (!box) return []
 
 	const size = PORT_SIZE / slideBounds.scale
-	return SIDES.map((side) => {
+	// a dragged endpoint handle fills on the snapped port itself, so the ring steps aside
+	const sides = pendingConnector.value
+		? SIDES.filter((side) => side !== bindPreview.value.anchor)
+		: SIDES
+	return sides.map((side) => {
 		const point = getPort(box, side)
 		const snapped = bindPreview.value.anchor === side
 		return {
 			key: `${bindPreview.value.elementId}-${side}`,
 			style: {
-				position: 'absolute',
-				zIndex: 9999,
+				...getHandleBaseStyles(slideBounds.scale),
+				// above the draw preview line, which would otherwise cross the snapped port
+				zIndex: 10002,
 				left: `${point.x - size / 2}px`,
 				top: `${point.y - size / 2}px`,
 				width: `${size}px`,
 				height: `${size}px`,
 				borderRadius: '9999px',
-				border: `${1 / slideBounds.scale}px solid ${selectionColor}`,
-				backgroundColor: snapped ? selectionColor : 'transparent',
-				boxSizing: 'border-box',
+				border: `${1 / slideBounds.scale}px solid ${portColor}`,
+				backgroundColor: snapped ? portColor : '#ffffff',
 				pointerEvents: 'none',
 				animation: 'connector-port-in 120ms ease-out',
 			},
