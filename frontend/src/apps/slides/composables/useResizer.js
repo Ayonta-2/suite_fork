@@ -17,6 +17,7 @@ export const useResizer = () => {
 	const isResizing = ref(false)
 	const currentResizer = ref(null)
 	const isShiftHeld = ref(false)
+	const isAltHeld = ref(false)
 
 	const resizeCursor = computed(() => cursorMap[currentResizer.value] ?? 'default')
 
@@ -39,11 +40,11 @@ export const useResizer = () => {
 		startX = lastX = e.clientX
 		startY = lastY = e.clientY
 		pointerDelta.value = { x: 0, y: 0 }
-		isShiftHeld.value = e.shiftKey
+		setModifiers(e)
 
 		window.addEventListener('mousemove', resize)
-		window.addEventListener('keydown', trackShift)
-		window.addEventListener('keyup', trackShift)
+		window.addEventListener('keydown', trackModifiers)
+		window.addEventListener('keyup', trackModifiers)
 		window.addEventListener('mouseup', stopResize, { once: true })
 	}
 
@@ -52,11 +53,16 @@ export const useResizer = () => {
 		pointerDelta.value = { x: lastX - startX, y: lastY - startY }
 	}
 
-	// shift can be pressed or released without the pointer moving, so it
-	// re-emits the last delta to rerun the resize
-	const trackShift = (e) => {
-		if (e.key !== 'Shift') return
-		isShiftHeld.value = e.type === 'keydown'
+	const setModifiers = (e) => {
+		isShiftHeld.value = e.shiftKey
+		isAltHeld.value = e.altKey
+	}
+
+	// modifiers can change without the pointer moving, so re-emit the last
+	// delta to rerun the resize
+	const trackModifiers = (e) => {
+		if (e.key !== 'Shift' && e.key !== 'Alt') return
+		setModifiers(e)
 		if (!frame) frame = requestAnimationFrame(flushResize)
 	}
 
@@ -68,7 +74,7 @@ export const useResizer = () => {
 
 		lastX = e.clientX
 		lastY = e.clientY
-		isShiftHeld.value = e.shiftKey
+		setModifiers(e)
 
 		if (!frame) frame = requestAnimationFrame(flushResize)
 	}
@@ -93,9 +99,9 @@ export const useResizer = () => {
 
 		window.removeEventListener('mousemove', resize)
 		window.removeEventListener('mouseup', stopResize)
-		window.removeEventListener('keydown', trackShift)
-		window.removeEventListener('keyup', trackShift)
+		window.removeEventListener('keydown', trackModifiers)
+		window.removeEventListener('keyup', trackModifiers)
 	}
 
-	return { isResizing, isShiftHeld, pointerDelta, currentResizer, startResize, resizeCursor }
+	return { isResizing, isShiftHeld, isAltHeld, pointerDelta, currentResizer, startResize, resizeCursor }
 }

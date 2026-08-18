@@ -133,7 +133,7 @@ const elementContextMenuRef = useTemplateRef('elementContextMenu')
 
 const { isDragging, positionDelta, startDragging } = useDragAndDrop()
 
-const { isResizing, isShiftHeld, pointerDelta, currentResizer, resizeCursor, startResize } =
+const { isResizing, isShiftHeld, isAltHeld, pointerDelta, currentResizer, resizeCursor, startResize } =
 	useResizer()
 
 const { isRotating, rotationDelta, startRotate } = useRotator()
@@ -453,13 +453,20 @@ const setOffsetFromBox = (box) => {
 }
 
 const resizeBox = (cursorMovement) => {
-	const box = getResizedBox(resizeStartBounds, currentResizer.value, cursorMovement)
+	const keepAspect = isShiftHeld.value
+	const fromCenter = isAltHeld.value
+	const box = getResizedBox(resizeStartBounds, currentResizer.value, cursorMovement, {
+		keepAspect,
+		fromCenter,
+	})
 	if (!box) return
 
 	const axes = isAspectLocked(resizeStartBounds.type) ? ['x'] : ['x', 'y']
 	// resize runs in the element's rotated local frame; the snap engine works on
-	// screen-axis-aligned boxes, so snapping a rotated resize isn't supported yet
-	const snappedBox = resizeStartBounds.rotation ? box : snapForResize(box, { axes })
+	// screen-axis-aligned boxes, so snapping a rotated resize isn't supported yet.
+	// snapping moves one edge, which would break a modifier-constrained resize
+	const skipSnap = resizeStartBounds.rotation || keepAspect || fromCenter
+	const snappedBox = skipSnap ? box : snapForResize(box, { axes })
 	setOffsetFromBox(snappedBox)
 }
 
