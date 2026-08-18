@@ -157,9 +157,19 @@ const buildElementContextOptions = () => {
 			})
 		}
 
+		// mirroring a line only swaps its heads around; nothing else is visible
+		const isOnlyLines = activeElements.value.every((el) => el.shapeType === 'line')
+		if (!isOnlyLines) {
+			transformOptions.push(
+				{
+					label: 'Flip horizontal',
+					icon: FlipHorizontal,
+					onClick: () => flipElements('horizontal'),
+				},
+				{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
+			)
+		}
 		transformOptions.push(
-			{ label: 'Flip horizontal', icon: FlipHorizontal, onClick: () => flipElements('horizontal') },
-			{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
 			{ label: 'Order', icon: BringToFront, submenu: orderOptions },
 			{ label: 'Align', icon: AlignLeft, submenu: alignOptions },
 		)

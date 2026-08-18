@@ -111,6 +111,8 @@ const elementStyle = computed(() => {
 		transform: transform,
 		transformOrigin: getTransformOrigin(),
 		minWidth: element.value.type == 'text' ? '2px' : '',
+		// an elbow's box is mostly empty, so only its path takes the pointer
+		pointerEvents: element.value.points ? 'none' : '',
 	}
 })
 

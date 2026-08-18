@@ -1330,7 +1330,7 @@ const flipElements = (direction) => {
 	const property = direction == 'horizontal' ? 'invertX' : 'invertY'
 
 	const flippable = activeElements.value.filter(
-		(element) => !getBoundTargetIds(element.connector).length,
+		(element) => !getBoundTargetIds(element.connector).length && !element.points,
 	)
 	const commands = flippable.map((element) => {
 		const current = element[property]

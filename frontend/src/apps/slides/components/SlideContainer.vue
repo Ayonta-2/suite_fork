@@ -103,6 +103,7 @@ import {
 	resetInteractionOffset,
 	bindPreview,
 	pendingConnector,
+	pendingPoints,
 	getTargetBox,
 	getBindableAt,
 } from '@/apps/slides/stores/interaction'
@@ -130,6 +131,7 @@ import {
 import { getMinTableWidth } from '@/apps/slides/utils/tableWidths'
 import {
 	getBoundTargetIds,
+	getConnectorEndpoints,
 	getLineEndpoints,
 	routeConnector,
 	snapToPort,
@@ -495,14 +497,11 @@ const resizeBox = (cursorMovement) => {
 
 const PORT_SNAP_RADIUS = 14
 
+const boxFor = (bound) => bound && getTargetBox(bound.elementId)
+
 // a connector end dragged over a bindable element takes the port under the
 // cursor, or the outline when it lands between ports; ⌘ keeps it free
-const routeDraggedEnd = (box, cursorMovement) => {
-	const line = activeElement.value
-	const end = currentResizer.value === 'line-left' ? 'start' : 'end'
-	const grabbed = getLineEndpoints(line)[end]
-	const cursor = { x: grabbed.x + cursorMovement.x, y: grabbed.y + cursorMovement.y }
-
+const bindDraggedEnd = (line, end, cursor) => {
 	const target = isMetaHeld.value ? null : getBindableAt(cursor, line.id)
 	const anchor =
 		target && (snapToPort(target.box, cursor, PORT_SNAP_RADIUS / slideBounds.scale) || 'auto')
@@ -513,9 +512,20 @@ const routeDraggedEnd = (box, cursorMovement) => {
 		[end]: target ? { elementId: target.elementId, anchor } : null,
 	}
 	pendingConnector.value = connector
+	return connector
+}
+
+const draggedEnd = () => (currentResizer.value === 'line-left' ? 'start' : 'end')
+
+const routeDraggedEnd = (box, cursorMovement) => {
+	const line = activeElement.value
+	const end = draggedEnd()
+	const grabbed = getLineEndpoints(line)[end]
+	const cursor = { x: grabbed.x + cursorMovement.x, y: grabbed.y + cursorMovement.y }
+
+	const connector = bindDraggedEnd(line, end, cursor)
 	if (!getBoundTargetIds(connector).length) return box
 
-	const boxFor = (bound) => bound && getTargetBox(bound.elementId)
 	return routeConnector(
 		{ ...line, ...box, connector },
 		boxFor(connector.start),
@@ -523,7 +533,31 @@ const routeDraggedEnd = (box, cursorMovement) => {
 	)
 }
 
+// an elbow end moves as a point and the path re-routes around it
+const resizeElbowEnd = (cursorMovement) => {
+	const line = activeElement.value
+	const end = draggedEnd()
+	const grabbed = getConnectorEndpoints(line)[end]
+	const cursor = { x: grabbed.x + cursorMovement.x, y: grabbed.y + cursorMovement.y }
+
+	const connector = bindDraggedEnd(line, end, cursor)
+	const points = [...line.points]
+	points[end === 'start' ? 0 : points.length - 1] = {
+		x: cursor.x - line.left,
+		y: cursor.y - line.top,
+	}
+	const box = routeConnector(
+		{ ...line, connector, points },
+		boxFor(connector.start),
+		boxFor(connector.end),
+	)
+	setOffsetFromBox(box)
+	pendingPoints.value = box.points
+}
+
 const resizeLine = (cursorMovement) => {
+	if (activeElement.value.points) return resizeElbowEnd(cursorMovement)
+
 	const resized = getResizedLine(resizeStartBounds, currentResizer.value, cursorMovement, {
 		snapAngle: isShiftHeld.value,
 	})

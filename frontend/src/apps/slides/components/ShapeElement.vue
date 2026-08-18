@@ -86,7 +86,7 @@
 				:filter="shadow.hasShadow ? `url(#${shadowFilterId})` : null"
 			/>
 
-			<g v-else-if="elbowPath">
+			<g v-else-if="elbowPath" pointer-events="auto">
 				<path
 					v-if="element.strokeWidth < 10"
 					:d="elbowPath"
@@ -151,7 +151,11 @@ import TextElement from '@/apps/slides/components/TextElement.vue'
 import { getPolygonVertices, isPolygonShape } from '@/apps/slides/utils/shapeGeometry'
 import { useSvgShadow } from '@/apps/slides/composables/useShadow'
 import { focusElementId, activeElementIds, dragOccurred } from '@/apps/slides/stores/element'
-import { interactionOffset, followerGeometry } from '@/apps/slides/stores/interaction'
+import {
+	interactionOffset,
+	followerGeometry,
+	pendingPoints,
+} from '@/apps/slides/stores/interaction'
 import { normalizeMarker, getMarkerShape, getMarkerSize } from '@/apps/slides/utils/lineMarkers'
 import { getElbowPathData } from '@/apps/slides/utils/connectors'
 
@@ -267,10 +271,13 @@ const lineSpan = computed(() => {
 })
 
 // an elbow line draws the routed points, live ones while it follows a target
+// or has an end dragged
 const elbowPath = computed(() => {
 	if (!isLine.value) return ''
 	const follower = props.mode == 'editor' ? followerGeometry.value[element.value?.id] : undefined
-	const points = follower?.points ?? element.value?.points
+	const isActiveInEditor = isActive.value && props.mode == 'editor'
+	const points =
+		follower?.points ?? (isActiveInEditor ? pendingPoints.value : null) ?? element.value?.points
 	if (!points) return ''
 	return getElbowPathData(points, startMarker.value?.inset ?? 0, endMarker.value?.inset ?? 0)
 })
@@ -297,7 +304,9 @@ const shapeStyles = computed(() => {
 		height: '100%',
 		opacity: (element.value?.opacity ?? 100) / 100,
 		overflow: hasMarkers.value || shadow.value.hasShadow || isLine.value ? 'visible' : '',
-		transform: `scale(${element.value?.invertX || 1}, ${element.value?.invertY || 1})`,
+		transform: element.value?.points
+			? ''
+			: `scale(${element.value?.invertX || 1}, ${element.value?.invertY || 1})`,
 	}
 	return {
 		...styles,

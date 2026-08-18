@@ -10,13 +10,14 @@
 			:currentResizer="currentResizer"
 			:filled="resizeHandle.filled"
 			:snapping="resizeHandle.snapping"
+			:position="resizeHandle.position"
 			@startResize="(e) => startResize(e, resizeHandle.direction)"
 		/>
 
 		<CornerHandle v-for="corner in cornerHandles" :key="corner" :corner="corner" />
 
 		<ResizeIndicator
-			v-show="currentResizer"
+			v-show="currentResizer && !isElbow"
 			:type="elementType"
 			:dimensions="dimensions"
 			:indicatorStyles="indicatorStyles"
@@ -34,7 +35,7 @@ import CornerHandle from '@/apps/slides/components/CornerHandle.vue'
 
 import { selectionBounds, slideBounds } from '@/apps/slides/stores/slide'
 import { activeElement } from '@/apps/slides/stores/element'
-import { pendingConnector } from '@/apps/slides/stores/interaction'
+import { pendingConnector, pendingPoints } from '@/apps/slides/stores/interaction'
 
 const props = defineProps({
 	elementType: {
@@ -75,7 +76,7 @@ const resizeHandles = computed(() => {
 	} else if (['image', 'video'].includes(props.elementType)) {
 		directions = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
 	} else if (props.elementType === 'line') {
-		directions = activeElement.value?.points ? [] : ['line-left', 'line-right']
+		directions = ['line-left', 'line-right']
 	} else if (['text', 'table'].includes(props.elementType)) {
 		// rows size themselves to their content, so a table resizes on width alone
 		directions = ['text-left', 'text-right']
@@ -97,8 +98,18 @@ const resizeHandles = computed(() => {
 		isVisible: isResizeHandleVisible(direction),
 		filled: isEndBound(direction),
 		snapping: !!pendingConnector.value && currentResizer.value === direction,
+		position: getElbowEnd(direction),
 	}))
 })
+
+// an elbow's ends sit on its path, not on the box edges
+const getElbowEnd = (direction) => {
+	const points = pendingPoints.value ?? activeElement.value?.points
+	if (!points) return null
+	return direction === 'line-left' ? points[0] : points.at(-1)
+}
+
+const isElbow = computed(() => !!activeElement.value?.points)
 
 // a bound connector end shows as a filled dot, a free one as a ring
 const isEndBound = (direction) => {

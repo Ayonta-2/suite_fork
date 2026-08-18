@@ -26,6 +26,9 @@ const bindPreview = ref(null)
 // the connector object an endpoint drag commits, in place of the detach rule
 const pendingConnector = ref(null)
 
+// the routed points an elbow end drag commits; a box offset can't carry them
+const pendingPoints = ref(null)
+
 const isRotatable = (element) => ['shape', 'image'].includes(element.type)
 
 // the box a connector attaches to, as rendered: auto-sized text and tables have
@@ -193,6 +196,8 @@ const commitInteraction = (extraCommands = []) => {
 			addCommand('rotation', rotation, normalizeRotation(rotation + rotationDelta.value))
 		}
 
+		if (pendingPoints.value) addCommand('points', element.points, pendingPoints.value)
+
 		if (pendingConnector.value) {
 			addCommand('connector', element.connector, pendingConnector.value)
 			commands.push(...getRaiseAboveCommands(element.id, getBoundTargetIds(pendingConnector.value)))
@@ -233,6 +238,7 @@ const commitInteraction = (extraCommands = []) => {
 	rotationDelta.value = 0
 	bindPreview.value = null
 	pendingConnector.value = null
+	pendingPoints.value = null
 
 	// the box is drawn at the dragged width, the table lands on its rounded columns
 	if (rescaled) nextTick(() => cropSelectionToFitContent(activeElementIds.value))
@@ -251,6 +257,7 @@ export {
 	rotationDelta,
 	bindPreview,
 	pendingConnector,
+	pendingPoints,
 	getTargetBox,
 	getBindableAt,
 	followerGeometry,

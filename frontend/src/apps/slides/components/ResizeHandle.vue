@@ -25,6 +25,11 @@ const props = defineProps({
 		type: Boolean,
 		default: false,
 	},
+	// an elbow end's spot inside the selection box, in slide units
+	position: {
+		type: Object,
+		default: null,
+	},
 })
 
 const emit = defineEmits(['startResize'])
@@ -95,15 +100,22 @@ const getLineResizerStyles = () => {
 
 	const size = props.currentResizer ? 11 : 9
 	const offset = `-${scaledPx(size / 2)}`
+	const at = props.position
+	const centred = (value) => `calc(${value}px - ${scaledPx(size / 2)})`
+	const spot = at
+		? { left: centred(at.x), top: centred(at.y) }
+		: {
+				left: resizer === 'line-left' ? offset : 'auto',
+				right: resizer === 'line-right' ? offset : 'auto',
+				top: `calc(50% - ${scaledPx(size / 2)})`,
+			}
 	return {
 		...getHandleBaseStyles(slideBounds.scale),
 		...(snapped ? { border: `${1 / slideBounds.scale}px solid ${portColor}` } : {}),
 		backgroundColor: snapped ? portColor : props.filled ? selectionColor : '#ffffff',
 		borderRadius: '9999px',
 		cursor: 'ew-resize',
-		left: resizer === 'line-left' ? offset : 'auto',
-		right: resizer === 'line-right' ? offset : 'auto',
-		top: `calc(50% - ${scaledPx(size / 2)})`,
+		...spot,
 		width: scaledPx(size),
 		height: scaledPx(size),
 	}
