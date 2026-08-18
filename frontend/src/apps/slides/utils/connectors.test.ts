@@ -7,12 +7,14 @@ import {
 	clipToBoundary,
 	containsPoint,
 	getAnchorPoint,
+	getElbowPath,
 	getLineBox,
 	getLineEndpoints,
 	remapElementIds,
 	getPort,
 	resolveAutoSide,
 	routeConnector,
+	routeElbow,
 	snapToPort,
 } from './connectors'
 
@@ -187,6 +189,195 @@ describe('routeConnector', () => {
 		const { end } = getLineEndpoints({ ...box, strokeWidth: 4 })
 		expect(end.x).toBeCloseTo(100)
 		expect(end.y).toBeCloseTo(2)
+	})
+})
+
+describe('getElbowPath', () => {
+	const bounds = (left: number, top: number, size = 100) => ({
+		left,
+		top,
+		right: left + size,
+		bottom: top + size,
+	})
+	const RIGHT = { x: 1, y: 0 }
+	const LEFT = { x: -1, y: 0 }
+	const UP = { x: 0, y: -1 }
+	const DOWN = { x: 0, y: 1 }
+	const a = bounds(0, 0)
+	const fromRightOfA = { start: { x: 100, y: 50 }, startNormal: RIGHT, startBounds: a }
+
+	it('makes an L when the ports face round a corner', () => {
+		const path = getElbowPath({
+			...fromRightOfA,
+			end: { x: 350, y: 200 },
+			endNormal: UP,
+			endBounds: bounds(300, 200),
+		})
+		expect(path).toEqual([
+			{ x: 100, y: 50 },
+			{ x: 350, y: 50 },
+			{ x: 350, y: 200 },
+		])
+	})
+
+	it('makes a Z on the mid-line when the ports face each other', () => {
+		const path = getElbowPath({
+			...fromRightOfA,
+			end: { x: 300, y: 250 },
+			endNormal: LEFT,
+			endBounds: bounds(300, 200),
+		})
+		expect(path).toEqual([
+			{ x: 100, y: 50 },
+			{ x: 200, y: 50 },
+			{ x: 200, y: 250 },
+			{ x: 300, y: 250 },
+		])
+	})
+
+	it('goes round the target to reach a port facing away', () => {
+		const path = getElbowPath({
+			...fromRightOfA,
+			end: { x: 350, y: 100 },
+			endNormal: DOWN,
+			endBounds: bounds(300, 0),
+		})
+		expect(path).toEqual([
+			{ x: 100, y: 50 },
+			{ x: 237, y: 50 },
+			{ x: 237, y: 124 },
+			{ x: 350, y: 124 },
+			{ x: 350, y: 100 },
+		])
+	})
+
+	it('loops over both boxes when the ports face the same way', () => {
+		const path = getElbowPath({
+			...fromRightOfA,
+			end: { x: 400, y: 50 },
+			endNormal: RIGHT,
+			endBounds: bounds(300, 0),
+		})
+		expect(path).toEqual([
+			{ x: 100, y: 50 },
+			{ x: 124, y: 50 },
+			{ x: 124, y: -24 },
+			{ x: 424, y: -24 },
+			{ x: 424, y: 50 },
+			{ x: 400, y: 50 },
+		])
+	})
+
+	it('shortens the stub when the boxes are closer than two stubs', () => {
+		const path = getElbowPath({
+			...fromRightOfA,
+			end: { x: 130, y: 250 },
+			endNormal: LEFT,
+			endBounds: bounds(130, 200),
+		})
+		expect(path).toEqual([
+			{ x: 100, y: 50 },
+			{ x: 115, y: 50 },
+			{ x: 115, y: 250 },
+			{ x: 130, y: 250 },
+		])
+	})
+
+	it('falls back to a straight line for overlapping boxes', () => {
+		const path = getElbowPath({
+			...fromRightOfA,
+			end: { x: 50, y: 150 },
+			endNormal: DOWN,
+			endBounds: bounds(50, 50),
+		})
+		expect(path).toEqual([
+			{ x: 100, y: 50 },
+			{ x: 50, y: 150 },
+		])
+	})
+
+	it('leaves a free end along the axis of the larger delta', () => {
+		const path = getElbowPath({
+			start: { x: 0, y: 0 },
+			end: { x: 300, y: 100 },
+			startNormal: null,
+			endNormal: null,
+			startBounds: null,
+			endBounds: null,
+		})
+		expect(path).toEqual([
+			{ x: 0, y: 0 },
+			{ x: 150, y: 0 },
+			{ x: 150, y: 100 },
+			{ x: 300, y: 100 },
+		])
+	})
+
+	it('snaps a rotated normal to the nearest axis', () => {
+		const path = getElbowPath({
+			...fromRightOfA,
+			startNormal: { x: 0.9, y: 0.4 },
+			end: { x: 300, y: 250 },
+			endNormal: LEFT,
+			endBounds: bounds(300, 200),
+		})
+		expect(path[1]).toEqual({ x: 200, y: 50 })
+	})
+})
+
+describe('routeElbow', () => {
+	it('boxes the route and stores the points relative to it', () => {
+		const rect = (left: number, top: number) => ({
+			left,
+			top,
+			width: 100,
+			height: 100,
+			rotation: 0,
+			shapeType: 'rectangle',
+		})
+		const line = {
+			left: 0,
+			top: 0,
+			width: 100,
+			height: 4,
+			rotation: 0,
+			strokeWidth: 4,
+			connector: { route: 'elbow', start: { anchor: 'right' }, end: { anchor: 'left' } },
+		}
+		expect(routeElbow(line, rect(0, 0), rect(300, 200))).toEqual({
+			left: 100,
+			top: 50,
+			width: 200,
+			height: 200,
+			rotation: 0,
+			points: [
+				{ x: 0, y: 0 },
+				{ x: 100, y: 0 },
+				{ x: 100, y: 200 },
+				{ x: 200, y: 200 },
+			],
+		})
+	})
+
+	it('keeps a free end of an existing elbow where it is', () => {
+		const line = {
+			id: 'e',
+			left: 100,
+			top: 50,
+			width: 200,
+			height: 200,
+			rotation: 0,
+			strokeWidth: 4,
+			points: [
+				{ x: 0, y: 0 },
+				{ x: 200, y: 200 },
+			],
+			connector: { route: 'elbow', start: { anchor: 'right' }, end: null },
+		}
+		const box = routeElbow(line, { left: 0, top: 0, width: 100, height: 100, rotation: 0 }, null)
+		const last = box.points.at(-1)
+		expect(box.left + last.x).toBe(300)
+		expect(box.top + last.y).toBe(250)
 	})
 })
 

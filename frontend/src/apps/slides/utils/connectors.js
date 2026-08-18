@@ -172,16 +172,19 @@ const lastAutoSide = new Map()
 
 // a fixed anchor sits on its port; `auto` sits on the port of whichever side
 // faces what the other end points to
-const resolveEnd = (key, box, anchor, aim) => {
-	if (anchor !== 'auto') return getPort(box, anchor)
+const resolveSide = (key, box, anchor, aim) => {
+	if (anchor !== 'auto') return anchor
 	const side = resolveAutoSide(box, aim, lastAutoSide.get(key))
 	lastAutoSide.set(key, side)
-	return getPort(box, side)
+	return side
 }
+
+const resolveEnd = (key, box, anchor, aim) => getPort(box, resolveSide(key, box, anchor, aim))
 
 // geometry of a straight connector once its bound ends sit on `startBox` /
 // `endBox` (null for a free end, which stays where the line has it)
 export const routeConnector = (line, startBox, endBox) => {
+	if (line.connector?.route === 'elbow') return routeElbow(line, startBox, endBox)
 	const free = getLineEndpoints(line)
 	const startAim = endBox ? getBoxCenter(endBox) : free.end
 	const endAim = startBox ? getBoxCenter(startBox) : free.start
@@ -192,6 +195,210 @@ export const routeConnector = (line, startBox, endBox) => {
 		? resolveEnd(`${line.id}:end`, endBox, line.connector.end.anchor, endAim)
 		: free.end
 	return getLineBox(start, end, line.strokeWidth)
+}
+
+const ELBOW_STUB = 24
+
+// free ends of a line, elbow or straight
+export const getConnectorEndpoints = (line) => {
+	if (!line.points) return getLineEndpoints(line)
+	const toSlide = (point) => ({ x: line.left + point.x, y: line.top + point.y })
+	return { start: toSlide(line.points[0]), end: toSlide(line.points.at(-1)) }
+}
+
+// axis-aligned unit vector nearest to `vector`
+const snapToAxis = (vector) =>
+	Math.abs(vector.x) >= Math.abs(vector.y)
+		? { x: Math.sign(vector.x) || 1, y: 0 }
+		: { x: 0, y: Math.sign(vector.y) || 1 }
+
+// unrotated bounds enclosing a rotated box
+const getEnclosingBounds = (box) => {
+	const corners = [
+		{ x: 0, y: 0 },
+		{ x: box.width, y: 0 },
+		{ x: box.width, y: box.height },
+		{ x: 0, y: box.height },
+	].map((corner) => toSlideSpace(box, corner))
+	const xs = corners.map((corner) => corner.x)
+	const ys = corners.map((corner) => corner.y)
+	return {
+		left: Math.min(...xs),
+		top: Math.min(...ys),
+		right: Math.max(...xs),
+		bottom: Math.max(...ys),
+	}
+}
+
+// separation between two bounds along each axis, negative when they overlap
+const getGap = (a, b) => ({
+	x: Math.max(b.left - a.right, a.left - b.right),
+	y: Math.max(b.top - a.bottom, a.top - b.bottom),
+})
+
+// an axis-aligned segment crosses the interior of `bounds` (touching the edge is fine)
+const crossesBounds = (a, b, bounds) => {
+	const epsilon = 0.5
+	const left = Math.min(a.x, b.x)
+	const right = Math.max(a.x, b.x)
+	const top = Math.min(a.y, b.y)
+	const bottom = Math.max(a.y, b.y)
+	return (
+		right > bounds.left + epsilon &&
+		left < bounds.right - epsilon &&
+		bottom > bounds.top + epsilon &&
+		top < bounds.bottom - epsilon
+	)
+}
+
+// a path that turns 180° retraces itself
+const doublesBack = (points) =>
+	points.some((point, i) => {
+		if (i < 2) return false
+		const previous = subtractVectors(points[i - 1], points[i - 2])
+		const current = subtractVectors(point, points[i - 1])
+		return previous.x * current.x + previous.y * current.y < 0
+	})
+
+const isSamePoint = (a, b) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6
+
+// drops repeated points and the middle of every straight run
+const simplifyPath = (points) => {
+	const path = []
+	points.forEach((point) => {
+		if (path.length && isSamePoint(path.at(-1), point)) return
+		if (path.length >= 2) {
+			const [a, b] = path.slice(-2)
+			const collinear = (a.x === b.x && b.x === point.x) || (a.y === b.y && b.y === point.y)
+			if (collinear) path.pop()
+		}
+		path.push(point)
+	})
+	return path
+}
+
+const getPathLength = (path) =>
+	path.reduce(
+		(sum, point, i) =>
+			i ? sum + Math.abs(point.x - path[i - 1].x) + Math.abs(point.y - path[i - 1].y) : 0,
+		0,
+	)
+
+// orthogonal polyline from `start` to `end`, each leaving its port along `normal`
+// for a stub before turning. every candidate runs stub → mid-line → stub, along
+// mid-x, mid-y, the stub lines themselves and the four lines just outside both
+// boxes; the one with the fewest bends (then shortest) that stays clear of both
+// boxes wins
+export const getElbowPath = ({ start, end, startNormal, endNormal, startBounds, endBounds }) => {
+	const delta = subtractVectors(end, start)
+	startNormal = startNormal ? snapToAxis(startNormal) : snapToAxis(delta)
+	endNormal = endNormal ? snapToAxis(endNormal) : snapToAxis({ x: -delta.x, y: -delta.y })
+
+	// stubs shrink per axis when the boxes sit closer than two of them
+	const room = (gap) => (gap > 0 ? Math.min(ELBOW_STUB, gap / 2) : ELBOW_STUB)
+	let stub
+	if (startBounds && endBounds) {
+		const gap = getGap(startBounds, endBounds)
+		if (gap.x <= 0 && gap.y <= 0) return [start, end]
+		stub = { x: room(gap.x), y: room(gap.y) }
+	} else {
+		stub = { x: room(Math.abs(delta.x)), y: room(Math.abs(delta.y)) }
+	}
+
+	const startStub = { x: start.x + startNormal.x * stub.x, y: start.y + startNormal.y * stub.y }
+	const endStub = { x: end.x + endNormal.x * stub.x, y: end.y + endNormal.y * stub.y }
+
+	const bounds = [startBounds, endBounds].filter(Boolean)
+	const union = {
+		left: Math.min(startStub.x, endStub.x, ...bounds.map((b) => b.left)),
+		top: Math.min(startStub.y, endStub.y, ...bounds.map((b) => b.top)),
+		right: Math.max(startStub.x, endStub.x, ...bounds.map((b) => b.right)),
+		bottom: Math.max(startStub.y, endStub.y, ...bounds.map((b) => b.bottom)),
+	}
+	const clearance = bounds.map((b) => ({
+		left: b.left - stub.x,
+		top: b.top - stub.y,
+		right: b.right + stub.x,
+		bottom: b.bottom + stub.y,
+	}))
+
+	const verticals = [
+		(startStub.x + endStub.x) / 2,
+		startStub.x,
+		endStub.x,
+		union.left - stub.x,
+		union.right + stub.x,
+	]
+	const horizontals = [
+		(startStub.y + endStub.y) / 2,
+		startStub.y,
+		endStub.y,
+		union.top - stub.y,
+		union.bottom + stub.y,
+	]
+	const candidates = [
+		...verticals.map((x) => [
+			{ x, y: startStub.y },
+			{ x, y: endStub.y },
+		]),
+		...horizontals.map((y) => [
+			{ x: startStub.x, y },
+			{ x: endStub.x, y },
+		]),
+	]
+
+	let best = null
+	candidates.forEach((middle) => {
+		const raw = [start, startStub, ...middle, endStub, end]
+		if (doublesBack(raw)) return
+		// the stubs sit inside the clearance band by design, so only the run between them is judged
+		const blocked = raw
+			.slice(1, -2)
+			.some((point, i) => clearance.some((c) => crossesBounds(point, raw[i + 2], c)))
+		if (blocked) return
+		const path = simplifyPath(raw)
+		const score = [path.length, getPathLength(path)]
+		if (
+			!best ||
+			score[0] < best.score[0] ||
+			(score[0] === best.score[0] && score[1] < best.score[1])
+		) {
+			best = { path, score }
+		}
+	})
+	return best ? best.path : simplifyPath([start, startStub, endStub, end])
+}
+
+// geometry of an elbow connector: an unrotated box around the route with the
+// route's points stored relative to its corner
+export const routeElbow = (line, startBox, endBox) => {
+	const free = getConnectorEndpoints(line)
+	const startAim = endBox ? getBoxCenter(endBox) : free.end
+	const endAim = startBox ? getBoxCenter(startBox) : free.start
+	const startSide =
+		startBox && resolveSide(`${line.id}:start`, startBox, line.connector.start.anchor, startAim)
+	const endSide = endBox && resolveSide(`${line.id}:end`, endBox, line.connector.end.anchor, endAim)
+	const outward = (box, side) => getRotatedVector(SIDE_NORMAL[side], box.rotation || 0)
+
+	const path = getElbowPath({
+		start: startBox ? getPort(startBox, startSide) : free.start,
+		end: endBox ? getPort(endBox, endSide) : free.end,
+		startNormal: startBox ? outward(startBox, startSide) : null,
+		endNormal: endBox ? outward(endBox, endSide) : null,
+		startBounds: startBox ? getEnclosingBounds(startBox) : null,
+		endBounds: endBox ? getEnclosingBounds(endBox) : null,
+	})
+
+	const left = Math.min(...path.map((point) => point.x))
+	const top = Math.min(...path.map((point) => point.y))
+	return {
+		left,
+		top,
+		width: Math.max(...path.map((point) => point.x)) - left,
+		height: Math.max(...path.map((point) => point.y)) - top,
+		rotation: 0,
+		points: path.map((point) => ({ x: point.x - left, y: point.y - top })),
+	}
 }
 
 export const getBoundTargetIds = (connector) =>
