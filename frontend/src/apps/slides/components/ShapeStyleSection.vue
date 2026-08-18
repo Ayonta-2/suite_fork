@@ -53,13 +53,13 @@
 				<ArrowheadSelect
 					:modelValue="normalizeMarker(activeElement.markerStart) ?? 'none'"
 					mirrored
-					@update:modelValue="(value) => setElementProperty('markerStart', value)"
+					@update:modelValue="(value) => setMarker('markerStart', value)"
 				/>
 			</PropertyRow>
 			<PropertyRow label="Line End">
 				<ArrowheadSelect
 					:modelValue="normalizeMarker(activeElement.markerEnd) ?? 'none'"
-					@update:modelValue="(value) => setElementProperty('markerEnd', value)"
+					@update:modelValue="(value) => setMarker('markerEnd', value)"
 				/>
 			</PropertyRow>
 		</template>
@@ -78,7 +78,7 @@ import ArrowheadSelect from '@/apps/slides/components/controls/ArrowheadSelect.v
 import { MAX_BORDER_RADIUS } from '@/apps/slides/utils/constants'
 import { normalizeMarker } from '@/apps/slides/utils/lineMarkers'
 
-import { activeElement } from '@/apps/slides/stores/element'
+import { activeElement, rememberMarkers } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
@@ -96,6 +96,11 @@ const strokeStyleOptions = [
 const displayStrokeStyle = computed(() => activeElement.value.strokeStyle || 'solid')
 
 const setStrokeStyle = (value) => setElementProperty('strokeStyle', value)
+
+const setMarker = (property, value) => {
+	setElementProperty(property, value)
+	rememberMarkers(activeElement.value)
+}
 
 const strokeMin = computed(() => (activeElement.value.shapeType === 'line' ? 0.5 : 0))
 

@@ -194,10 +194,20 @@ const getInitialShapeTextContent = (shapeElement) => {
 	})
 }
 
+// arrows chosen on the last line / connector become the next one's default
+const lastMarkers = {
+	line: { markerStart: 'none', markerEnd: 'none' },
+	connector: { markerStart: 'none', markerEnd: 'arrow' },
+}
+
+const rememberMarkers = (element) => {
+	const tool = element.connector ? 'connector' : 'line'
+	lastMarkers[tool] = { markerStart: element.markerStart, markerEnd: element.markerEnd }
+}
+
 const getShapeDefaults = (shapeType) => {
 	let width, height, strokeColor, strokeWidth, borderRadius, elementShapeType
-	const markerStart = 'none'
-	const markerEnd = 'none'
+	const { markerStart, markerEnd } = lastMarkers[shapeType] ?? lastMarkers.line
 
 	const { fillColor, strokeColor: defaultStrokeColor } = guessShapeColorsFromBackground(
 		currentSlide.value?.background,
@@ -232,6 +242,7 @@ const getShapeDefaults = (shapeType) => {
 			elementShapeType = shapeType
 			break
 		case 'line':
+		case 'connector':
 			width = 300
 			height = 1
 			strokeColor = defaultStrokeColor
@@ -254,7 +265,7 @@ const getShapeDefaults = (shapeType) => {
 	}
 }
 
-const addShapeElement = async (shapeType, bounds = null) => {
+const addShapeElement = async (shapeType, bounds = null, overrides = {}) => {
 	if (!shapeType) return
 
 	const {
@@ -307,6 +318,7 @@ const addShapeElement = async (shapeType, bounds = null) => {
 		shadowBlur: 0,
 		shadowOffset: 0,
 		shadowAngle: 45,
+		...overrides,
 	}
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
@@ -1343,4 +1355,5 @@ export {
 	cropSelectionToFitContent,
 	getElementCenter,
 	getShapeDefaults,
+	rememberMarkers,
 }

@@ -287,6 +287,13 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			handler: () => addShape('line'),
 		},
 		{
+			key: 'c',
+			description: 'Add connector',
+			group: 'Insert',
+			condition: inEditMode,
+			handler: () => addShape('connector'),
+		},
+		{
 			key: 'a',
 			ctrl: true,
 			description: 'Select all elements',

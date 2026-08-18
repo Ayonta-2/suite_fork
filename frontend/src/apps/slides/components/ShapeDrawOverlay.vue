@@ -1,10 +1,15 @@
 <template>
-	<div v-if="pendingShapeType" :style="overlayStyles" @mousedown.prevent="handleMouseDown" />
+	<div
+		v-if="pendingShapeType"
+		:style="overlayStyles"
+		@mousedown.prevent="handleMouseDown"
+		@mousemove="handleMouseMove"
+	/>
 
 	<div v-if="isDrawing" :style="previewStyles" />
 </template>
 <script setup>
-import { computed, onMounted, onBeforeUnmount } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 
 import {
 	pendingShapeType,
@@ -12,9 +17,16 @@ import {
 	getShapeDefaults,
 } from '@/apps/slides/stores/element'
 import { slideBounds } from '@/apps/slides/stores/slide'
+import { bindPreview, getBindableAt, getTargetBox } from '@/apps/slides/stores/interaction'
 import { useDrawRect } from '@/apps/slides/composables/useDrawRect'
 import { selectionColor } from '@/apps/slides/utils/constants'
 import { snapToNearest45 } from '@/apps/slides/utils/resize'
+import {
+	getLineBox,
+	getLineEndpoints,
+	routeConnector,
+	snapToPort,
+} from '@/apps/slides/utils/connectors'
 
 const { isDrawing, isShiftLocked, drawRect, startPoint, endPoint, startDrawing, cancelDrawing } =
 	useDrawRect()
@@ -27,8 +39,51 @@ const overlayStyles = {
 }
 
 const MIN_SIZE = 10
+const PORT_SNAP_RADIUS = 14
 
-const isLine = computed(() => pendingShapeType.value === 'line')
+const isConnector = computed(() => pendingShapeType.value === 'connector')
+const isLine = computed(() => pendingShapeType.value === 'line' || isConnector.value)
+
+// bindable element under the cursor while the Connector tool is armed, and the
+// one the press landed on once a drag starts
+const hoverBind = ref(null)
+let startBind = null
+
+const toSlideCoords = (e) => ({
+	x: (e.clientX - slideBounds.left) / slideBounds.scale,
+	y: (e.clientY - slideBounds.top) / slideBounds.scale,
+})
+
+const findBind = (point, excludeId) => {
+	const target = getBindableAt(point, excludeId)
+	if (!target) return null
+	const anchor = snapToPort(target.box, point, PORT_SNAP_RADIUS / slideBounds.scale) || 'auto'
+	return { elementId: target.elementId, anchor }
+}
+
+const handleMouseMove = (e) => {
+	if (!isConnector.value) return
+	const bypass = e.metaKey || e.ctrlKey
+	hoverBind.value = bypass ? null : findBind(toSlideCoords(e), startBind?.elementId)
+}
+
+watch(hoverBind, (bind) => {
+	if (isConnector.value) bindPreview.value = bind
+})
+
+watch(pendingShapeType, () => {
+	hoverBind.value = null
+	bindPreview.value = null
+})
+
+// the drawn line once its bound ends sit on their targets
+const routeDrawn = (start, end, strokeWidth) => {
+	const connector = { route: 'straight', start: startBind, end: hoverBind.value }
+	const boxFor = (bind) => bind && getTargetBox(bind.elementId)
+	const line = { ...getLineBox(start, end, strokeWidth), strokeWidth, connector }
+	const box = routeConnector(line, boxFor(connector.start), boxFor(connector.end))
+	return { box, connector }
+}
 
 const activeEndPoint = computed(() =>
 	isShiftLocked.value && isLine.value ? snapToNearest45(startPoint, endPoint) : endPoint,
@@ -47,9 +102,15 @@ const PREVIEW_CLIP_PATHS = {
 
 const previewClipPath = computed(() => PREVIEW_CLIP_PATHS[pendingShapeType.value] ?? null)
 
+const previewEndpoints = computed(() => {
+	if (!isConnector.value) return { start: startPoint, end: activeEndPoint.value }
+	const { box } = routeDrawn(startPoint, activeEndPoint.value, 1)
+	return getLineEndpoints({ ...box, strokeWidth: 1 })
+})
+
 const linePreviewStyles = computed(() => {
-	const { x: x1, y: y1 } = startPoint
-	const { x: x2, y: y2 } = activeEndPoint.value
+	const { x: x1, y: y1 } = previewEndpoints.value.start
+	const { x: x2, y: y2 } = previewEndpoints.value.end
 	const dx = x2 - x1
 	const dy = y2 - y1
 	const length = Math.hypot(dx, dy)
@@ -110,9 +171,25 @@ const getDefaultBounds = (point) => {
 	return { left: point.x - width / 2, top: point.y - height / 2, width, height }
 }
 
+const addConnector = (start, end) => {
+	const { strokeWidth } = getShapeDefaults('connector')
+	const { box, connector } = routeDrawn(start, end, strokeWidth)
+	const isBound = connector.start && connector.end
+	if (isBound || box.width >= MIN_SIZE) addShapeElement('connector', box, { connector })
+}
+
 const handleMouseDown = (e) => {
+	startBind = isConnector.value ? hoverBind.value : null
+	hoverBind.value = null
+
 	startDrawing(e, (rect, start, end) => {
 		if (isShiftLocked.value && isLine.value) end = snapToNearest45(start, end)
+
+		if (isConnector.value) {
+			addConnector(start, end)
+			pendingShapeType.value = null
+			return
+		}
 
 		const drawnAsLine = isLine.value
 		const isBigEnough = drawnAsLine ? isLineLongEnough(start, end) : isRectBigEnough(rect)

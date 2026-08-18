@@ -74,5 +74,14 @@ const shapeOptions = [
 		icon: makeIcon([h('line', { x1: '2', y1: '12', x2: '22', y2: '12' })]),
 		onClick: () => addShape('line'),
 	},
+	{
+		label: 'Connector',
+		icon: makeIcon([
+			h('rect', { x: '2', y: '3', width: '7', height: '7' }),
+			h('rect', { x: '15', y: '14', width: '7', height: '7' }),
+			h('path', { d: 'M9 6.5h3.5v11H15' }),
+		]),
+		onClick: () => addShape('connector'),
+	},
 ]
 </script>
