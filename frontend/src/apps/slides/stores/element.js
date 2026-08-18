@@ -16,7 +16,7 @@ import { markDirty } from './saving'
 import { generateUniqueId, cloneObj } from '../utils/helpers'
 import { getBorderInset, getCoverCrop, isFullRect } from '../utils/cropGeometry'
 import { getMinSizeForElement } from '../utils/resize'
-import { getLineBox } from '../utils/connectors'
+import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
 import { getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
 import { presentationId } from './presentation'
@@ -756,10 +756,12 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 
 	const baseZIndex = currentSlide.value.elements.length
 	const sortedElements = [...elements].sort((a, b) => (a.zIndex || 1) - (b.zIndex || 1))
+	const copies = remapElementIds(
+		sortedElements.map((element) => JSON.parse(JSON.stringify(element))),
+	)
 
 	sortedElements.forEach((element, index) => {
-		let newElement = JSON.parse(JSON.stringify(element))
-		newElement.id = generateUniqueId()
+		const newElement = copies[index]
 		delete newElement.locked
 		newElement.zIndex = baseZIndex + index + 1
 		newElement.top += displaceByPx
@@ -1215,11 +1217,18 @@ const cropSelectionToFitContent = (elementIds) => {
 		r = 0,
 		b = 0
 
+	// a connector whose ends both sit on selected targets adds nothing to the box
+	const isRoutedWithin = (element) => {
+		const boundIds = getBoundTargetIds(element.connector)
+		return boundIds.length == 2 && boundIds.every((id) => elementIds.includes(id))
+	}
+	const boundedIds = elementIds.filter((id) => !isRoutedWithin(findSlideElement(id)))
+
 	// crop selection to selected element edges
-	elementIds.forEach((id) => {
+	boundedIds.forEach((id) => {
 		const element = currentSlide.value.elements.find((el) => el.id === id)
 		// same source the resize observer writes from, so the two never disagree by a sub-pixel
-		const useLayoutBounds = elementIds.length == 1
+		const useLayoutBounds = boundedIds.length == 1
 
 		const {
 			left: elementLeft,
@@ -1242,37 +1251,15 @@ const cropSelectionToFitContent = (elementIds) => {
 	})
 }
 
-const updatePosition = (axis, value) => {
-	const property = axis == 'X' ? 'left' : 'top'
-	const delta = value - selectionBounds[property]
-
-	const commands = activeElements.value.map((element) =>
-		editElementCommand({
-			slideId: currentSlide.value.clientId,
-			elementIds: [element.id],
-			property,
-			oldValue: element[property],
-			newValue: element[property] + delta,
-		}),
-	)
-
-	commandHistory.execute(
-		batchCommand({
-			slideId: currentSlide.value.clientId,
-			elementIds: activeElementIds.value,
-			commands,
-		}),
-	)
-
-	selectionBounds[property] = value
-}
-
 const flipElements = (direction) => {
 	if (isSelectionLocked.value) return
 
 	const property = direction == 'horizontal' ? 'invertX' : 'invertY'
 
-	const commands = activeElements.value.map((element) => {
+	const flippable = activeElements.value.filter(
+		(element) => !getBoundTargetIds(element.connector).length,
+	)
+	const commands = flippable.map((element) => {
 		const current = element[property]
 		return editElementCommand({
 			slideId: currentSlide.value.clientId,
@@ -1282,6 +1269,7 @@ const flipElements = (direction) => {
 			newValue: !current || current == 1 ? -1 : 1,
 		})
 	})
+	if (!commands.length) return
 
 	commandHistory.execute(
 		batchCommand({
@@ -1348,7 +1336,6 @@ export {
 	replaceMediaElement,
 	normalizeZIndices,
 	isWithinOverlappingBounds,
-	updatePosition,
 	flipElements,
 	findSlideElement,
 	getInitialShapeTextContent,

@@ -4,8 +4,14 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 
 const { activeElementIds } = await import('./element')
 const { slides, slideIndex } = await import('./slide')
-const { interactionOffset, rotationDelta, followerGeometry, commitInteraction, resetInteractionOffset } =
-	await import('./interaction')
+const {
+	interactionOffset,
+	rotationDelta,
+	followerGeometry,
+	commitInteraction,
+	getFollowerCommands,
+	resetInteractionOffset,
+} = await import('./interaction')
 const { setCommandHistory } = await import('./historyMeta')
 
 const find = (id: number) => slides.value[0].elements.find((el: any) => el.id === id) as any
@@ -86,5 +92,56 @@ describe('connector following its targets', () => {
 
 		expect(find(2).left).toBe(500)
 		expect(find(3)).toMatchObject({ left: 200, width: 300, top: 149, height: 2 })
+	})
+
+	it('lets go of both targets when moved on its own', () => {
+		activeElementIds.value = [3]
+		interactionOffset.top = 50
+		commitInteraction()
+
+		expect(find(3).top).toBe(199)
+		expect(find(3).connector).toEqual({ route: 'straight', start: null, end: null })
+	})
+
+	it('lets go of just the end an endpoint drag carries away', () => {
+		activeElementIds.value = [3]
+		interactionOffset.width = 50
+		commitInteraction()
+
+		expect(find(3).connector.start).toEqual({ elementId: 1, anchor: 'right' })
+		expect(find(3).connector.end).toBeNull()
+	})
+
+	it('keeps both bindings when moved together with its targets', () => {
+		activeElementIds.value = [1, 2, 3]
+		interactionOffset.left = 50
+		commitInteraction()
+
+		expect(find(3)).toMatchObject({ left: 250, top: 149 })
+		expect(find(3).connector.start).toEqual({ elementId: 1, anchor: 'right' })
+	})
+})
+
+describe('re-routing outside a gesture', () => {
+	beforeEach(() => {
+		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
+		slideIndex.value = 0
+		resetInteractionOffset()
+		rotationDelta.value = 0
+		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
+	})
+
+	it('routes to the moved boxes and leaves untouched targets alone', () => {
+		const commands = getFollowerCommands({ 2: { top: 300 } })
+		commands.forEach((command: any) => command.execute(slides.value))
+
+		expect(find(3).top).toBe(249)
+		expect(find(3).rotation).toBe(45)
+		expect(find(3).width).toBeCloseTo(Math.hypot(200, 200))
+		expect(find(3).left).toBeCloseTo(300 - Math.hypot(200, 200) / 2)
+	})
+
+	it('has nothing to say when no target moved', () => {
+		expect(getFollowerCommands({ 1: undefined })).toEqual([])
 	})
 })

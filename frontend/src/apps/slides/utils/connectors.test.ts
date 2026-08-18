@@ -8,6 +8,7 @@ import {
 	getAnchorPoint,
 	getLineBox,
 	getLineEndpoints,
+	remapElementIds,
 	getPort,
 	resolveAutoSide,
 	routeConnector,
@@ -179,5 +180,25 @@ describe('line endpoints', () => {
 		expect(endpoints.start.y).toBeCloseTo(20)
 		expect(endpoints.end.x).toBeCloseTo(110)
 		expect(endpoints.end.y).toBeCloseTo(120)
+	})
+})
+
+describe('remapElementIds', () => {
+	it('points copied bindings at the copies and drops the rest', () => {
+		const copies = remapElementIds([
+			{ id: 'a' },
+			{
+				id: 'c',
+				connector: {
+					route: 'straight',
+					start: { elementId: 'a', anchor: 'right' },
+					end: { elementId: 'b', anchor: 'auto' },
+				},
+			},
+		] as any)
+
+		expect(copies[0].id).not.toBe('a')
+		expect(copies[1].connector.start).toEqual({ elementId: copies[0].id, anchor: 'right' })
+		expect(copies[1].connector.end).toBeNull()
 	})
 })

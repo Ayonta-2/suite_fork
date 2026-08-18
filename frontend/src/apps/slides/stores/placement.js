@@ -8,12 +8,13 @@ import {
 	getElementPosition,
 	isWithinOverlappingBounds,
 	normalizeZIndices,
-	updatePosition,
 	cropSelectionToFitContent,
 } from './element'
 import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
+import { interactionOffset, commitInteraction, getFollowerCommands } from './interaction'
 import { cloneObj } from '../utils/helpers'
+import { getBoundTargetIds } from '../utils/connectors'
 
 const isHorizontalDirection = (direction) =>
 	['left', 'horizontalCenter', 'right'].includes(direction)
@@ -39,7 +40,12 @@ const alignElementsToEachOther = (direction) => {
 	const start = isHorizontal ? selectionBounds.left : selectionBounds.top
 	const extent = isHorizontal ? selectionBounds.width : selectionBounds.height
 
-	const commands = activeElements.value.map((element) => {
+	// bound connectors sit out and follow their targets
+	const aligned = activeElements.value.filter(
+		(element) => !getBoundTargetIds(element.connector).length,
+	)
+	const moved = {}
+	const commands = aligned.map((element) => {
 		const position = getElementPosition(element.id)
 		const current = isHorizontal ? position.left : position.top
 		const size = isHorizontal ? position.right - position.left : position.bottom - position.top
@@ -49,14 +55,17 @@ const alignElementsToEachOther = (direction) => {
 		else if (['right', 'bottom'].includes(direction)) target = start + extent - size
 		else target = start + (extent - size) / 2
 
+		const newValue = Math.round(element[property] + (target - current))
+		moved[element.id] = { [property]: newValue }
 		return editElementCommand({
 			slideId: currentSlide.value.clientId,
 			elementIds: [element.id],
 			property,
 			oldValue: element[property],
-			newValue: Math.round(element[property] + (target - current)),
+			newValue,
 		})
 	})
+	commands.push(...getFollowerCommands(moved))
 
 	commandHistory.execute(
 		batchCommand({
@@ -84,8 +93,11 @@ const alignElement = (direction) => {
 	if (activeElementIds.value.length > 1) return alignElementsToEachOther(direction)
 	if (getAlignedDirections().includes(direction)) return
 
-	const axis = isHorizontalDirection(direction) ? 'X' : 'Y'
-	updatePosition(axis, Math.round(getAlignmentPositions()[direction]))
+	const property = isHorizontalDirection(direction) ? 'left' : 'top'
+	const value = Math.round(getAlignmentPositions()[direction])
+	interactionOffset[property] = value - selectionBounds[property]
+	commitInteraction()
+	selectionBounds[property] = value
 }
 
 const moveElement = (elements, elementId, moveToIndex, action) => {

@@ -7,7 +7,7 @@ import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
 import { normalizeRotation } from '@/apps/slides/utils/helpers'
 import { rescaleColumnWidths } from '@/apps/slides/utils/tableWidths'
-import { routeConnector } from '@/apps/slides/utils/connectors'
+import { detachMovedEnds, getBoundTargetIds, routeConnector } from '@/apps/slides/utils/connectors'
 
 const interactionOffset = reactive({ left: 0, top: 0, width: 0, height: 0 })
 
@@ -59,11 +59,9 @@ const followerGeometry = computed(() => {
 		const { connector } = element
 		if (!connector) return
 
-		const boundIds = [connector.start, connector.end].filter(Boolean).map((end) => end.elementId)
-		const activeTargets = boundIds.filter((id) => active.includes(id))
-		if (!activeTargets.length) return
-
-		if (active.includes(element.id) && activeTargets.length === boundIds.length) return
+		const boundIds = getBoundTargetIds(connector)
+		if (!boundIds.some((id) => active.includes(id))) return
+		if (active.includes(element.id) && boundIds.every((id) => active.includes(id))) return
 
 		geometry[element.id] = routeConnector(
 			element,
@@ -73,6 +71,40 @@ const followerGeometry = computed(() => {
 	})
 	return geometry
 })
+
+const getGeometryCommands = (element, geometry) =>
+	Object.entries(geometry)
+		.filter(([property, value]) => value != element[property])
+		.map(([property, value]) =>
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property,
+				oldValue: element[property],
+				newValue: value,
+				bypassLock: true,
+			}),
+		)
+
+// re-route commands for every connector bound to a target in `movedBoxes`
+// ({ [id]: partial box }), for edits that happen outside a live gesture
+const getFollowerCommands = (movedBoxes) => {
+	const commands = []
+	currentSlide.value.elements.forEach((element) => {
+		const { connector } = element
+		if (!connector) return
+		if (!getBoundTargetIds(connector).some((id) => movedBoxes[id])) return
+
+		const boxFor = (end) => end && { ...getTargetBox(end.elementId), ...movedBoxes[end.elementId] }
+		commands.push(
+			...getGeometryCommands(
+				element,
+				routeConnector(element, boxFor(connector.start), boxFor(connector.end)),
+			),
+		)
+	})
+	return commands
+}
 
 // a text box turns fixed on the first move of the gesture that resizes it, so the
 // width has to be recorded from auto for undo to reach the other side of it
@@ -132,28 +164,29 @@ const commitInteraction = (extraCommands = []) => {
 			rescaled = true
 		}
 
-		if (rotationDelta.value && ['shape', 'image'].includes(element.type)) {
-			const rotation = element.rotation || 0
+		const rotation = element.rotation || 0
+		if (rotationDelta.value && isRotatable(element)) {
 			addCommand('rotation', rotation, normalizeRotation(rotation + rotationDelta.value))
+		}
+
+		// a connector moved without its targets leaves them behind
+		if (
+			element.connector &&
+			!getBoundTargetIds(element.connector).every((id) => activeElementIds.value.includes(id))
+		) {
+			const box = {
+				left: element.left + interactionOffset.left,
+				top: element.top + interactionOffset.top,
+				width: element.width + interactionOffset.width,
+				rotation: normalizeRotation(rotation + rotationDelta.value),
+			}
+			const detached = detachMovedEnds(element, box)
+			if (detached) addCommand('connector', element.connector, detached)
 		}
 	})
 
 	currentSlide.value.elements.forEach((element) => {
-		const geometry = followers[element.id]
-		if (!geometry) return
-		Object.entries(geometry).forEach(([property, value]) => {
-			if (value == element[property]) return
-			commands.push(
-				editElementCommand({
-					slideId: currentSlide.value.clientId,
-					elementIds: [element.id],
-					property,
-					oldValue: element[property],
-					newValue: value,
-					bypassLock: true,
-				}),
-			)
-		})
+		if (followers[element.id]) commands.push(...getGeometryCommands(element, followers[element.id]))
 	})
 
 	commands.push(...extraCommands)
@@ -188,6 +221,7 @@ export {
 	interactionOffset,
 	rotationDelta,
 	followerGeometry,
+	getFollowerCommands,
 	commitInteraction,
 	resetInteractionOffset,
 	markTurnedFixed,

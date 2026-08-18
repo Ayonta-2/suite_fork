@@ -1,4 +1,4 @@
-import { normalizeRotation } from './helpers'
+import { generateUniqueId, normalizeRotation } from './helpers'
 import { getRotatedVector } from './resize'
 import { getPolygonVertices, isPolygonShape } from './shapeGeometry'
 
@@ -162,4 +162,39 @@ export const routeConnector = (line, startBox, endBox) => {
 	const start = startBox ? resolveEnd(startBox, line.connector.start.anchor, startAim) : free.start
 	const end = endBox ? resolveEnd(endBox, line.connector.end.anchor, endAim) : free.end
 	return getLineBox(start, end, line.strokeWidth)
+}
+
+export const getBoundTargetIds = (connector) =>
+	[connector?.start, connector?.end].filter(Boolean).map((end) => end.elementId)
+
+// a bound end that a gesture carries off its port lets go of its target
+export const detachMovedEnds = (line, box) => {
+	const before = getLineEndpoints(line)
+	const after = getLineEndpoints({ ...line, ...box })
+	const connector = { ...line.connector }
+	let detached = false
+	;['start', 'end'].forEach((end) => {
+		if (!connector[end]) return
+		if (Math.hypot(after[end].x - before[end].x, after[end].y - before[end].y) < 0.5) return
+		connector[end] = null
+		detached = true
+	})
+	return detached ? connector : null
+}
+
+// fresh ids for a copied set: bindings inside the set follow the copies, the
+// rest are dropped so a copy never trails the original's targets
+export const remapElementIds = (elements) => {
+	const idMap = new Map(elements.map((element) => [element.id, generateUniqueId()]))
+	elements.forEach((element) => {
+		element.id = idMap.get(element.id)
+		if (!element.connector) return
+		;['start', 'end'].forEach((end) => {
+			const bound = element.connector[end]
+			if (!bound) return
+			const elementId = idMap.get(bound.elementId)
+			element.connector[end] = elementId ? { ...bound, elementId } : null
+		})
+	})
+	return elements
 }
