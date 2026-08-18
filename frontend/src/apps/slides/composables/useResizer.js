@@ -18,6 +18,7 @@ export const useResizer = () => {
 	const currentResizer = ref(null)
 	const isShiftHeld = ref(false)
 	const isAltHeld = ref(false)
+	const isMetaHeld = ref(false)
 
 	const resizeCursor = computed(() => cursorMap[currentResizer.value] ?? 'default')
 
@@ -56,12 +57,13 @@ export const useResizer = () => {
 	const setModifiers = (e) => {
 		isShiftHeld.value = e.shiftKey
 		isAltHeld.value = e.altKey
+		isMetaHeld.value = e.metaKey || e.ctrlKey
 	}
 
 	// modifiers can change without the pointer moving, so re-emit the last
 	// delta to rerun the resize
 	const trackModifiers = (e) => {
-		if (e.key !== 'Shift' && e.key !== 'Alt') return
+		if (!['Shift', 'Alt', 'Meta', 'Control'].includes(e.key)) return
 		setModifiers(e)
 		if (!frame) frame = requestAnimationFrame(flushResize)
 	}
@@ -103,5 +105,14 @@ export const useResizer = () => {
 		window.removeEventListener('keyup', trackModifiers)
 	}
 
-	return { isResizing, isShiftHeld, isAltHeld, pointerDelta, currentResizer, startResize, resizeCursor }
+	return {
+		isResizing,
+		isShiftHeld,
+		isAltHeld,
+		isMetaHeld,
+		pointerDelta,
+		currentResizer,
+		startResize,
+		resizeCursor,
+	}
 }

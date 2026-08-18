@@ -8,6 +8,7 @@
 			:key="resizeHandle.direction"
 			:direction="resizeHandle.direction"
 			:currentResizer="currentResizer"
+			:filled="resizeHandle.filled"
 			@startResize="(e) => startResize(e, resizeHandle.direction)"
 		/>
 
@@ -31,6 +32,8 @@ import ResizeIndicator from '@/apps/slides/components/ResizeIndicator.vue'
 import CornerHandle from '@/apps/slides/components/CornerHandle.vue'
 
 import { selectionBounds, slideBounds } from '@/apps/slides/stores/slide'
+import { activeElement } from '@/apps/slides/stores/element'
+import { pendingConnector } from '@/apps/slides/stores/interaction'
 
 const props = defineProps({
 	elementType: {
@@ -91,8 +94,18 @@ const resizeHandles = computed(() => {
 	return directions.map((direction) => ({
 		direction,
 		isVisible: isResizeHandleVisible(direction),
+		filled: isEndBound(direction),
 	}))
 })
+
+// a bound connector end shows as a filled dot, a free one as a ring
+const isEndBound = (direction) => {
+	const connector = pendingConnector.value ?? activeElement.value?.connector
+	if (!connector) return false
+	if (direction === 'line-left') return !!connector.start
+	if (direction === 'line-right') return !!connector.end
+	return false
+}
 
 const CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
 

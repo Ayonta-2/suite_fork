@@ -36,6 +36,25 @@ const toLocalSpace = (box, point) => {
 	return { x: fromCenter.x + box.width / 2, y: fromCenter.y + box.height / 2 }
 }
 
+export const containsPoint = (box, point) => {
+	const local = toLocalSpace(box, point)
+	return local.x >= 0 && local.x <= box.width && local.y >= 0 && local.y <= box.height
+}
+
+// side whose port lies within `radius` of `point`, nearest first
+export const snapToPort = (box, point, radius) => {
+	let nearest = null
+	let best = radius
+	SIDES.forEach((side) => {
+		const port = getPort(box, side)
+		const distance = Math.hypot(point.x - port.x, point.y - port.y)
+		if (distance >= best) return
+		best = distance
+		nearest = side
+	})
+	return nearest
+}
+
 // midpoint of a side of the (rotated) bounding box
 export const getAnchorPoint = (box, side) => {
 	const normal = SIDE_NORMAL[side]

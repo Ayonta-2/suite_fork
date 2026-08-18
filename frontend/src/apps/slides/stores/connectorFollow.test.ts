@@ -10,11 +10,16 @@ const {
 	followerGeometry,
 	commitInteraction,
 	getFollowerCommands,
+	getBindableAt,
+	pendingConnector,
 	resetInteractionOffset,
 } = await import('./interaction')
 const { setCommandHistory } = await import('./historyMeta')
 
 const find = (id: number) => slides.value[0].elements.find((el: any) => el.id === id) as any
+
+// stacked rect1, line, rect2 from the back
+const zIndexes = { 1: 1, 3: 2, 2: 3 }
 
 // two 100×100 boxes side by side, joined by a connector from the right port
 // of the first to the left port of the second: (200,150) → (400,150)
@@ -45,6 +50,7 @@ describe('connector following its targets', () => {
 		slideIndex.value = 0
 		resetInteractionOffset()
 		rotationDelta.value = 0
+		pendingConnector.value = null
 		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
 	})
 
@@ -119,6 +125,41 @@ describe('connector following its targets', () => {
 
 		expect(find(3)).toMatchObject({ left: 250, top: 149 })
 		expect(find(3).connector.start).toEqual({ elementId: 1, anchor: 'right' })
+	})
+})
+
+describe('binding an endpoint drag', () => {
+	beforeEach(() => {
+		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
+		slides.value[0].elements.forEach((el: any) => (el.zIndex = zIndexes[el.id]))
+		slideIndex.value = 0
+		resetInteractionOffset()
+		rotationDelta.value = 0
+		pendingConnector.value = null
+		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
+	})
+
+	it('finds the topmost bindable element under a point, never a line', () => {
+		find(1).left = 350
+		expect(getBindableAt({ x: 420, y: 150 }, 3)?.elementId).toBe(2)
+		expect(getBindableAt({ x: 300, y: 150 }, 3)).toBeNull()
+		expect(getBindableAt({ x: 450, y: 150 }, 2)?.elementId).toBe(1)
+	})
+
+	it('commits the pending connector and lifts the line above its targets', () => {
+		activeElementIds.value = [3]
+		interactionOffset.width = 10
+		pendingConnector.value = {
+			route: 'straight',
+			start: { elementId: 1, anchor: 'right' },
+			end: { elementId: 2, anchor: 'top' },
+		}
+		commitInteraction()
+
+		expect(find(3).connector.end).toEqual({ elementId: 2, anchor: 'top' })
+		expect(find(3).width).toBe(210)
+		expect([find(1).zIndex, find(2).zIndex, find(3).zIndex]).toEqual([1, 2, 3])
+		expect(pendingConnector.value).toBeNull()
 	})
 })
 

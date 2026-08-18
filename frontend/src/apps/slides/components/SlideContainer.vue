@@ -22,6 +22,8 @@
 
 				<CropOverlay v-if="!inReadonlyMode" />
 
+				<ConnectorPorts v-if="!inReadonlyMode" />
+
 				<SnapGuides :ongoingInteraction="hasOngoingInteraction" :activeGuides="activeGuides" />
 
 				<SlideElement
@@ -65,6 +67,7 @@ import SelectionBox from '@/apps/slides/components/SelectionBox.vue'
 import MarqueeOverlay from '@/apps/slides/components/MarqueeOverlay.vue'
 import ShapeDrawOverlay from '@/apps/slides/components/ShapeDrawOverlay.vue'
 import CropOverlay from '@/apps/slides/components/CropOverlay.vue'
+import ConnectorPorts from '@/apps/slides/components/ConnectorPorts.vue'
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import DropTargetOverlay from '@/apps/slides/components/DropTargetOverlay.vue'
 import OverflowContentOverlay from '@/apps/slides/components/OverflowContentOverlay.vue'
@@ -98,6 +101,10 @@ import {
 	interactionOffset,
 	commitInteraction,
 	resetInteractionOffset,
+	bindPreview,
+	pendingConnector,
+	getTargetBox,
+	getBindableAt,
 } from '@/apps/slides/stores/interaction'
 
 import { handleCopy, handlePaste } from '@/apps/slides/stores/copyPaste'
@@ -121,6 +128,12 @@ import {
 	isAspectLocked,
 } from '@/apps/slides/utils/resize'
 import { getMinTableWidth } from '@/apps/slides/utils/tableWidths'
+import {
+	getBoundTargetIds,
+	getLineEndpoints,
+	routeConnector,
+	snapToPort,
+} from '@/apps/slides/utils/connectors'
 
 const emit = defineEmits(['update:hasOngoingInteraction'])
 
@@ -133,8 +146,16 @@ const elementContextMenuRef = useTemplateRef('elementContextMenu')
 
 const { isDragging, positionDelta, startDragging } = useDragAndDrop()
 
-const { isResizing, isShiftHeld, isAltHeld, pointerDelta, currentResizer, resizeCursor, startResize } =
-	useResizer()
+const {
+	isResizing,
+	isShiftHeld,
+	isAltHeld,
+	isMetaHeld,
+	pointerDelta,
+	currentResizer,
+	resizeCursor,
+	startResize,
+} = useResizer()
 
 const { isRotating, rotationDelta, startRotate } = useRotator()
 
@@ -201,7 +222,9 @@ const getSlideCursor = () => {
 const highlightElement = (element) => {
 	const toHighlight =
 		activeElementIds.value.length > 1 && activeElementIds.value.includes(element.id)
-	return toHighlight || pairElementId.value == element.id
+	const isAutoBindTarget =
+		bindPreview.value?.anchor === 'auto' && bindPreview.value.elementId === element.id
+	return toHighlight || pairElementId.value == element.id || isAutoBindTarget
 }
 
 const slideStyles = computed(() => ({
@@ -470,10 +493,41 @@ const resizeBox = (cursorMovement) => {
 	setOffsetFromBox(snappedBox)
 }
 
+const PORT_SNAP_RADIUS = 14
+
+// a connector end dragged over a bindable element takes the port under the
+// cursor, or the outline when it lands between ports; ⌘ keeps it free
+const routeDraggedEnd = (box, cursorMovement) => {
+	const line = activeElement.value
+	const end = currentResizer.value === 'line-left' ? 'start' : 'end'
+	const grabbed = getLineEndpoints(line)[end]
+	const cursor = { x: grabbed.x + cursorMovement.x, y: grabbed.y + cursorMovement.y }
+
+	const target = isMetaHeld.value ? null : getBindableAt(cursor, line.id)
+	const anchor =
+		target && (snapToPort(target.box, cursor, PORT_SNAP_RADIUS / slideBounds.scale) || 'auto')
+	bindPreview.value = target ? { elementId: target.elementId, anchor } : null
+
+	const connector = {
+		...line.connector,
+		[end]: target ? { elementId: target.elementId, anchor } : null,
+	}
+	pendingConnector.value = connector
+	if (!getBoundTargetIds(connector).length) return box
+
+	const boxFor = (bound) => bound && getTargetBox(bound.elementId)
+	return routeConnector(
+		{ ...line, ...box, connector },
+		boxFor(connector.start),
+		boxFor(connector.end),
+	)
+}
+
 const resizeLine = (cursorMovement) => {
-	const box = getResizedLine(resizeStartBounds, currentResizer.value, cursorMovement, {
+	const resized = getResizedLine(resizeStartBounds, currentResizer.value, cursorMovement, {
 		snapAngle: isShiftHeld.value,
 	})
+	const box = activeElement.value.connector ? routeDraggedEnd(resized, cursorMovement) : resized
 
 	setOffsetFromBox(box)
 	rotationDelta.value = box.rotation - resizeStartBounds.rotation

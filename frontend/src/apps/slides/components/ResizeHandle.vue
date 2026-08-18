@@ -5,7 +5,7 @@
 import { computed } from 'vue'
 
 import { slideBounds } from '@/apps/slides/stores/slide'
-import { getHandleBaseStyles } from '@/apps/slides/utils/constants'
+import { getHandleBaseStyles, selectionColor } from '@/apps/slides/utils/constants'
 
 const props = defineProps({
 	direction: {
@@ -15,6 +15,10 @@ const props = defineProps({
 	currentResizer: {
 		type: String,
 		default: null,
+	},
+	filled: {
+		type: Boolean,
+		default: false,
 	},
 })
 
@@ -87,6 +91,7 @@ const getLineResizerStyles = () => {
 	const offset = `-${scaledPx(size / 2)}`
 	return {
 		...getHandleBaseStyles(slideBounds.scale),
+		backgroundColor: props.filled ? selectionColor : '#ffffff',
 		borderRadius: '9999px',
 		cursor: 'ew-resize',
 		left: resizer === 'line-left' ? offset : 'auto',

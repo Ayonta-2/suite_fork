@@ -7,11 +7,24 @@ import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
 import { normalizeRotation } from '@/apps/slides/utils/helpers'
 import { rescaleColumnWidths } from '@/apps/slides/utils/tableWidths'
-import { detachMovedEnds, getBoundTargetIds, routeConnector } from '@/apps/slides/utils/connectors'
+import { getRaiseAboveCommands } from './placement'
+import {
+	containsPoint,
+	detachMovedEnds,
+	getBoundTargetIds,
+	routeConnector,
+} from '@/apps/slides/utils/connectors'
 
 const interactionOffset = reactive({ left: 0, top: 0, width: 0, height: 0 })
 
 const rotationDelta = ref(0)
+
+// while a connector end is dragged over a bindable element: whose ports show
+// and which one the end will take (`auto` lights the outline instead)
+const bindPreview = ref(null)
+
+// the connector object an endpoint drag commits, in place of the detach rule
+const pendingConnector = ref(null)
 
 const isRotatable = (element) => ['shape', 'image'].includes(element.type)
 
@@ -38,6 +51,17 @@ const getTargetBox = (elementId) => {
 	box.height += interactionOffset.height
 	if (isRotatable(element)) box.rotation += rotationDelta.value
 	return box
+}
+
+// topmost element under `point` that a connector end can bind to
+const getBindableAt = (point, excludeId) => {
+	const hits = currentSlide.value.elements.filter(
+		(element) => element.id !== excludeId && element.shapeType !== 'line',
+	)
+	const target = hits
+		.sort((a, b) => (b.zIndex || 1) - (a.zIndex || 1))
+		.find((element) => containsPoint(getTargetBox(element.id), point))
+	return target ? { elementId: target.id, box: getTargetBox(target.id) } : null
 }
 
 const hasLiveGesture = () =>
@@ -169,8 +193,11 @@ const commitInteraction = (extraCommands = []) => {
 			addCommand('rotation', rotation, normalizeRotation(rotation + rotationDelta.value))
 		}
 
-		// a connector moved without its targets leaves them behind
-		if (
+		if (pendingConnector.value) {
+			addCommand('connector', element.connector, pendingConnector.value)
+			commands.push(...getRaiseAboveCommands(element.id, getBoundTargetIds(pendingConnector.value)))
+		} else if (
+			// a connector moved without its targets leaves them behind
 			element.connector &&
 			!getBoundTargetIds(element.connector).every((id) => activeElementIds.value.includes(id))
 		) {
@@ -204,6 +231,8 @@ const commitInteraction = (extraCommands = []) => {
 
 	resetInteractionOffset()
 	rotationDelta.value = 0
+	bindPreview.value = null
+	pendingConnector.value = null
 
 	// the box is drawn at the dragged width, the table lands on its rounded columns
 	if (rescaled) nextTick(() => cropSelectionToFitContent(activeElementIds.value))
@@ -220,6 +249,10 @@ const resetInteractionOffset = () => {
 export {
 	interactionOffset,
 	rotationDelta,
+	bindPreview,
+	pendingConnector,
+	getTargetBox,
+	getBindableAt,
 	followerGeometry,
 	getFollowerCommands,
 	commitInteraction,

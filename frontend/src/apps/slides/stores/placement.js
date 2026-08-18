@@ -190,12 +190,10 @@ const getElementsWithUpdatedZIndices = (action) => {
 	return normalizeZIndices(elements)
 }
 
-const getPlacementUpdateCommands = (action) => {
+const getZIndexCommands = (updatedElements) => {
 	const commands = []
 
-	const elementsWithUpdatedZIndices = getElementsWithUpdatedZIndices(action)
-
-	elementsWithUpdatedZIndices.forEach((updatedElement) => {
+	updatedElements.forEach((updatedElement) => {
 		const originalElement = currentSlide.value.elements.find((el) => el.id == updatedElement.id)
 
 		if (originalElement.zIndex == updatedElement.zIndex) return
@@ -214,6 +212,21 @@ const getPlacementUpdateCommands = (action) => {
 	return commands
 }
 
+const getPlacementUpdateCommands = (action) =>
+	getZIndexCommands(getElementsWithUpdatedZIndices(action))
+
+// zIndex commands lifting `elementId` directly above the topmost of `aboveIds`,
+// nothing when it already sits higher
+const getRaiseAboveCommands = (elementId, aboveIds) => {
+	const elements = cloneObj(currentSlide.value.elements)
+	const find = (id) => elements.find((el) => el.id == id)
+	const ceiling = Math.max(...aboveIds.map((id) => find(id)?.zIndex || 1))
+	if ((find(elementId).zIndex || 1) > ceiling) return []
+
+	moveElement(elements, elementId, ceiling, 'forward')
+	return getZIndexCommands(normalizeZIndices(elements))
+}
+
 const arrangeElements = (action) => {
 	if (isSelectionLocked.value) return
 
@@ -228,4 +241,10 @@ const arrangeElements = (action) => {
 	)
 }
 
-export { alignElement, arrangeElements, getAlignedDirections, getAlignmentPositions }
+export {
+	alignElement,
+	arrangeElements,
+	getAlignedDirections,
+	getAlignmentPositions,
+	getRaiseAboveCommands,
+}

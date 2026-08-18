@@ -5,6 +5,7 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 
 import {
 	clipToBoundary,
+	containsPoint,
 	getAnchorPoint,
 	getLineBox,
 	getLineEndpoints,
@@ -12,6 +13,7 @@ import {
 	getPort,
 	resolveAutoSide,
 	routeConnector,
+	snapToPort,
 } from './connectors'
 
 const box = (overrides = {}) => ({ left: 100, top: 100, width: 200, height: 100, rotation: 0, ...overrides })
@@ -33,6 +35,24 @@ describe('getAnchorPoint', () => {
 		const rotated = box({ rotation: 90 })
 		closeTo(getAnchorPoint(rotated, 'top'), { x: 250, y: 150 })
 		closeTo(getAnchorPoint(rotated, 'right'), { x: 200, y: 250 })
+	})
+})
+
+describe('containsPoint', () => {
+	it('tests against the rotated box', () => {
+		expect(containsPoint(box(), { x: 150, y: 150 })).toBe(true)
+		expect(containsPoint(box(), { x: 99, y: 150 })).toBe(false)
+		// a 90° box of 200×100 spans y 50..250 at its centre column
+		expect(containsPoint(box({ rotation: 90 }), { x: 200, y: 60 })).toBe(true)
+		expect(containsPoint(box({ rotation: 90 }), { x: 110, y: 110 })).toBe(false)
+	})
+})
+
+describe('snapToPort', () => {
+	it('picks the port within reach and nothing between them', () => {
+		expect(snapToPort(box(), { x: 290, y: 155 }, 14)).toBe('right')
+		expect(snapToPort(box(), { x: 250, y: 150 }, 14)).toBeNull()
+		expect(snapToPort(box(), { x: 290, y: 155 }, 5)).toBeNull()
 	})
 })
 
