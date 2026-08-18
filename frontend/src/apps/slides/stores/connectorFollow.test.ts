@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
-const { activeElementIds } = await import('./element')
-const { slides, slideIndex } = await import('./slide')
+const { activeElementIds, deleteElements, duplicateElements } = await import('./element')
+const { slides, slideIndex, getNewSlide } = await import('./slide')
 const {
 	interactionOffset,
 	rotationDelta,
@@ -184,5 +184,70 @@ describe('re-routing outside a gesture', () => {
 
 	it('has nothing to say when no target moved', () => {
 		expect(getFollowerCommands({ 1: undefined })).toEqual([])
+	})
+})
+
+describe('deleting a target', () => {
+	beforeEach(() => {
+		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
+		slideIndex.value = 0
+		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
+	})
+
+	it('lets the connector go of that end', () => {
+		deleteElements(null, [1])
+		expect(find(1)).toBeUndefined()
+		expect(find(3).connector).toEqual({
+			route: 'straight',
+			start: null,
+			end: { elementId: 2, anchor: 'left' },
+		})
+	})
+
+	it('takes a fully bound connector along when both targets go', () => {
+		deleteElements(null, [1, 2])
+		expect(slides.value[0].elements).toEqual([])
+	})
+})
+
+describe('copying connectors', () => {
+	beforeEach(() => {
+		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
+		slideIndex.value = 0
+		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
+	})
+
+	const bindingsOf = (elements: any[]) => {
+		const connector = elements.find((el) => el.connector)
+		const ids = elements.map((el) => el.id)
+		return {
+			startInSet: ids.includes(connector.connector.start?.elementId),
+			endInSet: ids.includes(connector.connector.end?.elementId),
+			ownIds: ids,
+		}
+	}
+
+	it('keeps a duplicated pair connected to the copies, not the originals', async () => {
+		await duplicateElements(null, fixture())
+		const copies = slides.value[0].elements.slice(3)
+		expect(copies).toHaveLength(3)
+		const { startInSet, endInSet, ownIds } = bindingsOf(copies)
+		expect(startInSet && endInSet).toBe(true)
+		expect(ownIds).not.toContain(1)
+		expect(ownIds).not.toContain(3)
+	})
+
+	it('pastes a lone connector unbound', async () => {
+		await duplicateElements(null, [find(3)])
+		const copy = slides.value[0].elements[3]
+		expect(copy.connector).toEqual({ route: 'straight', start: null, end: null })
+	})
+
+	it('rebinds inside a duplicated slide', () => {
+		const copy = getNewSlide(true)
+		const { startInSet, endInSet, ownIds } = bindingsOf(copy.elements)
+		expect(startInSet && endInSet).toBe(true)
+		expect(ownIds).not.toContain(1)
+		expect(find(3).connector.start.elementId).toBe(1)
 	})
 })

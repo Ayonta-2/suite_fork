@@ -168,7 +168,7 @@ describe('routeConnector', () => {
 		expect(box).toMatchObject({ left: 100, top: 48, width: 200, height: 4, rotation: 0 })
 	})
 
-	it('aims an auto end at the other target centre', () => {
+	it('puts an auto end on the port facing the other target', () => {
 		const box = routeConnector(
 			line({ start: { anchor: 'auto' }, end: { anchor: 'auto' } }),
 			rect(0, 0),

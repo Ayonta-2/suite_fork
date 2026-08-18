@@ -245,8 +245,8 @@ def update_slide_attachments(parent: str, slide: dict | str):
 
     elements_data = slide.get("elements") or "[]"
     elements = elements_data if isinstance(elements_data, list) else json.loads(elements_data)
+    remap_element_ids(elements)
     for element in elements:
-        element["id"] = "".join(random.choices(string.ascii_lowercase + string.digits, k=9))
         if element.get("src") and element["src"].startswith("/private"):
             element["attachmentName"] = get_attachment(parent, element["src"])
         attach_poster(parent, element)
@@ -254,6 +254,25 @@ def update_slide_attachments(parent: str, slide: dict | str):
     slide["elements"] = json.dumps(elements)
 
     return slide
+
+
+def remap_element_ids(elements):
+    """Fresh ids for a copied set: connector bindings inside the set follow the copies, the rest are dropped."""
+    id_map = {
+        element.get("id"): "".join(random.choices(string.ascii_lowercase + string.digits, k=9))
+        for element in elements
+    }
+    for element in elements:
+        element["id"] = id_map[element.get("id")]
+        connector = element.get("connector")
+        if not connector:
+            continue
+        for end in ("start", "end"):
+            bound = connector.get(end)
+            if not bound:
+                continue
+            new_id = id_map.get(bound.get("elementId"))
+            connector[end] = {**bound, "elementId": new_id} if new_id else None
 
 
 def apply_slide_layout(slide, ref_id, parent):

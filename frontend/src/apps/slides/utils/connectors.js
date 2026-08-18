@@ -167,10 +167,17 @@ export const getLineBox = (start, end, strokeWidth) => {
 	}
 }
 
-// a fixed anchor sits on its port; `auto` aims straight at whatever the other
-// end points to and stops at the outline
-const resolveEnd = (box, anchor, aim) =>
-	anchor === 'auto' ? clipToBoundary(box, aim) : getPort(box, anchor)
+// last side each auto end settled on, so the hysteresis has something to hold
+const lastAutoSide = new Map()
+
+// a fixed anchor sits on its port; `auto` sits on the port of whichever side
+// faces what the other end points to
+const resolveEnd = (key, box, anchor, aim) => {
+	if (anchor !== 'auto') return getPort(box, anchor)
+	const side = resolveAutoSide(box, aim, lastAutoSide.get(key))
+	lastAutoSide.set(key, side)
+	return getPort(box, side)
+}
 
 // geometry of a straight connector once its bound ends sit on `startBox` /
 // `endBox` (null for a free end, which stays where the line has it)
@@ -178,8 +185,12 @@ export const routeConnector = (line, startBox, endBox) => {
 	const free = getLineEndpoints(line)
 	const startAim = endBox ? getBoxCenter(endBox) : free.end
 	const endAim = startBox ? getBoxCenter(startBox) : free.start
-	const start = startBox ? resolveEnd(startBox, line.connector.start.anchor, startAim) : free.start
-	const end = endBox ? resolveEnd(endBox, line.connector.end.anchor, endAim) : free.end
+	const start = startBox
+		? resolveEnd(`${line.id}:start`, startBox, line.connector.start.anchor, startAim)
+		: free.start
+	const end = endBox
+		? resolveEnd(`${line.id}:end`, endBox, line.connector.end.anchor, endAim)
+		: free.end
 	return getLineBox(start, end, line.strokeWidth)
 }
 

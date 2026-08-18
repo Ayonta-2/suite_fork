@@ -800,11 +800,45 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 	)
 }
 
+// a connector whose target dies lets go of it; one whose every target dies
+// in the same delete goes with them, otherwise it points at nothing
+const getDetachCommands = (idsToDelete) => {
+	const commands = []
+	const orphaned = []
+	currentSlide.value.elements.forEach((element) => {
+		if (idsToDelete.includes(element.id)) return
+		const boundIds = getBoundTargetIds(element.connector)
+		if (!boundIds.some((id) => idsToDelete.includes(id))) return
+		const bothDeleted =
+			element.connector.start &&
+			element.connector.end &&
+			boundIds.every((id) => idsToDelete.includes(id))
+		if (bothDeleted && !element.locked) return orphaned.push(element.id)
+		const connector = { ...element.connector }
+		;['start', 'end'].forEach((end) => {
+			if (idsToDelete.includes(connector[end]?.elementId)) connector[end] = null
+		})
+		commands.push(
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property: 'connector',
+				oldValue: element.connector,
+				newValue: connector,
+				bypassLock: true,
+			}),
+		)
+	})
+	return { commands, orphaned }
+}
+
 const deleteElements = (e, ids) => {
-	const idsToDelete = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
-	if (!idsToDelete.length) return
+	const targetIds = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
+	if (!targetIds.length) return
 	resetFocus()
-	let commands = []
+	const detach = getDetachCommands(targetIds)
+	const idsToDelete = [...targetIds, ...detach.orphaned]
+	let commands = [...detach.commands]
 
 	idsToDelete.forEach((id) => {
 		// re-entrant: the focusElementId and activeElement watches both blur an empty text element
