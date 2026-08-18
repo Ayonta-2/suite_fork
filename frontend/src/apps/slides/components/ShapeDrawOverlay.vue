@@ -85,12 +85,11 @@ const previewStyles = computed(() => {
 	}
 })
 
-const getLineBounds = (start, end) => ({
-	x1: start.x,
-	y1: start.y,
-	x2: end.x,
-	y2: end.y,
-})
+// a leftward drag stores its ends swapped, so a fresh line always starts on the left
+const getLineBounds = (start, end) => {
+	if (end.x < start.x) [start, end] = [end, start]
+	return { x1: start.x, y1: start.y, x2: end.x, y2: end.y }
+}
 
 const isLineLongEnough = (start, end) =>
 	Math.hypot(end.x - start.x, end.y - start.y) >= MIN_SIZE

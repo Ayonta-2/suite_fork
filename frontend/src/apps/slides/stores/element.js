@@ -195,8 +195,8 @@ const getInitialShapeTextContent = (shapeElement) => {
 
 const getShapeDefaults = (shapeType) => {
 	let width, height, strokeColor, strokeWidth, borderRadius, elementShapeType
-	let markerStart = false
-	let markerEnd = false
+	const markerStart = 'none'
+	const markerEnd = 'none'
 
 	const { fillColor, strokeColor: defaultStrokeColor } = guessShapeColorsFromBackground(
 		currentSlide.value?.background,
