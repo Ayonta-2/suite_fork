@@ -8,7 +8,7 @@
 	>
 		<div class="flex flex-col gap-5">
 			<p class="text-p-base text-ink-gray-7">{{ dialogDescription }}</p>
-			<div class="-m-1 grid max-h-[32rem] grid-cols-2 gap-6 overflow-y-auto p-1">
+			<div class="-m-1 no-scrollbar grid max-h-[32rem] grid-cols-2 gap-6 overflow-y-auto p-1">
 				<div
 					v-for="(theme, idx) in templateList"
 					:key="theme.name"
