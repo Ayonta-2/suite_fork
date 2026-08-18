@@ -1,5 +1,5 @@
 <template>
-	<div class="flex h-full w-72 flex-col border-l bg-surface-base" @mousedown="keepEditorFocus">
+	<div class="flex h-full w-72 flex-col border-l border-outline-elevation-1 bg-surface-elevation-1" @mousedown="keepEditorFocus">
 		<!-- outside every Section, so locking can never disable the way back out -->
 		<template v-if="activeElementIds.length">
 			<div class="flex shrink-0 items-center justify-between px-4 py-3">

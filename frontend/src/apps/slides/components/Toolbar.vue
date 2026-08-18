@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center justify-center gap-1 rounded bg-surface-base p-0.5 shadow-sm"
+		class="absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center justify-center gap-1 rounded bg-surface-elevation-1 p-0.5 shadow-sm"
 		@wheel="handleScrollBarWheelEvent"
 	>
 		<Tooltip text="Text" :hover-delay="0.7">
