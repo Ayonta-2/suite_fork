@@ -49,6 +49,13 @@
 			@change-end="borderRadius.commit"
 		/>
 		<template v-if="activeElement.shapeType == 'line'">
+			<PropertyRow v-if="activeElement.connector" label="Line Type">
+				<TabButtons
+					:modelValue="activeElement.connector.route"
+					:options="lineTypes"
+					@update:modelValue="setLineType"
+				/>
+			</PropertyRow>
 			<PropertyRow label="Line Start">
 				<ArrowheadSelect
 					:modelValue="normalizeMarker(activeElement.markerStart) ?? 'none'"
@@ -68,6 +75,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { TabButtons } from 'frappe-ui'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
@@ -75,6 +83,8 @@ import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 import LineStyleSelect from '@/apps/slides/components/controls/LineStyleSelect.vue'
 import ArrowheadSelect from '@/apps/slides/components/controls/ArrowheadSelect.vue'
+import LineStraight from '@/apps/slides/icons/LineStraight.vue'
+import LineElbow from '@/apps/slides/icons/LineElbow.vue'
 import { MAX_BORDER_RADIUS } from '@/apps/slides/utils/constants'
 import { normalizeMarker } from '@/apps/slides/utils/lineMarkers'
 
@@ -96,6 +106,14 @@ const strokeStyleOptions = [
 const displayStrokeStyle = computed(() => activeElement.value.strokeStyle || 'solid')
 
 const setStrokeStyle = (value) => setElementProperty('strokeStyle', value)
+
+const lineTypes = [
+	{ value: 'straight', tooltip: 'Straight', icon: LineStraight },
+	{ value: 'elbow', tooltip: 'Elbow', icon: LineElbow, disabled: true },
+]
+
+const setLineType = (route) =>
+	setElementProperty('connector', { ...activeElement.value.connector, route })
 
 const setMarker = (property, value) => {
 	setElementProperty(property, value)

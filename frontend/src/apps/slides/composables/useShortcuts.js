@@ -38,7 +38,7 @@ import {
 	performPreviousStep,
 } from '@/apps/slides/stores/slideshow'
 
-import { markDirty } from '@/apps/slides/stores/saving'
+import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
 import { inCropMode, commitCrop, cancelCrop } from '@/apps/slides/stores/imageCrop'
 
 const { toggleNavigationPanel } = useNavigationPanel()
@@ -64,17 +64,14 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		else if (key == 'ArrowUp') dy = -step
 		else if (key == 'ArrowDown') dy = step
 
+		interactionOffset.left = dx
+		interactionOffset.top = dy
+		commitInteraction()
+
 		updateSelectionBounds({
 			left: selectionBounds.left + dx,
 			top: selectionBounds.top + dy,
 		})
-
-		activeElements.value.forEach((element) => {
-			element.left += dx
-			element.top += dy
-		})
-
-		markDirty()
 	}
 
 	const isPlainInput = (e) => {

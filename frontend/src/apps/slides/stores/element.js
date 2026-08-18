@@ -832,6 +832,33 @@ const getDetachCommands = (idsToDelete) => {
 	return { commands, orphaned }
 }
 
+const hasBoundConnector = computed(() =>
+	activeElements.value.some((element) => getBoundTargetIds(element.connector).length),
+)
+
+// clears the bindings and leaves the line where it is
+const disconnectConnectors = () => {
+	const commands = activeElements.value
+		.filter((element) => !element.locked && getBoundTargetIds(element.connector).length)
+		.map((element) =>
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property: 'connector',
+				oldValue: element.connector,
+				newValue: { ...element.connector, start: null, end: null },
+			}),
+		)
+	if (!commands.length) return
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: activeElementIds.value,
+			commands,
+		}),
+	)
+}
+
 const deleteElements = (e, ids) => {
 	const targetIds = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
 	if (!targetIds.length) return
@@ -1369,6 +1396,8 @@ export {
 	addTableElement,
 	duplicateElements,
 	deleteElements,
+	hasBoundConnector,
+	disconnectConnectors,
 	selectAllElements,
 	selectableIds,
 	getElementPosition,

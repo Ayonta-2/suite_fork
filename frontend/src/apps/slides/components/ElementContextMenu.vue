@@ -21,6 +21,8 @@ import {
 	duplicateElements,
 	deleteElements,
 	flipElements,
+	hasBoundConnector,
+	disconnectConnectors,
 	isSelectionLocked,
 	hasLockedElements,
 	hasUnlockedElements,
@@ -140,6 +142,13 @@ const buildElementContextOptions = () => {
 
 	const transformOptions = []
 	if (!isSelectionLocked.value) {
+		if (hasBoundConnector.value) {
+			transformOptions.push({
+				label: 'Disconnect',
+				icon: 'lucide-unlink',
+				onClick: () => disconnectConnectors(),
+			})
+		}
 		if (canCrop) {
 			transformOptions.push({
 				label: 'Crop',

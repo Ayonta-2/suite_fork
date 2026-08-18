@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
-const { activeElementIds, deleteElements, duplicateElements } = await import('./element')
+const { activeElementIds, deleteElements, disconnectConnectors, duplicateElements } =
+	await import('./element')
 const { slides, slideIndex, getNewSlide } = await import('./slide')
 const {
 	interactionOffset,
@@ -207,6 +208,24 @@ describe('deleting a target', () => {
 	it('takes a fully bound connector along when both targets go', () => {
 		deleteElements(null, [1, 2])
 		expect(slides.value[0].elements).toEqual([])
+	})
+})
+
+describe('disconnecting', () => {
+	beforeEach(() => {
+		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
+		slideIndex.value = 0
+		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
+	})
+
+	it('drops both bindings and leaves the line in place', () => {
+		activeElementIds.value = [3]
+		disconnectConnectors()
+		expect(find(3)).toMatchObject({
+			left: 200,
+			width: 200,
+			connector: { route: 'straight', start: null, end: null },
+		})
 	})
 })
 
