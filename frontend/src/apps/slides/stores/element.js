@@ -286,12 +286,13 @@ const addShapeElement = async (shapeType, bounds = null) => {
 	const slideWidth = slideBounds.width / slideBounds.scale
 	const slideHeight = slideBounds.height / slideBounds.scale
 
+	// a line's box is exactly as tall as its stroke, so its centre line is top + strokeWidth / 2
 	if (elementShapeType === 'line' && bounds?.x1 !== undefined) {
-		bounds = lineBoundsFromEndpoints(bounds, defaultHeight)
+		bounds = lineBoundsFromEndpoints(bounds, strokeWidth)
 	}
 
 	const width = bounds?.width ?? defaultWidth
-	const height = elementShapeType === 'line' ? defaultHeight : (bounds?.height ?? defaultHeight)
+	const height = elementShapeType === 'line' ? strokeWidth : (bounds?.height ?? defaultHeight)
 	const left = bounds?.left ?? (slideWidth - width) / 2
 	const top = bounds?.top ?? (slideHeight - height) / 2
 

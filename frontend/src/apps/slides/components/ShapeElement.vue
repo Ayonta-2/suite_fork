@@ -126,6 +126,7 @@
 import { computed, inject, ref } from 'vue'
 
 import TextElement from '@/apps/slides/components/TextElement.vue'
+import { getPolygonVertices, isPolygonShape } from '@/apps/slides/utils/shapeGeometry'
 import { useSvgShadow } from '@/apps/slides/composables/useShadow'
 import { focusElementId, activeElementIds, dragOccurred } from '@/apps/slides/stores/element'
 import { interactionOffset } from '@/apps/slides/stores/interaction'
@@ -158,12 +159,10 @@ const wrapperStyles = {
 
 const isLine = computed(() => element.value?.shapeType === 'line')
 
-const POLYGON_SIDES = { diamond: 4, triangle: 3, pentagon: 5 }
-const isPolygon = computed(() => element.value?.shapeType in POLYGON_SIDES)
+const isPolygon = computed(() => isPolygonShape(element.value?.shapeType))
 
 const polygonPoints = computed(() => {
-	const sides = POLYGON_SIDES[element.value?.shapeType]
-	if (!sides) return ''
+	if (!isPolygon.value) return ''
 
 	const isActiveInEditor = isActive.value && props.mode == 'editor'
 	const offsetWidth = isActiveInEditor ? interactionOffset.width : 0
@@ -172,22 +171,8 @@ const polygonPoints = computed(() => {
 	const height = (element.value?.height ?? 0) + offsetHeight
 	const strokeInset = (element.value?.strokeWidth ?? 0) / 2
 
-	// Unit-circle vertices evenly spaced, starting from the top (-π/2)
-	const unitVertices = Array.from({ length: sides }, (_, k) => {
-		const angle = -Math.PI / 2 + (k * 2 * Math.PI) / sides
-		return { x: Math.cos(angle), y: Math.sin(angle) }
-	})
-
-	const xMin = Math.min(...unitVertices.map((v) => v.x))
-	const xMax = Math.max(...unitVertices.map((v) => v.x))
-	const yMin = Math.min(...unitVertices.map((v) => v.y))
-	const yMax = Math.max(...unitVertices.map((v) => v.y))
-
-	const scaleX = (x) => strokeInset + ((x - xMin) / (xMax - xMin)) * (width - 2 * strokeInset)
-	const scaleY = (y) => strokeInset + ((y - yMin) / (yMax - yMin)) * (height - 2 * strokeInset)
-
-	return unitVertices
-		.map((v) => `${scaleX(v.x)},${scaleY(v.y)}`)
+	return getPolygonVertices(element.value.shapeType, width, height, strokeInset)
+		.map((v) => `${v.x},${v.y}`)
 		.join(' ')
 })
 
