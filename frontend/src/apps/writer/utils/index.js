@@ -265,7 +265,7 @@ export function printDoc(html, settings = {}) {
               <style>${editorStyle}</style>
               <style>
               @page {
-                margin: 1.25cm;
+                margin: 1.25cm 2.5cm;
 
                 @top-left {
                   content: "${settings?.print_header_left || ''}";  
