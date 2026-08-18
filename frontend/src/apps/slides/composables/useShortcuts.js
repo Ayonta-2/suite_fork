@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useShortcut } from 'frappe-ui'
 
 import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
@@ -19,6 +19,7 @@ import {
 import {
 	resetFocus,
 	exitTextEditing,
+	startTextEditing,
 	focusElementId,
 	addTextElement,
 	pendingShapeType,
@@ -156,6 +157,34 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const hasOpenOverlay = () =>
 		!!document.querySelector('[data-dismissable-layer][data-state="open"]')
 
+	const hasTextCapableSelection = () => {
+		if (activeElements.value.length !== 1) return false
+		const [element] = activeElements.value
+		return element.type === 'text' || (element.type === 'shape' && element.shapeType !== 'line')
+	}
+
+	const canStartTextEditing = () =>
+		inEditMode() &&
+		hasTextCapableSelection() &&
+		!focusElementId.value &&
+		!isSelectionLocked.value &&
+		!hasOpenOverlay()
+
+	// typing with a text box or shape selected starts editing it with the typed
+	// character. runs in the capture phase and stops there so single-letter
+	// tool shortcuts don't fire while something editable is selected
+	const handleTypeToEdit = (e) => {
+		if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
+		if (isPlainInput(e) || e.target?.isContentEditable) return
+		if (!canStartTextEditing()) return
+		e.preventDefault()
+		e.stopPropagation()
+		startTextEditing(e.key)
+	}
+
+	onMounted(() => window.addEventListener('keydown', handleTypeToEdit, true))
+	onUnmounted(() => window.removeEventListener('keydown', handleTypeToEdit, true))
+
 	const handleEscape = (e) => {
 		if (isPlainInput(e)) return e.target.blur()
 		if (focusElementId.value) return exitTextEditing()
@@ -215,6 +244,13 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			handler: (e) => performHistory(e, 'redo'),
 		},
 
+		{
+			key: 'Enter',
+			description: 'Edit text of selected element',
+			group: 'Edit',
+			condition: canStartTextEditing,
+			handler: () => startTextEditing(),
+		},
 		{
 			key: 'Enter',
 			description: 'Add slide below',

@@ -1108,6 +1108,28 @@ const setEditableState = () => {
 	})
 }
 
+// enter text editing on the active text box or shape; `text` replaces its
+// content the way typing over a full selection would
+const startTextEditing = (text = '') => {
+	const element = activeElement.value
+	focusElementId.value = element.id
+
+	if (element.type === 'text') {
+		if (!activeEditor.value) return
+		setEditableState()
+		if (text) activeEditor.value.commands.insertContent(text)
+		return
+	}
+	if (!text) return
+
+	// a shape's editor is created on the next tick and selects all once mounted
+	const stop = watch(activeEditor, (editor) => {
+		if (!editor) return
+		stop()
+		editor.on('create', () => editor.commands.insertContent(text))
+	})
+}
+
 const initEditorForElement = (element) => {
 	if (['text', 'table'].includes(element?.type)) {
 		initTextEditor(
@@ -1333,6 +1355,7 @@ export {
 	ensureExplicitHeight,
 	getNaturalAspectRatio,
 	setEditableState,
+	startTextEditing,
 	replaceMediaElement,
 	normalizeZIndices,
 	isWithinOverlappingBounds,
