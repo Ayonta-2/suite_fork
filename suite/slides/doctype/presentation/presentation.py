@@ -249,6 +249,7 @@ def update_slide_attachments(parent: str, slide: dict | str):
         element["id"] = "".join(random.choices(string.ascii_lowercase + string.digits, k=9))
         if element.get("src") and element["src"].startswith("/private"):
             element["attachmentName"] = get_attachment(parent, element["src"])
+        attach_poster(parent, element)
 
     slide["elements"] = json.dumps(elements)
 
@@ -444,6 +445,17 @@ def get_attachment(presentation, file_url):
     return attachment
 
 
+def attach_poster(presentation, element):
+    """Best-effort: a broken poster must not fail the paste."""
+    poster = element.get("poster")
+    if not isinstance(poster, str) or not poster.startswith("/private"):
+        return
+    try:
+        get_attachment(presentation, poster)
+    except Exception:
+        frappe.log_error(f"could not attach poster {poster} to {presentation}")
+
+
 @frappe.whitelist()
 def get_updated_json(presentation: str, elements: list[dict]):
     frappe.get_doc("Presentation", presentation).check_permission("write")
@@ -453,6 +465,7 @@ def get_updated_json(presentation: str, elements: list[dict]):
             file_url = element["src"].replace(frappe.local.site_name, "")
             name = get_attachment(presentation, file_url)
             element["attachmentName"] = name
+        attach_poster(presentation, element)
 
     return elements
 
