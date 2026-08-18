@@ -33,7 +33,7 @@ const editingTitle = ref(false)
 
 const inputClasses = computed(() => {
 	const baseClasses = [
-		'flex h-7 items-center px-2',
+		'h-7 px-2 py-1.5',
 		'text-base font-medium cursor-text text-ink-gray-8',
 		'outline-none rounded',
 		'focus:ring-1 focus:ring-outline-gray-3',
