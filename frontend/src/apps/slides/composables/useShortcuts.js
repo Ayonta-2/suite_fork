@@ -52,16 +52,16 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const hasElements = () => activeElementIds.value.length > 0
 	const hasActiveTextEditor = () => hasElements() && !!activeEditor.value
 
-	const nudge = (key) => {
+	const nudge = (key, step = 1) => {
 		if (isSelectionLocked.value) return
 
 		let dx = 0
 		let dy = 0
 
-		if (key == 'ArrowLeft') dx = -1
-		else if (key == 'ArrowRight') dx = 1
-		else if (key == 'ArrowUp') dy = -1
-		else if (key == 'ArrowDown') dy = 1
+		if (key == 'ArrowLeft') dx = -step
+		else if (key == 'ArrowRight') dx = step
+		else if (key == 'ArrowUp') dy = -step
+		else if (key == 'ArrowDown') dy = step
 
 		updateSelectionBounds({
 			left: selectionBounds.left + dx,
@@ -114,30 +114,32 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		if (inEditMode() || inReadonly()) toggleNavigationPanel(e)
 	}
 
-	const handleArrowUp = () => {
+	const nudgeStep = (e) => (e?.shiftKey ? 10 : 1)
+
+	const handleArrowUp = (e) => {
 		if (inSlideShow()) return performPreviousStep()
 		if (inReadonly()) return changeSlide(slideIndex.value - 1)
 		if (!inEditMode()) return
-		if (hasElements()) nudge('ArrowUp')
+		if (hasElements()) nudge('ArrowUp', nudgeStep(e))
 		else changeEditorSlide(slideIndex.value - 1)
 	}
 
-	const handleArrowDown = () => {
+	const handleArrowDown = (e) => {
 		if (inSlideShow()) return performNextStep()
 		if (inReadonly()) return changeSlide(slideIndex.value + 1)
 		if (!inEditMode()) return
-		if (hasElements()) nudge('ArrowDown')
+		if (hasElements()) nudge('ArrowDown', nudgeStep(e))
 		else changeEditorSlide(slideIndex.value + 1)
 	}
 
-	const handleArrowLeft = () => {
+	const handleArrowLeft = (e) => {
 		if (inSlideShow()) return performPreviousStep()
-		if (inEditMode() && hasElements()) nudge('ArrowLeft')
+		if (inEditMode() && hasElements()) nudge('ArrowLeft', nudgeStep(e))
 	}
 
-	const handleArrowRight = () => {
+	const handleArrowRight = (e) => {
 		if (inSlideShow()) return performNextStep()
-		if (inEditMode() && hasElements()) nudge('ArrowRight')
+		if (inEditMode() && hasElements()) nudge('ArrowRight', nudgeStep(e))
 	}
 
 	const deleteElementOrSlide = (e) => {
@@ -342,6 +344,38 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		{
 			key: 'ArrowRight',
 			description: 'Move element',
+			group: 'Edit',
+			condition: inEditMode,
+			handler: handleArrowRight,
+		},
+		{
+			key: 'ArrowUp',
+			shift: true,
+			description: 'Move element by 10px',
+			group: 'Edit',
+			condition: inEditMode,
+			handler: handleArrowUp,
+		},
+		{
+			key: 'ArrowDown',
+			shift: true,
+			description: 'Move element by 10px',
+			group: 'Edit',
+			condition: inEditMode,
+			handler: handleArrowDown,
+		},
+		{
+			key: 'ArrowLeft',
+			shift: true,
+			description: 'Move element by 10px',
+			group: 'Edit',
+			condition: inEditMode,
+			handler: handleArrowLeft,
+		},
+		{
+			key: 'ArrowRight',
+			shift: true,
+			description: 'Move element by 10px',
 			group: 'Edit',
 			condition: inEditMode,
 			handler: handleArrowRight,

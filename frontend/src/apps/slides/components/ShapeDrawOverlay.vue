@@ -6,7 +6,11 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount } from 'vue'
 
-import { pendingShapeType, addShapeElement } from '@/apps/slides/stores/element'
+import {
+	pendingShapeType,
+	addShapeElement,
+	getShapeDefaults,
+} from '@/apps/slides/stores/element'
 import { slideBounds } from '@/apps/slides/stores/slide'
 import { useDrawRect } from '@/apps/slides/composables/useDrawRect'
 import { selectionColor } from '@/apps/slides/utils/constants'
@@ -97,15 +101,24 @@ const isLineLongEnough = (start, end) =>
 const isRectBigEnough = (rect) =>
 	rect.width >= MIN_SIZE && rect.height >= MIN_SIZE
 
+// a click (or a drag too small to mean anything) drops the default size centred on the cursor
+const getDefaultBounds = (point) => {
+	const { width, height } = getShapeDefaults(pendingShapeType.value)
+	if (isLine.value) {
+		return { x1: point.x - width / 2, y1: point.y, x2: point.x + width / 2, y2: point.y }
+	}
+	return { left: point.x - width / 2, top: point.y - height / 2, width, height }
+}
+
 const handleMouseDown = (e) => {
 	startDrawing(e, (rect, start, end) => {
 		if (isShiftLocked.value && isLine.value) end = snapToNearest45(start, end)
 
 		const drawnAsLine = isLine.value
-		const bounds = drawnAsLine ? getLineBounds(start, end) : rect
 		const isBigEnough = drawnAsLine ? isLineLongEnough(start, end) : isRectBigEnough(rect)
+		const drawnBounds = drawnAsLine ? getLineBounds(start, end) : rect
 
-		if (isBigEnough) addShapeElement(pendingShapeType.value, bounds)
+		addShapeElement(pendingShapeType.value, isBigEnough ? drawnBounds : getDefaultBounds(start))
 		pendingShapeType.value = null
 	})
 }

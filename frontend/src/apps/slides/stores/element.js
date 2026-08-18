@@ -1343,4 +1343,5 @@ export {
 	getInitialTableContent,
 	cropSelectionToFitContent,
 	getElementCenter,
+	getShapeDefaults,
 }
