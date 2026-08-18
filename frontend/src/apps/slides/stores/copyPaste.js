@@ -169,6 +169,8 @@ const handleClipboardJSON = async (clipboardJSON) => {
 	const json = JSON.parse(clipboardJSON)
 	if (json?.srcPresentation) return handlePastedJSON(json)
 	if (json?.clientId) return handlePastedSlideJSON(json)
+	// a bare array is the pre-source payload: no origin known, so attach as if foreign
+	if (Array.isArray(json)) return handlePastedJSON({ srcPresentation: null, elements: json })
 }
 
 const dataURLToFile = (dataURL, filename) => {
