@@ -90,6 +90,7 @@ const presentationActions = [
 	{ label: 'New', icon: 'lucide-plus', action: 'create' },
 	{ label: 'Duplicate', icon: 'lucide-copy', action: 'duplicate' },
 	{ label: 'Delete', icon: 'lucide-trash', action: 'delete' },
+	{ label: 'Change Theme', icon: 'lucide-swatch-book', action: 'updateTheme' },
 ]
 
 const getContextMenuOptions = () => {

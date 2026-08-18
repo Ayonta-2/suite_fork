@@ -4,17 +4,6 @@
 		:dropdown="showNavbarDropdown ? 'context' : null"
 		@performDropdownAction="(action) => emit('performDropdownAction', action)"
 	>
-		<template v-if="!inReadonlyMode" #left-actions>
-			<Button
-				variant="ghost"
-				tooltip="Template Theme"
-				@click="emit('performDropdownAction', 'updateTheme')"
-			>
-				<template #icon>
-					<LucideSwatchBook class="size-4 stroke-[1.5] text-ink-gray-7" />
-				</template>
-			</Button>
-		</template>
 		<template #default>
 			<div class="flex w-full justify-center">
 				<PresentationHeader :title="presentationDoc?.title" />
