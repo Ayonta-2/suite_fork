@@ -86,6 +86,28 @@
 				:filter="shadow.hasShadow ? `url(#${shadowFilterId})` : null"
 			/>
 
+			<g v-else-if="elbowPath">
+				<path
+					v-if="element.strokeWidth < 10"
+					:d="elbowPath"
+					fill="none"
+					stroke="transparent"
+					stroke-width="16"
+				/>
+				<path
+					:d="elbowPath"
+					fill="none"
+					:stroke="`${element.strokeColor}`"
+					:stroke-width="`${element.strokeWidth}px`"
+					:stroke-dasharray="strokeDashArray"
+					:stroke-linecap="strokeLineCap"
+					stroke-linejoin="round"
+					:marker-start="startMarker ? `url(#${markerStartId})` : null"
+					:marker-end="endMarker ? `url(#${markerEndId})` : null"
+					:filter="shadow.hasShadow ? `url(#${shadowFilterId})` : null"
+				/>
+			</g>
+
 			<g v-else-if="element.shapeType == 'line'">
 				<line
 					v-if="element.strokeWidth < 10"
@@ -131,6 +153,7 @@ import { useSvgShadow } from '@/apps/slides/composables/useShadow'
 import { focusElementId, activeElementIds, dragOccurred } from '@/apps/slides/stores/element'
 import { interactionOffset, followerGeometry } from '@/apps/slides/stores/interaction'
 import { normalizeMarker, getMarkerShape, getMarkerSize } from '@/apps/slides/utils/lineMarkers'
+import { getElbowPathData } from '@/apps/slides/utils/connectors'
 
 const props = defineProps({
 	transitionStyles: {
@@ -241,6 +264,15 @@ const lineSpan = computed(() => {
 	const startInset = Math.min(startMarker.value?.inset ?? 0, length / 2)
 	const endInset = Math.min(endMarker.value?.inset ?? 0, length / 2)
 	return { x1: startInset, x2: length - endInset }
+})
+
+// an elbow line draws the routed points, live ones while it follows a target
+const elbowPath = computed(() => {
+	if (!isLine.value) return ''
+	const follower = props.mode == 'editor' ? followerGeometry.value[element.value?.id] : undefined
+	const points = follower?.points ?? element.value?.points
+	if (!points) return ''
+	return getElbowPathData(points, startMarker.value?.inset ?? 0, endMarker.value?.inset ?? 0)
 })
 
 const markerStartId = computed(() => `line-marker-start-${element.value?.id || ''}`)

@@ -185,7 +185,7 @@ const resolveEnd = (key, box, anchor, aim) => getPort(box, resolveSide(key, box,
 // `endBox` (null for a free end, which stays where the line has it)
 export const routeConnector = (line, startBox, endBox) => {
 	if (line.connector?.route === 'elbow') return routeElbow(line, startBox, endBox)
-	const free = getLineEndpoints(line)
+	const free = getConnectorEndpoints(line)
 	const startAim = endBox ? getBoxCenter(endBox) : free.end
 	const endAim = startBox ? getBoxCenter(startBox) : free.start
 	const start = startBox
@@ -401,13 +401,43 @@ export const routeElbow = (line, startBox, endBox) => {
 	}
 }
 
+const ELBOW_CORNER_RADIUS = 8
+
+// pulls `point` toward `toward` by `distance`, never past the midpoint
+const pullAlong = (point, toward, distance) => {
+	const span = subtractVectors(toward, point)
+	const length = Math.hypot(span.x, span.y)
+	if (!length) return point
+	const t = Math.min(distance, length / 2) / length
+	return { x: point.x + span.x * t, y: point.y + span.y * t }
+}
+
+// svg path through the elbow's points with rounded corners; the ends pull back
+// by the marker insets like a straight line's span does
+export const getElbowPathData = (points, startInset = 0, endInset = 0) => {
+	if (points.length < 2) return ''
+	const path = [...points]
+	path[0] = pullAlong(path[0], path[1], startInset)
+	path[path.length - 1] = pullAlong(path.at(-1), path.at(-2), endInset)
+
+	const commands = [`M ${path[0].x} ${path[0].y}`]
+	for (let i = 1; i < path.length - 1; i++) {
+		const corner = path[i]
+		const before = pullAlong(corner, path[i - 1], ELBOW_CORNER_RADIUS)
+		const after = pullAlong(corner, path[i + 1], ELBOW_CORNER_RADIUS)
+		commands.push(`L ${before.x} ${before.y}`, `Q ${corner.x} ${corner.y} ${after.x} ${after.y}`)
+	}
+	commands.push(`L ${path.at(-1).x} ${path.at(-1).y}`)
+	return commands.join(' ')
+}
+
 export const getBoundTargetIds = (connector) =>
 	[connector?.start, connector?.end].filter(Boolean).map((end) => end.elementId)
 
 // a bound end that a gesture carries off its port lets go of its target
 export const detachMovedEnds = (line, box) => {
-	const before = getLineEndpoints(line)
-	const after = getLineEndpoints({ ...line, ...box })
+	const before = getConnectorEndpoints(line)
+	const after = getConnectorEndpoints({ ...line, ...box })
 	const connector = { ...line.connector }
 	let detached = false
 	;['start', 'end'].forEach((end) => {

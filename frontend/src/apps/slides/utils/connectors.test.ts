@@ -8,6 +8,7 @@ import {
 	containsPoint,
 	getAnchorPoint,
 	getElbowPath,
+	getElbowPathData,
 	getLineBox,
 	getLineEndpoints,
 	remapElementIds,
@@ -378,6 +379,30 @@ describe('routeElbow', () => {
 		const last = box.points.at(-1)
 		expect(box.left + last.x).toBe(300)
 		expect(box.top + last.y).toBe(250)
+	})
+})
+
+describe('getElbowPathData', () => {
+	it('rounds corners and pulls the ends back by the marker insets', () => {
+		const d = getElbowPathData(
+			[
+				{ x: 0, y: 0 },
+				{ x: 100, y: 0 },
+				{ x: 100, y: 100 },
+			],
+			4,
+			6,
+		)
+		expect(d).toBe('M 4 0 L 92 0 Q 100 0 100 8 L 100 94')
+	})
+
+	it('caps the corner radius at half the shorter segment', () => {
+		const d = getElbowPathData([
+			{ x: 0, y: 0 },
+			{ x: 10, y: 0 },
+			{ x: 10, y: 100 },
+		])
+		expect(d).toBe('M 0 0 L 5 0 Q 10 0 10 8 L 10 100')
 	})
 })
 

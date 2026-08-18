@@ -87,12 +87,15 @@ import LineStraight from '@/apps/slides/icons/LineStraight.vue'
 import LineElbow from '@/apps/slides/icons/LineElbow.vue'
 import { MAX_BORDER_RADIUS } from '@/apps/slides/utils/constants'
 import { normalizeMarker } from '@/apps/slides/utils/lineMarkers'
+import { routeConnector } from '@/apps/slides/utils/connectors'
 
 import { activeElement, rememberMarkers } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
+import { getTargetBox } from '@/apps/slides/stores/interaction'
 import {
+	setElementProperties,
 	setElementProperty,
 	useElementProperty,
 } from '@/apps/slides/composables/editProperty'
@@ -109,11 +112,28 @@ const setStrokeStyle = (value) => setElementProperty('strokeStyle', value)
 
 const lineTypes = [
 	{ value: 'straight', tooltip: 'Straight', icon: LineStraight },
-	{ value: 'elbow', tooltip: 'Elbow', icon: LineElbow, disabled: true },
+	{ value: 'elbow', tooltip: 'Elbow', icon: LineElbow },
 ]
 
-const setLineType = (route) =>
-	setElementProperty('connector', { ...activeElement.value.connector, route })
+// bound ends re-route for the new type, free ends stay put
+const setLineType = (route) => {
+	const line = activeElement.value
+	const connector = { ...line.connector, route }
+	const boxFor = (end) => end && getTargetBox(end.elementId)
+	const geometry = routeConnector(
+		{ ...line, connector },
+		boxFor(connector.start),
+		boxFor(connector.end),
+	)
+	setElementProperties([
+		{ property: 'connector', oldValue: line.connector, newValue: connector },
+		...['left', 'top', 'width', 'height', 'rotation', 'points'].map((property) => ({
+			property,
+			oldValue: line[property],
+			newValue: geometry[property],
+		})),
+	])
+}
 
 const setMarker = (property, value) => {
 	setElementProperty(property, value)
@@ -136,6 +156,7 @@ const lineStrokeWidth = {
 	set: (value) => {
 		const element = activeElement.value
 		element.strokeWidth = value
+		if (element.points) return
 		element.top = lineStart.top + (lineStart.strokeWidth - value) / 2
 		element.height = value
 	},

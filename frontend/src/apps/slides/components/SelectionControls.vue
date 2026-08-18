@@ -75,7 +75,7 @@ const resizeHandles = computed(() => {
 	} else if (['image', 'video'].includes(props.elementType)) {
 		directions = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
 	} else if (props.elementType === 'line') {
-		directions = ['line-left', 'line-right']
+		directions = activeElement.value?.points ? [] : ['line-left', 'line-right']
 	} else if (['text', 'table'].includes(props.elementType)) {
 		// rows size themselves to their content, so a table resizes on width alone
 		directions = ['text-left', 'text-right']
