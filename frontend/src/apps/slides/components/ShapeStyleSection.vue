@@ -79,6 +79,9 @@ import { MAX_BORDER_RADIUS } from '@/apps/slides/utils/constants'
 import { normalizeMarker } from '@/apps/slides/utils/lineMarkers'
 
 import { activeElement } from '@/apps/slides/stores/element'
+import { currentSlide } from '@/apps/slides/stores/slide'
+import { commandHistory } from '@/apps/slides/stores/historyMeta'
+import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
 import {
 	setElementProperty,
 	useElementProperty,
@@ -97,7 +100,47 @@ const setStrokeStyle = (value) => setElementProperty('strokeStyle', value)
 const strokeMin = computed(() => (activeElement.value.shapeType === 'line' ? 0.5 : 0))
 
 const borderRadius = useElementProperty('borderRadius')
-const strokeWidth = useElementProperty('strokeWidth')
+const shapeStrokeWidth = useElementProperty('strokeWidth')
+
+// a line is drawn along top + strokeWidth / 2, so its top moves with the stroke
+// to keep the visible line (and any bound ends) where it is
+let lineStart = null
+const lineStrokeWidth = {
+	begin: () => {
+		const { strokeWidth, top, height } = activeElement.value
+		lineStart = { strokeWidth, top, height }
+	},
+	set: (value) => {
+		const element = activeElement.value
+		element.strokeWidth = value
+		element.top = lineStart.top + (lineStart.strokeWidth - value) / 2
+		element.height = value
+	},
+	commit: () => {
+		if (!lineStart) return
+		const element = activeElement.value
+		const commands = ['strokeWidth', 'top', 'height']
+			.filter((property) => element[property] !== lineStart[property])
+			.map((property) =>
+				editElementCommand({
+					slideId: currentSlide.value.clientId,
+					elementIds: [element.id],
+					property,
+					oldValue: lineStart[property],
+					newValue: element[property],
+				}),
+			)
+		lineStart = null
+		if (!commands.length) return
+		commandHistory.execute(
+			batchCommand({ slideId: currentSlide.value.clientId, elementIds: [element.id], commands }),
+		)
+	},
+}
+
+const strokeWidth = computed(() =>
+	activeElement.value.shapeType === 'line' ? lineStrokeWidth : shapeStrokeWidth,
+)
 const fillColor = useElementProperty('fillColor')
 const strokeColor = useElementProperty('strokeColor')
 

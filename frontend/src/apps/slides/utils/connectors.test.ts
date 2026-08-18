@@ -3,7 +3,15 @@ import { describe, expect, it, vi } from 'vitest'
 // resize.js reaches mediaUploads via helpers.ts, which drags in the whole app
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
-import { clipToBoundary, getAnchorPoint, getPort, resolveAutoSide } from './connectors'
+import {
+	clipToBoundary,
+	getAnchorPoint,
+	getLineBox,
+	getLineEndpoints,
+	getPort,
+	resolveAutoSide,
+	routeConnector,
+} from './connectors'
 
 const box = (overrides = {}) => ({ left: 100, top: 100, width: 200, height: 100, rotation: 0, ...overrides })
 
@@ -108,5 +116,68 @@ describe('resolveAutoSide', () => {
 		expect(resolveAutoSide(square, atAngle(46), 'right')).toBe('right')
 		// well past the band it switches
 		expect(resolveAutoSide(square, atAngle(50), 'right')).toBe('bottom')
+	})
+})
+
+describe('routeConnector', () => {
+	const rect = (left: number, top: number) => ({
+		left,
+		top,
+		width: 100,
+		height: 100,
+		rotation: 0,
+		shapeType: 'rectangle',
+	})
+	const line = (connector: any) => ({
+		left: 0,
+		top: 0,
+		width: 100,
+		height: 4,
+		rotation: 0,
+		strokeWidth: 4,
+		connector,
+	})
+
+	it('joins two fixed ports and puts the centre line on them', () => {
+		const box = routeConnector(
+			line({ start: { anchor: 'right' }, end: { anchor: 'left' } }),
+			rect(0, 0),
+			rect(300, 0),
+		)
+		expect(box).toMatchObject({ left: 100, top: 48, width: 200, height: 4, rotation: 0 })
+	})
+
+	it('aims an auto end at the other target centre', () => {
+		const box = routeConnector(
+			line({ start: { anchor: 'auto' }, end: { anchor: 'auto' } }),
+			rect(0, 0),
+			rect(0, 300),
+		)
+		expect(box.rotation).toBe(90)
+		expect(box.width).toBe(200)
+	})
+
+	it('keeps a free end where the line has it', () => {
+		const box = routeConnector(
+			line({ start: { anchor: 'right' }, end: null }),
+			rect(0, 0),
+			null,
+		)
+		const { end } = getLineEndpoints({ ...box, strokeWidth: 4 })
+		expect(end.x).toBeCloseTo(100)
+		expect(end.y).toBeCloseTo(2)
+	})
+})
+
+describe('line endpoints', () => {
+	it('round-trip through getLineBox', () => {
+		const start = { x: 10, y: 20 }
+		const end = { x: 110, y: 120 }
+		const box = getLineBox(start, end, 6)
+		const endpoints = getLineEndpoints({ ...box, strokeWidth: 6 })
+		expect(endpoints.start.x).toBeCloseTo(10)
+		expect(endpoints.start.y).toBeCloseTo(20)
+		expect(endpoints.end.x).toBeCloseTo(110)
+		expect(endpoints.end.y).toBeCloseTo(120)
 	})
 })

@@ -13,9 +13,10 @@ import { useTextEditor, resetGrowthBaseline } from '@/apps/slides/composables/us
 
 import { getElementDiv } from './elementRegistry'
 import { markDirty } from './saving'
-import { generateUniqueId, cloneObj, normalizeRotation } from '../utils/helpers'
+import { generateUniqueId, cloneObj } from '../utils/helpers'
 import { getBorderInset, getCoverCrop, isFullRect } from '../utils/cropGeometry'
 import { getMinSizeForElement } from '../utils/resize'
+import { getLineBox } from '../utils/connectors'
 import { getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
 import { presentationId } from './presentation'
@@ -253,19 +254,6 @@ const getShapeDefaults = (shapeType) => {
 	}
 }
 
-const lineBoundsFromEndpoints = ({ x1, y1, x2, y2 }, height) => {
-	const dx = x2 - x1
-	const dy = y2 - y1
-	const length = Math.sqrt(dx ** 2 + dy ** 2)
-	return {
-		width: length,
-		height,
-		left: (x1 + x2) / 2 - length / 2,
-		top: (y1 + y2) / 2 - height / 2,
-		rotation: normalizeRotation(Math.atan2(dy, dx) * (180 / Math.PI)),
-	}
-}
-
 const addShapeElement = async (shapeType, bounds = null) => {
 	if (!shapeType) return
 
@@ -286,9 +274,9 @@ const addShapeElement = async (shapeType, bounds = null) => {
 	const slideWidth = slideBounds.width / slideBounds.scale
 	const slideHeight = slideBounds.height / slideBounds.scale
 
-	// a line's box is exactly as tall as its stroke, so its centre line is top + strokeWidth / 2
 	if (elementShapeType === 'line' && bounds?.x1 !== undefined) {
-		bounds = lineBoundsFromEndpoints(bounds, strokeWidth)
+		const { x1, y1, x2, y2 } = bounds
+		bounds = getLineBox({ x: x1, y: y1 }, { x: x2, y: y2 }, strokeWidth)
 	}
 
 	const width = bounds?.width ?? defaultWidth

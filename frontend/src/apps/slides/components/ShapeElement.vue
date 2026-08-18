@@ -129,7 +129,7 @@ import TextElement from '@/apps/slides/components/TextElement.vue'
 import { getPolygonVertices, isPolygonShape } from '@/apps/slides/utils/shapeGeometry'
 import { useSvgShadow } from '@/apps/slides/composables/useShadow'
 import { focusElementId, activeElementIds, dragOccurred } from '@/apps/slides/stores/element'
-import { interactionOffset } from '@/apps/slides/stores/interaction'
+import { interactionOffset, followerGeometry } from '@/apps/slides/stores/interaction'
 import { normalizeMarker, getMarkerShape, getMarkerSize } from '@/apps/slides/utils/lineMarkers'
 
 const props = defineProps({
@@ -235,7 +235,9 @@ const markerPathAttrs = (marker) => ({
 // the stroke stops short of a head, but the two ends never cross
 const lineSpan = computed(() => {
 	const isActiveInEditor = isActive.value && props.mode == 'editor'
-	const length = (element.value?.width ?? 0) + (isActiveInEditor ? interactionOffset.width : 0)
+	const follower = props.mode == 'editor' ? followerGeometry.value[element.value?.id] : undefined
+	const length =
+		follower?.width ?? (element.value?.width ?? 0) + (isActiveInEditor ? interactionOffset.width : 0)
 	const startInset = Math.min(startMarker.value?.inset ?? 0, length / 2)
 	const endInset = Math.min(endMarker.value?.inset ?? 0, length / 2)
 	return { x1: startInset, x2: length - endInset }

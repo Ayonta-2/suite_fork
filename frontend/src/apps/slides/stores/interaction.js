@@ -1,15 +1,78 @@
-import { nextTick, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref } from 'vue'
 
 import { currentSlide } from './slide'
 import { activeElements, activeElementIds, cropSelectionToFitContent } from './element'
+import { getElementDiv } from './elementRegistry'
 import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
 import { normalizeRotation } from '@/apps/slides/utils/helpers'
 import { rescaleColumnWidths } from '@/apps/slides/utils/tableWidths'
+import { routeConnector } from '@/apps/slides/utils/connectors'
 
 const interactionOffset = reactive({ left: 0, top: 0, width: 0, height: 0 })
 
 const rotationDelta = ref(0)
+
+const isRotatable = (element) => ['shape', 'image'].includes(element.type)
+
+// the box a connector attaches to, as rendered: auto-sized text and tables have
+// no stored size, and an active target carries the live gesture on top
+const getTargetBox = (elementId) => {
+	const element = currentSlide.value?.elements.find((el) => el.id === elementId)
+	if (!element) return null
+
+	const div = getElementDiv(element.id)
+	const box = {
+		left: element.left,
+		top: element.top,
+		width: element.width || div?.offsetWidth || 0,
+		height: element.height || div?.offsetHeight || 0,
+		rotation: isRotatable(element) ? element.rotation || 0 : 0,
+		shapeType: element.shapeType,
+	}
+	if (!activeElementIds.value.includes(element.id)) return box
+
+	box.left += interactionOffset.left
+	box.top += interactionOffset.top
+	box.width += interactionOffset.width
+	box.height += interactionOffset.height
+	if (isRotatable(element)) box.rotation += rotationDelta.value
+	return box
+}
+
+const hasLiveGesture = () =>
+	interactionOffset.left ||
+	interactionOffset.top ||
+	interactionOffset.width ||
+	interactionOffset.height ||
+	rotationDelta.value
+
+// live geometry of every connector whose target is in the gesture, keyed by
+// connector id. a connector selected together with all of its targets moves
+// rigidly with them and stays out of here
+const followerGeometry = computed(() => {
+	const geometry = {}
+	if (!hasLiveGesture()) return geometry
+
+	const active = activeElementIds.value
+	currentSlide.value?.elements.forEach((element) => {
+		const { connector } = element
+		if (!connector) return
+
+		const boundIds = [connector.start, connector.end].filter(Boolean).map((end) => end.elementId)
+		const activeTargets = boundIds.filter((id) => active.includes(id))
+		if (!activeTargets.length) return
+
+		if (active.includes(element.id) && activeTargets.length === boundIds.length) return
+
+		geometry[element.id] = routeConnector(
+			element,
+			connector.start && getTargetBox(connector.start.elementId),
+			connector.end && getTargetBox(connector.end.elementId),
+		)
+	})
+	return geometry
+})
 
 // a text box turns fixed on the first move of the gesture that resizes it, so the
 // width has to be recorded from auto for undo to reach the other side of it
@@ -33,8 +96,11 @@ const getColumnRescale = (element) => {
 const commitInteraction = (extraCommands = []) => {
 	const commands = []
 	let rescaled = false
+	const followers = followerGeometry.value
 
 	activeElements.value.forEach((element) => {
+		if (followers[element.id]) return
+
 		const addCommand = (property, oldValue, newValue) => {
 			if (newValue == oldValue) return
 			commands.push(
@@ -72,6 +138,24 @@ const commitInteraction = (extraCommands = []) => {
 		}
 	})
 
+	currentSlide.value.elements.forEach((element) => {
+		const geometry = followers[element.id]
+		if (!geometry) return
+		Object.entries(geometry).forEach(([property, value]) => {
+			if (value == element[property]) return
+			commands.push(
+				editElementCommand({
+					slideId: currentSlide.value.clientId,
+					elementIds: [element.id],
+					property,
+					oldValue: element[property],
+					newValue: value,
+					bypassLock: true,
+				}),
+			)
+		})
+	})
+
 	commands.push(...extraCommands)
 
 	if (commands.length) {
@@ -103,6 +187,7 @@ const resetInteractionOffset = () => {
 export {
 	interactionOffset,
 	rotationDelta,
+	followerGeometry,
 	commitInteraction,
 	resetInteractionOffset,
 	markTurnedFixed,

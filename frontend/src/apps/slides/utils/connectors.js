@@ -1,3 +1,4 @@
+import { normalizeRotation } from './helpers'
 import { getRotatedVector } from './resize'
 import { getPolygonVertices, isPolygonShape } from './shapeGeometry'
 
@@ -125,4 +126,40 @@ export const resolveAutoSide = (box, target, previousSide = null) => {
 	return SIDES.reduce((best, side) =>
 		angleDifference(angle, SIDE_ANGLE[side]) < angleDifference(angle, SIDE_ANGLE[best]) ? side : best,
 	)
+}
+
+// a line's box is exactly as tall as its stroke, so its centre line runs at
+// top + strokeWidth / 2 whatever the stored height says
+export const getLineEndpoints = (line) => {
+	const center = { x: line.left + line.width / 2, y: line.top + line.strokeWidth / 2 }
+	const halfSpan = getRotatedVector({ x: line.width / 2, y: 0 }, line.rotation || 0)
+	return { start: subtractVectors(center, halfSpan), end: addVectors(center, halfSpan) }
+}
+
+export const getLineBox = (start, end, strokeWidth) => {
+	const span = subtractVectors(end, start)
+	const length = Math.hypot(span.x, span.y)
+	return {
+		width: length,
+		height: strokeWidth,
+		left: (start.x + end.x) / 2 - length / 2,
+		top: (start.y + end.y) / 2 - strokeWidth / 2,
+		rotation: normalizeRotation((Math.atan2(span.y, span.x) * 180) / Math.PI),
+	}
+}
+
+// a fixed anchor sits on its port; `auto` aims straight at whatever the other
+// end points to and stops at the outline
+const resolveEnd = (box, anchor, aim) =>
+	anchor === 'auto' ? clipToBoundary(box, aim) : getPort(box, anchor)
+
+// geometry of a straight connector once its bound ends sit on `startBox` /
+// `endBox` (null for a free end, which stays where the line has it)
+export const routeConnector = (line, startBox, endBox) => {
+	const free = getLineEndpoints(line)
+	const startAim = endBox ? getBoxCenter(endBox) : free.end
+	const endAim = startBox ? getBoxCenter(startBox) : free.start
+	const start = startBox ? resolveEnd(startBox, line.connector.start.anchor, startAim) : free.start
+	const end = endBox ? resolveEnd(endBox, line.connector.end.anchor, endAim) : free.end
+	return getLineBox(start, end, line.strokeWidth)
 }

@@ -23,9 +23,7 @@ import { activeElementIds } from '@/apps/slides/stores/element'
 
 import { getTransitionKey } from '@/apps/slides/stores/transition'
 import { slideBounds } from '@/apps/slides/stores/slide'
-import { interactionOffset } from '@/apps/slides/stores/interaction'
-
-import { rotationDelta } from '@/apps/slides/stores/interaction'
+import { interactionOffset, followerGeometry, rotationDelta } from '@/apps/slides/stores/interaction'
 import { selectionColor } from '@/apps/slides/utils/constants'
 
 const props = defineProps({
@@ -54,14 +52,20 @@ const element = defineModel('element', {
 	default: null,
 })
 
+// a connector following its target draws the routed geometry in place of its own
+const follower = computed(() =>
+	props.mode == 'editor' ? followerGeometry.value[element.value.id] : undefined,
+)
+
 const elementStyle = computed(() => {
-	const isActiveInEditor = isActive.value && props.mode == 'editor'
+	const isActiveInEditor = isActive.value && props.mode == 'editor' && !follower.value
 	const offsetLeft = isActiveInEditor ? interactionOffset.left : 0
 	const offsetTop = isActiveInEditor ? interactionOffset.top : 0
 	const offsetWidth = isActiveInEditor ? interactionOffset.width : 0
 	const offsetHeight = isActiveInEditor ? interactionOffset.height : 0
+	const box = follower.value ?? element.value
 
-	let elementWidth = element.value.width
+	let elementWidth = box.width
 	if (elementWidth) {
 		elementWidth = `${elementWidth + offsetWidth}px`
 	} else {
@@ -77,14 +81,12 @@ const elementStyle = computed(() => {
 		elementHeight = 'auto'
 	}
 
-	const elementRotation = element.value.rotation || 0
+	const elementRotation = box.rotation || 0
 
 	// only the active editor element tracks the live rotation delta —
 	// inactive elements never read it, so they don't re-render per frame
 	const rotation =
-		isActive.value && isRotatable.value && props.mode == 'editor'
-			? elementRotation + rotationDelta.value
-			: elementRotation
+		isActiveInEditor && isRotatable.value ? elementRotation + rotationDelta.value : elementRotation
 
 	// the transient gesture offset rides on the transform (compositor-only,
 	// no layout) while left/top hold the committed position; it must come
@@ -98,8 +100,8 @@ const elementStyle = computed(() => {
 		position: 'absolute',
 		width: elementWidth,
 		height: elementHeight,
-		left: `${element.value.left}px`,
-		top: `${element.value.top}px`,
+		left: `${box.left}px`,
+		top: `${box.top}px`,
 		outline: props.highlight
 			? `${selectionColor}92 ${element.value.locked ? 'dashed' : 'solid'} ${1.5 / slideBounds.scale}px`
 			: 'none',
