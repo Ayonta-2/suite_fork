@@ -1,10 +1,10 @@
 <template>
 	<Dialog v-model:open="showLayoutDialog" size="4xl" title="Select a layout">
-		<div class="grid max-h-[32rem] grid-cols-3 gap-6 overflow-y-auto">
+		<div class="no-scrollbar grid max-h-[32rem] grid-cols-3 gap-6 overflow-y-auto">
 			<div
 				v-for="layout in layouts"
 				:key="layout.idx"
-				class="aspect-video cursor-pointer overflow-hidden rounded-lg border border-outline-gray-1 hover:border-outline-gray-2"
+				class="aspect-video cursor-pointer overflow-hidden rounded-md border border-outline-gray-1 hover:border-outline-gray-2"
 				:style="getThumbnailCardStyles(layout.thumbnail)"
 				@click="insertSlideWithLayout(layout)"
 			>

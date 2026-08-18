@@ -1,11 +1,11 @@
 <template>
 	<div
-		class="absolute bottom-10 left-1/2 z-10 flex h-12 -translate-x-1/2 items-center justify-center gap-1 rounded-lg bg-surface-base px-2 shadow-xl"
+		class="absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center justify-center gap-1 rounded bg-surface-elevation-1 p-0.5 shadow-md"
 		@wheel="handleScrollBarWheelEvent"
 	>
 		<Tooltip text="Text" :hover-delay="0.7">
 			<div class="cursor-pointer rounded p-2 hover:bg-surface-gray-3" @click="addTextElement(null)">
-				<Type class="size-4.5 stroke-[1.5] text-ink-gray-7" />
+				<Type class="size-4 stroke-[1.5] text-ink-gray-7" />
 			</div>
 		</Tooltip>
 
@@ -21,7 +21,7 @@
 			>
 				<template #default="{ openFileSelector }">
 					<div class="cursor-pointer rounded p-2 hover:bg-surface-gray-3" @click="openFileSelector">
-						<ImagePlus class="size-4.5 stroke-[1.5] text-ink-gray-7" />
+						<ImagePlus class="size-4 stroke-[1.5] text-ink-gray-7" />
 					</div>
 				</template>
 			</FileUploader>

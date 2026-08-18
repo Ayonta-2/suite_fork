@@ -4,17 +4,6 @@
 		:dropdown="showNavbarDropdown ? 'context' : null"
 		@performDropdownAction="(action) => emit('performDropdownAction', action)"
 	>
-		<template v-if="!inReadonlyMode" #left-actions>
-			<Button
-				variant="ghost"
-				tooltip="Template Theme"
-				@click="emit('performDropdownAction', 'updateTheme')"
-			>
-				<template #icon>
-					<LucideSwatchBook class="size-4 stroke-[1.5] text-ink-gray-7" />
-				</template>
-			</Button>
-		</template>
 		<template #default>
 			<div class="flex w-full justify-center">
 				<PresentationHeader :title="presentationDoc?.title" />
@@ -47,7 +36,7 @@
 
 <script setup>
 import { ref, computed, inject } from 'vue'
-import { Presentation } from 'lucide-vue-next'
+import { Play } from 'lucide-vue-next'
 
 import { Badge, Button } from 'frappe-ui'
 
@@ -78,7 +67,7 @@ const canPin = computed(() => {
 
 const primaryButtonProps = computed(() => ({
 	label: 'Present',
-	icon: Presentation,
+	icon: Play,
 	onClick: () => emit('startSlideShow'),
 	hide: route.name === 'slides-editor-new',
 }))

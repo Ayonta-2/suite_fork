@@ -2,7 +2,7 @@
 	<div :class="getThumbnailClasses()" :style="getThumbnailStyles(slide)">
 		<SlidePreview :slide="slide" :scale="scale" />
 		<div
-			class="absolute inset-0 flex w-full justify-between rounded-sm p-2"
+			class="absolute inset-0 flex w-full justify-between p-2"
 			:style="getGradientOverlayStyles(slide)"
 		>
 			<div class="text-[10px] font-medium">{{ slide.idx }}</div>
@@ -54,7 +54,7 @@ const getThumbnailClasses = () => {
 		'cursor-pointer',
 		'border',
 		'border-outline-gray-1',
-		'rounded',
+		'rounded-md',
 		'transition-transform',
 		'duration-400',
 		'ease-in-out',
@@ -66,14 +66,13 @@ const getThumbnailClasses = () => {
 
 	let outlineClasses = []
 	if (isActive && recentlyRestored.value) {
-		outlineClasses.push('ring-2', 'ring-offset-2', 'scale-[1.02]')
+		outlineClasses.push('ring-[3px]', 'scale-[1.02]')
 	} else if (isFocused.value) {
-		outlineClasses.push('ring-2', 'ring-offset-2')
+		outlineClasses.push('ring-[3px]')
 	} else if (isActive) {
 		outlineClasses.push(
-			'ring-[color:var(--surface-gray-8)] dark:ring-[color:var(--surface-gray-9)]',
-			'ring-2',
-			'ring-offset-2',
+			'ring-[color:var(--surface-gray-8)] dark:ring-[color:var(--surface-gray-5)]',
+			'ring-[3px]',
 		)
 	} else {
 		outlineClasses.push('ring-transparent', 'hover:border-outline-gray-2')
@@ -86,8 +85,7 @@ const getThumbnailStyles = (s) => {
 	return {
 		backgroundColor: s.background || '#ffffff',
 		height: `${props.height}px`,
-		'--tw-ring-offset-color': 'var(--surface-base)',
-		...(usesSelectionRing.value ? { '--tw-ring-color': selectionColor } : {}),
+		...(usesSelectionRing.value ? { '--tw-ring-color': `color-mix(in srgb, ${selectionColor} 60%, transparent)` } : {}),
 	}
 }
 </script>

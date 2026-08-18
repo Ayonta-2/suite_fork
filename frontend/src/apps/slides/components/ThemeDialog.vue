@@ -8,14 +8,14 @@
 	>
 		<div class="flex flex-col gap-5">
 			<p class="text-p-base text-ink-gray-7">{{ dialogDescription }}</p>
-			<div class="-m-1 grid max-h-[32rem] grid-cols-2 gap-6 overflow-y-auto p-1">
+			<div class="-m-1 no-scrollbar grid max-h-[32rem] grid-cols-2 gap-6 overflow-y-auto p-1">
 				<div
 					v-for="(theme, idx) in templateList"
 					:key="theme.name"
 					class="flex flex-col gap-3"
 				>
 					<div
-						class="aspect-video cursor-pointer overflow-hidden rounded-lg border border-outline-gray-1 hover:border-outline-gray-2"
+						class="aspect-video cursor-pointer overflow-hidden rounded-md border border-outline-gray-1 hover:border-outline-gray-2"
 						:class="getThemeThumbnailClasses(theme.name)"
 						:style="getThemeThumbnailStyles(theme)"
 						@click="performAction(theme.name)"
@@ -26,14 +26,14 @@
 							:scale="THEME_PREVIEW_SCALE"
 						/>
 					</div>
-					<div class="flex gap-2">
+					<div class="flex items-center justify-between">
+						<div class="select-none text-base text-ink-gray-7">
+							{{ theme.title }}
+						</div>
 						<LucideCheck
 							v-if="props.update && theme.name == presentationTheme"
 							class="size-4 stroke-[1.5] text-ink-gray-8"
 						/>
-						<div class="select-none text-base text-ink-gray-6">
-							{{ theme.title }}
-						</div>
 					</div>
 				</div>
 			</div>
