@@ -45,15 +45,24 @@ const showControls = computed(() => {
 	)
 })
 
+const isLine = computed(() => activeElement.value?.shapeType == 'line')
+
 const outline = computed(() => {
 	if (activeElementIds.value.length != 1) return 'none'
 
 	// a locked line keeps its outline; without handles it would have no affordance left
 	if (isSelectionLocked.value) return `${lockColor} dashed ${1.5 / slideBounds.scale}px`
 
-	if (activeElement.value?.shapeType == 'line') return 'none'
+	if (isLine.value) return `${selectionColor} solid ${1 / slideBounds.scale}px`
 	return `${selectionColor} solid ${1.5 / slideBounds.scale}px`
 })
+
+// a line's box is only as tall as its stroke, so hug it from outside instead of covering it
+const outlineOffset = computed(() =>
+	isLine.value && !isSelectionLocked.value
+		? `${1 / slideBounds.scale}px`
+		: `-${0.75 / slideBounds.scale}px`,
+)
 
 const isRotatable = computed(() => {
 	return ['shape', 'image'].includes(activeElement.value?.type)
@@ -80,7 +89,7 @@ const boxStyles = computed(() => {
 		backgroundColor: activeElementIds.value.length == 1 ? '' : `${selectionColor}25`,
 		outline: outline.value,
 		// straddle the edge instead of sitting outside it, so snap guides line up
-		outlineOffset: `-${0.75 / slideBounds.scale}px`,
+		outlineOffset: outlineOffset.value,
 		width: `${selectionBounds.width}px`,
 		height: `${selectionBounds.height}px`,
 		left: `${selectionBounds.left - offsetLeft}px`,

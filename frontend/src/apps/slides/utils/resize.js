@@ -148,7 +148,16 @@ const getClampedEnd = (fixedEnd, cursorTarget, minLength) => {
 	return addVectors(fixedEnd, scaleVector(direction, minLength))
 }
 
-export const getResizedLine = (start, handle, cursorMovement) => {
+// project `point` onto the nearest 45° ray from `origin`, keeping its distance
+export const snapToNearest45 = (origin, point) => {
+	const span = subtractVectors(point, origin)
+	const length = getLength(span)
+	const step = Math.PI / 4
+	const angle = Math.round(Math.atan2(span.y, span.x) / step) * step
+	return { x: origin.x + length * Math.cos(angle), y: origin.y + length * Math.sin(angle) }
+}
+
+export const getResizedLine = (start, handle, cursorMovement, { snapAngle = false } = {}) => {
 	const minLength = getMinSizeForElement(start.type).width
 
 	// for line resize + rotate happens through endpoints
@@ -159,7 +168,8 @@ export const getResizedLine = (start, handle, cursorMovement) => {
 	const grabbedEnd = grabbingRightEnd ? rightEnd : leftEnd
 
 	// add cursorMovement to the grabbed end and get new position of that endpoint
-	const cursorTarget = addVectors(grabbedEnd, cursorMovement)
+	const rawTarget = addVectors(grabbedEnd, cursorMovement)
+	const cursorTarget = snapAngle ? snapToNearest45(fixedEnd, rawTarget) : rawTarget
 	const newEnd = getClampedEnd(fixedEnd, cursorTarget, minLength)
 
 	// where the two ends sit now: the one we didn't grab stayed put

@@ -16,6 +16,7 @@ export const cursorMap = {
 export const useResizer = () => {
 	const isResizing = ref(false)
 	const currentResizer = ref(null)
+	const isShiftHeld = ref(false)
 
 	const resizeCursor = computed(() => cursorMap[currentResizer.value] ?? 'default')
 
@@ -38,14 +39,25 @@ export const useResizer = () => {
 		startX = lastX = e.clientX
 		startY = lastY = e.clientY
 		pointerDelta.value = { x: 0, y: 0 }
+		isShiftHeld.value = e.shiftKey
 
 		window.addEventListener('mousemove', resize)
+		window.addEventListener('keydown', trackShift)
+		window.addEventListener('keyup', trackShift)
 		window.addEventListener('mouseup', stopResize, { once: true })
 	}
 
 	const flushResize = () => {
 		frame = null
 		pointerDelta.value = { x: lastX - startX, y: lastY - startY }
+	}
+
+	// shift can be pressed or released without the pointer moving, so it
+	// re-emits the last delta to rerun the resize
+	const trackShift = (e) => {
+		if (e.key !== 'Shift') return
+		isShiftHeld.value = e.type === 'keydown'
+		if (!frame) frame = requestAnimationFrame(flushResize)
 	}
 
 	const resize = (e) => {
@@ -56,6 +68,7 @@ export const useResizer = () => {
 
 		lastX = e.clientX
 		lastY = e.clientY
+		isShiftHeld.value = e.shiftKey
 
 		if (!frame) frame = requestAnimationFrame(flushResize)
 	}
@@ -80,7 +93,9 @@ export const useResizer = () => {
 
 		window.removeEventListener('mousemove', resize)
 		window.removeEventListener('mouseup', stopResize)
+		window.removeEventListener('keydown', trackShift)
+		window.removeEventListener('keyup', trackShift)
 	}
 
-	return { isResizing, pointerDelta, currentResizer, startResize, resizeCursor }
+	return { isResizing, isShiftHeld, pointerDelta, currentResizer, startResize, resizeCursor }
 }

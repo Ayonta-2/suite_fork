@@ -10,6 +10,7 @@ import { pendingShapeType, addShapeElement } from '@/apps/slides/stores/element'
 import { slideBounds } from '@/apps/slides/stores/slide'
 import { useDrawRect } from '@/apps/slides/composables/useDrawRect'
 import { selectionColor } from '@/apps/slides/utils/constants'
+import { snapToNearest45 } from '@/apps/slides/utils/resize'
 
 const { isDrawing, isShiftLocked, drawRect, startPoint, endPoint, startDrawing, cancelDrawing } =
 	useDrawRect()
@@ -24,20 +25,6 @@ const overlayStyles = {
 const MIN_SIZE = 10
 
 const isLine = computed(() => pendingShapeType.value === 'line')
-
-const snapToNearest45 = (p1, p2) => {
-	const dx = p2.x - p1.x
-	const dy = p2.y - p1.y
-
-	const length = Math.hypot(dx, dy)
-	const rawAngle = Math.atan2(dy, dx)
-	const snappedAngle = Math.round(rawAngle / (Math.PI / 4)) * (Math.PI / 4)
-
-	return {
-		x: p1.x + length * Math.cos(snappedAngle),
-		y: p1.y + length * Math.sin(snappedAngle),
-	}
-}
 
 const activeEndPoint = computed(() =>
 	isShiftLocked.value && isLine.value ? snapToNearest45(startPoint, endPoint) : endPoint,

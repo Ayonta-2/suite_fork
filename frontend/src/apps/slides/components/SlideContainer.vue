@@ -133,7 +133,8 @@ const elementContextMenuRef = useTemplateRef('elementContextMenu')
 
 const { isDragging, positionDelta, startDragging } = useDragAndDrop()
 
-const { isResizing, pointerDelta, currentResizer, resizeCursor, startResize } = useResizer()
+const { isResizing, isShiftHeld, pointerDelta, currentResizer, resizeCursor, startResize } =
+	useResizer()
 
 const { isRotating, rotationDelta, startRotate } = useRotator()
 
@@ -463,7 +464,9 @@ const resizeBox = (cursorMovement) => {
 }
 
 const resizeLine = (cursorMovement) => {
-	const box = getResizedLine(resizeStartBounds, currentResizer.value, cursorMovement)
+	const box = getResizedLine(resizeStartBounds, currentResizer.value, cursorMovement, {
+		snapAngle: isShiftHeld.value,
+	})
 
 	setOffsetFromBox(box)
 	rotationDelta.value = box.rotation - resizeStartBounds.rotation
