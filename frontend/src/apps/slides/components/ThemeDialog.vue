@@ -26,14 +26,14 @@
 							:scale="THEME_PREVIEW_SCALE"
 						/>
 					</div>
-					<div class="flex gap-2">
+					<div class="flex items-center justify-between">
+						<div class="select-none text-base text-ink-gray-7">
+							{{ theme.title }}
+						</div>
 						<LucideCheck
 							v-if="props.update && theme.name == presentationTheme"
 							class="size-4 stroke-[1.5] text-ink-gray-8"
 						/>
-						<div class="select-none text-base text-ink-gray-6">
-							{{ theme.title }}
-						</div>
 					</div>
 				</div>
 			</div>
