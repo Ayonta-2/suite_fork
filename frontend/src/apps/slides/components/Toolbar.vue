@@ -27,7 +27,9 @@
 			</FileUploader>
 		</Tooltip>
 
-		<ShapesDropdown />
+		<ToolDropdown tooltip="Shapes" :icon="Shapes" :options="shapeTools" />
+
+		<ToolDropdown tooltip="Lines" :icon="Polyline" :options="lineTools" />
 
 		<TableDropdown />
 	</div>
@@ -36,17 +38,19 @@
 <script setup>
 import { ref } from 'vue'
 
-import { Type, ImagePlus } from 'lucide-vue-next'
+import { Type, ImagePlus, Shapes } from 'lucide-vue-next'
 
 import { Tooltip, FileUploader, toast } from 'frappe-ui'
 import { presentationId } from '@/apps/slides/stores/presentation'
 import { addTextElement } from '@/apps/slides/stores/element'
 import { allowedImageFileTypes } from '@/apps/slides/utils/constants'
 
-import ShapesDropdown from '@/apps/slides/components/ShapesDropdown.vue'
+import ToolDropdown from '@/apps/slides/components/ToolDropdown.vue'
+import Polyline from '@/apps/slides/icons/Polyline.vue'
 import TableDropdown from '@/apps/slides/components/TableDropdown.vue'
 
 import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
+import { shapeTools, lineTools } from '@/apps/slides/utils/toolbarTools'
 import { performPostUploadActions } from '@/apps/slides/utils/mediaUploads'
 
 const handleUploadSuccess = (file) => {

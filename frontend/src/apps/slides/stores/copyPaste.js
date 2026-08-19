@@ -15,7 +15,8 @@ import {
 import { inCropMode } from '@/apps/slides/stores/imageCrop'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
-import { getDocFromHTML, generateUniqueId } from '@/apps/slides/utils/helpers'
+import { getDocFromHTML } from '@/apps/slides/utils/helpers'
+import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { v4 as uuid4 } from 'uuid'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 
@@ -140,10 +141,7 @@ const handlePastedSlideJSON = async (slideJSON) => {
 	// Give each paste a fresh identity so repeated pastes don't share ids.
 	// refId (cross-slide transition key) is intentionally kept.
 	slideJSON.clientId = uuid4()
-	slideJSON.elements = (slideJSON.elements || []).map((el) => ({
-		...el,
-		id: generateUniqueId(),
-	}))
+	slideJSON.elements = remapElementIds(slideJSON.elements || [])
 
 	insertSlide(slideJSON, index)
 }

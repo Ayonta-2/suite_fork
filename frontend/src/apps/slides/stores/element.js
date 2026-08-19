@@ -13,9 +13,10 @@ import { useTextEditor, resetGrowthBaseline } from '@/apps/slides/composables/us
 
 import { getElementDiv } from './elementRegistry'
 import { markDirty } from './saving'
-import { generateUniqueId, cloneObj, normalizeRotation } from '../utils/helpers'
+import { generateUniqueId, cloneObj } from '../utils/helpers'
 import { getBorderInset, getCoverCrop, isFullRect } from '../utils/cropGeometry'
 import { getMinSizeForElement } from '../utils/resize'
+import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
 import { getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
 import { presentationId } from './presentation'
@@ -38,6 +39,8 @@ const activeElementIds = ref([])
 const focusElementId = ref(null)
 const pairElementId = ref(null)
 const pendingShapeType = ref(null)
+// markers / route picked from the toolbar, applied to the next drawn shape
+const pendingShapePreset = ref({})
 
 // true once a gesture crosses the drag threshold
 const dragOccurred = ref(false)
@@ -193,10 +196,20 @@ const getInitialShapeTextContent = (shapeElement) => {
 	})
 }
 
+// arrows chosen on the last line / connector become the next one's default
+const lastMarkers = {
+	line: { markerStart: 'none', markerEnd: 'none' },
+	connector: { markerStart: 'none', markerEnd: 'arrow' },
+}
+
+const rememberMarkers = (element) => {
+	const tool = element.connector ? 'connector' : 'line'
+	lastMarkers[tool] = { markerStart: element.markerStart, markerEnd: element.markerEnd }
+}
+
 const getShapeDefaults = (shapeType) => {
 	let width, height, strokeColor, strokeWidth, borderRadius, elementShapeType
-	let markerStart = false
-	let markerEnd = false
+	const { markerStart, markerEnd } = lastMarkers[shapeType] ?? lastMarkers.line
 
 	const { fillColor, strokeColor: defaultStrokeColor } = guessShapeColorsFromBackground(
 		currentSlide.value?.background,
@@ -231,6 +244,7 @@ const getShapeDefaults = (shapeType) => {
 			elementShapeType = shapeType
 			break
 		case 'line':
+		case 'connector':
 			width = 300
 			height = 1
 			strokeColor = defaultStrokeColor
@@ -253,20 +267,7 @@ const getShapeDefaults = (shapeType) => {
 	}
 }
 
-const lineBoundsFromEndpoints = ({ x1, y1, x2, y2 }, height) => {
-	const dx = x2 - x1
-	const dy = y2 - y1
-	const length = Math.sqrt(dx ** 2 + dy ** 2)
-	return {
-		width: length,
-		height,
-		left: (x1 + x2) / 2 - length / 2,
-		top: (y1 + y2) / 2 - height / 2,
-		rotation: normalizeRotation(Math.atan2(dy, dx) * (180 / Math.PI)),
-	}
-}
-
-const addShapeElement = async (shapeType, bounds = null) => {
+const addShapeElement = async (shapeType, bounds = null, overrides = {}) => {
 	if (!shapeType) return
 
 	const {
@@ -287,11 +288,12 @@ const addShapeElement = async (shapeType, bounds = null) => {
 	const slideHeight = slideBounds.height / slideBounds.scale
 
 	if (elementShapeType === 'line' && bounds?.x1 !== undefined) {
-		bounds = lineBoundsFromEndpoints(bounds, defaultHeight)
+		const { x1, y1, x2, y2 } = bounds
+		bounds = getLineBox({ x: x1, y: y1 }, { x: x2, y: y2 }, strokeWidth)
 	}
 
 	const width = bounds?.width ?? defaultWidth
-	const height = elementShapeType === 'line' ? defaultHeight : (bounds?.height ?? defaultHeight)
+	const height = elementShapeType === 'line' ? strokeWidth : (bounds?.height ?? defaultHeight)
 	const left = bounds?.left ?? (slideWidth - width) / 2
 	const top = bounds?.top ?? (slideHeight - height) / 2
 
@@ -318,6 +320,7 @@ const addShapeElement = async (shapeType, bounds = null) => {
 		shadowBlur: 0,
 		shadowOffset: 0,
 		shadowAngle: 45,
+		...overrides,
 	}
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
@@ -767,10 +770,12 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 
 	const baseZIndex = currentSlide.value.elements.length
 	const sortedElements = [...elements].sort((a, b) => (a.zIndex || 1) - (b.zIndex || 1))
+	const copies = remapElementIds(
+		sortedElements.map((element) => JSON.parse(JSON.stringify(element))),
+	)
 
 	sortedElements.forEach((element, index) => {
-		let newElement = JSON.parse(JSON.stringify(element))
-		newElement.id = generateUniqueId()
+		const newElement = copies[index]
 		delete newElement.locked
 		newElement.zIndex = baseZIndex + index + 1
 		newElement.top += displaceByPx
@@ -797,11 +802,70 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 	)
 }
 
+// a connector lets go of a deleted target, and goes along when all of them go
+const getDetachCommands = (idsToDelete) => {
+	const commands = []
+	const orphaned = []
+	currentSlide.value.elements.forEach((element) => {
+		if (idsToDelete.includes(element.id)) return
+		const boundIds = getBoundTargetIds(element.connector)
+		if (!boundIds.some((id) => idsToDelete.includes(id))) return
+		const bothDeleted =
+			element.connector.start &&
+			element.connector.end &&
+			boundIds.every((id) => idsToDelete.includes(id))
+		if (bothDeleted && !element.locked) return orphaned.push(element.id)
+		const connector = { ...element.connector }
+		;['start', 'end'].forEach((end) => {
+			if (idsToDelete.includes(connector[end]?.elementId)) connector[end] = null
+		})
+		commands.push(
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property: 'connector',
+				oldValue: element.connector,
+				newValue: connector,
+				bypassLock: true,
+			}),
+		)
+	})
+	return { commands, orphaned }
+}
+
+const hasBoundConnector = computed(() =>
+	activeElements.value.some((element) => getBoundTargetIds(element.connector).length),
+)
+
+const disconnectConnectors = () => {
+	const commands = activeElements.value
+		.filter((element) => !element.locked && getBoundTargetIds(element.connector).length)
+		.map((element) =>
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property: 'connector',
+				oldValue: element.connector,
+				newValue: { ...element.connector, start: null, end: null },
+			}),
+		)
+	if (!commands.length) return
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: activeElementIds.value,
+			commands,
+		}),
+	)
+}
+
 const deleteElements = (e, ids) => {
-	const idsToDelete = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
-	if (!idsToDelete.length) return
+	const targetIds = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
+	if (!targetIds.length) return
 	resetFocus()
-	let commands = []
+	const detach = getDetachCommands(targetIds)
+	const idsToDelete = [...targetIds, ...detach.orphaned]
+	let commands = [...detach.commands]
 
 	idsToDelete.forEach((id) => {
 		// re-entrant: the focusElementId and activeElement watches both blur an empty text element
@@ -1108,6 +1172,27 @@ const setEditableState = () => {
 	})
 }
 
+// `text` replaces the content, like typing over a full selection
+const startTextEditing = (text = '') => {
+	const element = activeElement.value
+	focusElementId.value = element.id
+
+	if (element.type === 'text') {
+		if (!activeEditor.value) return
+		setEditableState()
+		if (text) activeEditor.value.commands.insertContent(text)
+		return
+	}
+	if (!text) return
+
+	// a shape's editor is created on the next tick and selects all once mounted
+	const stop = watch(activeEditor, (editor) => {
+		if (!editor) return
+		stop()
+		editor.on('create', () => editor.commands.insertContent(text))
+	})
+}
+
 const initEditorForElement = (element) => {
 	if (['text', 'table'].includes(element?.type)) {
 		initTextEditor(
@@ -1204,11 +1289,18 @@ const cropSelectionToFitContent = (elementIds) => {
 		r = 0,
 		b = 0
 
+	// a connector whose ends both sit on selected targets adds nothing to the box
+	const isRoutedWithin = (element) => {
+		const boundIds = getBoundTargetIds(element.connector)
+		return boundIds.length == 2 && boundIds.every((id) => elementIds.includes(id))
+	}
+	const boundedIds = elementIds.filter((id) => !isRoutedWithin(findSlideElement(id)))
+
 	// crop selection to selected element edges
-	elementIds.forEach((id) => {
+	boundedIds.forEach((id) => {
 		const element = currentSlide.value.elements.find((el) => el.id === id)
 		// same source the resize observer writes from, so the two never disagree by a sub-pixel
-		const useLayoutBounds = elementIds.length == 1
+		const useLayoutBounds = boundedIds.length == 1
 
 		const {
 			left: elementLeft,
@@ -1231,37 +1323,15 @@ const cropSelectionToFitContent = (elementIds) => {
 	})
 }
 
-const updatePosition = (axis, value) => {
-	const property = axis == 'X' ? 'left' : 'top'
-	const delta = value - selectionBounds[property]
-
-	const commands = activeElements.value.map((element) =>
-		editElementCommand({
-			slideId: currentSlide.value.clientId,
-			elementIds: [element.id],
-			property,
-			oldValue: element[property],
-			newValue: element[property] + delta,
-		}),
-	)
-
-	commandHistory.execute(
-		batchCommand({
-			slideId: currentSlide.value.clientId,
-			elementIds: activeElementIds.value,
-			commands,
-		}),
-	)
-
-	selectionBounds[property] = value
-}
-
 const flipElements = (direction) => {
 	if (isSelectionLocked.value) return
 
 	const property = direction == 'horizontal' ? 'invertX' : 'invertY'
 
-	const commands = activeElements.value.map((element) => {
+	const flippable = activeElements.value.filter(
+		(element) => !getBoundTargetIds(element.connector).length && !element.points,
+	)
+	const commands = flippable.map((element) => {
 		const current = element[property]
 		return editElementCommand({
 			slideId: currentSlide.value.clientId,
@@ -1271,6 +1341,7 @@ const flipElements = (direction) => {
 			newValue: !current || current == 1 ? -1 : 1,
 		})
 	})
+	if (!commands.length) return
 
 	commandHistory.execute(
 		batchCommand({
@@ -1305,6 +1376,7 @@ export {
 	focusElementId,
 	pairElementId,
 	pendingShapeType,
+	pendingShapePreset,
 	dragOccurred,
 	activeElements,
 	activeElement,
@@ -1324,6 +1396,8 @@ export {
 	addTableElement,
 	duplicateElements,
 	deleteElements,
+	hasBoundConnector,
+	disconnectConnectors,
 	selectAllElements,
 	selectableIds,
 	getElementPosition,
@@ -1333,14 +1407,16 @@ export {
 	ensureExplicitHeight,
 	getNaturalAspectRatio,
 	setEditableState,
+	startTextEditing,
 	replaceMediaElement,
 	normalizeZIndices,
 	isWithinOverlappingBounds,
-	updatePosition,
 	flipElements,
 	findSlideElement,
 	getInitialShapeTextContent,
 	getInitialTableContent,
 	cropSelectionToFitContent,
 	getElementCenter,
+	getShapeDefaults,
+	rememberMarkers,
 }

@@ -11,7 +11,8 @@ import {
 import { flushPendingBlur, resetFocus } from '@/apps/slides/stores/element'
 import { saveChanges, dirty, saveFailed } from '@/apps/slides/stores/saving'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
-import { generateUniqueId, cloneObj } from '@/apps/slides/utils/helpers'
+import { cloneObj } from '@/apps/slides/utils/helpers'
+import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { router } from '@/apps/slides/router'
 
 import { toast } from 'frappe-ui'
@@ -65,10 +66,7 @@ const getNewSlide = (toDuplicate = false, layoutObject, source = currentSlide.va
 
 	if (toDuplicate) {
 		layout = { ...source }
-		layout.elements = source.elements.map((e) => ({
-			...e,
-			id: generateUniqueId(),
-		}))
+		layout.elements = remapElementIds(source.elements.map(cloneObj))
 	} else {
 		layout = layoutObject || null
 		layout.elements =

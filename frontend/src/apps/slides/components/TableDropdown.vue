@@ -5,6 +5,7 @@
 				<Tooltip text="Table" :hover-delay="0.7">
 					<div :class="triggerClass(isOpen)">
 						<Table class="size-4 stroke-[1.5] text-ink-gray-7" />
+						<ChevronDown class="size-3 text-ink-gray-5" />
 					</div>
 				</Tooltip>
 			</div>
@@ -36,7 +37,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 
-import { Table } from 'lucide-vue-next'
+import { Table, ChevronDown } from 'lucide-vue-next'
 
 import { Popover, Tooltip } from 'frappe-ui'
 
@@ -52,7 +53,7 @@ const label = computed(() =>
 )
 
 const triggerClass = (isOpen) => [
-	'cursor-pointer rounded p-2 hover:bg-surface-gray-3',
+	'flex cursor-pointer items-center gap-1 rounded py-2 pl-2 pr-1 hover:bg-surface-gray-3',
 	{ 'bg-surface-gray-3': isOpen },
 ]
 
