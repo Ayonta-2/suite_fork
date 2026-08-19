@@ -172,6 +172,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	// tool shortcuts don't fire while something editable is selected
 	const handleTypeToEdit = (e) => {
 		if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
+		if (e.key === '?') return
 		if (isPlainInput(e) || e.target?.isContentEditable) return
 		if (!canStartTextEditing()) return
 		e.preventDefault()

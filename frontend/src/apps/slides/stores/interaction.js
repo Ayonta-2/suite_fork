@@ -57,9 +57,9 @@ const getTargetBox = (elementId) => {
 }
 
 // topmost element under `point` that a connector end can bind to
-const getBindableAt = (point, excludeId) => {
+const getBindableAt = (point, excludeIds) => {
 	const hits = currentSlide.value.elements.filter(
-		(element) => element.id !== excludeId && element.shapeType !== 'line',
+		(element) => !excludeIds.includes(element.id) && element.shapeType !== 'line',
 	)
 	const target = hits
 		.sort((a, b) => (b.zIndex || 1) - (a.zIndex || 1))

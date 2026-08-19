@@ -258,12 +258,10 @@ def update_slide_attachments(parent: str, slide: dict | str):
 
 def remap_element_ids(elements):
     """Fresh ids for a copied set: connector bindings inside the set follow the copies, the rest are dropped."""
-    id_map = {
-        element.get("id"): "".join(random.choices(string.ascii_lowercase + string.digits, k=9))
-        for element in elements
-    }
-    for element in elements:
-        element["id"] = id_map[element.get("id")]
+    new_ids = ["".join(random.choices(string.ascii_lowercase + string.digits, k=9)) for _ in elements]
+    id_map = {element.get("id"): new_id for element, new_id in zip(elements, new_ids, strict=True)}
+    for element, new_id in zip(elements, new_ids, strict=True):
+        element["id"] = new_id
         connector = element.get("connector")
         if not connector:
             continue
@@ -271,8 +269,8 @@ def remap_element_ids(elements):
             bound = connector.get(end)
             if not bound:
                 continue
-            new_id = id_map.get(bound.get("elementId"))
-            connector[end] = {**bound, "elementId": new_id} if new_id else None
+            target_id = id_map.get(bound.get("elementId"))
+            connector[end] = {**bound, "elementId": target_id} if target_id else None
 
 
 def apply_slide_layout(slide, ref_id, parent):

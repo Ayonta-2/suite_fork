@@ -380,6 +380,31 @@ describe('routeElbow', () => {
 		expect(box.left + last.x).toBe(300)
 		expect(box.top + last.y).toBe(250)
 	})
+
+	it('boxes a straight route with a zero extent, not a missing one', () => {
+		const rect = (left: number) => ({ left, top: 0, width: 100, height: 100, rotation: 0 })
+		const line = {
+			id: 'f',
+			left: 0,
+			top: 0,
+			width: 100,
+			height: 4,
+			rotation: 0,
+			strokeWidth: 4,
+			connector: { route: 'elbow', start: { anchor: 'auto' }, end: { anchor: 'auto' } },
+		}
+		expect(routeElbow(line, rect(0), rect(300))).toEqual({
+			left: 100,
+			top: 50,
+			width: 200,
+			height: 0,
+			rotation: 0,
+			points: [
+				{ x: 0, y: 0 },
+				{ x: 200, y: 0 },
+			],
+		})
+	})
 })
 
 describe('getElbowPathData', () => {
@@ -436,5 +461,10 @@ describe('remapElementIds', () => {
 		expect(copies[0].id).not.toBe('a')
 		expect(copies[1].connector.start).toEqual({ elementId: copies[0].id, anchor: 'right' })
 		expect(copies[1].connector.end).toBeNull()
+	})
+
+	it('gives every element its own id even when the sources share one', () => {
+		const copies = remapElementIds([{ id: 'a' }, { id: 'a' }, {}, {}] as any)
+		expect(new Set(copies.map((copy) => copy.id)).size).toBe(4)
 	})
 })

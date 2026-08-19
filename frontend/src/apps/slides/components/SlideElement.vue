@@ -65,8 +65,9 @@ const elementStyle = computed(() => {
 	const offsetHeight = isActiveInEditor ? interactionOffset.height : 0
 	const box = follower.value ?? element.value
 
+	// a straight elbow route has a zero extent, which is a size, not a missing one
 	let elementWidth = box.width
-	if (elementWidth) {
+	if (elementWidth != null) {
 		elementWidth = `${elementWidth + offsetWidth}px`
 	} else {
 		elementWidth = 'auto'
@@ -75,7 +76,7 @@ const elementStyle = computed(() => {
 	let elementHeight = box.height
 	if (element.value.type == 'shape' && element.value.shapeType == 'line' && !box.points) {
 		elementHeight = `${element.value.strokeWidth}px`
-	} else if (elementHeight) {
+	} else if (elementHeight != null) {
 		elementHeight = `${elementHeight + offsetHeight}px`
 	} else {
 		elementHeight = 'auto'

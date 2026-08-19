@@ -142,9 +142,9 @@ describe('binding an endpoint drag', () => {
 
 	it('finds the topmost bindable element under a point, never a line', () => {
 		find(1).left = 350
-		expect(getBindableAt({ x: 420, y: 150 }, 3)?.elementId).toBe(2)
-		expect(getBindableAt({ x: 300, y: 150 }, 3)).toBeNull()
-		expect(getBindableAt({ x: 450, y: 150 }, 2)?.elementId).toBe(1)
+		expect(getBindableAt({ x: 420, y: 150 }, [3])?.elementId).toBe(2)
+		expect(getBindableAt({ x: 300, y: 150 }, [3])).toBeNull()
+		expect(getBindableAt({ x: 450, y: 150 }, [2])?.elementId).toBe(1)
 	})
 
 	it('commits the pending connector and lifts the line above its targets', () => {

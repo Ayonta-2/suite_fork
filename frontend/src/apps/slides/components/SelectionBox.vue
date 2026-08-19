@@ -58,13 +58,6 @@ const outline = computed(() => {
 	return `${selectionColor} solid ${1.5 / slideBounds.scale}px`
 })
 
-// a line's box is only as tall as its stroke, so hug it from outside instead of covering it
-const outlineOffset = computed(() =>
-	isLine.value && !isSelectionLocked.value
-		? `${1 / slideBounds.scale}px`
-		: `-${0.75 / slideBounds.scale}px`,
-)
-
 const isRotatable = computed(() => {
 	return ['shape', 'image'].includes(activeElement.value?.type)
 })
@@ -90,7 +83,7 @@ const boxStyles = computed(() => {
 		backgroundColor: activeElementIds.value.length == 1 ? '' : `${selectionColor}25`,
 		outline: outline.value,
 		// straddle the edge instead of sitting outside it, so snap guides line up
-		outlineOffset: outlineOffset.value,
+		outlineOffset: `-${0.75 / slideBounds.scale}px`,
 		width: `${selectionBounds.width}px`,
 		height: `${selectionBounds.height}px`,
 		left: `${selectionBounds.left - offsetLeft}px`,

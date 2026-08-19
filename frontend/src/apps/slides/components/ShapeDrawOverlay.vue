@@ -54,17 +54,19 @@ const toSlideCoords = (e) => ({
 	y: (e.clientY - slideBounds.top) / slideBounds.scale,
 })
 
-const findBind = (point, excludeId) => {
-	const target = getBindableAt(point, excludeId)
+// bindable element under the pointer, ⌘ bypassing; a drag never binds both
+// ends to the element it started on
+const findBind = (e) => {
+	if (e.metaKey || e.ctrlKey) return null
+	const point = toSlideCoords(e)
+	const target = getBindableAt(point, [startBind?.elementId])
 	if (!target) return null
 	const anchor = snapToPort(target.box, point, PORT_SNAP_RADIUS / slideBounds.scale) || 'auto'
 	return { elementId: target.elementId, anchor }
 }
 
 const handleMouseMove = (e) => {
-	if (!isConnector.value) return
-	const bypass = e.metaKey || e.ctrlKey
-	hoverBind.value = bypass ? null : findBind(toSlideCoords(e), startBind?.elementId)
+	if (isConnector.value) hoverBind.value = findBind(e)
 }
 
 watch(hoverBind, (bind) => {
@@ -150,11 +152,7 @@ const previewStyles = computed(() => {
 	}
 })
 
-// a leftward drag stores its ends swapped, so a fresh line always starts on the left
-const getLineBounds = (start, end) => {
-	if (end.x < start.x) [start, end] = [end, start]
-	return { x1: start.x, y1: start.y, x2: end.x, y2: end.y }
-}
+const getLineBounds = (start, end) => ({ x1: start.x, y1: start.y, x2: end.x, y2: end.y })
 
 const isLineLongEnough = (start, end) =>
 	Math.hypot(end.x - start.x, end.y - start.y) >= MIN_SIZE
@@ -171,15 +169,17 @@ const getDefaultBounds = (point) => {
 	return { left: point.x - width / 2, top: point.y - height / 2, width, height }
 }
 
+// a click on a shape is not a connector; a drag between two shapes always is
 const addConnector = (start, end) => {
 	const { strokeWidth } = getShapeDefaults('connector')
 	const { box, connector } = routeDrawn(start, end, strokeWidth)
 	const isBound = connector.start && connector.end
-	if (isBound || box.width >= MIN_SIZE) addShapeElement('connector', box, { connector })
+	if (isBound || isLineLongEnough(start, end)) addShapeElement('connector', box, { connector })
 }
 
 const handleMouseDown = (e) => {
-	startBind = isConnector.value ? hoverBind.value : null
+	startBind = null
+	if (isConnector.value) startBind = findBind(e)
 	hoverBind.value = null
 
 	startDrawing(e, (rect, start, end) => {

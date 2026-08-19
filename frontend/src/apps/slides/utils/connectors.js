@@ -452,9 +452,10 @@ export const detachMovedEnds = (line, box) => {
 // fresh ids for a copied set: bindings inside the set follow the copies, the
 // rest are dropped so a copy never trails the original's targets
 export const remapElementIds = (elements) => {
-	const idMap = new Map(elements.map((element) => [element.id, generateUniqueId()]))
-	elements.forEach((element) => {
-		element.id = idMap.get(element.id)
+	const newIds = elements.map(() => generateUniqueId())
+	const idMap = new Map(elements.map((element, i) => [element.id, newIds[i]]))
+	elements.forEach((element, i) => {
+		element.id = newIds[i]
 		if (!element.connector) return
 		;['start', 'end'].forEach((end) => {
 			const bound = element.connector[end]

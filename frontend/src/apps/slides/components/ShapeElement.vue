@@ -259,12 +259,17 @@ const markerPathAttrs = (marker) => ({
 	'stroke-linejoin': 'round',
 })
 
+// a connector following its target draws the routed geometry in place of its own
+const follower = computed(() =>
+	props.mode == 'editor' ? followerGeometry.value[element.value?.id] : undefined,
+)
+
 // the stroke stops short of a head, but the two ends never cross
 const lineSpan = computed(() => {
 	const isActiveInEditor = isActive.value && props.mode == 'editor'
-	const follower = props.mode == 'editor' ? followerGeometry.value[element.value?.id] : undefined
 	const length =
-		follower?.width ?? (element.value?.width ?? 0) + (isActiveInEditor ? interactionOffset.width : 0)
+		follower.value?.width ??
+		(element.value?.width ?? 0) + (isActiveInEditor ? interactionOffset.width : 0)
 	const startInset = Math.min(startMarker.value?.inset ?? 0, length / 2)
 	const endInset = Math.min(endMarker.value?.inset ?? 0, length / 2)
 	return { x1: startInset, x2: length - endInset }
@@ -274,10 +279,11 @@ const lineSpan = computed(() => {
 // or has an end dragged
 const elbowPath = computed(() => {
 	if (!isLine.value) return ''
-	const follower = props.mode == 'editor' ? followerGeometry.value[element.value?.id] : undefined
 	const isActiveInEditor = isActive.value && props.mode == 'editor'
 	const points =
-		follower?.points ?? (isActiveInEditor ? pendingPoints.value : null) ?? element.value?.points
+		follower.value?.points ??
+		(isActiveInEditor ? pendingPoints.value : null) ??
+		element.value?.points
 	if (!points) return ''
 	return getElbowPathData(points, startMarker.value?.inset ?? 0, endMarker.value?.inset ?? 0)
 })
