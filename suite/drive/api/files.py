@@ -457,10 +457,10 @@ def _collect_download_files(entity_names):
         entity = frappe.get_value(
             "File",
             name,
-            ["name", "file_name", "is_folder", "file_type", "file_url"],
+            ["name", "file_name", "is_folder", "file_type", "file_url", "status"],
             as_dict=True,
         )
-        if not entity:
+        if not entity or entity.status != STATUS_ACTIVE:
             continue
         if entity.is_folder:
             yield from _iter_folder_files(entity.name, prefix=f"{entity.file_name}/")
