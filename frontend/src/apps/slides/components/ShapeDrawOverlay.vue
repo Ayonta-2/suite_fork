@@ -6,13 +6,22 @@
 		@mousemove="handleMouseMove"
 	/>
 
-	<div v-if="isDrawing" :style="previewStyles" />
+	<svg v-if="isDrawing && isLine" :style="linePreviewStyles">
+		<polyline
+			:points="previewPoints"
+			fill="none"
+			:stroke="`${selectionColor}92`"
+			:stroke-width="2 / slideBounds.scale"
+		/>
+	</svg>
+	<div v-else-if="isDrawing" :style="previewStyles" />
 </template>
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 
 import {
 	pendingShapeType,
+	pendingShapePreset,
 	addShapeElement,
 	getShapeDefaults,
 } from '@/apps/slides/stores/element'
@@ -22,8 +31,8 @@ import { useDrawRect } from '@/apps/slides/composables/useDrawRect'
 import { selectionColor } from '@/apps/slides/utils/constants'
 import { snapToNearest45 } from '@/apps/slides/utils/resize'
 import {
+	getConnectorEndpoints,
 	getLineBox,
-	getLineEndpoints,
 	routeConnector,
 	snapToPort,
 } from '@/apps/slides/utils/connectors'
@@ -70,13 +79,16 @@ watch(hoverBind, (bind) => {
 	if (isConnector.value) bindPreview.value = bind
 })
 
-watch(pendingShapeType, () => {
+watch(pendingShapeType, (type) => {
+	startBind = null
 	hoverBind.value = null
 	bindPreview.value = null
+	if (!type) pendingShapePreset.value = {}
 })
 
 const routeDrawn = (start, end, strokeWidth) => {
-	const connector = { route: 'straight', start: startBind, end: hoverBind.value }
+	const route = pendingShapePreset.value.route ?? 'straight'
+	const connector = { route, start: startBind, end: hoverBind.value }
 	const boxFor = (bind) => bind && getTargetBox(bind.elementId)
 	const line = { ...getLineBox(start, end, strokeWidth), strokeWidth, connector }
 	const box = routeConnector(line, boxFor(connector.start), boxFor(connector.end))
@@ -100,37 +112,29 @@ const PREVIEW_CLIP_PATHS = {
 
 const previewClipPath = computed(() => PREVIEW_CLIP_PATHS[pendingShapeType.value] ?? null)
 
-const previewEndpoints = computed(() => {
-	if (!isConnector.value) return { start: startPoint, end: activeEndPoint.value }
-	const { box } = routeDrawn(startPoint, activeEndPoint.value, 1)
-	return getLineEndpoints({ ...box, strokeWidth: 1 })
-})
-
-const linePreviewStyles = computed(() => {
-	const { x: x1, y: y1 } = previewEndpoints.value.start
-	const { x: x2, y: y2 } = previewEndpoints.value.end
-	const dx = x2 - x1
-	const dy = y2 - y1
-	const length = Math.hypot(dx, dy)
-	const angle = Math.atan2(dy, dx) * (180 / Math.PI)
-
-	return {
-		position: 'absolute',
-		left: `${x1}px`,
-		top: `${y1}px`,
-		width: `${length}px`,
-		height: `${Math.max(2 / slideBounds.scale, 2)}px`,
-		transformOrigin: '0 50%',
-		transform: `translate(0, -50%) rotate(${angle}deg)`,
-		backgroundColor: `${selectionColor}92`,
-		zIndex: 10001,
-		pointerEvents: 'none',
+const previewPoints = computed(() => {
+	let points = [startPoint, activeEndPoint.value]
+	if (isConnector.value) {
+		const { box } = routeDrawn(startPoint, activeEndPoint.value, 1)
+		const { start, end } = getConnectorEndpoints({ ...box, strokeWidth: 1 })
+		points = box.points
+			? box.points.map((p) => ({ x: box.left + p.x, y: box.top + p.y }))
+			: [start, end]
 	}
+	return points.map((p) => `${p.x},${p.y}`).join(' ')
 })
+
+const linePreviewStyles = {
+	position: 'absolute',
+	inset: '0',
+	width: '100%',
+	height: '100%',
+	overflow: 'visible',
+	zIndex: 10001,
+	pointerEvents: 'none',
+}
 
 const previewStyles = computed(() => {
-	if (isLine.value) return linePreviewStyles.value
-
 	const { left, top, width, height } = drawRect
 
 	return {
@@ -170,7 +174,14 @@ const addConnector = (start, end) => {
 	const { strokeWidth } = getShapeDefaults('connector')
 	const { box, connector } = routeDrawn(start, end, strokeWidth)
 	const isBound = connector.start && connector.end
-	if (isBound || isLineLongEnough(start, end)) addShapeElement('connector', box, { connector })
+	if (!isBound && !isLineLongEnough(start, end)) return
+	const elbow = box.points ? { points: box.points, height: box.height } : {}
+	addShapeElement('connector', box, { ...presetOverrides(), connector, ...elbow })
+}
+
+const presetOverrides = () => {
+	const { route, ...overrides } = pendingShapePreset.value
+	return overrides
 }
 
 const handleMouseDown = (e) => {
@@ -191,7 +202,11 @@ const handleMouseDown = (e) => {
 		const isBigEnough = drawnAsLine ? isLineLongEnough(start, end) : isRectBigEnough(rect)
 		const drawnBounds = drawnAsLine ? getLineBounds(start, end) : rect
 
-		addShapeElement(pendingShapeType.value, isBigEnough ? drawnBounds : getDefaultBounds(start))
+		addShapeElement(
+			pendingShapeType.value,
+			isBigEnough ? drawnBounds : getDefaultBounds(start),
+			presetOverrides(),
+		)
 		pendingShapeType.value = null
 	})
 }

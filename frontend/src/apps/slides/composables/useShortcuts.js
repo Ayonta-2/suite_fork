@@ -23,6 +23,7 @@ import {
 	focusElementId,
 	addTextElement,
 	pendingShapeType,
+	pendingShapePreset,
 	selectAllElements,
 	activeElementIds,
 	activeElements,
@@ -146,6 +147,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	}
 
 	const addShape = (shapeType) => {
+		pendingShapePreset.value = {}
 		pendingShapeType.value = shapeType
 	}
 

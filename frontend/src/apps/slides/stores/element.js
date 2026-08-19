@@ -39,6 +39,8 @@ const activeElementIds = ref([])
 const focusElementId = ref(null)
 const pairElementId = ref(null)
 const pendingShapeType = ref(null)
+// markers / route picked from the toolbar, applied to the next drawn shape
+const pendingShapePreset = ref({})
 
 // true once a gesture crosses the drag threshold
 const dragOccurred = ref(false)
@@ -1374,6 +1376,7 @@ export {
 	focusElementId,
 	pairElementId,
 	pendingShapeType,
+	pendingShapePreset,
 	dragOccurred,
 	activeElements,
 	activeElement,
