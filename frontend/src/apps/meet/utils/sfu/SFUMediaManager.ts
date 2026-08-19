@@ -8,6 +8,7 @@ import type { ConsumerEntry, ConsumerManager } from "../media/ConsumerManager";
 import type { ParticipantManager } from "../media/ParticipantManager";
 import type { TransportManager } from "../media/TransportManager";
 import type { VideoElementManager } from "../media/VideoElementManager";
+import { publishInitialMediaWithRetry } from "./initialMediaPublication";
 
 interface MediaHandler {
 	localStream: MediaStream | null;
@@ -63,6 +64,8 @@ export interface PublishedMedia {
 	videoProducer?: Producer;
 	audioProducer?: Producer;
 	screenProducer?: Producer;
+	videoError?: unknown;
+	audioError?: unknown;
 }
 
 export interface ConsumerMetadata {
@@ -179,6 +182,25 @@ export class SFUMediaManager {
 		);
 	}
 
+	async publishInitialMedia(
+		localStream: MediaStream,
+		options: { publishVideo: boolean; publishAudio: boolean },
+		signal?: AbortSignal,
+		finalize?: (publication: PublishedMedia) => void | Promise<void>,
+	): Promise<PublishedMedia> {
+		return this.serializeSendMediaMutation(async () => {
+			const publication = await publishInitialMediaWithRetry(
+				(stream, retryOptions) =>
+					this.publishMediaNow(stream, retryOptions),
+				localStream,
+				options,
+				signal,
+			);
+			await finalize?.(publication);
+			return publication;
+		});
+	}
+
 	private async publishMediaNow(
 		localStream: MediaStream,
 		options: { publishVideo?: boolean; publishAudio?: boolean } = {},
@@ -232,6 +254,7 @@ export class SFUMediaManager {
 						console.log("Video published successfully");
 					}
 				} catch (error: unknown) {
+					results.videoError = error;
 					console.warn(
 						"Failed to publish video, continuing without video:",
 						(error as Error).message,
@@ -258,6 +281,7 @@ export class SFUMediaManager {
 						console.log("Audio published successfully");
 					}
 				} catch (error: unknown) {
+					results.audioError = error;
 					console.warn(
 						"Failed to publish audio, continuing without audio:",
 						(error as Error).message,
