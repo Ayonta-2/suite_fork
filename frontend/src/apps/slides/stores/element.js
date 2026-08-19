@@ -719,8 +719,10 @@ const replaceMediaElement = async (element, fileDoc) => {
 	const srcChanged = element.src !== fileDoc.file_url
 	const probes = srcChanged ? await probeReplacementMedia(element, fileDoc) : null
 
-	// a slow upload can outlive a slide switch or the element itself
-	const slide = slides.value.find((s) => s.elements.some((el) => el.id === element.id))
+	// a slow upload can outlive a slide switch or the element itself, and older
+	// presentations repeat one layout's element ids across slides, so only the
+	// element object itself names the slide to edit
+	const slide = slides.value.find((s) => s.elements.includes(element))
 	if (!slide) return
 	const slideId = slide.clientId
 

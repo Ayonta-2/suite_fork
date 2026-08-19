@@ -66,7 +66,6 @@ const getNewSlide = (toDuplicate = false, layoutObject, source = currentSlide.va
 
 	if (toDuplicate) {
 		layout = { ...source }
-		layout.elements = remapElementIds(source.elements.map(cloneObj))
 	} else {
 		layout = layoutObject || null
 		layout.elements =
@@ -76,7 +75,8 @@ const getNewSlide = (toDuplicate = false, layoutObject, source = currentSlide.va
 	let slide = {}
 	if (layout) {
 		slide = { ...layout }
-		slide.elements = layout.elements.map((e) => ({ ...e }))
+		// the same layout is inserted more than once, so its stored ids can't carry over
+		slide.elements = remapElementIds(layout.elements.map(cloneObj))
 	}
 
 	// override metadata and generate unique IDs for elements
