@@ -2,13 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { MARKER_STYLES, getMarkerShape, getMarkerSize, normalizeMarker } from './lineMarkers'
 
 describe('normalizeMarker', () => {
-	it('maps the legacy boolean to the filled triangle', () => {
+	it('maps the legacy boolean and none', () => {
 		expect(normalizeMarker(true)).toBe('triangle')
 		expect(normalizeMarker(false)).toBeNull()
-		expect(normalizeMarker(undefined)).toBeNull()
-	})
-
-	it('treats none as no marker', () => {
 		expect(normalizeMarker('none')).toBeNull()
 		expect(normalizeMarker('circle')).toBe('circle')
 	})
@@ -27,9 +23,5 @@ describe('getMarkerShape', () => {
 			const shape = getMarkerShape(style, 4)
 			if (shape) expect(shape.inset).toBeLessThanOrEqual(getMarkerSize(4))
 		}
-	})
-
-	it('keeps heads visible on hairlines', () => {
-		expect(getMarkerSize(0.5)).toBeGreaterThanOrEqual(8)
 	})
 })

@@ -800,8 +800,7 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 	)
 }
 
-// a connector whose target dies lets go of it; one whose every target dies
-// in the same delete goes with them, otherwise it points at nothing
+// a connector lets go of a deleted target, and goes along when all of them go
 const getDetachCommands = (idsToDelete) => {
 	const commands = []
 	const orphaned = []
@@ -836,7 +835,6 @@ const hasBoundConnector = computed(() =>
 	activeElements.value.some((element) => getBoundTargetIds(element.connector).length),
 )
 
-// clears the bindings and leaves the line where it is
 const disconnectConnectors = () => {
 	const commands = activeElements.value
 		.filter((element) => !element.locked && getBoundTargetIds(element.connector).length)
@@ -1172,8 +1170,7 @@ const setEditableState = () => {
 	})
 }
 
-// enter text editing on the active text box or shape; `text` replaces its
-// content the way typing over a full selection would
+// `text` replaces the content, like typing over a full selection
 const startTextEditing = (text = '') => {
 	const element = activeElement.value
 	focusElementId.value = element.id

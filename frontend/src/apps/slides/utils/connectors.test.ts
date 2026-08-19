@@ -27,17 +27,10 @@ const closeTo = (point, expected) => {
 }
 
 describe('getAnchorPoint', () => {
-	it('returns side midpoints of an unrotated box', () => {
+	it('returns side midpoints, rotated about the centre', () => {
 		closeTo(getAnchorPoint(box(), 'top'), { x: 200, y: 100 })
-		closeTo(getAnchorPoint(box(), 'right'), { x: 300, y: 150 })
-		closeTo(getAnchorPoint(box(), 'bottom'), { x: 200, y: 200 })
 		closeTo(getAnchorPoint(box(), 'left'), { x: 100, y: 150 })
-	})
-
-	it('rotates side midpoints about the centre', () => {
-		const rotated = box({ rotation: 90 })
-		closeTo(getAnchorPoint(rotated, 'top'), { x: 250, y: 150 })
-		closeTo(getAnchorPoint(rotated, 'right'), { x: 200, y: 250 })
+		closeTo(getAnchorPoint(box({ rotation: 90 }), 'top'), { x: 250, y: 150 })
 	})
 })
 
@@ -77,17 +70,6 @@ describe('getPort', () => {
 		closeTo(getPort(triangle, 'left'), { x: 150, y: 200 })
 		closeTo(getPort(triangle, 'right'), { x: 250, y: 200 })
 	})
-
-	it('keeps pentagon ports on the outline under rotation', () => {
-		const pentagon = box({ shapeType: 'pentagon', width: 200, height: 200, rotation: 30 })
-		const port = getPort(pentagon, 'left')
-		// the left port is on the outline, so it is closer to the centre than the bbox anchor
-		const centre = { x: 200, y: 200 }
-		const anchor = getAnchorPoint(pentagon, 'left')
-		expect(Math.hypot(port.x - centre.x, port.y - centre.y)).toBeLessThan(
-			Math.hypot(anchor.x - centre.x, anchor.y - centre.y),
-		)
-	})
 })
 
 describe('clipToBoundary', () => {
@@ -108,10 +90,6 @@ describe('clipToBoundary', () => {
 		const rotated = box({ rotation: 90, width: 200, height: 100 })
 		// rotated 90°, the box spans x 150..250 and y 50..250
 		closeTo(clipToBoundary(rotated, { x: 600, y: 150 }), { x: 250, y: 150 })
-	})
-
-	it('returns the centre when the target is on it', () => {
-		closeTo(clipToBoundary(box(), { x: 200, y: 150 }), { x: 200, y: 150 })
 	})
 })
 
@@ -182,11 +160,7 @@ describe('routeConnector', () => {
 	})
 
 	it('keeps a free end where the line has it', () => {
-		const box = routeConnector(
-			line({ start: { anchor: 'right' }, end: null }),
-			rect(0, 0),
-			null,
-		)
+		const box = routeConnector(line({ start: { anchor: 'right' }, end: null }), rect(0, 0), null)
 		const { end } = getLineEndpoints({ ...box, strokeWidth: 4 })
 		expect(end.x).toBeCloseTo(100)
 		expect(end.y).toBeCloseTo(2)

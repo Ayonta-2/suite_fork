@@ -499,9 +499,7 @@ const PORT_SNAP_RADIUS = 14
 
 const boxFor = (bound) => bound && getTargetBox(bound.elementId)
 
-// a connector end dragged over a bindable element takes the port under the
-// cursor, or the outline when it lands between ports; ⌘ keeps it free. both
-// ends on one element would collapse the line, so the other end's target is out
+// ⌘ keeps the end free; the other end's target is out, both ends on it would collapse the line
 const bindDraggedEnd = (line, end, cursor) => {
 	const other = line.connector[end === 'start' ? 'end' : 'start']
 	const target = isMetaHeld.value ? null : getBindableAt(cursor, [line.id, other?.elementId])

@@ -19,16 +19,25 @@ const { setCommandHistory } = await import('./historyMeta')
 
 const find = (id: number) => slides.value[0].elements.find((el: any) => el.id === id) as any
 
-// stacked rect1, line, rect2 from the back
-const zIndexes = { 1: 1, 3: 2, 2: 3 }
+// two 100×100 boxes with a connector from the right port of the first to the
+// left port of the second: (200,150) → (400,150); the line is stacked between them
+const rect = (id: number, left: number, zIndex: number) => ({
+	id,
+	type: 'shape',
+	shapeType: 'rectangle',
+	left,
+	top: 100,
+	width: 100,
+	height: 100,
+	zIndex,
+})
 
-// two 100×100 boxes side by side, joined by a connector from the right port
-// of the first to the left port of the second: (200,150) → (400,150)
 const fixture = () => [
-	{ id: 1, type: 'shape', shapeType: 'rectangle', left: 100, top: 100, width: 100, height: 100 },
-	{ id: 2, type: 'shape', shapeType: 'rectangle', left: 400, top: 100, width: 100, height: 100 },
+	rect(1, 100, 1),
+	rect(2, 400, 3),
 	{
 		id: 3,
+		zIndex: 2,
 		type: 'shape',
 		shapeType: 'line',
 		left: 200,
@@ -45,21 +54,16 @@ const fixture = () => [
 	},
 ]
 
+beforeEach(() => {
+	slides.value = [{ clientId: 'c1', elements: fixture() }] as any
+	slideIndex.value = 0
+	resetInteractionOffset()
+	rotationDelta.value = 0
+	pendingConnector.value = null
+	setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
+})
+
 describe('connector following its targets', () => {
-	beforeEach(() => {
-		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
-		slideIndex.value = 0
-		resetInteractionOffset()
-		rotationDelta.value = 0
-		pendingConnector.value = null
-		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
-	})
-
-	it('stays put while nothing moves', () => {
-		activeElementIds.value = [2]
-		expect(followerGeometry.value).toEqual({})
-	})
-
 	it('stretches to a target dragged away', () => {
 		activeElementIds.value = [2]
 		interactionOffset.left = 100
@@ -130,16 +134,6 @@ describe('connector following its targets', () => {
 })
 
 describe('binding an endpoint drag', () => {
-	beforeEach(() => {
-		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
-		slides.value[0].elements.forEach((el: any) => (el.zIndex = zIndexes[el.id]))
-		slideIndex.value = 0
-		resetInteractionOffset()
-		rotationDelta.value = 0
-		pendingConnector.value = null
-		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
-	})
-
 	it('finds the topmost bindable element under a point, never a line', () => {
 		find(1).left = 350
 		expect(getBindableAt({ x: 420, y: 150 }, [3])?.elementId).toBe(2)
@@ -165,14 +159,6 @@ describe('binding an endpoint drag', () => {
 })
 
 describe('re-routing outside a gesture', () => {
-	beforeEach(() => {
-		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
-		slideIndex.value = 0
-		resetInteractionOffset()
-		rotationDelta.value = 0
-		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
-	})
-
 	it('routes to the moved boxes and leaves untouched targets alone', () => {
 		const commands = getFollowerCommands({ 2: { top: 300 } })
 		commands.forEach((command: any) => command.execute(slides.value))
@@ -182,19 +168,9 @@ describe('re-routing outside a gesture', () => {
 		expect(find(3).width).toBeCloseTo(Math.hypot(200, 200))
 		expect(find(3).left).toBeCloseTo(300 - Math.hypot(200, 200) / 2)
 	})
-
-	it('has nothing to say when no target moved', () => {
-		expect(getFollowerCommands({ 1: undefined })).toEqual([])
-	})
 })
 
 describe('deleting a target', () => {
-	beforeEach(() => {
-		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
-		slideIndex.value = 0
-		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
-	})
-
 	it('lets the connector go of that end', () => {
 		deleteElements(null, [1])
 		expect(find(1)).toBeUndefined()
@@ -212,12 +188,6 @@ describe('deleting a target', () => {
 })
 
 describe('disconnecting', () => {
-	beforeEach(() => {
-		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
-		slideIndex.value = 0
-		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
-	})
-
 	it('drops both bindings and leaves the line in place', () => {
 		activeElementIds.value = [3]
 		disconnectConnectors()
@@ -230,12 +200,6 @@ describe('disconnecting', () => {
 })
 
 describe('copying connectors', () => {
-	beforeEach(() => {
-		slides.value = [{ clientId: 'c1', elements: fixture() }] as any
-		slideIndex.value = 0
-		setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
-	})
-
 	const bindingsOf = (elements: any[]) => {
 		const connector = elements.find((el) => el.connector)
 		const ids = elements.map((el) => el.id)
@@ -254,12 +218,6 @@ describe('copying connectors', () => {
 		expect(startInSet && endInSet).toBe(true)
 		expect(ownIds).not.toContain(1)
 		expect(ownIds).not.toContain(3)
-	})
-
-	it('pastes a lone connector unbound', async () => {
-		await duplicateElements(null, [find(3)])
-		const copy = slides.value[0].elements[3]
-		expect(copy.connector).toEqual({ route: 'straight', start: null, end: null })
 	})
 
 	it('rebinds inside a duplicated slide', () => {

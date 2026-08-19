@@ -215,8 +215,7 @@ const getZIndexCommands = (updatedElements) => {
 const getPlacementUpdateCommands = (action) =>
 	getZIndexCommands(getElementsWithUpdatedZIndices(action))
 
-// zIndex commands lifting `elementId` directly above the topmost of `aboveIds`,
-// nothing when it already sits higher
+// lifts `elementId` just above the topmost of `aboveIds`, nothing if already higher
 const getRaiseAboveCommands = (elementId, aboveIds) => {
 	const elements = cloneObj(currentSlide.value.elements)
 	const find = (id) => elements.find((el) => el.id == id)

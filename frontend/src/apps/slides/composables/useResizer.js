@@ -60,8 +60,7 @@ export const useResizer = () => {
 		isMetaHeld.value = e.metaKey || e.ctrlKey
 	}
 
-	// modifiers can change without the pointer moving, so re-emit the last
-	// delta to rerun the resize
+	// modifiers can change without the pointer moving, so rerun the last delta
 	const trackModifiers = (e) => {
 		if (!['Shift', 'Alt', 'Meta', 'Control'].includes(e.key)) return
 		setModifiers(e)

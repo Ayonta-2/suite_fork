@@ -19,8 +19,7 @@ const interactionOffset = reactive({ left: 0, top: 0, width: 0, height: 0 })
 
 const rotationDelta = ref(0)
 
-// while a connector end is dragged over a bindable element: whose ports show
-// and which one the end will take (`auto` lights the outline instead)
+// ports to show while an end is dragged over a target; `auto` lights the outline
 const bindPreview = ref(null)
 
 // the connector object an endpoint drag commits, in place of the detach rule
@@ -31,8 +30,7 @@ const pendingPoints = ref(null)
 
 const isRotatable = (element) => ['shape', 'image'].includes(element.type)
 
-// the box a connector attaches to, as rendered: auto-sized text and tables have
-// no stored size, and an active target carries the live gesture on top
+// rendered box: auto-sized text and tables have no stored size, active targets carry the gesture
 const getTargetBox = (elementId) => {
 	const element = currentSlide.value?.elements.find((el) => el.id === elementId)
 	if (!element) return null
@@ -74,9 +72,7 @@ const hasLiveGesture = () =>
 	interactionOffset.height ||
 	rotationDelta.value
 
-// live geometry of every connector whose target is in the gesture, keyed by
-// connector id. a connector selected together with all of its targets moves
-// rigidly with them and stays out of here
+// live geometry per following connector; one selected with all its targets moves rigidly instead
 const followerGeometry = computed(() => {
 	const geometry = {}
 	if (!hasLiveGesture()) return geometry
@@ -113,8 +109,7 @@ const getGeometryCommands = (element, geometry) =>
 			}),
 		)
 
-// re-route commands for every connector bound to a target in `movedBoxes`
-// ({ [id]: partial box }), for edits that happen outside a live gesture
+// re-route commands for connectors bound into `movedBoxes` ({ [id]: partial box })
 const getFollowerCommands = (movedBoxes) => {
 	const commands = []
 	currentSlide.value.elements.forEach((element) => {

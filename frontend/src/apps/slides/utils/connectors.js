@@ -12,8 +12,7 @@ const SIDE_NORMAL = {
 	left: { x: -1, y: 0 },
 }
 
-// hysteresis band around the diagonals so a target sliding along one doesn't
-// flip sides every frame
+// hysteresis around the diagonals so a target sliding along one doesn't flip sides
 const SIDE_HYSTERESIS_DEGREES = 2
 
 const addVectors = (a, b) => ({ x: a.x + b.x, y: a.y + b.y })
@@ -21,16 +20,14 @@ const subtractVectors = (a, b) => ({ x: a.x - b.x, y: a.y - b.y })
 
 export const getBoxCenter = (box) => ({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
 
-// slide-space point of a box-local point (relative to the top-left corner),
-// honouring rotation about the centre
+// box-local (top-left relative) point to slide space, rotated about the centre
 const toSlideSpace = (box, localPoint) => {
 	const center = getBoxCenter(box)
 	const fromCenter = { x: localPoint.x - box.width / 2, y: localPoint.y - box.height / 2 }
 	return addVectors(center, getRotatedVector(fromCenter, box.rotation || 0))
 }
 
-// the reverse: a slide-space point expressed relative to the box's top-left
-// corner, unrotated
+// slide-space point to box-local, unrotated
 const toLocalSpace = (box, point) => {
 	const fromCenter = getRotatedVector(subtractVectors(point, getBoxCenter(box)), -(box.rotation || 0))
 	return { x: fromCenter.x + box.width / 2, y: fromCenter.y + box.height / 2 }
@@ -64,8 +61,7 @@ export const getAnchorPoint = (box, side) => {
 	})
 }
 
-// outline of a shape as a closed polygon in local space; ovals are handled
-// analytically so they return nothing here
+// closed local-space outline; ovals are analytic and return nothing
 const getLocalOutline = (box) => {
 	const { width, height, shapeType } = box
 	if (isPolygonShape(shapeType)) return getPolygonVertices(shapeType, width, height)
@@ -90,8 +86,7 @@ const raySegmentDistance = (origin, direction, a, b) => {
 	return t
 }
 
-// where the ray from the box centre toward `target` leaves the shape's outline.
-// falls back to the centre when the target sits on it
+// where the centre→target ray leaves the outline; the centre when target sits on it
 export const clipToBoundary = (box, target) => {
 	const center = { x: box.width / 2, y: box.height / 2 }
 	const direction = subtractVectors(toLocalSpace(box, target), center)
@@ -116,9 +111,7 @@ export const clipToBoundary = (box, target) => {
 	})
 }
 
-// where a connector attaches for a fixed side: the point where the ray from the
-// centre through the side's midpoint leaves the shape, so polygon ports sit on
-// the outline instead of floating on the bounding box
+// fixed-side port: where the centre→side-midpoint ray leaves the outline
 export const getPort = (box, side) => clipToBoundary(box, getAnchorPoint(box, side))
 
 const SIDE_ANGLE = { right: 0, bottom: 90, left: 180, top: -90 }
@@ -128,9 +121,7 @@ const angleDifference = (a, b) => {
 	return Math.abs(diff)
 }
 
-// side of `box` that faces `target`, judged as if the box were square so the
-// answer is the side the centre→target ray actually leaves through. keeps
-// `previousSide` while the direction is within the hysteresis band of a diagonal
+// side facing `target`, judged as if square; keeps `previousSide` inside the hysteresis band
 export const resolveAutoSide = (box, target, previousSide = null) => {
 	const local = toLocalSpace(box, target)
 	const direction = { x: local.x - box.width / 2, y: local.y - box.height / 2 }
@@ -147,8 +138,7 @@ export const resolveAutoSide = (box, target, previousSide = null) => {
 	)
 }
 
-// a line's box is exactly as tall as its stroke, so its centre line runs at
-// top + strokeWidth / 2 whatever the stored height says
+// a line's centre runs at top + strokeWidth / 2 whatever the stored height
 export const getLineEndpoints = (line) => {
 	const center = { x: line.left + line.width / 2, y: line.top + line.strokeWidth / 2 }
 	const halfSpan = getRotatedVector({ x: line.width / 2, y: 0 }, line.rotation || 0)
@@ -170,8 +160,7 @@ export const getLineBox = (start, end, strokeWidth) => {
 // last side each auto end settled on, so the hysteresis has something to hold
 const lastAutoSide = new Map()
 
-// a fixed anchor sits on its port; `auto` sits on the port of whichever side
-// faces what the other end points to
+// `auto` takes the port of the side facing the other end's target
 const resolveSide = (key, box, anchor, aim) => {
 	if (anchor !== 'auto') return anchor
 	const side = resolveAutoSide(box, aim, lastAutoSide.get(key))
@@ -181,8 +170,7 @@ const resolveSide = (key, box, anchor, aim) => {
 
 const resolveEnd = (key, box, anchor, aim) => getPort(box, resolveSide(key, box, anchor, aim))
 
-// geometry of a straight connector once its bound ends sit on `startBox` /
-// `endBox` (null for a free end, which stays where the line has it)
+// straight geometry on `startBox` / `endBox`; a null (free) end stays put
 export const routeConnector = (line, startBox, endBox) => {
 	if (line.connector?.route === 'elbow') return routeElbow(line, startBox, endBox)
 	const free = getConnectorEndpoints(line)
@@ -284,11 +272,7 @@ const getPathLength = (path) =>
 		0,
 	)
 
-// orthogonal polyline from `start` to `end`, each leaving its port along `normal`
-// for a stub before turning. every candidate runs stub → mid-line → stub, along
-// mid-x, mid-y, the stub lines themselves and the four lines just outside both
-// boxes; the one with the fewest bends (then shortest) that stays clear of both
-// boxes wins
+// stub → mid-line → stub over candidate lines; fewest bends, then shortest, clearing both boxes
 export const getElbowPath = ({ start, end, startNormal, endNormal, startBounds, endBounds }) => {
 	const delta = subtractVectors(end, start)
 	startNormal = startNormal ? snapToAxis(startNormal) : snapToAxis(delta)
@@ -369,8 +353,7 @@ export const getElbowPath = ({ start, end, startNormal, endNormal, startBounds, 
 	return best ? best.path : simplifyPath([start, startStub, endStub, end])
 }
 
-// geometry of an elbow connector: an unrotated box around the route with the
-// route's points stored relative to its corner
+// unrotated box around the route, points relative to its corner
 export const routeElbow = (line, startBox, endBox) => {
 	const free = getConnectorEndpoints(line)
 	const startAim = endBox ? getBoxCenter(endBox) : free.end
@@ -412,8 +395,7 @@ const pullAlong = (point, toward, distance) => {
 	return { x: point.x + span.x * t, y: point.y + span.y * t }
 }
 
-// svg path through the elbow's points with rounded corners; the ends pull back
-// by the marker insets like a straight line's span does
+// rounded-corner path, ends pulled back by the marker insets
 export const getElbowPathData = (points, startInset = 0, endInset = 0) => {
 	if (points.length < 2) return ''
 	const path = [...points]
@@ -449,8 +431,7 @@ export const detachMovedEnds = (line, box) => {
 	return detached ? connector : null
 }
 
-// fresh ids for a copied set: bindings inside the set follow the copies, the
-// rest are dropped so a copy never trails the original's targets
+// fresh ids for a copied set; bindings inside it follow the copies, the rest drop
 export const remapElementIds = (elements) => {
 	const newIds = elements.map(() => generateUniqueId())
 	const idMap = new Map(elements.map((element, i) => [element.id, newIds[i]]))

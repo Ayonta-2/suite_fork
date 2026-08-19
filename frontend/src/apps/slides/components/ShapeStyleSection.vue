@@ -145,8 +145,7 @@ const strokeMin = computed(() => (activeElement.value.shapeType === 'line' ? 0.5
 const borderRadius = useElementProperty('borderRadius')
 const shapeStrokeWidth = useElementProperty('strokeWidth')
 
-// a line is drawn along top + strokeWidth / 2, so its top moves with the stroke
-// to keep the visible line (and any bound ends) where it is
+// the top shifts with the stroke so the visible line stays put
 let lineStart = null
 const lineStrokeWidth = {
 	begin: () => {

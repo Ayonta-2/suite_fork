@@ -44,8 +44,6 @@ const PORT_SNAP_RADIUS = 14
 const isConnector = computed(() => pendingShapeType.value === 'connector')
 const isLine = computed(() => pendingShapeType.value === 'line' || isConnector.value)
 
-// bindable element under the cursor while the Connector tool is armed, and the
-// one the press landed on once a drag starts
 const hoverBind = ref(null)
 let startBind = null
 
@@ -54,8 +52,7 @@ const toSlideCoords = (e) => ({
 	y: (e.clientY - slideBounds.top) / slideBounds.scale,
 })
 
-// bindable element under the pointer, ⌘ bypassing; a drag never binds both
-// ends to the element it started on
+// ⌘ bypasses binding; a drag never binds both ends to one element
 const findBind = (e) => {
 	if (e.metaKey || e.ctrlKey) return null
 	const point = toSlideCoords(e)
@@ -78,7 +75,6 @@ watch(pendingShapeType, () => {
 	bindPreview.value = null
 })
 
-// the drawn line once its bound ends sit on their targets
 const routeDrawn = (start, end, strokeWidth) => {
 	const connector = { route: 'straight', start: startBind, end: hoverBind.value }
 	const boxFor = (bind) => bind && getTargetBox(bind.elementId)

@@ -2,8 +2,7 @@ export const POLYGON_SIDES = { diamond: 4, triangle: 3, pentagon: 5 }
 
 export const isPolygonShape = (shapeType) => shapeType in POLYGON_SIDES
 
-// vertices of a regular polygon stretched to fill width × height, starting
-// from the top and inset by half the stroke so the stroke stays inside the box
+// regular polygon filling width × height from the top, inset by half the stroke
 export const getPolygonVertices = (shapeType, width, height, strokeInset = 0) => {
 	const sides = POLYGON_SIDES[shapeType]
 	if (!sides) return []

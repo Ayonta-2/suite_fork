@@ -83,8 +83,7 @@ const getCenterShift = (fixedSign, startBox, width, height) => ({
 	y: (-fixedSign.y * (height - startBox.height)) / 2,
 })
 
-// scale factor of the axis the cursor changed the most, so a diagonal drag on
-// a corner and a drag on a side both stretch the box uniformly
+// scale of the axis the cursor moved most, so corner and side drags stretch uniformly
 const getDominantScale = (start, width, height) => {
 	const scaleX = width / start.width
 	const scaleY = height / start.height

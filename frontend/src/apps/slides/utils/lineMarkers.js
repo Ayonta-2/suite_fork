@@ -10,9 +10,7 @@ export const normalizeMarker = (value) => {
 // heads grow with the stroke but never vanish on thin lines
 export const getMarkerSize = (strokeWidth) => 8 + strokeWidth * 2.5
 
-// geometry drawn with the line's vertex at the origin, pointing +x, the tip at
-// x = inset. `inset` is how far the line pulls back so it never pokes out beside
-// the head; the head is painted over the remaining overlap.
+// vertex at the origin pointing +x, tip at x = inset; the line pulls back by inset
 export const getMarkerShape = (style, strokeWidth) => {
 	const size = getMarkerSize(strokeWidth)
 	switch (style) {

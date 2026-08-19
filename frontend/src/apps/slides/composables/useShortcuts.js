@@ -167,9 +167,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		!isSelectionLocked.value &&
 		!hasOpenOverlay()
 
-	// typing with a text box or shape selected starts editing it with the typed
-	// character. runs in the capture phase and stops there so single-letter
-	// tool shortcuts don't fire while something editable is selected
+	// capture phase, so single-letter tool shortcuts don't fire over an editable selection
 	const handleTypeToEdit = (e) => {
 		if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
 		if (e.key === '?') return

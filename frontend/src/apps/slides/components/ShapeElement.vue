@@ -259,7 +259,6 @@ const markerPathAttrs = (marker) => ({
 	'stroke-linejoin': 'round',
 })
 
-// a connector following its target draws the routed geometry in place of its own
 const follower = computed(() =>
 	props.mode == 'editor' ? followerGeometry.value[element.value?.id] : undefined,
 )
@@ -275,8 +274,7 @@ const lineSpan = computed(() => {
 	return { x1: startInset, x2: length - endInset }
 })
 
-// an elbow line draws the routed points, live ones while it follows a target
-// or has an end dragged
+// live points while following a target or being end-dragged, stored ones otherwise
 const elbowPath = computed(() => {
 	if (!isLine.value) return ''
 	const isActiveInEditor = isActive.value && props.mode == 'editor'

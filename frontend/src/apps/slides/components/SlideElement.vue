@@ -52,7 +52,6 @@ const element = defineModel('element', {
 	default: null,
 })
 
-// a connector following its target draws the routed geometry in place of its own
 const follower = computed(() =>
 	props.mode == 'editor' ? followerGeometry.value[element.value.id] : undefined,
 )
