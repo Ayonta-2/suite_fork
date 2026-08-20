@@ -461,28 +461,38 @@ const addTableElement = async (rows = 3, cols = 3) => {
 	)
 }
 
-// createResource swallows a failed request and hands back the last poster it
-// saved, so a slow network silently pins the wrong poster or none at all
-const savePoster = (posterDataUrl) =>
-	call('suite.slides.doctype.presentation.presentation.save_base64_image', {
-		presentation_name: presentationId.value,
-		base64_data: posterDataUrl,
-		prefix: 'poster',
-	})
+// createResource hands back the last poster it saved when a request fails, which
+// silently pins the wrong one on a slow network
+const savePoster = async (posterDataUrl) => {
+	try {
+		return await call('suite.slides.doctype.presentation.presentation.save_base64_image', {
+			presentation_name: presentationId.value,
+			base64_data: posterDataUrl,
+			prefix: 'poster',
+		})
+	} catch (error) {
+		// the media is worth keeping without a poster
+		console.error('Could not save poster', error)
+		return null
+	}
+}
 
-const saveMediaFrameAsPoster = async (media, width, height) => {
+// a full bleed poster needs twice the 960px slide to stay sharp, and no more, so
+// encoding the frame at the media's own resolution only makes the upload slower
+const POSTER_MAX_EDGE = 1920
+const POSTER_QUALITY = 0.8
+
+const captureMediaFrame = (media, width, height) => {
+	const scale = Math.min(1, POSTER_MAX_EDGE / Math.max(width, height))
+
 	const canvas = document.createElement('canvas')
-	canvas.width = width
-	canvas.height = height
+	canvas.width = Math.round(width * scale)
+	canvas.height = Math.round(height * scale)
 
 	const context = canvas.getContext('2d')
 	context.drawImage(media, 0, 0, canvas.width, canvas.height)
 
-	return await savePoster(canvas.toDataURL('image/webp'))
-}
-
-const generatePoster = async (video) => {
-	return await saveMediaFrameAsPoster(video, video.videoWidth, video.videoHeight)
+	return canvas.toDataURL('image/webp', POSTER_QUALITY)
 }
 
 const isGifFile = (file) => {
@@ -498,7 +508,7 @@ const generateImagePoster = async (imageUrl) => {
 	img.src = imageUrl
 	await img.decode()
 
-	return await saveMediaFrameAsPoster(img, img.naturalWidth, img.naturalHeight)
+	return await savePoster(captureMediaFrame(img, img.naturalWidth, img.naturalHeight))
 }
 
 const getVideoElementClone = (videoUrl) => {
@@ -516,16 +526,17 @@ const getVideoElementClone = (videoUrl) => {
 	return videoElement
 }
 
-const handleVideoCloneDataLoad = async (videoClone, resolve, reject) => {
+// the frame is read locally, so how the element is sized never waits on the network
+const handleVideoCloneDataLoad = (videoClone, resolve, reject) => {
 	try {
-		const poster = await generatePoster(videoClone)
-		const aspectRatio = videoClone.videoWidth / videoClone.videoHeight
-		resolve({ posterURL: poster, aspectRatio: aspectRatio })
+		resolve({
+			frame: captureMediaFrame(videoClone, videoClone.videoWidth, videoClone.videoHeight),
+			aspectRatio: videoClone.videoWidth / videoClone.videoHeight,
+		})
 	} catch (err) {
 		reject(err)
 	} finally {
-		// remove the video element from the DOM after poster is generated
-		document.body.removeChild(videoClone)
+		videoClone.remove()
 	}
 }
 
@@ -538,16 +549,21 @@ const revokeProbeUrl = (url) => {
 	if (url.startsWith('blob:')) URL.revokeObjectURL(url)
 }
 
-const getVideoPoster = async (videoUrl) => {
+const captureVideoFrame = async (videoUrl) => {
 	return new Promise((resolve, reject) => {
 		// create a clone of the video element to generate a poster
 		// without making the original video visible so there's no flicker
 		const videoClone = getVideoElementClone(videoUrl)
 		document.body.appendChild(videoClone)
 
-		// we cannot directly capture the poster without data load event
+		// loadeddata fires before the first frame is decoded on a slow link, which
+		// captures an empty canvas; a completed seek guarantees the frame is there
+		videoClone.addEventListener('loadeddata', () => (videoClone.currentTime = 0.05), {
+			once: true,
+		})
+
 		videoClone.addEventListener(
-			'loadeddata',
+			'seeked',
 			() => handleVideoCloneDataLoad(videoClone, resolve, reject),
 			{ once: true },
 		)
@@ -555,9 +571,8 @@ const getVideoPoster = async (videoUrl) => {
 		videoClone.addEventListener(
 			'error',
 			() => {
-				// if video fails to load, don't leave cloned element in the DOM
-				document.body.removeChild(videoClone)
-				reject(new Error('Failed to load video for poster generation'))
+				videoClone.remove()
+				reject(new Error('Failed to load video for frame capture'))
 			},
 			{ once: true },
 		)
@@ -622,9 +637,9 @@ const addMediaElement = async (file, type, targetSlide, localFile) => {
 		elementWidth = 400
 		const videoUrl = getProbeUrl(src, localFile)
 		try {
-			const { posterURL, aspectRatio } = await getVideoPoster(videoUrl)
+			const { frame, aspectRatio } = await captureVideoFrame(videoUrl)
 			elementHeight = elementWidth / aspectRatio
-			videoPoster = posterURL
+			videoPoster = await savePoster(frame)
 		} catch {
 			// the video is worth keeping without a poster; it plays either way
 			elementHeight = elementWidth * (9 / 16)
@@ -699,8 +714,8 @@ const probeReplacementMedia = async (element, fileDoc, localFile) => {
 	if (element.type === 'video') {
 		const videoUrl = getProbeUrl(fileDoc.file_url, localFile)
 		try {
-			const { posterURL, aspectRatio } = await getVideoPoster(videoUrl)
-			return { poster: posterURL, aspect: aspectRatio }
+			const { frame, aspectRatio } = await captureVideoFrame(videoUrl)
+			return { poster: await savePoster(frame), aspect: aspectRatio }
 		} catch {
 			// the old poster belongs to the video being replaced, so it goes either way
 			return { poster: null }
