@@ -10,21 +10,9 @@
 		</Tooltip>
 
 		<Tooltip text="Media" :hover-delay="0.7">
-			<FileUploader
-				:fileTypes="allowedImageFileTypes.concat(['video/*'])"
-				:uploadArgs="{
-					doctype: 'Presentation',
-					docname: presentationId,
-					private: true,
-				}"
-				@success="(file) => handleUploadSuccess(file)"
-			>
-				<template #default="{ openFileSelector }">
-					<div class="cursor-pointer rounded p-2 hover:bg-surface-gray-3" @click="openFileSelector">
-						<ImagePlus class="size-4 stroke-[1.5] text-ink-gray-7" />
-					</div>
-				</template>
-			</FileUploader>
+			<div class="cursor-pointer rounded p-2 hover:bg-surface-gray-3" @click="openFilePicker">
+				<ImagePlus class="size-4 stroke-[1.5] text-ink-gray-7" />
+			</div>
 		</Tooltip>
 
 		<ToolDropdown tooltip="Shapes" :icon="Shapes" :options="shapeTools" />
@@ -32,16 +20,23 @@
 		<ToolDropdown tooltip="Lines" :icon="Polyline" :options="lineTools" />
 
 		<TableDropdown />
+
+		<input
+			ref="filePicker"
+			type="file"
+			class="hidden"
+			:accept="allowedImageFileTypes.concat('video/*').join(',')"
+			@change="addMedia"
+		/>
 	</div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { useTemplateRef } from 'vue'
 
 import { Type, ImagePlus, Shapes } from 'lucide-vue-next'
 
-import { Tooltip, FileUploader, toast } from 'frappe-ui'
-import { presentationId } from '@/apps/slides/stores/presentation'
+import { Tooltip } from 'frappe-ui'
 import { addTextElement } from '@/apps/slides/stores/element'
 import { allowedImageFileTypes } from '@/apps/slides/utils/constants'
 
@@ -51,18 +46,15 @@ import TableDropdown from '@/apps/slides/components/TableDropdown.vue'
 
 import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
 import { shapeTools, lineTools } from '@/apps/slides/utils/toolbarTools'
-import { performPostUploadActions } from '@/apps/slides/utils/mediaUploads'
+import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 
-const handleUploadSuccess = (file) => {
-	// file_type is a Drive category ('Image'), not a format; mime_type is what the allowlist speaks
-	const fileType = allowedImageFileTypes.includes(file.mime_type) ? 'image' : 'video'
+const filePicker = useTemplateRef('filePicker')
 
-	const toastProps = {
-		loading: file.file_name ? `Uploading: ${file.file_name}` : 'Uploading...',
-		success: (data) => (file.file_name ? `Uploaded: ${file.file_name}` : 'Uploaded'),
-		error: (data) => 'Upload failed. Please try again.',
-	}
+const openFilePicker = () => filePicker.value.click()
 
-	toast.promise(performPostUploadActions(file, fileType), toastProps)
+const addMedia = (e) => {
+	const file = e.target.files[0]
+	if (file) handleUploadedMedia([file])
+	e.target.value = ''
 }
 </script>

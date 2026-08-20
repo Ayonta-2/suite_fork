@@ -5,7 +5,7 @@
 			class="absolute inset-0 flex w-full justify-between p-2"
 			:style="getGradientOverlayStyles(slide)"
 		>
-			<div class="text-[10px] font-medium">{{ slide.idx }}</div>
+			<div class="text-[10px] font-medium">{{ slideNumber }}</div>
 			<TransitionIcon v-if="slide.transition != 'None'" class="h-3 opacity-80" />
 		</div>
 	</div>
@@ -15,6 +15,7 @@
 import { computed } from 'vue'
 
 import { focusedSlide, slides } from '@/apps/slides/stores/slide'
+import { presentationDoc } from '@/apps/slides/stores/presentation'
 import { recentlyRestored } from '@/apps/slides/stores/historyMeta'
 
 import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
@@ -42,6 +43,12 @@ const getGradientOverlayStyles = (slide) => {
 		color: textColor,
 	}
 }
+
+// a composite's slides keep the idx of the reference they came from, so the count
+// restarts at every reference; number them by position instead
+const slideNumber = computed(() =>
+	presentationDoc.value?.is_composite ? slides.value.indexOf(props.slide) + 1 : props.slide.idx,
+)
 
 const isFocused = computed(() => focusedSlide.value == slides.value.indexOf(props.slide))
 const usesSelectionRing = computed(() => (props.isActive && recentlyRestored.value) || isFocused.value)
