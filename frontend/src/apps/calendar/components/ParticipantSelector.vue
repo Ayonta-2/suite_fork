@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
-import { Combobox, createResource, toast } from 'frappe-ui'
+import { Avatar, Combobox, createResource, toast } from 'frappe-ui'
 
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
 
@@ -14,6 +14,7 @@ interface ContactSuggestion {
 interface ContactOption extends ContactSuggestion {
 	label: string
 	value: string
+	description?: string
 }
 
 const props = withDefaults(
@@ -47,8 +48,9 @@ const mailContacts = createResource({
 	transform: (data: ContactSuggestion[]): ContactOption[] =>
 		data.map((contact) => ({
 			...contact,
-			label: contact.name || contact.email,
+			label: contact.email,
 			value: contact.email,
+			description: contact.name || undefined,
 		})),
 })
 
@@ -147,11 +149,16 @@ const removeParticipant = (email: string) => {
 				v-model:open="showSuggestions"
 				class="w-full"
 				:options="options"
+				:filterable="false"
 				:placeholder="placeholder"
 				@update:query="handleInput($event)"
 				@update:model-value="handleParticipantSelect($event)"
 				@keyup.enter="handleParticipantEnter($event)"
-			/>
+			>
+				<template #item-prefix="{ item }">
+					<Avatar :image="item.user_image" :label="item.description || item.label" size="md" />
+				</template>
+			</Combobox>
 		</div>
 		<div class="max-h-[32rem] space-y-4 overflow-y-auto">
 			<EventParticipantList
