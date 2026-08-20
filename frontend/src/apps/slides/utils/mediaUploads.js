@@ -14,17 +14,21 @@ export const isMediaOwner = (owner, user) => !!user && (owner === user || user =
 
 // Images are converted to WebP, so the returned doc replaces the uploaded one.
 // Pass targetElement to swap that element's media instead of adding a new element.
-const performPostUploadActions = async (fileDoc, fileType, { targetElement, targetSlide }) => {
+const performPostUploadActions = async (
+	fileDoc,
+	fileType,
+	{ targetElement, targetSlide, localFile },
+) => {
 	if (fileType === 'image') {
 		fileDoc = await getWebPDoc(fileDoc)
 	}
 
 	if (targetElement) {
-		await replaceMediaElement(targetElement, fileDoc, fileType)
+		await replaceMediaElement(targetElement, fileDoc, localFile)
 		return fileDoc
 	}
 
-	await addMediaElement(fileDoc, fileType, targetSlide)
+	await addMediaElement(fileDoc, fileType, targetSlide, localFile)
 	return fileDoc
 }
 
@@ -76,7 +80,7 @@ const handleFile = (file, toastProps, targetElement) => {
 
 	if (targetElement && targetElement.type != fileType) targetElement = null
 
-	const target = { targetElement, targetSlide: currentSlide.value }
+	const target = { targetElement, targetSlide: currentSlide.value, localFile: file }
 
 	toast.promise(uploadMedia(file, fileType, target), toastProps)
 }

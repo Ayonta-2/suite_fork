@@ -1,5 +1,5 @@
 import { ref, computed, nextTick, watch } from 'vue'
-import { createResource } from 'frappe-ui'
+import { call } from 'frappe-ui'
 
 import {
 	selectionBounds,
@@ -461,14 +461,14 @@ const addTableElement = async (rows = 3, cols = 3) => {
 	)
 }
 
-const savePoster = createResource({
-	url: 'suite.slides.doctype.presentation.presentation.save_base64_image',
-	makeParams: (posterDataUrl) => ({
+// createResource swallows a failed request and hands back the last poster it
+// saved, so a slow network silently pins the wrong poster or none at all
+const savePoster = (posterDataUrl) =>
+	call('suite.slides.doctype.presentation.presentation.save_base64_image', {
 		presentation_name: presentationId.value,
 		base64_data: posterDataUrl,
 		prefix: 'poster',
-	}),
-})
+	})
 
 const saveMediaFrameAsPoster = async (media, width, height) => {
 	const canvas = document.createElement('canvas')
@@ -478,7 +478,7 @@ const saveMediaFrameAsPoster = async (media, width, height) => {
 	const context = canvas.getContext('2d')
 	context.drawImage(media, 0, 0, canvas.width, canvas.height)
 
-	return await savePoster.submit(canvas.toDataURL('image/webp'))
+	return await savePoster(canvas.toDataURL('image/webp'))
 }
 
 const generatePoster = async (video) => {
@@ -527,6 +527,15 @@ const handleVideoCloneDataLoad = async (videoClone, resolve, reject) => {
 		// remove the video element from the DOM after poster is generated
 		document.body.removeChild(videoClone)
 	}
+}
+
+// reading the frame back off the server re-downloads the whole upload, so the
+// file still in hand is what gets probed
+const getProbeUrl = (src, localFile) =>
+	localFile ? URL.createObjectURL(localFile) : getAttachmentUrl(src)
+
+const revokeProbeUrl = (url) => {
+	if (url.startsWith('blob:')) URL.revokeObjectURL(url)
 }
 
 const getVideoPoster = async (videoUrl) => {
@@ -587,7 +596,7 @@ const getLeftTopForCenteredElement = (elementWidth, elementHeight) => {
 	return { left: elementLeft, top: elementTop }
 }
 
-const addMediaElement = async (file, type, targetSlide) => {
+const addMediaElement = async (file, type, targetSlide, localFile) => {
 	const src = file.file_url
 
 	let elementWidth = 0
@@ -611,10 +620,18 @@ const addMediaElement = async (file, type, targetSlide) => {
 		}
 	} else {
 		elementWidth = 400
-		const { posterURL, aspectRatio } = await getVideoPoster(getAttachmentUrl(src))
-		elementHeight = elementWidth / aspectRatio
+		const videoUrl = getProbeUrl(src, localFile)
+		try {
+			const { posterURL, aspectRatio } = await getVideoPoster(videoUrl)
+			elementHeight = elementWidth / aspectRatio
+			videoPoster = posterURL
+		} catch {
+			// the video is worth keeping without a poster; it plays either way
+			elementHeight = elementWidth * (9 / 16)
+		} finally {
+			revokeProbeUrl(videoUrl)
+		}
 		position = getLeftTopForCenteredElement(elementWidth, elementHeight)
-		videoPoster = posterURL
 	}
 
 	// a slow upload can outlive a slide switch, so the element goes back to the
@@ -676,12 +693,20 @@ const addMediaElement = async (file, type, targetSlide) => {
 	)
 }
 
-const probeReplacementMedia = async (element, fileDoc) => {
+const probeReplacementMedia = async (element, fileDoc, localFile) => {
 	const newUrl = getAttachmentUrl(fileDoc.file_url)
 
 	if (element.type === 'video') {
-		const { posterURL, aspectRatio } = await getVideoPoster(newUrl)
-		return { poster: posterURL, aspect: aspectRatio }
+		const videoUrl = getProbeUrl(fileDoc.file_url, localFile)
+		try {
+			const { posterURL, aspectRatio } = await getVideoPoster(videoUrl)
+			return { poster: posterURL, aspect: aspectRatio }
+		} catch {
+			// the old poster belongs to the video being replaced, so it goes either way
+			return { poster: null }
+		} finally {
+			revokeProbeUrl(videoUrl)
+		}
 	}
 
 	return {
@@ -718,12 +743,12 @@ const pushImageReplaceEdits = (element, { frameHeight, newAspect, poster }, push
 	if ((element.poster ?? undefined) !== newPoster) pushEdit('poster', element.poster, newPoster)
 }
 
-const replaceMediaElement = async (element, fileDoc) => {
+const replaceMediaElement = async (element, fileDoc, localFile) => {
 	// measure while the old media is still rendered, before any await
 	const frameHeight = element.height || getElementDiv(element.id)?.offsetHeight
 
 	const srcChanged = element.src !== fileDoc.file_url
-	const probes = srcChanged ? await probeReplacementMedia(element, fileDoc) : null
+	const probes = srcChanged ? await probeReplacementMedia(element, fileDoc, localFile) : null
 
 	// a slow upload can outlive a slide switch or the element itself, and older
 	// presentations repeat one layout's element ids across slides, so only the
