@@ -13,7 +13,7 @@ export const isMediaOwner = (owner, user) => !!user && (owner === user || user =
 
 // Images are converted to WebP, so the returned doc replaces the uploaded one.
 // Pass targetElement to swap that element's media instead of adding a new element.
-export const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
+const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
 	if (fileType === 'image') {
 		fileDoc = await getWebPDoc(fileDoc)
 	}
