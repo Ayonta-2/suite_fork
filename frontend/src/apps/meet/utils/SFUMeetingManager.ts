@@ -59,6 +59,7 @@ export class SFUMeetingManager {
 	private connectionManager: ParticipantConnection;
 	mediaManager: SFUMediaManager;
 	private recoveryManager: SFURecoveryManager;
+	private consumerPreferenceGenerations = new Map<string, number>();
 
 	constructor(sfuClient: SFUClient) {
 		this.sfuClient = sfuClient;
@@ -377,24 +378,45 @@ export class SFUMeetingManager {
 			height: number;
 		},
 	): Promise<unknown | null> {
+		const generation =
+			(this.consumerPreferenceGenerations.get(consumerId) ?? 0) + 1;
+		this.consumerPreferenceGenerations.set(consumerId, generation);
+		if (!preferences.visible) {
+			this.consumerManager.updateConsumer(consumerId, {
+				adaptivelyPaused: true,
+			});
+		}
 		if (!this.sfuClient?.isConnected()) {
-			return null;
+			throw new Error("Cannot update consumer preferences while disconnected");
 		}
 
 		try {
-			return await this.sfuClient.updateConsumerPreferences({
+			const result = await this.sfuClient.updateConsumerPreferences({
 				consumerId,
 				visible: preferences.visible,
 				width: preferences.width,
 				height: preferences.height,
 			});
+			if (
+				preferences.visible &&
+				this.consumerPreferenceGenerations.get(consumerId) === generation
+			) {
+				this.consumerManager.updateConsumer(consumerId, {
+					adaptivelyPaused: false,
+				});
+			}
+			return result;
 		} catch (error) {
 			console.warn(
 				"Failed to update consumer preferences",
 				consumerId,
 				(error as Error)?.message || error,
 			);
-			return null;
+			throw error;
+		} finally {
+			if (this.consumerPreferenceGenerations.get(consumerId) === generation) {
+				this.consumerPreferenceGenerations.delete(consumerId);
+			}
 		}
 	}
 
