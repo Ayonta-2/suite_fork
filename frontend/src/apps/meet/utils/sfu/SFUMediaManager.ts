@@ -97,6 +97,9 @@ export class SFUMediaManager {
 
 	private eventHandlers: MediaEventHandlers = {};
 	private getCurrentUserId: () => string | null;
+	private selectedProducerIds = new Map<string, string>();
+	private attachmentTails = new Map<string, Promise<void>>();
+	private closedProducerIds = new Set<string>();
 	private pendingSubscriptions: Map<string, Promise<unknown | null>> = new Map();
 	private resubscribeTimers = new Map<
 		ReturnType<typeof setTimeout>,
@@ -673,42 +676,132 @@ export class SFUMediaManager {
 		participantId: string,
 		consumer: ConsumerEntry,
 	): Promise<void> {
-		try {
+		const key = `video:${participantId}`;
+		const previousProducerId = this.selectedProducerIds.get(key);
+		this.selectedProducerIds.set(key, consumer.producerId);
+		return this.serializeAttachment(key, async () => {
+			if (this.selectedProducerIds.get(key) !== consumer.producerId) return;
 			const track = consumer.track as MediaStreamTrack;
 			const stream = new MediaStream([track]);
 
-			await this.videoManager.attachStream(participantId, stream, false);
+			try {
+				await this.videoManager.attachStream(participantId, stream, false);
 
-			const participant = this.participantManager.getParticipant(participantId);
-			if (participant && !participant.video_enabled) {
-				this.participantManager.updateParticipant(participantId, {
-					video_enabled: true,
-				});
+				const participant = this.participantManager.getParticipant(participantId);
+				if (participant && !participant.video_enabled) {
+					this.participantManager.updateParticipant(participantId, {
+						video_enabled: true,
+					});
+				}
+			} catch (error) {
+				this.restoreSelectionAfterAttachmentFailure(
+					key,
+					participantId,
+					consumer.producerId,
+					previousProducerId,
+				);
+				console.error(
+					`Failed to attach video consumer for ${participantId}:`,
+					error,
+				);
+				throw error;
 			}
-		} catch (error) {
-			console.error(
-				`Failed to attach video consumer for ${participantId}:`,
-				error,
-			);
-			throw error;
-		}
+		});
 	}
 
 	async attachAudioConsumer(
 		participantId: string,
 		consumer: ConsumerEntry,
 	): Promise<void> {
-		try {
+		const key = `audio:${participantId}`;
+		const previousProducerId = this.selectedProducerIds.get(key);
+		this.selectedProducerIds.set(key, consumer.producerId);
+		return this.serializeAttachment(key, async () => {
+			if (this.selectedProducerIds.get(key) !== consumer.producerId) return;
 			const track = consumer.track as MediaStreamTrack;
 			const stream = new MediaStream([track]);
 
-			await this.videoManager.attachStream(participantId, stream, false);
-		} catch (error) {
-			console.error(
-				`Failed to attach audio consumer for ${participantId}:`,
-				error,
+			try {
+				await this.videoManager.attachStream(participantId, stream, false);
+			} catch (error) {
+				this.restoreSelectionAfterAttachmentFailure(
+					key,
+					participantId,
+					consumer.producerId,
+					previousProducerId,
+				);
+				console.error(
+					`Failed to attach audio consumer for ${participantId}:`,
+					error,
+				);
+				throw error;
+			}
+		});
+	}
+
+	private serializeAttachment(
+		key: string,
+		operation: () => Promise<void>,
+	): Promise<void> {
+		const attachment = (this.attachmentTails.get(key) ?? Promise.resolve())
+			.catch(() => undefined)
+			.then(operation)
+			.finally(() => {
+				if (this.attachmentTails.get(key) === attachment) {
+					this.attachmentTails.delete(key);
+				}
+			});
+		this.attachmentTails.set(key, attachment);
+		return attachment;
+	}
+
+	private restoreSelectionAfterAttachmentFailure(
+		key: string,
+		participantId: string,
+		failedProducerId: string,
+		previousProducerId: string | undefined,
+	): void {
+		if (this.selectedProducerIds.get(key) !== failedProducerId) return;
+		if (previousProducerId && !this.closedProducerIds.has(previousProducerId)) {
+			this.selectedProducerIds.set(key, previousProducerId);
+			return;
+		}
+		this.selectedProducerIds.delete(key);
+		if (!previousProducerId) return;
+		this.selectedProducerIds.set(key, previousProducerId);
+		queueMicrotask(() => {
+			void this.reattachAfterProducerClosed(participantId, previousProducerId).catch(
+				(error) =>
+					console.warn("Failed to recover endpoint media after attachment error:", error),
 			);
-			throw error;
+		});
+	}
+
+	async reattachAfterProducerClosed(
+		participantId: string,
+		producerId: string,
+	): Promise<void> {
+		this.closedProducerIds.add(producerId);
+		const consumers = this.consumerManager.getConsumersByParticipant(participantId);
+		for (const kind of ["audio", "video"] as const) {
+			const key = `${kind}:${participantId}`;
+			if (this.selectedProducerIds.get(key) !== producerId) continue;
+			const replacement = consumers.find(
+				(consumer) =>
+					consumer.producerId !== producerId &&
+					consumer.kind === kind &&
+					!consumer.isScreen &&
+					!consumer.consumer.closed,
+			);
+			if (!replacement) {
+				this.selectedProducerIds.delete(key);
+				continue;
+			}
+			if (kind === "video") {
+				await this.attachVideoConsumer(participantId, replacement);
+			} else {
+				await this.attachAudioConsumer(participantId, replacement);
+			}
 		}
 	}
 
@@ -765,6 +858,9 @@ export class SFUMediaManager {
 		const terminalCleanup = this.sendMediaMutationQueue.then(() => {
 			this.mediaHandler.cleanup();
 			this.processedConsumers.clear();
+			this.selectedProducerIds.clear();
+			this.attachmentTails.clear();
+			this.closedProducerIds.clear();
 			this.isScreenShareActive = false;
 		});
 		this.cleanupPromise = terminalCleanup;

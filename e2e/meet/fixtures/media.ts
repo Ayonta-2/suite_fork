@@ -40,3 +40,74 @@ export const STUB_MEDIA_SCRIPT = `(() => {
 		return stream;
 	};
 })();`;
+
+export const MEDIA_FAULT_SCRIPT = `(() => {
+	const localTracks = { audio: [], video: [] };
+	const peerConnections = [];
+	const pendingReceiverFaults = [];
+	const injectReceiverStats = (receiver, fault) => {
+		const originalGetStats = receiver.getStats.bind(receiver);
+		receiver.getStats = async () => {
+			const report = await originalGetStats();
+			const injected = new Map();
+			report.forEach((value, key) => {
+				if (value.type !== "inbound-rtp" || value.kind !== "video") {
+					injected.set(key, value);
+					return;
+				}
+				injected.set(key, {
+					...value,
+					...(fault === "zero-bytes" ? { bytesReceived: 0 } : {}),
+					...(fault === "decode-stall" ? { framesDecoded: 0 } : {}),
+				});
+			});
+			return injected;
+		};
+	};
+	const originalGetUserMedia = navigator.mediaDevices?.getUserMedia?.bind(
+		navigator.mediaDevices,
+	);
+	if (originalGetUserMedia) {
+		navigator.mediaDevices.getUserMedia = async (...args) => {
+			const stream = await originalGetUserMedia(...args);
+			for (const track of stream.getTracks()) localTracks[track.kind]?.push(track);
+			return stream;
+		};
+	}
+
+	const NativePeerConnection = window.RTCPeerConnection;
+	window.RTCPeerConnection = class extends NativePeerConnection {
+		constructor(...args) {
+			super(...args);
+			peerConnections.push(this);
+			this.addEventListener("track", (event) => {
+				if (event.track.kind !== "video" || pendingReceiverFaults.length === 0) return;
+				injectReceiverStats(event.receiver, pendingReceiverFaults.shift());
+			});
+		}
+	};
+
+	window.__meetMediaFaults = {
+		latestLocalTrackId(kind) {
+			return [...localTracks[kind]].reverse().find((track) => track.readyState === "live")?.id ?? null;
+		},
+		stopLatestLocalTrack(kind) {
+			const track = [...localTracks[kind]].reverse().find((item) => item.readyState === "live");
+			if (!track) return null;
+			track.stop();
+			track.dispatchEvent(new Event("ended"));
+			return track.id;
+		},
+		async injectReceiverStats(trackId, fault) {
+			const receiver = peerConnections
+				.flatMap((connection) => connection.getReceivers())
+				.find((item) => item.track?.id === trackId);
+			if (!receiver) return false;
+			injectReceiverStats(receiver, fault);
+			return true;
+		},
+		armNextVideoReceiverFault(fault) {
+			pendingReceiverFaults.push(fault);
+		},
+	};
+})();`;
