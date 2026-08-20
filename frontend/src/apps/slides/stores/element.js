@@ -587,7 +587,7 @@ const getLeftTopForCenteredElement = (elementWidth, elementHeight) => {
 	return { left: elementLeft, top: elementTop }
 }
 
-const addMediaElement = async (file, type) => {
+const addMediaElement = async (file, type, targetSlide) => {
 	const src = file.file_url
 
 	let elementWidth = 0
@@ -617,9 +617,14 @@ const addMediaElement = async (file, type) => {
 		videoPoster = posterURL
 	}
 
+	// a slow upload can outlive a slide switch, so the element goes back to the
+	// slide it was started from, not to whatever is on screen now
+	const slideIdx = slides.value.indexOf(targetSlide)
+	if (slideIdx === -1) return
+
 	let element = {
 		id: generateUniqueId(),
-		zIndex: currentSlide.value.elements.length + 1,
+		zIndex: targetSlide.elements.length + 1,
 		width: elementWidth,
 		height: elementHeight,
 		left: position.left,
@@ -651,11 +656,11 @@ const addMediaElement = async (file, type) => {
 		}
 	}
 
-	const refCommands = getCommandsToUpdateElementRefId(element) || []
+	const refCommands = getCommandsToUpdateElementRefId(element, slideIdx) || []
 
 	const commands = [
 		addElementCommand({
-			slideId: currentSlide.value.clientId,
+			slideId: targetSlide.clientId,
 			element: element,
 		}),
 		...refCommands,
@@ -663,9 +668,10 @@ const addMediaElement = async (file, type) => {
 
 	commandHistory.execute(
 		batchCommand({
-			slideId: currentSlide.value.clientId,
+			slideId: targetSlide.clientId,
 			elementIds: [element.id],
 			commands,
+			skipJumpOnExecute: targetSlide !== currentSlide.value,
 		}),
 	)
 }
@@ -722,9 +728,9 @@ const replaceMediaElement = async (element, fileDoc) => {
 	// a slow upload can outlive a slide switch or the element itself, and older
 	// presentations repeat one layout's element ids across slides, so only the
 	// element object itself names the slide to edit
-	const slide = slides.value.find((s) => s.elements.includes(element))
-	if (!slide) return
-	const slideId = slide.clientId
+	const slideIdx = slides.value.findIndex((s) => s.elements.includes(element))
+	if (slideIdx === -1) return
+	const slideId = slides.value[slideIdx].clientId
 
 	let commands = []
 	const pushEdit = (property, oldValue, newValue) => {
@@ -744,7 +750,7 @@ const replaceMediaElement = async (element, fileDoc) => {
 	}
 
 	// include any ref-id update commands produced by transition logic
-	commands = commands.concat(getCommandsToUpdateElementRefId(element) || [])
+	commands = commands.concat(getCommandsToUpdateElementRefId(element, slideIdx) || [])
 
 	if (commands.length) {
 		commandHistory.execute(

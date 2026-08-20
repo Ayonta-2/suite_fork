@@ -2,6 +2,7 @@ import { FileUploadHandler, toast, call } from 'frappe-ui'
 
 import { presentationId, presentationDoc } from '../stores/presentation'
 import { addMediaElement, replaceMediaElement } from '../stores/element'
+import { currentSlide } from '../stores/slide'
 
 import { session } from '@/boot/session'
 import { SLIDES_MEDIA_PARAM, MEDIA_PROXY_PATH } from './slidesRequests'
@@ -13,7 +14,7 @@ export const isMediaOwner = (owner, user) => !!user && (owner === user || user =
 
 // Images are converted to WebP, so the returned doc replaces the uploaded one.
 // Pass targetElement to swap that element's media instead of adding a new element.
-const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
+const performPostUploadActions = async (fileDoc, fileType, { targetElement, targetSlide }) => {
 	if (fileType === 'image') {
 		fileDoc = await getWebPDoc(fileDoc)
 	}
@@ -23,11 +24,11 @@ const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
 		return fileDoc
 	}
 
-	await addMediaElement(fileDoc, fileType)
+	await addMediaElement(fileDoc, fileType, targetSlide)
 	return fileDoc
 }
 
-const uploadMedia = (file, fileType, targetElement) => {
+const uploadMedia = (file, fileType, target) => {
 	return new Promise((resolve, reject) => {
 		fileUploadHandler
 			.upload(file, {
@@ -35,7 +36,7 @@ const uploadMedia = (file, fileType, targetElement) => {
 				docname: presentationId.value,
 				private: true,
 			})
-			.then((fileDoc) => performPostUploadActions(fileDoc, fileType, targetElement))
+			.then((fileDoc) => performPostUploadActions(fileDoc, fileType, target))
 			.then(resolve)
 			.catch((error) => {
 				reject(error)
@@ -75,7 +76,9 @@ const handleFile = (file, toastProps, targetElement) => {
 
 	if (targetElement && targetElement.type != fileType) targetElement = null
 
-	toast.promise(uploadMedia(file, fileType, targetElement), toastProps)
+	const target = { targetElement, targetSlide: currentSlide.value }
+
+	toast.promise(uploadMedia(file, fileType, target), toastProps)
 }
 
 const getToastProps = (file, index, length) => {
