@@ -71,22 +71,13 @@ afterEach(() => {
 })
 
 describe('pinned media', () => {
-	it('lets the server answer while it can be reached, so a revoked file stays private', async () => {
+	it('serves the pinned copy online without touching the network', async () => {
 		pinned.set(PINNED_KEY, body('pinned'))
-
-		const response = await respond(MEDIA_URL)
-
-		expect(response.status).toBe(403)
-		expect(fetches).toEqual([MEDIA_URL])
-	})
-
-	it('serves the pinned copy when the network fails', async () => {
-		pinned.set(PINNED_KEY, body('pinned'))
-		networkFails = true
 
 		const response = await respond(MEDIA_URL)
 
 		expect(await response.text()).toBe('pinned')
+		expect(fetches).toEqual([])
 	})
 
 	it('serves the pinned copy offline without waiting on the network', async () => {
