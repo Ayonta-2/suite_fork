@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="absolute left-0 top-0 h-full w-full bg-black"
+		class="absolute left-0 top-0 h-full w-full overflow-clip bg-black"
 		:class="{ 'slideshow-hide-cursor': cursorHidden }"
 	>
 		<div
@@ -145,6 +145,7 @@ const slideStyles = computed(() => {
 	const baseStyles = {
 		width: '960px',
 		height: '540px',
+		overflow: 'hidden',
 		backgroundColor: currentSlide.value?.background || '#ffffff',
 	}
 
