@@ -184,25 +184,17 @@ const getPinnedResponse = async (event) => {
 	return pinned ? respondFromCache(event, pinned) : null
 }
 
-// keyed by the file path alone, a pinned copy says nothing about who may still see
-// it, so online the file goes the usual way and the copy only covers the gap
+// a pin is a request to present without the network, so it wins even online;
+// the user-switch clear and unpinning are what bound it
 const getMediaResponse = async (event) => {
 	// the pin action stores the body itself
 	if (event.request.headers.has(PIN_HEADER)) return fetch(event.request)
 
-	if (!self.navigator.onLine) {
-		const pinned = await getPinnedResponse(event)
-		if (pinned) return pinned
-	}
+	const pinned = await getPinnedResponse(event)
+	if (pinned) return pinned
 
 	const cache = await openCache(MEDIA_CACHE_NAME)
-	try {
-		return await (cache ? cacheFirst(event, 'media', cache) : fetch(event.request))
-	} catch (err) {
-		const pinned = await getPinnedResponse(event)
-		if (pinned) return pinned
-		throw err
-	}
+	return cache ? cacheFirst(event, 'media', cache) : fetch(event.request)
 }
 
 const getAssetResponse = async (event, url) => {
