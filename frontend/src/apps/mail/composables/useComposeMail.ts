@@ -101,10 +101,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	const getDefaultFromEmail = () => {
 		const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
 		const defaultOutgoingEmail = scope.account.value?.default_outgoing_email
+		// Matched case-insensitively; the identity's own spelling is what goes out.
+		const identityMatching = (email?: string) =>
+			identityEmails.find((e) => e.toLowerCase() === email?.toLowerCase())
 
 		return (
-			identityEmails.find((e) => e === mailDetails?.from_email) ??
-			identityEmails.find((e) => e === defaultOutgoingEmail) ??
+			identityMatching(mailDetails?.from_email) ??
+			identityMatching(defaultOutgoingEmail) ??
 			identityEmails[0] ??
 			// An account with no identities at all still has to send as somebody.
 			user.data.name

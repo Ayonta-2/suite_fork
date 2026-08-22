@@ -1285,6 +1285,7 @@ const getSourceMail = (mail: string) =>
 	thread.value.find((m: Mail) => m.name === mail.split(':')[1])
 
 const getReplyDetails = (mail: Mail) => ({
+	from_email: getReplyIdentityEmail(mail),
 	subject: mail.subject?.startsWith('Re: ') ? mail.subject : `Re: ${mail.subject}`,
 	quoted_content: getQuotedContent(mail),
 	attachments: mail.attachments?.filter((a: Attachment) => a.disposition === 'inline') || [],
@@ -1312,8 +1313,23 @@ const getReplyAllRecipients = (mail: Mail) => {
 		}
 }
 
-const isUserEmail = (email: string) =>
-	identities.value.data?.map((i: Identity) => i.email).includes(email)
+// Addresses arrive in whatever casing the other side used: match case-insensitively, and hand
+// back the identity's own spelling, since the composer looks the address up by that.
+const getIdentityEmail = (email?: string) =>
+	identities.value.data?.find((i: Identity) => i.email.toLowerCase() === email?.toLowerCase())
+		?.email
+
+const isUserEmail = (email: string) => !!getIdentityEmail(email)
+
+// The identity a reply should go out as: the one the message was addressed to (the sender,
+// when the message is our own). Undefined when no identity took part, and the composer falls
+// back to the account's default outgoing address, then its first identity.
+const getReplyIdentityEmail = (mail: Mail) => {
+	const { to = [], cc = [], bcc = [] } = mail.groupedRecipients ?? {}
+	return getIdentityEmail(
+		[mail.from_email, ...[...to, ...cc, ...bcc].map((r) => r.email)].find(isUserEmail),
+	)
+}
 
 // The plain-text reading of a body, normalised. Servers hand some bodies over already
 // entity-escaped, and those carry no real tags — so they take this path, where showing
