@@ -100,10 +100,22 @@ class TestWebDAVDispatch(IntegrationTestCase):
         self.assertEqual(response.status_code, 200)
         commit.assert_called()
 
-    def test_unexpected_handler_error_maps_to_500(self):
+    def test_unexpected_handler_error_maps_to_500_and_logs_durably(self):
         from suite.drive.webdav import dispatch as dispatch_module
 
-        with patch.dict(dispatch_module._HANDLERS, {"PROPFIND": ("missing_module", "handle")}):
-            response = dispatch("PROPFIND", "/dav/Home", user=USER, password=PASSWORD)
+        log_filter = {"method": "WebDAV PROPFIND /dav/Home"}
+        frappe.db.delete("Error Log", log_filter)
+        try:
+            with patch.dict(dispatch_module._HANDLERS, {"PROPFIND": ("missing_module", "handle")}):
+                response = dispatch("PROPFIND", "/dav/Home", user=USER, password=PASSWORD)
 
-        self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.status_code, 500)
+            # the response body must not leak the traceback
+            self.assertNotIn(b"missing_module", response.get_data())
+            # frappe/app.py rolls back after the response carrier is raised;
+            # the Error Log row must survive that or production 500s vanish
+            frappe.db.rollback()
+            self.assertTrue(frappe.db.exists("Error Log", log_filter))
+        finally:
+            frappe.db.delete("Error Log", log_filter)
+            frappe.db.commit()

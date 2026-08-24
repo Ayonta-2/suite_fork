@@ -78,7 +78,12 @@ def _dispatch(request: Request) -> None:
         _rollback()
         mapped = errors.map_exception(e)
         if mapped.status >= 500:
-            frappe.log_error(title="WebDAV")
+            frappe.log_error(title=f"WebDAV {request.method} {request.path}"[:140])
+            # frappe/app.py rolls back again after the carrier is raised; the
+            # handler's writes are already discarded, so committing here
+            # persists exactly the Error Log row — without it a production
+            # 500 leaves no trace
+            frappe.db.commit()
         _raise(errors.to_response(mapped))
     else:
         _respond(response)
