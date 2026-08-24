@@ -123,3 +123,17 @@ class TestOutgoingPlaintext(StalwartIntegrationTestCase):
             .insert(ignore_permissions=True)
             .file_url
         )
+
+    def test_signature_is_introduced_by_the_separator(self):
+        # The composer wraps the signature it inserts; without the marker the block is just
+        # more markup and a reader cannot tell where the message ends.
+        html = (
+            "<div>Regards,</div><div>Alex</div><div><br></div>"
+            '<div class="frappe_mail_signature"><div>Alex Smith</div>'
+            "<div>Support Team</div></div>"
+        )
+        body = self.text_body(self.delivered(html))
+
+        self.assertIn("\n-- \nAlex Smith\nSupport Team", body)
+        # RFC 3676 4.3: the only fixed line allowed to end in a space.
+        self.assertEqual([line for line in body.splitlines() if line.endswith(" ")], ["-- "])

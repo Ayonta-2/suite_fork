@@ -29,6 +29,8 @@ MIN_WIDTH = 24
 MAX_BLANK_RUN = 2
 # RFC 3676 4.3. The trailing space is what identifies it, so it survives every trim here.
 SIGNATURE_SEPARATOR = "-- "
+# Class the composer puts on the signature it inserts, mirroring frappe_mail_quote.
+SIGNATURE_CLASS = "frappe_mail_signature"
 
 # Tags that never contribute text. `button` is among them because a call to action worth
 # reading is an <a>; a real <button> is a dead control whose label only adds noise.
@@ -225,6 +227,8 @@ def _tag_tokens(el: Tag, state: _State) -> list[_Token]:
     name = (el.name or "").lower()
     if name in _DROPPED or el.has_attr("hidden") or _HIDDEN.search(str(el.get("style") or "")):
         return []
+    if SIGNATURE_CLASS in (el.get("class") or []):
+        return _signature_tokens(el, state)
     if name == "br":
         return [_Break(state)]
     if name == "hr":
@@ -253,6 +257,22 @@ def _bounded(inner: list[_Token], margin: int) -> list[_Token]:
     """Fence tokens off as their own paragraph."""
 
     return [_Boundary(margin), *inner, _Boundary(margin)]
+
+
+def _signature_tokens(el: Tag, state: _State) -> list[_Token]:
+    """The signature block, introduced by the separator a reader looks for.
+
+    The composer marks the block it inserts, because by the time a body reaches here the
+    signature is ordinary markup and nothing else could tell it apart.
+    """
+
+    inner = _tokenize(el, state)
+    if not any(isinstance(token, _Text) and token.value.strip() for token in inner):
+        return []
+
+    # Margin 0 after the separator keeps the signature on the line below it, not a blank
+    # line below it.
+    return [_Boundary(1), _Text(SIGNATURE_SEPARATOR, state), _Boundary(0), *inner, _Boundary(1)]
 
 
 def _list_tokens(el: Tag, state: _State) -> list[_Token]:

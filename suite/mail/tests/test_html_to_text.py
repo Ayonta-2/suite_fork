@@ -494,3 +494,45 @@ class ToFlowed(unittest.TestCase):
         text = to_flowed("Para one   \n\n  indented\nFrom X\n-- \nSig")
         soft = [line for line in text.split("\n") if line.endswith(" ")]
         self.assertEqual(soft, ["-- "])
+
+
+class Signature(unittest.TestCase):
+    """The composer marks the signature it inserts, so the text part can carry the separator a
+    reader looks for. RFC 3676 4.3: exactly "-- ", trailing space included."""
+
+    SIG = (
+        "<div>Regards,</div><div>Alex</div><div><br></div>"
+        '<div class="frappe_mail_signature"><div>Alex Smith</div>'
+        '<div><a href="mailto:alex@example.com">alex@example.com</a></div></div>'
+    )
+
+    def test_separator_precedes_the_signature(self):
+        self.assertEqual(
+            html_to_text(self.SIG),
+            "Regards,\nAlex\n\n-- \nAlex Smith\nalex@example.com",
+        )
+
+    def test_separator_keeps_its_trailing_space(self):
+        self.assertIn("\n-- \n", html_to_text(self.SIG))
+
+    def test_separator_survives_flowed(self):
+        # It is the one fixed line allowed to end in a space, so it must not be trimmed.
+        self.assertIn("\n-- \n", html_to_text(self.SIG, flowed=True))
+
+    def test_signature_is_never_a_soft_break(self):
+        lines = html_to_text(self.SIG, flowed=True).splitlines()
+        self.assertEqual([line for line in lines if line.endswith(" ")], ["-- "])
+
+    def test_unmarked_body_gets_no_separator(self):
+        self.assertNotIn("--", html_to_text("<div>Regards,</div><div>Alex</div>"))
+
+    def test_empty_signature_block_is_skipped(self):
+        # Nothing to introduce, so the separator would only mislead.
+        self.assertEqual(html_to_text('<div>Body</div><div class="frappe_mail_signature"></div>'), "Body")
+
+    def test_class_is_matched_among_others(self):
+        html = '<div>Body</div><div class="foo frappe_mail_signature"><div>Alex</div></div>'
+        self.assertEqual(html_to_text(html), "Body\n\n-- \nAlex")
+
+    def test_signature_sits_on_the_line_below_the_separator(self):
+        self.assertNotIn("-- \n\n", html_to_text(self.SIG))
