@@ -285,8 +285,12 @@
 										>
 											<!-- The timestamp yields to the actions on hover (fixed
 											     right edge), so the row never moves. -->
+											<!-- flex, not a bare span: MailDate's own mr-1 doesn't
+											     count inside an inline wrapper, and the gap between
+											     time and actions went with it. -->
 											<span
 												v-if="!isMobile || isCollapsed(mail)"
+												class="flex"
 												:class="{
 													'sm:group-hover/card:hidden sm:group-has-[[data-state=open]]/card:hidden':
 														isCollapsed(mail),
@@ -303,8 +307,8 @@
 												v-if="!isMobile && !readonly"
 												:class="
 													isCollapsed(mail)
-														? 'hidden h-5 items-center sm:group-hover/card:flex sm:group-has-[[data-state=open]]/card:flex'
-														: 'flex'
+														? 'hidden h-5 items-center gap-1 sm:group-hover/card:flex sm:group-has-[[data-state=open]]/card:flex'
+														: 'flex gap-1'
 												"
 											>
 											<MailActions
