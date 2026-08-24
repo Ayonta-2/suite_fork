@@ -336,19 +336,42 @@ const srcdoc = computed(() => {
 					const limit = document.documentElement.clientWidth;
 					if (!limit) return;
 					document.querySelectorAll('[width], [style*="width"]').forEach((el) => {
+						const style = el.style;
+						// The authored box is stashed before the first rewrite, since writing
+						// '100%' destroys it and a resize back to a wide pane must restore it —
+						// the iframe persists across pane-width changes.
+						const img = el.tagName === 'IMG';
+						if (img && el.dataset.authorWidth === undefined) {
+							el.dataset.authorWidth = el.getAttribute('width') ?? '';
+							el.dataset.authorStyleWidth = style.width;
+							el.dataset.authorStyleHeight = style.height;
+						}
+						const attrWidth = img
+							? parseInt(el.dataset.authorWidth, 10)
+							: parseInt(el.getAttribute('width'), 10);
+						const styleWidth = img ? el.dataset.authorStyleWidth : style.width;
 						let clamped = false;
-						if (parseInt(el.getAttribute('width'), 10) > limit) {
+						if (attrWidth > limit) {
 							el.setAttribute('width', '100%');
 							clamped = true;
+						} else if (img && attrWidth > 0) {
+							el.setAttribute('width', el.dataset.authorWidth);
 						}
-						const style = el.style;
-						if (style.width.endsWith('px') && parseFloat(style.width) > limit) {
-							style.width = '100%';
-							clamped = true;
+						if (styleWidth.endsWith('px')) {
+							if (parseFloat(styleWidth) > limit) {
+								style.width = '100%';
+								clamped = true;
+							} else if (img) {
+								style.width = styleWidth;
+							}
 						}
-						// An image we just narrowed must shed its authored height with the width,
-						// or the photo squashes. Only then — otherwise the email is the author's.
-						if (clamped && el.tagName === 'IMG') style.height = 'auto';
+						// An image we narrowed must shed its authored height with the width, or
+						// the photo squashes; one that fits again gets its authored box back —
+						// otherwise the email is the author's.
+						if (img) {
+							if (clamped) style.height = 'auto';
+							else style.height = el.dataset.authorStyleHeight;
+						}
 						if (style.minWidth.endsWith('px') && parseFloat(style.minWidth) > limit) style.minWidth = '0';
 
 						// A percentage width capped by a pixel max-width is how every responsive
@@ -376,12 +399,23 @@ const srcdoc = computed(() => {
 				// fluid width against a fixed height is the author's own design.
 				const unsquashImages = () => {
 					document.querySelectorAll('img').forEach((img) => {
-						if (img.style.width.includes('%') || img.getAttribute('width')?.includes('%')) return;
+						const authored = img.dataset.authorWidth ?? img.getAttribute('width') ?? '';
+						const authoredStyle = img.dataset.authorStyleWidth ?? img.style.width;
+						if (authoredStyle.includes('%') || authored.includes('%')) return;
 						const drawn =
-							(img.style.width.endsWith('px') && parseFloat(img.style.width)) ||
-							parseFloat(img.getAttribute('width')) ||
+							(authoredStyle.endsWith('px') && parseFloat(authoredStyle)) ||
+							parseFloat(authored) ||
 							img.naturalWidth;
-						if (img.clientWidth && drawn > img.clientWidth + 1) img.style.height = 'auto';
+						if (!img.clientWidth) return;
+						if (drawn > img.clientWidth + 1) {
+							// Stash before overwriting, so widening the pane can undo this too.
+							if (img.dataset.authorStyleHeight === undefined)
+								img.dataset.authorStyleHeight = img.style.height;
+							img.style.height = 'auto';
+						} else if (img.style.height === 'auto' && img.dataset.authorStyleHeight !== undefined) {
+							// The box fits again — the authored height comes back with it.
+							img.style.height = img.dataset.authorStyleHeight;
+						}
 					});
 				};
 
