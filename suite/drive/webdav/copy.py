@@ -23,7 +23,7 @@ from suite.drive.webdav import pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import BadRequest, Forbidden, NotFoundError, quota_guard
-from suite.drive.webdav.structure import _check_locks, _resolve_destination
+from suite.drive.webdav.structure import _resolve_destination
 
 
 def handle(ctx: DavContext) -> Response:
@@ -45,7 +45,10 @@ def handle(ctx: DavContext) -> Response:
     if not user_has_permission(dest_parent.name, "upload"):
         raise Forbidden("Ask the destination folder owner for upload access.")
     pathmap.validate_dav_name(dest_name, dest_parent)
-    _check_locks(ctx, membership_parent=dest_parent.name)
+
+    from suite.drive.webdav import locks
+
+    locks.enforce(ctx, membership_parent=dest_parent.name)
 
     overwrote = False
     if destination.entity is not None:
@@ -53,7 +56,11 @@ def handle(ctx: DavContext) -> Response:
             from suite.drive.webdav.errors import PreconditionFailed
 
             raise PreconditionFailed("Destination exists and Overwrite is F.")
+        locks.enforce(
+            ctx, entity=destination.entity.name, check_descendants=bool(destination.entity.is_folder)
+        )
         toggle_entity_status(frappe.get_doc("File", destination.entity.name), ctx.manager, set())
+        locks.drop_locks_under(destination.entity.name)
         overwrote = True
 
     acquire_owner_storage_lock(ctx.user)

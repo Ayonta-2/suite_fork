@@ -29,6 +29,7 @@ class Resource:
     segments: list[str]
     is_collection: bool
     display_name: str
+    ancestors: list[str] | None = None  # for lockdiscovery inheritance
 
 
 def handle(ctx: DavContext) -> Response:
@@ -43,14 +44,18 @@ def handle(ctx: DavContext) -> Response:
     resources = _collect_resources(ctx, depth)
     quota = _current_quota(ctx.user) if mode == "prop" and QUOTA_PROPS & set(requested) else None
 
-    from suite.drive.webdav import deadprops
+    from suite.drive.webdav import deadprops, locks
 
     dead = deadprops.get_dead_props([r.row.name for r in resources if r.row is not None])
+    lock_map = locks.discovery_map(
+        {r.row.name: r.ancestors or [] for r in resources if r.row is not None}
+    )
 
     builder = MultistatusBuilder()
     for resource in resources:
         dead_props = dead.get(resource.row.name, {}) if resource.row is not None else {}
-        _render(builder, resource, mode, requested, quota, dead_props)
+        row_locks = lock_map.get(resource.row.name, []) if resource.row is not None else []
+        _render(builder, resource, mode, requested, quota, dead_props, row_locks)
     return builder.build()
 
 
@@ -93,15 +98,25 @@ def _collect_resources(ctx: DavContext, depth: str) -> list[Resource]:
         # indistinguishable from absent, matching Drive's anti-enumeration stance
         raise NotFoundError("Resource not found.")
 
-    resources = [Resource(row, list(ctx.segments), resolved.is_collection, display)]
+    target_ancestors = [node["name"] for node in parent_path[:-1]]
+    resources = [
+        Resource(row, list(ctx.segments), resolved.is_collection, display, target_ancestors)
+    ]
     if depth == "1" and resolved.is_collection:
+        child_ancestors = [*target_ancestors, row.name]
         children = pathmap.list_children(row.name)
         child_access = perms.resolve_children_access(parent_path, children, ctx.user)
         for child in children:
             if not child_access[child.name]["read"]:
                 continue
             resources.append(
-                Resource(child, [*ctx.segments, child.file_name], bool(child.is_folder), child.file_name)
+                Resource(
+                    child,
+                    [*ctx.segments, child.file_name],
+                    bool(child.is_folder),
+                    child.file_name,
+                    child_ancestors,
+                )
             )
     return resources
 
@@ -133,13 +148,18 @@ def _render(
     requested: list[str],
     quota: tuple[int, int] | None,
     dead_props: dict[str, etree._Element],
+    row_locks: list,
 ) -> None:
+    from suite.drive.webdav import locks
+
     available = live_properties(
         resource.row,
         is_collection=resource.is_collection,
         display_name=resource.display_name,
         quota=quota if resource.is_collection else None,
     )
+    available[dav("supportedlock")] = locks.supportedlock_xml()
+    available[dav("lockdiscovery")] = locks.lockdiscovery_xml(row_locks)
     response = builder.add_response(pathmap.href_for(resource.segments, resource.is_collection))
 
     if mode == "propname":

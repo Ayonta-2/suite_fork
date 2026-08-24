@@ -15,7 +15,7 @@ from suite.drive.api.files import toggle_entity_status
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.utils import create_drive_file, generate_upward_path
 from suite.drive.utils.files import storage_key
-from suite.drive.webdav import pathmap
+from suite.drive.webdav import locks, pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import (
@@ -45,7 +45,7 @@ def handle_mkcol(ctx: DavContext) -> Response:
     if not user_has_permission(parent.name, "upload"):
         raise Forbidden("Ask the folder owner for upload access.")
     pathmap.validate_dav_name(name, parent)
-    _check_locks(ctx, membership_parent=parent.name)
+    locks.enforce(ctx, membership_parent=parent.name)
 
     # create_folder minus validate_filename: exact-name collision was already
     # ruled out by resolution, and the LIKE-count heuristic both over- and
@@ -65,10 +65,16 @@ def handle_delete(ctx: DavContext) -> Response:
         raise NotFoundError("Resource not found.")
 
     evaluate_preconditions(ctx.request, resolved.entity)
-    _check_locks(ctx, entity=resolved.entity.name, subtree=bool(resolved.entity.is_folder))
+    locks.enforce(
+        ctx,
+        entity=resolved.entity.name,
+        membership_parent=resolved.entity.folder,
+        check_descendants=bool(resolved.entity.is_folder),
+    )
 
     # trash, not destruction: recoverable from the Drive web UI
     toggle_entity_status(frappe.get_doc("File", resolved.entity.name), ctx.manager, set())
+    locks.drop_locks_under(resolved.entity.name)
     return Response(status=204)
 
 
@@ -87,16 +93,23 @@ def handle_move(ctx: DavContext) -> Response:
     if not user_has_permission(dest_parent.name, "upload"):
         raise Forbidden("Ask the destination folder owner for upload access.")
     pathmap.validate_dav_name(dest_name, dest_parent)
-    _check_locks(ctx, entity=source.entity.name, subtree=bool(source.entity.is_folder))
-    _check_locks(ctx, membership_parent=dest_parent.name)
+    locks.enforce(
+        ctx,
+        entity=source.entity.name,
+        membership_parent=source.entity.folder,
+        check_descendants=bool(source.entity.is_folder),
+    )
+    locks.enforce(ctx, membership_parent=dest_parent.name)
 
     overwrote = False
     target = destination.entity
     if target is not None and target.name != source.entity.name:
         if not ctx.overwrite:
             raise PreconditionFailed("Destination exists and Overwrite is F.")
+        locks.enforce(ctx, entity=target.name, check_descendants=bool(target.is_folder))
         # trashing frees the exact name, so Drive's controllers won't auto-rename
         toggle_entity_status(frappe.get_doc("File", target.name), ctx.manager, set())
+        locks.drop_locks_under(target.name)
         overwrote = True
 
     doc = frappe.get_doc("File", source.entity.name)
@@ -106,6 +119,8 @@ def handle_move(ctx: DavContext) -> Response:
     if doc.file_name != dest_name:
         doc.rename(dest_name)
 
+    # RFC 4918 §7.5: locks do not move with the resource
+    locks.drop_locks_under(source.entity.name)
     return Response(status=204 if overwrote else 201)
 
 
@@ -145,13 +160,3 @@ def _parent_row(name: str) -> frappe._dict:
     if row is None:
         raise Conflict("Destination's parent collection does not exist.")
     return row
-
-
-def _check_locks(
-    ctx: DavContext,
-    entity: str | None = None,
-    membership_parent: str | None = None,
-    subtree: bool = False,
-) -> None:
-    # wired up by the locking module once LOCK/UNLOCK land
-    pass

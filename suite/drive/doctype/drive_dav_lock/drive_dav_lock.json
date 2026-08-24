@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "autoname": "field:token",
+ "creation": "2026-08-24 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "token",
+  "entity",
+  "scope",
+  "depth",
+  "owner_user",
+  "owner_xml",
+  "timeout_seconds",
+  "expires_at",
+  "lock_root"
+ ],
+ "fields": [
+  {
+   "description": "The coded lock token, urn:uuid form. The document name IS the token.",
+   "fieldname": "token",
+   "fieldtype": "Data",
+   "label": "Token",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "entity",
+   "fieldtype": "Link",
+   "label": "Entity",
+   "options": "File",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "Exclusive",
+   "fieldname": "scope",
+   "fieldtype": "Select",
+   "label": "Scope",
+   "options": "Exclusive\nShared",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "depth",
+   "fieldtype": "Select",
+   "label": "Depth",
+   "options": "0\ninfinity",
+   "reqd": 1
+  },
+  {
+   "fieldname": "owner_user",
+   "fieldtype": "Link",
+   "label": "Owner User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The client-supplied DAV:owner element, re-serialized through the hardened parser.",
+   "fieldname": "owner_xml",
+   "fieldtype": "Small Text",
+   "ignore_xss_filter": 1,
+   "label": "Owner XML"
+  },
+  {
+   "fieldname": "timeout_seconds",
+   "fieldtype": "Int",
+   "label": "Timeout (seconds)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Expires At",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Decoded request path at LOCK time, echoed as DAV:lockroot.",
+   "fieldname": "lock_root",
+   "fieldtype": "Small Text",
+   "label": "Lock Root"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-24 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Drive",
+ "name": "Drive DAV Lock",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

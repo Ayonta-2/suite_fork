@@ -167,4 +167,6 @@ class TestWebDAVPropfind(IntegrationTestCase):
         with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:
             response = propfind.handle(ctx)
         self.assertEqual(response.status_code, 207)
-        self.assertLessEqual(sql.call_count, 8, "PROPFIND Depth:1 must stay O(1) in child count")
+        # resolution ≤4 + parent CTE + children + grants + dead props + locks = 9,
+        # independent of child count
+        self.assertLessEqual(sql.call_count, 9, "PROPFIND Depth:1 must stay O(1) in child count")

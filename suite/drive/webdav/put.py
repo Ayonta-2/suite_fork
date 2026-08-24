@@ -46,7 +46,13 @@ def handle(ctx: DavContext) -> Response:
         raise Conflict("Cannot PUT to a collection URL.")
 
     evaluate_preconditions(ctx.request, row)
-    _check_locks(ctx, resolved)
+
+    from suite.drive.webdav import locks
+
+    if row is not None:
+        locks.enforce(ctx, entity=row.name)
+    else:
+        locks.enforce(ctx, membership_parent=resolved.parent.name)
 
     # keep the target's extension on the scratch name — mimemapper detects by it
     from werkzeug.utils import secure_filename
@@ -136,11 +142,6 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
         activity_message=f"{full_name} updated {row.file_name} via WebDAV",
     )
     return _response(ctx, 204, row.name, sha256)
-
-
-def _check_locks(ctx: DavContext, resolved) -> None:
-    # wired up by the locking module once LOCK/UNLOCK land
-    pass
 
 
 def _run_upload_validators(scratch: Path, file_name: str, parent: str) -> None:

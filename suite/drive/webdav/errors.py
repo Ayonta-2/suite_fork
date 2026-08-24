@@ -65,8 +65,14 @@ class UnsupportedMediaType(DAVError):
 class Locked(DAVError):
     status = 423
 
-    def __init__(self, message: str = "", *, lock_root: str | None = None):
-        super().__init__(message, condition="lock-token-submitted", condition_href=lock_root)
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        lock_root: str | None = None,
+        condition: str = "lock-token-submitted",
+    ):
+        super().__init__(message, condition=condition, condition_href=lock_root)
 
 
 class FailedDependency(DAVError):

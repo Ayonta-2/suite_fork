@@ -141,6 +141,7 @@ class File(FrappeFile):
         frappe.db.delete("Drive Notification", {"notif_doctype_name": self.name})
         frappe.db.delete("Drive Entity Activity Log", {"entity": self.name})
         frappe.db.delete("Drive DAV Property", {"entity": self.name})
+        frappe.db.delete("Drive DAV Lock", {"entity": self.name})
 
         if (
             self.content_doctype

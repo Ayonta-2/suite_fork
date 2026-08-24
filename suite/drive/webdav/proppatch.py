@@ -63,7 +63,10 @@ def handle(ctx: DavContext) -> Response:
     if not user_has_permission(row.name, "write"):
         raise Forbidden("You cannot modify this resource's properties.")
     evaluate_preconditions(ctx.request, row)
-    _check_locks(ctx, row.name)
+
+    from suite.drive.webdav import locks
+
+    locks.enforce(ctx, entity=row.name)
 
     instructions = _parse_body(ctx)
     _validate(row, instructions)
@@ -147,8 +150,3 @@ def _multistatus(
     for status, props in sorted(by_status.items()):
         response.propstat(status, props)
     return builder.build()
-
-
-def _check_locks(ctx: DavContext, entity: str) -> None:
-    # wired up by the locking module once LOCK/UNLOCK land
-    pass

@@ -33,6 +33,8 @@ _HANDLERS: dict[str, tuple[str, str]] = {
     "DELETE": ("structure", "handle_delete"),
     "MOVE": ("structure", "handle_move"),
     "COPY": ("copy", "handle"),
+    "LOCK": ("lock", "handle_lock"),
+    "UNLOCK": ("lock", "handle_unlock"),
 }
 
 

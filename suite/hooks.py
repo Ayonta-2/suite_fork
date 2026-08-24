@@ -300,6 +300,7 @@ scheduler_events = {
     "hourly": [
         # drive
         "suite.drive.api.scripts.clear_download_archives",
+        "suite.drive.webdav.locks.purge_expired_locks",
         # mail
         "suite.mail.doctype.mail_exchange.mail_exchange.retry_stuck_mail_exchanges",
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
@@ -374,6 +375,7 @@ ignore_links_on_delete = [
     "Drive Notification",
     "Drive Entity Activity Log",
     "Drive DAV Property",
+    "Drive DAV Lock",
     # mail
     "Mail Account Request",
     "Mail Domain Request",
