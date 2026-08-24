@@ -65,8 +65,13 @@ def handle(ctx: DavContext) -> Response:
 
     acquire_owner_storage_lock(ctx.user)
     with quota_guard():
-        # the rolled-up folder size is an upper bound of what gets copied
-        validate_quota(incoming_size=source.entity.file_size or 0)
+        # a fresh subtree sum, not the best-effort (and driftable) folder
+        # rollup; a Depth:0 collection copy carries no members
+        if source.entity.is_folder:
+            incoming = _subtree_bytes(source.entity.name) if depth != "0" else 0
+        else:
+            incoming = source.entity.file_size or 0
+        validate_quota(incoming_size=incoming)
 
     copier = _Copier(ctx.manager, ctx.user, recurse=depth != "0")
     try:
@@ -150,6 +155,23 @@ class _Copier:
                 self.manager.delete_file(blob)
             except Exception:
                 pass
+
+
+def _subtree_bytes(root_name: str) -> int:
+    """Total bytes of every active file under (and including) a node — an
+    authoritative figure for the quota pre-check, unlike the folder rollup."""
+    rows = frappe.db.sql(
+        """WITH RECURSIVE subtree AS (
+            SELECT `name`, is_folder, file_size FROM `tabFile` WHERE `name` = %(root)s
+        UNION ALL
+            SELECT f.`name`, f.is_folder, f.file_size
+            FROM `tabFile` f JOIN subtree s ON f.folder = s.`name`
+            WHERE f.status = 'Active'
+        )
+        SELECT COALESCE(SUM(file_size), 0) FROM subtree WHERE is_folder = 0""",
+        values={"root": root_name},
+    )
+    return int(rows[0][0] or 0)
 
 
 def _timestamp(value) -> float | None:
