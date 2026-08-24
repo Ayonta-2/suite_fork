@@ -144,6 +144,30 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
             self._delete(f"/dav/Everyone/{shared.file_name}/keep.txt", user=READER)
         self.assertEqual(frappe.db.get_value("File", protected.name, "status"), STATUS_ACTIVE)
 
+    def test_write_verb_hides_unreadable_as_404(self):
+        # a file READER cannot read must look absent (404), not forbidden (403),
+        # so write verbs aren't an existence oracle for hidden resources
+        with self.set_user(OWNER):
+            secret = create_drive_file(
+                f"secret-{frappe.generate_hash(length=6)}",
+                get_root_folder().name,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            write_file_fixture(secret.name, "hidden.txt", b"nope")
+        # deny READER read on the whole subtree (a user-specific deny beats $GENERAL)
+        frappe.get_doc(
+            {"doctype": "Drive Permission", "entity": secret.name, "user": READER, "deny": 1, "read": 1}
+        ).insert(ignore_permissions=True)
+
+        path = f"/dav/Everyone/{secret.file_name}/hidden.txt"
+        with self.assertRaises(NotFoundError):
+            self._delete(path, user=READER)
+        with self.assertRaises(NotFoundError):
+            structure.handle_move(
+                make_ctx("MOVE", path, READER, headers={"Destination": "/dav/Home/stolen.txt"})
+            )
+
     def test_trashed_name_is_reusable(self):
         with self.set_user(OWNER):
             original = write_file_fixture(self.base.name, "cycle.txt", b"v1")

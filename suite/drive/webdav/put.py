@@ -23,7 +23,7 @@ from suite.drive.api.permissions import user_has_permission
 from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage, validate_quota
 from suite.drive.utils import create_drive_file, get_file_type, update_file_size
 from suite.drive.utils.files import get_s3_key, get_s3_url
-from suite.drive.webdav import pathmap
+from suite.drive.webdav import pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import (
@@ -32,6 +32,7 @@ from suite.drive.webdav.errors import (
     Forbidden,
     InsufficientStorage,
     MethodNotAllowed,
+    NotFoundError,
     quota_guard,
 )
 
@@ -67,10 +68,16 @@ def handle(ctx: DavContext) -> Response:
     # arbitrarily large body to be spooled to local disk before being rejected
     # (native upload_file also checks permission before writing the temp file).
     if row is None:
-        if not user_has_permission(resolved.parent.name, "upload"):
+        # unreadable parent reads as absent, not forbidden (anti-enumeration)
+        access = perms.resolve_entity_access(resolved.parent, ctx.user)
+        if not (access["read"] or access["upload"]):
+            raise NotFoundError("Resource not found.")
+        if not access["upload"]:
             raise Forbidden("Ask the folder owner for upload access.")
         owner, existing = ctx.user, 0
     else:
+        if not perms.resolve_entity_access(row, ctx.user)["read"]:
+            raise NotFoundError("Resource not found.")
         if not user_has_permission(row.name, "write"):
             raise Forbidden("You cannot overwrite this file.")
         owner, existing = row.owner, row.file_size or 0

@@ -15,7 +15,7 @@ from suite.drive.api.files import toggle_entity_status
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.utils import create_drive_file, generate_upward_path
 from suite.drive.utils.files import storage_key
-from suite.drive.webdav import locks, pathmap
+from suite.drive.webdav import locks, pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import (
@@ -36,13 +36,22 @@ def handle_mkcol(ctx: DavContext) -> Response:
     resolved = pathmap.resolve(ctx.segments, ctx.user)
     if resolved.is_mount or resolved.root == "virtual":
         raise Forbidden("Cannot create collections here.")
-    if resolved.exists:
-        raise MethodNotAllowed("A resource already exists at this URL.")
     if resolved.missing_intermediate or resolved.root == "unknown":
         raise Conflict("Intermediate collections do not exist.")
 
     parent, name = resolved.parent, ctx.segments[-1]
-    if not user_has_permission(parent.name, "upload"):
+    # hide the whole subtree from users with no access to the parent — the
+    # "already exists" (405) and permission (403) replies must not leak that a
+    # sibling exists to someone who cannot even read the folder
+    access = perms.resolve_entity_access(parent, ctx.user)
+    if not (access["read"] or access["upload"]):
+        raise NotFoundError("Resource not found.")
+    if resolved.exists:
+        # an existing but unreadable sibling looks absent, not "already here"
+        if not perms.resolve_entity_access(resolved.entity, ctx.user)["read"]:
+            raise NotFoundError("Resource not found.")
+        raise MethodNotAllowed("A resource already exists at this URL.")
+    if not access["upload"]:
         raise Forbidden("Ask the folder owner for upload access.")
     pathmap.validate_dav_name(name, parent)
     locks.enforce(ctx, membership_parent=parent.name)
@@ -62,6 +71,9 @@ def handle_delete(ctx: DavContext) -> Response:
     if resolved.is_mount or resolved.root == "virtual":
         raise Forbidden("Cannot delete this collection.")
     if not resolved.exists:
+        raise NotFoundError("Resource not found.")
+    # unreadable is indistinguishable from absent (see handle_mkcol)
+    if not perms.resolve_entity_access(resolved.entity, ctx.user)["read"]:
         raise NotFoundError("Resource not found.")
 
     evaluate_preconditions(ctx.request, resolved.entity)
@@ -83,6 +95,9 @@ def handle_move(ctx: DavContext) -> Response:
     if source.is_mount or source.root == "virtual":
         raise Forbidden("Cannot move this collection.")
     if not source.exists:
+        raise NotFoundError("Resource not found.")
+    # unreadable is indistinguishable from absent (see handle_mkcol)
+    if not perms.resolve_entity_access(source.entity, ctx.user)["read"]:
         raise NotFoundError("Resource not found.")
 
     destination, dest_parent, dest_name = _resolve_destination(ctx, source)
@@ -145,6 +160,11 @@ def _resolve_destination(ctx: DavContext, source: pathmap.ResolvedPath):
         if destination.parent is not None
         else _parent_row(destination.entity.folder)
     )
+
+    # a destination parent the user cannot see reads as absent, not forbidden
+    dest_access = perms.resolve_entity_access(parent, ctx.user)
+    if not (dest_access["read"] or dest_access["upload"]):
+        raise Conflict("Destination's parent collection does not exist.")
 
     # a folder cannot move/copy into its own subtree
     if source.entity.is_folder:

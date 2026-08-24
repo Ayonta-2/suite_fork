@@ -16,7 +16,7 @@ from werkzeug.http import parse_date
 from werkzeug.wrappers import Response
 
 from suite.drive.api.permissions import user_has_permission
-from suite.drive.webdav import deadprops, pathmap
+from suite.drive.webdav import deadprops, pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import BadRequest, Forbidden, NotFoundError
@@ -60,6 +60,10 @@ def handle(ctx: DavContext) -> Response:
         raise NotFoundError("Resource not found.")
 
     row = resolved.entity
+    # an unreadable resource is 404, not 403 — indistinguishable from absent,
+    # matching GET/PROPFIND so write verbs don't leak existence
+    if not perms.resolve_entity_access(row, ctx.user)["read"]:
+        raise NotFoundError("Resource not found.")
     if not user_has_permission(row.name, "write"):
         raise Forbidden("You cannot modify this resource's properties.")
     evaluate_preconditions(ctx.request, row)

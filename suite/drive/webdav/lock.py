@@ -16,7 +16,7 @@ from suite.drive.api.files import get_upload_path
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.api.storage import acquire_owner_storage_lock, validate_quota
 from suite.drive.utils import create_drive_file, get_ancestors_of
-from suite.drive.webdav import locks, pathmap
+from suite.drive.webdav import locks, pathmap, perms
 from suite.drive.webdav.context import DavContext
 from suite.drive.webdav.errors import (
     BadRequest,
@@ -110,6 +110,9 @@ def _create(
     created = False
     if resolved.exists:
         row = resolved.entity
+        # unreadable is indistinguishable from absent (anti-enumeration)
+        if not perms.resolve_entity_access(row, ctx.user)["read"]:
+            raise NotFoundError("Resource not found.")
         if not user_has_permission(row.name, "write"):
             raise Forbidden("You cannot lock this resource.")
         if not row.is_folder:
@@ -177,7 +180,11 @@ def _create_empty_resource(ctx: DavContext, resolved: pathmap.ResolvedPath) -> f
     if resolved.missing_intermediate or resolved.root == "unknown" or resolved.parent is None:
         raise Conflict("Intermediate collections do not exist.")
     parent, name = resolved.parent, ctx.segments[-1]
-    if not user_has_permission(parent.name, "upload"):
+    # unreadable parent reads as absent, not forbidden (anti-enumeration)
+    access = perms.resolve_entity_access(parent, ctx.user)
+    if not (access["read"] or access["upload"]):
+        raise NotFoundError("Resource not found.")
+    if not access["upload"]:
         raise Forbidden("Ask the folder owner for upload access.")
     pathmap.validate_dav_name(name, parent)
     locks.enforce(ctx, membership_parent=parent.name)
