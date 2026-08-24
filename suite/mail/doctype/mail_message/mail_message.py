@@ -623,7 +623,7 @@ class MailMessage(Document):
             recipients=recipients,
             attachments=attachments,
             html_body=self.html_body,
-            text_body=self.text_body,
+            text_body=None if self.html_body else self.text_body,
             message_id=self.message_id,
             id=self.id,
             in_reply_to=self.in_reply_to,
@@ -1137,8 +1137,8 @@ def preview_from_html(html_body: str) -> str:
     soup = BeautifulSoup(html_body, "html.parser")
     # Strip the same quote containers the client collapses (see EmailContent.vue) so the
     # preview surfaces the new content instead of "On ... wrote:" and everything below it.
-    for quote in soup.find_all(class_=["gmail_quote", "frappe_mail_quote"]):
-        quote.decompose()
+    for q in soup.find_all(class_=["gmail_quote", "frappe_mail_quote"]):
+        q.decompose()
 
     # A message that is nothing but a quote would otherwise get a blank preview.
     return convert_html_to_text(str(soup)) or convert_html_to_text(html_body)

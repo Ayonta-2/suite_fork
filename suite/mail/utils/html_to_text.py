@@ -119,6 +119,26 @@ def html_to_text(html: str | None, *, width: int = DEFAULT_WIDTH, flowed: bool =
     return _render(_paragraphs(_tokenize(soup.body or soup, _State())), width, flowed)
 
 
+def to_flowed(text: str | None) -> str:
+    """Re-encode ready-made plain text as `format=flowed`, without reflowing it.
+
+    Every line comes out fixed, so a reader shows the breaks the sender chose. This is for
+    text the app did not generate, so a part can declare one wire format either way.
+
+    Unlike _wire, a leading `>` is left alone: in text written as text it is a quote, and
+    stuffing it would show the reader a literal `>` instead.
+    """
+
+    if not text:
+        return ""
+    lines = []
+    for line in text.splitlines():
+        fixed = line if line == SIGNATURE_SEPARATOR else line.rstrip()
+        stuff = fixed[:1] == " " or fixed.startswith("From ")
+        lines.append((" " + fixed) if stuff else fixed)
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True)
 class _State:
     """What the enclosing elements say about the text being collected."""

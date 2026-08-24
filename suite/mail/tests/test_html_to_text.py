@@ -9,7 +9,7 @@ something do not."""
 
 import unittest
 
-from suite.mail.utils.html_to_text import DEFAULT_WIDTH, html_to_text
+from suite.mail.utils.html_to_text import DEFAULT_WIDTH, html_to_text, to_flowed
 
 
 class Empty(unittest.TestCase):
@@ -456,3 +456,41 @@ class ComposedBody(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ToFlowed(unittest.TestCase):
+    """Ready-made text re-encoded as format=flowed. Every line comes out fixed, so the breaks
+    the sender chose are the breaks the reader sees."""
+
+    def test_empty(self):
+        self.assertEqual(to_flowed(None), "")
+        self.assertEqual(to_flowed(""), "")
+
+    def test_plain_lines_are_unchanged(self):
+        self.assertEqual(to_flowed("One\nTwo"), "One\nTwo")
+
+    def test_no_line_ends_with_a_space(self):
+        # A trailing space would be read as a soft break and join the two lines.
+        self.assertEqual(to_flowed("One   \nTwo"), "One\nTwo")
+
+    def test_leading_space_is_stuffed(self):
+        self.assertEqual(to_flowed("  indented"), "   indented")
+
+    def test_from_line_is_stuffed(self):
+        self.assertEqual(to_flowed("From here on"), " From here on")
+
+    def test_quote_marker_is_left_alone(self):
+        # In text written as text a leading `>` is a real quote, not content to protect.
+        self.assertEqual(to_flowed("> quoted"), "> quoted")
+
+    def test_signature_separator_keeps_its_trailing_space(self):
+        self.assertEqual(to_flowed("Bye\n-- \nAlex"), "Bye\n-- \nAlex")
+
+    def test_blank_lines_survive(self):
+        self.assertEqual(to_flowed("One\n\nTwo"), "One\n\nTwo")
+
+    def test_output_is_valid_flowed(self):
+        # The property that matters: nothing the caller wrote can be mistaken for a soft break.
+        text = to_flowed("Para one   \n\n  indented\nFrom X\n-- \nSig")
+        soft = [line for line in text.split("\n") if line.endswith(" ")]
+        self.assertEqual(soft, ["-- "])
