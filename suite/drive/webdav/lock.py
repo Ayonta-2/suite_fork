@@ -55,6 +55,10 @@ def handle_unlock(ctx: DavContext) -> Response:
     resolved = pathmap.resolve(ctx.segments, ctx.user)
     if not resolved.exists or resolved.is_mount:
         raise NotFoundError("Resource not found.")
+    # unreadable is indistinguishable from absent — otherwise the 409-vs-404
+    # split below is an existence oracle (anti-enumeration, matches other verbs)
+    if not perms.resolve_entity_access(resolved.entity, ctx.user)["read"]:
+        raise NotFoundError("Resource not found.")
 
     header = ctx.request.headers.get("Lock-Token", "").strip()
     if not header.startswith("<") or not header.endswith(">"):
@@ -107,6 +111,12 @@ def _create(
 ) -> Response:
     scope, owner_xml = _parse_lockinfo(body)
 
+    # bound the lock table before materializing anything — the unmapped-URL path
+    # writes a real File row + blob, which must not happen once a user is at the
+    # cap (checking after would orphan the blob when the DB row rolls back)
+    if locks.user_active_lock_count(ctx.user) >= locks.MAX_ACTIVE_LOCKS_PER_USER:
+        raise InsufficientStorage("Too many active locks; release some before creating more.")
+
     created = False
     if resolved.exists:
         row = resolved.entity
@@ -133,11 +143,6 @@ def _create(
             lock_root=conflicts[0].lock_root,
             condition="no-conflicting-lock",
         )
-
-    # bound the lock table against a user minting locks without end (each also
-    # persists a File row on the unmapped-URL create path)
-    if locks.user_active_lock_count(ctx.user) >= locks.MAX_ACTIVE_LOCKS_PER_USER:
-        raise InsufficientStorage("Too many active locks; release some before creating more.")
 
     lock = locks.create_lock(
         row.name,

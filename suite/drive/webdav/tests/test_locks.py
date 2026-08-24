@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -12,7 +13,9 @@ from suite.drive.webdav.errors import (
     BadRequest,
     Conflict,
     Forbidden,
+    InsufficientStorage,
     Locked,
+    NotFoundError,
     PreconditionFailed,
 )
 from suite.drive.webdav.tests.utils import ensure_user_with_password, make_ctx, write_file_fixture
@@ -299,6 +302,34 @@ class TestWebDAVLocks(IntegrationTestCase):
     def test_lock_depth_one_is_400(self):
         with self.assertRaises(BadRequest):
             self._lock(f"/dav/Home/{self.base_name}/doc.docx", Depth="1")
+
+    def test_unlock_unreadable_is_404_not_409(self):
+        # UNLOCK must hide an unreadable resource as 404, not reveal it via 409
+        with self.set_user(OWNER):
+            secret = create_drive_file(
+                f"lk-secret-{frappe.generate_hash(length=6)}",
+                get_root_folder().name,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            write_file_fixture(secret.name, "hidden.txt", b"x")
+        frappe.get_doc(
+            {"doctype": "Drive Permission", "entity": secret.name, "user": EDITOR, "deny": 1, "read": 1}
+        ).insert(ignore_permissions=True)
+        with self.assertRaises(NotFoundError):
+            self._unlock(
+                f"/dav/Everyone/{secret.file_name}/hidden.txt",
+                "urn:uuid:00000000-0000-0000-0000-000000000000",
+                user=EDITOR,
+            )
+
+    def test_lock_cap_rejects_before_creating_resource(self):
+        # hitting the per-user lock cap must reject before materializing a File/blob
+        path = f"/dav/Home/{self.base_name}/capped.docx"
+        with patch.object(locks, "MAX_ACTIVE_LOCKS_PER_USER", 0):
+            with self.assertRaises(InsufficientStorage):
+                self._lock(path)
+        self.assertIsNone(self._resolve_entity(path))
 
     def test_lockdiscovery_redacts_other_users_lock(self):
         # OWNER holds the lock; EDITOR can read the file but must not learn the
