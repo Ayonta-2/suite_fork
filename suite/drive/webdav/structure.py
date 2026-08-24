@@ -1,0 +1,157 @@
+"""MKCOL, DELETE and MOVE.
+
+DELETE maps to Drive's trash (recoverable from the web UI) — the resource
+leaves the DAV namespace either way. MOVE reuses Drive's own move/rename
+controllers, pre-trashing an Overwrite:T target so their auto-rename collision
+handling never fires and exact WebDAV naming survives.
+"""
+
+from pathlib import Path
+
+import frappe
+from werkzeug.wrappers import Response
+
+from suite.drive.api.files import toggle_entity_status
+from suite.drive.api.permissions import user_has_permission
+from suite.drive.utils import create_drive_file, generate_upward_path
+from suite.drive.utils.files import storage_key
+from suite.drive.webdav import pathmap
+from suite.drive.webdav.conditional import evaluate_preconditions
+from suite.drive.webdav.context import DavContext
+from suite.drive.webdav.errors import (
+    Conflict,
+    Forbidden,
+    MethodNotAllowed,
+    NotFoundError,
+    PreconditionFailed,
+    UnsupportedMediaType,
+)
+
+
+def handle_mkcol(ctx: DavContext) -> Response:
+    if ctx.body.read_all(64 * 1024).strip():
+        # RFC 4918 §9.3: unknown MKCOL bodies may be refused
+        raise UnsupportedMediaType("MKCOL request bodies are not supported.")
+
+    resolved = pathmap.resolve(ctx.segments, ctx.user)
+    if resolved.is_mount or resolved.root == "virtual":
+        raise Forbidden("Cannot create collections here.")
+    if resolved.exists:
+        raise MethodNotAllowed("A resource already exists at this URL.")
+    if resolved.missing_intermediate or resolved.root == "unknown":
+        raise Conflict("Intermediate collections do not exist.")
+
+    parent, name = resolved.parent, ctx.segments[-1]
+    if not user_has_permission(parent.name, "upload"):
+        raise Forbidden("Ask the folder owner for upload access.")
+    pathmap.validate_dav_name(name, parent)
+    _check_locks(ctx, membership_parent=parent.name)
+
+    # create_folder minus validate_filename: exact-name collision was already
+    # ruled out by resolution, and the LIKE-count heuristic both over- and
+    # under-detects for DAV semantics
+    path = ctx.manager.create_folder(
+        frappe._dict(file_name=name, parent_path=Path(storage_key(parent.file_url or "")))
+    )
+    create_drive_file(name, parent.name, "Folder", path)
+    return Response(status=201)
+
+
+def handle_delete(ctx: DavContext) -> Response:
+    resolved = pathmap.resolve(ctx.segments, ctx.user)
+    if resolved.is_mount or resolved.root == "virtual":
+        raise Forbidden("Cannot delete this collection.")
+    if not resolved.exists:
+        raise NotFoundError("Resource not found.")
+
+    evaluate_preconditions(ctx.request, resolved.entity)
+    _check_locks(ctx, entity=resolved.entity.name, subtree=bool(resolved.entity.is_folder))
+
+    # trash, not destruction: recoverable from the Drive web UI
+    toggle_entity_status(frappe.get_doc("File", resolved.entity.name), ctx.manager, set())
+    return Response(status=204)
+
+
+def handle_move(ctx: DavContext) -> Response:
+    source = pathmap.resolve(ctx.segments, ctx.user)
+    if source.is_mount or source.root == "virtual":
+        raise Forbidden("Cannot move this collection.")
+    if not source.exists:
+        raise NotFoundError("Resource not found.")
+
+    destination, dest_parent, dest_name = _resolve_destination(ctx, source)
+    evaluate_preconditions(ctx.request, source.entity)
+
+    if not user_has_permission(source.entity.name, "write"):
+        raise Forbidden("You cannot move this file.")
+    if not user_has_permission(dest_parent.name, "upload"):
+        raise Forbidden("Ask the destination folder owner for upload access.")
+    pathmap.validate_dav_name(dest_name, dest_parent)
+    _check_locks(ctx, entity=source.entity.name, subtree=bool(source.entity.is_folder))
+    _check_locks(ctx, membership_parent=dest_parent.name)
+
+    overwrote = False
+    target = destination.entity
+    if target is not None and target.name != source.entity.name:
+        if not ctx.overwrite:
+            raise PreconditionFailed("Destination exists and Overwrite is F.")
+        # trashing frees the exact name, so Drive's controllers won't auto-rename
+        toggle_entity_status(frappe.get_doc("File", target.name), ctx.manager, set())
+        overwrote = True
+
+    doc = frappe.get_doc("File", source.entity.name)
+    pathmap.reset_memo()
+    if dest_parent.name != source.entity.folder:
+        doc.move(dest_parent.name)
+    if doc.file_name != dest_name:
+        doc.rename(dest_name)
+
+    return Response(status=204 if overwrote else 201)
+
+
+def _resolve_destination(ctx: DavContext, source: pathmap.ResolvedPath):
+    """Parse + resolve the Destination header; returns (resolved, parent_row, leaf_name)."""
+    segments, _ = pathmap.parse_destination(ctx.request)
+    destination = pathmap.resolve(segments, ctx.user)
+
+    if destination.is_mount or destination.root == "virtual":
+        raise Forbidden("Cannot write to the namespace root.")
+    if destination.root == "unknown" or destination.missing_intermediate:
+        raise Conflict("Destination's parent collection does not exist.")
+
+    if destination.entity is not None and destination.entity.name == source.entity.name:
+        if segments[-1] != source.entity.file_name:
+            # case-only rename: the CI fallback resolved the source itself
+            return destination, _parent_row(destination.entity.folder), segments[-1]
+        raise Forbidden("Source and destination are the same resource.")
+
+    parent = (
+        destination.parent
+        if destination.parent is not None
+        else _parent_row(destination.entity.folder)
+    )
+
+    # a folder cannot move/copy into its own subtree
+    if source.entity.is_folder:
+        ancestors = {node["name"] for node in generate_upward_path(parent.name, ctx.user)}
+        if source.entity.name in ancestors:
+            raise Conflict("Destination is inside the source collection.")
+
+    return destination, parent, segments[-1]
+
+
+def _parent_row(name: str) -> frappe._dict:
+    row = pathmap.fetch(name)
+    if row is None:
+        raise Conflict("Destination's parent collection does not exist.")
+    return row
+
+
+def _check_locks(
+    ctx: DavContext,
+    entity: str | None = None,
+    membership_parent: str | None = None,
+    subtree: bool = False,
+) -> None:
+    # wired up by the locking module once LOCK/UNLOCK land
+    pass

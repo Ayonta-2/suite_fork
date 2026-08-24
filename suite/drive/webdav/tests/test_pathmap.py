@@ -23,7 +23,7 @@ def make_file(parent, name: str, **kwargs):
         name,
         parent,
         kwargs.pop("file_type", "Text"),
-        f"{parent_url}/{frappe.generate_hash(8)}",
+        f"{parent_url}/{frappe.generate_hash(length=8)}",
         kwargs.pop("mime_type", "text/plain"),
         kwargs.pop("file_size", 4),
         **kwargs,

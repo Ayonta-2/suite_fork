@@ -87,7 +87,7 @@ class TestWebDAVPropfind(IntegrationTestCase):
     def test_unreadable_children_are_omitted(self):
         with self.set_user(OWNER):
             shared = create_drive_file(
-                f"prop-shared-{frappe.generate_hash(6)}",
+                f"prop-shared-{frappe.generate_hash(length=6)}",
                 get_root_folder().name,
                 "Folder",
                 lambda f: FileManager().create_folder(f),
@@ -154,7 +154,7 @@ class TestWebDAVPropfind(IntegrationTestCase):
     def test_depth_one_query_budget(self):
         with self.set_user(OWNER):
             big = create_drive_file(
-                f"prop-big-{frappe.generate_hash(6)}",
+                f"prop-big-{frappe.generate_hash(length=6)}",
                 self.home,
                 "Folder",
                 lambda f: FileManager().create_folder(f),

@@ -120,7 +120,7 @@ class TestBatchedPermissionResolver(IntegrationTestCase):
         rng = random.Random(42)
         with self.set_user(OWNER):
             base = create_drive_file(
-                f"perm-tree-{frappe.generate_hash(6)}",
+                f"perm-tree-{frappe.generate_hash(length=6)}",
                 get_root_folder().name,
                 "Folder",
                 lambda f: FileManager().create_folder(f),
@@ -139,7 +139,7 @@ class TestBatchedPermissionResolver(IntegrationTestCase):
     def test_admin_short_circuit(self):
         with self.set_user(OWNER):
             base = create_drive_file(
-                f"admin-tree-{frappe.generate_hash(6)}",
+                f"admin-tree-{frappe.generate_hash(length=6)}",
                 get_user_folder(OWNER).name,
                 "Folder",
                 lambda f: FileManager().create_folder(f),
@@ -153,7 +153,7 @@ class TestBatchedPermissionResolver(IntegrationTestCase):
     def test_query_count_is_constant_in_child_count(self):
         with self.set_user(OWNER):
             base = create_drive_file(
-                f"budget-tree-{frappe.generate_hash(6)}",
+                f"budget-tree-{frappe.generate_hash(length=6)}",
                 get_user_folder(OWNER).name,
                 "Folder",
                 lambda f: FileManager().create_folder(f),

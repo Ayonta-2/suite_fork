@@ -27,6 +27,11 @@ _HANDLERS: dict[str, tuple[str, str]] = {
     "PROPFIND": ("propfind", "handle"),
     "GET": ("get", "handle"),
     "HEAD": ("get", "handle"),
+    "PUT": ("put", "handle"),
+    "MKCOL": ("structure", "handle_mkcol"),
+    "DELETE": ("structure", "handle_delete"),
+    "MOVE": ("structure", "handle_move"),
+    "COPY": ("copy", "handle"),
 }
 
 

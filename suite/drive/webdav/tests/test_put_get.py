@@ -30,7 +30,7 @@ class TestWebDAVContent(IntegrationTestCase):
             cls.home = get_user_folder(OWNER).name
             manager = FileManager()
             # committed fixtures survive across runs, so names must be unique
-            cls.folder_name = f"Media-{frappe.generate_hash(6)}"
+            cls.folder_name = f"Media-{frappe.generate_hash(length=6)}"
             cls.media = create_drive_file(
                 cls.folder_name, cls.home, "Folder", lambda f: manager.create_folder(f)
             )
@@ -123,3 +123,193 @@ class TestWebDAVContent(IntegrationTestCase):
             frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 0)
             frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
             frappe.db.commit()
+
+
+class TestWebDAVPut(IntegrationTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user_with_password(OWNER, PASSWORD)
+        ensure_user(STRANGER)
+        with cls.set_user(OWNER):
+            cls.home = get_user_folder(OWNER).name
+
+    def setUp(self):
+        frappe.set_user(OWNER)
+        with self.set_user(OWNER):
+            self.base_name = f"Put-{frappe.generate_hash(length=6)}"
+            self.base = create_drive_file(
+                self.base_name, self.home, "Folder", lambda f: FileManager().create_folder(f)
+            )
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def _put(self, path: str, data: bytes, user: str = OWNER, headers: dict | None = None):
+        from suite.drive.webdav import put as put_module
+
+        return put_module.handle(
+            make_ctx("PUT", path, user, data=data, content_type="application/octet-stream", headers=headers)
+        )
+
+    def _resolve(self, path: str, user: str = OWNER):
+        from suite.drive.webdav import pathmap
+
+        pathmap.reset_memo()
+        return pathmap.resolve([segment for segment in path.split("/") if segment], user)
+
+    def test_put_creates_file(self):
+        body = b"fresh content here"
+        response = self._put(f"/dav/Home/{self.base_name}/new.txt", body)
+        self.assertEqual(response.status_code, 201)
+
+        import hashlib
+
+        expected_hash = hashlib.sha256(body).hexdigest()
+        self.assertEqual(response.headers["ETag"], f'"sha256-{expected_hash}"')
+
+        row = self._resolve(f"Home/{self.base_name}/new.txt").entity
+        self.assertEqual(row.file_size, len(body))
+        self.assertEqual(row.content_hash, expected_hash)
+        self.assertEqual(row.mime_type, "text/plain")
+        manager = FileManager()
+        self.assertEqual(manager.get_local_path(row.file_url).read_bytes(), body)
+        # parent rollup grew
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), len(body))
+
+    def test_put_overwrites_in_place(self):
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        row = self._resolve(f"Home/{self.base_name}/doc.txt").entity
+        # same entity, no auto-rename
+        self.assertEqual(row.name, target.name)
+        self.assertEqual(row.file_size, 3)
+        manager = FileManager()
+        self.assertEqual(manager.get_local_path(row.file_url).read_bytes(), b"v2!")
+        # edit activity was logged
+        self.assertTrue(
+            frappe.db.exists(
+                "Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"}
+            )
+        )
+
+    def test_put_overwrite_by_collaborator_keeps_owner(self):
+        from suite.drive.utils import get_root_folder
+
+        with self.set_user("Administrator"):
+            shared_folder = create_drive_file(
+                f"put-shared-{frappe.generate_hash(length=6)}",
+                get_root_folder().name,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+                owner=OWNER,
+            )
+        with self.set_user(OWNER):
+            target = write_file_fixture(shared_folder.name, "shared.txt", b"mine")
+        frappe.get_doc(
+            {
+                "doctype": "Drive Permission",
+                "entity": target.name,
+                "user": STRANGER,
+                "read": 1,
+                "write": 1,
+            }
+        ).insert(ignore_permissions=True)
+
+        response = self._put(
+            f"/dav/Everyone/{shared_folder.file_name}/shared.txt", b"theirs!", user=STRANGER
+        )
+        self.assertEqual(response.status_code, 204)
+        # content replaced, but ownership (and quota accounting) stays put
+        self.assertEqual(frappe.db.get_value("File", target.name, "owner"), OWNER)
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"theirs!"))
+
+    def test_put_statuses(self):
+        from suite.drive.webdav.errors import BadRequest, Conflict, Forbidden, MethodNotAllowed
+
+        with self.assertRaises(Conflict):  # missing intermediate
+            self._put(f"/dav/Home/{self.base_name}/nowhere/x.txt", b"x")
+        with self.assertRaises(MethodNotAllowed):  # target is a collection
+            self._put(f"/dav/Home/{self.base_name}", b"x")
+        with self.assertRaises(MethodNotAllowed):  # mount
+            self._put("/dav/Home", b"x")
+        with self.assertRaises(Conflict):  # trailing slash on a new resource
+            self._put(f"/dav/Home/{self.base_name}/dir-ish/", b"x")
+        with self.assertRaises(BadRequest):  # partial PUT
+            self._put(f"/dav/Home/{self.base_name}/x.txt", b"x", headers={"Content-Range": "bytes 0-0/5"})
+        from suite.drive.utils import get_root_folder
+
+        with self.set_user("Administrator"):
+            foreign = create_drive_file(
+                f"put-ro-{frappe.generate_hash(length=6)}",
+                get_root_folder().name,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+                owner=OWNER,
+            )
+        with self.assertRaises(Forbidden):  # $GENERAL read on Everyone grants no upload
+            self._put(f"/dav/Everyone/{foreign.file_name}/x.txt", b"x", user=STRANGER)
+
+    def test_put_conditionals(self):
+        from suite.drive.webdav.errors import PreconditionFailed
+
+        with self.set_user(OWNER):
+            write_file_fixture(self.base.name, "locked.txt", b"held")
+        with self.assertRaises(PreconditionFailed):
+            self._put(
+                f"/dav/Home/{self.base_name}/locked.txt", b"no", headers={"If-None-Match": "*"}
+            )
+        with self.assertRaises(PreconditionFailed):
+            self._put(
+                f"/dav/Home/{self.base_name}/locked.txt", b"no", headers={"If-Match": '"wrong"'}
+            )
+
+    def test_put_honors_client_mtime(self):
+        response = self._put(
+            f"/dav/Home/{self.base_name}/dated.txt", b"x", headers={"X-OC-Mtime": "1700000000"}
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.headers["X-OC-Mtime"], "accepted")
+
+        from datetime import datetime
+
+        row = self._resolve(f"Home/{self.base_name}/dated.txt").entity
+        stored = frappe.db.get_value("File", row.name, "file_modified")
+        self.assertEqual(frappe.utils.get_datetime(stored), datetime.fromtimestamp(1700000000))
+
+    def test_put_empty_body(self):
+        response = self._put(f"/dav/Home/{self.base_name}/empty.bin", b"")
+        self.assertEqual(response.status_code, 201)
+        row = self._resolve(f"Home/{self.base_name}/empty.bin").entity
+        self.assertEqual(row.file_size, 0)
+
+    def test_put_quota_is_507_and_cleans_scratch(self):
+        from suite.drive.api.files import get_upload_path
+        from suite.drive.webdav.errors import InsufficientStorage
+
+        frappe.db.set_value("Drive Settings", OWNER, "quota", 1, update_modified=False)
+        try:
+            with self.assertRaises(InsufficientStorage):
+                self._put(f"/dav/Home/{self.base_name}/big.bin", b"z" * (2 * 1024 * 1024))
+        finally:
+            frappe.db.set_value("Drive Settings", OWNER, "quota", 0, update_modified=False)
+
+        uploads_dir = get_upload_path("probe").parent
+        leftovers = [p for p in uploads_dir.glob("webdav_*")]
+        self.assertEqual(leftovers, [])
+
+    def test_put_after_delete_creates_new_entity(self):
+        from suite.drive.webdav import structure
+
+        with self.set_user(OWNER):
+            original = write_file_fixture(self.base.name, "cycle.txt", b"one")
+        structure.handle_delete(make_ctx("DELETE", f"/dav/Home/{self.base_name}/cycle.txt", OWNER))
+
+        response = self._put(f"/dav/Home/{self.base_name}/cycle.txt", b"two")
+        self.assertEqual(response.status_code, 201)
+        row = self._resolve(f"Home/{self.base_name}/cycle.txt").entity
+        self.assertNotEqual(row.name, original.name)
