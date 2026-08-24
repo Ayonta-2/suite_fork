@@ -24,6 +24,7 @@ from suite.drive.webdav.xmlutil import _PARSER, dav, dav_element
 
 DEFAULT_LOCK_TIMEOUT = 600
 MAX_LOCK_TIMEOUT = 3600
+MAX_ACTIVE_LOCKS_PER_USER = 1000
 
 _FIELDS = ["token", "entity", "scope", "depth", "owner_user", "owner_xml", "expires_at", "lock_root"]
 
@@ -229,6 +230,14 @@ def refresh_lock(token: str, *, requested_timeout: int) -> LockInfo:
 
 def delete_lock(token: str) -> None:
     frappe.db.delete("Drive DAV Lock", {"name": token})
+
+
+def user_active_lock_count(user: str) -> int:
+    """How many unexpired locks this user holds — the per-user creation cap."""
+    return frappe.db.count(
+        "Drive DAV Lock",
+        {"owner_user": user, "expires_at": [">", frappe.utils.now_datetime()]},
+    )
 
 
 def drop_locks_under(entity: str) -> None:

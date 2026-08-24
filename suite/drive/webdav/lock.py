@@ -14,6 +14,7 @@ from werkzeug.wrappers import Response
 
 from suite.drive.api.files import get_upload_path
 from suite.drive.api.permissions import user_has_permission
+from suite.drive.api.storage import acquire_owner_storage_lock, validate_quota
 from suite.drive.utils import create_drive_file, get_ancestors_of
 from suite.drive.webdav import locks, pathmap
 from suite.drive.webdav.context import DavContext
@@ -21,11 +22,17 @@ from suite.drive.webdav.errors import (
     BadRequest,
     Conflict,
     Forbidden,
+    InsufficientStorage,
     Locked,
     NotFoundError,
     PreconditionFailed,
+    quota_guard,
 )
 from suite.drive.webdav.xmlutil import XML_BODY_CAP, dav, dav_element, parse_xml, xml_response
+
+# DAV:owner is informational (RFC 4918 §14.17); cap it like a dead property so a
+# LOCK cannot bloat the lock row or the PROPFIND lockdiscovery reflected to others
+MAX_OWNER_XML_BYTES = 64 * 1024
 
 
 def handle_lock(ctx: DavContext) -> Response:
@@ -124,6 +131,11 @@ def _create(
             condition="no-conflicting-lock",
         )
 
+    # bound the lock table against a user minting locks without end (each also
+    # persists a File row on the unmapped-URL create path)
+    if locks.user_active_lock_count(ctx.user) >= locks.MAX_ACTIVE_LOCKS_PER_USER:
+        raise InsufficientStorage("Too many active locks; release some before creating more.")
+
     lock = locks.create_lock(
         row.name,
         scope=scope,
@@ -156,6 +168,8 @@ def _parse_lockinfo(body: etree._Element) -> tuple[str, str | None]:
 
     owner = body.find(dav("owner"))
     owner_xml = etree.tostring(owner, encoding="unicode") if owner is not None else None
+    if owner_xml and len(owner_xml.encode("utf-8")) > MAX_OWNER_XML_BYTES:
+        raise BadRequest("DAV:owner element is too large.")
     return scope, owner_xml
 
 
@@ -167,6 +181,12 @@ def _create_empty_resource(ctx: DavContext, resolved: pathmap.ResolvedPath) -> f
         raise Forbidden("Ask the folder owner for upload access.")
     pathmap.validate_dav_name(name, parent)
     locks.enforce(ctx, membership_parent=parent.name)
+
+    # mirror put._create's storage gate: an over-quota user must not mint new
+    # File rows through the lock-null create path either
+    acquire_owner_storage_lock(ctx.user)
+    with quota_guard():
+        validate_quota(incoming_size=0)
 
     manager = ctx.manager
     scratch = get_upload_path(f"webdav_{frappe.generate_hash(length=12)}_lock")
