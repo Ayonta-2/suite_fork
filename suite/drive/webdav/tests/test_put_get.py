@@ -178,6 +178,40 @@ class TestWebDAVPut(IntegrationTestCase):
         # parent rollup grew
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), len(body))
 
+    def test_put_unreadable_target_hidden_as_404(self):
+        # the read-gate must run before preconditions/locks/the 405 collection
+        # reply, so an unreadable resource is indistinguishable from an absent one
+        from suite.drive.utils import get_root_folder
+
+        with self.set_user(OWNER):
+            secret = create_drive_file(
+                f"put-secret-{frappe.generate_hash(length=6)}",
+                get_root_folder().name,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            write_file_fixture(secret.name, "hidden.txt", b"nope")
+        frappe.get_doc(
+            {"doctype": "Drive Permission", "entity": secret.name, "user": STRANGER, "deny": 1, "read": 1}
+        ).insert(ignore_permissions=True)
+
+        path = f"/dav/Everyone/{secret.file_name}/hidden.txt"
+        # If-None-Match: * would be a 412 existence oracle on an existing resource
+        with self.assertRaises(NotFoundError):
+            self._put(path, b"x", user=STRANGER, headers={"If-None-Match": "*"})
+        # a plain overwrite attempt is 404, not 403
+        with self.assertRaises(NotFoundError):
+            self._put(path, b"x", user=STRANGER)
+
+    def test_put_out_of_range_mtime_is_ignored(self):
+        # a wildly large X-OC-Mtime must not overflow datetime.fromtimestamp / 500
+        response = self._put(
+            f"/dav/Home/{self.base_name}/stamped.txt",
+            b"data",
+            headers={"X-OC-Mtime": "99999999999999999999"},
+        )
+        self.assertEqual(response.status_code, 201)
+
     def test_put_overwrites_in_place(self):
         with self.set_user(OWNER):
             target = write_file_fixture(self.base.name, "doc.txt", b"version-one")

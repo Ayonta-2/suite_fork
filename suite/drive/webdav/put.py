@@ -9,6 +9,7 @@ nextcloud vendor round-trips modification times.
 """
 
 import hashlib
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from suite.drive.api.files import get_upload_path
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage, validate_quota
 from suite.drive.utils import create_drive_file, get_file_type, update_file_size
-from suite.drive.utils.files import get_s3_key, get_s3_url
+from suite.drive.utils.files import get_s3_key, get_s3_url, stored_on_disk
 from suite.drive.webdav import pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
@@ -36,6 +37,9 @@ from suite.drive.webdav.errors import (
     quota_guard,
 )
 
+# 9999-12-31 UTC — the largest epoch datetime.fromtimestamp can represent
+MAX_MTIME = 253402300799
+
 
 def handle(ctx: DavContext) -> Response:
     resolved = pathmap.resolve(ctx.segments, ctx.user)
@@ -48,10 +52,31 @@ def handle(ctx: DavContext) -> Response:
         raise BadRequest("Partial PUT is not supported.")
 
     row = resolved.entity
-    if row is not None and row.is_folder:
-        raise MethodNotAllowed("Cannot PUT to a collection.")
-    if row is None and ctx.had_trailing_slash:
-        raise Conflict("Cannot PUT to a collection URL.")
+
+    # Permission gate FIRST — before any existence- or lock-revealing branch
+    # (the 405 collection reply, evaluate_preconditions' 412, locks.enforce's
+    # 423), so an unreadable target is indistinguishable from an absent one, as
+    # on the other write verbs. It also stops an unauthorized/over-quota client
+    # forcing a large body to be spooled before rejection (native upload_file
+    # checks permission before writing the temp file too). Create paths gate on
+    # the parent's access, overwrite on the row's.
+    if row is None:
+        access = perms.resolve_entity_access(resolved.parent, ctx.user)
+        if not (access["read"] or access["upload"]):
+            raise NotFoundError("Resource not found.")
+        if not access["upload"]:
+            raise Forbidden("Ask the folder owner for upload access.")
+        if ctx.had_trailing_slash:
+            raise Conflict("Cannot PUT to a collection URL.")
+        owner, existing = ctx.user, 0
+    else:
+        if not perms.resolve_entity_access(row, ctx.user)["read"]:
+            raise NotFoundError("Resource not found.")
+        if row.is_folder:
+            raise MethodNotAllowed("Cannot PUT to a collection.")
+        if not user_has_permission(row.name, "write"):
+            raise Forbidden("You cannot overwrite this file.")
+        owner, existing = row.owner, row.file_size or 0
 
     evaluate_preconditions(ctx.request, row)
 
@@ -61,26 +86,6 @@ def handle(ctx: DavContext) -> Response:
         locks.enforce(ctx, entity=row.name)
     else:
         locks.enforce(ctx, membership_parent=resolved.parent.name)
-
-    # Check permission and derive a storage ceiling BEFORE consuming the body.
-    # The streaming_request_paths hook removes frappe's body cap for /dav, so
-    # without this an unauthorized or over-quota client could force an
-    # arbitrarily large body to be spooled to local disk before being rejected
-    # (native upload_file also checks permission before writing the temp file).
-    if row is None:
-        # unreadable parent reads as absent, not forbidden (anti-enumeration)
-        access = perms.resolve_entity_access(resolved.parent, ctx.user)
-        if not (access["read"] or access["upload"]):
-            raise NotFoundError("Resource not found.")
-        if not access["upload"]:
-            raise Forbidden("Ask the folder owner for upload access.")
-        owner, existing = ctx.user, 0
-    else:
-        if not perms.resolve_entity_access(row, ctx.user)["read"]:
-            raise NotFoundError("Resource not found.")
-        if not user_has_permission(row.name, "write"):
-            raise Forbidden("You cannot overwrite this file.")
-        owner, existing = row.owner, row.file_size or 0
 
     ceiling = _size_ceiling(owner, existing)
     length = ctx.request.content_length
@@ -172,8 +177,16 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
         validate_quota(row.owner, max(0, delta))
 
     mime_type = _detect_mime(ctx, scratch)
+    manager = ctx.manager
     doc = frappe.get_doc("File", row.name)
-    ctx.manager.upload_file(scratch, doc, create_thumbnail=True)
+    if manager.s3_enabled and stored_on_disk(row.file_url):
+        # a framework-adopted blob lives on the site disk even under S3; overwrite
+        # it in place — upload_file would write the new body to a stray S3 key that
+        # GET (which serves on-disk blobs directly) never reads back, silently
+        # dropping the edit while advertising a fresh ETag
+        shutil.copyfile(scratch, manager.get_local_path(row.file_url))
+    else:
+        manager.upload_file(scratch, doc, create_thumbnail=True)
     doc.db_set(
         {
             "file_size": size,
@@ -217,8 +230,12 @@ def _detect_mime(ctx: DavContext, scratch: Path) -> str:
 
 def _client_mtime(ctx: DavContext) -> float | None:
     header = ctx.request.headers.get("X-OC-Mtime")
-    if header and header.strip().isdigit():
-        return float(header.strip())
+    if header:
+        stamp = header.strip()
+        # isdigit() alone let a huge value through and overflowed
+        # datetime.fromtimestamp; bound it to what a datetime can represent
+        if stamp.isdigit() and int(stamp) <= MAX_MTIME:
+            return float(stamp)
     return None
 
 
