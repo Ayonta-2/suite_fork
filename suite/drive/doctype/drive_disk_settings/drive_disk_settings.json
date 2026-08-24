@@ -8,6 +8,7 @@
   "general_section",
   "preview_size",
   "quota",
+  "webdav_enabled",
   "disk_section",
   "flat",
   "root_folder",
@@ -93,6 +94,13 @@
    "label": "Quota"
   },
   {
+   "default": "0",
+   "description": "Let WebDAV clients (Windows Explorer, Finder, rclone…) connect to Drive at /dav using Frappe login credentials.",
+   "fieldname": "webdav_enabled",
+   "fieldtype": "Check",
+   "label": "Enable WebDAV"
+  },
+  {
    "fieldname": "disk_section",
    "fieldtype": "Section Break",
    "label": "Disk"
@@ -114,7 +122,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-16 18:24:47.598513",
+ "modified": "2026-08-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Disk Settings",

@@ -333,6 +333,14 @@ extend_bootinfo = "suite.suite_core.boot.extend_bootinfo"
 after_file_upload = "suite.drive.overrides.file.after_file_upload"
 after_request = "suite.drive.api.product.after_request"
 
+# drive — WebDAV protocol dispatcher (list hook, additive; answers all verbs under /dav)
+before_request = ["suite.drive.webdav.dispatch.handle_before_request"]
+
+# drive — the WebDAV dispatcher consumes /dav request bodies itself (frappe skips the
+# body cap and form_dict buffering; a no-op on frappe versions without this hook,
+# where PUT bodies fall back to buffered and capped)
+streaming_request_paths = ["/dav/"]
+
 # ============================================================================
 # Fixtures (concatenated; identical entries de-duplicated)
 # ============================================================================
@@ -414,6 +422,8 @@ ALLOWED_PATHS = [
     "/api/method/frappe.website.doctype.web_form.web_form.accept",
     "/api/method/frappe.core.doctype.user.user.test_password_strength",
     "/api/method/frappe.core.doctype.user.user.update_password",
+    # drive — WebDAV mount root
+    "/dav",
 ]
 
 ALLOWED_WILDCARD_PATHS = [
@@ -431,6 +441,8 @@ ALLOWED_WILDCARD_PATHS = [
     "/api/method/writer.api.",
     "/api/method/suite.slides.api.",
     "/api/method/suite.sheets.api.",
+    # drive — WebDAV namespace
+    "/dav/",
 ]
 
 DENIED_PATHS = []

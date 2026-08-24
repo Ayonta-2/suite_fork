@@ -9,6 +9,7 @@
   "user",
   "user_folder",
   "auto_detect_links",
+  "webdav_enabled",
   "quota",
   "writer_section",
   "writer_settings"
@@ -26,6 +27,13 @@
    "fieldname": "auto_detect_links",
    "fieldtype": "Check",
    "label": "Auto Detect Links"
+  },
+  {
+   "default": "1",
+   "description": "Allow WebDAV clients to access my files when WebDAV is enabled on this site.",
+   "fieldname": "webdav_enabled",
+   "fieldtype": "Check",
+   "label": "Allow WebDAV Access"
   },
   {
    "fieldname": "user_folder",
@@ -56,7 +64,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-09 13:07:34.980995",
+ "modified": "2026-08-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Settings",
