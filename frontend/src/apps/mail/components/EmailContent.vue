@@ -226,9 +226,13 @@ const srcdoc = computed(() => {
 					max-width: 100% !important;
 				}
 
+				/* Width only — never height. A blanket height:auto overrules authored
+				   squares (an avatar with border-radius:50% renders as an ellipse of the
+				   photo's intrinsic ratio). Images render as authored; the one case that
+				   can't — a fixed width wider than the pane — is rewritten by
+				   normalizeWidths() below, which drops that image's height with it. */
 				img {
 					max-width: 100% !important;
-					height: auto !important;
 				}
 
 				blockquote {
@@ -290,9 +294,19 @@ const srcdoc = computed(() => {
 					const limit = document.documentElement.clientWidth;
 					if (!limit) return;
 					document.querySelectorAll('[width], [style*="width"]').forEach((el) => {
-						if (parseInt(el.getAttribute('width'), 10) > limit) el.setAttribute('width', '100%');
+						let clamped = false;
+						if (parseInt(el.getAttribute('width'), 10) > limit) {
+							el.setAttribute('width', '100%');
+							clamped = true;
+						}
 						const style = el.style;
-						if (style.width.endsWith('px') && parseFloat(style.width) > limit) style.width = '100%';
+						if (style.width.endsWith('px') && parseFloat(style.width) > limit) {
+							style.width = '100%';
+							clamped = true;
+						}
+						// An image we just narrowed must shed its authored height with the width,
+						// or the photo squashes. Only then — otherwise the email is the author's.
+						if (clamped && el.tagName === 'IMG') style.height = 'auto';
 						if (style.minWidth.endsWith('px') && parseFloat(style.minWidth) > limit) style.minWidth = '0';
 
 						// A percentage width capped by a pixel max-width is how every responsive
@@ -310,8 +324,34 @@ const srcdoc = computed(() => {
 							style.setProperty('max-width', cap > limit ? '100%' : el.dataset.authorMaxWidth, 'important');
 					});
 				};
-				normalizeWidths();
-				window.addEventListener('resize', normalizeWidths);
+
+				// The stylesheet clamp can also shrink an image normalizeWidths never
+				// rewrote — a pixel width in a table cell narrower than the pane, or a
+				// height-only declaration whose intrinsic width overflows. Only layout
+				// knows, and only once the bitmap arrives (naturalWidth is 0 before
+				// load): if the box the image got is narrower than the width its height
+				// was drawn for, shed that height. Percentage widths are left alone —
+				// fluid width against a fixed height is the author's own design.
+				const unsquashImages = () => {
+					document.querySelectorAll('img').forEach((img) => {
+						if (img.style.width.includes('%') || img.getAttribute('width')?.includes('%')) return;
+						const drawn =
+							(img.style.width.endsWith('px') && parseFloat(img.style.width)) ||
+							parseFloat(img.getAttribute('width')) ||
+							img.naturalWidth;
+						if (img.clientWidth && drawn > img.clientWidth + 1) img.style.height = 'auto';
+					});
+				};
+
+				const normalizeAll = () => {
+					normalizeWidths();
+					unsquashImages();
+				};
+				normalizeAll();
+				window.addEventListener('resize', normalizeAll);
+				document.querySelectorAll('img').forEach((img) =>
+					img.addEventListener('load', unsquashImages),
+				);
 
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {
