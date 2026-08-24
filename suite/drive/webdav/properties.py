@@ -31,6 +31,11 @@ def modified_utc(row: frappe._dict) -> datetime:
     return _to_utc(row.modified)
 
 
+def to_site_naive(value: datetime) -> datetime:
+    """Aware datetime -> the naive site-local form the DB stores."""
+    return value.astimezone(_site_zone()).replace(tzinfo=None)
+
+
 def iso8601(value: datetime | str) -> str:
     return _to_utc(value).strftime("%Y-%m-%dT%H:%M:%SZ")
 

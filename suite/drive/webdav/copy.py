@@ -133,8 +133,9 @@ class _Copier:
         return total
 
     def _copy_dead_props(self, source_name: str, target_name: str) -> None:
-        # wired up once the dead-property store lands
-        pass
+        from suite.drive.webdav import deadprops
+
+        deadprops.copy_props(source_name, target_name)
 
     def cleanup(self) -> None:
         for blob in self.created_blobs:

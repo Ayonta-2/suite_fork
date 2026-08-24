@@ -43,9 +43,14 @@ def handle(ctx: DavContext) -> Response:
     resources = _collect_resources(ctx, depth)
     quota = _current_quota(ctx.user) if mode == "prop" and QUOTA_PROPS & set(requested) else None
 
+    from suite.drive.webdav import deadprops
+
+    dead = deadprops.get_dead_props([r.row.name for r in resources if r.row is not None])
+
     builder = MultistatusBuilder()
     for resource in resources:
-        _render(builder, resource, mode, requested, quota)
+        dead_props = dead.get(resource.row.name, {}) if resource.row is not None else {}
+        _render(builder, resource, mode, requested, quota, dead_props)
     return builder.build()
 
 
@@ -127,6 +132,7 @@ def _render(
     mode: str,
     requested: list[str],
     quota: tuple[int, int] | None,
+    dead_props: dict[str, etree._Element],
 ) -> None:
     available = live_properties(
         resource.row,
@@ -137,18 +143,23 @@ def _render(
     response = builder.add_response(pathmap.href_for(resource.segments, resource.is_collection))
 
     if mode == "propname":
-        response.propstat(200, [etree.Element(tag) for tag, value in available.items() if value is not None])
+        names = [tag for tag, value in available.items() if value is not None]
+        names += list(dead_props)
+        response.propstat(200, [etree.Element(tag) for tag in names])
         return
 
     if mode == "allprop":
         found = [value for tag, value in available.items() if value is not None and tag not in QUOTA_PROPS]
         found += [available[tag] for tag in requested if available.get(tag) is not None and tag in QUOTA_PROPS]
+        found += list(dead_props.values())
         response.propstat(200, found)
         return
 
     found, missing = [], []
     for tag in requested:
         value = available.get(tag)
+        if value is None:
+            value = dead_props.get(tag)
         if value is not None:
             found.append(value)
         else:

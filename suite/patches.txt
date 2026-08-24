@@ -103,3 +103,4 @@ suite.mail.patches.remove_held_queue_statuses
 execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frappe.is_setup_complete() else None
 suite.suite_core.patches.move_blob_store_out_of_private
 suite.suite_core.patches.align_owner_with_user
+suite.drive.patches.webdav_property_index

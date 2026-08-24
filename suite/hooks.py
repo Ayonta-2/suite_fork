@@ -373,6 +373,7 @@ ignore_links_on_delete = [
     "Drive Entity Log",
     "Drive Notification",
     "Drive Entity Activity Log",
+    "Drive DAV Property",
     # mail
     "Mail Account Request",
     "Mail Domain Request",
