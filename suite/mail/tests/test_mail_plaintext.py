@@ -137,3 +137,30 @@ class TestOutgoingPlaintext(StalwartIntegrationTestCase):
         self.assertIn("\n-- \nAlex Smith\nSupport Team", body)
         # RFC 3676 4.3: the only fixed line allowed to end in a space.
         self.assertEqual([line for line in body.splitlines() if line.endswith(" ")], ["-- "])
+
+    def test_a_text_only_mail_arrives_as_text(self):
+        # RFC 8621 lets htmlBody fall back to the text parts, so a mail with no HTML used to
+        # reach the reader through html_body, where prose is parsed as markup.
+        from suite.mail.api.outbound import send
+        from suite.mail.tests.test_mail_inbound_outbound_api import fake_request
+
+        subject = "Text only " + unique_name("subject")
+        with self.set_user(self.sender.email), fake_request():
+            queue = send(
+                from_=self.sender.email,
+                to=self.receiver.email,
+                subject=subject,
+                text="Line one\nLine two",
+            )
+            frappe.get_doc("Mail Queue", queue)._process()
+
+        thread = self.wait_until(
+            lambda: next((t for t in self.get_inbox_threads(self.receiver) if t["subject"] == subject), None),
+            timeout=60,
+            message="Text-only mail did not arrive.",
+        )
+        message = thread["messages"][-1]
+
+        self.assertFalse(message["html_body"], "a text-only body must not arrive as HTML")
+        self.assertIn("Line one", message["text_body"])
+        self.assertIn("Line two", message["text_body"])

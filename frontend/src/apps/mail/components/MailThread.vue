@@ -321,7 +321,7 @@
 										     face to land on, which CSS resolves upward to the system Medium,
 										     rendering the body bolder than everything around it. font-normal pins
 										     it to Regular. -->
-										<LinkifiedText
+										<PlainTextBody
 											v-else
 											:text="getPlainTextBody(mail)"
 											class="pt-4 font-sans !font-normal text-base !leading-5 sm:text-sm"
@@ -497,7 +497,7 @@ import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
 import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vue'
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
-import LinkifiedText from '@/components/LinkifiedText.vue'
+import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
