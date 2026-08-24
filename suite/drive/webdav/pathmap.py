@@ -84,6 +84,7 @@ def list_children(parent_name: str) -> list[frappe._dict]:
         FROM `tabFile`
         WHERE folder = %(parent)s AND status = 'Active' AND {_REPRESENTABLE}
             AND file_name NOT LIKE '%%/%%' AND file_name NOT LIKE '%%\\\\%%'
+            AND file_name NOT IN ('.', '..')
         ORDER BY creation ASC""",
         values={"parent": parent_name},
         as_dict=True,
