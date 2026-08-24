@@ -300,6 +300,30 @@ class TestWebDAVLocks(IntegrationTestCase):
         with self.assertRaises(BadRequest):
             self._lock(f"/dav/Home/{self.base_name}/doc.docx", Depth="1")
 
+    def test_lockdiscovery_redacts_other_users_lock(self):
+        # OWNER holds the lock; EDITOR can read the file but must not learn the
+        # token or owner identity via PROPFIND lockdiscovery
+        path = f"/dav/Everyone/{self.shared.file_name}/team.txt"
+        self._lock(path, user=OWNER)
+
+        ctx = make_ctx(
+            "PROPFIND", f"/dav/Everyone/{self.shared.file_name}", EDITOR, headers={"Depth": "1"}
+        )
+        parsed = etree.fromstring(propfind.handle(ctx).get_data())
+        checked = False
+        for response in parsed.findall(dav("response")):
+            if not response.find(dav("href")).text.endswith("team.txt"):
+                continue
+            checked = True
+            prop = response.find(f"{dav('propstat')}/{dav('prop')}")
+            active = prop.find(dav("lockdiscovery")).find(dav("activelock"))
+            # the lock's presence and scope are visible
+            self.assertIsNotNone(active.find(f"{dav('lockscope')}/{dav('exclusive')}"))
+            # but the token and the owner identity are not
+            self.assertIsNone(active.find(dav("locktoken")))
+            self.assertNotIn("mailto:owner@example.com", etree.tostring(active, encoding="unicode"))
+        self.assertTrue(checked, "team.txt was not in the listing")
+
     def _resolve_entity(self, path: str):
         pathmap.reset_memo()
         segments = [segment for segment in path.split("/") if segment][1:]

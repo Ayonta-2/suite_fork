@@ -55,7 +55,7 @@ def handle(ctx: DavContext) -> Response:
     for resource in resources:
         dead_props = dead.get(resource.row.name, {}) if resource.row is not None else {}
         row_locks = lock_map.get(resource.row.name, []) if resource.row is not None else []
-        _render(builder, resource, mode, requested, quota, dead_props, row_locks)
+        _render(builder, resource, mode, requested, quota, dead_props, row_locks, ctx.user)
     return builder.build()
 
 
@@ -149,6 +149,7 @@ def _render(
     quota: tuple[int, int] | None,
     dead_props: dict[str, etree._Element],
     row_locks: list,
+    viewer: str,
 ) -> None:
     from suite.drive.webdav import locks
 
@@ -159,7 +160,7 @@ def _render(
         quota=quota if resource.is_collection else None,
     )
     available[dav("supportedlock")] = locks.supportedlock_xml()
-    available[dav("lockdiscovery")] = locks.lockdiscovery_xml(row_locks)
+    available[dav("lockdiscovery")] = locks.lockdiscovery_xml(row_locks, viewer)
     response = builder.add_response(pathmap.href_for(resource.segments, resource.is_collection))
 
     if mode == "propname":

@@ -119,15 +119,11 @@ def _conditional_gate(ctx: DavContext, submitted: IfHeader) -> None:
 def _coverage(
     entity: str | None, membership_parent: str | None, check_descendants: bool
 ) -> list[LockInfo]:
-    locks = _active_locks()
-    if not locks:
-        return []
-
     covering: dict[str, LockInfo] = {}
 
     def add_chain(target: str) -> None:
         ancestors = set(get_ancestors_of(target))
-        for lock in locks:
+        for lock in _fetch_locks({target, *ancestors}):
             if lock.entity == target or (lock.entity in ancestors and lock.depth == "infinity"):
                 covering[lock.token] = lock
 
@@ -137,10 +133,8 @@ def _coverage(
         # RFC 4918 §7.4: even a depth-0 lock on a collection protects its member list
         add_chain(membership_parent)
     if entity and check_descendants:
-        for token in _locks_over_subtree(entity):
-            for lock in locks:
-                if lock.token == token:
-                    covering[lock.token] = lock
+        for lock in _fetch_locks_by_token(_locks_over_subtree(entity)):
+            covering[lock.token] = lock
     return list(covering.values())
 
 
@@ -149,18 +143,24 @@ def covering_locks(entity: str) -> list[LockInfo]:
 
 
 def discovery_map(ancestors_by_entity: dict[str, list[str]]) -> dict[str, list[LockInfo]]:
-    """Lockdiscovery for a whole PROPFIND listing from one lock fetch."""
-    locks = _active_locks()
+    """Lockdiscovery for a whole PROPFIND listing from one indexed lock fetch."""
+    candidates: set[str] = set()
+    for entity, ancestors in ancestors_by_entity.items():
+        candidates.add(entity)
+        candidates.update(ancestors)
+    locks = _fetch_locks(candidates)
     if not locks:
         return {}
+
+    by_entity: dict[str, list[LockInfo]] = {}
+    for lock in locks:
+        by_entity.setdefault(lock.entity, []).append(lock)
+
     result: dict[str, list[LockInfo]] = {}
     for entity, ancestors in ancestors_by_entity.items():
-        ancestor_set = set(ancestors)
-        matched = [
-            lock
-            for lock in locks
-            if lock.entity == entity or (lock.entity in ancestor_set and lock.depth == "infinity")
-        ]
+        matched = list(by_entity.get(entity, []))
+        for ancestor in ancestors:
+            matched += [lock for lock in by_entity.get(ancestor, []) if lock.depth == "infinity"]
         if matched:
             result[entity] = matched
     return result
@@ -260,9 +260,9 @@ def find_conflicts(entity: str, *, scope: str, depth: str, is_folder: bool) -> l
     with any lock inside the subtree."""
     covering = list(covering_locks(entity))
     if is_folder and depth == "infinity":
-        tokens = set(_locks_over_subtree(entity))
         known = {lock.token for lock in covering}
-        covering += [lock for lock in _active_locks() if lock.token in tokens - known]
+        subtree = set(_locks_over_subtree(entity))
+        covering += _fetch_locks_by_token(list(subtree - known))
 
     if scope == "Exclusive":
         return covering
@@ -305,23 +305,29 @@ def supportedlock_xml() -> etree._Element:
     return supported
 
 
-def lockdiscovery_xml(locks: list[LockInfo]) -> etree._Element:
+def lockdiscovery_xml(locks: list[LockInfo], viewer: str | None = None) -> etree._Element:
+    """Render activelocks. When `viewer` is given (a PROPFIND listing), a lock the
+    viewer does not own is emitted without its token or owner identity — the
+    token is inert to a non-owner anyway (enforce/UNLOCK require ownership), and
+    the owner element would leak who is editing which file."""
     discovery = dav_element("lockdiscovery")
     for lock in locks:
+        owned = viewer is None or lock.owner_user == viewer
         active = etree.SubElement(discovery, dav("activelock"))
         locktype = etree.SubElement(active, dav("locktype"))
         etree.SubElement(locktype, dav("write"))
         lockscope = etree.SubElement(active, dav("lockscope"))
         etree.SubElement(lockscope, dav(lock.scope.lower()))
         etree.SubElement(active, dav("depth")).text = lock.depth
-        if lock.owner_xml:
+        if owned and lock.owner_xml:
             try:
                 active.append(etree.fromstring(lock.owner_xml.encode("utf-8"), parser=_PARSER))
             except etree.XMLSyntaxError:
                 pass
         etree.SubElement(active, dav("timeout")).text = f"Second-{lock.remaining}"
-        token = etree.SubElement(active, dav("locktoken"))
-        etree.SubElement(token, dav("href")).text = lock.token
+        if owned:
+            token = etree.SubElement(active, dav("locktoken"))
+            etree.SubElement(token, dav("href")).text = lock.token
         root = etree.SubElement(active, dav("lockroot"))
         etree.SubElement(root, dav("href")).text = lock.lock_root
     return discovery
@@ -330,14 +336,35 @@ def lockdiscovery_xml(locks: list[LockInfo]) -> etree._Element:
 # --- internals ---
 
 
-def _active_locks() -> list[LockInfo]:
-    # one fetch; the purge DELETE runs only when something actually expired
-    rows = frappe.get_all("Drive DAV Lock", fields=_FIELDS)
-    now = frappe.utils.now_datetime()
-    active = [LockInfo(**row) for row in rows if row.expires_at > now]
-    if len(active) != len(rows):
-        purge_expired_locks(lazy=True)
-    return active
+def _fetch_locks(entity_names: set[str]) -> list[LockInfo]:
+    """Active locks anchored to any of these entities — one indexed query, so
+    enforcement never loads the whole table (only the target's chain matters)."""
+    if not entity_names:
+        return []
+    rows = frappe.get_all(
+        "Drive DAV Lock",
+        filters={
+            "entity": ["in", list(entity_names)],
+            "expires_at": [">", frappe.utils.now_datetime()],
+        },
+        fields=_FIELDS,
+    )
+    return [LockInfo(**row) for row in rows]
+
+
+def _fetch_locks_by_token(tokens: list[str]) -> list[LockInfo]:
+    """Active locks by token — for the subtree-descendant conflict/coverage set."""
+    if not tokens:
+        return []
+    rows = frappe.get_all(
+        "Drive DAV Lock",
+        filters={
+            "name": ["in", tokens],
+            "expires_at": [">", frappe.utils.now_datetime()],
+        },
+        fields=_FIELDS,
+    )
+    return [LockInfo(**row) for row in rows]
 
 
 def _get(token: str) -> LockInfo:
