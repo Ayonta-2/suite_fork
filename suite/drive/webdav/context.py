@@ -103,16 +103,19 @@ def build(request: Request, user: str) -> DavContext:
     )
 
 
-def _decode_segments(path: str) -> list[str]:
-    # werkzeug has already percent-decoded request.path exactly once (UTF-8)
-    remainder = path[len(DAV_PREFIX) :]
-    segments = [segment for segment in remainder.split("/") if segment]
+def validate_segments(segments: list[str]) -> list[str]:
     for segment in segments:
         if segment in (".", ".."):
             raise BadRequest("Relative path segments are not allowed.")
         if "�" in segment or any(ord(c) < 0x20 for c in segment):
             raise BadRequest("Malformed path segment.")
     return segments
+
+
+def _decode_segments(path: str) -> list[str]:
+    # werkzeug has already percent-decoded request.path exactly once (UTF-8)
+    remainder = path[len(DAV_PREFIX) :]
+    return validate_segments([segment for segment in remainder.split("/") if segment])
 
 
 def _parse_depth(value: str | None) -> str | None:
