@@ -84,6 +84,11 @@ export const isAdmin = createResource({
   url: 'suite.drive.api.product.is_site_admin',
 })
 
+export const webdavConfig = createResource({
+  url: 'suite.drive.api.product.webdav_config',
+  cache: 'drive-webdav-config',
+})
+
 export const apps = {
   get data() {
     return getAppSwitcherItems('drive')
