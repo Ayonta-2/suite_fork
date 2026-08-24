@@ -106,6 +106,11 @@ def _respond(response: Response) -> None:
 
 
 def _raise(response: Response) -> None:
+    # frappe's process_response replaces WWW-Authenticate on 401/403 with an
+    # OAuth Bearer challenge; frappe.local.response_headers is merged after
+    # that, so mirror ours there — WebDAV clients only speak Basic
+    if "WWW-Authenticate" in response.headers:
+        frappe.local.response_headers["WWW-Authenticate"] = response.headers["WWW-Authenticate"]
     raise DAVResponseException(response=response)
 
 

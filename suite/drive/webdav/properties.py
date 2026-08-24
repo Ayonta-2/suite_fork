@@ -18,7 +18,9 @@ from suite.drive.webdav.xmlutil import dav, dav_element
 
 def compute_etag(row: frappe._dict) -> str:
     if row.get("content_hash"):
-        return f'"sha256-{row.content_hash}"'
+        # 128 bits of the hash: plenty for cache validation, and short enough
+        # for clients with tight header buffers (litmus builds If into 200 bytes)
+        return f'"sha256-{row.content_hash[:32]}"'
     stamp = _as_datetime(row.modified).strftime("%Y%m%d%H%M%S%f")
     return f'"{row.name}-{row.file_size or 0}-{stamp}"'
 

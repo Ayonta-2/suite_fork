@@ -167,7 +167,7 @@ class TestWebDAVPut(IntegrationTestCase):
         import hashlib
 
         expected_hash = hashlib.sha256(body).hexdigest()
-        self.assertEqual(response.headers["ETag"], f'"sha256-{expected_hash}"')
+        self.assertEqual(response.headers["ETag"], f'"sha256-{expected_hash[:32]}"')
 
         row = self._resolve(f"Home/{self.base_name}/new.txt").entity
         self.assertEqual(row.file_size, len(body))

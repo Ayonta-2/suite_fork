@@ -24,6 +24,8 @@ def row(**overrides):
 class TestWebDAVProperties(IntegrationTestCase):
     def test_etag_prefers_content_hash(self):
         self.assertEqual(compute_etag(row(content_hash="deadbeef")), '"sha256-deadbeef"')
+        long_hash = "ab" * 32
+        self.assertEqual(compute_etag(row(content_hash=long_hash)), f'"sha256-{long_hash[:32]}"')
 
     def test_etag_fallback_is_stable_and_strong_quoted(self):
         first, second = compute_etag(row()), compute_etag(row())

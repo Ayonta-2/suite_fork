@@ -188,7 +188,7 @@ def _bump_folder_size(folder: str, delta: int) -> None:
 
 
 def _response(ctx: DavContext, status: int, entity_name: str, sha256: str) -> Response:
-    headers = {"ETag": f'"sha256-{sha256}"'}
+    headers = {"ETag": f'"sha256-{sha256[:32]}"'}
     if ctx.request.headers.get("X-OC-Mtime"):
         headers["X-OC-Mtime"] = "accepted"
     return Response(status=status, headers=headers)
