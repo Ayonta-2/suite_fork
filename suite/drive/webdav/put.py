@@ -20,13 +20,20 @@ from werkzeug.wrappers import Response
 from suite.drive.api.activity import create_new_activity_log
 from suite.drive.api.files import get_upload_path
 from suite.drive.api.permissions import user_has_permission
-from suite.drive.api.storage import acquire_owner_storage_lock, validate_quota
+from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage, validate_quota
 from suite.drive.utils import create_drive_file, get_file_type, update_file_size
 from suite.drive.utils.files import get_s3_key, get_s3_url
 from suite.drive.webdav import pathmap
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
-from suite.drive.webdav.errors import BadRequest, Conflict, Forbidden, MethodNotAllowed, quota_guard
+from suite.drive.webdav.errors import (
+    BadRequest,
+    Conflict,
+    Forbidden,
+    InsufficientStorage,
+    MethodNotAllowed,
+    quota_guard,
+)
 
 
 def handle(ctx: DavContext) -> Response:
@@ -54,6 +61,25 @@ def handle(ctx: DavContext) -> Response:
     else:
         locks.enforce(ctx, membership_parent=resolved.parent.name)
 
+    # Check permission and derive a storage ceiling BEFORE consuming the body.
+    # The streaming_request_paths hook removes frappe's body cap for /dav, so
+    # without this an unauthorized or over-quota client could force an
+    # arbitrarily large body to be spooled to local disk before being rejected
+    # (native upload_file also checks permission before writing the temp file).
+    if row is None:
+        if not user_has_permission(resolved.parent.name, "upload"):
+            raise Forbidden("Ask the folder owner for upload access.")
+        owner, existing = ctx.user, 0
+    else:
+        if not user_has_permission(row.name, "write"):
+            raise Forbidden("You cannot overwrite this file.")
+        owner, existing = row.owner, row.file_size or 0
+
+    ceiling = _size_ceiling(owner, existing)
+    length = ctx.request.content_length
+    if ceiling is not None and length and length > ceiling:
+        raise InsufficientStorage("Upload exceeds available storage.")
+
     # keep the target's extension on the scratch name — mimemapper detects by it
     from werkzeug.utils import secure_filename
 
@@ -62,8 +88,12 @@ def handle(ctx: DavContext) -> Response:
     )
     digest = hashlib.sha256()
     try:
+        written = 0
         with scratch.open("wb") as spool:
             for chunk in ctx.body.stream():
+                written += len(chunk)
+                if ceiling is not None and written > ceiling:
+                    raise InsufficientStorage("Upload exceeds available storage.")
                 spool.write(chunk)
                 digest.update(chunk)
         size = scratch.stat().st_size
@@ -75,12 +105,26 @@ def handle(ctx: DavContext) -> Response:
         scratch.unlink(missing_ok=True)
 
 
+def _size_ceiling(owner: str, existing_size: int) -> int | None:
+    """Largest body this PUT may spool to disk, or None when unbounded. Bounds
+    the scratch write by the owner's remaining quota (an overwrite reclaims the
+    existing blob) and an optional absolute site cap, so a client can never
+    spool far past what could ever be stored."""
+    ceilings = []
+    usage = get_storage_usage(owner)
+    if usage["limit"]:
+        ceilings.append(max(0, usage["limit"] - usage["total_size"]) + (existing_size or 0))
+    hard = frappe.conf.get("drive_webdav_max_upload_size")
+    if hard:
+        ceilings.append(int(hard))
+    return min(ceilings) if ceilings else None
+
+
 def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) -> Response:
     parent = resolved.parent
     name = ctx.segments[-1]
 
-    if not user_has_permission(parent.name, "upload"):
-        raise Forbidden("Ask the folder owner for upload access.")
+    # upload permission was already verified in handle(), before the body spool
     pathmap.validate_dav_name(name, parent)
     _run_upload_validators(scratch, name, parent.name)
 
@@ -110,8 +154,7 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
 
 
 def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha256: str) -> Response:
-    if not user_has_permission(row.name, "write"):
-        raise Forbidden("You cannot overwrite this file.")
+    # write permission was already verified in handle(), before the body spool
     _run_upload_validators(scratch, row.file_name, row.folder)
 
     # quota stays with the existing owner — an Office save must not shift
