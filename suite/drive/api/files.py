@@ -874,7 +874,14 @@ def search(query: str):
 
 @frappe.whitelist(allow_guest=True)
 def translate_old_name(old_name: str):
-    return frappe.get_value("File", {"old_name": old_name}, "name")
+    # The pre-team-restructure id mapping (Drive File's `old_name` field) was
+    # dropped when Drive File merged into the framework File doctype, so ids
+    # can only be passed through when they survived migration as File names.
+    # Missing and inaccessible ids both return None so guests can't probe
+    # which private files exist.
+    if not frappe.db.exists("File", old_name):
+        return None
+    return old_name if user_has_permission(old_name, "read") else None
 
 
 @frappe.whitelist(allow_guest=True)
