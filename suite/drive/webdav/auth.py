@@ -16,7 +16,7 @@ import secrets
 import frappe
 from frappe.auth import LoginAttemptTracker
 from frappe.utils import cint
-from frappe.utils.password import check_password
+from frappe.utils.password import check_password, passlibctx
 from werkzeug.wrappers import Request
 
 from suite.drive.webdav.errors import AuthRequired, Forbidden
@@ -24,6 +24,9 @@ from suite.drive.webdav.errors import AuthRequired, Forbidden
 REALM = "Frappe Drive"
 CRED_CACHE_TTL = 600
 MAX_PASSWORD_SIZE = 512  # mirrors frappe.auth.MAX_PASSWORD_SIZE
+# WebDAV lockout counters live in their own key space so a brute force against
+# /dav cannot lock a user out of the web UI (frappe's login shares one hash)
+LOCKOUT_KEY_NS = "webdav:"
 
 
 def authenticate(request: Request) -> str:
@@ -55,7 +58,10 @@ def authenticate(request: Request) -> str:
             canonical = check_password(user, password, delete_tracker_cache=False)
         except frappe.AuthenticationError:
             # wrong password, unknown user and passwordless (social-login) user
-            # are indistinguishable on purpose
+            # are indistinguishable on purpose — including by timing: check_password
+            # skips the slow hash when no stored hash exists, so equalize it here
+            if not _stored_hash_fingerprint(user):
+                _equalize_hash_timing(password)
             _record_failure(trackers)
             _delete_cache(user)
             raise _challenge("Incorrect user or password.") from None
@@ -118,13 +124,13 @@ def _requires_two_factor(user: str) -> bool:
     return bool(should_run_2fa(user))
 
 
-# --- login-attempt tracking (same key space as frappe's web login) ---
+# --- login-attempt tracking (its own key space; see LOCKOUT_KEY_NS) ---
 
 
 def _trackers(user: str) -> list[LoginAttemptTracker]:
-    keys = [user]
+    keys = [LOCKOUT_KEY_NS + user]
     if request_ip := getattr(frappe.local, "request_ip", None):
-        keys.append(request_ip)
+        keys.append(LOCKOUT_KEY_NS + request_ip)
     interval = _lock_interval()
     attempts = _max_attempts()
     if attempts:
@@ -149,6 +155,22 @@ def _max_attempts() -> int:
 
 def _lock_interval() -> int:
     return cint(frappe.get_system_settings("allow_login_after_fail")) or 60
+
+
+# --- timing equalization (see the authenticate() failure path) ---
+# A passlib hash of a throwaway secret, computed once, so the no-stored-hash
+# failure path can spend the same verify time as a wrong-password path.
+_DUMMY_HASH: str | None = None
+
+
+def _equalize_hash_timing(password: str) -> None:
+    global _DUMMY_HASH
+    try:
+        if _DUMMY_HASH is None:
+            _DUMMY_HASH = passlibctx.hash("webdav-timing-equalizer")
+        passlibctx.verify(password, _DUMMY_HASH)
+    except Exception:
+        pass
 
 
 # --- credential cache (skip passlib on the hot path) ---

@@ -63,6 +63,20 @@ class TestWebDAVAuth(IntegrationTestCase):
                 authenticate(user, PASSWORD)
             self.assertIn("Retry-After", ctx.exception.headers)
 
+    def test_lockout_uses_isolated_key_space(self):
+        # WebDAV failures must not feed frappe's web-login lockout counter
+        user = make_user("isolate")
+        with self.change_settings(
+            "System Settings", allow_consecutive_login_attempts=3, allow_login_after_fail=60
+        ):
+            with self.assertRaises(AuthRequired):
+                authenticate(user, "wrong-password")
+            # the failure lands under the namespaced key, never frappe's web-login key
+            self.assertIsNone(frappe.cache.hget("login_failed_count", user))
+            self.assertIsNotNone(
+                frappe.cache.hget("login_failed_count", f"{auth.LOCKOUT_KEY_NS}{user}")
+            )
+
     def test_correct_password_returns_canonical_user(self):
         user = make_user("ok")
         self.assertEqual(authenticate(user, PASSWORD), user)
