@@ -159,15 +159,26 @@ const collapseQuotes = (doc: Document) => {
 		// Only the outermost quote gets a toggle — hiding it hides any quotes nested inside.
 		if (quote.parentElement?.closest('.gmail_quote, .frappe_mail_quote')) return
 		quote.classList.add('quote-hidden')
+		// A labelled control, not a bare '···' chip — unlabelled, it was easy to miss
+		// that a reply hides a whole conversation underneath it.
 		const button = doc.createElement('button')
-		button.textContent = '···'
+		button.innerHTML =
+			'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 11h16M4 16h10"/></svg>'
+		const label = doc.createElement('span')
+		label.textContent = __('Show trimmed content')
+		// The toggle script runs inside the iframe, where __() doesn't exist — both
+		// translations ride along as data attributes instead.
+		button.dataset.show = __('Show trimmed content')
+		button.dataset.hide = __('Hide trimmed content')
+		button.appendChild(label)
+		// Styled by the .quote-toggle rules in the srcdoc stylesheet — a class, not
+		// inline styles, so the mobile media query can size the touch target up.
+		button.className = 'quote-toggle'
 		button.setAttribute(
-			'style',
-			`background:${colors.value.button};color:${colors.value.text};padding:0.5px 6px;border-radius:8px;cursor:pointer;transition:background .2s;margin:12px 0;`,
+			'onclick',
+			"var hidden = this.nextElementSibling.classList.toggle('quote-hidden');" +
+				'this.lastElementChild.textContent = hidden ? this.dataset.show : this.dataset.hide;',
 		)
-		button.setAttribute('onmouseover', `this.style.background='${colors.value.buttonHover}'`)
-		button.setAttribute('onmouseout', `this.style.background='${colors.value.button}'`)
-		button.setAttribute('onclick', "this.nextElementSibling.classList.toggle('quote-hidden');")
 		quote.parentNode?.insertBefore(button, quote)
 	})
 }
@@ -259,6 +270,37 @@ const srcdoc = computed(() => {
 
 				.quote-hidden {
 					display: none;
+				}
+
+				.quote-toggle {
+					display: inline-flex;
+					align-items: center;
+					gap: 6px;
+					background: ${colors.value.button};
+					color: ${colors.value.text};
+					padding: 4px 9px;
+					/* frappe-ui's standard button radius (rounded-4) */
+					border-radius: 8px;
+					transition: background .2s;
+					margin: 12px 0;
+				}
+
+				.quote-toggle:hover {
+					background: ${colors.value.buttonHover};
+				}
+
+				/* A finger target on mobile — matches the app's 40px mobile buttons,
+				   with the lg radius that size takes. */
+				@media (max-width: 640px) {
+					.quote-toggle {
+						padding: 10px 14px;
+						gap: 8px;
+						border-radius: 10px;
+					}
+					.quote-toggle svg {
+						width: 14px;
+						height: 14px;
+					}
 				}
 
 				.email-pixel {
