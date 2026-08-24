@@ -23,7 +23,11 @@ class DAVResponseException(HTTPException):
 
 # method -> (module under suite.drive.webdav, handler attribute); imported lazily
 # so non-DAV requests never load the protocol engine
-_HANDLERS: dict[str, tuple[str, str]] = {}
+_HANDLERS: dict[str, tuple[str, str]] = {
+    "PROPFIND": ("propfind", "handle"),
+    "GET": ("get", "handle"),
+    "HEAD": ("get", "handle"),
+}
 
 
 def handle_before_request() -> None:

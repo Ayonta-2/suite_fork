@@ -44,3 +44,30 @@ def dispatch(*args, **kwargs) -> Response | None:
     except DAVResponseException as e:
         return e.response
     return None
+
+
+def make_ctx(method: str, path: str, user: str, **kwargs):
+    """DavContext for calling a verb handler directly (dispatcher bypassed)."""
+    from suite.drive.webdav import context, pathmap
+
+    pathmap.reset_memo()
+    request = set_dav_request(method, path, **kwargs)
+    frappe.set_user(user)
+    return context.build(request, user)
+
+
+def write_file_fixture(parent: str, name: str, data: bytes, mime_type: str = "text/plain"):
+    """A Drive file whose bytes really exist on local disk."""
+    from suite.drive.utils import create_drive_file
+    from suite.drive.utils.files import FileManager
+
+    manager = FileManager()
+
+    def entity_path(file):
+        relative = manager.get_disk_path(file)
+        full = manager.site_folder / relative
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_bytes(data)
+        return "/" + str(relative)
+
+    return create_drive_file(name, parent, "Text", entity_path, mime_type, len(data))

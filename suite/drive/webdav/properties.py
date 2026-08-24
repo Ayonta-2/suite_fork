@@ -27,6 +27,10 @@ def rfc1123(value: datetime | str) -> str:
     return http_date(_to_utc(value))
 
 
+def modified_utc(row: frappe._dict) -> datetime:
+    return _to_utc(row.modified)
+
+
 def iso8601(value: datetime | str) -> str:
     return _to_utc(value).strftime("%Y-%m-%dT%H:%M:%SZ")
 
