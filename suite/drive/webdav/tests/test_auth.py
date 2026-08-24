@@ -92,22 +92,27 @@ class TestWebDAVAuth(IntegrationTestCase):
         auth._delete_cache(user)
         self.assertEqual(authenticate(user, password), user)
 
-    def test_disabled_account_is_forbidden(self):
+    def test_disabled_account_is_indistinguishable_from_wrong_password(self):
+        # a correct password for a disabled account must not be confirmable
         user = make_user("disabled")
         frappe.db.set_value("User", user, "enabled", 0)
         try:
-            with self.assertRaises(Forbidden) as ctx:
+            with self.assertRaises(AuthRequired) as ctx:
                 authenticate(user, PASSWORD)
-            self.assertIn("disabled", str(ctx.exception))
+            self.assertEqual(str(ctx.exception), "Incorrect user or password.")
+            self.assertNotIn("disabled", str(ctx.exception))
+            self.assertIn("WWW-Authenticate", ctx.exception.headers)
         finally:
             frappe.db.set_value("User", user, "enabled", 1)
 
-    def test_two_factor_user_is_rejected_with_explanation(self):
+    def test_two_factor_user_is_indistinguishable_from_wrong_password(self):
+        # a correct password for a 2FA account must not be confirmable over DAV
         user = make_user("twofactor")
         with patch("frappe.twofactor.should_run_2fa", return_value=True):
             with self.assertRaises(AuthRequired) as ctx:
                 authenticate(user, PASSWORD)
-        self.assertIn("two-factor", str(ctx.exception))
+        self.assertEqual(str(ctx.exception), "Incorrect user or password.")
+        self.assertNotIn("two-factor", str(ctx.exception))
         self.assertIn("WWW-Authenticate", ctx.exception.headers)
 
     def test_disable_user_pass_login_is_forbidden(self):

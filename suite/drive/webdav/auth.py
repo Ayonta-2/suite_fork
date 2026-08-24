@@ -49,6 +49,7 @@ def authenticate(request: Request) -> str:
         raise Forbidden("Password login is disabled on this site, so WebDAV is unavailable.")
 
     canonical = _verify_cached(user, password)
+    verified_now = False
     if not canonical:
         try:
             canonical = check_password(user, password, delete_tracker_cache=False)
@@ -58,20 +59,27 @@ def authenticate(request: Request) -> str:
             _record_failure(trackers)
             _delete_cache(user)
             raise _challenge("Incorrect user or password.") from None
-        _store_cache(user, password, canonical)
+        verified_now = True
 
-    # policy checks run on every request, never cached
+    # Policy checks run on every request, never cached. A blocked account
+    # (disabled, or 2FA which WebDAV clients cannot perform) must return the
+    # SAME generic challenge as a wrong password: a distinguishable reply would
+    # confirm the password is correct — a credential oracle the block cannot
+    # otherwise leak.
     if not cint(frappe.db.get_value("User", canonical, "enabled")):
         _record_failure(trackers)
-        raise Forbidden("This account is disabled.")
+        _delete_cache(user)
+        raise _challenge("Incorrect user or password.")
 
     if _requires_two_factor(canonical):
-        # the password was correct — not a tracker failure
-        raise _challenge(
-            "Your account has two-factor authentication enabled, which WebDAV clients "
-            "cannot perform. Ask an administrator to exempt this account, or use the web app."
-        )
+        # correct password, but not a tracker failure (would lock a real user
+        # whose client is merely mis-pointed at WebDAV)
+        _delete_cache(user)
+        raise _challenge("Incorrect user or password.")
 
+    # only cache credentials that are actually allowed to authenticate
+    if verified_now:
+        _store_cache(user, password, canonical)
     for tracker in trackers:
         tracker.add_success_attempt()
     return canonical
