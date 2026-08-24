@@ -41,7 +41,7 @@
 			     rather than ending beneath it. Not reserved otherwise, or every thread would
 			     end in a gap explaining nothing. -->
 			<div
-				class="sm:space-y-4 sm:px-5 sm:pt-6"
+				class="sm:space-y-3 sm:px-5 sm:pt-6"
 				:class="{
 					'pb-16': isMobile && !thread?.at(-1)?.draft,
 					'sm:pb-24': isComposeWindowOpen(),
@@ -49,9 +49,12 @@
 				}"
 			>
 				<template v-for="group in mailsByDay" :key="group.date">
+					<!-- Borderless: the date is a label, not a control — only the
+					     more-messages toggle keeps the pill outline. -->
 					<ThreadDivider
 						v-if="shouldShowDateDivider(group.mails)"
 						:message="getFormattedDate(group.date)"
+						class="[&_span:not(.border-t)]:text-ink-gray-4 [&_span:not(.border-t)]:border-0 [&_span:not(.border-t)]:text-xs"
 					/>
 					<template v-for="mail in group.mails" :key="mail.name">
 						<ThreadDivider
@@ -80,13 +83,24 @@
 						<div
 							v-if="!collapsedMailNames.has(mail.name) && !isPoppedOut(mail)"
 							:data-mail-name="mail.name"
+							class="group/card"
 							:class="{
-								'px-3.5 py-5': isMobile,
+								'px-3.5': isMobile,
+								// Same tightening the desktop rows got: reading padding for
+								// open mail, slimmer rows for collapsed ones.
+								'py-5': isMobile && !isCollapsed(mail),
+								'py-3.5': isMobile && isCollapsed(mail),
 								'max-sm:border-b':
 									(thread.length > 1 || mail.draft) &&
 									mail.name !== mailBeforeCollapsedGroup &&
 									mail.name !== mailBeforeUnseenMarker,
-								'sm:rounded-xl sm:p-5': thread.length > 1 || mail.draft,
+								'sm:rounded-xl': thread.length > 1 || mail.draft,
+								// A collapsed row only holds one line — reading-card padding
+								// around it is what made the thread feel loose.
+								'sm:px-4 sm:py-5': (thread.length > 1 || mail.draft) && !isCollapsed(mail),
+								// The list rows' hover, so a clickable row answers the cursor.
+								'sm:hover:bg-surface-gray-1 sm:px-4 sm:py-3':
+									thread.length > 1 && isCollapsed(mail),
 								'sm:border':
 									(thread.length > 1 && !mail.draft) ||
 									(mail.draft && dataTheme === 'dark'),
@@ -155,17 +169,36 @@
 									class="flex items-center space-x-3"
 									:class="{
 										'cursor-pointer': mail !== lastMessage,
-										'pb-6': mail.preview || !isCollapsed(mail),
+										'pb-6': !isCollapsed(mail),
+										// Mobile collapsed rows: a step, not a chasm, between the
+										// name row and its preview line.
+										'pb-2': isCollapsed(mail) && isMobile && !!mail.preview,
 									}"
 									@click.stop="mail.collapsed = !mail.collapsed"
 								>
 									<Avatar
 										:label="getSenderInitial(mail)"
 										:image="mail.user_image"
-										size="xl"
+										:size="isCollapsed(mail) ? (isMobile ? 'lg' : 'md') : 'xl'"
 									/>
-									<div class="flex flex-1 justify-between truncate text-sm">
-										<div class="mr-3 flex flex-col space-y-1 truncate">
+									<!-- Collapsed rows align everything on one text baseline —
+									     name, preview and timestamp are three sizes with three
+									     line boxes, and centered boxes leave baselines adrift. -->
+									<!-- min-w-0, not truncate: the flex item still shrinks so the
+									     nested spans can ellipsize, but overflow stays visible — the
+									     hover actions overhang this box and were clipped by it. -->
+									<div
+										class="flex min-w-0 flex-1 justify-between text-sm"
+										:class="{ 'items-baseline': isCollapsed(mail) && !isMobile }"
+									>
+										<div
+											class="mr-3 flex truncate"
+											:class="
+												isCollapsed(mail) && !isMobile
+													? 'flex-1 items-baseline space-x-3'
+													: 'flex-col space-y-1'
+											"
+										>
 											<div class="flex items-center space-x-1.5">
 												<span
 													class="truncate text-[15px] !font-semibold sm:text-base"
@@ -177,7 +210,7 @@
 												     descenders of a g or a p were shaved off. 16px still sits under the
 												     sender name beside it, so the row does not grow. -->
 												<span
-													v-if="!isMobile"
+													v-if="!isMobile && !isCollapsed(mail)"
 													class="text-ink-gray-5 truncate leading-4"
 												>
 													<span>&lt;</span>
@@ -189,12 +222,23 @@
 													</Tooltip>
 													<span>&gt;</span>
 												</span>
-												<template
-													v-if="!(isCollapsed(mail) || mail.draft)"
-												>
+											</div>
+											<!-- Same 13px truncate, same shaved descenders. Collapsed
+											     mails keep just sender + preview — recipients belong to
+											     the expanded reading view. A compact summary, not the
+											     roster: two names carry the line, the rest fold into
+											     "and x others" behind the chevron beside it. -->
+											<div
+												v-if="!isCollapsed(mail)"
+												class="flex items-center space-x-1.5 truncate leading-4"
+											>
+												<span class="truncate">
+													{{ recipientsSummary(mail) }}
+												</span>
+												<template v-if="!mail.draft">
 													<ChevronDown
 														v-if="isMobile"
-														class="text-ink-gray-6 h-3.5 w-3.5 rounded-sm transition-transform duration-200"
+														class="text-ink-gray-6 mt-px h-3.5 w-3.5 shrink-0 rounded-sm transition-transform duration-200"
 														:class="{
 															'rotate-180':
 																showMailDetails === mail.name,
@@ -209,21 +253,64 @@
 													<MailDetailsPopover v-else :mail />
 												</template>
 											</div>
-											<!-- Same 13px truncate, same shaved descenders. -->
-											<div class="truncate leading-4">
-												{{ getFormattedRecipients(mail.recipients) }}
-											</div>
+											<!-- Desktop collapsed rows are one line: the preview rides
+											     beside the name instead of on a row of its own.
+											     leading-5: truncate is overflow-hidden and the preset's
+											     1.15 puts 14px text in a ~16.1px box while Inter's glyph
+											     box wants ~16.4 — descenders were shaved. The row is
+											     avatar-tall, so the stated 20px adds no height. -->
+											<span
+												v-if="isCollapsed(mail) && !isMobile"
+												class="text-ink-gray-7 min-w-0 flex-1 truncate leading-5"
+											>
+												{{ mail.preview }}
+											</span>
 										</div>
-										<div class="flex items-center space-x-1 self-start">
-											<MailDate
+										<!-- self-start suits the expanded card's two-line header; on
+										     a collapsed row the block inherits the parent's baseline
+										     alignment (its own baseline is the timestamp's). -->
+										<div
+											class="flex items-center space-x-1"
+											:class="{
+												'self-start': !isCollapsed(mail),
+												'self-center': isCollapsed(mail) && isMobile,
+												/* Hovered collapsed rows swap text for icon buttons —
+												   no baseline to join, so center the block instead.
+												   group-has [data-state=open]: the ⋯ menu is portaled,
+												   so opening it ends the hover — without this the
+												   trigger unmounts and the menu loses its anchor. */
+												'sm:group-hover/card:self-center sm:group-has-[[data-state=open]]/card:self-center':
+													isCollapsed(mail) && !isMobile,
+											}"
+										>
+											<!-- The timestamp yields to the actions on hover (fixed
+											     right edge), so the row never moves. -->
+											<span
 												v-if="!isMobile || isCollapsed(mail)"
-												:datetime="mail.received_at"
-											/>
-											<MailActions
+												:class="{
+													'sm:group-hover/card:hidden sm:group-has-[[data-state=open]]/card:hidden':
+														isCollapsed(mail),
+												}"
+											>
+												<MailDate
+													:datetime="mail.received_at"
+													:clock="showsClockTime"
+												/>
+											</span>
+											<!-- h-5: the 28px ghost buttons overhang the padding
+											     instead of growing the one-line row on hover. -->
+											<div
 												v-if="!isMobile && !readonly"
+												:class="
+													isCollapsed(mail)
+														? 'hidden h-5 items-center sm:group-hover/card:flex sm:group-has-[[data-state=open]]/card:flex'
+														: 'flex'
+												"
+											>
+											<MailActions
 												:mailbox
 												:mail
-												:is-collapsed="isCollapsed(mail)"
+												:is-collapsed="false"
 												:show-reply-all="showReplyAll(mail)"
 												:pop-out-draft
 												:reply
@@ -240,6 +327,7 @@
 												@mark-mail-spam="(m: Mail, spam: boolean) => emit('markMailSpam', m, spam)"
 												@delete-mail="(m: Mail) => emit('deleteMail', m)"
 											/>
+											</div>
 										</div>
 									</div>
 								</div>
@@ -250,9 +338,14 @@
 									class="mb-4"
 								/>
 
-								<div v-show="isCollapsed(mail)" class="truncate text-base">
+								<div
+									v-show="isCollapsed(mail) && isMobile"
+									class="truncate text-base"
+								>
 									{{ mail.preview }}
 								</div>
+
+
 
 								<div v-show="!isCollapsed(mail)">
 									<Alert
@@ -479,7 +572,6 @@ import {
 	escapeHtml,
 	extractQuotedContent,
 	getFormattedDate,
-	getFormattedRecipients,
 	getGroupedRecipients,
 	hasHtmlContent,
 	matchesScreenedValue,
@@ -519,6 +611,7 @@ import type {
 	Mail,
 	Mailbox,
 	MailboxData,
+	Recipient,
 	ScreenedAddress,
 } from '@/apps/mail/types'
 
@@ -577,8 +670,8 @@ const emit = defineEmits([
 ])
 
 const { isMobile } = useScreenSize()
-const { openSettings } = useSettings()
 const { filterBySender } = useFilterBySender()
+const { openSettings } = useSettings()
 const dayjs = inject('$dayjs')
 const user = inject('$user')
 // The pane acts as the thread's owning account (the active one unless the `account`
@@ -637,6 +730,28 @@ const mailsByDay = computed(() => {
 	}
 	return groups
 })
+
+// The expanded header's second line: "to Pushkar", "to Pushkar and Neha", "to Pushkar,
+// Rushabh and Neha", "to Pushkar, Rushabh and 2 others". First names only — the full
+// roster with addresses is behind the chevron beside it.
+const recipientsSummary = (mail: Mail) => {
+	const ordered = [...mail.recipients].sort(
+		(a, b) => Number(b.type === 'To') - Number(a.type === 'To'),
+	)
+	const names = ordered.map((r: Recipient) => (r.display_name || r.email).split(' ')[0])
+	if (!names.length) return ''
+	if (names.length === 1) return __('to {0}', [names[0]])
+	if (names.length === 2) return __('to {0} and {1}', [names[0], names[1]])
+	if (names.length === 3) return __('to {0}, {1} and {2}', names)
+	return __('to {0}, {1} and {2} others', [names[0], names[1], String(names.length - 2)])
+}
+
+// Rows state clock time only while day dividers state the date (multi-day thread, grouping
+// on, desktop). Otherwise the row's timestamp is the only date there is, and stays relative.
+const showsClockTime = computed(
+	() =>
+		!isMobile.value && mailsByDay.value.length > 1 && user.data.group_messages_by === 'Day',
+)
 
 const shouldShowDateDivider = (mails: Mail[]) =>
 	!isMobile.value &&
