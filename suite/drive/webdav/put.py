@@ -288,8 +288,11 @@ def _bump_folder_size(folder: str, delta: int) -> None:
     try:
         update_file_size(folder, delta)
     except Exception:
-        # racy rollups, same stance as upload_file (api/files.py)
-        pass
+        # Rollups are optimistic saves up the whole ancestor chain, so
+        # concurrent saves collide routinely — never worth failing a finished
+        # save over, same stance as upload_file (api/files.py). But nothing
+        # reconciles the counters later, so leave a trace of the drift.
+        frappe.log_error("Drive: folder size rollup failed", frappe.get_traceback())
 
 
 def _response(ctx: DavContext, status: int, entity_name: str, sha256: str) -> Response:

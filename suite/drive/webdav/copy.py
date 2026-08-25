@@ -83,7 +83,10 @@ def handle(ctx: DavContext) -> Response:
     try:
         update_file_size(dest_parent.name, total)
     except Exception:
-        pass
+        # racy rollup, never worth failing the finished copy over — but leave
+        # a trace of the drift, nothing reconciles the counters later (same
+        # stance as PUT)
+        frappe.log_error("Drive: folder size rollup failed", frappe.get_traceback())
 
     return Response(status=204 if overwrote else 201)
 

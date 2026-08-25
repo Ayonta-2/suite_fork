@@ -238,6 +238,20 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
         )
 
+    def test_put_survives_folder_rollup_failure_but_logs_it(self):
+        # rollups collide under concurrent saves and must never fail a finished
+        # save (parity with api/files.py upload_file) — but nothing reconciles
+        # the counters later, so the suppressed failure must leave a trace
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        with patch.object(put_module, "update_file_size", side_effect=frappe.TimestampMismatchError):
+            response = self._put(f"/dav/Home/{self.base_name}/rollup.txt", b"counted?")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(frappe.db.exists("Error Log", {"method": "Drive: folder size rollup failed"}))
+
     def test_put_create_failure_leaves_no_orphan_blob(self):
         # the blob move is irreversible while the File insert rolls back with
         # the transaction, so a DB failure after the move would strand an
