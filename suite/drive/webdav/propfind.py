@@ -47,9 +47,7 @@ def handle(ctx: DavContext) -> Response:
     from suite.drive.webdav import deadprops, locks
 
     dead = deadprops.get_dead_props([r.row.name for r in resources if r.row is not None])
-    lock_map = locks.discovery_map(
-        {r.row.name: r.ancestors or [] for r in resources if r.row is not None}
-    )
+    lock_map = locks.discovery_map({r.row.name: r.ancestors or [] for r in resources if r.row is not None})
 
     builder = MultistatusBuilder()
     for resource in resources:
@@ -99,9 +97,7 @@ def _collect_resources(ctx: DavContext, depth: str) -> list[Resource]:
         raise NotFoundError("Resource not found.")
 
     target_ancestors = [node["name"] for node in parent_path[:-1]]
-    resources = [
-        Resource(row, list(ctx.segments), resolved.is_collection, display, target_ancestors)
-    ]
+    resources = [Resource(row, list(ctx.segments), resolved.is_collection, display, target_ancestors)]
     if depth == "1" and resolved.is_collection:
         child_ancestors = [*target_ancestors, row.name]
         children = pathmap.list_children(row.name)
@@ -171,7 +167,9 @@ def _render(
 
     if mode == "allprop":
         found = [value for tag, value in available.items() if value is not None and tag not in QUOTA_PROPS]
-        found += [available[tag] for tag in requested if available.get(tag) is not None and tag in QUOTA_PROPS]
+        found += [
+            available[tag] for tag in requested if available.get(tag) is not None and tag in QUOTA_PROPS
+        ]
         found += list(dead_props.values())
         response.propstat(200, found)
         return

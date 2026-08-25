@@ -155,11 +155,7 @@ def _resolve_destination(ctx: DavContext, source: pathmap.ResolvedPath):
             return destination, _parent_row(destination.entity.folder), segments[-1]
         raise Forbidden("Source and destination are the same resource.")
 
-    parent = (
-        destination.parent
-        if destination.parent is not None
-        else _parent_row(destination.entity.folder)
-    )
+    parent = destination.parent if destination.parent is not None else _parent_row(destination.entity.folder)
 
     # a destination parent the user cannot see reads as absent, not forbidden
     dest_access = perms.resolve_entity_access(parent, ctx.user)

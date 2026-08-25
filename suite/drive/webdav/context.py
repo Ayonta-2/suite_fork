@@ -85,7 +85,7 @@ class DavContext:
     extras: dict = field(default_factory=dict)
 
     @cached_property
-    def manager(self) -> "FileManager":
+    def manager(self) -> FileManager:
         from suite.drive.utils.files import FileManager
 
         return FileManager()

@@ -124,9 +124,7 @@ def parse_destination(request: Request) -> tuple[list[str], bool]:
 
     try:
         segments = [
-            unquote(segment, errors="strict")
-            for segment in raw_path[len(DAV_PREFIX) :].split("/")
-            if segment
+            unquote(segment, errors="strict") for segment in raw_path[len(DAV_PREFIX) :].split("/") if segment
         ]
     except UnicodeDecodeError as e:
         raise BadRequest("Malformed Destination header.") from e

@@ -168,9 +168,7 @@ class TestWebDAVPathmap(IntegrationTestCase):
             builder.host = host
             return Request(builder.get_environ())
 
-        segments, slash = pathmap.parse_destination(
-            request("http://s2.localhost:8001/dav/Home/Caf%C3%A9/")
-        )
+        segments, slash = pathmap.parse_destination(request("http://s2.localhost:8001/dav/Home/Caf%C3%A9/"))
         self.assertEqual(segments, ["Home", "Café"])
         self.assertTrue(slash)
 

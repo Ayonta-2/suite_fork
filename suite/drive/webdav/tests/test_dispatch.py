@@ -121,9 +121,7 @@ class TestWebDAVDispatch(IntegrationTestCase):
             self.assertIn("disabled on this site", response.get_data(as_text=True))
 
             # permitted verb still works end to end
-            response = dispatch(
-                "PROPFIND", "/dav/Home", user=USER, password=PASSWORD, headers={"Depth": "0"}
-            )
+            response = dispatch("PROPFIND", "/dav/Home", user=USER, password=PASSWORD, headers={"Depth": "0"})
             self.assertEqual(response.status_code, 207)
 
             # the handshake reflects the restriction: no LOCK -> no class 2

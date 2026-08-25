@@ -193,6 +193,4 @@ class TestWebDAVProppatch(IntegrationTestCase):
         doc.db_set("status", "Removed", update_modified=False)
         doc.reload()
         doc.delete(ignore_permissions=True, force=True)
-        self.assertEqual(
-            frappe.db.count("Drive DAV Property", {"entity": self.file.name}), 0
-        )
+        self.assertEqual(frappe.db.count("Drive DAV Property", {"entity": self.file.name}), 0)

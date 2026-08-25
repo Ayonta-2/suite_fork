@@ -109,7 +109,9 @@ class TestWebDAVContent(IntegrationTestCase):
         enable_user_webdav(OWNER)
         frappe.db.commit()
         try:
-            response = dispatch("GET", f"/dav/Home/{self.folder_name}/data.bin", user=OWNER, password=PASSWORD)
+            response = dispatch(
+                "GET", f"/dav/Home/{self.folder_name}/data.bin", user=OWNER, password=PASSWORD
+            )
             self.assertEqual(response.status_code, 200)
             self.assertEqual(self._body(response), DATA)
 
@@ -230,9 +232,7 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(manager.get_local_path(row.file_url).read_bytes(), b"v2!")
         # edit activity was logged
         self.assertTrue(
-            frappe.db.exists(
-                "Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"}
-            )
+            frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
         )
 
     def test_put_overwrite_by_collaborator_keeps_owner(self):
@@ -258,9 +258,7 @@ class TestWebDAVPut(IntegrationTestCase):
             }
         ).insert(ignore_permissions=True)
 
-        response = self._put(
-            f"/dav/Everyone/{shared_folder.file_name}/shared.txt", b"theirs!", user=STRANGER
-        )
+        response = self._put(f"/dav/Everyone/{shared_folder.file_name}/shared.txt", b"theirs!", user=STRANGER)
         self.assertEqual(response.status_code, 204)
         # content replaced, but ownership (and quota accounting) stays put
         self.assertEqual(frappe.db.get_value("File", target.name, "owner"), OWNER)
@@ -298,13 +296,9 @@ class TestWebDAVPut(IntegrationTestCase):
         with self.set_user(OWNER):
             write_file_fixture(self.base.name, "locked.txt", b"held")
         with self.assertRaises(PreconditionFailed):
-            self._put(
-                f"/dav/Home/{self.base_name}/locked.txt", b"no", headers={"If-None-Match": "*"}
-            )
+            self._put(f"/dav/Home/{self.base_name}/locked.txt", b"no", headers={"If-None-Match": "*"})
         with self.assertRaises(PreconditionFailed):
-            self._put(
-                f"/dav/Home/{self.base_name}/locked.txt", b"no", headers={"If-Match": '"wrong"'}
-            )
+            self._put(f"/dav/Home/{self.base_name}/locked.txt", b"no", headers={"If-Match": '"wrong"'})
 
     def test_put_honors_client_mtime(self):
         response = self._put(

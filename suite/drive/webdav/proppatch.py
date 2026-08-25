@@ -98,9 +98,7 @@ def _parse_body(ctx: DavContext) -> list[Instruction]:
         for element in prop:
             if not isinstance(element.tag, str):
                 continue
-            instructions.append(
-                Instruction(action, element.tag, element if action == "set" else None)
-            )
+            instructions.append(Instruction(action, element.tag, element if action == "set" else None))
     if not instructions:
         raise BadRequest("Empty propertyupdate.")
     return instructions
@@ -139,9 +137,7 @@ def _apply(row: frappe._dict, instructions: list[Instruction]) -> None:
             deadprops.remove(row.name, instruction.tag)
 
 
-def _multistatus(
-    ctx: DavContext, resolved, instructions: list[Instruction], failed: bool
-) -> Response:
+def _multistatus(ctx: DavContext, resolved, instructions: list[Instruction], failed: bool) -> Response:
     builder = MultistatusBuilder()
     response = builder.add_response(pathmap.href_for(ctx.segments, resolved.is_collection))
 

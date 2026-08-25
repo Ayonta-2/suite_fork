@@ -68,10 +68,7 @@ class IfHeader:
             tokens = get_active_tokens(entity) if entity else frozenset()
             etag = get_etag(entity) if entity else None
             for condition_list in group.lists:
-                if all(
-                    _condition_holds(condition, tokens, etag)
-                    for condition in condition_list.conditions
-                ):
+                if all(_condition_holds(condition, tokens, etag) for condition in condition_list.conditions):
                     return True
         return False
 

@@ -73,9 +73,7 @@ class TestWebDAVAuth(IntegrationTestCase):
                 authenticate(user, "wrong-password")
             # the failure lands under the namespaced key, never frappe's web-login key
             self.assertIsNone(frappe.cache.hget("login_failed_count", user))
-            self.assertIsNotNone(
-                frappe.cache.hget("login_failed_count", f"{auth.LOCKOUT_KEY_NS}{user}")
-            )
+            self.assertIsNotNone(frappe.cache.hget("login_failed_count", f"{auth.LOCKOUT_KEY_NS}{user}"))
 
     def test_correct_password_returns_canonical_user(self):
         user = make_user("ok")

@@ -116,9 +116,7 @@ def _conditional_gate(ctx: DavContext, submitted: IfHeader) -> None:
         raise PreconditionFailed("If header condition failed.")
 
 
-def _coverage(
-    entity: str | None, membership_parent: str | None, check_descendants: bool
-) -> list[LockInfo]:
+def _coverage(entity: str | None, membership_parent: str | None, check_descendants: bool) -> list[LockInfo]:
     covering: dict[str, LockInfo] = {}
 
     def add_chain(target: str) -> None:

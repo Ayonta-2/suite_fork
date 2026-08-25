@@ -35,7 +35,7 @@ class TestIfHeaderParsing(UnitTestCase):
         self.assertFalse(group.lists[0].conditions[0].negated)
 
     def test_tagged_lists(self):
-        header = f"<http://host/dav/a.txt> (<{TOKEN}>) </dav/b.txt> ([\"etag-b\"])"
+        header = f'<http://host/dav/a.txt> (<{TOKEN}>) </dav/b.txt> (["etag-b"])'
         parsed = parse_if_header(header)
         self.assertEqual(len(parsed.tagged), 2)
         self.assertEqual(parsed.tagged[0].resource_href, "http://host/dav/a.txt")
@@ -43,7 +43,7 @@ class TestIfHeaderParsing(UnitTestCase):
         self.assertEqual(parsed.tagged[1].lists[0].conditions[0].etag, '"etag-b"')
 
     def test_not_and_multiple_conditions(self):
-        parsed = parse_if_header(f'(Not <DAV:no-lock> [\"tag\"]) (<{TOKEN}>)')
+        parsed = parse_if_header(f'(Not <DAV:no-lock> ["tag"]) (<{TOKEN}>)')
         first = parsed.tagged[0].lists[0]
         self.assertTrue(first.conditions[0].negated)
         self.assertEqual(first.conditions[0].token, "DAV:no-lock")
@@ -82,8 +82,6 @@ class TestIfHeaderEvaluation(UnitTestCase):
     def test_tagged_binding(self):
         header = f"</dav/other.txt> (<{TOKEN}>)"
         # token active on the request target but the condition binds to /dav/other.txt
-        self.assertFalse(
-            evaluate(header, tokens=frozenset({TOKEN}), href_map={"/dav/other.txt": "other"})
-        )
+        self.assertFalse(evaluate(header, tokens=frozenset({TOKEN}), href_map={"/dav/other.txt": "other"}))
         # unresolvable tagged href evaluates false rather than erroring
         self.assertFalse(evaluate(header, href_map={}))

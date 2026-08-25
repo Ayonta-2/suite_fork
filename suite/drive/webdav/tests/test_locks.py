@@ -82,9 +82,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         return lock_module.handle_lock(make_ctx("LOCK", path, user, data=body, headers=headers))
 
     def _unlock(self, path: str, token: str, user: str = OWNER):
-        return lock_module.handle_unlock(
-            make_ctx("UNLOCK", path, user, headers={"Lock-Token": f"<{token}>"})
-        )
+        return lock_module.handle_unlock(make_ctx("UNLOCK", path, user, headers={"Lock-Token": f"<{token}>"}))
 
     def _token(self, response) -> str:
         return response.headers["Lock-Token"][1:-1]
@@ -134,9 +132,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         with self.assertRaises(Locked):
             put.handle(make_ctx("PUT", path, OWNER, data=b"stomp"))
         # owner + token passes
-        response = put.handle(
-            make_ctx("PUT", path, OWNER, data=b"proper", headers={"If": f"(<{token}>)"})
-        )
+        response = put.handle(make_ctx("PUT", path, OWNER, data=b"proper", headers={"If": f"(<{token}>)"}))
         self.assertEqual(response.status_code, 204)
         # a leaked token in another user's hands grants nothing
         with self.assertRaises(Locked):
@@ -152,9 +148,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         # depth-inf lock protects new members anywhere below
         with self.assertRaises(Locked):
             structure.handle_mkcol(make_ctx("MKCOL", f"{folder_path}/NewDir", EDITOR))
-        response = put.handle(
-            make_ctx("PUT", child, OWNER, data=b"fine", headers={"If": f"(<{token}>)"})
-        )
+        response = put.handle(make_ctx("PUT", child, OWNER, data=b"fine", headers={"If": f"(<{token}>)"}))
         self.assertEqual(response.status_code, 204)
 
     def test_depth_zero_collection_lock_protects_membership(self):
@@ -178,9 +172,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("File", row.name, "status"), STATUS_ACTIVE)
 
         # the Office flow: PUT with the token, then UNLOCK
-        response = put.handle(
-            make_ctx("PUT", path, OWNER, data=b"content", headers={"If": f"(<{token}>)"})
-        )
+        response = put.handle(make_ctx("PUT", path, OWNER, data=b"content", headers={"If": f"(<{token}>)"}))
         self.assertEqual(response.status_code, 204)
         with self.assertRaises(Locked):
             put.handle(make_ctx("PUT", path, OWNER, data=b"no-token"))
@@ -246,11 +238,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         token = self._token(self._lock(path))
         # correct token AND wrong etag: 412, not 423 (litmus complex_cond_put)
         with self.assertRaises(PreconditionFailed):
-            put.handle(
-                make_ctx(
-                    "PUT", path, OWNER, data=b"x", headers={"If": f'(<{token}> ["wrong-etag"])'}
-                )
-            )
+            put.handle(make_ctx("PUT", path, OWNER, data=b"x", headers={"If": f'(<{token}> ["wrong-etag"])'}))
         with self.assertRaises(BadRequest):
             put.handle(make_ctx("PUT", path, OWNER, data=b"x", headers={"If": "(corrupt"}))
 
@@ -260,13 +248,11 @@ class TestWebDAVLocks(IntegrationTestCase):
 
         with self.assertRaises(Locked):
             structure.handle_delete(make_ctx("DELETE", path, OWNER))
-        response = structure.handle_delete(
-            make_ctx("DELETE", path, OWNER, headers={"If": f"(<{token}>)"})
-        )
+        response = structure.handle_delete(make_ctx("DELETE", path, OWNER, headers={"If": f"(<{token}>)"}))
         self.assertEqual(response.status_code, 204)
         self.assertIsNone(locks.find_lock(token))
 
-        second = write_file_fixture(self.base.name, "mv.txt", b"mv")
+        write_file_fixture(self.base.name, "mv.txt", b"mv")
         token = self._token(self._lock(f"/dav/Home/{self.base_name}/mv.txt"))
         structure.handle_move(
             make_ctx(
@@ -337,9 +323,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         path = f"/dav/Everyone/{self.shared.file_name}/team.txt"
         self._lock(path, user=OWNER)
 
-        ctx = make_ctx(
-            "PROPFIND", f"/dav/Everyone/{self.shared.file_name}", EDITOR, headers={"Depth": "1"}
-        )
+        ctx = make_ctx("PROPFIND", f"/dav/Everyone/{self.shared.file_name}", EDITOR, headers={"Depth": "1"})
         parsed = etree.fromstring(propfind.handle(ctx).get_data())
         checked = False
         for response in parsed.findall(dav("response")):

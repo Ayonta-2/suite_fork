@@ -2,10 +2,23 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.drive.api.files import remove_or_restore
-from suite.drive.utils import STATUS_ACTIVE, STATUS_TRASHED, create_drive_file, get_root_folder, get_user_folder
+from suite.drive.utils import (
+    STATUS_ACTIVE,
+    STATUS_TRASHED,
+    create_drive_file,
+    get_root_folder,
+    get_user_folder,
+)
 from suite.drive.utils.files import FileManager, storage_key
 from suite.drive.webdav import pathmap, structure
-from suite.drive.webdav.errors import BadRequest, Conflict, Forbidden, MethodNotAllowed, NotFoundError, UnsupportedMediaType
+from suite.drive.webdav.errors import (
+    BadRequest,
+    Conflict,
+    Forbidden,
+    MethodNotAllowed,
+    NotFoundError,
+    UnsupportedMediaType,
+)
 from suite.drive.webdav.tests.utils import ensure_user_with_password, make_ctx, write_file_fixture
 from suite.tests.utils import ensure_user
 

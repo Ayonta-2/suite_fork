@@ -45,9 +45,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
             self.base = create_drive_file(
                 self.base_name, self.home, "Folder", lambda f: manager.create_folder(f)
             )
-            self.sub = create_drive_file(
-                "sub", self.base.name, "Folder", lambda f: manager.create_folder(f)
-            )
+            self.sub = create_drive_file("sub", self.base.name, "Folder", lambda f: manager.create_folder(f))
             self.file = write_file_fixture(self.base.name, "b.txt", b"move me")
 
     def tearDown(self):
@@ -70,18 +68,14 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         return pathmap.resolve([segment for segment in path.split("/") if segment], user)
 
     def test_move_renames_in_place(self):
-        response = self._move(
-            f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/renamed.txt"
-        )
+        response = self._move(f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/renamed.txt")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(frappe.db.get_value("File", self.file.name, "file_name"), "renamed.txt")
         self.assertFalse(self._resolve(f"Home/{self.base_name}/b.txt").exists)
         self.assertEqual(blob_bytes(self.file.name), b"move me")
 
     def test_move_reparents(self):
-        response = self._move(
-            f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/sub/b.txt"
-        )
+        response = self._move(f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/sub/b.txt")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(frappe.db.get_value("File", self.file.name, "folder"), self.sub.name)
         self.assertEqual(blob_bytes(self.file.name), b"move me")
@@ -92,9 +86,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("File", self.file.name, "file_name"), "c.txt")
 
     def test_move_case_only_rename(self):
-        response = self._move(
-            f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/B.TXT"
-        )
+        response = self._move(f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/B.TXT")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(frappe.db.get_value("File", self.file.name, "file_name"), "B.TXT")
 
@@ -134,9 +126,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         with self.assertRaises(Conflict):
             self._move(f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/nope/x")
         with self.assertRaises(BadGateway):
-            self._move(
-                f"/dav/Home/{self.base_name}/b.txt", f"http://elsewhere.example/dav/Home/x.txt"
-            )
+            self._move(f"/dav/Home/{self.base_name}/b.txt", "http://elsewhere.example/dav/Home/x.txt")
         with self.assertRaises(Forbidden):
             self._move(f"/dav/Home/{self.base_name}/b.txt", "/dav/Home")
 
@@ -150,16 +140,12 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
                 lambda f: FileManager().create_folder(f),
                 owner=OWNER,
             )
-        response = self._move(
-            f"/dav/Home/{self.base_name}/b.txt", f"/dav/Everyone/{shared.file_name}/b.txt"
-        )
+        response = self._move(f"/dav/Home/{self.base_name}/b.txt", f"/dav/Everyone/{shared.file_name}/b.txt")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(frappe.db.get_value("File", self.file.name, "folder"), shared.name)
 
     def test_copy_file(self):
-        response = self._copy(
-            f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/sub/copy.txt"
-        )
+        response = self._copy(f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/sub/copy.txt")
         self.assertEqual(response.status_code, 201)
 
         duplicate = self._resolve(f"Home/{self.base_name}/sub/copy.txt").entity
@@ -233,9 +219,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
                 Overwrite="F",
             )
 
-        response = self._copy(
-            f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/spot.txt"
-        )
+        response = self._copy(f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/spot.txt")
         self.assertEqual(response.status_code, 204)
         self.assertEqual(frappe.db.get_value("File", target.name, "status"), STATUS_TRASHED)
 
@@ -245,8 +229,6 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         frappe.db.set_value("Drive Settings", OWNER, "quota", 1, update_modified=False)
         try:
             with self.assertRaises(InsufficientStorage):
-                self._copy(
-                    f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/too-big.txt"
-                )
+                self._copy(f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/too-big.txt")
         finally:
             frappe.db.set_value("Drive Settings", OWNER, "quota", 0, update_modified=False)

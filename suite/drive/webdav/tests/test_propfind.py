@@ -39,9 +39,7 @@ class TestWebDAVPropfind(IntegrationTestCase):
         with cls.set_user(OWNER):
             cls.home = get_user_folder(OWNER).name
             manager = FileManager()
-            cls.docs = create_drive_file(
-                "PropDocs", cls.home, "Folder", lambda f: manager.create_folder(f)
-            )
+            cls.docs = create_drive_file("PropDocs", cls.home, "Folder", lambda f: manager.create_folder(f))
             cls.report = write_file_fixture(cls.docs.name, "report.txt", b"hello propfind")
             cls.notes = write_file_fixture(cls.docs.name, "notes.md", b"# notes", "text/markdown")
 
@@ -92,7 +90,7 @@ class TestWebDAVPropfind(IntegrationTestCase):
                 "Folder",
                 lambda f: FileManager().create_folder(f),
             )
-            visible = write_file_fixture(shared.name, "visible.txt", b"ok")
+            write_file_fixture(shared.name, "visible.txt", b"ok")
             hidden = write_file_fixture(shared.name, "hidden.txt", b"no")
         frappe.get_doc(
             {"doctype": "Drive Permission", "entity": hidden.name, "user": READER, "read": 1, "deny": 1}

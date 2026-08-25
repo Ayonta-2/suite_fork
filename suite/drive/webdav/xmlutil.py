@@ -71,7 +71,7 @@ class MultistatusBuilder:
     def __init__(self):
         self.root = etree.Element(dav("multistatus"), nsmap={"D": DAV_NS})
 
-    def add_response(self, href: str) -> "ResponseBuilder":
+    def add_response(self, href: str) -> ResponseBuilder:
         response = etree.SubElement(self.root, dav("response"))
         etree.SubElement(response, dav("href")).text = href
         return ResponseBuilder(response)

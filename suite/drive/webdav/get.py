@@ -101,9 +101,7 @@ def _serve_s3(ctx: DavContext, row: frappe._dict, manager: FileManager) -> Respo
     except ClientError as e:
         code = e.response.get("Error", {}).get("Code")
         if code == "InvalidRange":
-            return Response(
-                status=416, headers={**headers, "Content-Range": f"bytes */{row.file_size or 0}"}
-            )
+            return Response(status=416, headers={**headers, "Content-Range": f"bytes */{row.file_size or 0}"})
         if code in ("NoSuchKey", "404"):
             raise NotFoundError("File content is missing.") from e
         raise

@@ -95,9 +95,7 @@ def handle(ctx: DavContext) -> Response:
     # keep the target's extension on the scratch name — mimemapper detects by it
     from werkzeug.utils import secure_filename
 
-    scratch = get_upload_path(
-        f"webdav_{frappe.generate_hash(length=12)}_{secure_filename(ctx.segments[-1])}"
-    )
+    scratch = get_upload_path(f"webdav_{frappe.generate_hash(length=12)}_{secure_filename(ctx.segments[-1])}")
     digest = hashlib.sha256()
     try:
         written = 0
