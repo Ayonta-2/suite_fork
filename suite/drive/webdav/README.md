@@ -26,9 +26,11 @@ Notes on behavior:
   `PROPFIND, GET` gives site-wide read-only WebDAV — the OPTIONS handshake
   then advertises `DAV: 1, 3` (no locking) so clients degrade gracefully.
 - **DELETE moves to Drive's trash** — recoverable from the web UI for 30 days.
-- Accounts with **two-factor authentication cannot connect** (WebDAV clients
-  only speak Basic auth); the 401 explains this. Social-login accounts without
-  a site password cannot connect either.
+- Clients sign in with the Frappe username and password, **or with an API
+  key and secret** in their place (generated from the WebDAV settings panel;
+  the secret is shown once). API credentials are their own factor, so they are
+  the working path for **two-factor accounts** — and for social-login accounts
+  without a site password — whose passwords cannot complete Basic auth.
 - ETags are strong (`sha256` of content, populated on every WebDAV write).
 - Locks (`LOCK`/`UNLOCK`, exclusive + shared, depth 0/infinity, Office-style
   refresh) coordinate DAV clients with each other; the Drive web UI is not

@@ -1,10 +1,13 @@
-"""HTTP Basic authentication against Frappe login credentials.
+"""HTTP Basic authentication against Frappe credentials.
 
-frappe's validate_auth() interprets Basic as api_key:api_secret, so the WebDAV
-dispatcher authenticates before frappe ever sees the header. Passwords are
-verified with frappe's own check_password; a short-lived HMAC cache skips the
-deliberately-slow hash verification that clients would otherwise trigger on
-every single request.
+The Basic pair is either the Frappe username and password, or the user's
+api_key:api_secret — tried in that order of specificity: a key lookup first
+(keys are generated hashes, never emails), then the password path. API
+credentials are their own factor, so they work for 2FA accounts and when
+password login is disabled site-wide — the same stance frappe's token auth
+takes. Passwords are verified with frappe's own check_password; a short-lived
+HMAC cache skips the deliberately-slow hash verification that clients would
+otherwise trigger on every single request.
 """
 
 import base64
@@ -16,7 +19,7 @@ import secrets
 import frappe
 from frappe.auth import LoginAttemptTracker
 from frappe.utils import cint
-from frappe.utils.password import check_password, passlibctx
+from frappe.utils.password import check_password, get_decrypted_password, passlibctx
 from werkzeug.wrappers import Request
 
 from suite.drive.webdav.errors import AuthRequired, Forbidden
@@ -47,6 +50,19 @@ def authenticate(request: Request) -> str:
             "Too many failed login attempts. Try again later.",
             headers={"Retry-After": str(_lock_interval())},
         )
+
+    api_user = _api_key_user(user)
+    if api_user is not None:
+        # API credentials are their own factor: the 2FA and
+        # disable_user_pass_login gates below govern password logins only
+        if _api_secret_valid(api_user.name, password) and cint(api_user.enabled):
+            for tracker in trackers:
+                tracker.add_success_attempt()
+            return api_user.name
+        # a matching key with a wrong secret (or a disabled account) must be
+        # indistinguishable from any other bad credential
+        _record_failure(trackers)
+        raise _challenge("Incorrect user or password.")
 
     if frappe.get_system_settings("disable_user_pass_login"):
         raise Forbidden("Password login is disabled on this site, so WebDAV is unavailable.")
@@ -122,6 +138,23 @@ def _requires_two_factor(user: str) -> bool:
     from frappe.twofactor import should_run_2fa
 
     return bool(should_run_2fa(user))
+
+
+# --- api_key:api_secret (generated from the WebDAV settings panel) ---
+
+
+def _api_key_user(api_key: str) -> frappe._dict | None:
+    """The user owning this api_key, or None to fall through to password auth.
+    Keys are generated hashes and never contain '@', so email logins skip the
+    lookup entirely."""
+    if "@" in api_key:
+        return None
+    return frappe.db.get_value("User", {"api_key": api_key}, ["name", "enabled"], as_dict=True)
+
+
+def _api_secret_valid(user: str, presented: str) -> bool:
+    stored = get_decrypted_password("User", user, fieldname="api_secret", raise_exception=False)
+    return bool(stored) and hmac.compare_digest(presented.encode(), stored.encode())
 
 
 # --- login-attempt tracking (its own key space; see LOCKOUT_KEY_NS) ---

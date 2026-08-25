@@ -341,6 +341,9 @@ def webdav_config() -> dict:
                 "username": frappe.session.user,
                 "enabled_for_user": user_webdav_enabled(frappe.session.user),
                 "two_factor_blocked": bool(should_run_2fa(frappe.session.user)),
+                # api_key doubles as the WebDAV username for key-based sign-in;
+                # the secret is only ever shown once, at generation time
+                "api_key": frappe.db.get_value("User", frappe.session.user, "api_key"),
             }
         )
     return config

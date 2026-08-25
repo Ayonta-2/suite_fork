@@ -142,6 +142,57 @@ class TestWebDAVAuth(IntegrationTestCase):
             with self.assertRaises(Forbidden):
                 authenticate(user, PASSWORD)
 
+    def _make_api_keys(self, user: str) -> tuple[str, str]:
+        from frappe.core.doctype.user.user import generate_keys
+
+        with self.set_user("Administrator"):
+            secret = generate_keys(user)["api_secret"]
+        return frappe.db.get_value("User", user, "api_key"), secret
+
+    def test_api_key_secret_authenticates(self):
+        user = make_user("apikey")
+        api_key, secret = self._make_api_keys(user)
+        self.assertEqual(authenticate(api_key, secret), user)
+
+    def test_api_key_wrong_secret_challenges_and_tracks(self):
+        user = make_user("apikey-bad")
+        api_key, _secret = self._make_api_keys(user)
+        with self.change_settings(
+            "System Settings", allow_consecutive_login_attempts=3, allow_login_after_fail=60
+        ):
+            with self.assertRaises(AuthRequired) as ctx:
+                authenticate(api_key, "not-the-secret")
+            self.assertEqual(str(ctx.exception), "Incorrect user or password.")
+            self.assertIsNotNone(frappe.cache.hget("login_failed_count", f"{auth.LOCKOUT_KEY_NS}{api_key}"))
+
+    def test_api_keys_bypass_two_factor(self):
+        # API credentials are their own factor — the working path for 2FA accounts
+        user = make_user("apikey-2fa")
+        api_key, secret = self._make_api_keys(user)
+        with patch("frappe.twofactor.should_run_2fa", return_value=True):
+            self.assertEqual(authenticate(api_key, secret), user)
+            with self.assertRaises(AuthRequired):
+                authenticate(user, PASSWORD)  # the password path stays blocked
+
+    def test_api_keys_work_when_password_login_disabled(self):
+        user = make_user("apikey-nopass")
+        api_key, secret = self._make_api_keys(user)
+        with self.change_settings("System Settings", disable_user_pass_login=1):
+            self.assertEqual(authenticate(api_key, secret), user)
+            with self.assertRaises(Forbidden):
+                authenticate(user, PASSWORD)
+
+    def test_api_key_of_disabled_account_is_rejected(self):
+        user = make_user("apikey-disabled")
+        api_key, secret = self._make_api_keys(user)
+        frappe.db.set_value("User", user, "enabled", 0)
+        try:
+            with self.assertRaises(AuthRequired) as ctx:
+                authenticate(api_key, secret)
+            self.assertEqual(str(ctx.exception), "Incorrect user or password.")
+        finally:
+            frappe.db.set_value("User", user, "enabled", 1)
+
     def test_guest_and_empty_credentials_challenge(self):
         for user, password in (("Guest", "x"), ("", "x"), ("someone@example.com", "")):
             with self.assertRaises(AuthRequired):
