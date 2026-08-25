@@ -238,6 +238,23 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
         )
 
+    def test_put_create_failure_leaves_no_orphan_blob(self):
+        # the blob move is irreversible while the File insert rolls back with
+        # the transaction, so a DB failure after the move would strand an
+        # unreferenced blob at its final path — the move must come last
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        with (
+            patch.object(put_module, "_bump_folder_size", side_effect=frappe.ValidationError),
+            self.assertRaises(frappe.ValidationError),
+        ):
+            self._put(f"/dav/Home/{self.base_name}/orphan.txt", b"stranded?")
+
+        row = self._resolve(f"Home/{self.base_name}/orphan.txt").entity
+        self.assertFalse(FileManager().get_local_path(row.file_url).exists())
+
     def test_put_overwrite_failure_leaves_old_bytes(self):
         # the blob swap is irreversible while every DB write rolls back with the
         # transaction, so a failure after the swap would leave new bytes served

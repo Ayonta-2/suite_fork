@@ -154,9 +154,11 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
         mime_type,
         size,
     )
-    manager.upload_file(scratch, drive_file, create_thumbnail=True)
+    # the storage form of the url — upload_file derives the disk path / S3 key
+    # from it, and get_s3_key cannot recover that from the fetch-url rewrite
+    blob = frappe._dict(name=drive_file.name, file_url=drive_file.file_url, mime_type=mime_type)
     if manager.s3_enabled:
-        drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
+        drive_file.file_url = get_s3_url(get_s3_key(blob.file_url))
         drive_file.save()
     stamped = {"content_hash": sha256}
     if (client_mtime := _client_mtime_datetime(ctx)) is not None:
@@ -166,6 +168,12 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
     drive_file.db_set(stamped, update_modified=False)
     _bump_folder_size(parent.name, size)
 
+    # Move the bytes only after every rollback-able write above has succeeded —
+    # the move is irreversible, so done any earlier a failed save or db_set
+    # would roll the File row back and strand the blob at its final disk path
+    # or S3 key, unreferenced and invisible to quota. A failure here instead
+    # leaves the body in the scratch file, which handle() always unlinks.
+    manager.upload_file(scratch, blob, create_thumbnail=True)
     return _response(ctx, 201, drive_file.name, sha256)
 
 
