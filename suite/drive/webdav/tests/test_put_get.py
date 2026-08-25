@@ -183,6 +183,9 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(row.content_hash, expected_hash)
         self.assertEqual(row.mime_type, "text/plain")
         manager = FileManager()
+        # the byte move rides on the commit the dispatcher issues before the
+        # response leaves
+        frappe.db.commit()
         self.assertEqual(manager.get_local_path(row.file_url).read_bytes(), body)
         # parent rollup grew
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), len(body))
@@ -254,6 +257,19 @@ class TestWebDAVPut(IntegrationTestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(frappe.db.exists("Error Log", {"method": "Drive: folder size rollup failed"}))
+
+    def test_put_create_rollback_leaves_no_orphan_blob(self):
+        # the dispatcher commits only after the handler returns; if that
+        # commit fails and degrades to a rollback, the staged bytes must be
+        # discarded — nothing may sit at the final path outside quota
+        response = self._put(f"/dav/Home/{self.base_name}/stranded.txt", b"stranded?")
+        self.assertEqual(response.status_code, 201)
+        row = self._resolve(f"Home/{self.base_name}/stranded.txt").entity
+        blob_path = FileManager().get_local_path(row.file_url)
+        frappe.db.rollback()
+
+        self.assertFalse(blob_path.exists())
+        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
 
     def test_put_create_failure_leaves_no_orphan_blob(self):
         # the blob move is irreversible while the File insert rolls back with

@@ -153,8 +153,8 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
         mime_type,
         size,
     )
-    # the storage form of the url — upload_file derives the disk path / S3 key
-    # from it, and get_s3_key cannot recover that from the fetch-url rewrite
+    # the storage form of the url — disk path and S3 key derive from it, and
+    # neither can be recovered from the fetch-url rewrite by get_s3_key
     blob = frappe._dict(name=drive_file.name, file_url=drive_file.file_url, mime_type=mime_type)
     if manager.s3_enabled:
         drive_file.file_url = get_s3_url(get_s3_key(blob.file_url))
@@ -167,12 +167,15 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
     drive_file.db_set(stamped, update_modified=False)
     _bump_folder_size(parent.name, size)
 
-    # Move the bytes only after every rollback-able write above has succeeded —
-    # the move is irreversible, so done any earlier a failed save or db_set
-    # would roll the File row back and strand the blob at its final disk path
-    # or S3 key, unreferenced and invisible to quota. A failure here instead
-    # leaves the body in the scratch file, which handle() always unlinks.
-    manager.upload_file(scratch, blob, create_thumbnail=True)
+    # Same staging discipline as _overwrite: the byte move is irreversible
+    # while every write above — the File insert included — rolls back with the
+    # transaction, and the dispatcher commits only after this handler returns.
+    # Placed at the final path any earlier, a failed commit would strand the
+    # blob there, unreferenced and invisible to quota.
+    if manager.s3_enabled:
+        _stage_s3_swap(manager, blob, scratch, get_s3_key(blob.file_url))
+    else:
+        _stage_disk_swap(scratch, manager.site_folder / storage_key(blob.file_url), manager, blob)
     return _response(ctx, 201, drive_file.name, sha256)
 
 
@@ -221,7 +224,9 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
 
 def _stage_blob_swap(manager, row: frappe._dict, doc, scratch: Path) -> None:
     if manager.s3_enabled and not stored_on_disk(row.file_url):
-        _stage_s3_swap(manager, doc, scratch)
+        # storage_key, not get_s3_key: an existing row's file_url is the
+        # rewritten fetch url, which only storage_key resolves to the object key
+        _stage_s3_swap(manager, doc, scratch, storage_key(row.file_url))
     elif manager.s3_enabled:
         # a framework-adopted blob lives on the site disk even under S3; swap
         # it in place — upload_file would write the new body to a stray S3 key
@@ -249,13 +254,10 @@ def _stage_disk_swap(scratch: Path, target: Path, manager=None, doc=None) -> Non
     frappe.db.after_rollback.add(lambda: staged.unlink(missing_ok=True))
 
 
-def _stage_s3_swap(manager, doc, scratch: Path) -> None:
+def _stage_s3_swap(manager, doc, scratch: Path, key: str) -> None:
     """Upload the body to a scratch key now — that is the fallible network
     transfer — and promote it to the real key at commit with a server-side
-    managed copy (multipart-sized objects included). The key comes from
-    storage_key, not get_s3_key: an existing row's file_url is the rewritten
-    fetch url, which only storage_key resolves back to the object key."""
-    key = storage_key(doc.file_url)
+    managed copy (multipart-sized objects included)."""
     staging_key = f"{key}.{frappe.generate_hash(length=12)}.putpart"
     manager.conn.upload_file(str(scratch), manager.bucket, staging_key)
     thumb_source = None
