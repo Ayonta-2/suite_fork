@@ -16,7 +16,7 @@ class TestWebDAVLogging(IntegrationTestCase):
         ensure_user_with_password(USER, PASSWORD)
         enable_user_webdav(USER)
         frappe.db.commit()
-        cls.logger_name = f"drive_webdav-{frappe.local.site}"
+        cls.logger_name = f"suite.drive.webdav-{frappe.local.site}"
 
     def setUp(self):
         # committed, because a failed-auth dispatch rolls the transaction back
@@ -35,9 +35,19 @@ class TestWebDAVLogging(IntegrationTestCase):
         conf = {"drive_webdav_log_level": level} if level else {}
         return patch.dict(frappe.local.conf, conf, clear=False)
 
-    def test_disabled_by_default(self):
-        with self.assertNoLogs(self.logger_name):
+    def test_enabled_by_default_at_info(self):
+        with self.assertLogs(self.logger_name, level="INFO") as logs:
             dispatch("OPTIONS", "/dav")
+        self.assertIn("OPTIONS /dav -> 200", logs.output[0])
+
+    def test_off_disables_logging(self):
+        with self._with_level("off"), self.assertNoLogs(self.logger_name):
+            dispatch("OPTIONS", "/dav")
+
+    def test_unrecognized_level_keeps_the_default(self):
+        with self._with_level("verbose"), self.assertLogs(self.logger_name, level="INFO") as logs:
+            dispatch("OPTIONS", "/dav")
+        self.assertIn("OPTIONS /dav -> 200", logs.output[0])
 
     def test_info_logs_one_line_per_request(self):
         with self._with_level("info"), self.assertLogs(self.logger_name, level="INFO") as logs:

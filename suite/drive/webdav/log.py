@@ -1,12 +1,12 @@
 """Request logging for the WebDAV dispatcher.
 
-Off by default; enable per site with drive_webdav_log_level in
-site_config.json — "error" (5xx only), "warning" (adds 4xx), "info" (one line
-per request) or "debug" (adds the protocol headers that matter when
-reproducing client behavior). Lines land in logs/drive_webdav.log at both the
-bench and site level. Credentials are never logged: the Authorization header
-is deliberately excluded, and lock tokens are capabilities only in the hands
-of their owner.
+On by default at "info" — one line per request in logs/suite.drive.webdav.log
+at both the bench and site level. drive_webdav_log_level in site_config.json
+tunes it: "error" (5xx only), "warning" (adds 4xx), "debug" (adds the protocol
+headers that matter when reproducing client behavior) or "off". Unrecognized
+values keep the default rather than silently going dark. Credentials are never
+logged: the Authorization header is deliberately excluded, and lock tokens are
+capabilities only in the hands of their owner.
 """
 
 import logging
@@ -14,6 +14,9 @@ import time
 
 import frappe
 from werkzeug.wrappers import Request, Response
+
+LOGGER_MODULE = "suite.drive.webdav"
+DEFAULT_LEVEL = logging.INFO
 
 LEVELS = {
     "error": logging.ERROR,
@@ -43,7 +46,9 @@ DEBUG_HEADERS = (
 
 def configured_level() -> int | None:
     raw = str(frappe.conf.get("drive_webdav_log_level") or "").strip().lower()
-    return LEVELS.get(raw)
+    if raw == "off":
+        return None
+    return LEVELS.get(raw, DEFAULT_LEVEL)
 
 
 def start_request(request: Request) -> None:
@@ -68,7 +73,7 @@ def log_response(request: Request, response: Response) -> None:
     if not context:
         return
 
-    logger = frappe.logger("drive_webdav", file_count=10)
+    logger = frappe.logger(LOGGER_MODULE, file_count=10)
     logger.setLevel(context["level"])
 
     status = response.status_code
