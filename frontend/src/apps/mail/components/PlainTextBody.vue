@@ -31,23 +31,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { groupPlainText } from "@/apps/mail/utils/plainTextBlocks";
-import LinkifiedText from "@/components/LinkifiedText.vue";
+import { computed, ref, watch } from 'vue'
+import { groupPlainText } from '@/apps/mail/utils/plainTextBlocks'
+import LinkifiedText from '@/components/LinkifiedText.vue'
 
-const { text } = defineProps<{ text?: string | null }>();
-const segments = computed(() => groupPlainText(text ?? ""));
-const expanded = ref(new Set<number>());
+const { text } = defineProps<{ text?: string | null }>()
+const segments = computed(() => groupPlainText(text ?? ''))
+const expanded = ref(new Set<number>())
 
 // Opening another message reuses this component, and the indices mean something else there.
 watch(
 	() => text,
 	() => (expanded.value = new Set()),
-);
+)
 
 const toggle = (index: number) => {
-	const next = new Set(expanded.value);
-	if (!next.delete(index)) next.add(index);
-	expanded.value = next;
-};
+	const next = new Set(expanded.value)
+	if (!next.delete(index)) next.add(index)
+	expanded.value = next
+}
 </script>
