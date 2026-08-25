@@ -418,7 +418,7 @@
 										     face to land on, which CSS resolves upward to the system Medium,
 										     rendering the body bolder than everything around it. font-normal pins
 										     it to Regular. -->
-										<LinkifiedText
+										<PlainTextBody
 											v-else
 											:text="getPlainTextBody(mail)"
 											class="pt-4 font-sans !font-normal text-base !leading-5 sm:text-sm"
@@ -573,12 +573,12 @@ import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
 	decodeHtmlEntities,
 	downloadUrlAsFile,
-	escapeHtml,
 	extractQuotedContent,
 	getFormattedDate,
 	getGroupedRecipients,
 	hasHtmlContent,
 	matchesScreenedValue,
+	plainTextToHtml,
 	raiseToast,
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
@@ -593,7 +593,7 @@ import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
 import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vue'
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
-import LinkifiedText from '@/components/LinkifiedText.vue'
+import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
@@ -1456,14 +1456,17 @@ const getReplyIdentityEmail = (mail: Mail) => {
 // the address it stands for. Both consumers below start from here.
 const getPlainTextBody = (mail: Mail) => decodeHtmlEntities(mail.html_body || mail.text_body || '')
 
-// A body with no markup is plain text, so it has to be escaped before going into the
-// <pre> — the reader parses this as HTML. Bounce notices are the case that bites:
-// their `RCPT TO:<user@host>` reads as an unknown tag, which the sanitizer then drops,
-// silently deleting the very addresses the notice is about.
+// A body with no markup is plain text, so it has to be escaped before going in here: the
+// reader parses this as HTML. Bounce notices are the case that bites, since their
+// `RCPT TO:<user@host>` reads as an unknown tag, which the sanitizer then drops, silently
+// deleting the very addresses the notice is about.
+// Deliberately not a <pre>: the editor parses one as a code block, so quoting or forwarding
+// a plain-text mail used to hand the recipient the sender's prose in monospace that never
+// wrapped. plainTextToHtml keeps the line breaks without asking for that.
 const getBodyContent = (mail: Mail) => {
 	if (hasHtmlContent(mail.html_body)) return mail.html_body
 	const text = getPlainTextBody(mail)
-	return `<pre style="white-space: pre-wrap; word-break: break-word">${text ? escapeHtml(text) : '&nbsp;'}</pre>`
+	return `<div style="white-space: pre-wrap">${text ? plainTextToHtml(text) : '&nbsp;'}</div>`
 }
 
 const getQuotedContent = (mail: Mail) =>

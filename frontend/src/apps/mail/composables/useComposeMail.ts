@@ -163,10 +163,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
 	// ── Signature ───────────────────────────────────────────────────────────────────────────────
 
+	// The wrapper is what lets the text/plain alternative introduce the block with RFC 3676's
+	// "-- " separator; by the time a body reaches the server the signature is ordinary markup.
+	// Gated on the HTML form, which is the one actually inserted.
 	const buildSignature = (email?: string) => {
 		const identity = getIdentity(email!)
-		return identity?.text_signature
-			? `<div><br></div><div><br></div>${identity.html_signature}`
+		return identity?.html_signature
+			? '<div><br></div><div><br></div><div class="frappe_mail_signature">' +
+					identity.html_signature +
+					'</div>'
 			: ''
 	}
 
