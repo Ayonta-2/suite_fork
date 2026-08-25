@@ -5,13 +5,23 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "property_section",
   "entity",
+  "property_column_break",
   "ns",
   "prop_name",
+  "value_section",
   "value_xml"
  ],
  "fields": [
   {
+   "description": "A WebDAV dead property (RFC 4918 §4.4) — client-stored metadata PROPPATCHed onto an entity. One row per (entity, namespace, name); rows follow the entity through MOVE, are cloned by COPY and wiped when it is deleted. All protocol access goes through the WebDAV engine, not this form.",
+   "fieldname": "property_section",
+   "fieldtype": "Section Break",
+   "label": "Property"
+  },
+  {
+   "description": "The File this property is attached to.",
    "fieldname": "entity",
    "fieldtype": "Link",
    "label": "Entity",
@@ -20,20 +30,30 @@
    "search_index": 1
   },
   {
-   "description": "Namespace URI; empty for the null namespace.",
+   "fieldname": "property_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Namespace URI qualifying the property name (e.g. urn:schemas-microsoft-com:); empty for the null namespace.",
    "fieldname": "ns",
    "fieldtype": "Data",
    "label": "Namespace",
    "length": 255
   },
   {
+   "description": "The property's local name within the namespace.",
    "fieldname": "prop_name",
    "fieldtype": "Data",
    "label": "Property Name",
    "reqd": 1
   },
   {
-   "description": "The full serialized property element, namespace declarations included, so client XML round-trips.",
+   "fieldname": "value_section",
+   "fieldtype": "Section Break",
+   "label": "Value"
+  },
+  {
+   "description": "The full serialized property element, namespace declarations included, so client XML round-trips byte-faithfully (prefixes may be rewritten; namespace URIs are preserved). Capped at 64 KB by the engine.",
    "fieldname": "value_xml",
    "fieldtype": "Long Text",
    "ignore_xss_filter": 1,
@@ -43,7 +63,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-24 12:30:00.000000",
+ "modified": "2026-08-25 13:30:00.000000",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive DAV Property",
