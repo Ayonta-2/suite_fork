@@ -9,6 +9,20 @@ from suite.drive.webdav.dispatch import DAVResponseException, handle_before_requ
 from suite.tests.utils import ensure_user
 
 
+def ensure_system_settings_saveable() -> None:
+    """CI sites skip the setup wizard, leaving System Settings' mandatory
+    language/time_zone empty — any later save (e.g. change_settings) then hits
+    MandatoryError. Backfill the effective defaults so the doc round-trips."""
+    current = frappe.db.get_value("System Settings", "System Settings", ["language", "time_zone"])
+    language, time_zone = current or (None, None)
+    if not language:
+        frappe.db.set_single_value("System Settings", "language", "en")
+    if not time_zone:
+        frappe.db.set_single_value("System Settings", "time_zone", frappe.utils.get_system_timezone())
+    if not language or not time_zone:
+        frappe.clear_document_cache("System Settings", "System Settings")
+
+
 def ensure_user_with_password(email: str, password: str) -> None:
     ensure_user(email)
     update_password(email, password)

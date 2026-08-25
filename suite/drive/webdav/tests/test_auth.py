@@ -6,7 +6,11 @@ from frappe.utils.password import update_password
 
 from suite.drive.webdav import auth
 from suite.drive.webdav.errors import AuthRequired, Forbidden
-from suite.drive.webdav.tests.utils import ensure_user_with_password, set_dav_request
+from suite.drive.webdav.tests.utils import (
+    ensure_system_settings_saveable,
+    ensure_user_with_password,
+    set_dav_request,
+)
 
 PASSWORD = "webdav-auth-pw-9000"
 
@@ -28,6 +32,11 @@ def authenticate(user: str | None, password: str = "", header: str | None = None
 
 
 class TestWebDAVAuth(IntegrationTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_system_settings_saveable()
+
     def tearDown(self):
         frappe.set_user("Administrator")
         super().tearDown()
