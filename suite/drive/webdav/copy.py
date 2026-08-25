@@ -17,7 +17,7 @@ from werkzeug.wrappers import Response
 from suite.drive.api.files import toggle_entity_status
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.api.storage import acquire_owner_storage_lock, validate_quota
-from suite.drive.utils import create_drive_file, generate_upward_path, update_file_size
+from suite.drive.utils import apply_file_size_delta, create_drive_file, generate_upward_path
 from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url, storage_key
 from suite.drive.webdav import pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
@@ -81,11 +81,11 @@ def handle(ctx: DavContext) -> Response:
         raise
 
     try:
-        update_file_size(dest_parent.name, total)
+        apply_file_size_delta(dest_parent.name, total)
     except Exception:
-        # racy rollup, never worth failing the finished copy over — but leave
-        # a trace of the drift, nothing reconciles the counters later (same
-        # stance as PUT)
+        # the atomic delta cannot lose a race, so this is real infrastructure
+        # trouble — never worth failing the finished copy over, but leave a
+        # trace of the drift (same stance as PUT)
         frappe.log_error("Drive: folder size rollup failed", frappe.get_traceback())
 
     return Response(status=204 if overwrote else 201)

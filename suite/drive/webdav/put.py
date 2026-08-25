@@ -22,7 +22,7 @@ from suite.drive.api.activity import create_new_activity_log
 from suite.drive.api.files import get_upload_path
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage, validate_quota
-from suite.drive.utils import create_drive_file, get_file_type, update_file_size
+from suite.drive.utils import apply_file_size_delta, create_drive_file, get_file_type
 from suite.drive.utils.files import get_s3_key, get_s3_url, storage_key, stored_on_disk
 from suite.drive.webdav import pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
@@ -156,6 +156,19 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
     # the storage form of the url — disk path and S3 key derive from it, and
     # neither can be recovered from the fetch-url rewrite by get_s3_key
     blob = frappe._dict(name=drive_file.name, file_url=drive_file.file_url, mime_type=mime_type)
+
+    # Stage the byte transfer now, finalize at commit (same discipline as
+    # _overwrite): the move is irreversible while every row write rolls back
+    # with the transaction, and the dispatcher commits only after this handler
+    # returns — placed at the final path any earlier, a failed commit would
+    # strand the blob there, unreferenced. Staging before the remaining row
+    # writes also keeps their row locks out of the transfer window, so an
+    # S3-sized upload never stalls a concurrent PUT's rollup.
+    if manager.s3_enabled:
+        _stage_s3_swap(manager, blob, scratch, get_s3_key(blob.file_url))
+    else:
+        _stage_disk_swap(scratch, manager.site_folder / storage_key(blob.file_url), manager, blob)
+
     if manager.s3_enabled:
         drive_file.file_url = get_s3_url(get_s3_key(blob.file_url))
         drive_file.save()
@@ -166,16 +179,6 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
         stamped["file_modified"] = client_mtime
     drive_file.db_set(stamped, update_modified=False)
     _bump_folder_size(parent.name, size)
-
-    # Same staging discipline as _overwrite: the byte move is irreversible
-    # while every write above — the File insert included — rolls back with the
-    # transaction, and the dispatcher commits only after this handler returns.
-    # Placed at the final path any earlier, a failed commit would strand the
-    # blob there, unreferenced and invisible to quota.
-    if manager.s3_enabled:
-        _stage_s3_swap(manager, blob, scratch, get_s3_key(blob.file_url))
-    else:
-        _stage_disk_swap(scratch, manager.site_folder / storage_key(blob.file_url), manager, blob)
     return _response(ctx, 201, drive_file.name, sha256)
 
 
@@ -193,6 +196,18 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     mime_type = _detect_mime(ctx, scratch)
     manager = ctx.manager
     doc = frappe.get_doc("File", row.name)
+
+    # DB writes roll back while byte writes cannot, and the dispatcher commits
+    # only after this handler returns — replacing the target here would leave
+    # a failed commit serving the new body under the rolled-back size, hash
+    # and mtime (wrong GET bodies, stale ETags). So only the fallible byte
+    # transfer happens now, into a staging location; the target changes at
+    # after_commit through the least fallible primitive available, and any
+    # rollback discards the staged bytes without touching the target. Staging
+    # before the row writes also keeps their row locks out of the transfer
+    # window, so an S3-sized upload never stalls a concurrent PUT's rollup.
+    _stage_blob_swap(manager, row, doc, scratch)
+
     doc.db_set(
         {
             "file_size": size,
@@ -210,15 +225,6 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
         activity_type="edit",
         activity_message=f"{full_name} updated {row.file_name} via WebDAV",
     )
-
-    # DB writes roll back while byte writes cannot, and the dispatcher commits
-    # only after this handler returns — replacing the target here would leave
-    # a failed commit serving the new body under the rolled-back size, hash
-    # and mtime (wrong GET bodies, stale ETags, skewed quota). So only the
-    # fallible byte transfer happens now, into a staging location; the target
-    # changes at after_commit through the least fallible primitive available,
-    # and any rollback discards the staged bytes without touching the target.
-    _stage_blob_swap(manager, row, doc, scratch)
     return _response(ctx, 204, row.name, sha256)
 
 
@@ -337,12 +343,12 @@ def _bump_folder_size(folder: str, delta: int) -> None:
     if not delta:
         return
     try:
-        update_file_size(folder, delta)
+        apply_file_size_delta(folder, delta)
     except Exception:
-        # Rollups are optimistic saves up the whole ancestor chain, so
-        # concurrent saves collide routinely — never worth failing a finished
-        # save over, same stance as upload_file (api/files.py). But nothing
-        # reconciles the counters later, so leave a trace of the drift.
+        # The atomic delta cannot lose a race, so what lands here is real
+        # infrastructure trouble — and folder sizes are display metadata
+        # (quota sums leaf files directly), never worth failing a finished
+        # save over. Log the drift; there is no reconciliation job yet.
         frappe.log_error("Drive: folder size rollup failed", frappe.get_traceback())
 
 

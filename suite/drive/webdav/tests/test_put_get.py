@@ -190,6 +190,24 @@ class TestWebDAVPut(IntegrationTestCase):
         # parent rollup grew
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), len(body))
 
+    def test_put_rolls_size_up_the_ancestor_chain(self):
+        with self.set_user(OWNER):
+            sub = create_drive_file(
+                f"Sub-{frappe.generate_hash(length=6)}",
+                self.base.name,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+
+        self._put(f"/dav/Home/{self.base_name}/{sub.file_name}/a.txt", b"12345")
+        self.assertEqual(frappe.db.get_value("File", sub.name, "file_size"), 5)
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), 5)
+
+        # an overwrite rolls up the delta, shrinking included
+        self._put(f"/dav/Home/{self.base_name}/{sub.file_name}/a.txt", b"123")
+        self.assertEqual(frappe.db.get_value("File", sub.name, "file_size"), 3)
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), 3)
+
     def test_put_unreadable_target_hidden_as_404(self):
         # the read-gate must run before preconditions/locks/the 405 collection
         # reply, so an unreadable resource is indistinguishable from an absent one
@@ -245,14 +263,14 @@ class TestWebDAVPut(IntegrationTestCase):
         )
 
     def test_put_survives_folder_rollup_failure_but_logs_it(self):
-        # rollups collide under concurrent saves and must never fail a finished
-        # save (parity with api/files.py upload_file) — but nothing reconciles
-        # the counters later, so the suppressed failure must leave a trace
+        # the atomic rollup only fails on real infrastructure trouble, and a
+        # display counter is never worth failing a finished save over — but
+        # the suppressed failure must leave a trace
         from unittest.mock import patch
 
         from suite.drive.webdav import put as put_module
 
-        with patch.object(put_module, "update_file_size", side_effect=frappe.TimestampMismatchError):
+        with patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError):
             response = self._put(f"/dav/Home/{self.base_name}/rollup.txt", b"counted?")
 
         self.assertEqual(response.status_code, 201)
