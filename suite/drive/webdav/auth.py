@@ -17,7 +17,7 @@ import hmac
 import secrets
 
 import frappe
-from frappe.auth import LoginAttemptTracker
+from frappe.auth import MAX_PASSWORD_SIZE, LoginAttemptTracker
 from frappe.utils import cint
 from frappe.utils.password import check_password, get_decrypted_password, passlibctx
 from werkzeug.wrappers import Request
@@ -26,7 +26,6 @@ from suite.drive.webdav.errors import AuthRequired, Forbidden
 
 REALM = "Frappe Drive"
 CRED_CACHE_TTL = 600
-MAX_PASSWORD_SIZE = 512  # mirrors frappe.auth.MAX_PASSWORD_SIZE
 # WebDAV lockout counters live in their own key space so a brute force against
 # /dav cannot lock a user out of the web UI (frappe's login shares one hash)
 LOCKOUT_KEY_NS = "webdav:"
