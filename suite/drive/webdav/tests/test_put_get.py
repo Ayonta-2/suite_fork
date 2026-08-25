@@ -262,6 +262,29 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
         )
 
+    def test_put_succeeds_when_thumbnail_fails(self):
+        # thumbnails are cosmetic: once the bytes and metadata are committed
+        # and promoted, a thumbnail failure must not turn the PUT into a
+        # client-visible error — the client would retry a finished save
+        from unittest.mock import patch
+
+        png = bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000d49444154789c626001000000ffff03000006000557bfabd40000000049454e44ae426082"
+        )
+        response = self._put(f"/dav/Home/{self.base_name}/pixel.png", png)
+        self.assertEqual(response.status_code, 201)
+        row = self._resolve(f"Home/{self.base_name}/pixel.png").entity
+        self.assertTrue(row.mime_type.startswith("image/"))
+
+        with patch("frappe.enqueue", side_effect=RuntimeError):
+            frappe.db.commit()  # must not raise — the save already succeeded
+
+        self.assertEqual(FileManager().get_local_path(row.file_url).read_bytes(), png)
+        self.assertTrue(
+            frappe.db.exists("Error Log", {"method": "Drive: could not create WebDAV thumbnail"})
+        )
+
     def test_put_rollup_failure_fails_the_put(self):
         # a suppressed rollup failure would commit ancestor sizes that no
         # reconciliation repairs — the PUT must fail so the whole transaction,

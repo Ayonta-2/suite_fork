@@ -277,7 +277,7 @@ def _stage_disk_swap(scratch: Path, target: Path, undo, manager=None, doc=None) 
             _compensate_failed_promotion(undo)
             raise
         if manager is not None and manager.can_create_thumbnail(doc):
-            frappe.enqueue(manager.upload_thumbnail, now=True, at_front=True, file=doc, file_path=str(target))
+            _enqueue_thumbnail(manager, doc, str(target))
 
     frappe.db.after_commit.add(swap)
     frappe.db.after_rollback.add(lambda: staged.unlink(missing_ok=True))
@@ -306,9 +306,7 @@ def _stage_s3_swap(manager, doc, scratch: Path, key: str, undo) -> None:
             raise
         _discard_staging_object(manager, staging_key)
         if thumb_source is not None:
-            frappe.enqueue(
-                manager.upload_thumbnail, now=True, at_front=True, file=doc, file_path=str(thumb_source)
-            )
+            _enqueue_thumbnail(manager, doc, str(thumb_source), discard_source=thumb_source)
 
     def discard():
         if thumb_source is not None:
@@ -317,6 +315,19 @@ def _stage_s3_swap(manager, doc, scratch: Path, key: str, undo) -> None:
 
     frappe.db.after_commit.add(swap)
     frappe.db.after_rollback.add(discard)
+
+
+def _enqueue_thumbnail(manager, doc, file_path: str, discard_source: Path | None = None) -> None:
+    """Thumbnails are cosmetic, and by this point the bytes and metadata are
+    committed and promoted — nothing here may fail the response, or the client
+    would retry a PUT that already succeeded. upload_thumbnail swallows its own
+    failures; this guards the enqueue machinery around it."""
+    try:
+        frappe.enqueue(manager.upload_thumbnail, now=True, at_front=True, file=doc, file_path=file_path)
+    except Exception:
+        if discard_source is not None:
+            discard_source.unlink(missing_ok=True)
+        frappe.log_error("Drive: could not create WebDAV thumbnail", frappe.get_traceback())
 
 
 def _compensate_failed_promotion(undo) -> None:
