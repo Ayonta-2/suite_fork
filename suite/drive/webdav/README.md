@@ -20,6 +20,11 @@ links) are not shown.
 
 Notes on behavior:
 
+- **Method allow-list**: *Allowed WebDAV Methods* on Drive Disk Settings
+  restricts which verbs clients may use (empty = all). Input is validated
+  against the supported set; OPTIONS is always allowed and GET implies HEAD.
+  `PROPFIND, GET` gives site-wide read-only WebDAV — the OPTIONS handshake
+  then advertises `DAV: 1, 3` (no locking) so clients degrade gracefully.
 - **DELETE moves to Drive's trash** — recoverable from the web UI for 30 days.
 - Accounts with **two-factor authentication cannot connect** (WebDAV clients
   only speak Basic auth); the 401 explains this. Social-login accounts without

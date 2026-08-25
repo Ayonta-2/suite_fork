@@ -9,6 +9,7 @@
   "preview_size",
   "quota",
   "webdav_enabled",
+  "webdav_allowed_methods",
   "disk_section",
   "flat",
   "root_folder",
@@ -101,6 +102,13 @@
    "label": "Enable WebDAV"
   },
   {
+   "depends_on": "webdav_enabled",
+   "description": "Comma-separated HTTP methods WebDAV clients may use; leave empty to allow all. Valid: OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK, UNLOCK. OPTIONS is always allowed and GET implies HEAD. Example for read-only access: PROPFIND, GET.",
+   "fieldname": "webdav_allowed_methods",
+   "fieldtype": "Small Text",
+   "label": "Allowed WebDAV Methods"
+  },
+  {
    "fieldname": "disk_section",
    "fieldtype": "Section Break",
    "label": "Disk"
@@ -122,7 +130,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-24 12:00:00.000000",
+ "modified": "2026-08-25 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Disk Settings",

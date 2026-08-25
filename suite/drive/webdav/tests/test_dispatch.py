@@ -107,6 +107,37 @@ class TestWebDAVDispatch(IntegrationTestCase):
         self.assertEqual(response.status_code, 403)
         self.assertIn("disabled for your account", response.get_data(as_text=True))
 
+    def test_method_allow_list_is_enforced(self):
+        frappe.db.set_single_value(
+            "Drive Disk Settings", "webdav_allowed_methods", "OPTIONS, GET, HEAD, PROPFIND"
+        )
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+        frappe.db.commit()
+        try:
+            # blocked verb: 405 naming the permitted set
+            response = dispatch("PUT", "/dav/Home/x.txt", user=USER, password=PASSWORD, data=b"x")
+            self.assertEqual(response.status_code, 405)
+            self.assertEqual(response.headers["Allow"], "OPTIONS, GET, HEAD, PROPFIND")
+            self.assertIn("disabled on this site", response.get_data(as_text=True))
+
+            # permitted verb still works end to end
+            response = dispatch(
+                "PROPFIND", "/dav/Home", user=USER, password=PASSWORD, headers={"Depth": "0"}
+            )
+            self.assertEqual(response.status_code, 207)
+
+            # the handshake reflects the restriction: no LOCK -> no class 2
+            response = dispatch("OPTIONS", "/dav")
+            self.assertEqual(response.headers["Allow"], "OPTIONS, GET, HEAD, PROPFIND")
+            self.assertEqual(response.headers["DAV"], "1, 3")
+        finally:
+            frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "")
+            frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+            frappe.db.commit()
+
+        response = dispatch("OPTIONS", "/dav")
+        self.assertEqual(response.headers["DAV"], "1, 2, 3")
+
     def test_success_path_commits_before_raising(self):
         with patch.object(frappe.db, "commit", wraps=frappe.db.commit) as commit:
             response = dispatch("OPTIONS", "/dav")

@@ -66,7 +66,13 @@ def _dispatch(request: Request) -> None:
         if not settings.user_webdav_enabled(user):
             raise errors.Forbidden("WebDAV is disabled for your account. Enable it in Drive settings.")
         frappe.set_user(user)
-        handler = _handler_for(request.method)
+        allowed = settings.allowed_webdav_methods()
+        if request.method not in allowed:
+            raise errors.MethodNotAllowed(
+                f"{request.method} is disabled on this site.",
+                headers={"Allow": ", ".join(allowed)},
+            )
+        handler = _handler_for(request.method, allowed)
         ctx = context.build(request, user)
         response = handler(ctx)
     except DAVResponseException:
@@ -89,14 +95,14 @@ def _dispatch(request: Request) -> None:
         _respond(response)
 
 
-def _handler_for(method: str) -> Callable:
+def _handler_for(method: str, allowed: tuple[str, ...] = ALLOWED_METHODS) -> Callable:
     entry = _HANDLERS.get(method)
     if not entry:
         from suite.drive.webdav.errors import MethodNotAllowed
 
         raise MethodNotAllowed(
             f"{method} is not supported here.",
-            headers={"Allow": ", ".join(ALLOWED_METHODS)},
+            headers={"Allow": ", ".join(allowed)},
         )
     module_name, attribute = entry
     module = importlib.import_module(f"suite.drive.webdav.{module_name}")
