@@ -51,11 +51,13 @@ def handle_before_request() -> None:
 
 
 def _dispatch(request: Request) -> None:
-    from suite.drive.webdav import auth, context, errors, options, settings
+    from suite.drive.webdav import auth, context, errors, log, options, settings
 
     if not settings.global_webdav_enabled():
         # disabled site is indistinguishable from one without the feature
         raise NotFound()
+
+    log.start_request(request)
 
     if request.method == "OPTIONS":
         # pre-auth: static headers, and Windows probes before offering credentials
@@ -63,6 +65,7 @@ def _dispatch(request: Request) -> None:
 
     try:
         user = auth.authenticate(request)
+        log.note_user(user)
         if not settings.user_webdav_enabled(user):
             raise errors.Forbidden("WebDAV is disabled for your account. Enable it in Drive settings.")
         frappe.set_user(user)
@@ -79,10 +82,12 @@ def _dispatch(request: Request) -> None:
         raise
     except errors.DAVError as e:
         _rollback()
+        log.note(str(e) or type(e).__name__)
         _raise(errors.to_response(e))
     except Exception as e:
         _rollback()
         mapped = errors.map_exception(e)
+        log.note(f"{type(e).__name__}: {e}"[:200])
         if mapped.status >= 500:
             frappe.log_error(title=f"WebDAV {request.method} {request.path}"[:140])
             # frappe/app.py rolls back again after the carrier is raised; the
@@ -117,6 +122,10 @@ def _respond(response: Response) -> None:
 
 
 def _raise(response: Response) -> None:
+    from suite.drive.webdav import log
+
+    # every response leaves through here — the one choke point worth logging
+    log.log_response(frappe.local.request, response)
     # frappe's process_response replaces WWW-Authenticate on 401/403 with an
     # OAuth Bearer challenge; frappe.local.response_headers is merged after
     # that, so mirror ours there — WebDAV clients only speak Basic

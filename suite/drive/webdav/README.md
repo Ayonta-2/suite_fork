@@ -76,6 +76,16 @@ query count per listing), `propfind`/`proppatch` (+ `deadprops` store),
   request-line default.
 - On **Frappe Cloud**, `/dav` is in the app's `ALLOWED_WILDCARD_PATHS`.
 
+## Site config keys
+
+Optional per-site knobs (`site_config.json`):
+
+| Key | Effect |
+|---|---|
+| `drive_webdav_log_level` | Request logging to `logs/drive_webdav.log` (bench and site copy). `"error"` = 5xx only, `"warning"` = adds 4xx, `"info"` = one line per request (method, path, status, duration, user, IP, client), `"debug"` = adds the protocol headers (Depth, Destination, If, Lock-Token…). Unset/anything else = off. Credentials are never logged. |
+| `drive_webdav_max_upload_size` | Absolute PUT body ceiling in bytes, enforced while spooling (on top of the per-user quota bound). |
+| `drive_webdav_s3_redirect` | Serve S3-backed GETs as 302s to presigned URLs instead of proxying. Only for deployments whose clients handle cross-host redirects (rclone, Cyberduck — not the Windows mini-redirector). |
+
 ## rclone
 
 ```
