@@ -19,7 +19,7 @@
 			<div v-if="config.globally_enabled" class="flex flex-col gap-4">
 				<SettingsRow
 					:title="__('Allow WebDAV access to my files')"
-					:description="__('Turn off to block WebDAV clients from your account.')"
+					:description="__('Off by default — turn on before connecting a client.')"
 				>
 					<Switch v-model="userEnabled" />
 				</SettingsRow>
@@ -65,11 +65,11 @@ import { setSettings, webdavConfig } from '@/apps/drive/resources/permissions'
 const config = computed(() => webdavConfig.data ?? {})
 
 const globalEnabled = ref(Boolean(config.value.globally_enabled))
-const userEnabled = ref(config.value.enabled_for_user !== false)
+const userEnabled = ref(config.value.enabled_for_user === true)
 
 watch(config, (value) => {
 	globalEnabled.value = Boolean(value.globally_enabled)
-	userEnabled.value = value.enabled_for_user !== false
+	userEnabled.value = value.enabled_for_user === true
 })
 
 const setGlobal = createResource({
@@ -84,7 +84,7 @@ watch(globalEnabled, (value) => {
 })
 
 watch(userEnabled, (value) => {
-	if (value !== (config.value.enabled_for_user !== false)) {
+	if (value !== (config.value.enabled_for_user === true)) {
 		setSettings.submit({ updates: { webdav_enabled: value } })
 	}
 })

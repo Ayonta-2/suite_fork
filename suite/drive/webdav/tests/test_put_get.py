@@ -102,8 +102,11 @@ class TestWebDAVContent(IntegrationTestCase):
             self._get(f"/dav/Everyone/{home_name}/{self.folder_name}/data.bin", user=STRANGER)
 
     def test_end_to_end_get_through_dispatcher(self):
+        from suite.drive.webdav.tests.utils import enable_user_webdav
+
         frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 1)
         frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+        enable_user_webdav(OWNER)
         frappe.db.commit()
         try:
             response = dispatch("GET", f"/dav/Home/{self.folder_name}/data.bin", user=OWNER, password=PASSWORD)
@@ -122,6 +125,7 @@ class TestWebDAVContent(IntegrationTestCase):
         finally:
             frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 0)
             frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+            frappe.db.set_value("Drive Settings", OWNER, "webdav_enabled", 0, update_modified=False)
             frappe.db.commit()
 
 

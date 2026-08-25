@@ -29,8 +29,8 @@
    "label": "Auto Detect Links"
   },
   {
-   "default": "1",
-   "description": "Allow WebDAV clients to access my files when WebDAV is enabled on this site.",
+   "default": "0",
+   "description": "Let WebDAV clients access my files when WebDAV is enabled on this site. Off until you turn it on.",
    "fieldname": "webdav_enabled",
    "fieldtype": "Check",
    "label": "Allow WebDAV Access"
@@ -64,7 +64,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-24 12:00:00.000000",
+ "modified": "2026-08-25 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Settings",

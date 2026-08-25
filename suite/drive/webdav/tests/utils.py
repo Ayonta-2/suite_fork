@@ -14,6 +14,15 @@ def ensure_user_with_password(email: str, password: str) -> None:
     update_password(email, password)
 
 
+def enable_user_webdav(user: str, commit: bool = False) -> None:
+    """Flip the (opt-in, default-off) per-user toggle for a test user."""
+    if not frappe.db.exists("Drive Settings", user):
+        frappe.get_doc({"doctype": "Drive Settings", "user": user}).insert(ignore_permissions=True)
+    frappe.db.set_value("Drive Settings", user, "webdav_enabled", 1, update_modified=False)
+    if commit:
+        frappe.db.commit()
+
+
 def basic_header(user: str, password: str) -> str:
     return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
 

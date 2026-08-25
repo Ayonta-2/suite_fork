@@ -46,8 +46,13 @@ class TestWebDAVSettings(IntegrationTestCase):
         self.assertFalse(config["is_admin"])
         self.assertTrue(config["server_url"].endswith("/dav/"))
         self.assertEqual(config["username"], USER)
-        self.assertTrue(config["enabled_for_user"])
+        # per-user access is opt-in: off until the user flips it
+        self.assertFalse(config["enabled_for_user"])
         self.assertFalse(config["two_factor_blocked"])
+
+        with self.set_user(USER):
+            set_settings({"webdav_enabled": 1})
+            self.assertTrue(webdav_config()["enabled_for_user"])
 
     def test_config_flags_two_factor(self):
         self._set_global(1)
@@ -64,13 +69,15 @@ class TestWebDAVSettings(IntegrationTestCase):
         set_webdav_enabled(False)
         self.assertFalse(global_webdav_enabled())
 
-    def test_user_opt_out_via_set_settings(self):
+    def test_user_opt_in_via_set_settings(self):
+        # default-off is covered by test_missing_settings_row_defaults_to_disabled;
+        # earlier tests in this class may already have opted USER in
         with self.set_user(USER):
-            set_settings({"webdav_enabled": 0})
-            self.assertFalse(user_webdav_enabled(USER))
             set_settings({"webdav_enabled": 1})
             self.assertTrue(user_webdav_enabled(USER))
+            set_settings({"webdav_enabled": 0})
+            self.assertFalse(user_webdav_enabled(USER))
 
-    def test_missing_settings_row_defaults_to_enabled(self):
+    def test_missing_settings_row_defaults_to_disabled(self):
         frappe.db.delete("Drive Settings", {"user": FRESH})
-        self.assertTrue(user_webdav_enabled(FRESH))
+        self.assertFalse(user_webdav_enabled(FRESH))

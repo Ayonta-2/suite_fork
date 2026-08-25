@@ -6,7 +6,12 @@ from werkzeug.datastructures import Headers
 from werkzeug.exceptions import NotFound
 
 from suite.drive.webdav.dispatch import handle_before_request
-from suite.drive.webdav.tests.utils import dispatch, ensure_user_with_password, set_dav_request
+from suite.drive.webdav.tests.utils import (
+    dispatch,
+    enable_user_webdav,
+    ensure_user_with_password,
+    set_dav_request,
+)
 
 USER = "webdav-dispatch@example.com"
 PASSWORD = "webdav-dispatch-pw-9000"
@@ -20,6 +25,7 @@ class TestWebDAVDispatch(IntegrationTestCase):
     def setUpClass(cls):
         super().setUpClass()
         ensure_user_with_password(USER, PASSWORD)
+        enable_user_webdav(USER)
         frappe.db.commit()
 
     def setUp(self):
@@ -80,16 +86,24 @@ class TestWebDAVDispatch(IntegrationTestCase):
         self.assertNotIn("POST", response.headers["Allow"])
 
     def test_user_toggle_off_is_403(self):
-        if not frappe.db.exists("Drive Settings", USER):
-            frappe.get_doc({"doctype": "Drive Settings", "user": USER}).insert(ignore_permissions=True)
         frappe.db.set_value("Drive Settings", USER, "webdav_enabled", 0)
         frappe.db.commit()
         try:
             response = dispatch("PROPFIND", "/dav/Home", user=USER, password=PASSWORD)
         finally:
-            frappe.db.set_value("Drive Settings", USER, "webdav_enabled", 1)
-            frappe.db.commit()
+            enable_user_webdav(USER, commit=True)
 
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("disabled for your account", response.get_data(as_text=True))
+
+    def test_user_access_is_opt_in_by_default(self):
+        # a user who never touched their settings must be rejected
+        fresh = "webdav-dispatch-fresh@example.com"
+        ensure_user_with_password(fresh, PASSWORD)
+        frappe.db.set_value("Drive Settings", fresh, "webdav_enabled", 0, update_modified=False)
+        frappe.db.commit()
+
+        response = dispatch("PROPFIND", "/dav/Home", user=fresh, password=PASSWORD)
         self.assertEqual(response.status_code, 403)
         self.assertIn("disabled for your account", response.get_data(as_text=True))
 

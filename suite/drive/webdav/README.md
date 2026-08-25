@@ -9,9 +9,9 @@ directly at `https://<site>/dav/`.
 
 1. **Admin**: Drive → Settings → WebDAV → *Enable WebDAV* (or check
    *Enable WebDAV* on the **Drive Disk Settings** doctype).
-2. **User**: connect a client to `https://<site>/dav/` and sign in with the
-   Frappe username and password. Each user can opt out under Drive →
-   Settings → WebDAV.
+2. **User**: turn on *Allow WebDAV Access* under Drive → Settings → WebDAV
+   (off by default), then connect a client to `https://<site>/dav/` and sign
+   in with the Frappe username and password.
 
 The mount shows two folders: **Home** (the user's personal files) and
 **Everyone** (the shared site tree). All Drive permissions apply exactly as in
