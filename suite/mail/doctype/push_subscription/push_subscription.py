@@ -15,7 +15,7 @@ from suite.mail.jmap import get_push_subscription_service
 from suite.mail.utils import generate_uuid_style_hash, log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.user import get_jmap_configured_users, is_jmap_configured
-from suite.utils import parse_filters
+from suite.utils import enqueue_job, parse_filters
 from suite.utils.dt import get_utc_now, parse_iso_datetime
 from suite.utils.user import is_system_manager
 
@@ -149,6 +149,61 @@ def bulk_delete(names: str | list[str]) -> None:
 
 
 @frappe.whitelist()
+def get_site_device_client_id(user: str) -> str:
+    """Returns this site's deterministic device client id for the user.
+
+    Deterministic so the site's own subscription on the mail server can be recognized
+    (and healed) without storing anything locally.
+    """
+
+    return generate_uuid_style_hash(f"frappe-{frappe.local.site.replace('.', '-')}-{user}")
+
+
+def ensure_push_subscription(user: str) -> None:
+    """Creates this site's push subscription for the user if the mail server holds none.
+
+    A subscription lost to a failed creation, an unrenewed expiry or a server-side delete
+    silently ends the user's webhooks — and with them both realtime events and mailbox-count
+    cache invalidation. The device client id is deterministic per site+user, so presence is
+    a plain lookup.
+    """
+
+    if not frappe.utils.get_url().startswith("https://"):
+        return
+    if is_push_subscription_disabled(user):
+        return
+
+    device_client_id = get_site_device_client_id(user)
+    now = get_utc_now()
+
+    for subscription in get_push_subscription_service(user, ignore_permissions=True).get():
+        if subscription.get("deviceClientId") != device_client_id:
+            continue
+        expires = subscription.get("expires")
+        if not expires or parse_iso_datetime(expires, as_str=False) > now:
+            return
+
+    _add_push_subscription(user, ignore_permissions=True)
+
+
+def on_login(login_manager) -> None:
+    """Login hook: heal the user's push subscription in the background.
+
+    Enqueued so the JMAP round trips never sit in the login path.
+    """
+
+    user = login_manager.user
+    if user in ("Guest", "Administrator") or not is_jmap_configured(user):
+        return
+
+    enqueue_job(
+        ensure_push_subscription,
+        user=user,
+        queue="short",
+        enqueue_after_commit=True,
+    )
+
+
 def add_push_subscription(
     user: str,
     device_client_id: str | None = None,
@@ -180,9 +235,7 @@ def _add_push_subscription(
 
     is_push_subscription_disabled(user, raise_exception=True)
 
-    device_client_id = device_client_id or generate_uuid_style_hash(
-        f"frappe-{frappe.local.site.replace('.', '-')}-{user}"
-    )
+    device_client_id = device_client_id or get_site_device_client_id(user)
     if url:
         if not url.startswith("https://"):
             frappe.throw(_("The URL must start with 'https://'."))
@@ -284,7 +337,8 @@ def renew_expiring_push_subscriptions() -> None:
     Scheduled to run daily. A subscription is renewed when its expiry is within
     ``RENEW_THRESHOLD_DAYS`` of the run; subscriptions without an expiry or expiring
     later are left untouched. Users who disabled push subscriptions in their User
-    Settings are skipped.
+    Settings are skipped. Users missing this site's subscription on the mail server get
+    one created (self-healing — see ensure_push_subscription).
     """
 
     if not frappe.utils.get_url().startswith("https://"):
@@ -297,6 +351,7 @@ def renew_expiring_push_subscriptions() -> None:
             continue
 
         try:
+            ensure_push_subscription(user)
             service = get_push_subscription_service(user, ignore_permissions=True)
 
             expiring_ids = []

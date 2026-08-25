@@ -70,3 +70,58 @@ class FetchChanges(unittest.TestCase):
 
         log_mail_error.assert_not_called()
         update_sync_state.assert_not_called()
+
+
+class FetchChangesInit(unittest.TestCase):
+    """``fetch_changes`` with no stored sync state — how the state gets seeded.
+
+    A webhook carries the new state and initializes from it directly. A manual or
+    scheduled run carries none; storing that None would leave the account
+    re-"initializing" on every run with changes never fetched, so the state is seeded
+    from the server instead.
+    """
+
+    def _run(
+        self, email_state: str | None, server_state: str | mock.Mock | None
+    ) -> tuple[mock.Mock, mock.Mock, mock.Mock]:
+        with (
+            mock.patch.object(mail_message, "get_sync_state", return_value=None),
+            mock.patch.object(mail_message, "update_sync_state") as update_sync_state,
+            mock.patch.object(mail_message, "get_jmap_connection"),
+            mock.patch.object(mail_message, "EmailService") as email_service,
+            mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
+        ):
+            if isinstance(server_state, mock.Mock):
+                email_service.return_value.get_state = server_state
+            else:
+                email_service.return_value.get_state = mock.MagicMock(return_value=server_state)
+            mail_message.fetch_changes("user@example.test", "f7", email_state=email_state)
+
+        return update_sync_state, log_mail_error, email_service.return_value.get_state
+
+    def test_webhook_state_initializes_directly(self):
+        update_sync_state, log_mail_error, get_state = self._run("s2", "unused")
+
+        update_sync_state.assert_called_once_with("f7", type="email", state="s2")
+        get_state.assert_not_called()
+        log_mail_error.assert_not_called()
+
+    def test_missing_state_is_seeded_from_server(self):
+        update_sync_state, log_mail_error, _ = self._run(None, "s5")
+
+        update_sync_state.assert_called_once_with("f7", type="email", state="s5")
+        log_mail_error.assert_not_called()
+
+    def test_unavailable_server_state_is_not_stored(self):
+        update_sync_state, log_mail_error, _ = self._run(None, None)
+
+        update_sync_state.assert_not_called()
+        log_mail_error.assert_not_called()
+
+    def test_seed_failure_is_logged_and_not_stored(self):
+        update_sync_state, log_mail_error, _ = self._run(
+            None, mock.MagicMock(side_effect=RuntimeError("boom"))
+        )
+
+        update_sync_state.assert_not_called()
+        log_mail_error.assert_called_once()
