@@ -162,6 +162,15 @@ def _resolve_destination(ctx: DavContext, source: pathmap.ResolvedPath):
     if not (dest_access["read"] or dest_access["upload"]):
         raise Conflict("Destination's parent collection does not exist.")
 
+    # an existing destination the user cannot read fails closed as PUT does
+    # (404) — the Overwrite:F 412 and the overwrite path's 403 would otherwise
+    # confirm a hidden name to anyone with upload access to the parent
+    if (
+        destination.entity is not None
+        and not perms.resolve_entity_access(destination.entity, ctx.user)["read"]
+    ):
+        raise NotFoundError("Resource not found.")
+
     # a folder cannot move/copy into its own subtree
     if source.entity.is_folder:
         ancestors = {node["name"] for node in generate_upward_path(parent.name, ctx.user)}

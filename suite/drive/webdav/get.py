@@ -50,6 +50,15 @@ def _collection_response(ctx: DavContext, spa_url: str) -> Response:
     return redirect(spa_url, code=302)
 
 
+def _neutralize_active_content(headers) -> None:
+    """File bytes are untrusted user content served from the app origin, and
+    neither frappe nor werkzeug adds these: without them an uploaded HTML/SVG
+    file opened in a browser runs its scripts with the viewer's session. DAV
+    clients ignore both headers."""
+    headers["X-Content-Type-Options"] = "nosniff"
+    headers["Content-Security-Policy"] = "sandbox"
+
+
 def _serve_local(ctx: DavContext, row: frappe._dict, manager: FileManager) -> Response:
     try:
         response = send_file(
@@ -68,6 +77,7 @@ def _serve_local(ctx: DavContext, row: frappe._dict, manager: FileManager) -> Re
     # disposition from the path; DAV clients name files from the URL
     response.headers["Accept-Ranges"] = "bytes"
     response.headers.pop("Content-Disposition", None)
+    _neutralize_active_content(response.headers)
     return response
 
 
@@ -83,6 +93,7 @@ def _serve_s3(ctx: DavContext, row: frappe._dict, manager: FileManager) -> Respo
         "Accept-Ranges": "bytes",
         "Cache-Control": "private, no-cache",
     }
+    _neutralize_active_content(headers)
     if is_not_modified(ctx.request, row):
         return Response(status=304, headers=headers)
 

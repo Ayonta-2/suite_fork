@@ -125,6 +125,9 @@ class TestWebDAVPathmap(IntegrationTestCase):
         doc.db_set({"content_doctype": "User", "content_docname": USER}, update_modified=False)
         slashed = make_file(self.docs.name, "before-rename")
         frappe.db.set_value("File", slashed.name, "file_name", "a/b.txt", update_modified=False)
+        backslashed = make_file(self.docs.name, "before-bs-rename")
+        frappe.db.set_value("File", backslashed.name, "file_name", "a\\b.txt", update_modified=False)
+        percented = make_file(self.docs.name, "100%.txt")
         try:
             self.assertFalse(resolve("Home/Docs/Site.link").exists)
             self.assertFalse(resolve("Home/Docs/Notes").exists)
@@ -132,10 +135,16 @@ class TestWebDAVPathmap(IntegrationTestCase):
             self.assertNotIn(link.name, listed)
             self.assertNotIn(doc.name, listed)
             self.assertNotIn(slashed.name, listed)
+            # the LIKE-escape trap: '%\\%' matched %-suffixed names, not backslashes
+            self.assertNotIn(backslashed.name, listed)
+            self.assertIn(percented.name, listed)
         finally:
             frappe.db.set_value("File", slashed.name, "file_name", "before-rename", update_modified=False)
+            frappe.db.set_value(
+                "File", backslashed.name, "file_name", "before-bs-rename", update_modified=False
+            )
             doc.db_set({"content_doctype": None, "content_docname": None}, update_modified=False)
-            for entity in (link, doc, slashed):
+            for entity in (link, doc, slashed, backslashed, percented):
                 entity.reload()
                 entity.delete(ignore_permissions=True, force=True)
 

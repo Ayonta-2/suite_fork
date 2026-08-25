@@ -82,7 +82,10 @@ def handle_unlock(ctx: DavContext) -> Response:
 
 
 def _refresh(ctx: DavContext, resolved: pathmap.ResolvedPath, timeout: int) -> Response:
-    if not resolved.exists:
+    # an unreadable target answers exactly like an unmapped one (anti-enumeration,
+    # as on UNLOCK): the owner-mismatch Forbidden below would otherwise confirm
+    # a hidden resource and its lock to anyone holding a leaked token
+    if not resolved.exists or not perms.resolve_entity_access(resolved.entity, ctx.user)["read"]:
         raise PreconditionFailed("Nothing to refresh at this URL.")
 
     submitted = locks.parsed_if(ctx).all_tokens()

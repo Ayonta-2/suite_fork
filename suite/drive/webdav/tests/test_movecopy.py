@@ -208,6 +208,37 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         self.assertTrue(self._resolve(f"Home/{shared.file_name}/open.txt", user=READER).exists)
         self.assertFalse(self._resolve(f"Home/{shared.file_name}/hidden.txt", user=READER).exists)
 
+    def test_unreadable_destination_reads_as_absent(self):
+        # neither the Overwrite:F 412 nor the overwrite path's 403 may confirm
+        # a name READER cannot see — fail closed as 404, like PUT
+        with self.set_user(OWNER):
+            shared = create_drive_file(
+                f"mc-dst-{frappe.generate_hash(length=6)}",
+                get_root_folder().name,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            hidden = write_file_fixture(shared.name, "spot.txt", b"hidden")
+        frappe.get_doc(
+            {"doctype": "Drive Permission", "entity": shared.name, "user": READER, "read": 1, "upload": 1}
+        ).insert(ignore_permissions=True)
+        frappe.get_doc(
+            {"doctype": "Drive Permission", "entity": hidden.name, "user": READER, "read": 1, "deny": 1}
+        ).insert(ignore_permissions=True)
+        with self.set_user(READER):
+            write_file_fixture(shared.name, "mine.txt", b"mine")
+
+        for overwrite in (False, None):
+            with self.assertRaises(NotFoundError):
+                self._move(
+                    f"/dav/Everyone/{shared.file_name}/mine.txt",
+                    f"/dav/Everyone/{shared.file_name}/spot.txt",
+                    user=READER,
+                    overwrite=overwrite,
+                )
+        # the hidden destination was never trashed
+        self.assertEqual(frappe.db.get_value("File", hidden.name, "status"), "Active")
+
     def test_copy_overwrite_semantics(self):
         with self.set_user(OWNER):
             target = write_file_fixture(self.base.name, "spot.txt", b"old")

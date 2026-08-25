@@ -79,11 +79,13 @@ def resolve(segments: list[str], user: str) -> ResolvedPath:
 
 def list_children(parent_name: str) -> list[frappe._dict]:
     """All representable, addressable children — oldest row wins exact-name duplicates."""
+    # CHAR(92) is the backslash: spelled as a LIKE pattern it is unescaped
+    # twice (string literal, then LIKE) and ends up matching '%' instead
     rows = frappe.db.sql(
         f"""SELECT {_PROJECTION}
         FROM `tabFile`
         WHERE folder = %(parent)s AND status = 'Active' AND {_REPRESENTABLE}
-            AND file_name NOT LIKE '%%/%%' AND file_name NOT LIKE '%%\\\\%%'
+            AND file_name NOT LIKE '%%/%%' AND INSTR(file_name, CHAR(92)) = 0
             AND file_name NOT IN ('.', '..')
         ORDER BY creation ASC""",
         values={"parent": parent_name},

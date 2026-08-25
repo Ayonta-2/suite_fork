@@ -59,6 +59,9 @@ class TestWebDAVContent(IntegrationTestCase):
         self.assertTrue(response.headers["ETag"])
         self.assertTrue(response.headers["Last-Modified"].endswith(" GMT"))
         self.assertNotIn("Content-Disposition", response.headers)
+        # user bytes must come back inert for browsers
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["Content-Security-Policy"], "sandbox")
 
     def test_range_request_yields_206(self):
         response = self._get(f"/dav/Home/{self.folder_name}/data.bin", headers={"Range": "bytes=0-4"})
@@ -307,11 +310,16 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.headers["X-OC-Mtime"], "accepted")
 
-        from datetime import datetime
+        from datetime import UTC, datetime
+
+        from suite.drive.webdav.properties import to_site_naive
 
         row = self._resolve(f"Home/{self.base_name}/dated.txt").entity
         stored = frappe.db.get_value("File", row.name, "file_modified")
-        self.assertEqual(frappe.utils.get_datetime(stored), datetime.fromtimestamp(1700000000))
+        # the UTC epoch stored in the site zone, not the OS zone
+        self.assertEqual(
+            frappe.utils.get_datetime(stored), to_site_naive(datetime.fromtimestamp(1700000000, tz=UTC))
+        )
 
     def test_put_empty_body(self):
         response = self._put(f"/dav/Home/{self.base_name}/empty.bin", b"")

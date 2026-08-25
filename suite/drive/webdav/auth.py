@@ -160,7 +160,9 @@ def _api_secret_valid(user: str, presented: str) -> bool:
 
 
 def _trackers(user: str) -> list[LoginAttemptTracker]:
-    keys = [LOCKOUT_KEY_NS + user]
+    # the DB resolves user names case-insensitively, so case variants of one
+    # account must share a counter (the credential cache lowercases the same way)
+    keys = [LOCKOUT_KEY_NS + user.lower()]
     if request_ip := getattr(frappe.local, "request_ip", None):
         keys.append(LOCKOUT_KEY_NS + request_ip)
     interval = _lock_interval()

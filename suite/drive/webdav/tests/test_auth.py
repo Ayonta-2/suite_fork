@@ -64,10 +64,11 @@ class TestWebDAVAuth(IntegrationTestCase):
         with self.change_settings(
             "System Settings", allow_consecutive_login_attempts=3, allow_login_after_fail=60
         ):
-            # frappe locks only once failures exceed the threshold
-            for _ in range(4):
+            # frappe locks only once failures exceed the threshold; case
+            # variants resolve to the same account and must share the counter
+            for variant in (user, user.upper(), user.title(), user):
                 with self.assertRaises(AuthRequired):
-                    authenticate(user, "wrong-password")
+                    authenticate(variant, "wrong-password")
             with self.assertRaises(Forbidden) as ctx:
                 authenticate(user, PASSWORD)
             self.assertIn("Retry-After", ctx.exception.headers)

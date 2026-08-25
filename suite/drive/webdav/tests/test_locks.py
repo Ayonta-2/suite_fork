@@ -181,6 +181,43 @@ class TestWebDAVLocks(IntegrationTestCase):
         response = put.handle(make_ctx("PUT", path, OWNER, data=b"unlocked now"))
         self.assertEqual(response.status_code, 204)
 
+    def _hide_from_editor(self, name: str, data: bytes = b"secret"):
+        with self.set_user(OWNER):
+            hidden = write_file_fixture(self.shared.name, name, data)
+        frappe.get_doc(
+            {"doctype": "Drive Permission", "entity": hidden.name, "user": EDITOR, "read": 1, "deny": 1}
+        ).insert(ignore_permissions=True)
+        return hidden
+
+    def test_if_header_cannot_probe_unreadable_resources(self):
+        from suite.drive.webdav.properties import compute_etag
+
+        hidden = self._hide_from_editor("secret.txt")
+        etag = compute_etag(pathmap.fetch(hidden.name))
+        hidden_url = f"/dav/Everyone/{self.shared.file_name}/secret.txt"
+        target = f"/dav/Everyone/{self.shared.file_name}/team.txt"
+
+        # a tagged condition on a hidden resource evaluates as if it were
+        # unmapped — even a correct ETag guess must not turn the 412 off
+        with self.assertRaises(PreconditionFailed):
+            put.handle(
+                make_ctx("PUT", target, EDITOR, data=b"x", headers={"If": f"<{hidden_url}> ([{etag}])"})
+            )
+        # a reader evaluates the same condition for real
+        response = put.handle(
+            make_ctx("PUT", target, OWNER, data=b"x", headers={"If": f"<{hidden_url}> ([{etag}])"})
+        )
+        self.assertEqual(response.status_code, 204)
+
+    def test_refresh_on_unreadable_path_reads_as_unmapped(self):
+        self._hide_from_editor("secret2.txt")
+        path = f"/dav/Everyone/{self.shared.file_name}/secret2.txt"
+        token = self._token(self._lock(path, user=OWNER))
+        # a leaked token must not confirm the hidden resource or its lock: the
+        # reply matches an unmapped URL, not the owner-mismatch Forbidden
+        with self.assertRaises(PreconditionFailed):
+            lock_module.handle_lock(make_ctx("LOCK", path, EDITOR, headers={"If": f"(<{token}>)"}))
+
     def test_refresh_extends_and_expiry_frees(self):
         path = f"/dav/Home/{self.base_name}/doc.docx"
         token = self._token(self._lock(path, Timeout="Second-60"))

@@ -10,7 +10,7 @@ nextcloud vendor round-trips modification times.
 
 import hashlib
 import shutil
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import frappe
@@ -36,6 +36,7 @@ from suite.drive.webdav.errors import (
     NotFoundError,
     quota_guard,
 )
+from suite.drive.webdav.properties import to_site_naive
 
 # 9999-12-31 UTC — the largest epoch datetime.fromtimestamp can represent
 MAX_MTIME = 253402300799
@@ -151,13 +152,17 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
         lambda file: "/" + str(manager.get_disk_path(file)),
         mime_type,
         size,
-        _client_mtime(ctx),
     )
     manager.upload_file(scratch, drive_file, create_thumbnail=True)
     if manager.s3_enabled:
         drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
         drive_file.save()
-    drive_file.db_set("content_hash", sha256, update_modified=False)
+    stamped = {"content_hash": sha256}
+    if (client_mtime := _client_mtime_datetime(ctx)) is not None:
+        # not via create_drive_file: its fromtimestamp() reads the epoch in the
+        # OS zone, not the site zone the DB convention expects
+        stamped["file_modified"] = client_mtime
+    drive_file.db_set(stamped, update_modified=False)
     _bump_folder_size(parent.name, size)
 
     return _response(ctx, 201, drive_file.name, sha256)
@@ -238,8 +243,13 @@ def _client_mtime(ctx: DavContext) -> float | None:
 
 
 def _client_mtime_datetime(ctx: DavContext) -> datetime | None:
+    """X-OC-Mtime is a UTC epoch; the DB stores site-local naive datetimes.
+    A zoneless fromtimestamp() would read the epoch in the OS zone instead and
+    skew every round-trip (rclone re-syncs) whenever the two zones differ."""
     stamp = _client_mtime(ctx)
-    return datetime.fromtimestamp(stamp) if stamp else None
+    if stamp is None:
+        return None
+    return to_site_naive(datetime.fromtimestamp(stamp, tz=UTC))
 
 
 def _bump_folder_size(folder: str, delta: int) -> None:

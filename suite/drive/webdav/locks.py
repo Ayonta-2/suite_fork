@@ -15,8 +15,8 @@ import frappe
 from lxml import etree
 
 from suite.drive.utils import get_ancestors_of
-from suite.drive.webdav import pathmap
-from suite.drive.webdav.context import DavContext
+from suite.drive.webdav import pathmap, perms
+from suite.drive.webdav.context import DavContext, validate_segments
 from suite.drive.webdav.errors import BadRequest, Locked, PreconditionFailed
 from suite.drive.webdav.ifheader import EMPTY_IF, BadIfHeader, IfHeader, parse_if_header
 from suite.drive.webdav.properties import compute_etag
@@ -92,18 +92,35 @@ def parsed_if(ctx: DavContext) -> IfHeader:
 
 
 def _conditional_gate(ctx: DavContext, submitted: IfHeader) -> None:
+    def readable(resolved: pathmap.ResolvedPath) -> str | None:
+        # a resource the user cannot read evaluates exactly like an absent one:
+        # the observable 412 would otherwise disclose its existence, ETag and
+        # lock state to anyone who can name its URL in a tagged If list
+        row = resolved.entity
+        if row is None or not perms.resolve_entity_access(row, ctx.user)["read"]:
+            return None
+        return row.name
+
     def resolve_href(href: str | None) -> str | None:
         if href is None:
-            resolved = pathmap.resolve(ctx.segments, ctx.user)
-            return resolved.entity.name if resolved.entity is not None else None
+            return readable(pathmap.resolve(ctx.segments, ctx.user))
         from urllib.parse import unquote, urlsplit
 
         path = urlsplit(href).path
         if path != pathmap.DAV_PREFIX and not path.startswith(pathmap.DAV_PREFIX + "/"):
             return None
-        segments = [unquote(segment) for segment in path[len(pathmap.DAV_PREFIX) :].split("/") if segment]
-        resolved = pathmap.resolve(segments, ctx.user)
-        return resolved.entity.name if resolved.entity is not None else None
+        try:
+            segments = validate_segments(
+                [
+                    unquote(segment, errors="strict")
+                    for segment in path[len(pathmap.DAV_PREFIX) :].split("/")
+                    if segment
+                ]
+            )
+        except (BadRequest, UnicodeDecodeError):
+            # an href the URL namespace itself would refuse is simply unmapped
+            return None
+        return readable(pathmap.resolve(segments, ctx.user))
 
     def get_etag(entity: str) -> str | None:
         row = pathmap.fetch(entity)
