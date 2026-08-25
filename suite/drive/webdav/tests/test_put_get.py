@@ -232,6 +232,9 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(row.name, target.name)
         self.assertEqual(row.file_size, 3)
         manager = FileManager()
+        # the byte swap rides on the commit the dispatcher issues before the
+        # response leaves
+        frappe.db.commit()
         self.assertEqual(manager.get_local_path(row.file_url).read_bytes(), b"v2!")
         # edit activity was logged
         self.assertTrue(
@@ -268,6 +271,21 @@ class TestWebDAVPut(IntegrationTestCase):
 
         row = self._resolve(f"Home/{self.base_name}/orphan.txt").entity
         self.assertFalse(FileManager().get_local_path(row.file_url).exists())
+
+    def test_put_overwrite_commit_failure_keeps_old_bytes(self):
+        # the dispatcher commits only after the handler returns; if that
+        # commit fails and degrades to a rollback, the staged bytes must be
+        # discarded and the target must never have changed
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        blob_path = FileManager().get_local_path(target.file_url)
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+        frappe.db.rollback()
+
+        self.assertEqual(blob_path.read_bytes(), b"version-one")
+        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
 
     def test_put_overwrite_failure_leaves_old_bytes(self):
         # the blob swap is irreversible while every DB write rolls back with the

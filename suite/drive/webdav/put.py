@@ -10,7 +10,6 @@ nextcloud vendor round-trips modification times.
 
 import hashlib
 import os
-import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -24,7 +23,7 @@ from suite.drive.api.files import get_upload_path
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage, validate_quota
 from suite.drive.utils import create_drive_file, get_file_type, update_file_size
-from suite.drive.utils.files import get_s3_key, get_s3_url, stored_on_disk
+from suite.drive.utils.files import get_s3_key, get_s3_url, storage_key, stored_on_disk
 from suite.drive.webdav import pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
@@ -209,35 +208,85 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
         activity_message=f"{full_name} updated {row.file_name} via WebDAV",
     )
 
-    # Replace the bytes only after every rollback-able write above has
-    # succeeded — the replacement itself cannot be rolled back, so done any
-    # earlier a failed db_set or activity insert would leave the new body
-    # served under the old size/hash/mtime (wrong GET bodies, stale ETags,
-    # skewed quota). The remaining window is a failed commit after an atomic
-    # swap, which self-heals: the stored hash then mismatches the body, so
-    # hash-checking clients re-upload.
-    if manager.s3_enabled and stored_on_disk(row.file_url):
-        # a framework-adopted blob lives on the site disk even under S3; overwrite
-        # it in place — upload_file would write the new body to a stray S3 key that
-        # GET (which serves on-disk blobs directly) never reads back, silently
-        # dropping the edit while advertising a fresh ETag
-        _replace_disk_blob(scratch, manager.get_local_path(row.file_url))
-    else:
-        manager.upload_file(scratch, doc, create_thumbnail=True)
+    # DB writes roll back while byte writes cannot, and the dispatcher commits
+    # only after this handler returns — replacing the target here would leave
+    # a failed commit serving the new body under the rolled-back size, hash
+    # and mtime (wrong GET bodies, stale ETags, skewed quota). So only the
+    # fallible byte transfer happens now, into a staging location; the target
+    # changes at after_commit through the least fallible primitive available,
+    # and any rollback discards the staged bytes without touching the target.
+    _stage_blob_swap(manager, row, doc, scratch)
     return _response(ctx, 204, row.name, sha256)
 
 
-def _replace_disk_blob(scratch: Path, target: Path) -> None:
-    """Swap the target's bytes atomically: a bare copyfile onto the target can
-    die midway (ENOSPC, a killed worker) and leave a corrupt half-written blob,
-    so spool beside the target first and os.replace — same directory, same
-    filesystem — as the only mutation the old blob ever sees."""
+def _stage_blob_swap(manager, row: frappe._dict, doc, scratch: Path) -> None:
+    if manager.s3_enabled and not stored_on_disk(row.file_url):
+        _stage_s3_swap(manager, doc, scratch)
+    elif manager.s3_enabled:
+        # a framework-adopted blob lives on the site disk even under S3; swap
+        # it in place — upload_file would write the new body to a stray S3 key
+        # that GET (which serves on-disk blobs directly) never reads back. No
+        # thumbnail either, matching the native path for adopted blobs.
+        _stage_disk_swap(scratch, manager.get_local_path(row.file_url))
+    else:
+        _stage_disk_swap(scratch, manager.site_folder / storage_key(row.file_url), manager, doc)
+
+
+def _stage_disk_swap(scratch: Path, target: Path, manager=None, doc=None) -> None:
+    """Rename the spooled body next to the target now (.uploads shares the
+    target's filesystem — the assumption upload_file's rename already makes),
+    so the commit-time swap is a bare same-directory os.replace: atomic, and
+    the only mutation the old blob ever sees."""
     staged = target.with_name(f"{target.name}.{frappe.generate_hash(length=12)}.putpart")
-    try:
-        shutil.copyfile(scratch, staged)
+    os.rename(scratch, staged)
+
+    def swap():
         os.replace(staged, target)
-    finally:
-        staged.unlink(missing_ok=True)
+        if manager is not None and manager.can_create_thumbnail(doc):
+            frappe.enqueue(manager.upload_thumbnail, now=True, at_front=True, file=doc, file_path=str(target))
+
+    frappe.db.after_commit.add(swap)
+    frappe.db.after_rollback.add(lambda: staged.unlink(missing_ok=True))
+
+
+def _stage_s3_swap(manager, doc, scratch: Path) -> None:
+    """Upload the body to a scratch key now — that is the fallible network
+    transfer — and promote it to the real key at commit with a server-side
+    managed copy (multipart-sized objects included). The key comes from
+    storage_key, not get_s3_key: an existing row's file_url is the rewritten
+    fetch url, which only storage_key resolves back to the object key."""
+    key = storage_key(doc.file_url)
+    staging_key = f"{key}.{frappe.generate_hash(length=12)}.putpart"
+    manager.conn.upload_file(str(scratch), manager.bucket, staging_key)
+    thumb_source = None
+    if manager.can_create_thumbnail(doc):
+        # upload_thumbnail renders from a local file and deletes it when done
+        thumb_source = scratch.with_name(scratch.name + ".thumbsrc")
+        os.rename(scratch, thumb_source)
+
+    def swap():
+        manager.conn.copy({"Bucket": manager.bucket, "Key": staging_key}, manager.bucket, key)
+        _discard_staging_object(manager, staging_key)
+        if thumb_source is not None:
+            frappe.enqueue(
+                manager.upload_thumbnail, now=True, at_front=True, file=doc, file_path=str(thumb_source)
+            )
+
+    def discard():
+        if thumb_source is not None:
+            thumb_source.unlink(missing_ok=True)
+        _discard_staging_object(manager, staging_key)
+
+    frappe.db.after_commit.add(swap)
+    frappe.db.after_rollback.add(discard)
+
+
+def _discard_staging_object(manager, staging_key: str) -> None:
+    try:
+        manager.conn.delete_object(Bucket=manager.bucket, Key=staging_key)
+    except Exception:
+        # a stray scratch object is only clutter; the swap must not fail over it
+        frappe.log_error("Drive: could not delete WebDAV staging object", frappe.get_traceback())
 
 
 def _run_upload_validators(scratch: Path, file_name: str, parent: str) -> None:
