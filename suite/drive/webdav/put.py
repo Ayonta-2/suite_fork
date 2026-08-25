@@ -9,6 +9,7 @@ nextcloud vendor round-trips modification times.
 """
 
 import hashlib
+import os
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -182,14 +183,6 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     mime_type = _detect_mime(ctx, scratch)
     manager = ctx.manager
     doc = frappe.get_doc("File", row.name)
-    if manager.s3_enabled and stored_on_disk(row.file_url):
-        # a framework-adopted blob lives on the site disk even under S3; overwrite
-        # it in place — upload_file would write the new body to a stray S3 key that
-        # GET (which serves on-disk blobs directly) never reads back, silently
-        # dropping the edit while advertising a fresh ETag
-        shutil.copyfile(scratch, manager.get_local_path(row.file_url))
-    else:
-        manager.upload_file(scratch, doc, create_thumbnail=True)
     doc.db_set(
         {
             "file_size": size,
@@ -207,7 +200,36 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
         activity_type="edit",
         activity_message=f"{full_name} updated {row.file_name} via WebDAV",
     )
+
+    # Replace the bytes only after every rollback-able write above has
+    # succeeded — the replacement itself cannot be rolled back, so done any
+    # earlier a failed db_set or activity insert would leave the new body
+    # served under the old size/hash/mtime (wrong GET bodies, stale ETags,
+    # skewed quota). The remaining window is a failed commit after an atomic
+    # swap, which self-heals: the stored hash then mismatches the body, so
+    # hash-checking clients re-upload.
+    if manager.s3_enabled and stored_on_disk(row.file_url):
+        # a framework-adopted blob lives on the site disk even under S3; overwrite
+        # it in place — upload_file would write the new body to a stray S3 key that
+        # GET (which serves on-disk blobs directly) never reads back, silently
+        # dropping the edit while advertising a fresh ETag
+        _replace_disk_blob(scratch, manager.get_local_path(row.file_url))
+    else:
+        manager.upload_file(scratch, doc, create_thumbnail=True)
     return _response(ctx, 204, row.name, sha256)
+
+
+def _replace_disk_blob(scratch: Path, target: Path) -> None:
+    """Swap the target's bytes atomically: a bare copyfile onto the target can
+    die midway (ENOSPC, a killed worker) and leave a corrupt half-written blob,
+    so spool beside the target first and os.replace — same directory, same
+    filesystem — as the only mutation the old blob ever sees."""
+    staged = target.with_name(f"{target.name}.{frappe.generate_hash(length=12)}.putpart")
+    try:
+        shutil.copyfile(scratch, staged)
+        os.replace(staged, target)
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def _run_upload_validators(scratch: Path, file_name: str, parent: str) -> None:

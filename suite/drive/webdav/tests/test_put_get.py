@@ -238,6 +238,26 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
         )
 
+    def test_put_overwrite_failure_leaves_old_bytes(self):
+        # the blob swap is irreversible while every DB write rolls back with the
+        # transaction, so a failure after the swap would leave new bytes served
+        # under the old size/hash/mtime — the swap must come last
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        blob_path = FileManager().get_local_path(target.file_url)
+
+        with (
+            patch.object(put_module, "create_new_activity_log", side_effect=frappe.ValidationError),
+            self.assertRaises(frappe.ValidationError),
+        ):
+            self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+
+        self.assertEqual(blob_path.read_bytes(), b"version-one")
+
     def test_put_overwrite_by_collaborator_keeps_owner(self):
         from suite.drive.utils import get_root_folder
 
