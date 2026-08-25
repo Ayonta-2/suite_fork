@@ -281,9 +281,7 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.commit()  # must not raise — the save already succeeded
 
         self.assertEqual(FileManager().get_local_path(row.file_url).read_bytes(), png)
-        self.assertTrue(
-            frappe.db.exists("Error Log", {"method": "Drive: could not create WebDAV thumbnail"})
-        )
+        self.assertTrue(frappe.db.exists("Error Log", {"method": "Drive: could not create WebDAV thumbnail"}))
 
     def test_put_rollup_failure_fails_the_put(self):
         # a suppressed rollup failure would commit ancestor sizes that no
