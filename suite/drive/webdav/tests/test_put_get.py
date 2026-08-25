@@ -306,6 +306,45 @@ class TestWebDAVPut(IntegrationTestCase):
         row = self._resolve(f"Home/{self.base_name}/orphan.txt").entity
         self.assertFalse(FileManager().get_local_path(row.file_url).exists())
 
+    def test_put_overwrite_promotion_failure_reverts_metadata(self):
+        # if the commit-time promotion itself fails, the transaction is
+        # already committed — compensation must step the metadata and rollup
+        # back to match the unchanged bytes, and the failure must surface
+        from unittest.mock import patch
+
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        blob_path = FileManager().get_local_path(target.file_url)
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+        with patch("os.replace", side_effect=OSError), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        self.assertEqual(blob_path.read_bytes(), b"version-one")
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        self.assertIsNone(frappe.db.get_value("File", target.name, "content_hash"))
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
+        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+
+    def test_put_create_promotion_failure_removes_row(self):
+        # compensation for a failed create promotion: without bytes the row
+        # must not exist, nor its share of the folder rollup
+        from unittest.mock import patch
+
+        response = self._put(f"/dav/Home/{self.base_name}/ghost.txt", b"boo")
+        self.assertEqual(response.status_code, 201)
+        row = self._resolve(f"Home/{self.base_name}/ghost.txt").entity
+        blob_path = FileManager().get_local_path(row.file_url)
+        with patch("os.replace", side_effect=OSError), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        self.assertFalse(frappe.db.exists("File", row.name))
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), 0)
+        self.assertFalse(blob_path.exists())
+        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+
     def test_put_overwrite_commit_failure_keeps_old_bytes(self):
         # the dispatcher commits only after the handler returns; if that
         # commit fails and degrades to a rollback, the staged bytes must be

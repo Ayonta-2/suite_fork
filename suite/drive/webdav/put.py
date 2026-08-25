@@ -157,6 +157,12 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
     # neither can be recovered from the fetch-url rewrite by get_s3_key
     blob = frappe._dict(name=drive_file.name, file_url=drive_file.file_url, mime_type=mime_type)
 
+    def undo():
+        # compensation for a promotion that failed after commit: without the
+        # bytes the row must not exist, nor its share of the rollup
+        frappe.db.delete("File", {"name": drive_file.name})
+        apply_file_size_delta(parent.name, -size)
+
     # Stage the byte transfer now, finalize at commit (same discipline as
     # _overwrite): the move is irreversible while every row write rolls back
     # with the transaction, and the dispatcher commits only after this handler
@@ -165,9 +171,9 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
     # writes also keeps their row locks out of the transfer window, so an
     # S3-sized upload never stalls a concurrent PUT's rollup.
     if manager.s3_enabled:
-        _stage_s3_swap(manager, blob, scratch, get_s3_key(blob.file_url))
+        _stage_s3_swap(manager, blob, scratch, get_s3_key(blob.file_url), undo)
     else:
-        _stage_disk_swap(scratch, manager.site_folder / storage_key(blob.file_url), manager, blob)
+        _stage_disk_swap(scratch, manager.site_folder / storage_key(blob.file_url), undo, manager, blob)
 
     if manager.s3_enabled:
         drive_file.file_url = get_s3_url(get_s3_key(blob.file_url))
@@ -197,6 +203,15 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     manager = ctx.manager
     doc = frappe.get_doc("File", row.name)
 
+    fields = ("file_size", "mime_type", "file_type", "file_modified", "content_hash", "modified")
+    prior = {field: doc.get(field) for field in fields}
+
+    def undo():
+        # compensation for a promotion that failed after commit: the bytes
+        # never changed, so the metadata and rollup step back to match them
+        frappe.db.set_value("File", row.name, prior, update_modified=False)
+        apply_file_size_delta(row.folder, -delta)
+
     # DB writes roll back while byte writes cannot, and the dispatcher commits
     # only after this handler returns — replacing the target here would leave
     # a failed commit serving the new body under the rolled-back size, hash
@@ -206,7 +221,7 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     # rollback discards the staged bytes without touching the target. Staging
     # before the row writes also keeps their row locks out of the transfer
     # window, so an S3-sized upload never stalls a concurrent PUT's rollup.
-    _stage_blob_swap(manager, row, doc, scratch)
+    _stage_blob_swap(manager, row, doc, scratch, undo)
 
     doc.db_set(
         {
@@ -228,22 +243,22 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     return _response(ctx, 204, row.name, sha256)
 
 
-def _stage_blob_swap(manager, row: frappe._dict, doc, scratch: Path) -> None:
+def _stage_blob_swap(manager, row: frappe._dict, doc, scratch: Path, undo) -> None:
     if manager.s3_enabled and not stored_on_disk(row.file_url):
         # storage_key, not get_s3_key: an existing row's file_url is the
         # rewritten fetch url, which only storage_key resolves to the object key
-        _stage_s3_swap(manager, doc, scratch, storage_key(row.file_url))
+        _stage_s3_swap(manager, doc, scratch, storage_key(row.file_url), undo)
     elif manager.s3_enabled:
         # a framework-adopted blob lives on the site disk even under S3; swap
         # it in place — upload_file would write the new body to a stray S3 key
         # that GET (which serves on-disk blobs directly) never reads back. No
         # thumbnail either, matching the native path for adopted blobs.
-        _stage_disk_swap(scratch, manager.get_local_path(row.file_url))
+        _stage_disk_swap(scratch, manager.get_local_path(row.file_url), undo)
     else:
-        _stage_disk_swap(scratch, manager.site_folder / storage_key(row.file_url), manager, doc)
+        _stage_disk_swap(scratch, manager.site_folder / storage_key(row.file_url), undo, manager, doc)
 
 
-def _stage_disk_swap(scratch: Path, target: Path, manager=None, doc=None) -> None:
+def _stage_disk_swap(scratch: Path, target: Path, undo, manager=None, doc=None) -> None:
     """Rename the spooled body next to the target now (.uploads shares the
     target's filesystem — the assumption upload_file's rename already makes),
     so the commit-time swap is a bare same-directory os.replace: atomic, and
@@ -252,7 +267,12 @@ def _stage_disk_swap(scratch: Path, target: Path, manager=None, doc=None) -> Non
     os.rename(scratch, staged)
 
     def swap():
-        os.replace(staged, target)
+        try:
+            os.replace(staged, target)
+        except Exception:
+            staged.unlink(missing_ok=True)
+            _compensate_failed_promotion(undo)
+            raise
         if manager is not None and manager.can_create_thumbnail(doc):
             frappe.enqueue(manager.upload_thumbnail, now=True, at_front=True, file=doc, file_path=str(target))
 
@@ -260,7 +280,7 @@ def _stage_disk_swap(scratch: Path, target: Path, manager=None, doc=None) -> Non
     frappe.db.after_rollback.add(lambda: staged.unlink(missing_ok=True))
 
 
-def _stage_s3_swap(manager, doc, scratch: Path, key: str) -> None:
+def _stage_s3_swap(manager, doc, scratch: Path, key: str, undo) -> None:
     """Upload the body to a scratch key now — that is the fallible network
     transfer — and promote it to the real key at commit with a server-side
     managed copy (multipart-sized objects included)."""
@@ -273,7 +293,14 @@ def _stage_s3_swap(manager, doc, scratch: Path, key: str) -> None:
         os.rename(scratch, thumb_source)
 
     def swap():
-        manager.conn.copy({"Bucket": manager.bucket, "Key": staging_key}, manager.bucket, key)
+        try:
+            manager.conn.copy({"Bucket": manager.bucket, "Key": staging_key}, manager.bucket, key)
+        except Exception:
+            if thumb_source is not None:
+                thumb_source.unlink(missing_ok=True)
+            _discard_staging_object(manager, staging_key)
+            _compensate_failed_promotion(undo)
+            raise
         _discard_staging_object(manager, staging_key)
         if thumb_source is not None:
             frappe.enqueue(
@@ -287,6 +314,21 @@ def _stage_s3_swap(manager, doc, scratch: Path, key: str) -> None:
 
     frappe.db.after_commit.add(swap)
     frappe.db.after_rollback.add(discard)
+
+
+def _compensate_failed_promotion(undo) -> None:
+    """A promotion fails only after the transaction committed, so the row
+    already claims bytes the target never received. Step the metadata back to
+    match the unchanged bytes and commit that immediately — the exception this
+    failure re-raises makes the framework roll back whatever is uncommitted,
+    and the client's 500 prompts a clean retry. Only a second, independent
+    failure inside this compensation can leave metadata ahead of bytes; that
+    gets the loudest trace available."""
+    try:
+        undo()
+        frappe.db.commit()
+    except Exception:
+        frappe.log_error("Drive: metadata left ahead of bytes after failed promotion", frappe.get_traceback())
 
 
 def _discard_staging_object(manager, staging_key: str) -> None:
