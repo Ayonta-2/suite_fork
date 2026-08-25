@@ -262,19 +262,27 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
         )
 
-    def test_put_survives_folder_rollup_failure_but_logs_it(self):
-        # the atomic rollup only fails on real infrastructure trouble, and a
-        # display counter is never worth failing a finished save over — but
-        # the suppressed failure must leave a trace
+    def test_put_rollup_failure_fails_the_put(self):
+        # a suppressed rollup failure would commit ancestor sizes that no
+        # reconciliation repairs — the PUT must fail so the whole transaction,
+        # staged bytes included, rolls back for the client to retry
         from unittest.mock import patch
 
         from suite.drive.webdav import put as put_module
 
-        with patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError):
-            response = self._put(f"/dav/Home/{self.base_name}/rollup.txt", b"counted?")
+        with (
+            patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
+            self.assertRaises(frappe.QueryTimeoutError),
+        ):
+            self._put(f"/dav/Home/{self.base_name}/rollup.txt", b"counted?")
 
-        self.assertEqual(response.status_code, 201)
-        self.assertTrue(frappe.db.exists("Error Log", {"method": "Drive: folder size rollup failed"}))
+        row = self._resolve(f"Home/{self.base_name}/rollup.txt").entity
+        blob_path = FileManager().get_local_path(row.file_url)
+        frappe.db.rollback()  # what dispatch does on any handler exception
+
+        self.assertFalse(frappe.db.exists("File", row.name))
+        self.assertFalse(blob_path.exists())
+        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
 
     def test_put_create_rollback_leaves_no_orphan_blob(self):
         # the dispatcher commits only after the handler returns; if that

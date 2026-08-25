@@ -76,17 +76,12 @@ def handle(ctx: DavContext) -> Response:
     copier = _Copier(ctx.manager, ctx.user, recurse=depth != "0")
     try:
         total = copier.copy(source.entity, dest_parent, dest_name)
+        # a failed rollup fails the copy: suppressed, it would commit stale
+        # ancestor sizes that no reconciliation repairs (same stance as PUT)
+        apply_file_size_delta(dest_parent.name, total)
     except Exception:
         copier.cleanup()
         raise
-
-    try:
-        apply_file_size_delta(dest_parent.name, total)
-    except Exception:
-        # the atomic delta cannot lose a race, so this is real infrastructure
-        # trouble — never worth failing the finished copy over, but leave a
-        # trace of the drift (same stance as PUT)
-        frappe.log_error("Drive: folder size rollup failed", frappe.get_traceback())
 
     return Response(status=204 if overwrote else 201)
 

@@ -385,16 +385,13 @@ def _client_mtime_datetime(ctx: DavContext) -> datetime | None:
 
 
 def _bump_folder_size(folder: str, delta: int) -> None:
+    """A failed rollup fails the PUT. The atomic delta cannot lose a race, so
+    failure means the database itself is in trouble — and suppressed, it would
+    commit ancestor sizes that no reconciliation repairs. Raising rolls the
+    whole transaction back, staged bytes included, for the client to retry."""
     if not delta:
         return
-    try:
-        apply_file_size_delta(folder, delta)
-    except Exception:
-        # The atomic delta cannot lose a race, so what lands here is real
-        # infrastructure trouble — and folder sizes are display metadata
-        # (quota sums leaf files directly), never worth failing a finished
-        # save over. Log the drift; there is no reconciliation job yet.
-        frappe.log_error("Drive: folder size rollup failed", frappe.get_traceback())
+    apply_file_size_delta(folder, delta)
 
 
 def _response(ctx: DavContext, status: int, entity_name: str, sha256: str) -> Response:
