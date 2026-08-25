@@ -327,6 +327,10 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertIsNone(frappe.db.get_value("File", target.name, "content_hash"))
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
         self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        # no history for an edit that never took effect
+        self.assertFalse(
+            frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
+        )
 
     def test_put_create_promotion_failure_removes_row(self):
         # compensation for a failed create promotion: without bytes the row
@@ -373,7 +377,7 @@ class TestWebDAVPut(IntegrationTestCase):
         blob_path = FileManager().get_local_path(target.file_url)
 
         with (
-            patch.object(put_module, "create_new_activity_log", side_effect=frappe.ValidationError),
+            patch.object(put_module, "_bump_folder_size", side_effect=frappe.ValidationError),
             self.assertRaises(frappe.ValidationError),
         ):
             self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")

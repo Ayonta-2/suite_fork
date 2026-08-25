@@ -203,14 +203,24 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     manager = ctx.manager
     doc = frappe.get_doc("File", row.name)
 
+    full_name = frappe.db.get_value("User", ctx.user, "full_name")
+    activity = create_new_activity_log(
+        entity=row.name,
+        activity_type="edit",
+        activity_message=f"{full_name} updated {row.file_name} via WebDAV",
+    )
+
     fields = ("file_size", "mime_type", "file_type", "file_modified", "content_hash", "modified")
     prior = {field: doc.get(field) for field in fields}
 
     def undo():
         # compensation for a promotion that failed after commit: the bytes
-        # never changed, so the metadata and rollup step back to match them
+        # never changed, so the metadata and rollup step back to match them —
+        # and the edit this activity row announces never took effect
         frappe.db.set_value("File", row.name, prior, update_modified=False)
         apply_file_size_delta(row.folder, -delta)
+        if activity.name:
+            frappe.db.delete("Drive Entity Activity Log", {"name": activity.name})
 
     # DB writes roll back while byte writes cannot, and the dispatcher commits
     # only after this handler returns — replacing the target here would leave
@@ -233,13 +243,6 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
         }
     )
     _bump_folder_size(row.folder, delta)
-
-    full_name = frappe.db.get_value("User", ctx.user, "full_name")
-    create_new_activity_log(
-        entity=row.name,
-        activity_type="edit",
-        activity_message=f"{full_name} updated {row.file_name} via WebDAV",
-    )
     return _response(ctx, 204, row.name, sha256)
 
 
