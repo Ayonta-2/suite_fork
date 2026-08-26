@@ -1121,6 +1121,14 @@ def jscalendar_to_vevent(event: dict, categories: list[str] | None = None):
         component.add("organizer", vText(organizer))
 
     locations = [l.get("name") for l in (event.get("locations") or {}).values() if l.get("name")]
+    # Google appends the video-call link to LOCATION ("Remote; https://..."), and many clients
+    # only surface LOCATION — CONFERENCE/URL get buried — so do the same for the Meet link.
+    meet_link = next(
+        (l.get("href") for l in (event.get("links") or {}).values() if is_conference_link(l.get("href"))),
+        None,
+    )
+    if meet_link and not any(meet_link in name for name in locations):
+        locations.append(meet_link)
     if locations:
         component.add("location", "; ".join(locations))
 
