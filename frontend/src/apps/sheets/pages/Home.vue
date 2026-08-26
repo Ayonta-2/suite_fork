@@ -30,7 +30,7 @@
         <div class="home-viewtoggle" role="tablist" aria-label="View mode">
           <Button
             :variant="viewMode === 'list' ? 'subtle' : 'ghost'"
-            size="sm" icon="list"
+            size="sm" icon="lucide-list"
             tooltip="List view"
             role="tab"
             :aria-selected="viewMode === 'list'"
@@ -38,7 +38,7 @@
           />
           <Button
             :variant="viewMode === 'grid' ? 'subtle' : 'ghost'"
-            size="sm" icon="grid"
+            size="sm" icon="lucide-grid-2x2"
             tooltip="Grid view"
             role="tab"
             :aria-selected="viewMode === 'grid'"
@@ -47,7 +47,7 @@
         </div>
         <!-- Overflow menu for secondary home-level destinations. Kept separate
              from the New Sheet CTA so a nav item isn't styled as a peer action. -->
-        <Dropdown :options="overflowActions" placement="bottom-end">
+        <Dropdown :options="overflowActions">
           <template #default="{ open }">
             <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis-vertical" tooltip="More" />
           </template>
@@ -63,7 +63,7 @@
          search changes can still trigger a refetch. -->
     <div v-if="loading || loadError || !isTrueEmpty" class="home-toolbar">
       <div class="home-toolbar-inner">
-        <TabButtons v-model="ownerTab" :buttons="ownerTabs" />
+        <TabButtons v-model="ownerTab" :options="ownerTabs" />
         <FormControl
           type="text"
           size="sm"
@@ -159,7 +159,7 @@
               </span>
             </div>
             <div class="home-card-menu" @click.stop>
-              <Dropdown :options="cardActions(sheet)" placement="right">
+              <Dropdown :options="cardActions(sheet)" align="end">
                 <template #default="{ open }">
                   <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis-vertical" tooltip="Actions" />
                 </template>
@@ -180,52 +180,48 @@
       </template>
     </div>
 
-    <!-- Sheet list — Frappe UI ListView with its own internal scroll (its
-         rows region is h-full overflow-y-auto), so topbar, toolbar, column
-         header and footer stay put while rows scroll. Rows are grouped by
-         recency under the default sort; empty / no-match states go through
-         the options.emptyState contract. -->
-    <div v-else class="home-listshell">
-      <div class="home-listcol">
-      <!-- Custom flat column header — replaces ListView's built-in gray-pill
-           header (suppressed via the `:deep` rule below) with a borderless row
-           whose labels double as sort controls, matching the frappe-ui Files
-           desktop pattern. The grid template mirrors ListRow's exactly
-           (`3fr 1fr 1fr 60px`, gap-4, px-2) so labels align with row cells. -->
-      <div class="home-listhead" role="row">
-        <button
-          v-for="col in sortHeaders"
-          :key="col.key"
-          type="button"
-          class="home-listhead-cell"
-          :class="{ 'is-active': sortBy === col.key }"
-          :aria-sort="sortBy === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
-          @click="setSort(col.key)"
-        >
-          <span class="truncate">{{ col.label }}</span>
-          <FeatherIcon
-            v-if="sortBy === col.key"
-            :name="sortDir === 'asc' ? 'arrow-up' : 'arrow-down'"
-            class="home-sort-caret"
-          />
-        </button>
-        <!-- Spacer keeps the header grid aligned with the row's 60px actions column. -->
-        <span aria-hidden="true" />
-      </div>
+    <!-- Sheet list — composed from Frappe UI's native list primitives so the
+         header, groups, rows, and empty state share one layout contract. -->
+    <div v-else class="home-body">
+      <div class="flex min-h-full flex-col gap-2">
       <ListView
-        class="h-full"
+        class="!w-full"
         :columns="listColumns"
         :rows="listRows"
         row-key="name"
         :options="listOptions"
       >
+        <template #default="{ showGroupedRows }">
+          <ListHeader>
+            <button
+              v-for="col in listColumns"
+              :key="col.key"
+              type="button"
+              class="flex min-w-0 items-center gap-1 text-left text-base text-ink-gray-5"
+              :class="{ 'font-medium text-ink-gray-8': sortBy === col.key }"
+              :disabled="col.key === '_actions'"
+              :aria-sort="sortBy === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined"
+              @click="col.key !== '_actions' && setSort(col.key)"
+            >
+              <span class="truncate">{{ col.label }}</span>
+              <FeatherIcon
+                v-if="sortBy === col.key"
+                :name="sortDir === 'asc' ? 'arrow-up' : 'arrow-down'"
+                class="size-3.5 shrink-0"
+              />
+            </button>
+          </ListHeader>
+          <ListGroups v-if="listRows.length && showGroupedRows" />
+          <ListRows v-else-if="listRows.length" />
+          <ListEmptyState v-else />
+        </template>
         <template #cell="{ item, row, column }">
           <div
             v-if="column.key === '_actions'"
             class="flex w-full justify-end"
             @click.stop
           >
-            <Dropdown :options="cardActions(row)" placement="right">
+            <Dropdown :options="cardActions(row)" align="end">
               <template #default="{ open }">
                 <Button
                   :variant="open ? 'subtle' : 'ghost'"
@@ -238,6 +234,7 @@
           </div>
           <ListRowItem
             v-else
+            class="min-w-0"
             :column="column"
             :row="row"
             :item="item"
@@ -245,22 +242,18 @@
           />
         </template>
       </ListView>
-      <!-- The empty #left slot suppresses ListFooter's page-size TabButtons —
-           we only want its Load More button + "X of Y" count. -->
-      <ListFooter
-        v-if="sheets.length"
-        class="home-listfooter"
-        :options="{ rowCount: sheets.length, totalCount: total }"
-        @loadMore="loadMore"
-      >
-        <template #left><span /></template>
-      </ListFooter>
+      <div v-if="sheets.length" class="flex items-center justify-end gap-3 border-t border-outline-gray-2 pt-2">
+        <Button v-if="sheets.length < total" label="Load More" :loading="loadingMore" @click="loadMore" />
+        <div class="flex items-center gap-1 text-base text-ink-gray-5">
+          <span>{{ sheets.length }}</span><span>of</span><span>{{ total }}</span>
+        </div>
+      </div>
       </div>
     </div>
 
     <!-- Rename dialog -->
-    <Dialog v-model="showRenameDialog" :options="{ title: 'Rename sheet', size: 'sm' }">
-      <template #body-content>
+    <Dialog v-model:open="showRenameDialog" title="Rename sheet" size="sm">
+      <template #default>
         <FormControl v-model="renameValue" label="New title" placeholder="Untitled Sheet" @keydown.enter="confirmRename" />
       </template>
       <template #actions>
@@ -273,10 +266,11 @@
 
     <!-- Delete confirm dialog -->
     <Dialog
-      v-model="showDeleteDialog"
-      :options="{ title: 'Move to trash?', size: 'sm' }"
+      v-model:open="showDeleteDialog"
+      title="Move to trash?"
+      size="sm"
     >
-      <template #body-content>
+      <template #default>
         <p class="home-confirm-text">
           "<strong>{{ deleteTarget?.title }}</strong>" will be moved to Trash. You
           can restore it from there before it's permanently deleted.
@@ -300,20 +294,16 @@
 <script setup>
 import { ref, computed, h, onMounted, watch } from 'vue'
 import {
-  Avatar,
-  Badge,
-  Button,
-  Dialog,
-  Spinner,
-  FormControl,
-  FeatherIcon,
-  Dropdown,
-  ListView,
+  Avatar, Badge, Button, Dialog, Spinner, FormControl, Dropdown, TabButtons, debounce } from 'frappe-ui'
+import {
+  Icon as FeatherIcon,
+  ListEmptyState,
+  ListGroups,
+  ListHeader,
+  ListRows,
   ListRowItem,
-  ListFooter,
-  TabButtons,
-  debounce,
-} from 'frappe-ui'
+  ListView,
+} from 'frappe-ui/experimental'
 import { useRouter } from 'vue-router'
 
 import { call } from '@/apps/sheets/utils/api.js'
@@ -332,7 +322,7 @@ function newSheet() {
 // Top-level overflow menu (the ⋮ next to New Sheet). Just Trash for now; this
 // is the home for future home-level destinations (Shared, Settings, …).
 const overflowActions = [
-  { label: 'Trash', icon: 'trash-2', onClick: () => router.push({ name: 'sheets-trash' }) },
+  { label: 'Trash', icon: 'lucide-trash-2', onClick: () => router.push({ name: 'sheets-trash' }) },
 ]
 
 const PAGE_SIZE = 50
@@ -443,15 +433,6 @@ const ownerTabs = [
   { label: 'Shared with me', value: 'shared' },
 ]
 
-// Sort lives in the column header (not a separate dropdown): each entry is a
-// clickable header cell whose `key` is the server `order_by` keyword. Order
-// and widths mirror `listColumns`' data columns so the header aligns with rows.
-const sortHeaders = [
-  { key: 'title',    label: 'Name' },
-  { key: 'owner',    label: 'Owner' },
-  { key: 'modified', label: 'Last Modified' },
-]
-
 // The direction a column sorts by when it first becomes active: dates read
 // newest-first, text/owner read A→Z. Re-clicking the active column toggles.
 const SORT_DEFAULT_DIR = { modified: 'desc', title: 'asc', owner: 'asc' }
@@ -532,11 +513,11 @@ watch(
 function cardActions(sheet) {
   const actions = []
   if (isOwnedByMe(sheet)) {
-    actions.push({ label: 'Rename', icon: 'edit-2', onClick: () => openRenameDialog(sheet) })
+    actions.push({ label: 'Rename', icon: 'lucide-edit-2', onClick: () => openRenameDialog(sheet) })
   }
-  actions.push({ label: 'Duplicate', icon: 'copy', onClick: () => duplicate(sheet) })
+  actions.push({ label: 'Duplicate', icon: 'lucide-copy', onClick: () => duplicate(sheet) })
   if (isOwnedByMe(sheet)) {
-    actions.push({ label: 'Delete', icon: 'trash-2', onClick: () => confirmDelete(sheet) })
+    actions.push({ label: 'Delete', icon: 'lucide-trash-2', onClick: () => confirmDelete(sheet) })
   }
   return actions
 }
@@ -552,18 +533,20 @@ const renaming         = ref(false)
 
 onMounted(fetchSheets)
 
-// Tab/sort changes reset to page 1 immediately; search debounces on top.
-watch([ownerTab, sortBy, sortDir], () => fetchSheets())
+// Filters reset the page visibly; sorting keeps the current rows on screen
+// while the reordered first page loads.
+watch(ownerTab, () => fetchSheets())
+watch([sortBy, sortDir], () => fetchSheets({ background: true }))
 watch(searchQuery, debounce(() => fetchSheets(), 300))
 
 // Monotonic token invalidates in-flight responses, so a slow page-1 fetch
 // can't clobber the rows of a newer tab/sort/search request.
 let reqToken = 0
 
-async function fetchSheets({ append = false } = {}) {
+async function fetchSheets({ append = false, background = false } = {}) {
   const token = ++reqToken
   if (append) loadingMore.value = true
-  else loading.value = true
+  else if (!background) loading.value = true
   try {
     const res = await call('suite.sheets.api.list_sheets', {
       start: append ? sheets.value.length : 0,
@@ -581,9 +564,9 @@ async function fetchSheets({ append = false } = {}) {
   } catch (err) {
     if (token !== reqToken) return
     console.error('list_sheets failed:', err)
-    if (append) {
+    if (append || background) {
       // Keep what's already on screen; surface the failure via the badge.
-      _flashError(err?.message || 'Load more failed')
+      _flashError(err?.message || (append ? 'Load more failed' : 'Could not sort sheets'))
     } else {
       // A failed reset must not leave the previous filter's rows rendered
       // under the new tab/sort/search — clear and show the error surface.
@@ -876,120 +859,4 @@ async function duplicate(sheet) {
   color: var(--ink-gray-5);
 }
 
-/* ── List view ─────────────────────────────────────────────────────────────
-   Frappe UI's ListView owns its own header/row styling — header background,
-   gridTemplateColumns, dividers, hover. The shell bounds its height so the
-   rows region (h-full overflow-y-auto inside ListView) scrolls internally,
-   keeping the column header and ListFooter fixed.
-
-   The scroll region spans the FULL width — not a centered 1200px column — so
-   the mouse wheel scrolls the list from anywhere across the viewport and the
-   scrollbar sits at the viewport's right edge (a narrow centered scroller left
-   dead zones on wide screens where the wheel hit a non-scrollable ancestor).
-   Content is re-centered to a 1200px band by insetting the header, the rows
-   region and the footer with the shared `--list-inset` below, rather than by
-   capping the container. */
-.home-listshell {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  padding: 0 0 12px;
-}
-.home-listcol {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  /* Horizontal inset that centers content on a 1200px band, with a 32px floor
-     so narrow viewports keep a gutter. `100%` resolves against each consumer
-     (header / scroller / footer are all full-width), so they line up. */
-  --list-inset: max(32px, (100% - 1200px) / 2);
-}
-
-/* Custom flat column header — replaces ListView's built-in gray-pill header
-   (suppressed just below). The grid mirrors ListRow exactly so labels sit over
-   their columns: same `3fr 1fr 1fr 60px` template, gap-4 (1rem), px-2 (8px). */
-.home-listhead {
-  position: relative;
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: 3fr 1fr 1fr 60px;
-  gap: 1rem;
-  align-items: center;
-  /* +8px matches the rows' px-2, so the header labels sit over the row cells. */
-  padding: 6px calc(var(--list-inset) + 8px);
-  margin-bottom: 4px;
-}
-/* Hairline under the header, inset to the same 1200px band as the rows (a
-   border on the full-width element would overshoot the row dividers). */
-.home-listhead::after {
-  content: '';
-  position: absolute;
-  left: var(--list-inset);
-  right: var(--list-inset);
-  bottom: 0;
-  height: 1px;
-  background: var(--outline-gray-2);
-}
-
-/* A header label doubles as a sort control: quiet by default, darker on hover,
-   and darkest with a direction caret when it's the active sort. Native button
-   chrome is reset so it reads as plain header text. */
-.home-listhead-cell {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  letter-spacing: .01em;
-  color: var(--ink-gray-5);
-  text-align: left;
-  transition: color .12s;
-}
-.home-listhead-cell:hover      { color: var(--ink-gray-7); }
-.home-listhead-cell.is-active  { color: var(--ink-gray-8); font-weight: 500; }
-.home-sort-caret { width: 13px; height: 13px; flex-shrink: 0; }
-
-/* Suppress ListView's built-in header so only our flat sortable header shows.
-   frappe-ui's ListView exposes no per-column header slot or sort hook and
-   always renders <ListHeader>, so hiding it via its own utility classes is the
-   only seam available. The `.grid.rounded.bg-surface-gray-2` trio is unique to
-   ListHeader (data rows are `flex flex-col`, never all three), so this can't
-   hide a row.
-   ⚠ COUPLING: pinned to frappe-ui's ListHeader class names. If a frappe-ui
-   upgrade renames them the built-in header reappears (a duplicate header) —
-   degraded, not a crash; re-point this selector to match. */
-.home-listcol :deep(.grid.rounded.bg-surface-gray-2) { display: none; }
-
-/* Inset the scroll region's content (rows + group headers) to the same 1200px
-   band as the header. The padding lives on the scroller ITSELF so the scrollbar
-   stays pinned to the viewport edge while the content is centered.
-   ⚠ COUPLING: targets ListRows/ListGroups' internal `.h-full.overflow-y-auto`
-   scroll div — frappe-ui hard-codes the scroll there with no prop to hook. If
-   that changes, rows lose the centering inset (full-bleed), not the scroll. */
-.home-listcol :deep(.h-full.overflow-y-auto) {
-  padding-inline: var(--list-inset);
-}
-
-.home-listfooter {
-  position: relative;
-  flex-shrink: 0;
-  padding: 8px calc(var(--list-inset) + 4px);
-}
-/* Footer divider inset to the content band, mirroring the header hairline. */
-.home-listfooter::before {
-  content: '';
-  position: absolute;
-  left: var(--list-inset);
-  right: var(--list-inset);
-  top: 0;
-  height: 1px;
-  background: var(--outline-gray-2);
-}
 </style>

@@ -420,7 +420,7 @@ export function getLink(entity, copy = true, withDomain = true) {
   } catch (err) {
     if (err.name === 'NotAllowedError') {
       toast({
-        icon: 'alert-triangle',
+        icon: 'lucide-alert-triangle',
         iconClasses: 'text-red-700',
         title: 'Clipboard permission denied',
         position: 'bottom-right',
@@ -442,6 +442,7 @@ export const setTitle = (title) =>
 async function uploadImage(file, params) {
   const uploader = useFileUpload()
   const upload = uploader.upload(file, {
+    private: false,
     params,
     upload_endpoint: '/api/method//api/method/suite.drive.api.files.upload_file',
   })

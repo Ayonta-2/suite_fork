@@ -1,9 +1,10 @@
 <template>
-	<Dialog v-model="show" :options="{ title: __('Edit Photo'), size: 'sm' }">
-		<template #body-content>
+	<Dialog v-model:open="show" :title="__('Edit Photo')" size="sm">
+		<template #default>
 			<FileUploader
 				class="mb-2 w-full"
 				:file-types="['image/*']"
+				:private="false"
 				@success="(file) => setProfilePhoto.submit({ image: file.file_url })"
 			>
 				<template #default="{ error, uploading, openFileSelector }">

@@ -83,7 +83,7 @@
       <Dropdown
         v-else-if="fileActions.length"
         :options="fileActions"
-        placement="right"
+        align="end"
         :button="{
           variant: 'ghost',
           icon: LucideMoreHorizontal,
@@ -240,9 +240,9 @@ const fileActions = computed(() =>
   props.document?.doc?.settings
     ? [
         {
-          group: true,
+          group: '',
           hideLabel: true,
-          items: [
+          options: [
             {
               label: __('Share'),
               icon: LucideShare2,
@@ -265,9 +265,9 @@ const fileActions = computed(() =>
           ],
         },
         {
-          group: true,
+          group: '',
           hideLabel: true,
-          items: [
+          options: [
             {
               label: __('Move'),
               icon: LucideArrowLeftRight,
@@ -325,9 +325,9 @@ const fileActions = computed(() =>
           ],
         },
         {
-          group: true,
+          group: '',
           hideLabel: true,
-          items: dynamicList([
+          options: dynamicList([
             {
               label: 'View',
               icon: LucideView,
@@ -426,9 +426,9 @@ const fileActions = computed(() =>
           ]),
         },
         {
-          group: true,
+          group: '',
           hideLabel: true,
-          items: [
+          options: [
             {
               onClick: () => clearCache(),
               label: 'Clear Cache',
@@ -446,7 +446,7 @@ const fileActions = computed(() =>
       ].map((k) => {
         return {
           ...k,
-          items: k.items.filter((l) => !l.isEnabled || l.isEnabled()),
+          options: k.options.filter((l) => !l.isEnabled || l.isEnabled()),
         }
       })
     : [],

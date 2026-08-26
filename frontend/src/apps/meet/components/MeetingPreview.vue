@@ -8,7 +8,7 @@
 			<!-- Video preview remains bounded so the camera-off state does not dominate. -->
 			<div class="flex min-w-0 flex-1 items-center justify-center lg:flex-[2]">
 				<div
-					class="relative aspect-video w-full overflow-hidden rounded-xl bg-black shadow-xl lg:aspect-[3/2]"
+					class="relative aspect-video w-full overflow-hidden rounded-7 bg-black shadow-xl lg:aspect-[3/2]"
 				>
 					<ParticipantTile
 						class="h-full w-full"
@@ -49,7 +49,7 @@
 						{{ props.meetingTitle }}
 					</p>
 
-					<h2 class="mb-7 text-4xl-semibold text-ink-gray-9">
+					<h2 class="mb-7 text-3xl-semibold text-ink-gray-9">
 						Ready to join?
 					</h2>
 

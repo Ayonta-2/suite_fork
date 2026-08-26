@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "node scripts/copy-noise-suppression-assets.mjs && node scripts/unlink-frappe-ui.mjs && vite --host",
     "dev:frappe-ui": "node scripts/copy-noise-suppression-assets.mjs && node scripts/link-frappe-ui.mjs && vite --host",
@@ -52,8 +55,8 @@
     "@tiptap/starter-kit": "^3.26.0",
     "@tiptap/vue-3": "^3.26.0",
     "@tiptap/y-tiptap": "^3.0.1",
-    "@vueuse/components": "^10.4.1",
-    "@vueuse/core": "^10.4.1",
+    "@vueuse/components": "^14.1.0",
+    "@vueuse/core": "^14.1.0",
     "@workadventure/noise-suppression": "0.0.4",
     "chart.js": "^4.5.1",
     "cheerio": "^1.2.0",
@@ -69,7 +72,7 @@
     "feather-icons": "^4.29.2",
     "file-saver": "^2.0.5",
     "firebase": "^12.2.1",
-    "frappe-ui": "frappe/frappe-ui#5b4243d13ed0f06a1e855f4a92f02ac36435f24e",
+    "frappe-ui": "1.0.0-beta.55",
     "fuzzysort": "^3.1.0",
     "gemoji": "^8.1.0",
     "hast-util-to-html": "^9.0.5",

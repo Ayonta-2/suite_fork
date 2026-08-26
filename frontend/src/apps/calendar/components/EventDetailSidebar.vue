@@ -400,7 +400,7 @@ const deleteEvent = createResource({
 
 const NOTIFY_DELETE_OPTIONS = {
 	title: __('Notify Participants'),
-	icon: { name: 'bell' },
+	icon: { name: 'lucide-bell' },
 	message: __('Send a cancellation email to let attendees know this event was deleted?'),
 }
 
@@ -411,7 +411,7 @@ const openUrl = (location: string) => {
 
 <template>
 	<div
-		class="bg-surface-white flex h-full w-[352px] shrink-0 flex-col overflow-hidden border-l text-left"
+		class="bg-surface-base flex h-full w-[352px] shrink-0 flex-col overflow-hidden border-l text-left"
 	>
 		<!-- Header -->
 		<!-- h-12 matches the mail header bar's 48px, so when mail hosts this panel
@@ -461,7 +461,7 @@ const openUrl = (location: string) => {
 				     date keeps text-sm's default 1.15 line-height (14.95px), so
 				     -8 + 24 + 6 + 14.95 + 12 sums to 49 within a subpixel. -->
 				<div class="min-w-0 space-y-1.5">
-					<h3 class="text-ink-gray-8 break-words text-lg font-semibold leading-6">
+					<h3 class="text-ink-gray-8 break-words text-md font-semibold leading-6">
 						{{ calendarEvent.title || __('Untitled event') }}
 					</h3>
 					<div class="text-ink-gray-6 break-words text-sm">
@@ -507,7 +507,7 @@ const openUrl = (location: string) => {
 					</div>
 					<div class="px-4.5 py-2">
 						<button
-							class="bg-surface-gray-2 hover:bg-surface-gray-3 text-ink-gray-7 flex w-full items-center justify-center gap-2 rounded py-1.5 text-sm"
+					class="bg-surface-gray-2 hover:bg-surface-gray-3 text-ink-gray-7 flex w-full items-center justify-center gap-2 rounded-4 py-1.5 text-sm"
 							@click="joinMeet"
 						>
 							{{ __('Join') }}
@@ -634,7 +634,7 @@ const openUrl = (location: string) => {
 			/>
 		</div>
 
-		<Dialog v-model="showNotifyModal" :options="NOTIFY_DELETE_OPTIONS">
+		<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_DELETE_OPTIONS">
 			<template #actions>
 				<div class="flex justify-end space-x-2">
 					<Button variant="outline" @click="pendingDelete?.(false)"> {{ __('Skip') }} </Button>

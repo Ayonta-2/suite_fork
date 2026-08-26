@@ -25,7 +25,7 @@
 				v-if="actions.length"
 				:options="actions"
 				:title="__('Actions')"
-				placement="bottom-end"
+				align="end"
 			>
 				<Button variant="ghost" :title="__('Actions')" class="shrink-0 max-sm:mr-2">
 					<template #icon>
@@ -132,14 +132,14 @@
 		>
 			<div class="mx-auto flex max-w-5xl flex-col gap-5 md:flex-row md:items-start">
 				<div v-for="stack in 2" :key="stack" class="flex min-w-0 flex-1 flex-col gap-5">
-					<div v-for="card in 2" :key="card" class="rounded-md border">
+					<div v-for="card in 2" :key="card" class="rounded-4 border">
 						<div class="flex h-13 items-center border-b px-4">
-							<Skeleton class="h-3.5 w-24 rounded" />
+							<Skeleton class="h-3.5 w-24 rounded-4" />
 						</div>
 						<div v-for="row in 5" :key="row" class="flex items-center px-5 py-4">
-							<Skeleton class="h-3 w-1/4 rounded" />
+							<Skeleton class="h-3 w-1/4 rounded-4" />
 							<Skeleton
-								class="ml-12 h-3 rounded"
+								class="ml-12 h-3 rounded-4"
 								:style="{ width: `${20 + ((stack * 5 + card * 7 + row * 13) % 25)}%` }"
 							/>
 						</div>
@@ -154,9 +154,9 @@
 			:initial-value="data?.send_at"
 			@confirm="(sendAt: string) => rescheduleMail.submit({ send_at: sendAt })"
 		/>
-		<Dialog v-model="showSendNow" :options="sendNowOptions" />
-		<Dialog v-model="showRetry" :options="retryOptions" />
-		<Dialog v-model="showCancel" :options="cancelOptions" />
+		<Dialog v-model:open="showSendNow" v-bind="sendNowOptions" />
+		<Dialog v-model:open="showRetry" v-bind="retryOptions" />
+		<Dialog v-model:open="showCancel" v-bind="cancelOptions" />
 	</div>
 </template>
 
@@ -417,7 +417,7 @@ const cancelOptions = computed(() => ({
 	message: data.value?.email_deleted
 		? __('Cancel the scheduled delivery?')
 		: __('Cancel the scheduled delivery and move the message back to Drafts?'),
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [
 		{
 			label: __('Confirm'),

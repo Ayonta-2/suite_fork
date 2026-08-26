@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Calendar, Dialog, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, createResource, usePageMeta } from 'frappe-ui'
+import { Calendar } from 'frappe-ui/experimental'
 
 import { useScreenSize } from '@/composables/useScreenSize'
 import { raiseToast } from '@/apps/calendar/utils'
@@ -352,13 +353,13 @@ const editEvent = createResource({
 
 const RECURRING_EVENT_MODAL_OPTIONS = {
 	title: __('Update Recurring Event'),
-	icon: { name: 'repeat' },
+	icon: { name: 'lucide-repeat' },
 	message: __('Do you want to update just this instance, or all events in the series?'),
 }
 
 const NOTIFY_MODAL_OPTIONS = {
 	title: __('Notify Participants'),
-	icon: { name: 'bell' },
+	icon: { name: 'lucide-bell' },
 	message: __('Send an email to let attendees know this event has been updated?'),
 }
 </script>
@@ -403,7 +404,7 @@ const NOTIFY_MODAL_OPTIONS = {
 		</div>
 	</div>
 	<EventModal v-model="showEditEvent" :selected-event="event" @reload-events="events.reload()" />
-	<Dialog v-model="showRecurringEventModal" :options="RECURRING_EVENT_MODAL_OPTIONS">
+	<Dialog v-model:open="showRecurringEventModal" v-bind="RECURRING_EVENT_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
 				<Button @click="handleUpdateRecurringEvent(false)">
@@ -412,7 +413,7 @@ const NOTIFY_MODAL_OPTIONS = {
 			</div>
 		</template>
 	</Dialog>
-	<Dialog v-model="showNotifyModal" :options="NOTIFY_MODAL_OPTIONS">
+	<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
 				<Button variant="outline" @click="submitEvent(false)"> {{ __('Skip') }} </Button>

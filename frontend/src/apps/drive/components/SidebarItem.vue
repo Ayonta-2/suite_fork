@@ -1,14 +1,14 @@
 <template>
   <button
-    class="flex h-7 w-full cursor-pointer items-center rounded text-ink-gray-7 active:bg-surface-elevation-3 hover:bg-surface-gray-2"
+    class="flex h-7 w-full cursor-pointer items-center rounded-4 text-ink-gray-7 active:bg-surface-elevation-3 hover:bg-surface-gray-2"
     @click="handleClick"
   >
     <div class="flex w-full items-center justify-between duration-300 ease-in-out p-2">
       <div class="flex items-center">
         <Tooltip
           :text="__(label)"
-          placement="right"
-          arrow-class="fill-surface-gray-10"
+          side="right"
+          class="sidebar-item-tooltip"
           :disabled="!isCollapsed"
         >
           <slot name="icon">
@@ -58,3 +58,9 @@ function handleClick() {
   router.push({ path: props.to })
 }
 </script>
+
+<style>
+.sidebar-item-tooltip [data-slot='arrow'] {
+  fill: var(--surface-gray-10);
+}
+</style>

@@ -31,19 +31,19 @@ function handleClick() {
   <ContextMenuRoot>
     <ContextMenuTrigger
       as-child
-      class="block border-2 border-dashed border-outline-gray-2 rounded-lg text-ink-gray-7 text-sm select-none py-[45px] w-[300px] text-center"
+      class="block border-2 border-dashed border-outline-gray-2 rounded-6 text-ink-gray-7 text-sm select-none py-[45px] w-[300px] text-center"
     >
       <span>Right click here.</span>
     </ContextMenuTrigger>
 
     <ContextMenuPortal>
       <ContextMenuContent
-        class="min-w-[220px] z-30 bg-surface-elevation-2 rounded-lg p-1.5 shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none will-change-[opacity,transform] data-[side=top]:animate-slideDownAndFade data-[side=right]:animate-slideLeftAndFade data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade"
+        class="min-w-[220px] z-30 bg-surface-elevation-2 rounded-6 p-1.5 shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none will-change-[opacity,transform] data-[side=top]:animate-slideDownAndFade data-[side=right]:animate-slideLeftAndFade data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade"
         :side-offset="5"
       >
         <!-- New Tab -->
         <ContextMenuItem
-          class="group text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:bg-surface-gray-3"
+          class="group text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:bg-surface-gray-3"
           @click="handleClick"
         >
           New Tab
@@ -56,7 +56,7 @@ function handleClick() {
 
         <!-- New Window -->
         <ContextMenuItem
-          class="group text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:bg-surface-gray-3"
+          class="group text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:bg-surface-gray-3"
         >
           New Window
           <div
@@ -68,7 +68,7 @@ function handleClick() {
 
         <!-- New Private Window (disabled) -->
         <ContextMenuItem
-          class="group text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:bg-surface-gray-3"
+          class="group text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:bg-surface-gray-3"
           disabled
         >
           New Private Window
@@ -82,7 +82,7 @@ function handleClick() {
         <!-- More Tools (sub) -->
         <ContextMenuSub>
           <ContextMenuSubTrigger
-            class="group text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none w-full outline-none cursor-pointer data-[state=open]:bg-surface-gray-2 data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:bg-surface-gray-3 data-[highlighted]:data-[state=open]:bg-surface-gray-3"
+            class="group text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none w-full outline-none cursor-pointer data-[state=open]:bg-surface-gray-2 data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:bg-surface-gray-3 data-[highlighted]:data-[state=open]:bg-surface-gray-3"
           >
             More Tools
             <div
@@ -93,12 +93,12 @@ function handleClick() {
           </ContextMenuSubTrigger>
           <ContextMenuPortal>
             <ContextMenuSubContent
-              class="min-w-[220px] z-30 bg-surface-elevation-2 rounded-lg p-1.5 shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none will-change-[opacity,transform] data-[side=top]:animate-slideDownAndFade data-[side=right]:animate-slideLeftAndFade data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade"
+              class="min-w-[220px] z-30 bg-surface-elevation-2 rounded-6 p-1.5 shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none will-change-[opacity,transform] data-[side=top]:animate-slideDownAndFade data-[side=right]:animate-slideLeftAndFade data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade"
               :side-offset="2"
               :align-offset="-5"
             >
               <ContextMenuItem
-                class="group text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
+                class="group text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
               >
                 Save Page As…
                 <div
@@ -108,12 +108,12 @@ function handleClick() {
                 </div>
               </ContextMenuItem>
               <ContextMenuItem
-                class="text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
+                class="text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
               >
                 Create Shortcut…
               </ContextMenuItem>
               <ContextMenuItem
-                class="text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
+                class="text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
               >
                 Name Window…
               </ContextMenuItem>
@@ -121,7 +121,7 @@ function handleClick() {
                 class="h-[1px] bg-outline-gray-2 my-1.5 mx-1"
               />
               <ContextMenuItem
-                class="text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
+                class="text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
               >
                 Developer Tools
               </ContextMenuItem>
@@ -134,7 +134,7 @@ function handleClick() {
         <!-- Checkboxes -->
         <ContextMenuCheckboxItem
           v-model="checkboxOne"
-          class="group text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:bg-surface-gray-3"
+          class="group text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:bg-surface-gray-3"
         >
           <ContextMenuItemIndicator
             class="absolute left-0 w-7 inline-flex items-center justify-center text-ink-gray-7"
@@ -151,7 +151,7 @@ function handleClick() {
 
         <ContextMenuCheckboxItem
           v-model="checkboxTwo"
-          class="text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
+          class="text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
         >
           <ContextMenuItemIndicator
             class="absolute left-0 w-7 inline-flex items-center justify-center text-ink-gray-7"
@@ -169,7 +169,7 @@ function handleClick() {
         </ContextMenuLabel>
         <ContextMenuRadioGroup v-model="person">
           <ContextMenuRadioItem
-            class="text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
+            class="text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
             value="pedro"
           >
             <ContextMenuItemIndicator
@@ -180,7 +180,7 @@ function handleClick() {
             Pedro Duarte
           </ContextMenuRadioItem>
           <ContextMenuRadioItem
-            class="text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
+            class="text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2 relative pl-7 select-none outline-none cursor-pointer data-[highlighted]:bg-surface-gray-3"
             value="colm"
           >
             <ContextMenuItemIndicator

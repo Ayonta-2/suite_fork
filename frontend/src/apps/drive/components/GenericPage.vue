@@ -62,7 +62,7 @@ import { entitiesDownload } from '@/apps/drive/utils/download'
 import { ref, computed, watch, watchEffect, provide, inject, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { onKeyDown, useEventListener } from '@vueuse/core'
-import { request, useScrollContainer } from 'frappe-ui'
+import { frappeRequest, shellScrollContainer as scrollHost } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { activeEntity, startRename } from '@/apps/drive/data/selection'
 import { uploads } from '@/apps/drive/data/uploads'
@@ -109,7 +109,6 @@ const props = defineProps({
   getEntities: Object,
 })
 const route = useRoute()
-const { el: scrollHost } = useScrollContainer()
 
 const listDialog = ref('')
 provide('listDialog', listDialog)
@@ -316,7 +315,7 @@ async function loadMore() {
   const next = pageStart.value
   try {
     const path = res.url.startsWith('/') ? res.url : `/api/method/${res.url}`
-    const resp = await request({
+    const resp = await frappeRequest({
       url: path,
       method: 'GET',
       params: {
@@ -328,7 +327,7 @@ async function loadMore() {
       },
       credentials: 'include',
     })
-    // request() is a raw fetch that skips the resource's transform, so the page
+    // frappeRequest() skips the resource's transform, so the page
     // rows arrive unformatted — run them through the same formatter the resource
     // uses, or this page would keep the dotfiles page 1 hides.
     // The query moved on while this was in flight — these rows belong to the
@@ -349,7 +348,7 @@ async function loadMore() {
 
 // Infinite scroll is driven off the shell's scroll container directly rather
 // than through `useInfiniteScroll`. That composable resolves its target once, at
-// setup — but `useScrollContainer` is a module-level registry the *shell* fills
+// setup — but `shellScrollContainer` is a module-level ref the *shell* fills
 // in, and on a cold mount the shell registers a tick after this component sets
 // up. So it bound to `null`, its internal `arrivedState` never updated again,
 // and the list loaded page 1 and then never paginated no matter how far you

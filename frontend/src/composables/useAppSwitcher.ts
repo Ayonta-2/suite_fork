@@ -1,10 +1,11 @@
 import { computed, h } from 'vue'
 import { RouterLink } from 'vue-router'
+
 import { getAppSwitcherItems, type SuiteAppSwitcherItem } from '@/apps/registry'
 import { translate as __ } from '@/boot/translation'
 
 const linkClasses =
-	'flex items-center gap-2 rounded p-1.5 outline-none focus:bg-surface-gray-2 data-[highlighted]:bg-surface-alpha-gray-2'
+	'flex items-center gap-2 rounded-4 p-1.5 outline-none focus:bg-surface-gray-2 data-[highlighted]:bg-surface-alpha-gray-2'
 
 function renderAppLink(app: SuiteAppSwitcherItem) {
 	return h(

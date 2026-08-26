@@ -27,10 +27,10 @@
 		<!-- Mobile: the subject is part of the fixed chrome — scrolling starts below it,
 		     and its border is the separator content passes under. -->
 		<div v-if="isMobile && thread?.length" class="shrink-0 border-b px-3.5 pb-3.5 pt-1.5">
-			<!-- !leading-7: subjects wrap, and both text-xl-semibold (line-height 1.15
+			<!-- !leading-7: subjects wrap, and both text-lg-semibold (line-height 1.15
 			     baked in) and the global body.mail-app h2 rule outrank a plain leading-*
 			     utility — wrapped lines sat nearly touching. -->
-			<h2 class="text-xl-semibold !leading-7">
+			<h2 class="text-lg-semibold !leading-7">
 				{{ thread[0].subject || __('[No subject]') }}
 			</h2>
 		</div>
@@ -94,7 +94,7 @@
 									(thread.length > 1 || mail.draft) &&
 									mail.name !== mailBeforeCollapsedGroup &&
 									mail.name !== mailBeforeUnseenMarker,
-								'sm:rounded-xl': thread.length > 1 || mail.draft,
+								'sm:rounded-7': thread.length > 1 || mail.draft,
 								// A collapsed row only holds one line — reading-card padding
 								// around it is what made the thread feel loose.
 								'sm:px-4 sm:py-5': (thread.length > 1 || mail.draft) && !isCollapsed(mail),
@@ -238,7 +238,7 @@
 												<template v-if="!mail.draft">
 													<ChevronDown
 														v-if="isMobile"
-														class="text-ink-gray-6 mt-px h-3.5 w-3.5 shrink-0 rounded-sm transition-transform duration-200"
+														class="text-ink-gray-6 mt-px h-3.5 w-3.5 shrink-0 rounded-1 transition-transform duration-200"
 														:class="{
 															'rotate-180':
 																showMailDetails === mail.name,
@@ -486,7 +486,7 @@
 						     the card was withheld; the collapsed test tells that reason from this one. -->
 						<div
 							v-else-if="!collapsedMailNames.has(mail.name)"
-							class="text-ink-gray-8 rounded-xl border px-5 py-3 text-sm"
+							class="text-ink-gray-8 rounded-7 border px-5 py-3 text-sm"
 						>
 							{{ __('This draft is open in another window.') }}
 							<button
@@ -541,7 +541,7 @@
 
 	<div v-else class="h-full overflow-hidden p-5">
 		<div
-			class="bg-surface-gray-1 flex h-full items-center justify-center rounded-md"
+			class="bg-surface-gray-1 flex h-full items-center justify-center rounded-4"
 		>
 			<div class="flex flex-col items-center space-y-3">
 				<NoMails class="text-ink-gray-2 h-16 w-16" />
@@ -1510,4 +1510,3 @@ const getForwardHeader = (mail: Mail) => {
 const getForwardedBody = (mail: Mail) =>
 	`<div class="frappe_mail_fwd"><br><br>${getBodyContent(mail)}</div>`
 </script>
-
