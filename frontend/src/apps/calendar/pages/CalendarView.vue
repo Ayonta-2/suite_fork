@@ -139,6 +139,17 @@ const calendars = createResource({
 
 const visibleCalendars = ref<string[]>([])
 
+// Calendars carry no colour of their own, so each takes one from the palette by
+// position; its events and its dot in the sidebar share it.
+const PALETTE = ['green', 'blue', 'violet', 'amber', 'pink', 'cyan', 'orange']
+const calendarColor = (name: string) => {
+	const index = calendars.data?.findIndex((cal) => cal.name === name) ?? -1
+	return PALETTE[Math.max(index, 0) % PALETTE.length]
+}
+const coloredCalendars = computed(
+	() => calendars.data?.map((cal) => ({ ...cal, color: calendarColor(cal.name) })) || [],
+)
+
 const events = createResource({
 	url: 'suite.calendar.api.get_calendar_events',
 	makeParams: () => {
@@ -158,11 +169,13 @@ const events = createResource({
 
 const visibleEvents = computed(
 	() =>
-		events.data?.filter((event) =>
-			event.calendars
-				.map((c) => c.calendar)
-				.some((cal) => visibleCalendars.value.includes(cal)),
-		) || [],
+		events.data
+			?.filter((event) =>
+				event.calendars
+					.map((c) => c.calendar)
+					.some((cal) => visibleCalendars.value.includes(cal)),
+			)
+			.map((event) => ({ ...event, color: calendarColor(event.calendars[0]?.calendar) })) || [],
 )
 
 const showEditEvent = ref(false)
@@ -211,6 +224,19 @@ const handleEventClick = ({ calendarEvent }) =>
 const closeEventDetail = () => {
 	const { event: _event, recurrence: _recurrence, ...query } = route.query
 	router.replace({ query })
+}
+
+// The sidebar's upcoming list toggles the detail panel the way mail's does:
+// a second click on the open row closes it.
+const toggleEventDetail = (calendarEvent) => {
+	const open = selectedCalendarEvent.value
+	if (
+		open &&
+		open.id === calendarEvent.id &&
+		(open.recurrence_id ?? '') === (calendarEvent.recurrence_id ?? '')
+	)
+		closeEventDetail()
+	else handleEventClick({ calendarEvent })
 }
 
 // The calendar app has no compose surface of its own — hand over to mail's
@@ -365,14 +391,22 @@ const NOTIFY_MODAL_OPTIONS = {
 	<div class="flex h-screen min-h-0 w-full min-w-0 flex-col">
 		<div class="flex min-h-0 min-w-0 flex-1">
 			<AppSidebar
-				:calendars="calendars?.data || []"
+				:calendars="coloredCalendars"
 				:visible-calendars
+				:month="calendarRef?.currentMonth"
+				:year="calendarRef?.currentYear"
+				:day="calendarRef?.currentDay"
+				:view="calendarRef?.activeView"
+				:events="visibleEvents"
+				:selected-event="selectedCalendarEvent"
 				@update:visible-calendars="
 					(name) =>
 						visibleCalendars.includes(name)
 							? visibleCalendars.splice(visibleCalendars.indexOf(name), 1)
 							: visibleCalendars.push(name)
 				"
+				@select-date="(date) => calendarRef?.setCalendarDate(date)"
+				@select-event="toggleEventDetail"
 			/>
 			<div class="min-h-0 min-w-0 flex-1 p-4">
 				<Calendar
