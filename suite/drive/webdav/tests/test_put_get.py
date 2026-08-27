@@ -1,8 +1,10 @@
+from pathlib import Path
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.drive.utils import create_drive_file, get_user_folder
-from suite.drive.utils.files import FileManager
+from suite.drive.utils.files import FileManager, get_s3_url, storage_key
 from suite.drive.webdav import get as get_module
 from suite.drive.webdav.errors import NotFoundError
 from suite.drive.webdav.properties import compute_etag
@@ -531,3 +533,163 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(response.status_code, 201)
         row = self._resolve(f"Home/{self.base_name}/cycle.txt").entity
         self.assertNotEqual(row.name, original.name)
+
+
+class _FakeS3Conn:
+    """In-memory stand-in for the boto3 client — enough surface for the PUT
+    staging flow, with a call log to assert what never happened."""
+
+    def __init__(self):
+        self.objects: dict[str, bytes] = {}
+        self.calls: list[tuple] = []
+
+    def upload_file(self, path, bucket, key):
+        self.calls.append(("upload_file", key))
+        self.objects[key] = Path(path).read_bytes()
+
+    def copy(self, source, bucket, key):
+        self.calls.append(("copy", source["Key"], key))
+        self.objects[key] = self.objects[source["Key"]]
+
+    def delete_object(self, Bucket, Key):
+        self.calls.append(("delete_object", Key))
+        self.objects.pop(Key, None)
+
+
+class TestWebDAVPutS3(IntegrationTestCase):
+    """PUT against S3-backed rows, boto client faked in memory.
+
+    The invariant under test: the commit that publishes the new metadata must
+    also publish the key holding the new bytes. Promoting bytes into a fixed
+    key after commit exposed the previous object under the new size/ETag/mtime
+    for the whole S3 copy (and, on create, a 404 until the copy finished).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user_with_password(OWNER, PASSWORD)
+        with cls.set_user(OWNER):
+            cls.home = get_user_folder(OWNER).name
+
+    def setUp(self):
+        frappe.set_user(OWNER)
+        with self.set_user(OWNER):
+            self.base_name = f"PutS3-{frappe.generate_hash(length=6)}"
+            self.base = create_drive_file(
+                self.base_name, self.home, "Folder", lambda f: FileManager().create_folder(f)
+            )
+        self.conn = _FakeS3Conn()
+        self.manager = FileManager()
+        self.manager.s3_enabled = True
+        self.manager.bucket = "test-bucket"
+        self.manager.conn = self.conn
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def _put(self, path: str, data: bytes):
+        from suite.drive.webdav import put as put_module
+
+        ctx = make_ctx("PUT", path, OWNER, data=data, content_type="application/octet-stream")
+        ctx.__dict__["manager"] = self.manager
+        return put_module.handle(ctx)
+
+    def _resolve(self, path: str):
+        from suite.drive.webdav import pathmap
+
+        pathmap.reset_memo()
+        return pathmap.resolve([segment for segment in path.split("/") if segment], OWNER)
+
+    def _s3_fixture(self, name: str, data: bytes):
+        """An S3-native Drive file: a committed row whose file_url names a
+        bare bucket key holding the bytes."""
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, name, data)
+        key = f"s3-fixture-{frappe.generate_hash(length=8)}/{name}"
+        frappe.db.set_value("File", target.name, "file_url", get_s3_url(key), update_modified=False)
+        # committed, so a mid-test rollback discards only the PUT under test
+        frappe.db.commit()
+        self.conn.objects[key] = data
+        return target, key
+
+    def _stored_key(self, entity: str) -> str:
+        return storage_key(frappe.db.get_value("File", entity, "file_url"))
+
+    def _calls(self, kind: str) -> list[tuple]:
+        return [call for call in self.conn.calls if call[0] == kind]
+
+    def test_overwrite_publishes_generation_with_the_commit(self):
+        target, old_key = self._s3_fixture("doc.txt", b"version-one")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        # pointer and metadata ride the same commit: the uncommitted row
+        # already names the generation key the bytes were fully uploaded to
+        new_key = self._stored_key(target.name)
+        self.assertNotEqual(new_key, old_key)
+        self.assertTrue(new_key.endswith(".putgen"))
+        self.assertEqual(self.conn.objects[new_key], b"v2!")
+        # no post-commit promotion copy — its window served the previous
+        # bytes under the committed metadata
+        self.assertEqual(self._calls("copy"), [])
+        # the old object stays intact while the old row is the visible one
+        self.assertEqual(self.conn.objects[old_key], b"version-one")
+
+        frappe.db.commit()
+        # the replaced object is garbage once the new row is public
+        self.assertNotIn(old_key, self.conn.objects)
+        self.assertEqual(self.conn.objects[new_key], b"v2!")
+
+    def test_overwrite_rollback_reaps_generation_and_keeps_target(self):
+        target, old_key = self._s3_fixture("doc.txt", b"version-one")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+        frappe.db.rollback()
+
+        self.assertEqual(self.conn.objects[old_key], b"version-one")
+        self.assertEqual([key for key in self.conn.objects if key.endswith(".putgen")], [])
+        self.assertEqual(self._stored_key(target.name), old_key)
+
+    def test_repeated_overwrites_do_not_stack_suffixes(self):
+        target, _ = self._s3_fixture("doc.txt", b"v1")
+
+        self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2")
+        frappe.db.commit()
+        first = self._stored_key(target.name)
+
+        self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v3")
+        frappe.db.commit()
+        second = self._stored_key(target.name)
+
+        self.assertNotEqual(second, first)
+        self.assertEqual(second.count(".putgen"), 1)
+        self.assertNotIn(first, self.conn.objects)  # the prior generation was reaped
+        self.assertEqual(self.conn.objects[second], b"v3")
+
+    def test_create_uploads_to_the_published_key_before_commit(self):
+        response = self._put(f"/dav/Home/{self.base_name}/new.txt", b"fresh")
+        self.assertEqual(response.status_code, 201)
+
+        row = self._resolve(f"Home/{self.base_name}/new.txt").entity
+        key = storage_key(row.file_url)
+        self.assertTrue(key.endswith(".putgen"))
+        # a GET the instant after commit finds the bytes at the key the row
+        # names (the copy design 404'd until the promotion finished)
+        self.assertEqual(self.conn.objects[key], b"fresh")
+        self.assertEqual(self._calls("copy"), [])
+
+        frappe.db.commit()
+        self.assertEqual(self._calls("delete_object"), [])  # nothing replaced, nothing reaped
+
+    def test_create_rollback_reaps_generation(self):
+        response = self._put(f"/dav/Home/{self.base_name}/ghost.txt", b"boo")
+        self.assertEqual(response.status_code, 201)
+        row = self._resolve(f"Home/{self.base_name}/ghost.txt").entity
+        key = storage_key(row.file_url)
+
+        frappe.db.rollback()
+        self.assertNotIn(key, self.conn.objects)
