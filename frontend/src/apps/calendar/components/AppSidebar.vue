@@ -97,13 +97,17 @@ const sidebarItems = computed(() => [
 
 <template>
 	<Sidebar v-model:collapsed="isSidebarCollapsed">
-		<SidebarHeader :title="title" :subtitle="subtitle" :menu-items="menuItems" :logo="branding.data?.brand_html || CalendarLogo" />
-		<div class="flex-1 px-2">
-			<SidebarSection v-for="section in sidebarItems" :key="section.label" :label="section.label">
-				<SidebarItem v-for="item in section.items" :key="item.label" :label="item.label" :icon="item.icon" :on-click="item.onClick" />
-			</SidebarSection>
+		<div class="flex h-full flex-col p-2">
+			<SidebarHeader :title="title" :subtitle="subtitle" :menu-items="menuItems" :logo="branding.data?.brand_html || CalendarLogo" />
+			<!-- -mx/px: rows sit flush with the clip edge, so without this the
+			     active item's shadow ring is cut off at both sides. -->
+			<div class="-mx-1 flex-1 overflow-y-auto overflow-x-hidden px-1">
+				<SidebarSection v-for="section in sidebarItems" :key="section.label" :label="section.label">
+					<SidebarItem v-for="item in section.items" :key="item.label" :label="item.label" :icon="item.icon" :on-click="item.onClick" />
+				</SidebarSection>
+			</div>
+			<SidebarCollapseToggle />
 		</div>
-		<div class="p-2"><SidebarCollapseToggle /></div>
 	</Sidebar>
 	<SettingsModal v-model="showSettings" />
 </template>
