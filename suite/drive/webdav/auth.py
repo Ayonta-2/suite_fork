@@ -229,7 +229,7 @@ def _verify_cached(user: str, password: str) -> str | None:
         return None
     if not hmac.compare_digest(digest.hexdigest(), digest_hex):
         return None
-    if fingerprint != _stored_hash_fingerprint(user):
+    if fingerprint != _stored_hash_fingerprint(canonical):
         # password changed since the entry was stored
         _delete_cache(user)
         return None
@@ -237,7 +237,9 @@ def _verify_cached(user: str, password: str) -> str | None:
 
 
 def _store_cache(user: str, password: str, canonical: str) -> None:
-    fingerprint = _stored_hash_fingerprint(user)
+    # fingerprint by the User row's real name — the submitted casing can miss
+    # on a case-sensitive __Auth lookup
+    fingerprint = _stored_hash_fingerprint(canonical)
     if not fingerprint:
         return
     salt = secrets.token_bytes(16)

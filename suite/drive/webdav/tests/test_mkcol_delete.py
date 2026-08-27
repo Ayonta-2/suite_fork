@@ -107,6 +107,23 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
         with self.assertRaises(Forbidden):
             self._mkcol("/dav/Everyone/RootIntruder", user=READER)
 
+    def test_delete_rolls_size_up_all_ancestors(self):
+        with self.set_user(OWNER):
+            nested = create_drive_file(
+                "Nested", self.base.name, "Folder", lambda f: FileManager().create_folder(f)
+            )
+            victim = write_file_fixture(nested.name, "sized.txt", b"0123456789")
+
+        def size(name):
+            return frappe.db.get_value("File", name, "file_size") or 0
+
+        before = (size(nested.name), size(self.base.name))
+        response = self._delete(f"/dav/Home/{self.base_name}/Nested/sized.txt")
+        self.assertEqual(response.status_code, 204)
+        # trash decrements the parent AND the grandparent, not just doc.folder
+        self.assertEqual(size(nested.name), before[0] - victim.file_size)
+        self.assertEqual(size(self.base.name), before[1] - victim.file_size)
+
     def test_delete_moves_file_to_trash(self):
         with self.set_user(OWNER):
             victim = write_file_fixture(self.base.name, "victim.txt", b"bye")

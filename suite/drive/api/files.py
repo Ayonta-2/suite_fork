@@ -22,6 +22,7 @@ from suite.drive.utils import (
     ATTACHMENT_CONTENT_DOCTYPE,
     STATUS_ACTIVE,
     STATUS_TRASHED,
+    apply_file_size_delta,
     create_drive_file,
     get_file_type,
     get_new_file_name,
@@ -715,15 +716,8 @@ def toggle_entity_status(doc, manager: FileManager, locked_owners: set):
 
     doc.status = flag
     doc.file_modified = frappe.utils.now_datetime()
-    # Only update parent folder size if parent exists (not root level)
-    if doc.folder:
-        folder_size = frappe.db.get_value("File", doc.folder, "file_size") or 0
-        frappe.db.set_value(
-            "File",
-            doc.folder,
-            "file_size",
-            folder_size + doc.file_size * (1 if flag == STATUS_ACTIVE else -1),
-        )
+    if doc.folder and doc.file_size:
+        apply_file_size_delta(doc.folder, doc.file_size * (1 if flag == STATUS_ACTIVE else -1))
 
     doc.save()
 

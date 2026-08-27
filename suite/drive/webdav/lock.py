@@ -131,6 +131,8 @@ def _create(
         if not row.is_folder:
             depth = "0"  # depth is meaningless on a non-collection
     else:
+        if ctx.had_trailing_slash:
+            raise Conflict("Cannot LOCK an unmapped collection URL.")
         row = _create_empty_resource(ctx, resolved)
         created = True
         depth = "0"
@@ -204,21 +206,24 @@ def _create_empty_resource(ctx: DavContext, resolved: pathmap.ResolvedPath) -> f
     manager = ctx.manager
     scratch = get_upload_path(f"webdav_{frappe.generate_hash(length=12)}_lock")
     scratch.write_bytes(b"")
-    drive_file = create_drive_file(
-        name,
-        parent.name,
-        "Application",
-        lambda file: "/" + str(manager.get_disk_path(file)),
-        "application/octet-stream",
-        0,
-    )
-    manager.upload_file(scratch, drive_file, create_thumbnail=False)
-    if manager.s3_enabled:
-        from suite.drive.utils.files import get_s3_key, get_s3_url
+    try:
+        drive_file = create_drive_file(
+            name,
+            parent.name,
+            "Application",
+            lambda file: "/" + str(manager.get_disk_path(file)),
+            "application/octet-stream",
+            0,
+        )
+        manager.upload_file(scratch, drive_file, create_thumbnail=False)
+        if manager.s3_enabled:
+            from suite.drive.utils.files import get_s3_key, get_s3_url
 
-        drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
-        drive_file.save()
-    drive_file.db_set("content_hash", hashlib.sha256(b"").hexdigest(), update_modified=False)
+            drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
+            drive_file.save()
+        drive_file.db_set("content_hash", hashlib.sha256(b"").hexdigest(), update_modified=False)
+    finally:
+        scratch.unlink(missing_ok=True)
 
     pathmap.reset_memo()
     return pathmap.fetch(drive_file.name)

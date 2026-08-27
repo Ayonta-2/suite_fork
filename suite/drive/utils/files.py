@@ -474,10 +474,11 @@ class FileManager:
             if stored_on_disk(source.file_url):
                 self.conn.upload_file(str(self.get_local_path(src_key)), self.bucket, dst_key)
             else:
-                self.conn.copy_object(
-                    Bucket=self.bucket,
-                    CopySource={"Bucket": self.bucket, "Key": src_key},
-                    Key=dst_key,
+                # managed copy: copy_object caps at 5GB, conn.copy does multipart
+                self.conn.copy(
+                    {"Bucket": self.bucket, "Key": src_key},
+                    self.bucket,
+                    dst_key,
                 )
         else:
             shutil.copy2(self.get_local_path(src_key), self.get_local_path(dst_key))

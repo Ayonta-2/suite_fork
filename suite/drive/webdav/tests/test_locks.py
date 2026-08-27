@@ -181,6 +181,11 @@ class TestWebDAVLocks(IntegrationTestCase):
         response = put.handle(make_ctx("PUT", path, OWNER, data=b"unlocked now"))
         self.assertEqual(response.status_code, 204)
 
+    def test_lock_unmapped_with_trailing_slash_raises_conflict(self):
+        # a collection URL must not mint a lock-null *file* (RFC 4918 §7.3)
+        with self.assertRaises(Conflict):
+            self._lock(f"/dav/Home/{self.base_name}/nonexistent/")
+
     def _hide_from_editor(self, name: str, data: bytes = b"secret"):
         with self.set_user(OWNER):
             hidden = write_file_fixture(self.shared.name, name, data)
