@@ -259,8 +259,8 @@ def drop_locks_under(entity: str) -> None:
     """DELETE/MOVE cleanup: locks do not survive unmapping or travel (RFC §7.5)."""
     tokens = _locks_over_subtree(entity)
     frappe.db.delete("Drive DAV Lock", {"entity": entity})
-    for token in tokens:
-        frappe.db.delete("Drive DAV Lock", {"name": token})
+    if tokens:
+        frappe.db.delete("Drive DAV Lock", {"name": ["in", tokens]})
 
 
 def find_lock(token: str) -> LockInfo | None:
