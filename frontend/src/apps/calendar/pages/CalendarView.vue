@@ -70,22 +70,52 @@ const setRoute = () => {
 	const name = routeNameForView(view)
 	const accountId = route.params.accountId
 
-	// Query carries the open event's deep link; date/view navigation keeps it.
-	if (dayjs().isSame(target, view))
-		router.replace({ name, params: { accountId }, query: route.query })
-	else router.push({ name, params: { accountId, year, month: month + 1, day }, query: route.query })
+	// Today's period gets the bare URL. Query carries the open event's deep
+	// link; date/view navigation keeps it.
+	const location = dayjs().isSame(target, view)
+		? { name, params: { accountId }, query: route.query }
+		: { name, params: { accountId, year, month: month + 1, day }, query: route.query }
+
+	// Every change of view or period is a history entry, so Back retraces it.
+	// The one exception is when the URL already shows this view and period —
+	// e.g. a dated URL for today's month collapsing to the bare one — which
+	// only re-forms the current entry rather than adding a copy of it.
+	const { year: y, month: m, day: d } = route.params
+	const current = y && m && d ? dayjs(`${y}-${m}-${d}`, 'YYYY-M-D') : dayjs()
+	if (viewForRouteName(route.name) === view && current.isSame(target, view)) router.replace(location)
+	else router.push(location)
 }
 
-onMounted(() => {
-	const view = viewForRouteName(route.name)
-	if (view && calendarRef.value) calendarRef.value.activeView = view
+// The URL is the source of truth for view and date. All three view routes
+// render this one component, so Back/Forward change the route without a
+// remount — the calendar has to be told each time, not just on mount. Only
+// what differs is written, which is what keeps this and setRoute (which
+// writes the route from the calendar) from chasing each other.
+const applyRoute = () => {
+	const calendar = calendarRef.value
+	if (!calendar) return
 
+	const view = viewForRouteName(route.name)
+	if (view && calendar.activeView !== view) calendar.activeView = view
+
+	// A route without a date is today's, the way setRoute writes it.
 	const { year, month, day } = route.params
-	if (year && month && day) {
-		const date = dayjs(`${year}-${month}-${day}`, 'YYYY-M-D')
-		if (date.isValid()) calendarRef.value.setCalendarDate(date)
-	}
-})
+	const date = year && month && day ? dayjs(`${year}-${month}-${day}`, 'YYYY-M-D') : dayjs()
+	if (!date.isValid()) return
+	if (
+		date.year() !== calendar.currentYear ||
+		date.month() !== calendar.currentMonth ||
+		date.date() !== calendar.currentDay
+	)
+		calendar.setCalendarDate(date)
+}
+
+onMounted(applyRoute)
+
+watch(
+	() => [route.name, route.params.year, route.params.month, route.params.day],
+	() => applyRoute(),
+)
 
 const transformEvent = (event) => {
 	// All-day-ness is the event's own flag, or the midnight-to-midnight shape of an invite
