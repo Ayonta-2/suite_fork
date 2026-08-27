@@ -7,6 +7,7 @@ import { Calendar } from 'frappe-ui/experimental'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
+import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { userStore } from '@/apps/calendar/stores/user'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
 import EventDetailSidebar from '@/apps/calendar/components/EventDetailSidebar.vue'
@@ -87,24 +88,16 @@ onMounted(() => {
 })
 
 const transformEvent = (event) => {
-	// The all-day heuristic reads the stored wall clock (midnight in the event's own zone).
-	const rawStart = dayjs(event.start)
-	const dur = dayjs.duration(event.duration || 'PT0S')
-	const isAllDay =
-		rawStart.hour() === 0 &&
-		rawStart.minute() === 0 &&
-		rawStart.second() === 0 &&
-		dur.days() > 0 &&
-		dur.hours() === 0 &&
-		dur.minutes() === 0 &&
-		dur.seconds() === 0
+	// All-day-ness is the event's own flag, or the midnight-to-midnight shape of an invite
+	// that arrived without one; either way it is read off the stored wall clock.
+	const isAllDay = isAllDayEvent(event)
 
 	// Timed events are placed in the viewer's zone; all-day events keep their calendar date.
-	const start = isAllDay ? rawStart : fromEventZone(event.start, event.time_zone)
-	const end = start.add(dur)
-	// The stored end of an all-day event is the midnight after its last day; the
-	// calendar wants that last day itself, since it reads `toDate` inclusively.
-	const lastDay = isAllDay ? end.subtract(1, 'day') : end
+	const start = isAllDay ? dayjs(event.start) : fromEventZone(event.start, event.time_zone)
+	const end = start.add(dayjs.duration(event.duration || 'PT0S'))
+	// The calendar reads `toDate` inclusively, so an all-day event hands over its last day
+	// rather than the midnight after it that the stored end points at.
+	const lastDay = isAllDay ? (eventLastDay(start, event.duration, true) ?? start) : end
 
 	return {
 		...event,
