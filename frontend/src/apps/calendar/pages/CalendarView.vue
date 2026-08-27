@@ -218,16 +218,17 @@ const handleOpenEvent = (e) => {
 	Object.assign(event, e, e.calendarEvent && { calendarEvent: withActualTitle(e.calendarEvent) })
 	showEditEvent.value = true
 
-	// Editing an existing event is addressable: ?event=<id>&edit=1 (never for
-	// new-event drafts, which have no id and no restorable form state).
+	// Editing an existing event is addressable: ?edit=<id> (never for new-event
+	// drafts, which have no id and no restorable form state). Its own key, apart
+	// from the detail sidebar's ?event=: the sidebar is derived from that one,
+	// so sharing it would open the sidebar under every double-clicked pill.
 	const opened = e.calendarEvent
-	if (opened?.id && (route.query.edit !== '1' || route.query.event !== opened.id))
+	if (opened?.id && route.query.edit !== opened.id)
 		router.replace({
 			query: {
 				...route.query,
-				event: opened.id,
-				recurrence: opened.recurrence_id || undefined,
-				edit: '1',
+				edit: opened.id,
+				editRecurrence: opened.recurrence_id || undefined,
 			},
 		})
 }
@@ -321,22 +322,22 @@ watch(
 	(val) => {
 		if (val) return
 		Object.keys(event).forEach((key) => delete event[key])
-		// Closing the modal drops only `edit` — the detail sidebar (?event=) stays.
+		// Closing the modal drops only its own keys — the detail sidebar (?event=) stays.
 		if (route.query.edit) {
-			const { edit: _edit, ...query } = route.query
+			const { edit: _edit, editRecurrence: _rec, ...query } = route.query
 			router.replace({ query })
 		}
 	},
 )
 
-// Restore the edit modal from ?edit=1 (reload, shared link), and close it when
-// back/forward removes the param. Guards: never touch an already-open modal
-// (events reloading in the background must not stomp form state), and never
-// close a NEW-event draft (those carry no calendarEvent and own no query).
+// Restore the edit modal from ?edit=<id> (reload, shared link), and close it
+// when back/forward removes the param. Guards: never touch an already-open
+// modal (events reloading in the background must not stomp form state), and
+// never close a NEW-event draft (those carry no calendarEvent and own no query).
 watch(
-	[() => events.data, () => route.query.event, () => route.query.recurrence, () => route.query.edit],
-	([data, id, recurrence, edit]) => {
-		if (!edit || !id) {
+	[() => events.data, () => route.query.edit, () => route.query.editRecurrence],
+	([data, id, recurrence]) => {
+		if (!id) {
 			if (showEditEvent.value && event.calendarEvent) showEditEvent.value = false
 			return
 		}
