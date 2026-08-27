@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Dialog, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, TabButtons, createResource, usePageMeta } from 'frappe-ui'
 import { Calendar } from 'frappe-ui/experimental'
 
 import { useScreenSize } from '@/composables/useScreenSize'
@@ -226,6 +226,12 @@ const closeEventDetail = () => {
 	router.replace({ query })
 }
 
+/** "August 2026" → the month and its year apart, so the year can be set in a lighter ink. */
+const splitYear = (title: string) => {
+	const match = /^(.*?)[,\s]*(\d{4})$/.exec(title || '')
+	return match ? { label: match[1], year: match[2] } : { label: title, year: '' }
+}
+
 // The sidebar's upcoming list toggles the detail panel the way mail's does:
 // a second click on the open row closes it.
 const toggleEventDetail = (calendarEvent) => {
@@ -417,7 +423,33 @@ const NOTIFY_MODAL_OPTIONS = {
 					:on-dbl-click="(event) => handleOpenEvent(event)"
 					:on-cell-click="(event) => handleOpenEvent(event)"
 					@update="handleUpdate"
-				/>
+				>
+					<!-- The month is a label, not a picker: the sidebar's mini month is
+					     where a date gets chosen. The year sits beside it, muted. -->
+					<template
+						#header="{ currentMonthYear, enabledModes, activeView, decrement, increment, updateActiveView, setCalendarDate }"
+					>
+						<div class="mb-2 flex items-center justify-between">
+							<div class="flex items-baseline gap-1.5 px-2 text-lg leading-5">
+								<span class="font-medium text-ink-gray-9">{{ splitYear(currentMonthYear).label }}</span>
+								<span v-if="splitYear(currentMonthYear).year" class="text-ink-gray-4">
+									{{ splitYear(currentMonthYear).year }}
+								</span>
+							</div>
+							<div class="flex gap-x-1">
+								<Button variant="ghost" icon="lucide-chevron-left" @click="decrement" />
+								<Button variant="ghost" :label="__('Today')" @click="setCalendarDate()" />
+								<Button variant="ghost" icon="lucide-chevron-right" @click="increment" />
+								<TabButtons
+									class="ml-2"
+									:options="enabledModes"
+									:model-value="activeView"
+									@update:model-value="(view) => updateActiveView(view)"
+								/>
+							</div>
+						</div>
+					</template>
+				</Calendar>
 			</div>
 			<!-- Desktop only: it is a side panel with a fixed width, so on a phone it
 			     covered the grid it is meant to sit beside. The selection still happens
