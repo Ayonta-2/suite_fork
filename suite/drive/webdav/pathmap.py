@@ -118,7 +118,7 @@ def parse_destination(request: Request) -> tuple[list[str], bool]:
         raise BadRequest("Destination header is required.")
 
     parts = urlsplit(header)
-    if parts.netloc and _bare_host(parts.netloc) != _bare_host(request.host):
+    if parts.netloc and not _same_host(parts.netloc, request.host):
         raise BadGateway("Destination is on another host.")
     raw_path = parts.path
     if raw_path != DAV_PREFIX and not raw_path.startswith(DAV_PREFIX + "/"):
@@ -203,8 +203,13 @@ def _reserved_names(parent: frappe._dict) -> set[str]:
     return reserved
 
 
-def _bare_host(netloc: str) -> str:
-    host = netloc.lower()
-    for suffix in (":80", ":443"):
-        host = host.removesuffix(suffix)
-    return host
+def _same_host(destination: str, request_host: str) -> bool:
+    """Hostnames must match; ports only when both sides state a non-default
+    one — a proxy rewriting Host with nginx's $host drops the port, which
+    must not fail every MOVE/COPY on a non-standard port."""
+    try:
+        dest, req = urlsplit("//" + destination), urlsplit("//" + request_host)
+        ports = {port for port in (dest.port, req.port) if port not in (None, 80, 443)}
+    except ValueError:
+        return False
+    return bool(dest.hostname) and dest.hostname == req.hostname and len(ports) <= 1
