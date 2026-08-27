@@ -450,22 +450,29 @@ def settle_swap_destination(file, stamp, placed):
     pointer, so the checks drain quietly and the heal stands."""
     placed = Path(placed)
     for delay in _SETTLE_DELAYS:
+        # locked, like the in-request swap: a newer PUT blocks at its own
+        # locked read until this commit, so it cannot slip between these
+        # guards (which may hash sizable files) and the replace below
         current = frappe.db.get_value(
-            "File", file, ["file_url", "status", "content_hash", "file_size"], as_dict=True
+            "File", file, ["file_url", "status", "content_hash", "file_size"], as_dict=True, for_update=True
         )
         if current is None or current.status != STATUS_ACTIVE:
+            frappe.db.commit()
             return
         dest = FileManager().get_local_path(current.file_url)
         if dest != placed:
-            if (
-                _content_carries(stamp, current)
-                and _file_delivers_stamp(placed, stamp)
-                and not _bytes_deliver_stamp(stamp, current)
-            ):
+            ours = _file_delivers_stamp(placed, stamp)
+            if ours and _content_carries(stamp, current) and not _bytes_deliver_stamp(stamp, current):
                 os.replace(placed, dest)
+            elif ours:
+                # superseded — the row moved on without needing these bytes;
+                # reap our copy. A placed path that no longer delivers the
+                # stamp may already belong to someone else's blob: leave it.
+                placed.unlink(missing_ok=True)
+            frappe.db.commit()
             return
+        frappe.db.commit()  # release the row before waiting
         time.sleep(delay)
-        frappe.db.commit()  # a fresh snapshot for the next look
 
 
 def _swap_state(name: str) -> frappe._dict | None:

@@ -1000,6 +1000,50 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(slept.call_count, 5)
         self.assertEqual(blob_path.read_bytes(), b"v2!")
 
+    def test_put_swap_settlement_yields_to_a_newer_put(self):
+        # a newer PUT that landed (and moved on) before the worker gets
+        # there owns the row — the settlement must not replace its bytes,
+        # and reaps only a copy that provably still delivers our stamp
+        from unittest.mock import patch
+
+        from suite.drive.utils import apply_file_size_delta
+        from suite.drive.webdav import put as put_module
+
+        with self.set_user(OWNER):
+            dest = create_drive_file(
+                f"Dest-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        manager = FileManager()
+        old_path = manager.get_local_path(target.file_url)
+        new_rel = Path(storage_key(frappe.db.get_value("File", dest.name, "file_url"))) / "doc.txt"
+        new_path = manager.site_folder / new_rel
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+        old_path.rename(new_path)  # the stalled mover's disk transfer
+        with patch("time.sleep"), patch("frappe.enqueue") as queued:
+            frappe.db.commit()  # times out, heals at the old path, queues
+
+        # the mover commits, and then a newer PUT overwrites at the new home
+        size_now = frappe.db.get_value("File", target.name, "file_size")
+        frappe.db.set_value("File", target.name, {"file_url": "/" + str(new_rel), "folder": dest.name})
+        apply_file_size_delta(self.base.name, -size_now)
+        apply_file_size_delta(dest.name, size_now)
+        newest = b"NEWEST!"
+        new_path.write_bytes(newest)
+        frappe.db.set_value("File", target.name, {"content_hash": "newer-hash", "file_size": len(newest)})
+
+        spec = {key: value for key, value in queued.call_args.kwargs.items() if key != "queue"}
+        with patch("time.sleep"):
+            put_module.settle_swap_destination(**spec)
+
+        self.assertEqual(new_path.read_bytes(), newest)  # the newer write stands
+        self.assertFalse(old_path.exists())  # our superseded copy was reaped
+
     def test_put_swap_stands_down_for_a_row_trashed_in_the_gap(self):
         # a trash in the gap carried the bytes off — recreating the path
         # would orphan a blob nothing references, and a later restore-from-
