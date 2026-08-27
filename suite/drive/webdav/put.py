@@ -512,11 +512,25 @@ def settle_swap_destination(file, stamp, placed, hops=0):
             )
             return
         except Exception:
-            pass
-    _file_log(
+            # the queue is down, but the database demonstrably is not — the
+            # loop above just used it. Continue the chase inline instead of
+            # abandoning a verification that needs no queue at all; the hop
+            # cap still bounds the recursion.
+            return settle_swap_destination(file, stamp, str(placed), hops=hops + 1)
+    note = (
         f"File {file}: swap settlement exhausted mid-churn; bytes at {placed}; replay with "
         f"settle_swap_destination(file={file!r}, stamp={json.dumps(stamp, default=str)}, placed={str(placed)!r})"
     )
+    _file_log(note)
+    try:
+        # the database is alive on this path — leave a record an operator
+        # actually sees, not just a log line
+        frappe.log_error(
+            "Drive: swap settlement exhausted mid-churn", note, reference_doctype="File", reference_name=file
+        )
+        frappe.db.commit()
+    except Exception:
+        pass
 
 
 def _swap_state(name: str) -> frappe._dict | None:
