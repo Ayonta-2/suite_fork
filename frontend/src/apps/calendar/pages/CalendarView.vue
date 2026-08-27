@@ -40,6 +40,8 @@ watch(
 		calendarRef.value?.currentDay,
 	],
 	([year, month], [oldYear, oldMonth]) => {
+		// Nothing to write while the calendar is not mounted (a hot reload unmounts it).
+		if (year == null || month == null) return
 		if (year !== oldYear || month !== oldMonth) events.reload()
 		setRoute()
 	},
@@ -353,8 +355,20 @@ const showRecurringEventModal = ref(false)
 const isUpdateInstance = ref(false)
 const showNotifyModal = ref(false)
 
+// The calendar draws a move or resize before it is confirmed here. Until a
+// dialog button answers, the change is only on screen: a dialog closed by its
+// X or a click outside, or a save that fails, puts the pill back where it was
+// by re-syncing the calendar's copy of the events from ours.
+let confirmed = false
+const revertUpdate = () => calendarRef.value?.reloadEvents()
+
+watch([showRecurringEventModal, showNotifyModal], ([recurring, notify]) => {
+	if (!recurring && !notify && !confirmed) revertUpdate()
+})
+
 const handleUpdate = (e) => {
 	Object.assign(eventToBeUpdated, withActualTitle(e))
+	confirmed = false
 	if (e.recurrence_id) showRecurringEventModal.value = true
 	else handleUpdateEvent()
 }
@@ -378,9 +392,11 @@ const hasParticipantsOtherThanUser = computed(
 )
 
 const submitEvent = (sendEmail: boolean) => {
-	if (isUpdateInstance.value) {
-		return
-	}
+	confirmed = true
+	showNotifyModal.value = false
+	// Editing a single instance of a series is not supported yet; the move is undone rather
+	// than left on screen as if it had been saved.
+	if (isUpdateInstance.value) return revertUpdate()
 
 	eventToBeUpdated.start = dayjs(eventToBeUpdated.fromDateTime).format('YYYY-MM-DDTHH:mm:ss')
 	if (!eventToBeUpdated.isAllDay) {
@@ -408,6 +424,10 @@ const editEvent = createResource({
 	onSuccess: () => {
 		raiseToast(__('Event updated.'), 'success')
 		events.reload()
+	},
+	onError: (error) => {
+		revertUpdate()
+		raiseToast(error.message, 'error')
 	},
 })
 
