@@ -225,6 +225,9 @@ def _create_root_folder(file_name):
     root._name = file_name
     root.flags.file_created = True
     root.insert(ignore_permissions=True)
+    # creation is triggered by whoever touches Drive first; a pinned root owned
+    # by that visitor would hand them the owner's all-access bypass forever
+    root.db_set("owner", "Administrator", update_modified=False)
     return frappe._dict(name=root.name, file_url=root.file_url)
 
 
