@@ -297,7 +297,11 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     if new_file_url is not None:
         stamped["file_url"] = new_file_url
     doc.db_set(stamped)
-    _bump_folder_size(row.folder, delta)
+    # doc.folder, not row.folder: the resolve-time snapshot spans the whole
+    # body spool, and a move committed in that window would land the delta on
+    # a folder the file already left — the row lock held since the locked
+    # read guarantees doc.folder is where the row sits at commit
+    _bump_folder_size(doc.folder, delta)
     return _response(ctx, 204, row.name, sha256)
 
 

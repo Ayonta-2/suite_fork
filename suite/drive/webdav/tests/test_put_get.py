@@ -721,6 +721,45 @@ class TestWebDAVPut(IntegrationTestCase):
         # destination: the true bytes arrived
         self.assertEqual(frappe.db.get_value("File", dest.name, "file_size"), len(b"version-one"))
 
+    def test_put_overwrite_charges_the_folder_the_row_sits_in(self):
+        # the resolve-time parent spans the whole body spool — a move that
+        # commits in that window must not receive the size delta; it belongs
+        # to the folder the locked row actually sits in at commit
+        from unittest.mock import patch
+
+        from suite.drive.utils import apply_file_size_delta
+        from suite.drive.webdav import put as put_module
+
+        with self.set_user(OWNER):
+            dest = create_drive_file(
+                f"Dest-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        real_lock = put_module.acquire_owner_storage_lock
+
+        def move_then_lock(owner):
+            # a move landing between path resolution and the row lock
+            size_now = frappe.db.get_value("File", target.name, "file_size")
+            frappe.db.set_value("File", target.name, "folder", dest.name)
+            apply_file_size_delta(self.base.name, -size_now)
+            apply_file_size_delta(dest.name, size_now)
+            return real_lock(owner)
+
+        with patch.object(put_module, "acquire_owner_storage_lock", side_effect=move_then_lock):
+            response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+        frappe.db.commit()
+
+        # the delta landed where the file lives now, not where it was resolved
+        self.assertEqual(frappe.db.get_value("File", dest.name, "file_size"), len(b"v2!"))
+        expected_source = (base_size or 0) - len(b"version-one")
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), expected_source)
+
     def test_put_compensation_after_trash_skips_settled_accounting(self):
         # trashing subtracted the stamped size from the chain, which already
         # telescoped the stamped delta away — reversing it again would
