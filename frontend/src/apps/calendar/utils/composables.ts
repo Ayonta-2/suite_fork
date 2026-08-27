@@ -1,19 +1,6 @@
-import { computed, ref } from 'vue'
-
+import { useTheme as useSuiteTheme } from '@/composables/useTheme'
 import { userStore } from '@/apps/calendar/stores/user'
 
-const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-const systemIsDark = ref(mediaQuery.matches)
-mediaQuery.addEventListener('change', () => (systemIsDark.value = mediaQuery.matches))
-
-export const useTheme = () => {
-	const { userResource } = userStore()
-
-	const dataTheme = computed(() => {
-		const colorScheme = userResource.data?.color_scheme || 'System Default'
-		if (colorScheme === 'System Default') return systemIsDark.value ? 'dark' : 'light'
-		return colorScheme === 'Dark Mode' ? 'dark' : 'light'
-	})
-
-	return { dataTheme }
-}
+// The colour scheme is one User Settings row shared with mail, so both apps go through
+// the suite-wide composable — and its one write queue behind the cycle shortcut.
+export const useTheme = () => useSuiteTheme(userStore().userResource)

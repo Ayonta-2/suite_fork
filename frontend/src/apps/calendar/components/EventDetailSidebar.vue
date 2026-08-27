@@ -23,6 +23,7 @@ import meetLogo from '@/assets/app-logos/meet.png'
 
 import { getMeetUrl, getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
 import { fromEventZone, inUserTimeZone } from '@/apps/calendar/utils/datetime'
+import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
@@ -95,25 +96,25 @@ const calendarOwnerLabel = computed(
 // --- Date / time label ---
 
 const dateLabel = computed(() => {
-	// Full-day detection reads the stored wall clock (midnight in the event's own zone);
-	// timed events are then shown in the viewer's zone.
-	const rawStart = dayjs(calendarEvent.start)
-	const duration = dayjs.duration(calendarEvent.duration)
-	const isFullDay = duration.asHours() % 24 === 0 && rawStart.isSame(rawStart.startOf('day'))
-	const start = isFullDay ? rawStart : fromEventZone(calendarEvent.start, calendarEvent.time_zone)
-	const end = start.add(duration)
-	const isSameDay =
-		start.isSame(end, 'day') || (isFullDay && start.isSame(end.subtract(1, 'ms'), 'day'))
+	// Full-day events keep their own calendar date (the stored wall clock); timed events are
+	// shown in the viewer's zone.
+	const isFullDay = isAllDayEvent(calendarEvent)
+	const start = isFullDay
+		? dayjs(calendarEvent.start)
+		: fromEventZone(calendarEvent.start, calendarEvent.time_zone)
+	const end = start.add(dayjs.duration(calendarEvent.duration))
 
 	const currentYear = dayjs().year()
 	const showYear = start.year() !== currentYear || end.year() !== currentYear
 	const dateFormat = showYear ? 'ddd, D MMM YYYY' : 'ddd, D MMM'
 
 	if (isFullDay) {
-		if (isSameDay) return start.format(dateFormat)
-		return `${start.format(dateFormat)} - ${end.subtract(1, 'day').format(dateFormat)}`
+		const lastDay = eventLastDay(start, calendarEvent.duration, true)
+		if (!lastDay) return start.format(dateFormat)
+		return `${start.format(dateFormat)} - ${lastDay.format(dateFormat)}`
 	}
 
+	const isSameDay = start.isSame(end, 'day')
 	if (isSameDay)
 		return `${start.format('h:mm a')} - ${end.format('h:mm a')} · ${start.format(dateFormat)}`
 	return `${start.format(`${dateFormat}, h:mm a`)} - ${end.format(`${dateFormat}, h:mm a`)}`

@@ -72,7 +72,7 @@
     "feather-icons": "^4.29.2",
     "file-saver": "^2.0.5",
     "firebase": "^12.2.1",
-    "frappe-ui": "1.0.0-beta.55",
+    "frappe-ui": "frappe/frappe-ui#c2fce39bcb5ee5514e709fc6b16f9de2caed302c",
     "fuzzysort": "^3.1.0",
     "gemoji": "^8.1.0",
     "hast-util-to-html": "^9.0.5",

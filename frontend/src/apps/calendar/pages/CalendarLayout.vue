@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, provide, watchEffect } from 'vue'
-import { FrappeUIProvider, createResource } from 'frappe-ui'
+import { FrappeUIProvider } from 'frappe-ui'
 
-import { raiseToast, shouldIgnoreKeypress } from '@/apps/calendar/utils'
+import { shouldIgnoreKeypress } from '@/apps/calendar/utils'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { useTheme } from '@/apps/calendar/utils/composables'
 import { userStore } from '@/apps/calendar/stores/user'
@@ -19,7 +19,7 @@ import { initSocket } from '@/apps/calendar/socket'
  *   - wraps children in FrappeUIProvider and renders the nested <router-view>.
  */
 const { userResource } = userStore()
-const { dataTheme } = useTheme()
+const { dataTheme, cycleTheme } = useTheme()
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
@@ -47,40 +47,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
 		return cycleTheme()
 	}
 }
-
-const COLOR_SCHEME_CYCLE = ['System Default', 'Light Mode', 'Dark Mode'] as const
-
-const cycleTheme = () => {
-	const current = userResource.data?.color_scheme
-	if (!current) return
-
-	const idx = COLOR_SCHEME_CYCLE.indexOf(current)
-	const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
-
-	// Optimistic: flip the theme and confirm at once, before the server round-trip resolves.
-	userResource.data.color_scheme = next
-	raiseToast(__('Color scheme updated to {0}.', [next]))
-
-	updateColorScheme.submit(next, {
-		onError: () => {
-			userResource.data.color_scheme = current
-			raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
-		},
-	})
-}
-
-const updateColorScheme = createResource({
-	url: 'frappe.client.set_value',
-	makeParams: (color_scheme) => ({
-		doctype: 'User Settings',
-		name: userResource.data.user_settings,
-		fieldname: { color_scheme },
-	}),
-	onSuccess: () => {
-		// Reconcile the optimistic value against server truth (sets the same value; harmless).
-		userResource.reload()
-	},
-})
 </script>
 
 <template>
