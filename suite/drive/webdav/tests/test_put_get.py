@@ -286,6 +286,28 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(FileManager().get_local_path(row.file_url).read_bytes(), png)
         self.assertTrue(frappe.db.exists("Error Log", {"method": "Drive: could not create WebDAV thumbnail"}))
 
+    def test_put_succeeds_when_thumbnail_logging_fails_too(self):
+        # by promotion time the write is complete — even the failure LOGGING
+        # failing on top must not turn the committed PUT into a client-visible
+        # error and provoke a retry of a finished save
+        from unittest.mock import patch
+
+        png = bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000d49444154789c626001000000ffff03000006000557bfabd40000000049454e44ae426082"
+        )
+        response = self._put(f"/dav/Home/{self.base_name}/pixel2.png", png)
+        self.assertEqual(response.status_code, 201)
+        row = self._resolve(f"Home/{self.base_name}/pixel2.png").entity
+
+        with (
+            patch("frappe.enqueue", side_effect=RuntimeError),
+            patch("frappe.log_error", side_effect=RuntimeError),
+        ):
+            frappe.db.commit()  # must not raise — the save already succeeded
+
+        self.assertEqual(FileManager().get_local_path(row.file_url).read_bytes(), png)
+
     def test_put_rollup_failure_fails_the_put(self):
         # a suppressed rollup failure would commit ancestor sizes that no
         # reconciliation repairs — the PUT must fail so the whole transaction,
@@ -879,6 +901,28 @@ class TestWebDAVPutS3(IntegrationTestCase):
         self.assertEqual(self.conn.objects[old_key], b"version-one")
         self.assertEqual([key for key in self.conn.objects if key.endswith(".putgen")], [])
         self.assertEqual(self._stored_key(target.name), old_key)
+
+    def test_overwrite_survives_reap_and_logging_failure(self):
+        # the reap of the replaced object and even the logging of its failure
+        # run after the overwrite succeeded — neither may fail the response
+        from unittest.mock import patch
+
+        target, old_key = self._s3_fixture("doc.txt", b"version-one")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        def broken_delete(**kwargs):
+            raise RuntimeError
+
+        self.conn.delete_object = broken_delete
+        with patch("frappe.log_error", side_effect=RuntimeError):
+            frappe.db.commit()  # must not raise — the overwrite already succeeded
+
+        new_key = self._stored_key(target.name)
+        self.assertEqual(self.conn.objects[new_key], b"v2!")
+        # the replaced object leaks (recorded, not fatal)
+        self.assertIn(old_key, self.conn.objects)
 
     def test_repeated_overwrites_do_not_stack_suffixes(self):
         target, _ = self._s3_fixture("doc.txt", b"v1")

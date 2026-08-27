@@ -381,13 +381,21 @@ def _enqueue_thumbnail(manager, doc, file_path: str, discard_source: Path | None
     """Thumbnails are cosmetic, and by this point the bytes and metadata are
     committed and promoted — nothing here may fail the response, or the client
     would retry a PUT that already succeeded. upload_thumbnail swallows its own
-    failures; this guards the enqueue machinery around it."""
+    failures; this guards the enqueue machinery around it — and the recovery
+    itself (an unlink, an Error Log insert) may not escape either."""
     try:
         frappe.enqueue(manager.upload_thumbnail, now=True, at_front=True, file=doc, file_path=file_path)
     except Exception:
-        if discard_source is not None:
-            discard_source.unlink(missing_ok=True)
-        frappe.log_error("Drive: could not create WebDAV thumbnail", frappe.get_traceback())
+        trace = frappe.get_traceback()
+        try:
+            if discard_source is not None:
+                discard_source.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            frappe.log_error("Drive: could not create WebDAV thumbnail", trace)
+        except Exception:
+            _file_log(f"File {doc.name}: could not create WebDAV thumbnail\n{trace}")
 
 
 class _Compensation:
@@ -516,8 +524,13 @@ def _discard_object(manager, key: str) -> None:
     try:
         manager.conn.delete_object(Bucket=manager.bucket, Key=key)
     except Exception:
-        # a stray object is only clutter; the PUT's outcome must not fail over it
-        frappe.log_error("Drive: could not delete WebDAV object", frappe.get_traceback())
+        # a stray object is only clutter; the PUT's outcome must not fail over
+        # it — not even over the Error Log insert recording the leak
+        trace = frappe.get_traceback()
+        try:
+            frappe.log_error("Drive: could not delete WebDAV object", trace)
+        except Exception:
+            _file_log(f"could not delete WebDAV object {key}\n{trace}")
 
 
 def _run_upload_validators(scratch: Path, file_name: str, parent: str) -> None:
