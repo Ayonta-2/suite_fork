@@ -58,10 +58,10 @@ class TestWebDAVContent(IntegrationTestCase):
         self.assertEqual(response.headers["Accept-Ranges"], "bytes")
         self.assertTrue(response.headers["ETag"])
         self.assertTrue(response.headers["Last-Modified"].endswith(" GMT"))
-        self.assertNotIn("Content-Disposition", response.headers)
-        # user bytes must come back inert for browsers
+        # user bytes must come back inert for browsers; DAV clients ignore all three
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(response.headers["Content-Security-Policy"], "sandbox")
+        self.assertEqual(response.headers["Content-Disposition"], "attachment; filename=data.bin")
 
     def test_range_request_yields_206(self):
         response = self._get(f"/dav/Home/{self.folder_name}/data.bin", headers={"Range": "bytes=0-4"})
@@ -80,10 +80,11 @@ class TestWebDAVContent(IntegrationTestCase):
         response = self._get(f"/dav/Home/{self.folder_name}/data.bin", headers={"If-None-Match": etag})
         self.assertEqual(response.status_code, 304)
 
-    def test_head_reports_length_without_disposition(self):
+    def test_head_reports_length(self):
         response = self._get(f"/dav/Home/{self.folder_name}/data.bin", method="HEAD")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["Content-Length"], str(len(DATA)))
+        self.assertEqual(response.headers["Content-Disposition"], "attachment; filename=data.bin")
 
     def test_collection_get_redirects_to_spa(self):
         response = self._get(f"/dav/Home/{self.folder_name}")

@@ -12,7 +12,7 @@ from botocore.exceptions import ClientError
 from werkzeug.utils import redirect, send_file
 from werkzeug.wrappers import Response
 
-from suite.drive.utils.files import FileManager, storage_key, stored_on_disk
+from suite.drive.utils.files import FileManager, content_disposition, storage_key, stored_on_disk
 from suite.drive.webdav import pathmap, perms
 from suite.drive.webdav.conditional import is_not_modified
 from suite.drive.webdav.context import DavContext
@@ -50,13 +50,15 @@ def _collection_response(ctx: DavContext, spa_url: str) -> Response:
     return redirect(spa_url, code=302)
 
 
-def _neutralize_active_content(headers) -> None:
+def _neutralize_active_content(headers, filename: str) -> None:
     """File bytes are untrusted user content served from the app origin, and
     neither frappe nor werkzeug adds these: without them an uploaded HTML/SVG
-    file opened in a browser runs its scripts with the viewer's session. DAV
-    clients ignore both headers."""
+    file opened in a browser runs its scripts with the viewer's session.
+    Attachment covers UAs that ignore CSP, matching the presigned-URL path;
+    DAV clients name files from the URL and ignore all three headers."""
     headers["X-Content-Type-Options"] = "nosniff"
     headers["Content-Security-Policy"] = "sandbox"
+    headers["Content-Disposition"] = content_disposition(filename)
 
 
 def _serve_local(ctx: DavContext, row: frappe._dict, manager: FileManager) -> Response:
@@ -73,11 +75,9 @@ def _serve_local(ctx: DavContext, row: frappe._dict, manager: FileManager) -> Re
     except FileNotFoundError:
         raise NotFoundError("File content is missing.") from None
     response.headers["Cache-Control"] = "private, no-cache"
-    # werkzeug advertises ranges only on actual 206s and invents an inline
-    # disposition from the path; DAV clients name files from the URL
+    # werkzeug advertises ranges only on actual 206s
     response.headers["Accept-Ranges"] = "bytes"
-    response.headers.pop("Content-Disposition", None)
-    _neutralize_active_content(response.headers)
+    _neutralize_active_content(response.headers, row.file_name)
     return response
 
 
@@ -93,7 +93,7 @@ def _serve_s3(ctx: DavContext, row: frappe._dict, manager: FileManager) -> Respo
         "Accept-Ranges": "bytes",
         "Cache-Control": "private, no-cache",
     }
-    _neutralize_active_content(headers)
+    _neutralize_active_content(headers, row.file_name)
     if is_not_modified(ctx.request, row):
         return Response(status=304, headers=headers)
 
