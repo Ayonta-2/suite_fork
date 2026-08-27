@@ -263,8 +263,8 @@ const splitYear = (title: string) => {
 	return match ? { label: match[1], year: match[2] } : { label: title, year: '' }
 }
 
-// The sidebar's upcoming list toggles the detail panel the way mail's does:
-// a second click on the open row closes it.
+// A pill in the grid and a row in the sidebar's upcoming list toggle the
+// detail panel the way mail's does: a second click on the open event closes it.
 const toggleEventDetail = (calendarEvent) => {
 	const open = selectedCalendarEvent.value
 	if (
@@ -450,7 +450,7 @@ const NOTIFY_MODAL_OPTIONS = {
 					ref="calendar"
 					:events="visibleEvents"
 					:config="{ isEditMode: true }"
-					:on-click="handleEventClick"
+					:on-click="({ calendarEvent }) => toggleEventDetail(calendarEvent)"
 					:on-dbl-click="(event) => handleOpenEvent(event)"
 					:on-cell-click="(event) => handleOpenEvent(event)"
 					@update="handleUpdate"
