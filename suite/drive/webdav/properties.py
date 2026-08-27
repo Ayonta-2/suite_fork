@@ -99,6 +99,8 @@ def _resourcetype(is_collection: bool) -> etree._Element:
 
 
 def _to_utc(value: datetime | str) -> datetime:
+    # naive site-local stamps are ambiguous during the DST fall-back hour;
+    # fold=0 picks the earlier instant, the best the lost offset allows
     return _as_datetime(value).replace(tzinfo=_site_zone()).astimezone(UTC)
 
 
