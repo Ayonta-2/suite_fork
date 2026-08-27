@@ -494,6 +494,7 @@ class TestWebDAVPut(IntegrationTestCase):
         frappe.db.commit()
         with self.set_user(OWNER):
             target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
 
         response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
         self.assertEqual(response.status_code, 204)
@@ -501,6 +502,7 @@ class TestWebDAVPut(IntegrationTestCase):
         with (
             patch("os.replace", side_effect=OSError),
             patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
+            patch("frappe.enqueue") as enqueue_mock,
             self.assertRaises(OSError),
         ):
             frappe.db.commit()
@@ -509,6 +511,22 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertTrue(
             frappe.db.exists("Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name})
         )
+
+        # the compensation was handed to a worker; run it as the worker would
+        self.assertEqual(enqueue_mock.call_args.args, (put_module.repair_promotion_drift,))
+        spec = {key: value for key, value in enqueue_mock.call_args.kwargs.items() if key != "queue"}
+        put_module.repair_promotion_drift(**spec)
+
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        self.assertIsNone(frappe.db.get_value("File", target.name, "content_hash"))
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
+        self.assertFalse(
+            frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
+        )
+        # a repeat run finds the stamp gone and changes nothing
+        put_module.repair_promotion_drift(**spec)
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
 
     def test_put_overwrite_commit_failure_keeps_old_bytes(self):
         # the dispatcher commits only after the handler returns; if that

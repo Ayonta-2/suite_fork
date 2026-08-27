@@ -166,6 +166,17 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
         frappe.db.delete("File", {"name": drive_file.name})
         apply_file_size_delta(parent.name, -size)
 
+    def repair():
+        # read at drift time, after the stamp landed on the row
+        return {
+            "file": drive_file.name,
+            "stamp_hash": drive_file.content_hash,
+            "stamp_modified": drive_file.modified,
+            "restore": None,
+            "folder": parent.name,
+            "delta": size,
+        }
+
     # Stage the byte transfer now, publish at commit (same discipline as
     # _overwrite): the transfer is irreversible while every row write rolls
     # back with the transaction, and the dispatcher commits only after this
@@ -182,7 +193,11 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
         drive_file.save()
     else:
         _stage_disk_swap(
-            scratch, manager.site_folder / storage_key(blob.file_url), undo, drive_file, manager, blob
+            scratch,
+            manager.site_folder / storage_key(blob.file_url),
+            _Compensation(drive_file, undo, repair),
+            manager,
+            blob,
         )
     stamped = {"content_hash": sha256}
     if (client_mtime := _client_mtime_datetime(ctx)) is not None:
@@ -236,6 +251,18 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
         if activity.name:
             frappe.db.delete("Drive Entity Activity Log", {"name": activity.name})
 
+    def repair():
+        # read at drift time, after the stamp landed on the row
+        return {
+            "file": row.name,
+            "stamp_hash": doc.content_hash,
+            "stamp_modified": doc.modified,
+            "restore": prior,
+            "folder": row.folder,
+            "delta": delta,
+            "activity": activity.name,
+        }
+
     # DB writes roll back while byte writes cannot, and the dispatcher commits
     # only after this handler returns — replacing the target here would leave
     # a failed commit serving the new body under the rolled-back size, hash
@@ -246,7 +273,7 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     # bytes without touching the target. Staging before the row writes also
     # keeps their row locks out of the transfer window, so an S3-sized upload
     # never stalls a concurrent PUT's rollup.
-    new_file_url = _stage_blob_swap(manager, doc, scratch, undo, revoke)
+    new_file_url = _stage_blob_swap(manager, doc, scratch, _Compensation(doc, undo, repair, revoke))
 
     stamped = {
         "file_size": size,
@@ -262,12 +289,12 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     return _response(ctx, 204, row.name, sha256)
 
 
-def _stage_blob_swap(manager, doc, scratch: Path, undo, revoke) -> str | None:
+def _stage_blob_swap(manager, doc, scratch: Path, compensation: _Compensation) -> str | None:
     """Stage the new bytes for the commit-time swap. Returns the new file_url
     when they land under a new storage key (an S3 generation), or None when
-    the target path itself is swapped in place at commit (disk). revoke only
-    reaches the disk swaps — the S3 path has no fallible post-commit step, so
-    its edit always takes effect."""
+    the target path itself is swapped in place at commit (disk). The
+    compensation only reaches the disk swaps — the S3 path has no fallible
+    post-commit step, so its edit always takes effect."""
     if manager.s3_enabled and not stored_on_disk(doc.file_url):
         # storage_key, not get_s3_key: an existing row's file_url is the
         # rewritten fetch url, which only storage_key resolves to the object key
@@ -278,21 +305,19 @@ def _stage_blob_swap(manager, doc, scratch: Path, undo, revoke) -> str | None:
         # it in place — upload_file would write the new body to a stray S3 key
         # that GET (which serves on-disk blobs directly) never reads back. No
         # thumbnail either, matching the native path for adopted blobs.
-        _stage_disk_swap(scratch, manager.get_local_path(doc.file_url), undo, doc, revoke=revoke)
+        _stage_disk_swap(scratch, manager.get_local_path(doc.file_url), compensation)
     else:
-        _stage_disk_swap(
-            scratch, manager.site_folder / storage_key(doc.file_url), undo, doc, manager, doc, revoke
-        )
+        _stage_disk_swap(scratch, manager.site_folder / storage_key(doc.file_url), compensation, manager, doc)
     return None
 
 
-def _stage_disk_swap(scratch: Path, target: Path, undo, stamped, manager=None, doc=None, revoke=None) -> None:
+def _stage_disk_swap(
+    scratch: Path, target: Path, compensation: _Compensation, manager=None, doc=None
+) -> None:
     """Rename the spooled body next to the target now (.uploads shares the
     target's filesystem — the assumption upload_file's rename already makes),
     so the commit-time swap is a bare same-directory os.replace: atomic, and
-    the only mutation the old blob ever sees. `stamped` is the row document
-    whose post-stamp content_hash/modified fingerprint identifies this PUT's
-    committed write to the compensation."""
+    the only mutation the old blob ever sees."""
     staged = target.with_name(f"{target.name}.{frappe.generate_hash(length=12)}.putpart")
     os.rename(scratch, staged)
 
@@ -301,7 +326,7 @@ def _stage_disk_swap(scratch: Path, target: Path, undo, stamped, manager=None, d
             os.replace(staged, target)
         except Exception:
             staged.unlink(missing_ok=True)
-            _compensate_failed_promotion(undo, stamped, revoke)
+            compensation.run()
             raise
         if manager is not None and manager.can_create_thumbnail(doc):
             _enqueue_thumbnail(manager, doc, str(target))
@@ -364,63 +389,91 @@ def _enqueue_thumbnail(manager, doc, file_path: str, discard_source: Path | None
         frappe.log_error("Drive: could not create WebDAV thumbnail", frappe.get_traceback())
 
 
-def _compensate_failed_promotion(undo, stamped, revoke=None) -> None:
-    """A promotion fails only after the transaction committed, so the row
-    already claims bytes the target never received. Step the metadata back to
-    match the unchanged bytes and commit that immediately — the exception this
-    failure re-raises makes the framework roll back whatever is uncommitted,
-    and the client's 500 prompts a clean retry.
+class _Compensation:
+    """Steps a committed PUT back when its disk promotion fails: the row
+    already claims bytes the target never received, and the exception the
+    failure re-raises turns into the client's 500, whose retry heals
+    everything anyway.
 
-    Only while the row still carries this PUT's stamp, though: a writer that
-    slipped in after our commit has already replaced metadata, bytes and
-    rollup, computing its delta against our committed size — restoring our
-    snapshot over that would clobber the newer write and unbalance the
-    accounting chain. The locking read in _carries_stamp blocks until such a
-    writer commits and then shows its stamp, so the choice is race-free.
-    revoke, by contrast, retracts only rows this PUT itself created (its
+    undo restores the shared row state (metadata snapshot, rollup delta) and
+    is guarded by the stamp check: a writer that slipped in after our commit
+    has already replaced metadata, bytes and rollup, computing its delta
+    against our committed size — restoring our snapshot over that would
+    clobber the newer write and unbalance the accounting chain. The locking
+    read in _carries_stamp blocks until such a writer commits, so the choice
+    is race-free. revoke retracts only rows this PUT itself created (its
     audit trail) and runs either way: an edit that never took effect must not
-    stay recorded, however the row race went.
+    stay recorded, however the row race went. repair builds the same undo as
+    a serializable spec for the queued worker retry."""
 
-    The compensation itself gets two attempts — a first failure is often a
-    deadlock victim or lock timeout that a fresh transaction survives. If
-    both fail, the drift is recorded on its own committed Error Log row (the
-    dispatcher rolls back after the 500, which would discard an uncommitted
-    one) and in the site's file log, which needs no database at all."""
-    try:
-        _apply_compensation(undo, stamped, revoke)
-    except Exception:
+    def __init__(self, stamped, undo, repair, revoke=None):
+        self.stamped = stamped
+        self.undo = undo
+        self.repair = repair
+        self.revoke = revoke
+
+    def run(self) -> None:
+        """Two attempts on fresh transactions — a first failure is often a
+        deadlock victim or lock timeout. If both fail, the drift is recorded
+        durably and the compensation is handed to a background worker, whose
+        queue rides Redis rather than the database connection failing here."""
         try:
-            frappe.db.rollback()
-            _apply_compensation(undo, stamped, revoke)
+            self._attempt()
         except Exception:
-            _record_metadata_drift(stamped)
+            try:
+                frappe.db.rollback()
+                self._attempt()
+            except Exception:
+                self._record_drift()
 
-
-def _apply_compensation(undo, stamped, revoke) -> None:
-    if revoke is not None:
-        revoke()
-    if _carries_stamp(stamped):
-        undo()
-    frappe.db.commit()
-
-
-def _record_metadata_drift(stamped) -> None:
-    trace = frappe.get_traceback()
-    # the database may be the very thing that is failing — file log first
-    frappe.logger("drive").error(
-        f"File {stamped.name}: metadata left ahead of bytes after failed promotion\n{trace}"
-    )
-    try:
-        frappe.db.rollback()  # clear any aborted transaction so the log row can commit
-        frappe.log_error(
-            "Drive: metadata left ahead of bytes after failed promotion",
-            trace,
-            reference_doctype="File",
-            reference_name=stamped.name,
-        )
+    def _attempt(self) -> None:
+        if self.revoke is not None:
+            self.revoke()
+        if _carries_stamp(self.stamped):
+            self.undo()
         frappe.db.commit()
-    except Exception:
-        pass
+
+    def _record_drift(self) -> None:
+        trace = frappe.get_traceback()
+        # the database may be the very thing that is failing — file log first
+        frappe.logger("drive").error(
+            f"File {self.stamped.name}: metadata left ahead of bytes after failed promotion\n{trace}"
+        )
+        try:
+            frappe.db.rollback()  # clear any aborted transaction so the log row can commit
+            frappe.log_error(
+                "Drive: metadata left ahead of bytes after failed promotion",
+                trace,
+                reference_doctype="File",
+                reference_name=self.stamped.name,
+            )
+            frappe.db.commit()
+        except Exception:
+            pass
+        try:
+            frappe.enqueue(repair_promotion_drift, queue="short", **self.repair())
+        except Exception:
+            frappe.logger("drive").error(f"File {self.stamped.name}: could not queue the drift repair")
+
+
+def repair_promotion_drift(file, stamp_hash, stamp_modified, restore, folder, delta, activity=None):
+    """Deferred compensation, run by a worker on its own connection after the
+    in-request attempts failed. Same rules as the inline path: the restore
+    and the rollup reversal apply only while the row still carries the failed
+    PUT's stamp (a later successful save reconciles everything itself), and
+    the audit row comes off regardless. Idempotent — a repeat run finds the
+    stamp gone and changes nothing."""
+    stamped = frappe._dict(name=file, content_hash=stamp_hash, modified=stamp_modified)
+    if _carries_stamp(stamped):
+        if restore is None:
+            # a failed create: without the bytes the row must not exist
+            frappe.db.delete("File", {"name": file})
+        else:
+            frappe.db.set_value("File", file, restore, update_modified=False)
+        apply_file_size_delta(folder, -delta)
+    if activity:
+        frappe.db.delete("Drive Entity Activity Log", {"name": activity})
+    frappe.db.commit()
 
 
 def _carries_stamp(stamped) -> bool:
