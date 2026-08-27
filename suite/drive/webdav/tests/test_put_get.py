@@ -411,6 +411,11 @@ class TestWebDAVPut(IntegrationTestCase):
         expected = (base_size or 0) + len(b"v2!") - len(b"version-one")
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), expected)
         self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        # but the failed edit must not stay recorded as a successful one —
+        # the audit row is ours alone, so yielding does not spare it
+        self.assertFalse(
+            frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
+        )
 
     def test_put_create_compensation_yields_to_newer_write(self):
         # same yield rule on the create path: the row a racing writer now

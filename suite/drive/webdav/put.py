@@ -225,10 +225,14 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
 
     def undo():
         # compensation for a promotion that failed after commit: the bytes
-        # never changed, so the metadata and rollup step back to match them —
-        # and the edit this activity row announces never took effect
+        # never changed, so the metadata and rollup step back to match them
         frappe.db.set_value("File", row.name, prior, update_modified=False)
         apply_file_size_delta(row.folder, -delta)
+
+    def revoke():
+        # our own audit row: the edit it announces never took effect, and
+        # that stays true when a newer writer supersedes the metadata
+        # restore — the newer PUT logs its own row
         if activity.name:
             frappe.db.delete("Drive Entity Activity Log", {"name": activity.name})
 
@@ -242,7 +246,7 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     # bytes without touching the target. Staging before the row writes also
     # keeps their row locks out of the transfer window, so an S3-sized upload
     # never stalls a concurrent PUT's rollup.
-    new_file_url = _stage_blob_swap(manager, doc, scratch, undo)
+    new_file_url = _stage_blob_swap(manager, doc, scratch, undo, revoke)
 
     stamped = {
         "file_size": size,
@@ -258,10 +262,12 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     return _response(ctx, 204, row.name, sha256)
 
 
-def _stage_blob_swap(manager, doc, scratch: Path, undo) -> str | None:
+def _stage_blob_swap(manager, doc, scratch: Path, undo, revoke) -> str | None:
     """Stage the new bytes for the commit-time swap. Returns the new file_url
     when they land under a new storage key (an S3 generation), or None when
-    the target path itself is swapped in place at commit (disk)."""
+    the target path itself is swapped in place at commit (disk). revoke only
+    reaches the disk swaps — the S3 path has no fallible post-commit step, so
+    its edit always takes effect."""
     if manager.s3_enabled and not stored_on_disk(doc.file_url):
         # storage_key, not get_s3_key: an existing row's file_url is the
         # rewritten fetch url, which only storage_key resolves to the object key
@@ -272,13 +278,15 @@ def _stage_blob_swap(manager, doc, scratch: Path, undo) -> str | None:
         # it in place — upload_file would write the new body to a stray S3 key
         # that GET (which serves on-disk blobs directly) never reads back. No
         # thumbnail either, matching the native path for adopted blobs.
-        _stage_disk_swap(scratch, manager.get_local_path(doc.file_url), undo, doc)
+        _stage_disk_swap(scratch, manager.get_local_path(doc.file_url), undo, doc, revoke=revoke)
     else:
-        _stage_disk_swap(scratch, manager.site_folder / storage_key(doc.file_url), undo, doc, manager, doc)
+        _stage_disk_swap(
+            scratch, manager.site_folder / storage_key(doc.file_url), undo, doc, manager, doc, revoke
+        )
     return None
 
 
-def _stage_disk_swap(scratch: Path, target: Path, undo, stamped, manager=None, doc=None) -> None:
+def _stage_disk_swap(scratch: Path, target: Path, undo, stamped, manager=None, doc=None, revoke=None) -> None:
     """Rename the spooled body next to the target now (.uploads shares the
     target's filesystem — the assumption upload_file's rename already makes),
     so the commit-time swap is a bare same-directory os.replace: atomic, and
@@ -293,7 +301,7 @@ def _stage_disk_swap(scratch: Path, target: Path, undo, stamped, manager=None, d
             os.replace(staged, target)
         except Exception:
             staged.unlink(missing_ok=True)
-            _compensate_failed_promotion(undo, stamped)
+            _compensate_failed_promotion(undo, stamped, revoke)
             raise
         if manager is not None and manager.can_create_thumbnail(doc):
             _enqueue_thumbnail(manager, doc, str(target))
@@ -356,7 +364,7 @@ def _enqueue_thumbnail(manager, doc, file_path: str, discard_source: Path | None
         frappe.log_error("Drive: could not create WebDAV thumbnail", frappe.get_traceback())
 
 
-def _compensate_failed_promotion(undo, stamped) -> None:
+def _compensate_failed_promotion(undo, stamped, revoke=None) -> None:
     """A promotion fails only after the transaction committed, so the row
     already claims bytes the target never received. Step the metadata back to
     match the unchanged bytes and commit that immediately — the exception this
@@ -369,9 +377,14 @@ def _compensate_failed_promotion(undo, stamped) -> None:
     snapshot over that would clobber the newer write and unbalance the
     accounting chain. The locking read in _carries_stamp blocks until such a
     writer commits and then shows its stamp, so the choice is race-free.
-    Only a second, independent failure inside this compensation can leave
-    metadata ahead of bytes; that gets the loudest trace available."""
+    revoke, by contrast, retracts only rows this PUT itself created (its
+    audit trail) and runs either way: an edit that never took effect must not
+    stay recorded, however the row race went. Only a second, independent
+    failure inside this compensation can leave metadata ahead of bytes; that
+    gets the loudest trace available."""
     try:
+        if revoke is not None:
+            revoke()
         if _carries_stamp(stamped):
             undo()
         frappe.db.commit()
