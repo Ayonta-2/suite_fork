@@ -102,6 +102,9 @@ const transformEvent = (event) => {
 	// Timed events are placed in the viewer's zone; all-day events keep their calendar date.
 	const start = isAllDay ? rawStart : fromEventZone(event.start, event.time_zone)
 	const end = start.add(dur)
+	// The stored end of an all-day event is the midnight after its last day; the
+	// calendar wants that last day itself, since it reads `toDate` inclusively.
+	const lastDay = isAllDay ? end.subtract(1, 'day') : end
 
 	return {
 		...event,
@@ -112,11 +115,12 @@ const transformEvent = (event) => {
 		title: event.title || __('Untitled event'),
 		actualTitle: event.title,
 		fromDate: start.format('YYYY-MM-DD'),
-		toDate: end.format('YYYY-MM-DD'),
+		toDate: lastDay.format('YYYY-MM-DD'),
 		fromTime: start.format('HH:mm'),
 		toTime: end.format('HH:mm'),
 		role: getEventRole(event),
 		isAllDay,
+		isFullDay: isAllDay,
 	}
 }
 
