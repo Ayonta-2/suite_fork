@@ -361,8 +361,10 @@ def _stage_disk_swap(
     destination on an overwrite is the signature of a mover or trasher
     between its disk transfer and its commit, and gets a bounded wait for
     that commit to land — falling through to today's heal-by-overwrite when
-    the blob is simply gone. What remains open is a peer frozen for hundreds
-    of milliseconds between those two adjacent statements."""
+    the blob is simply gone. Because that fallthrough is also where a peer
+    stalled beyond the wait would surface, it queues a settlement job that
+    keeps re-checking from a worker and finishes the follow whenever the
+    peer finally commits (see settle_swap_destination)."""
     staged = target.with_name(f"{target.name}.{frappe.generate_hash(length=12)}.putpart")
     os.rename(scratch, staged)
 
@@ -371,6 +373,7 @@ def _stage_disk_swap(
 
     def swap():
         placed = None
+        suspicious = False
         try:
             waits_left = _SWAP_WAITS
             for _attempt in range(_SWAP_FOLLOW_LIMIT):
@@ -383,12 +386,14 @@ def _stage_disk_swap(
                     compensation.run()
                     return
                 dest = manager.get_local_path(current.file_url)
-                if placed is None and expects_existing and not dest.exists() and waits_left:
+                missing = placed is None and expects_existing and not dest.exists()
+                if missing and waits_left:
                     waits_left -= 1
                     frappe.db.commit()  # release the row so the peer can commit
                     time.sleep(0.1)
                     continue
                 if dest != placed:
+                    suspicious = suspicious or missing
                     os.replace(placed if placed is not None else staged, dest)
                     placed = dest
                     frappe.db.commit()
@@ -402,11 +407,65 @@ def _stage_disk_swap(
             cleanup(placed)
             compensation.run()
             raise
+        if suspicious:
+            _queue_swap_settlement(compensation.stamped, placed)
         if doc is not None and manager.can_create_thumbnail(doc):
             _enqueue_thumbnail(manager, doc, str(placed))
 
     frappe.db.after_commit.add(swap)
     frappe.db.after_rollback.add(lambda: staged.unlink(missing_ok=True))
+
+
+def _queue_swap_settlement(stamped, placed: Path) -> None:
+    """Best-effort hand-off of the timed-out wait to a worker; a failure to
+    queue must not fail a PUT whose bytes are already placed and consistent
+    with everything committed so far."""
+    try:
+        frappe.enqueue(
+            settle_swap_destination,
+            queue="short",
+            file=stamped.name,
+            stamp={
+                "content_hash": stamped.get("content_hash"),
+                "file_size": stamped.get("file_size"),
+            },
+            placed=str(placed),
+        )
+    except Exception:
+        _file_log(f"File {stamped.name}: could not queue the swap settlement\n{frappe.get_traceback()}")
+
+
+_SETTLE_DELAYS = (1, 2, 4, 8, 16)
+
+
+def settle_swap_destination(file, stamp, placed):
+    """The late half of the swap's follow, queued when the in-request wait
+    for a suspected mid-flight relocation timed out and the bytes were
+    placed at the last committed path. A peer stalled longer than that wait
+    commits eventually; a worker re-checks here — minutes past any plausible
+    stall — and finishes the follow when it does. Idempotent by the same
+    guards as compensation: it acts only while the row still claims the
+    PUT's content, the placed file still delivers it, and the row's current
+    location does not. A blob that was simply missing never moves the
+    pointer, so the checks drain quietly and the heal stands."""
+    placed = Path(placed)
+    for delay in _SETTLE_DELAYS:
+        current = frappe.db.get_value(
+            "File", file, ["file_url", "status", "content_hash", "file_size"], as_dict=True
+        )
+        if current is None or current.status != STATUS_ACTIVE:
+            return
+        dest = FileManager().get_local_path(current.file_url)
+        if dest != placed:
+            if (
+                _content_carries(stamp, current)
+                and _file_delivers_stamp(placed, stamp)
+                and not _bytes_deliver_stamp(stamp, current)
+            ):
+                os.replace(placed, dest)
+            return
+        time.sleep(delay)
+        frappe.db.commit()  # a fresh snapshot for the next look
 
 
 def _swap_state(name: str) -> frappe._dict | None:
@@ -653,15 +712,24 @@ def _content_carries(stamped, current) -> bool:
 
 def _bytes_deliver_stamp(stamped, current) -> bool:
     """Whether the file at the row's current location really holds the
-    stamped content. The stat gate keeps this cheap — a genuine compensation
-    almost always has old size ≠ stamped size and never hashes; the full
-    hash runs only for a same-size file, on this rare failure path, and any
-    doubt (unreadable path, missing file, no hash to check) counts as
-    undelivered so the restore proceeds."""
+    stamped content. Any doubt (unresolvable path) counts as undelivered so
+    the restore proceeds."""
+    try:
+        path = FileManager().get_local_path(current.file_url)
+    except Exception:
+        return False
+    return _file_delivers_stamp(path, stamped)
+
+
+def _file_delivers_stamp(path: Path, stamped) -> bool:
+    """Whether the file at `path` holds the stamped content. The stat gate
+    keeps this cheap — a genuine compensation almost always has old size ≠
+    stamped size and never hashes; the full hash runs only for a same-size
+    file, on rare failure paths, and any doubt (missing file, unreadable, no
+    hash to check) counts as undelivered."""
     if not stamped.get("content_hash"):
         return False
     try:
-        path = FileManager().get_local_path(current.file_url)
         if path.stat().st_size != (stamped.get("file_size") or 0):
             return False
         digest = hashlib.sha256()

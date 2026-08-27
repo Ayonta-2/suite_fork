@@ -920,12 +920,85 @@ class TestWebDAVPut(IntegrationTestCase):
 
         blob_path.unlink()  # the blob is simply gone; nobody is mid-flight
 
-        with patch("time.sleep") as waited:
+        with patch("time.sleep") as waited, patch("frappe.enqueue") as queued:
             frappe.db.commit()  # runs the swap
 
         self.assertEqual(waited.call_count, 3)
         self.assertEqual(blob_path.read_bytes(), b"v2!")
         self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        # the timed-out wait hands a settlement check to a worker — a peer
+        # stalled beyond the wait would surface exactly here
+        self.assertEqual(queued.call_count, 1)
+
+    def test_put_swap_settlement_finishes_a_delayed_move(self):
+        # a mover stalled past the in-request waits commits eventually; the
+        # queued settlement must then finish the follow — new bytes onto the
+        # row's real location, orphan removed
+        from unittest.mock import patch
+
+        from suite.drive.utils import apply_file_size_delta
+        from suite.drive.webdav import put as put_module
+
+        with self.set_user(OWNER):
+            dest = create_drive_file(
+                f"Dest-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        manager = FileManager()
+        old_path = manager.get_local_path(target.file_url)
+        new_rel = Path(storage_key(frappe.db.get_value("File", dest.name, "file_url"))) / "doc.txt"
+        new_path = manager.site_folder / new_rel
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        # the mover's disk transfer has happened; its row write stalls past
+        # every in-request wait
+        old_path.rename(new_path)
+        with patch("time.sleep"), patch("frappe.enqueue") as queued:
+            frappe.db.commit()  # swap times out and heals at the old path
+        self.assertEqual(old_path.read_bytes(), b"v2!")
+        self.assertEqual(queued.call_args.args, (put_module.settle_swap_destination,))
+
+        # now the stalled mover finally commits
+        size_now = frappe.db.get_value("File", target.name, "file_size")
+        frappe.db.set_value("File", target.name, {"file_url": "/" + str(new_rel), "folder": dest.name})
+        apply_file_size_delta(self.base.name, -size_now)
+        apply_file_size_delta(dest.name, size_now)
+
+        spec = {key: value for key, value in queued.call_args.kwargs.items() if key != "queue"}
+        with patch("time.sleep"):
+            put_module.settle_swap_destination(**spec)
+
+        self.assertEqual(new_path.read_bytes(), b"v2!")
+        self.assertFalse(old_path.exists())
+
+    def test_put_swap_settlement_leaves_a_healed_blob_alone(self):
+        # when the blob was simply missing, the pointer never moves — the
+        # settlement checks drain quietly and the healed bytes stand
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        blob_path = FileManager().get_local_path(target.file_url)
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+        blob_path.unlink()
+        with patch("time.sleep"), patch("frappe.enqueue") as queued:
+            frappe.db.commit()
+
+        spec = {key: value for key, value in queued.call_args.kwargs.items() if key != "queue"}
+        with patch("time.sleep") as slept:
+            put_module.settle_swap_destination(**spec)
+
+        self.assertEqual(slept.call_count, 5)
+        self.assertEqual(blob_path.read_bytes(), b"v2!")
 
     def test_put_swap_stands_down_for_a_row_trashed_in_the_gap(self):
         # a trash in the gap carried the bytes off — recreating the path
