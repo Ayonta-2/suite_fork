@@ -181,7 +181,9 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
         drive_file.file_url = get_s3_url(generation)
         drive_file.save()
     else:
-        _stage_disk_swap(scratch, manager.site_folder / storage_key(blob.file_url), undo, manager, blob)
+        _stage_disk_swap(
+            scratch, manager.site_folder / storage_key(blob.file_url), undo, drive_file, manager, blob
+        )
     stamped = {"content_hash": sha256}
     if (client_mtime := _client_mtime_datetime(ctx)) is not None:
         # not via create_drive_file: its fromtimestamp() reads the epoch in the
@@ -270,17 +272,19 @@ def _stage_blob_swap(manager, doc, scratch: Path, undo) -> str | None:
         # it in place — upload_file would write the new body to a stray S3 key
         # that GET (which serves on-disk blobs directly) never reads back. No
         # thumbnail either, matching the native path for adopted blobs.
-        _stage_disk_swap(scratch, manager.get_local_path(doc.file_url), undo)
+        _stage_disk_swap(scratch, manager.get_local_path(doc.file_url), undo, doc)
     else:
-        _stage_disk_swap(scratch, manager.site_folder / storage_key(doc.file_url), undo, manager, doc)
+        _stage_disk_swap(scratch, manager.site_folder / storage_key(doc.file_url), undo, doc, manager, doc)
     return None
 
 
-def _stage_disk_swap(scratch: Path, target: Path, undo, manager=None, doc=None) -> None:
+def _stage_disk_swap(scratch: Path, target: Path, undo, stamped, manager=None, doc=None) -> None:
     """Rename the spooled body next to the target now (.uploads shares the
     target's filesystem — the assumption upload_file's rename already makes),
     so the commit-time swap is a bare same-directory os.replace: atomic, and
-    the only mutation the old blob ever sees."""
+    the only mutation the old blob ever sees. `stamped` is the row document
+    whose post-stamp content_hash/modified fingerprint identifies this PUT's
+    committed write to the compensation."""
     staged = target.with_name(f"{target.name}.{frappe.generate_hash(length=12)}.putpart")
     os.rename(scratch, staged)
 
@@ -289,7 +293,7 @@ def _stage_disk_swap(scratch: Path, target: Path, undo, manager=None, doc=None) 
             os.replace(staged, target)
         except Exception:
             staged.unlink(missing_ok=True)
-            _compensate_failed_promotion(undo)
+            _compensate_failed_promotion(undo, stamped)
             raise
         if manager is not None and manager.can_create_thumbnail(doc):
             _enqueue_thumbnail(manager, doc, str(target))
@@ -352,19 +356,39 @@ def _enqueue_thumbnail(manager, doc, file_path: str, discard_source: Path | None
         frappe.log_error("Drive: could not create WebDAV thumbnail", frappe.get_traceback())
 
 
-def _compensate_failed_promotion(undo) -> None:
+def _compensate_failed_promotion(undo, stamped) -> None:
     """A promotion fails only after the transaction committed, so the row
     already claims bytes the target never received. Step the metadata back to
     match the unchanged bytes and commit that immediately — the exception this
     failure re-raises makes the framework roll back whatever is uncommitted,
-    and the client's 500 prompts a clean retry. Only a second, independent
-    failure inside this compensation can leave metadata ahead of bytes; that
-    gets the loudest trace available."""
+    and the client's 500 prompts a clean retry.
+
+    Only while the row still carries this PUT's stamp, though: a writer that
+    slipped in after our commit has already replaced metadata, bytes and
+    rollup, computing its delta against our committed size — restoring our
+    snapshot over that would clobber the newer write and unbalance the
+    accounting chain. The locking read in _carries_stamp blocks until such a
+    writer commits and then shows its stamp, so the choice is race-free.
+    Only a second, independent failure inside this compensation can leave
+    metadata ahead of bytes; that gets the loudest trace available."""
     try:
-        undo()
+        if _carries_stamp(stamped):
+            undo()
         frappe.db.commit()
     except Exception:
         frappe.log_error("Drive: metadata left ahead of bytes after failed promotion", frappe.get_traceback())
+
+
+def _carries_stamp(stamped) -> bool:
+    """Whether the committed row still holds exactly what this PUT wrote —
+    the content hash plus the modified clock db_set stamped alongside it."""
+    current = frappe.db.get_value(
+        "File", stamped.name, ["modified", "content_hash"], as_dict=True, for_update=True
+    )
+    if current is None:
+        return False
+    same_clock = frappe.utils.get_datetime(current.modified) == frappe.utils.get_datetime(stamped.modified)
+    return same_clock and current.content_hash == stamped.content_hash
 
 
 def _discard_object(manager, key: str) -> None:

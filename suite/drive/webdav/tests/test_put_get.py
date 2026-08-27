@@ -381,6 +381,58 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertFalse(blob_path.exists())
         self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
 
+    def test_put_overwrite_compensation_yields_to_newer_write(self):
+        # a writer that slips in between our commit and the failed promotion
+        # computed its delta against our committed state — its metadata and
+        # accounting already describe the disk truth, and stepping back to
+        # our snapshot would clobber them
+        from unittest.mock import patch
+
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        blob_path = FileManager().get_local_path(target.file_url)
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        def newer_write_then_fail(*args):
+            # what a racing PUT leaves behind once it commits: a fresh stamp
+            frappe.db.set_value("File", target.name, {"file_size": 7, "content_hash": "newer"})
+            raise OSError
+
+        with patch("os.replace", side_effect=newer_write_then_fail), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        # the newer write survives untouched...
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), 7)
+        self.assertEqual(frappe.db.get_value("File", target.name, "content_hash"), "newer")
+        # ...and so does our forward delta, which the newer writer built upon
+        expected = (base_size or 0) + len(b"v2!") - len(b"version-one")
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), expected)
+        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+
+    def test_put_create_compensation_yields_to_newer_write(self):
+        # same yield rule on the create path: the row a racing writer now
+        # owns must not be deleted out from under it
+        from unittest.mock import patch
+
+        response = self._put(f"/dav/Home/{self.base_name}/claimed.txt", b"boo")
+        self.assertEqual(response.status_code, 201)
+        row = self._resolve(f"Home/{self.base_name}/claimed.txt").entity
+
+        def newer_write_then_fail(*args):
+            frappe.db.set_value("File", row.name, {"content_hash": "newer"})
+            raise OSError
+
+        with patch("os.replace", side_effect=newer_write_then_fail), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        self.assertTrue(frappe.db.exists("File", row.name))
+        self.assertEqual(frappe.db.get_value("File", row.name, "content_hash"), "newer")
+        # the create's rollup contribution stands — the newer write built on it
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), len(b"boo"))
+
     def test_put_overwrite_commit_failure_keeps_old_bytes(self):
         # the dispatcher commits only after the handler returns; if that
         # commit fails and degrades to a rollback, the staged bytes must be
