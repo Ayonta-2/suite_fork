@@ -480,6 +480,45 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
         )
 
+    def test_put_compensation_survives_a_broken_file_log(self):
+        # the file log sits on the very disk that may have failed the
+        # promotion — a failure opening or writing it must not gate the
+        # database record or the queued repair, which ride other services
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        real_logger = frappe.logger
+
+        def broken_drive_logger(name=None, *args, **kwargs):
+            if name == "drive":
+                raise RuntimeError
+            return real_logger(name, *args, **kwargs)
+
+        with (
+            patch("os.replace", side_effect=OSError),
+            patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
+            patch("frappe.logger", side_effect=broken_drive_logger),
+            patch("frappe.enqueue") as enqueue_mock,
+            self.assertRaises(OSError),
+        ):
+            frappe.db.commit()
+        frappe.db.rollback()  # what dispatch does before answering the 500
+
+        self.assertTrue(
+            frappe.db.exists("Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name})
+        )
+        self.assertEqual(enqueue_mock.call_args.args, (put_module.repair_promotion_drift,))
+
     def test_put_compensation_retries_on_a_fresh_transaction(self):
         # a deadlock victim or lock timeout fails once and survives a retry —
         # the compensation must not give up (and record drift) on first blood

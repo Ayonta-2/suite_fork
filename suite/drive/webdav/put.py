@@ -443,8 +443,10 @@ class _Compensation:
         #   bench execute suite.drive.webdav.put.repair_promotion_drift \
         #       --kwargs '<spec>'
         note = "replay with repair_promotion_drift(**spec); spec follows:\n" + json.dumps(spec, default=str)
-        # the database may be the very thing that is failing — file log first
-        frappe.logger("drive").error(
+        # each rung records independently — the file log needs no services,
+        # but it sits on the very disk that may have failed the promotion, so
+        # it must not gate the database record or the queued repair either
+        _file_log(
             f"File {self.stamped.name}: metadata left ahead of bytes after failed promotion\n{trace}\n{note}"
         )
         try:
@@ -461,10 +463,21 @@ class _Compensation:
         try:
             frappe.enqueue(repair_promotion_drift, queue="short", **spec)
         except Exception:
-            frappe.logger("drive").error(
+            _file_log(
                 f"File {self.stamped.name}: could not queue the drift repair — "
                 f"replay the spec recorded above\n{frappe.get_traceback()}"
             )
+
+
+def _file_log(message: str) -> None:
+    """The service-independent rung of the drift record. Even opening the log
+    file can fail (the promotion may have failed because this same disk is
+    full or read-only) — swallow that so a broken rung never silences the
+    healthier ones."""
+    try:
+        frappe.logger("drive").error(message)
+    except Exception:
+        pass
 
 
 def repair_promotion_drift(file, stamp_hash, stamp_modified, restore, folder, delta, activity=None):
