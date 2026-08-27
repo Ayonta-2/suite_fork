@@ -354,10 +354,6 @@ def _stage_s3_generation(manager, doc, scratch: Path, key: str, replaces: str | 
     generation = f"{_GENERATION_SUFFIX.sub('', key)}.{frappe.generate_hash(length=12)}.putgen"
     manager.conn.upload_file(str(scratch), manager.bucket, generation)
     thumb_source = None
-    if manager.can_create_thumbnail(doc):
-        # upload_thumbnail renders from a local file and deletes it when done
-        thumb_source = scratch.with_name(scratch.name + ".thumbsrc")
-        os.rename(scratch, thumb_source)
 
     def promote():
         # the inequality guards the freak hash collision where reaping the
@@ -372,8 +368,18 @@ def _stage_s3_generation(manager, doc, scratch: Path, key: str, replaces: str | 
             thumb_source.unlink(missing_ok=True)
         _discard_object(manager, generation)
 
+    # armed the moment the object exists: anything that raises between here
+    # and the commit — the thumbnail rename below included — must reap it on
+    # rollback, or the failed PUT strands an unreferenced object forever
     frappe.db.after_commit.add(promote)
     frappe.db.after_rollback.add(discard)
+
+    if manager.can_create_thumbnail(doc):
+        # upload_thumbnail renders from a local file and deletes it when done;
+        # the closures read thumb_source at run time, so they see this rebind
+        staged_thumb = scratch.with_name(scratch.name + ".thumbsrc")
+        os.rename(scratch, staged_thumb)
+        thumb_source = staged_thumb
     return generation
 
 

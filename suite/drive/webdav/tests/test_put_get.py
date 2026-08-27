@@ -20,6 +20,10 @@ OWNER = "webdav-content-owner@example.com"
 STRANGER = "webdav-content-stranger@example.com"
 PASSWORD = "webdav-content-pw"
 DATA = b"0123456789abcdefghij"
+PIXEL_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000d49444154789c626001000000ffff03000006000557bfabd40000000049454e44ae426082"
+)
 
 
 class TestWebDAVContent(IntegrationTestCase):
@@ -271,10 +275,7 @@ class TestWebDAVPut(IntegrationTestCase):
         # client-visible error — the client would retry a finished save
         from unittest.mock import patch
 
-        png = bytes.fromhex(
-            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-            "0000000d49444154789c626001000000ffff03000006000557bfabd40000000049454e44ae426082"
-        )
+        png = PIXEL_PNG
         response = self._put(f"/dav/Home/{self.base_name}/pixel.png", png)
         self.assertEqual(response.status_code, 201)
         row = self._resolve(f"Home/{self.base_name}/pixel.png").entity
@@ -292,10 +293,7 @@ class TestWebDAVPut(IntegrationTestCase):
         # error and provoke a retry of a finished save
         from unittest.mock import patch
 
-        png = bytes.fromhex(
-            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-            "0000000d49444154789c626001000000ffff03000006000557bfabd40000000049454e44ae426082"
-        )
+        png = PIXEL_PNG
         response = self._put(f"/dav/Home/{self.base_name}/pixel2.png", png)
         self.assertEqual(response.status_code, 201)
         row = self._resolve(f"Home/{self.base_name}/pixel2.png").entity
@@ -954,6 +952,18 @@ class TestWebDAVPutS3(IntegrationTestCase):
 
         frappe.db.commit()
         self.assertEqual(self._calls("delete_object"), [])  # nothing replaced, nothing reaped
+
+    def test_thumbnail_prep_failure_reaps_generation(self):
+        # the rollback reaper must be armed the moment the object exists: a
+        # failure between the upload and the commit (here the thumbnail
+        # source rename) otherwise strands an unreferenced object forever
+        from unittest.mock import patch
+
+        with patch("os.rename", side_effect=OSError), self.assertRaises(OSError):
+            self._put(f"/dav/Home/{self.base_name}/pixel.png", PIXEL_PNG)
+
+        frappe.db.rollback()  # what dispatch does on any handler exception
+        self.assertEqual([key for key in self.conn.objects if key.endswith(".putgen")], [])
 
     def test_create_rollback_reaps_generation(self):
         response = self._put(f"/dav/Home/{self.base_name}/ghost.txt", b"boo")
