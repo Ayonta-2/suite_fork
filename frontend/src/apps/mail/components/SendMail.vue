@@ -15,14 +15,14 @@
 	     and the built-in close comes back. -->
 	<Dialog
 		v-if="state === 'modal'"
-		v-model="show"
+		v-model:open="show"
 		:show-close-button="false"
 		:dismissible="false"
-		:options="{ title: __('Compose Mail'), size: '5xl' }"
+	 v-bind="{ title: __('Compose Mail'), size: '5xl' }"
 	>
 		<template #title="{ close }">
 			<div class="flex items-center gap-2">
-				<h3 class="text-ink-gray-8 text-2xl-semibold min-w-0 flex-1 truncate leading-6">
+				<h3 class="text-ink-gray-8 text-xl-semibold min-w-0 flex-1 truncate leading-6">
 					{{ __('Compose Mail') }}
 				</h3>
 				<Button
@@ -51,7 +51,7 @@
 				</Button>
 			</div>
 		</template>
-		<template #body-content>
+		<template>
 			<div ref="host" class="flex min-h-0 flex-1 flex-col" />
 		</template>
 	</Dialog>

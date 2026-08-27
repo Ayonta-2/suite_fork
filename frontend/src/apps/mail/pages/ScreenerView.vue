@@ -12,7 +12,7 @@
 				:count="senders.data?.length ? waitingLabel : undefined"
 			>
 				<template #actions>
-					<AdaptiveDropdown :options="bulkOptions" placement="bottom-end">
+					<AdaptiveDropdown :options="bulkOptions">
 						<Button variant="ghost" class="!h-10 !w-10 !rounded-full">
 							<template #icon><Ellipsis class="icon" /></template>
 						</Button>
@@ -102,18 +102,17 @@
 								<span class="truncate">{{ waitingLabel }}</span>
 								<!-- Redundant while the explainer slab is teaching the same lesson above,
 								     and skipped on mobile where the popover doesn't sit well. -->
-								<Popover v-if="explainerDismissed && !isMobile" placement="bottom-start">
-									<template #target="{ togglePopover }">
+								<Popover v-if="explainerDismissed && !isMobile" side="bottom" align="start">
+									<template #trigger>
 										<Button
 											variant="ghost"
 											class="ml-1 !px-1.5"
 											:tooltip="__('How the Screener works')"
-											@click="togglePopover()"
 										>
 											<template #icon><CircleHelp class="icon" /></template>
 										</Button>
 									</template>
-									<template #body-main>
+									<template #default>
 										<div class="w-80 p-4">
 											<div class="text-ink-gray-8 mb-1.5 text-sm !font-semibold">
 												{{ __('How the Screener works') }}
@@ -146,7 +145,7 @@
 								</Popover>
 							</div>
 							<div class="-mr-2 flex shrink-0 items-center space-x-2">
-								<Dropdown :options="bulkOptions" placement="bottom-end">
+								<Dropdown :options="bulkOptions">
 									<Button variant="ghost" class="!px-1.5">
 										<template #icon><Ellipsis class="icon" /></template>
 									</Button>
@@ -319,7 +318,7 @@
 									/>
 									<AdaptiveDropdown
 										:options="denyOptions(openSender)"
-										placement="bottom-end"
+										align="end"
 									>
 										<Button variant="outline" class="-ml-px !rounded-l-none !px-1.5">
 											<template #icon><ChevronDown class="h-4 w-4" /></template>
@@ -336,7 +335,7 @@
 									/>
 									<AdaptiveDropdown
 										:options="allowOptions(openSender)"
-										placement="bottom-end"
+										align="end"
 									>
 										<Button
 											variant="solid"
@@ -401,7 +400,7 @@
 
 					<div v-else class="flex-1 overflow-hidden">
 						<div
-							class="bg-surface-gray-1 m-5 flex h-[calc(100%-2.9em)] items-center justify-center rounded-md"
+							class="bg-surface-gray-1 m-5 flex h-[calc(100%-2.9em)] items-center justify-center rounded-4"
 						>
 							<div class="flex flex-col items-center space-y-3">
 								<NoMails class="text-ink-gray-2 h-16 w-16" />
@@ -416,8 +415,8 @@
 			</template>
 		</div>
 
-		<Dialog v-model="showClearAll" :options="clearAllOptions" />
-		<Dialog v-model="showBulkConfirm" :options="bulkConfirmOptions" />
+		<Dialog v-model:open="showClearAll" v-bind="clearAllOptions" />
+		<Dialog v-model:open="showBulkConfirm" v-bind="bulkConfirmOptions" />
 	</div>
 </template>
 
@@ -1160,7 +1159,7 @@ const domainOption = (action: 'allow' | 'screenOut', sender: ScreeningSender) =>
 const allowOptions = (sender: ScreeningSender) => [
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Allow and Archive ({0})', ['E']),
 				icon: Archive,
@@ -1173,7 +1172,7 @@ const allowOptions = (sender: ScreeningSender) => [
 			},
 		],
 	},
-	{ group: '', items: [domainOption('allow', sender)] },
+	{ group: '', options: [domainOption('allow', sender)] },
 ]
 
 const denyOptions = (sender: ScreeningSender) => [domainOption('screenOut', sender)]
@@ -1187,7 +1186,7 @@ const moreOptions = (sender: ScreeningSender) => [
 	// domain rows read as a pair (same phrasing, same globes) and shouldn't be split from each other.
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Allow and Archive'),
 				icon: Archive,
@@ -1205,7 +1204,7 @@ const moreOptions = (sender: ScreeningSender) => [
 	// without a divider of its own — it is the only row here that shuts someone out.
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Allow all emails from {0}', [domainOf(sender.from_email)]),
 				icon: Globe,
@@ -1325,4 +1324,3 @@ const bulkOptions = computed(() => [
 	{ label: __('Move All to Inbox'), icon: Inbox, onClick: () => (showClearAll.value = true) },
 ])
 </script>
-

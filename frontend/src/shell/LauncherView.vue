@@ -4,7 +4,7 @@
     <header class="flex h-12 shrink-0 items-center justify-between border-b p-2">
       <div v-if="workspaceName" class="flex items-center gap-2">
         <Avatar :image="workspaceLogo" :label="workspaceName" shape="square" size="lg" />
-        <div class="text-lg-medium">{{ workspaceName }}</div>
+        <div class="text-md-medium">{{ workspaceName }}</div>
       </div>
       <div v-else />
 
@@ -20,7 +20,7 @@
 
     <div class="flex-1 overflow-auto">
       <div class="mx-auto flex min-h-full max-w-5xl flex-col px-6 pt-[8%] pb-16">
-        <div class="mx-auto grid grid-cols-2 gap-x-10 gap-y-10 min-[480px]:grid-cols-4 min-[480px]:gap-x-20">
+        <div class="mx-auto grid grid-cols-3 gap-x-10 gap-y-10 min-[480px]:grid-cols-4 min-[480px]:gap-x-20">
           <LauncherTile
             v-for="app in apps"
             :key="app.id"

@@ -5,7 +5,7 @@
 		data-theme="dark"
 	>
 		<div
-			v-if="!hasConnectionError"
+			v-if="!hasConnectionError && !connectionState.connectionMoved"
 			class="shrink-0 overflow-hidden transition-[height] duration-500 ease-in-out"
 			:class="headerVisible ? 'h-11' : 'h-0'"
 		>
@@ -39,13 +39,38 @@
 			</MeetingHeader>
 		</div>
 
+		<div
+			v-if="connectionState.connectionMoved"
+			class="grid flex-1 place-items-center px-5 py-16"
+		>
+			<div class="flex w-full max-w-sm flex-col items-center text-center">
+				<div class="rounded-full bg-surface-gray-2 p-3 text-ink-gray-5">
+					<span class="lucide-monitor-smartphone block size-6" aria-hidden="true" />
+				</div>
+				<h1 class="mt-4 text-2xl-semibold text-ink-gray-9">
+					Meeting moved to another device
+				</h1>
+				<p class="mt-2 text-p-base text-ink-gray-6">
+					Your audio and video have stopped here because you joined from another device.
+				</p>
+				<Button
+					class="mt-6"
+					variant="solid"
+					theme="gray"
+					icon-left="lucide-arrow-left"
+					label="Back to Meet"
+					@click="router.push('/meet')"
+				/>
+			</div>
+		</div>
+
 		<!-- Error state -->
-		<div v-if="hasConnectionError" class="flex-1 flex items-center justify-center">
+		<div v-else-if="hasConnectionError" class="flex-1 flex items-center justify-center">
 			<div class="text-center text-white">
 				<div class="text-red-500 mb-4">
 					<lucide-alert-circle class="w-12 h-12 mx-auto" />
 				</div>
-				<p class="text-xl mb-4">{{ connectionState.connectionError }}</p>
+				<p class="text-lg mb-4">{{ connectionState.connectionError }}</p>
 				<Button @click="resetToPreview" variant="outline" theme="red">Try Again</Button>
 			</div>
 		</div>
@@ -100,7 +125,7 @@
 								aria-live="polite"
 								data-testid="e2ee-join-pending-state"
 							>
-								<h1 class="text-lg-medium text-ink-gray-8">
+								<h1 class="text-md-medium text-ink-gray-8">
 									{{ e2eeJoinTitle }}
 								</h1>
 								<p class="mt-1 max-w-sm text-p-base text-ink-gray-7">
@@ -141,6 +166,7 @@
 								v-if="activePanel === 'chat'"
 								:open="true"
 								:messages="chatStore.chatMessages"
+								:avatar-by-user="participantAvatars"
 								:user-id="(currentUser.currentUser.value?.user_id as string) || ''"
 								:user-name="
 									(currentUser.currentUser.value?.full_name as string) ||
@@ -510,6 +536,7 @@ const sfuConnection = useSFUConnection({
 		}
 	},
 	onHostKickedYou: () => sfuConnection.endCall(),
+	onParticipantConnectionReplaced: () => mediaControls.cleanupLocalMedia(),
 	onScreenShareStarted: (data: SFUScreenShareData) => {
 		const pid = data.participantId;
 		if (!pid) return;
@@ -557,6 +584,7 @@ const sfuConnection = useSFUConnection({
 	},
 	onRecordingState: recording.syncState,
 	onRecordingEnabled: recording.setGlobalEnabled,
+	onCohostPromoted: () => meetingDoc.reload(),
 });
 const { networkQuality, downlinkQuality, isTransportFailed } = useNetworkQuality(
 	sfuConnection.sfuManager,
@@ -804,6 +832,15 @@ const activePanel = computed(() => {
 
 const participantsForPeoplePanel = computed<Record<string, Participant>>(
 	() => participantStore.participants as Record<string, Participant>,
+);
+
+const participantAvatars = computed(() =>
+	Object.fromEntries(
+		Object.entries(participantsForPeoplePanel.value).map(([userId, participant]) => [
+			userId,
+			participant.avatar,
+		]),
+	),
 );
 
 const { isMobile } = useResponsiveGrid();

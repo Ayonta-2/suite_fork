@@ -18,7 +18,9 @@
 			:class="{ 'fixed left-0 top-0 z-10 w-60 !bg-surface-base': isMobile }"
 			:disable-collapse="isMobile"
 		>
-			<div class="flex h-full flex-col p-2">
+			<!-- No padding around the header: its own inset centres the logo in the
+			     collapsed rail, in line with the icons of the px-2 body below. -->
+			<div class="flex h-full flex-col">
 				<SidebarHeader
 					:title="title"
 					:subtitle="subtitle"
@@ -26,20 +28,18 @@
 					:logo="branding.data?.brand_html || MailLogo"
 				/>
 
-				<!-- -mx/px: rows sit flush with the clip edge, so without this the
-				     active item's shadow ring is cut off at both sides. -->
-				<div class="-mx-1 flex-1 overflow-y-auto overflow-x-hidden px-1">
+				<div class="flex-1 overflow-y-auto overflow-x-hidden px-2">
 					<SidebarSection
 						v-for="section in sidebarItems"
 						:key="section.key ?? section.label"
 						:label="section.label"
-						:items="section.items"
 						:collapsible="section.collapsible"
 						:collapsed="isSectionCollapsed(section)"
 						@update:collapsed="(collapsed) => setSectionCollapsed(section.key, collapsed)"
 					>
-						<template #sidebar-item="{ item }">
-							<SidebarItem
+						<SidebarItem
+							v-for="item in section.items"
+							:key="item.label"
 								:label="item.label"
 								:icon="item.icon"
 								:to="item.to"
@@ -72,12 +72,11 @@
 										</span>
 									</div>
 								</template>
-							</SidebarItem>
-						</template>
+						</SidebarItem>
 					</SidebarSection>
 				</div>
 
-				<div class="mt-auto">
+				<div class="mt-auto p-2">
 					<!-- Personal widgets (events, quota) are meaningless while administering the server. -->
 					<UpcomingEvents
 						v-if="user.data.is_jmap_configured && !route.meta.isDashboard"
@@ -117,7 +116,7 @@
 import { computed, h, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
-import { Icon } from 'frappe-ui/icons'
+import { Icon } from 'frappe-ui/experimental'
 import { Check, Keyboard, User } from 'lucide-vue-next'
 import {
 	Avatar,
@@ -241,7 +240,7 @@ const goToMailbox = () => {
 const menuItems = computed(() => [
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				...appsMenuOption.value,
 				condition: () => !isMobile.value,
@@ -269,7 +268,7 @@ const menuItems = computed(() => [
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				icon: Settings,
 				label: __('Settings'),
@@ -285,24 +284,28 @@ const menuItems = computed(() => [
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				icon: User,
 				label: __('Accounts'),
 				submenu: user.data.accounts.map?.((a) => ({
-					component: h(
-						'div',
-						{
-							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
-							onClick: () => switchAccount(a.id),
-						},
-						[
-							h(Avatar, { label: a._name, size: 'md' }),
-							h('span', { class: 'text-sm w-full truncate' }, a._name),
-							a.id === store.accountId &&
-								h(Check, { label: a._name, class: 'shrink-0 icon' }),
-						],
-					),
+					label: a._name,
+					onClick: () => switchAccount(a.id),
+					slots: {
+						item: () =>
+							h(
+								'div',
+								{
+									class: 'flex items-center gap-2 p-1.5 rounded-4 hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
+								},
+								[
+									h(Avatar, { label: a._name, size: 'md' }),
+									h('span', { class: 'text-sm w-full truncate' }, a._name),
+									a.id === store.accountId &&
+										h(Check, { label: a._name, class: 'shrink-0 icon' }),
+								],
+							),
+					},
 				})),
 				condition: () => user.data.accounts?.length > 1 && !route.meta.isDashboard,
 			},

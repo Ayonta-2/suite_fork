@@ -117,7 +117,6 @@ const startsAt = computed(() =>
 	dayjs(`${event.startDate}T${event.isAllDay ? '00:00' : event.startTime}`),
 )
 const endsAt = computed(() => dayjs(`${event.endDate}T${event.isAllDay ? '00:00' : event.endTime}`))
-
 const isDateTimeValid = computed(() => {
 	if (!event.startDate || !event.endDate) return false
 	if (!event.isAllDay && (!event.startTime || !event.endTime)) return false
@@ -301,6 +300,18 @@ watch(
 		const end = start.add(gap > 0 ? gap : DEFAULT_DURATION_MINUTES, 'minute')
 		event.endDate = end.format('YYYY-MM-DD')
 		event.endTime = end.format('HH:mm')
+	},
+)
+
+watch(
+	() => [event.endDate, event.endTime],
+	([endDate, endTime]) => {
+		if (event.isAllDay || !endDate || !endTime) return
+		const end = dayjs(`${endDate}T${endTime}`)
+		if (!end.isValid() || end.isAfter(startsAt.value)) return
+		const start = end.subtract(DEFAULT_DURATION_MINUTES, 'minute')
+		event.startDate = start.format('YYYY-MM-DD')
+		event.startTime = start.format('HH:mm')
 	},
 )
 
@@ -513,7 +524,7 @@ const VISIBILITY_OPTIONS = [
 
 const showNotifyParticipantsOptions = computed(() => ({
 	title: __('Notify Participants'),
-	icon: { name: 'bell' },
+	icon: { name: 'lucide-bell' },
 	message: isNew.value
 		? __("Send an email to let attendees know they've been invited?")
 		: __('Send an email to let attendees know this event has been updated?'),
@@ -521,18 +532,18 @@ const showNotifyParticipantsOptions = computed(() => ({
 
 const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 	title: __('Update Recurring Event'),
-	icon: { name: 'repeat' },
+	icon: { name: 'lucide-repeat' },
 	message: __('Do you want to update just this instance, or all events in the series?'),
 }
 </script>
 
 <template>
-	<Dialog v-model="show" size="4xl" bare>
+	<Dialog v-model:open="show" size="4xl" bare>
 		<template #default="{ close }">
 			<div class="flex max-h-[85vh] flex-col text-ink-gray-8">
 				<!-- header -->
 				<div class="flex items-center border-b px-6 py-4">
-					<span class="text-lg font-semibold">{{ dialogTitle }}</span>
+					<span class="text-md font-semibold">{{ dialogTitle }}</span>
 					<Button variant="ghost" class="ml-auto" @click="close">
 						<template #icon><X :size="18" class="icon text-ink-gray-5" /></template>
 					</Button>
@@ -546,11 +557,11 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 							v-model="event.title"
 							:autofocus="isNew"
 							:placeholder="__('Add title')"
-							class="w-full border-none bg-transparent p-0 pb-4 text-2xl font-semibold tracking-tight text-ink-gray-8 outline-none placeholder:text-ink-gray-4 focus:ring-0"
+							class="w-full border-none bg-transparent p-0 pb-4 text-xl font-semibold tracking-tight text-ink-gray-8 outline-none placeholder:text-ink-gray-4 focus:ring-0"
 						/>
 
 						<!-- date & time — one grouped card -->
-						<div class="rounded-xl border border-outline-gray-2">
+						<div class="rounded-7 border border-outline-gray-2">
 							<div class="flex items-center gap-3 border-b px-3.5 py-3">
 								<Clock :size="18" class="icon shrink-0 text-ink-gray-5" />
 								<span class="flex-1 text-base font-medium">
@@ -574,6 +585,8 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 											v-if="!event.isAllDay"
 											v-model="event.startTime"
 											type="time"
+											:interval="15"
+											format="h:mm A"
 											class="w-full"
 										/>
 									</div>
@@ -588,6 +601,8 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 											v-if="!event.isAllDay"
 											v-model="event.endTime"
 											type="time"
+											:interval="15"
+											format="h:mm A"
 											class="w-full"
 										/>
 									</div>
@@ -595,7 +610,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 							</div>
 							<div class="px-3.5 pb-3.5">
 								<div
-									class="group -mx-1.5 flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-surface-gray-2"
+									class="group -mx-1.5 flex cursor-pointer items-center gap-2 rounded-6 px-1.5 py-1.5 hover:bg-surface-gray-2"
 									@click="toggleRepeat"
 								>
 									<FormControl
@@ -611,7 +626,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 						</div>
 
 						<!-- meet link -->
-						<div class="mt-4 flex items-center gap-3 rounded-lg border border-outline-gray-2 px-3.5 py-3">
+						<div class="mt-4 flex items-center gap-3 rounded-6 border border-outline-gray-2 px-3.5 py-3">
 							<template v-if="meetUrl">
 								<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-7 shrink-0" />
 								<div class="min-w-0 flex-1">
@@ -656,7 +671,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 											:placeholder="__('Meeting location {0}', [i + 1])"
 											class="w-full"
 										/>
-										<Button icon="x" class="mt-auto" @click="event.locations.splice(i, 1)" />
+									<Button icon="lucide-x" class="mt-auto" @click="event.locations.splice(i, 1)" />
 									</div>
 									<Button
 										v-if="(event.locations?.length ?? 0) < 3"
@@ -755,14 +770,14 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 		:r-rule="event?.recurrence_rule"
 		@update-recurrence-rule="(val) => (event.recurrence_rule = val)"
 	/>
-	<Dialog v-model="showRecurringEventModal" :options="SHOW_RECURRING_EVENT_MODAL_OPTIONS">
+	<Dialog v-model:open="showRecurringEventModal" v-bind="SHOW_RECURRING_EVENT_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
 				<Button @click="handleSaveRecurringEvent(false)">{{ __('Entire Series') }}</Button>
 			</div>
 		</template>
 	</Dialog>
-	<Dialog v-model="showNotifyParticipantsModal" :options="showNotifyParticipantsOptions">
+	<Dialog v-model:open="showNotifyParticipantsModal" v-bind="showNotifyParticipantsOptions">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
 				<Button variant="outline" @click="submitEvent(false)">

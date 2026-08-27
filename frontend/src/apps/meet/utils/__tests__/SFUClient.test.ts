@@ -3,6 +3,7 @@ import {
 	connectionDetailsFromJoinPayload,
 	SFUClient,
 	SFURequestError,
+	SFUResponseError,
 } from "../SFUClient";
 
 const mockSignalChannel = () => ({
@@ -190,6 +191,25 @@ describe("sendRequest", () => {
 			cb({ success: false, error: "nope" }),
 		);
 		await expect(client.sendRequest("test", {})).rejects.toThrow("nope");
+	});
+
+	it("preserves structured response errors", async () => {
+		const client = createClient();
+		client.connected = true;
+		client.signalChannel.emit = vi.fn((_event, _data, cb) =>
+			cb({
+				success: false,
+				error: "already connected",
+				code: "PARTICIPANT_CONNECTION_CONFLICT",
+				details: { conflictId: "owner-1" },
+			}),
+		);
+
+		await expect(client.sendRequest("join_room", {})).rejects.toMatchObject<SFUResponseError>({
+			code: "PARTICIPANT_CONNECTION_CONFLICT",
+			details: { conflictId: "owner-1" },
+			message: "already connected",
+		});
 	});
 
 	it("rejects with TIMEOUT when an acknowledgement does not arrive", async () => {
@@ -761,6 +781,29 @@ describe("E2EE signaling payloads", () => {
 		}
 	});
 
+	it("includes Participant Connection ownership in join requests", async () => {
+		const client = createClient();
+		client.connected = true;
+		const sendRequest = vi
+			.spyOn(client, "sendRequest")
+			.mockResolvedValue({ success: true });
+
+		await client.joinRoom(
+			"room-1",
+			{ name: "Alice" },
+			{ audio_enabled: false },
+			{ connectionId: "connection-1", conflictId: "owner-1" },
+		);
+
+		expect(sendRequest).toHaveBeenCalledWith(
+			"join_room",
+			expect.objectContaining({
+				connectionId: "connection-1",
+				conflictId: "owner-1",
+			}),
+		);
+	});
+
 	it("reports RTCRtpScriptTransform capability in join request", async () => {
 		const client = createClient();
 		client.connected = true;
@@ -875,6 +918,71 @@ describe("E2EE signaling payloads", () => {
 		client.connectionDetails.e2eeRequired = true;
 		await client.refreshToken();
 		expect(client.connectionDetails.e2eeRequired).toBe(true);
+	});
+
+	it("forces a post-authorization refresh after an in-flight request", async () => {
+		const refreshResolvers: Array<
+			(value: { auth_token: string; expires_in: number }) => void
+		> = [];
+		vi.mocked(frappeRequest).mockImplementation(
+			() => new Promise((resolve) => refreshResolvers.push(resolve)),
+		);
+		const client = createClient();
+		client.connected = true;
+		const sendRequestSpy = vi
+			.spyOn(client, "sendRequest")
+			.mockResolvedValue({ success: true });
+
+		const scheduledRefresh = client.refreshToken({ skipServerUpdate: true });
+		const promotionRefresh = client.refreshToken({ forceNewRequest: true });
+		refreshResolvers[0]({ auth_token: "pre-promotion", expires_in: 3600 });
+		await scheduledRefresh;
+		await vi.waitFor(() => expect(frappeRequest).toHaveBeenCalledTimes(2));
+		refreshResolvers[1]({ auth_token: "post-promotion", expires_in: 3600 });
+
+		await expect(
+			Promise.all([scheduledRefresh, promotionRefresh]),
+		).resolves.toEqual(["pre-promotion", "post-promotion"]);
+		expect(sendRequestSpy).toHaveBeenCalledWith("auth:update_token", {
+			token: "post-promotion",
+		});
+	});
+
+	it("discards a token refresh from before disconnect", async () => {
+		let resolveRefresh!: (value: { auth_token: string; expires_in: number }) => void;
+		vi.mocked(frappeRequest).mockImplementation(
+			() => new Promise((resolve) => (resolveRefresh = resolve)),
+		);
+		const client = createClient();
+		const refresh = client.refreshToken();
+
+		client.disconnect();
+		client.connectionDetails.authToken = "current-token";
+		resolveRefresh({ auth_token: "stale-token", expires_in: 3600 });
+
+		await expect(refresh).rejects.toThrow(
+			"Token refresh superseded by disconnect",
+		);
+		expect(client.connectionDetails.authToken).toBe("current-token");
+		expect(client.signalChannel.updateAuth).not.toHaveBeenCalled();
+	});
+
+	it("does not sync a refreshed token after the connection is rebuilt", async () => {
+		vi.mocked(frappeRequest).mockResolvedValue({
+			auth_token: "old-connection-token",
+			expires_in: 3600,
+		});
+		const client = createClient();
+		client.connected = true;
+		vi.mocked(client.signalChannel.updateAuth).mockImplementation(() => {
+			client.disconnect();
+		});
+		const sendRequestSpy = vi.spyOn(client, "sendRequest");
+
+		await expect(client.refreshToken()).rejects.toThrow(
+			"Token refresh superseded by disconnect",
+		);
+		expect(sendRequestSpy).not.toHaveBeenCalled();
 	});
 
 	it("setE2EERequired updates connectionDetails for the realtime-event flow", () => {

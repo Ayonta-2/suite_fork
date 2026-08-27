@@ -144,6 +144,12 @@ interface ConnectionStatus {
 interface SFUResponse {
 	success: boolean;
 	error?: string;
+	code?: string;
+	details?: ParticipantConnectionConflictDetails;
+}
+
+interface ParticipantConnectionConflictDetails {
+	conflictId: string;
 }
 
 export interface SFUWebRtcTransportResponse {
@@ -203,6 +209,32 @@ export class SFURequestError extends Error {
 		this.name = "SFURequestError";
 		this.code = code;
 	}
+}
+
+/** Preserves structured server rejection details, including takeover generations. */
+export class SFUResponseError extends Error {
+	readonly code?: string;
+	readonly details?: ParticipantConnectionConflictDetails;
+
+	constructor(
+		message: string,
+		code?: string,
+		details?: ParticipantConnectionConflictDetails,
+	) {
+		super(message);
+		this.name = "SFUResponseError";
+		this.code = code;
+		this.details = details;
+	}
+}
+
+function normalizeSFUResponseDetails(
+	value: unknown,
+): ParticipantConnectionConflictDetails | undefined {
+	if (!isUnknownRecord(value) || typeof value.conflictId !== "string") {
+		return undefined;
+	}
+	return { conflictId: value.conflictId };
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
@@ -302,7 +334,8 @@ export class SFUClient {
 	connectionDetails: ConnectionDetails;
 	eventHandlers: Map<string, SFUEventHandler>;
 	private eventListeners: Map<string, Set<SFUEventHandler>>;
-	isRefreshingToken: boolean;
+	private tokenRefreshPromise: Promise<string> | null;
+	private tokenRefreshGeneration: number;
 	tokenRefreshTimer: ReturnType<typeof setTimeout> | null;
 	ownSenderId: number | null;
 	private pendingRequestRejectors: Set<(error: SFURequestError) => void>;
@@ -324,7 +357,8 @@ export class SFUClient {
 		};
 		this.eventHandlers = new Map();
 		this.eventListeners = new Map();
-		this.isRefreshingToken = false;
+		this.tokenRefreshPromise = null;
+		this.tokenRefreshGeneration = 0;
 		this.tokenRefreshTimer = null;
 		this.ownSenderId = null;
 		this.pendingRequestRejectors = new Set();
@@ -531,7 +565,8 @@ export class SFUClient {
 			isHost: false,
 			isCohost: false,
 		};
-		this.isRefreshingToken = false;
+		this.tokenRefreshGeneration += 1;
+		this.tokenRefreshPromise = null;
 	}
 
 	// ==================== TOKEN MANAGEMENT ====================
@@ -572,59 +607,84 @@ export class SFUClient {
 	}
 
 	async refreshToken(
-		options: { skipServerUpdate?: boolean } = {},
+		options: { skipServerUpdate?: boolean; forceNewRequest?: boolean } = {},
 	): Promise<string> {
-		const { skipServerUpdate = false } = options;
-		if (this.isRefreshingToken) {
-			return "";
-		}
-
-		try {
-			this.isRefreshingToken = true;
-
-		const response = requireJoinPayload(await frappeRequest({
-				url: "suite.meet.api.meeting.refresh_sfu_token",
-				params: { meeting_id: this.connectionDetails.meetingId },
-			}), "SFU token refresh");
-			const authToken = requireString(
-				response.auth_token,
-				"auth_token",
-				"SFU token refresh",
-			);
-
-			const expiresInSeconds =
-				typeof response.expires_in === "number" ? response.expires_in : 3600;
-
-			this.connectionDetails.authToken = authToken;
-			this.connectionDetails.tokenExpiresAt =
-				Date.now() + expiresInSeconds * 1000;
-			this.connectionDetails.codecStrategy = normalizeCodecStrategy(
-				response.codec_strategy || this.connectionDetails.codecStrategy,
-			);
-			this.connectionDetails.e2eeRequired =
-				this.connectionDetails.e2eeRequired || Boolean(response.e2ee_required);
-
-			this.signalChannel.updateAuth(authToken);
-
-			if (!skipServerUpdate && this.connected) {
-				await this.sendRequest("auth:update_token", {
-					token: authToken,
-				});
-			} else if (!this.connected) {
-				console.log(
-					"Skipping server token sync because socket is disconnected",
-				);
+		const { skipServerUpdate = false, forceNewRequest = false } = options;
+		if (forceNewRequest && this.tokenRefreshPromise) {
+			const pendingRefresh = this.tokenRefreshPromise;
+			try {
+				await pendingRefresh;
+			} catch {
+				// A fresh request can still recover from the in-flight refresh failure.
 			}
-
-			this.scheduleTokenRefresh();
-
-			return authToken;
-		} catch (error) {
-			console.warn("Token refresh failed:", error);
-			throw error;
-		} finally {
-			this.isRefreshingToken = false;
+			if (this.tokenRefreshPromise === pendingRefresh) {
+				this.tokenRefreshPromise = null;
+			}
 		}
+
+		let refreshPromise = this.tokenRefreshPromise;
+		if (!refreshPromise) {
+			const refreshGeneration = this.tokenRefreshGeneration;
+			refreshPromise = (async () => {
+				try {
+					const response = requireJoinPayload(
+						await frappeRequest({
+							url: "suite.meet.api.meeting.refresh_sfu_token",
+							params: { meeting_id: this.connectionDetails.meetingId },
+						}),
+						"SFU token refresh",
+					);
+					const authToken = requireString(
+						response.auth_token,
+						"auth_token",
+						"SFU token refresh",
+					);
+					if (refreshGeneration !== this.tokenRefreshGeneration) {
+						throw new Error("Token refresh superseded by disconnect");
+					}
+
+					const expiresInSeconds =
+						typeof response.expires_in === "number" ? response.expires_in : 3600;
+
+					this.connectionDetails.authToken = authToken;
+					this.connectionDetails.tokenExpiresAt =
+						Date.now() + expiresInSeconds * 1000;
+					this.connectionDetails.codecStrategy = normalizeCodecStrategy(
+						response.codec_strategy || this.connectionDetails.codecStrategy,
+					);
+					this.connectionDetails.e2eeRequired =
+						this.connectionDetails.e2eeRequired || Boolean(response.e2ee_required);
+
+					this.signalChannel.updateAuth(authToken);
+					this.scheduleTokenRefresh();
+
+					return authToken;
+				} catch (error) {
+					console.warn("Token refresh failed:", error);
+					throw error;
+				}
+			})();
+			this.tokenRefreshPromise = refreshPromise;
+			const clearRefreshPromise = () => {
+				if (this.tokenRefreshPromise === refreshPromise) {
+					this.tokenRefreshPromise = null;
+				}
+			};
+			void refreshPromise.then(clearRefreshPromise, clearRefreshPromise);
+		}
+
+		const serverSyncGeneration = this.tokenRefreshGeneration;
+		const authToken = await refreshPromise;
+		if (serverSyncGeneration !== this.tokenRefreshGeneration) {
+			throw new Error("Token refresh superseded by disconnect");
+		}
+		if (!skipServerUpdate && this.connected) {
+			await this.sendRequest("auth:update_token", { token: authToken });
+		} else if (!this.connected) {
+			console.log("Skipping server token sync because socket is disconnected");
+		}
+
+		return authToken;
 	}
 
 	isTokenExpiringSoon(): boolean {
@@ -909,11 +969,14 @@ export class SFUClient {
 		roomId: string,
 		userData: JoinUserData,
 		mediaState: JoinRoomMediaState,
+		options: { connectionId?: string; conflictId?: string } = {},
 	): Promise<{ success: boolean; senderId?: number }> {
 		const e2eeMode = this.getE2EEMode();
 		const e2eeShouldBeActive = this.isE2EERequired();
 		const result = (await this.sendRequest("join_room", {
 			roomId,
+			...(options.connectionId ? { connectionId: options.connectionId } : {}),
+			...(options.conflictId ? { conflictId: options.conflictId } : {}),
 			userData,
 			mediaState,
 			e2ee: {
@@ -1095,12 +1158,17 @@ export class SFUClient {
 								typeof rawResponse.error === "string"
 									? rawResponse.error
 									: undefined,
+							code:
+								typeof rawResponse.code === "string" ? rawResponse.code : undefined,
+							details: normalizeSFUResponseDetails(rawResponse.details),
 						};
 						if (response.success) {
 							resolve(response);
 						} else {
-							const error = new Error(
+							const error = new SFUResponseError(
 								response.error || `Request failed: ${event}`,
+								response.code,
+								response.details,
 							);
 							console.error(`SFU request failed (${event}):`, response.error);
 							reject(error);

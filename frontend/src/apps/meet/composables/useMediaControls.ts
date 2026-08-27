@@ -1,4 +1,4 @@
-import { confirmDialog, toast } from "frappe-ui";
+import { dialog, toast } from "frappe-ui";
 import { onUnmounted, type Ref, ref, watch } from "vue";
 import { autoFramingPaused } from "../data/backgroundEffects";
 import {
@@ -402,7 +402,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 	const confirmScreenShareOverride = () =>
 		new Promise<boolean>((resolve) => {
-			confirmDialog({
+			dialog.confirm({
 				title: "Start Screen Share Anyway?",
 				message:
 					"Someone is already sharing their screen. Starting yours may result in multiple active screen shares.",
@@ -2419,10 +2419,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 	observeLocalTracks();
 
-	onUnmounted(() => {
+	const cleanupLocalMedia = async () => {
 		cameraLifecycleGeneration++;
 		cameraLifecycleAbortController.abort(cameraLifecycleAbort());
 		mediaState.isCameraOn = false;
+		mediaState.isMicOn = false;
+		mediaState.isScreenSharing = false;
 		if (observedCameraTrack && cameraEndedListener) {
 			observedCameraTrack.removeEventListener("ended", cameraEndedListener);
 		}
@@ -2450,7 +2452,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			}
 		}
 
-		void enqueueCameraTransition(async () => {
+		await enqueueCameraTransition(async () => {
 			try {
 				await reconcileCameraTrack(null, "camera-unmount", false);
 			} finally {
@@ -2475,7 +2477,11 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					}
 				}
 			}
-		}).catch(() => {});
+		});
+	};
+
+	onUnmounted(() => {
+		void cleanupLocalMedia().catch(() => {});
 	});
 
 	return {
@@ -2488,6 +2494,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		applySpeakerDevice,
 		applyBackgroundEffectsToLocalStream,
 		republishMediaAfterE2EE,
+		cleanupLocalMedia,
 		setLocalVideoRef,
 		setRemoteVideoRef,
 		setScreenShareVideoRef,

@@ -3,11 +3,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { createResource, toast } from 'frappe-ui'
 
 import { useScreenSize } from '@/composables/useScreenSize'
+import { useTheme as useSuiteTheme } from '@/composables/useTheme'
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 
-import type { COLOR_SCHEME, ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
+import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
 
 // Re-exported from the suite-wide composable so mail's many callers keep one import, and so the
 // calendar reads the same ref rather than a second copy of the same window width. Imported at the
@@ -572,76 +573,6 @@ export const useSettings = () => {
 	return { showSettings, settingsTab, openSettings }
 }
 
-const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-const systemIsDark = ref(mediaQuery.matches)
-mediaQuery.addEventListener('change', () => (systemIsDark.value = mediaQuery.matches))
-
-const COLOR_SCHEME_CYCLE = ['System Default', 'Light Mode', 'Dark Mode'] as const
-
-// The write behind the theme toggle, in flight and waiting. Module-level, so every
-// useTheme() shares the one queue — the setting is one row, whoever writes it.
-let writingColorScheme = false
-let queuedColorScheme: COLOR_SCHEME | null = null
-
-export const useTheme = () => {
-	const { userResource } = userStore()
-
-	const dataTheme = computed(() => {
-		const colorScheme = userResource.data?.color_scheme || 'System Default'
-		if (colorScheme === 'System Default') return systemIsDark.value ? 'dark' : 'light'
-		return colorScheme === 'Dark Mode' ? 'dark' : 'light'
-	})
-
-	const updateColorScheme = createResource({
-		url: 'frappe.client.set_value',
-		makeParams: (color_scheme: COLOR_SCHEME) => ({
-			doctype: 'User Settings',
-			name: userResource.data?.user_settings,
-			fieldname: { color_scheme },
-		}),
-	})
-
-	// The theme flips before the server answers, so the shortcut can be pressed faster than
-	// the round-trip: two set_value calls in flight against the same User Settings row have
-	// both read the same `modified` timestamp, and the server rejects the second as stale —
-	// a failure toast for a toggle that was working. So one write at a time, and only ever
-	// the newest scheme: the schemes a fast cycle passes through are on their way somewhere
-	// else, and none of them is worth a round-trip of its own.
-	const persistColorScheme = async (scheme: COLOR_SCHEME) => {
-		queuedColorScheme = scheme
-		if (writingColorScheme) return
-
-		writingColorScheme = true
-		try {
-			while (queuedColorScheme) {
-				const next = queuedColorScheme
-				queuedColorScheme = null
-				await updateColorScheme.submit(next)
-			}
-		} catch {
-			// The optimistic value now describes a write that did not land, and unwinding to
-			// the scheme before it would land on one the user may have already cycled past.
-			// Take the server's word for where the cycle actually stands.
-			queuedColorScheme = null
-			userResource.reload()
-			raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
-		} finally {
-			writingColorScheme = false
-		}
-	}
-
-	// Cycle System Default → Light → Dark. Bound to Cmd/Ctrl+Shift+L app-wide (see App.vue).
-	const cycleTheme = () => {
-		const current = userResource.data?.color_scheme
-		const idx = COLOR_SCHEME_CYCLE.indexOf(current as COLOR_SCHEME)
-		const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
-
-		// Optimistic: flip the theme and confirm at once, before the server round-trip resolves.
-		if (userResource.data) userResource.data.color_scheme = next
-		raiseToast(__('Color scheme updated to {0}.', [next]))
-
-		persistColorScheme(next)
-	}
-
-	return { dataTheme, cycleTheme }
-}
+// Re-exported like useScreenSize: the colour scheme is one User Settings row shared with the
+// calendar, so both apps go through the one composable — and its one write queue.
+export const useTheme = () => useSuiteTheme(userStore().userResource)
