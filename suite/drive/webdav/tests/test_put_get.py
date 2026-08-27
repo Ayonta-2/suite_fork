@@ -653,6 +653,32 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("File", sub.name, "file_size"), len(b"version-one"))
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
 
+    def test_put_create_compensation_cleans_linked_records(self):
+        # the row comes off through the controller, so records another
+        # request linked to it in the window go with it — a raw row delete
+        # would orphan them beyond any future cleanup's reach
+        from unittest.mock import patch
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        response = self._put(f"/dav/Home/{self.base_name}/linked.txt", b"boo")
+        self.assertEqual(response.status_code, 201)
+        row = self._resolve(f"Home/{self.base_name}/linked.txt").entity
+
+        def link_then_fail(*args):
+            frappe.get_doc(
+                {"doctype": "Drive Permission", "entity": row.name, "user": STRANGER, "read": 1}
+            ).insert(ignore_permissions=True)
+            raise OSError
+
+        with patch("os.replace", side_effect=link_then_fail), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        self.assertFalse(frappe.db.exists("File", row.name))
+        self.assertFalse(frappe.db.exists("Drive Permission", {"entity": row.name}))
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), 0)
+
     def test_put_compensation_balances_a_move_across_sibling_folders(self):
         # the stamped delta the PUT left on the source chain and the stamped
         # size the move subtracted from it telescope to exactly the true

@@ -166,8 +166,13 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
         # bytes the row must not exist, nor its share of the rollup — reversed
         # where the rollup now lives, should a move have relocated the row; a
         # trash already settled the chain with the stamped size, so only the
-        # row itself remains to remove
-        frappe.db.delete("File", {"name": drive_file.name})
+        # row itself remains to remove. Through the controller, not a raw row
+        # delete: after_delete reaps whatever another request linked to the
+        # row in the window (permissions, favourites, locks, dead props) —
+        # orphaned by a raw delete, those rows would never become reachable
+        # again. force skips the link check that would otherwise throw over
+        # those same rows before the cleanup runs.
+        frappe.delete_doc("File", drive_file.name, ignore_permissions=True, force=True)
         if current.status == STATUS_ACTIVE:
             apply_file_size_delta(current.folder, -size)
 
@@ -515,8 +520,9 @@ def repair_promotion_drift(file, stamp, restore, delta, activity=None):
     current = _locked_content_state(file)
     if _should_restore(stamp, current):
         if restore is None:
-            # a failed create: without the bytes the row must not exist
-            frappe.db.delete("File", {"name": file})
+            # a failed create: without the bytes the row must not exist —
+            # through the controller, so after_delete reaps linked records
+            frappe.delete_doc("File", file, ignore_permissions=True, force=True)
         else:
             _restore_content(file, restore, stamp.get("modified"), current)
         # a trashed row's chain was already settled by the trash flow, which
