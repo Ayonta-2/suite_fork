@@ -99,6 +99,14 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
         with self.assertRaises(Forbidden):
             self._mkcol(f"/dav/Everyone/{shared_name}/Intruder", user=READER)
 
+    def test_everyone_root_is_read_only_for_non_admins(self):
+        # the shared root carries only the $GENERAL read grant, so the same
+        # resolver Drive uses leaves creation there to Drive admins
+        with self.assertRaises(Forbidden):
+            self._mkcol("/dav/Everyone/RootIntruder")
+        with self.assertRaises(Forbidden):
+            self._mkcol("/dav/Everyone/RootIntruder", user=READER)
+
     def test_delete_moves_file_to_trash(self):
         with self.set_user(OWNER):
             victim = write_file_fixture(self.base.name, "victim.txt", b"bye")

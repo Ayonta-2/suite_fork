@@ -468,6 +468,8 @@ class TestWebDAVPut(IntegrationTestCase):
             )
         with self.assertRaises(Forbidden):  # $GENERAL read on Everyone grants no upload
             self._put(f"/dav/Everyone/{foreign.file_name}/x.txt", b"x", user=STRANGER)
+        with self.assertRaises(Forbidden):  # the shared root itself: read-only, as in Drive
+            self._put("/dav/Everyone/intruder.txt", b"x")
 
     def test_put_conditionals(self):
         from suite.drive.webdav.errors import PreconditionFailed

@@ -67,6 +67,13 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         pathmap.reset_memo()
         return pathmap.resolve([segment for segment in path.split("/") if segment], user)
 
+    def test_move_and_copy_into_everyone_root_are_forbidden(self):
+        # the shared root is read-only for non-admins, exactly as in Drive
+        with self.assertRaises(Forbidden):
+            self._move(f"/dav/Home/{self.base_name}/b.txt", "/dav/Everyone/b.txt")
+        with self.assertRaises(Forbidden):
+            self._copy(f"/dav/Home/{self.base_name}/b.txt", "/dav/Everyone/b.txt")
+
     def test_move_renames_in_place(self):
         response = self._move(f"/dav/Home/{self.base_name}/b.txt", f"/dav/Home/{self.base_name}/renamed.txt")
         self.assertEqual(response.status_code, 201)
