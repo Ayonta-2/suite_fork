@@ -102,8 +102,20 @@
 					<FormControl v-model="scheduleTitle" label="Title" placeholder="Team meeting" />
 					<div class="grid grid-cols-1 gap-3 md:grid-cols-3">
 						<FormControl v-model="scheduleDate" label="Date" type="date" />
-						<FormControl v-model="scheduleStartTime" label="Start" type="time" />
-						<FormControl v-model="scheduleEndTime" label="End" type="time" />
+						<FormControl
+							v-model="scheduleStartTime"
+							label="Start"
+							type="time"
+							:interval="15"
+							format="h:mm A"
+						/>
+						<FormControl
+							v-model="scheduleEndTime"
+							label="End"
+							type="time"
+							:interval="15"
+							format="h:mm A"
+						/>
 					</div>
 					<ParticipantSelector
 						v-model="scheduleParticipants"
@@ -137,12 +149,16 @@ import {
 	createResource,
 	toast,
 } from "frappe-ui";
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import { userStore as useCalendarUserStore } from "@/apps/calendar/stores/user";
 import dayjs from "@/apps/calendar/utils/dayjs";
 import ParticipantSelector from "@/apps/calendar/components/ParticipantSelector.vue";
+import {
+	adjustScheduleEndTime,
+	adjustScheduleStartTime,
+} from "@/apps/calendar/utils/scheduleTime";
 import { useConnectionState } from "../composables/useConnectionState";
 import MeetSidebar from "../components/MeetSidebar.vue";
 import UpcomingMeetings from "../components/UpcomingMeetings.vue";
@@ -173,6 +189,14 @@ const scheduleStartTime = ref(dayjs().add(1, "hour").startOf("hour").format("HH:
 const scheduleEndTime = ref(dayjs().add(2, "hour").startOf("hour").format("HH:mm"));
 const scheduleParticipants = ref<CalendarParticipant[]>([]);
 const upcomingMeetingsRef = ref<{ reload: () => void } | null>(null);
+
+watch(scheduleStartTime, (startTime) => {
+	scheduleEndTime.value = adjustScheduleEndTime(startTime, scheduleEndTime.value);
+});
+
+watch(scheduleEndTime, (endTime) => {
+	scheduleStartTime.value = adjustScheduleStartTime(scheduleStartTime.value, endTime);
+});
 
 const userResource = createResource({
 	url: "suite.api.account.get_logged_in_user",

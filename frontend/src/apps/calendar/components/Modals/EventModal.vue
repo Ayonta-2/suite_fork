@@ -117,7 +117,6 @@ const startsAt = computed(() =>
 	dayjs(`${event.startDate}T${event.isAllDay ? '00:00' : event.startTime}`),
 )
 const endsAt = computed(() => dayjs(`${event.endDate}T${event.isAllDay ? '00:00' : event.endTime}`))
-
 const isDateTimeValid = computed(() => {
 	if (!event.startDate || !event.endDate) return false
 	if (!event.isAllDay && (!event.startTime || !event.endTime)) return false
@@ -301,6 +300,18 @@ watch(
 		const end = start.add(gap > 0 ? gap : DEFAULT_DURATION_MINUTES, 'minute')
 		event.endDate = end.format('YYYY-MM-DD')
 		event.endTime = end.format('HH:mm')
+	},
+)
+
+watch(
+	() => [event.endDate, event.endTime],
+	([endDate, endTime]) => {
+		if (event.isAllDay || !endDate || !endTime) return
+		const end = dayjs(`${endDate}T${endTime}`)
+		if (!end.isValid() || end.isAfter(startsAt.value)) return
+		const start = end.subtract(DEFAULT_DURATION_MINUTES, 'minute')
+		event.startDate = start.format('YYYY-MM-DD')
+		event.startTime = start.format('HH:mm')
 	},
 )
 
@@ -574,6 +585,8 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 											v-if="!event.isAllDay"
 											v-model="event.startTime"
 											type="time"
+											:interval="15"
+											format="h:mm A"
 											class="w-full"
 										/>
 									</div>
@@ -588,6 +601,8 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 											v-if="!event.isAllDay"
 											v-model="event.endTime"
 											type="time"
+											:interval="15"
+											format="h:mm A"
 											class="w-full"
 										/>
 									</div>
