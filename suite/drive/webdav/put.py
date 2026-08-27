@@ -26,7 +26,7 @@ from suite.drive.api.activity import create_new_activity_log
 from suite.drive.api.files import get_upload_path
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage, validate_quota
-from suite.drive.utils import apply_file_size_delta, create_drive_file, get_file_type
+from suite.drive.utils import STATUS_ACTIVE, apply_file_size_delta, create_drive_file, get_file_type
 from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url, storage_key, stored_on_disk
 from suite.drive.webdav import pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
@@ -164,9 +164,12 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
     def undo(current):
         # compensation for a promotion that failed after commit: without the
         # bytes the row must not exist, nor its share of the rollup — reversed
-        # where the rollup now lives, should a move have relocated the row
+        # where the rollup now lives, should a move have relocated the row; a
+        # trash already settled the chain with the stamped size, so only the
+        # row itself remains to remove
         frappe.db.delete("File", {"name": drive_file.name})
-        apply_file_size_delta(current.folder, -size)
+        if current.status == STATUS_ACTIVE:
+            apply_file_size_delta(current.folder, -size)
 
     def repair():
         # read at drift time, after the stamp landed on the row
@@ -243,9 +246,12 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
         # never changed, so the content metadata and rollup step back to
         # match them. A metadata-only writer (rename, move) may have carried
         # our stale claim along — the reversal follows the row to its current
-        # folder, and the newer clock stays if someone else advanced it
+        # folder, and the newer clock stays if someone else advanced it. A
+        # trashed row's chain needs no reversal: the trash flow subtracted
+        # the stamped size, which telescoped the stamped delta away already
         _restore_content(row.name, prior, doc.modified, current)
-        apply_file_size_delta(current.folder, -delta)
+        if current.status == STATUS_ACTIVE:
+            apply_file_size_delta(current.folder, -delta)
 
     def revoke():
         # our own audit row: the edit it announces never took effect, and
@@ -513,7 +519,10 @@ def repair_promotion_drift(file, stamp, restore, delta, activity=None):
             frappe.db.delete("File", {"name": file})
         else:
             _restore_content(file, restore, stamp.get("modified"), current)
-        apply_file_size_delta(current.folder, -delta)
+        # a trashed row's chain was already settled by the trash flow, which
+        # subtracted the stamped size — the stamped delta telescoped away
+        if current.status == STATUS_ACTIVE:
+            apply_file_size_delta(current.folder, -delta)
     if activity:
         frappe.db.delete("Drive Entity Activity Log", {"name": activity})
     frappe.db.commit()
@@ -532,7 +541,7 @@ def _locked_content_state(name: str) -> frappe._dict | None:
     return frappe.db.get_value(
         "File",
         name,
-        ["content_hash", "file_size", "file_modified", "modified", "folder", "file_url"],
+        ["content_hash", "file_size", "modified", "folder", "file_url", "status"],
         as_dict=True,
         for_update=True,
     )
@@ -549,17 +558,17 @@ def _should_restore(stamped, current) -> bool:
 
 def _content_carries(stamped, current) -> bool:
     """Whether the row still claims exactly the content this PUT wrote — its
-    hash, size and content mtime. The row clock (modified) is deliberately
-    not part of the fingerprint: a metadata-only writer (rename, move, share)
-    advances it while carrying our stale content claim along, and yielding to
-    one would leave the old bytes under the failed PUT's metadata."""
+    hash and size. Clocks are deliberately not part of the fingerprint: a
+    metadata-only writer advances `modified` (rename, move, share) or even
+    `file_modified` (trash, a PROPPATCH timestamp write) while carrying our
+    stale content claim along, and yielding to one would leave the old bytes
+    under the failed PUT's metadata. The case the clocks used to guard — a
+    racing PUT of the identical body — is settled by _bytes_deliver_stamp."""
     if current is None:
         return False
     if current.content_hash != stamped.get("content_hash"):
         return False
-    if (current.file_size or 0) != (stamped.get("file_size") or 0):
-        return False
-    return _same_clock(current.file_modified, stamped.get("file_modified"))
+    return (current.file_size or 0) == (stamped.get("file_size") or 0)
 
 
 def _bytes_deliver_stamp(stamped, current) -> bool:

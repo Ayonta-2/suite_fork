@@ -653,6 +653,116 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("File", sub.name, "file_size"), len(b"version-one"))
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
 
+    def test_put_compensation_balances_a_move_across_sibling_folders(self):
+        # the stamped delta the PUT left on the source chain and the stamped
+        # size the move subtracted from it telescope to exactly the true
+        # bytes leaving; the reversal belongs only where the move added the
+        # stamped size — the destination — and both ledgers must land exact
+        from unittest.mock import patch
+
+        from suite.drive.utils import apply_file_size_delta
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            dest = create_drive_file(
+                f"Dest-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        def move_then_fail(*args):
+            size_now = frappe.db.get_value("File", target.name, "file_size")
+            frappe.db.set_value("File", target.name, "folder", dest.name)
+            apply_file_size_delta(self.base.name, -size_now)
+            apply_file_size_delta(dest.name, size_now)
+            raise OSError
+
+        with patch("os.replace", side_effect=move_then_fail), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        # source: the true bytes left, nothing more, nothing less
+        expected_source = (base_size or 0) - len(b"version-one")
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), expected_source)
+        # destination: the true bytes arrived
+        self.assertEqual(frappe.db.get_value("File", dest.name, "file_size"), len(b"version-one"))
+
+    def test_put_compensation_after_trash_skips_settled_accounting(self):
+        # trashing subtracted the stamped size from the chain, which already
+        # telescoped the stamped delta away — reversing it again would
+        # double-subtract; only the content metadata still needs stepping
+        # back, so a later restore-from-trash re-adds the true size
+        from unittest.mock import patch
+
+        from suite.drive.utils import STATUS_TRASHED, apply_file_size_delta
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        def trash_then_fail(*args):
+            # what toggle_entity_status leaves once it trashes the row
+            size_now = frappe.db.get_value("File", target.name, "file_size")
+            frappe.db.set_value(
+                "File",
+                target.name,
+                {"status": STATUS_TRASHED, "file_modified": frappe.utils.now_datetime()},
+            )
+            apply_file_size_delta(self.base.name, -size_now)
+            raise OSError
+
+        with patch("os.replace", side_effect=trash_then_fail), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        # content claim stepped back, so a restore-from-trash is consistent
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        self.assertIsNone(frappe.db.get_value("File", target.name, "content_hash"))
+        self.assertEqual(frappe.db.get_value("File", target.name, "status"), STATUS_TRASHED)
+        # chain reflects exactly the true bytes leaving for the trash
+        expected = (base_size or 0) - len(b"version-one")
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), expected)
+
+    def test_put_compensation_survives_a_touch(self):
+        # a writer that only advances file_modified (a PROPPATCH timestamp
+        # write) carries our stale content claim like any metadata writer —
+        # the content fingerprint must not yield over a moved clock
+        from unittest.mock import patch
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        def touch_then_fail(*args):
+            frappe.db.set_value("File", target.name, "file_modified", frappe.utils.now_datetime())
+            raise OSError
+
+        with patch("os.replace", side_effect=touch_then_fail), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        self.assertIsNone(frappe.db.get_value("File", target.name, "content_hash"))
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
+
     def test_put_compensation_retries_on_a_fresh_transaction(self):
         # a deadlock victim or lock timeout fails once and survives a retry —
         # the compensation must not give up (and record drift) on first blood
