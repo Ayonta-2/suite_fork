@@ -27,7 +27,7 @@ from suite.drive.api.files import get_upload_path
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage, validate_quota
 from suite.drive.utils import apply_file_size_delta, create_drive_file, get_file_type
-from suite.drive.utils.files import get_s3_key, get_s3_url, storage_key, stored_on_disk
+from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url, storage_key, stored_on_disk
 from suite.drive.webdav import pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
 from suite.drive.webdav.context import DavContext
@@ -448,7 +448,7 @@ class _Compensation:
         if self.revoke is not None:
             self.revoke()
         current = _locked_content_state(self.stamped.name)
-        if _content_carries(self.stamped, current):
+        if _should_restore(self.stamped, current):
             self.undo(current)
         frappe.db.commit()
 
@@ -507,7 +507,7 @@ def repair_promotion_drift(file, stamp, restore, delta, activity=None):
     audit row comes off regardless. Idempotent — a repeat run finds the stamp
     gone and changes nothing."""
     current = _locked_content_state(file)
-    if _content_carries(stamp, current):
+    if _should_restore(stamp, current):
         if restore is None:
             # a failed create: without the bytes the row must not exist
             frappe.db.delete("File", {"name": file})
@@ -532,10 +532,19 @@ def _locked_content_state(name: str) -> frappe._dict | None:
     return frappe.db.get_value(
         "File",
         name,
-        ["content_hash", "file_size", "file_modified", "modified", "folder"],
+        ["content_hash", "file_size", "file_modified", "modified", "folder", "file_url"],
         as_dict=True,
         for_update=True,
     )
+
+
+def _should_restore(stamped, current) -> bool:
+    """Restore only when the row still claims the content this PUT wrote AND
+    the bytes at its current location do not actually deliver that claim.
+    The byte check settles the one case the row fingerprint cannot: a racing
+    PUT of the identical body whose promotion succeeded while ours failed —
+    the claim is then genuine, and restoring the snapshot would corrupt it."""
+    return _content_carries(stamped, current) and not _bytes_deliver_stamp(stamped, current)
 
 
 def _content_carries(stamped, current) -> bool:
@@ -543,9 +552,7 @@ def _content_carries(stamped, current) -> bool:
     hash, size and content mtime. The row clock (modified) is deliberately
     not part of the fingerprint: a metadata-only writer (rename, move, share)
     advances it while carrying our stale content claim along, and yielding to
-    one would leave the old bytes under the failed PUT's metadata. The blind
-    spot this accepts: a racing PUT of the identical body with the identical
-    client mtime is indistinguishable from a metadata-only writer here."""
+    one would leave the old bytes under the failed PUT's metadata."""
     if current is None:
         return False
     if current.content_hash != stamped.get("content_hash"):
@@ -553,6 +560,28 @@ def _content_carries(stamped, current) -> bool:
     if (current.file_size or 0) != (stamped.get("file_size") or 0):
         return False
     return _same_clock(current.file_modified, stamped.get("file_modified"))
+
+
+def _bytes_deliver_stamp(stamped, current) -> bool:
+    """Whether the file at the row's current location really holds the
+    stamped content. The stat gate keeps this cheap — a genuine compensation
+    almost always has old size ≠ stamped size and never hashes; the full
+    hash runs only for a same-size file, on this rare failure path, and any
+    doubt (unreadable path, missing file, no hash to check) counts as
+    undelivered so the restore proceeds."""
+    if not stamped.get("content_hash"):
+        return False
+    try:
+        path = FileManager().get_local_path(current.file_url)
+        if path.stat().st_size != (stamped.get("file_size") or 0):
+            return False
+        digest = hashlib.sha256()
+        with path.open("rb") as fh:
+            while chunk := fh.read(1024 * 1024):
+                digest.update(chunk)
+        return digest.hexdigest() == stamped.get("content_hash")
+    except Exception:
+        return False
 
 
 def _restore_content(name: str, prior: dict, stamped_clock, current) -> None:

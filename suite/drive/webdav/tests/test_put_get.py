@@ -539,6 +539,45 @@ class TestWebDAVPut(IntegrationTestCase):
         )
         self.assertEqual(enqueue_mock.call_args.args, (put_module.repair_promotion_drift,))
 
+    def test_put_compensation_spares_an_identical_winner(self):
+        # a racing PUT of the identical body looks like a metadata-only
+        # writer to the row fingerprint — only the bytes settle it: they
+        # deliver the stamped claim, so the restore must stand down
+        import hashlib
+        from unittest.mock import patch
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        blob_path = FileManager().get_local_path(target.file_url)
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        def identical_winner_then_fail(*args):
+            # what the racing identical PUT leaves once it wins: the same
+            # content claim under a newer clock, and the bytes delivered
+            frappe.db.set_value(
+                "File", target.name, "modified", frappe.utils.now_datetime(), update_modified=False
+            )
+            blob_path.write_bytes(b"v2!")
+            raise OSError
+
+        with patch("os.replace", side_effect=identical_winner_then_fail), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        # the winner's write stands: claim, bytes and accounting untouched
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"v2!"))
+        self.assertEqual(
+            frappe.db.get_value("File", target.name, "content_hash"), hashlib.sha256(b"v2!").hexdigest()
+        )
+        self.assertEqual(blob_path.read_bytes(), b"v2!")
+        expected = (base_size or 0) + len(b"v2!") - len(b"version-one")
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), expected)
+
     def test_put_compensation_survives_a_metadata_only_writer(self):
         # a rename that slips in bumps the row clock but carries our stale
         # content claim along — that is no reason to yield: the content
