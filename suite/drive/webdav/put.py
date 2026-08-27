@@ -438,7 +438,10 @@ def _queue_swap_settlement(stamped, placed: Path) -> None:
 _SETTLE_DELAYS = (1, 2, 4, 8, 16)
 
 
-_SETTLE_HOPS = 3
+# far beyond any organic relocation rate — the chase settles the moment the
+# churn pauses for a single iteration — yet finite, so machine-speed churn of
+# a file cannot pin a worker (or the inline fallback's stack) forever
+_SETTLE_HOPS = 64
 
 
 def settle_swap_destination(file, stamp, placed, hops=0):
