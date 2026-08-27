@@ -321,34 +321,56 @@ def _stage_blob_swap(manager, doc, scratch: Path, compensation: _Compensation) -
         # it in place — upload_file would write the new body to a stray S3 key
         # that GET (which serves on-disk blobs directly) never reads back. No
         # thumbnail either, matching the native path for adopted blobs.
-        _stage_disk_swap(scratch, manager.get_local_path(doc.file_url), compensation)
+        _stage_disk_swap(scratch, manager.get_local_path(doc.file_url), compensation, manager)
     else:
         _stage_disk_swap(scratch, manager.site_folder / storage_key(doc.file_url), compensation, manager, doc)
     return None
 
 
-def _stage_disk_swap(
-    scratch: Path, target: Path, compensation: _Compensation, manager=None, doc=None
-) -> None:
+def _stage_disk_swap(scratch: Path, target: Path, compensation: _Compensation, manager, doc=None) -> None:
     """Rename the spooled body next to the target now (.uploads shares the
     target's filesystem — the assumption upload_file's rename already makes),
-    so the commit-time swap is a bare same-directory os.replace: atomic, and
-    the only mutation the old blob ever sees."""
+    so the commit-time swap is a single atomic os.replace and the only
+    mutation the old blob ever sees."""
     staged = target.with_name(f"{target.name}.{frappe.generate_hash(length=12)}.putpart")
     os.rename(scratch, staged)
 
     def swap():
         try:
-            os.replace(staged, target)
+            live = _swap_destination(compensation.stamped.name, manager)
+            if live is None:
+                # the row was trashed or deleted in the gap: its bytes were
+                # carried off (or reaped) with it — placing ours would orphan
+                # them, so the stamped metadata steps back instead
+                staged.unlink(missing_ok=True)
+                compensation.run()
+                return
+            os.replace(staged, live)
         except Exception:
             staged.unlink(missing_ok=True)
             compensation.run()
             raise
-        if manager is not None and manager.can_create_thumbnail(doc):
-            _enqueue_thumbnail(manager, doc, str(target))
+        if doc is not None and manager.can_create_thumbnail(doc):
+            _enqueue_thumbnail(manager, doc, str(live))
 
     frappe.db.after_commit.add(swap)
     frappe.db.after_rollback.add(lambda: staged.unlink(missing_ok=True))
+
+
+def _swap_destination(name: str, manager) -> Path | None:
+    """Where the committed row wants its bytes right now. The staging-time
+    target can go stale in the commit-to-swap gap: a move relocates the blob
+    and rewrites file_url, and replacing at the captured path would succeed —
+    silently orphaning the new bytes while the moved file kept serving old
+    ones under the new metadata, with no failure to compensate. Following the
+    committed file_url lands the replace on the bytes the move carried. (A
+    move's own disk transfer is not gated by the row lock, so a move still
+    mid-flight here remains its race, not ours.) None means the row is no
+    longer Active — or no longer exists — and the swap must stand down."""
+    current = frappe.db.get_value("File", name, ["file_url", "status"], as_dict=True)
+    if current is None or current.status != STATUS_ACTIVE:
+        return None
+    return manager.get_local_path(current.file_url)
 
 
 # one generation suffix per key: [0-9a-f] is generate_hash's alphabet

@@ -828,6 +828,83 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertIsNone(frappe.db.get_value("File", target.name, "content_hash"))
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
 
+    def test_put_swap_follows_a_move_committed_in_the_gap(self):
+        # a move landing between the commit and the swap has already carried
+        # the old bytes to the new path and rewritten file_url — the replace
+        # must follow the committed row there, not recreate the abandoned
+        # path as an orphan while the moved file serves old bytes
+        from suite.drive.utils import apply_file_size_delta
+
+        with self.set_user(OWNER):
+            dest = create_drive_file(
+                f"Dest-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        manager = FileManager()
+        old_path = manager.get_local_path(target.file_url)
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        # what a committed MOVE leaves in the gap: blob carried, row rewritten
+        new_rel = Path(storage_key(frappe.db.get_value("File", dest.name, "file_url"))) / "doc.txt"
+        new_path = manager.site_folder / new_rel
+        old_path.rename(new_path)
+        size_now = frappe.db.get_value("File", target.name, "file_size")
+        frappe.db.set_value("File", target.name, {"file_url": "/" + str(new_rel), "folder": dest.name})
+        apply_file_size_delta(self.base.name, -size_now)
+        apply_file_size_delta(dest.name, size_now)
+
+        frappe.db.commit()  # runs the swap
+
+        self.assertEqual(new_path.read_bytes(), b"v2!")
+        self.assertFalse(old_path.exists())
+        self.assertEqual(list(old_path.parent.glob("*.putpart")), [])
+
+    def test_put_swap_stands_down_for_a_row_trashed_in_the_gap(self):
+        # a trash in the gap carried the bytes off — recreating the path
+        # would orphan a blob nothing references, and a later restore-from-
+        # trash would clobber it; the claim steps back instead
+        from suite.drive.utils import STATUS_TRASHED, apply_file_size_delta
+
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        blob_path = FileManager().get_local_path(target.file_url)
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        # what toggle_entity_status leaves in the gap: blob off to the
+        # trash, row flagged, chain settled with the stamped size
+        trashed_blob = blob_path.with_name(blob_path.name + ".intrash")
+        blob_path.rename(trashed_blob)
+        size_now = frappe.db.get_value("File", target.name, "file_size")
+        frappe.db.set_value(
+            "File",
+            target.name,
+            {"status": STATUS_TRASHED, "file_modified": frappe.utils.now_datetime()},
+        )
+        apply_file_size_delta(self.base.name, -size_now)
+
+        frappe.db.commit()  # must not raise — the swap stands down quietly
+
+        self.assertFalse(blob_path.exists())  # no orphan recreated
+        self.assertEqual(trashed_blob.read_bytes(), b"version-one")
+        # the claim stepped back to match the trashed bytes; the chain keeps
+        # the trash flow's own settlement
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        self.assertIsNone(frappe.db.get_value("File", target.name, "content_hash"))
+        self.assertEqual(
+            frappe.db.get_value("File", self.base.name, "file_size"),
+            (base_size or 0) - len(b"version-one"),
+        )
+        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        trashed_blob.unlink()
+
     def test_put_compensation_retries_on_a_fresh_transaction(self):
         # a deadlock victim or lock timeout fails once and survives a retry —
         # the compensation must not give up (and record drift) on first blood
