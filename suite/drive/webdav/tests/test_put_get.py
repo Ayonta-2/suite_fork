@@ -1000,6 +1000,71 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(slept.call_count, 5)
         self.assertEqual(blob_path.read_bytes(), b"v2!")
 
+    def test_put_swap_settlement_follows_a_second_relocation(self):
+        # a further move can empty the destination between the settlement's
+        # locked read and its replace (disk transfers are not lock-gated) —
+        # the settlement must re-verify after placing and follow, or it
+        # recreates a stale path and strands the bytes all over again
+        import os
+        from unittest.mock import patch
+
+        from suite.drive.utils import apply_file_size_delta
+        from suite.drive.webdav import put as put_module
+
+        with self.set_user(OWNER):
+            dest1 = create_drive_file(
+                f"Dest1-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            dest2 = create_drive_file(
+                f"Dest2-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        manager = FileManager()
+        old_path = manager.get_local_path(target.file_url)
+        rel1 = Path(storage_key(frappe.db.get_value("File", dest1.name, "file_url"))) / "doc.txt"
+        rel2 = Path(storage_key(frappe.db.get_value("File", dest2.name, "file_url"))) / "doc.txt"
+        path1 = manager.site_folder / rel1
+        path2 = manager.site_folder / rel2
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+        old_path.rename(path1)  # the stalled first mover's disk transfer
+        with patch("time.sleep"), patch("frappe.enqueue") as queued:
+            frappe.db.commit()  # times out, heals at the old path, queues
+
+        # mover one commits; mover two has already carried the blob onward
+        # but its row write is still pending — it lands mid-settlement
+        size_now = frappe.db.get_value("File", target.name, "file_size")
+        frappe.db.set_value("File", target.name, {"file_url": "/" + str(rel1), "folder": dest1.name})
+        apply_file_size_delta(self.base.name, -size_now)
+        apply_file_size_delta(dest1.name, size_now)
+        path1.rename(path2)  # mover two's disk transfer
+
+        real_replace = os.replace
+        landed = []
+
+        def replace_then_mover_two_commits(src, dst):
+            real_replace(src, dst)
+            if not landed:
+                landed.append(True)
+                frappe.db.set_value("File", target.name, {"file_url": "/" + str(rel2), "folder": dest2.name})
+                apply_file_size_delta(dest1.name, -size_now)
+                apply_file_size_delta(dest2.name, size_now)
+
+        spec = {key: value for key, value in queued.call_args.kwargs.items() if key != "queue"}
+        with patch("time.sleep"), patch("os.replace", side_effect=replace_then_mover_two_commits):
+            put_module.settle_swap_destination(**spec)
+
+        self.assertEqual(path2.read_bytes(), b"v2!")  # followed to the final home
+        self.assertFalse(path1.exists())  # no stale path recreated
+        self.assertFalse(old_path.exists())
+
     def test_put_swap_settlement_yields_to_a_newer_put(self):
         # a newer PUT that landed (and moved on) before the worker gets
         # there owns the row — the settlement must not replace its bytes,

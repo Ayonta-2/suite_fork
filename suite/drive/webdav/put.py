@@ -447,10 +447,14 @@ def settle_swap_destination(file, stamp, placed):
     stall — and finishes the follow when it does. Idempotent by the same
     guards as compensation: it acts only while the row still claims the
     PUT's content, the placed file still delivers it, and the row's current
-    location does not. A blob that was simply missing never moves the
-    pointer, so the checks drain quietly and the heal stands."""
+    location does not. Every placement is re-verified with a fresh locked
+    read and followed if the pointer moved again, mirroring the in-request
+    swap. A blob that was simply missing never moves the pointer, so the
+    checks drain quietly and the heal stands."""
     placed = Path(placed)
-    for delay in _SETTLE_DELAYS:
+    moved = False
+    delays = iter(_SETTLE_DELAYS)
+    for _ in range(len(_SETTLE_DELAYS) + 3):
         # locked, like the in-request swap: a newer PUT blocks at its own
         # locked read until this commit, so it cannot slip between these
         # guards (which may hash sizable files) and the replace below
@@ -461,19 +465,33 @@ def settle_swap_destination(file, stamp, placed):
             frappe.db.commit()
             return
         dest = FileManager().get_local_path(current.file_url)
-        if dest != placed:
-            ours = _file_delivers_stamp(placed, stamp)
-            if ours and _content_carries(stamp, current) and not _bytes_deliver_stamp(stamp, current):
-                os.replace(placed, dest)
-            elif ours:
-                # superseded — the row moved on without needing these bytes;
-                # reap our copy. A placed path that no longer delivers the
-                # stamp may already belong to someone else's blob: leave it.
-                placed.unlink(missing_ok=True)
+        if dest == placed:
+            frappe.db.commit()  # release the row before deciding or waiting
+            if moved:
+                return  # a fresh locked read agrees with the follow — settled
+            delay = next(delays, None)
+            if delay is None:
+                return  # the peer never landed; the heal stands
+            time.sleep(delay)
+            continue
+        ours = _file_delivers_stamp(placed, stamp)
+        if ours and _content_carries(stamp, current) and not _bytes_deliver_stamp(stamp, current):
+            # follow the pointer, then loop: the next locked read must agree
+            # with the placement — a further relocation mid-replace (a disk
+            # transfer is not lock-gated) would otherwise strand these bytes
+            # exactly the way the original stale-path race did
+            os.replace(placed, dest)
+            placed = dest
+            moved = True
             frappe.db.commit()
-            return
-        frappe.db.commit()  # release the row before waiting
-        time.sleep(delay)
+            continue
+        if ours:
+            # superseded — the row moved on without needing these bytes;
+            # reap our copy. A placed path that no longer delivers the
+            # stamp may already belong to someone else's blob: leave it.
+            placed.unlink(missing_ok=True)
+        frappe.db.commit()
+        return
 
 
 def _swap_state(name: str) -> frappe._dict | None:
