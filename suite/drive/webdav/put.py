@@ -161,20 +161,19 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
     # neither can be recovered from the fetch-url rewrite by get_s3_key
     blob = frappe._dict(name=drive_file.name, file_url=drive_file.file_url, mime_type=mime_type)
 
-    def undo():
+    def undo(current):
         # compensation for a promotion that failed after commit: without the
-        # bytes the row must not exist, nor its share of the rollup
+        # bytes the row must not exist, nor its share of the rollup — reversed
+        # where the rollup now lives, should a move have relocated the row
         frappe.db.delete("File", {"name": drive_file.name})
-        apply_file_size_delta(parent.name, -size)
+        apply_file_size_delta(current.folder, -size)
 
     def repair():
         # read at drift time, after the stamp landed on the row
         return {
             "file": drive_file.name,
-            "stamp_hash": drive_file.content_hash,
-            "stamp_modified": drive_file.modified,
+            "stamp": {field: drive_file.get(field) for field in _STAMP_FIELDS},
             "restore": None,
-            "folder": parent.name,
             "delta": size,
         }
 
@@ -239,11 +238,14 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
     fields = ("file_size", "mime_type", "file_type", "file_modified", "content_hash", "modified")
     prior = {field: doc.get(field) for field in fields}
 
-    def undo():
+    def undo(current):
         # compensation for a promotion that failed after commit: the bytes
-        # never changed, so the metadata and rollup step back to match them
-        frappe.db.set_value("File", row.name, prior, update_modified=False)
-        apply_file_size_delta(row.folder, -delta)
+        # never changed, so the content metadata and rollup step back to
+        # match them. A metadata-only writer (rename, move) may have carried
+        # our stale claim along — the reversal follows the row to its current
+        # folder, and the newer clock stays if someone else advanced it
+        _restore_content(row.name, prior, doc.modified, current)
+        apply_file_size_delta(current.folder, -delta)
 
     def revoke():
         # our own audit row: the edit it announces never took effect, and
@@ -256,10 +258,8 @@ def _overwrite(ctx: DavContext, row: frappe._dict, scratch: Path, size: int, sha
         # read at drift time, after the stamp landed on the row
         return {
             "file": row.name,
-            "stamp_hash": doc.content_hash,
-            "stamp_modified": doc.modified,
+            "stamp": {field: doc.get(field) for field in _STAMP_FIELDS},
             "restore": prior,
-            "folder": row.folder,
             "delta": delta,
             "activity": activity.name,
         }
@@ -410,16 +410,19 @@ class _Compensation:
     failure re-raises turns into the client's 500, whose retry heals
     everything anyway.
 
-    undo restores the shared row state (metadata snapshot, rollup delta) and
-    is guarded by the stamp check: a writer that slipped in after our commit
-    has already replaced metadata, bytes and rollup, computing its delta
-    against our committed size — restoring our snapshot over that would
-    clobber the newer write and unbalance the accounting chain. The locking
-    read in _carries_stamp blocks until such a writer commits, so the choice
-    is race-free. revoke retracts only rows this PUT itself created (its
-    audit trail) and runs either way: an edit that never took effect must not
-    stay recorded, however the row race went. repair builds the same undo as
-    a serializable spec for the queued worker retry."""
+    undo restores the shared row state (content snapshot, rollup delta) and
+    is guarded by the content-stamp check: a CONTENT writer that slipped in
+    after our commit has already replaced bytes, metadata and rollup,
+    computing its delta against our committed size — restoring our snapshot
+    over that would clobber the newer write and unbalance the accounting
+    chain. A metadata-only writer (rename, move, share) is not a reason to
+    yield: it carries our stale content claim along, so undo still runs,
+    receiving the locked current row to follow a move and to keep a newer
+    clock. The locking read blocks until any in-flight writer commits, so
+    the choice is race-free. revoke retracts only rows this PUT itself
+    created (its audit trail) and runs either way: an edit that never took
+    effect must not stay recorded, however the row race went. repair builds
+    the same undo as a serializable spec for the queued worker retry."""
 
     def __init__(self, stamped, undo, repair, revoke=None):
         self.stamped = stamped
@@ -444,8 +447,9 @@ class _Compensation:
     def _attempt(self) -> None:
         if self.revoke is not None:
             self.revoke()
-        if _carries_stamp(self.stamped):
-            self.undo()
+        current = _locked_content_state(self.stamped.name)
+        if _content_carries(self.stamped, current):
+            self.undo(current)
         frappe.db.commit()
 
     def _record_drift(self) -> None:
@@ -494,36 +498,78 @@ def _file_log(message: str) -> None:
         pass
 
 
-def repair_promotion_drift(file, stamp_hash, stamp_modified, restore, folder, delta, activity=None):
+def repair_promotion_drift(file, stamp, restore, delta, activity=None):
     """Deferred compensation, run by a worker on its own connection after the
     in-request attempts failed. Same rules as the inline path: the restore
     and the rollup reversal apply only while the row still carries the failed
-    PUT's stamp (a later successful save reconciles everything itself), and
-    the audit row comes off regardless. Idempotent — a repeat run finds the
-    stamp gone and changes nothing."""
-    stamped = frappe._dict(name=file, content_hash=stamp_hash, modified=stamp_modified)
-    if _carries_stamp(stamped):
+    PUT's content stamp (a later successful save reconciles everything
+    itself), the reversal follows the row to its current folder, and the
+    audit row comes off regardless. Idempotent — a repeat run finds the stamp
+    gone and changes nothing."""
+    current = _locked_content_state(file)
+    if _content_carries(stamp, current):
         if restore is None:
             # a failed create: without the bytes the row must not exist
             frappe.db.delete("File", {"name": file})
         else:
-            frappe.db.set_value("File", file, restore, update_modified=False)
-        apply_file_size_delta(folder, -delta)
+            _restore_content(file, restore, stamp.get("modified"), current)
+        apply_file_size_delta(current.folder, -delta)
     if activity:
         frappe.db.delete("Drive Entity Activity Log", {"name": activity})
     frappe.db.commit()
 
 
-def _carries_stamp(stamped) -> bool:
-    """Whether the committed row still holds exactly what this PUT wrote —
-    the content hash plus the modified clock db_set stamped alongside it."""
-    current = frappe.db.get_value(
-        "File", stamped.name, ["modified", "content_hash"], as_dict=True, for_update=True
+# the fields a PUT stamps; the first three are the content fingerprint, the
+# row clock (modified) rides along only to decide whether restore may put the
+# clock back
+_STAMP_FIELDS = ("content_hash", "file_size", "file_modified", "modified")
+
+
+def _locked_content_state(name: str) -> frappe._dict | None:
+    """The row's content claim and location, read under lock: a concurrent
+    writer has either committed (and shows here) or waits until the
+    compensation commits, so the yield-or-restore choice is race-free."""
+    return frappe.db.get_value(
+        "File",
+        name,
+        ["content_hash", "file_size", "file_modified", "modified", "folder"],
+        as_dict=True,
+        for_update=True,
     )
+
+
+def _content_carries(stamped, current) -> bool:
+    """Whether the row still claims exactly the content this PUT wrote — its
+    hash, size and content mtime. The row clock (modified) is deliberately
+    not part of the fingerprint: a metadata-only writer (rename, move, share)
+    advances it while carrying our stale content claim along, and yielding to
+    one would leave the old bytes under the failed PUT's metadata. The blind
+    spot this accepts: a racing PUT of the identical body with the identical
+    client mtime is indistinguishable from a metadata-only writer here."""
     if current is None:
         return False
-    same_clock = frappe.utils.get_datetime(current.modified) == frappe.utils.get_datetime(stamped.modified)
-    return same_clock and current.content_hash == stamped.content_hash
+    if current.content_hash != stamped.get("content_hash"):
+        return False
+    if (current.file_size or 0) != (stamped.get("file_size") or 0):
+        return False
+    return _same_clock(current.file_modified, stamped.get("file_modified"))
+
+
+def _restore_content(name: str, prior: dict, stamped_clock, current) -> None:
+    """Put the prior content metadata back. The row clock reverts only when
+    it still reads this PUT's stamp — a metadata writer that advanced it
+    keeps its newer clock, only its carried content claim is corrected."""
+    restore = dict(prior)
+    if not _same_clock(current.modified, stamped_clock):
+        restore.pop("modified", None)
+    frappe.db.set_value("File", name, restore, update_modified=False)
+
+
+def _same_clock(left, right) -> bool:
+    # get_datetime(None) means "now", so bare equality would misread None
+    if left is None or right is None:
+        return left is None and right is None
+    return frappe.utils.get_datetime(left) == frappe.utils.get_datetime(right)
 
 
 def _discard_object(manager, key: str) -> None:

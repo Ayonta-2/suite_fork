@@ -539,6 +539,81 @@ class TestWebDAVPut(IntegrationTestCase):
         )
         self.assertEqual(enqueue_mock.call_args.args, (put_module.repair_promotion_drift,))
 
+    def test_put_compensation_survives_a_metadata_only_writer(self):
+        # a rename that slips in bumps the row clock but carries our stale
+        # content claim along — that is no reason to yield: the content
+        # metadata must still step back while the rename and its newer clock
+        # survive
+        from unittest.mock import patch
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        bumped = []
+
+        def rename_then_fail(*args):
+            frappe.db.set_value("File", target.name, "file_name", "renamed.txt")
+            bumped.append(frappe.db.get_value("File", target.name, "modified"))
+            raise OSError
+
+        with patch("os.replace", side_effect=rename_then_fail), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        # content claim and rollup reverted to match the unchanged bytes...
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        self.assertIsNone(frappe.db.get_value("File", target.name, "content_hash"))
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
+        # ...while the rename and the clock it advanced survive
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_name"), "renamed.txt")
+        self.assertEqual(frappe.db.get_value("File", target.name, "modified"), bumped[0])
+
+    def test_put_compensation_follows_a_move(self):
+        # a move that slips in carries our stale content claim (and its
+        # rollup share) into another folder — the reversal must land where
+        # the rollup went, not where the file used to be
+        from unittest.mock import patch
+
+        from suite.drive.utils import apply_file_size_delta
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            sub = create_drive_file(
+                f"Sub-{frappe.generate_hash(length=6)}",
+                self.base.name,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        def move_then_fail(*args):
+            # what MOVE leaves behind: reparented row, rollup share carried
+            size_now = frappe.db.get_value("File", target.name, "file_size")
+            frappe.db.set_value("File", target.name, "folder", sub.name)
+            apply_file_size_delta(self.base.name, -size_now)
+            apply_file_size_delta(sub.name, size_now)
+            raise OSError
+
+        with patch("os.replace", side_effect=move_then_fail), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        self.assertEqual(frappe.db.get_value("File", target.name, "folder"), sub.name)
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        self.assertEqual(frappe.db.get_value("File", sub.name, "file_size"), len(b"version-one"))
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
+
     def test_put_compensation_retries_on_a_fresh_transaction(self):
         # a deadlock victim or lock timeout fails once and survives a retry —
         # the compensation must not give up (and record drift) on first blood
