@@ -11,6 +11,7 @@ nextcloud vendor round-trips modification times.
 """
 
 import hashlib
+import json
 import os
 import re
 from datetime import UTC, datetime
@@ -435,15 +436,22 @@ class _Compensation:
 
     def _record_drift(self) -> None:
         trace = frappe.get_traceback()
+        spec = self.repair()
+        # the full spec rides every record, so the handoff can degrade but
+        # never vanish: even with the database and the queue both down, the
+        # last line below replays verbatim once services return, e.g.
+        #   bench execute suite.drive.webdav.put.repair_promotion_drift \
+        #       --kwargs '<spec>'
+        note = "replay with repair_promotion_drift(**spec); spec follows:\n" + json.dumps(spec, default=str)
         # the database may be the very thing that is failing — file log first
         frappe.logger("drive").error(
-            f"File {self.stamped.name}: metadata left ahead of bytes after failed promotion\n{trace}"
+            f"File {self.stamped.name}: metadata left ahead of bytes after failed promotion\n{trace}\n{note}"
         )
         try:
             frappe.db.rollback()  # clear any aborted transaction so the log row can commit
             frappe.log_error(
                 "Drive: metadata left ahead of bytes after failed promotion",
-                trace,
+                f"{trace}\n\n{note}",
                 reference_doctype="File",
                 reference_name=self.stamped.name,
             )
@@ -451,9 +459,12 @@ class _Compensation:
         except Exception:
             pass
         try:
-            frappe.enqueue(repair_promotion_drift, queue="short", **self.repair())
+            frappe.enqueue(repair_promotion_drift, queue="short", **spec)
         except Exception:
-            frappe.logger("drive").error(f"File {self.stamped.name}: could not queue the drift repair")
+            frappe.logger("drive").error(
+                f"File {self.stamped.name}: could not queue the drift repair — "
+                f"replay the spec recorded above\n{frappe.get_traceback()}"
+            )
 
 
 def repair_promotion_drift(file, stamp_hash, stamp_modified, restore, folder, delta, activity=None):

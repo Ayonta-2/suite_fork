@@ -440,6 +440,46 @@ class TestWebDAVPut(IntegrationTestCase):
 
     DRIFT_LOG = "Drive: metadata left ahead of bytes after failed promotion"
 
+    def test_put_compensation_parks_replayable_spec_when_queue_is_down(self):
+        # with the database failing and the queue down too, the handoff must
+        # not vanish: the recorded spec alone has to be enough to replay the
+        # repair verbatim once services return
+        import json
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        with (
+            patch("os.replace", side_effect=OSError),
+            patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
+            patch("frappe.enqueue", side_effect=RuntimeError),
+            self.assertRaises(OSError),
+        ):
+            frappe.db.commit()
+        frappe.db.rollback()  # what dispatch does before answering the 500
+
+        record = frappe.db.get_value(
+            "Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name}, "error"
+        )
+        spec = json.loads(record.splitlines()[-1])
+        put_module.repair_promotion_drift(**spec)
+
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
+        self.assertFalse(
+            frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
+        )
+
     def test_put_compensation_retries_on_a_fresh_transaction(self):
         # a deadlock victim or lock timeout fails once and survives a retry —
         # the compensation must not give up (and record drift) on first blood
