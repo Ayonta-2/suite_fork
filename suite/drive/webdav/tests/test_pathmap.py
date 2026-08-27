@@ -186,7 +186,9 @@ class TestWebDAVPathmap(IntegrationTestCase):
         self.assertFalse(slash)
 
         # a Host-rewriting proxy ($host) drops the port; only an explicit conflict rejects
-        segments, _ = pathmap.parse_destination(request("http://s2.localhost:8001/dav/Home/c", host="s2.localhost"))
+        segments, _ = pathmap.parse_destination(
+            request("http://s2.localhost:8001/dav/Home/c", host="s2.localhost")
+        )
         self.assertEqual(segments, ["Home", "c"])
         with self.assertRaises(BadGateway):
             pathmap.parse_destination(request("http://s2.localhost:9999/dav/Home/x"))
