@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -641,12 +642,18 @@ class _Compensation:
 def _file_log(message: str) -> None:
     """The service-independent rung of the drift record. Even opening the log
     file can fail (the promotion may have failed because this same disk is
-    full or read-only) — swallow that so a broken rung never silences the
-    healthier ones."""
+    full or read-only) — fall back to stderr then: an already-open
+    descriptor that needs neither the site disk nor any service, lands in
+    the supervisor's or container's log stream, and cannot fail on a full
+    disk the way a file write can. The repair spec rides the message, so it
+    survives even with logging, database, and queue all down at once."""
     try:
         frappe.logger("drive").error(message)
     except Exception:
-        pass
+        try:
+            print(f"drive.webdav: {message}", file=sys.stderr, flush=True)
+        except Exception:
+            pass
 
 
 def repair_promotion_drift(file, stamp, restore, delta, activity=None):

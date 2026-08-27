@@ -1085,6 +1085,51 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
         trashed_blob.unlink()
 
+    def test_put_compensation_spec_reaches_stderr_when_all_else_fails(self):
+        # logging, database persistence and queueing all down at once: the
+        # replayable spec must still leave the process — stderr is an
+        # already-open descriptor that shares fate with none of them
+        import contextlib
+        import io
+        import json
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        real_logger = frappe.logger
+
+        def broken_drive_logger(name=None, *args, **kwargs):
+            if name == "drive":
+                raise RuntimeError
+            return real_logger(name, *args, **kwargs)
+
+        err = io.StringIO()
+        with (
+            patch("os.replace", side_effect=OSError),
+            patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
+            patch("frappe.logger", side_effect=broken_drive_logger),
+            patch("frappe.log_error", side_effect=RuntimeError),
+            patch("frappe.enqueue", side_effect=RuntimeError),
+            contextlib.redirect_stderr(err),
+            self.assertRaises(OSError),
+        ):
+            frappe.db.commit()
+
+        output = err.getvalue()
+        self.assertIn(target.name, output)
+        spec_lines = [line for line in output.splitlines() if line.startswith("{")]
+        spec = json.loads(spec_lines[0])
+        self.assertEqual(spec["file"], target.name)  # replayable verbatim
+
     def test_put_compensation_retries_on_a_fresh_transaction(self):
         # a deadlock victim or lock timeout fails once and survives a retry —
         # the compensation must not give up (and record drift) on first blood
