@@ -352,20 +352,18 @@ def _stage_disk_swap(
 
     The swap settles against concurrent relocations rather than trusting the
     staging-time path: a move or rename that lands in the commit-to-swap gap
-    rewrites file_url — and performs its disk transfer BEFORE it takes the
-    row lock — so replacing at the captured path would succeed while
+    rewrites file_url, so replacing at the captured path would succeed while
     orphaning the new bytes and leaving the moved file serving old ones
     under the new metadata, with no failure to compensate. Each pass takes a
-    locking read (past our own snapshot, serialized against a mover's
-    pending row write, released promptly so the peer can commit), places the
-    bytes where the committed row points, and re-verifies; a missing
-    destination on an overwrite is the signature of a mover or trasher
-    between its disk transfer and its commit, and gets a bounded wait for
-    that commit to land — falling through to today's heal-by-overwrite when
-    the blob is simply gone. Because that fallthrough is also where a peer
-    stalled beyond the wait would surface, it queues a settlement job that
-    keeps re-checking from a worker and finishes the follow whenever the
-    peer finally commits (see settle_swap_destination)."""
+    locking read (past our own snapshot, released promptly so the peer can
+    commit), places the bytes where the committed row points, and
+    re-verifies. Drive's relocation flows (File.move/rename, trash) hold the
+    row lock ACROSS their disk transfer, so a relocation is never observable
+    mid-flight from this locked read; the machinery below — the bounded wait
+    on a missing overwrite destination, the settlement job it queues — stays
+    as defense in depth for out-of-band writers that bypass the controllers,
+    and the missing-destination fallthrough still heals a blob that is
+    simply gone (see settle_swap_destination)."""
     staged = target.with_name(f"{target.name}.{frappe.generate_hash(length=12)}.putpart")
     os.rename(scratch, staged)
 
@@ -483,9 +481,9 @@ def settle_swap_destination(file, stamp, placed, hops=0):
         ours = _file_delivers_stamp(placed, stamp)
         if ours and _content_carries(stamp, current) and not _bytes_deliver_stamp(stamp, current):
             # follow the pointer, then loop: the next locked read must agree
-            # with the placement — a further relocation mid-replace (a disk
-            # transfer is not lock-gated) would otherwise strand these bytes
-            # exactly the way the original stale-path race did
+            # with the placement — an out-of-band relocation mid-replace
+            # would otherwise strand these bytes exactly the way the
+            # original stale-path race did
             os.replace(placed, dest)
             placed = dest
             moved = True

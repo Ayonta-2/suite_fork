@@ -692,6 +692,8 @@ def remove_or_restore(entity_names: list[str] | str):
 def toggle_entity_status(doc, manager: FileManager, locked_owners: set):
     """Trash an Active entity, or restore a Trashed one. Shared by
     remove_or_restore and WebDAV DELETE."""
+    # row lock before the disk transfer — same discipline as File.move()
+    frappe.db.get_value("File", doc.name, "name", for_update=True)
     if not user_has_permission(doc, "write"):
         raise frappe.PermissionError("You do not have permission to remove this file")
     if doc.owner not in locked_owners:
