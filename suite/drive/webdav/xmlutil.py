@@ -51,6 +51,15 @@ def parse_xml(body: bytes) -> etree._Element | None:
         raise BadRequest(f"Malformed XML request body: {e}") from e
 
 
+def parse_fragment(xml_text: str) -> etree._Element | None:
+    """Re-parse a stored, previously validated fragment; None when it no
+    longer parses (a row predating a policy change, or hand-edited)."""
+    try:
+        return etree.fromstring(xml_text.encode("utf-8"), parser=_PARSER)
+    except etree.XMLSyntaxError:
+        return None
+
+
 def serialize(element: etree._Element) -> bytes:
     return etree.tostring(element, xml_declaration=True, encoding="utf-8")
 

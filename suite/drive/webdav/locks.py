@@ -20,7 +20,7 @@ from suite.drive.webdav.context import DavContext, validate_segments
 from suite.drive.webdav.errors import BadRequest, Locked, PreconditionFailed
 from suite.drive.webdav.ifheader import EMPTY_IF, BadIfHeader, IfHeader, parse_if_header
 from suite.drive.webdav.properties import compute_etag
-from suite.drive.webdav.xmlutil import _PARSER, dav, dav_element
+from suite.drive.webdav.xmlutil import dav, dav_element, parse_fragment
 
 DEFAULT_LOCK_TIMEOUT = 600
 MAX_LOCK_TIMEOUT = 3600
@@ -334,11 +334,8 @@ def lockdiscovery_xml(locks: list[LockInfo], viewer: str | None = None) -> etree
         lockscope = etree.SubElement(active, dav("lockscope"))
         etree.SubElement(lockscope, dav(lock.scope.lower()))
         etree.SubElement(active, dav("depth")).text = lock.depth
-        if owned and lock.owner_xml:
-            try:
-                active.append(etree.fromstring(lock.owner_xml.encode("utf-8"), parser=_PARSER))
-            except etree.XMLSyntaxError:
-                pass
+        if owned and lock.owner_xml and (owner := parse_fragment(lock.owner_xml)) is not None:
+            active.append(owner)
         etree.SubElement(active, dav("timeout")).text = f"Second-{lock.remaining}"
         if owned:
             token = etree.SubElement(active, dav("locktoken"))

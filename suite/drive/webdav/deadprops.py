@@ -9,7 +9,7 @@ declarations included — so client extension XML round-trips byte-faithfully
 import frappe
 from lxml import etree
 
-from suite.drive.webdav.xmlutil import _PARSER
+from suite.drive.webdav.xmlutil import parse_fragment
 
 MAX_VALUE_BYTES = 64 * 1024
 MAX_PROPS_PER_ENTITY = 200
@@ -38,9 +38,8 @@ def get_dead_props(entity_names: list[str]) -> dict[str, dict[str, etree._Elemen
     )
     result: dict[str, dict[str, etree._Element]] = {}
     for row in rows:
-        try:
-            element = etree.fromstring(row.value_xml.encode("utf-8"), parser=_PARSER)
-        except etree.XMLSyntaxError:
+        element = parse_fragment(row.value_xml)
+        if element is None:
             continue
         result.setdefault(row.entity, {})[clark(row.ns, row.prop_name)] = element
     return result
