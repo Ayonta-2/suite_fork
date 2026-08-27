@@ -439,7 +439,10 @@ def _queue_swap_settlement(stamped, placed: Path) -> None:
 _SETTLE_DELAYS = (1, 2, 4, 8, 16)
 
 
-def settle_swap_destination(file, stamp, placed):
+_SETTLE_HOPS = 3
+
+
+def settle_swap_destination(file, stamp, placed, hops=0):
     """The late half of the swap's follow, queued when the in-request wait
     for a suspected mid-flight relocation timed out and the bytes were
     placed at the last committed path. A peer stalled longer than that wait
@@ -449,11 +452,14 @@ def settle_swap_destination(file, stamp, placed):
     PUT's content, the placed file still delivers it, and the row's current
     location does not. Every placement is re-verified with a fresh locked
     read and followed if the pointer moved again, mirroring the in-request
-    swap. A blob that was simply missing never moves the pointer, so the
-    checks drain quietly and the heal stands."""
+    swap — a job never ends on an unverified replace: when relocations
+    outlast the budget, the remainder chains to a fresh job (hops-capped,
+    no re-waits) whose first locked read is exactly the missing
+    verification. A blob that was simply missing never moves the pointer,
+    so the checks drain quietly and the heal stands."""
     placed = Path(placed)
     moved = False
-    delays = iter(_SETTLE_DELAYS)
+    delays = iter(_SETTLE_DELAYS if hops == 0 else ())
     for _ in range(len(_SETTLE_DELAYS) + 3):
         # locked, like the in-request swap: a newer PUT blocks at its own
         # locked read until this commit, so it cannot slip between these
@@ -492,6 +498,26 @@ def settle_swap_destination(file, stamp, placed):
             placed.unlink(missing_ok=True)
         frappe.db.commit()
         return
+    # budget exhausted right after a replace (pure waits return above): the
+    # placement is live but the last word belongs to a fresh locked read —
+    # chain the remainder instead of exiting unverified
+    if hops < _SETTLE_HOPS:
+        try:
+            frappe.enqueue(
+                settle_swap_destination,
+                queue="short",
+                file=file,
+                stamp=stamp,
+                placed=str(placed),
+                hops=hops + 1,
+            )
+            return
+        except Exception:
+            pass
+    _file_log(
+        f"File {file}: swap settlement exhausted mid-churn; bytes at {placed}; replay with "
+        f"settle_swap_destination(file={file!r}, stamp={json.dumps(stamp, default=str)}, placed={str(placed)!r})"
+    )
 
 
 def _swap_state(name: str) -> frappe._dict | None:

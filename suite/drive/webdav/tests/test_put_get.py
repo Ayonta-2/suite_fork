@@ -1065,6 +1065,80 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertFalse(path1.exists())  # no stale path recreated
         self.assertFalse(old_path.exists())
 
+    def test_put_swap_settlement_chains_past_an_exhausted_budget(self):
+        # when relocations outlast one job's budget, the final replace must
+        # not be the last word — the remainder chains to a fresh job whose
+        # first locked read is the missing verification
+        import hashlib
+        import itertools
+        import os
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        # drain swaps a prior test may have left queued — the job commits
+        # internally and must not fire them under this test's patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            dest1 = create_drive_file(
+                f"Dest1-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            dest2 = create_drive_file(
+                f"Dest2-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        manager = FileManager()
+        old_path = manager.get_local_path(target.file_url)
+        rel_a = Path(storage_key(frappe.db.get_value("File", dest1.name, "file_url"))) / "doc.txt"
+        rel_b = Path(storage_key(frappe.db.get_value("File", dest2.name, "file_url"))) / "doc.txt"
+        path_a = manager.site_folder / rel_a
+        path_b = manager.site_folder / rel_b
+
+        # synthetic drift: row stamped with the new content, our healed bytes
+        # at the old path, pointer at A where a mover carried the stale blob
+        new_hash = hashlib.sha256(b"v2!").hexdigest()
+        frappe.db.set_value(
+            "File", target.name, {"content_hash": new_hash, "file_size": 3, "file_url": "/" + str(rel_a)}
+        )
+        old_path.write_bytes(b"v2!")
+        path_a.write_bytes(b"version-one")
+        stamp = {"content_hash": new_hash, "file_size": 3}
+
+        real_replace = os.replace
+        churn = itertools.cycle([(rel_b, path_b), (rel_a, path_a)])
+
+        def relocate_after_each_replace(src, dst):
+            real_replace(src, dst)
+            rel, path = next(churn)
+            frappe.db.set_value("File", target.name, "file_url", "/" + str(rel))
+            path.write_bytes(b"version-one")
+
+        with (
+            patch.object(put_module, "_SETTLE_DELAYS", ()),
+            patch("os.replace", side_effect=relocate_after_each_replace),
+            patch("frappe.enqueue") as chained,
+            patch("time.sleep"),
+        ):
+            put_module.settle_swap_destination(target.name, stamp, str(old_path))
+
+        kwargs = chained.call_args.kwargs
+        self.assertEqual(kwargs["hops"], 1)
+
+        # the churn stops; the chained hop verifies and finishes the follow
+        with patch("time.sleep"):
+            put_module.settle_swap_destination(
+                kwargs["file"], kwargs["stamp"], kwargs["placed"], hops=kwargs["hops"]
+            )
+        final = manager.get_local_path(frappe.db.get_value("File", target.name, "file_url"))
+        self.assertEqual(final.read_bytes(), b"v2!")
+        self.assertFalse(Path(kwargs["placed"]).exists())
+
     def test_put_swap_settlement_yields_to_a_newer_put(self):
         # a newer PUT that landed (and moved on) before the worker gets
         # there owns the row — the settlement must not replace its bytes,
