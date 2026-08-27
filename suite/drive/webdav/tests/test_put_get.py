@@ -864,6 +864,69 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertFalse(old_path.exists())
         self.assertEqual(list(old_path.parent.glob("*.putpart")), [])
 
+    def test_put_swap_waits_out_a_mid_flight_move(self):
+        # a mover renames the blob away BEFORE it takes the row lock — the
+        # missing overwrite target is that signature, and the swap must wait
+        # for the mover's commit and then follow it, not recreate the
+        # abandoned path while old bytes land under the new metadata
+        from unittest.mock import patch
+
+        from suite.drive.utils import apply_file_size_delta
+
+        with self.set_user(OWNER):
+            dest = create_drive_file(
+                f"Dest-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        manager = FileManager()
+        old_path = manager.get_local_path(target.file_url)
+        new_rel = Path(storage_key(frappe.db.get_value("File", dest.name, "file_url"))) / "doc.txt"
+        new_path = manager.site_folder / new_rel
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        # the mover's disk transfer has happened; its row write has not
+        old_path.rename(new_path)
+
+        def mover_commits(_seconds):
+            size_now = frappe.db.get_value("File", target.name, "file_size")
+            frappe.db.set_value("File", target.name, {"file_url": "/" + str(new_rel), "folder": dest.name})
+            apply_file_size_delta(self.base.name, -size_now)
+            apply_file_size_delta(dest.name, size_now)
+
+        with patch("time.sleep", side_effect=mover_commits) as waited:
+            frappe.db.commit()  # runs the swap
+
+        self.assertEqual(waited.call_count, 1)
+        self.assertEqual(new_path.read_bytes(), b"v2!")
+        self.assertFalse(old_path.exists())
+        self.assertEqual(list(old_path.parent.glob("*.putpart")), [])
+
+    def test_put_swap_still_heals_a_missing_blob(self):
+        # a genuinely lost blob shows the same missing-target signature; the
+        # bounded wait must fall through and let the overwrite recreate it
+        from unittest.mock import patch
+
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        blob_path = FileManager().get_local_path(target.file_url)
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        blob_path.unlink()  # the blob is simply gone; nobody is mid-flight
+
+        with patch("time.sleep") as waited:
+            frappe.db.commit()  # runs the swap
+
+        self.assertEqual(waited.call_count, 3)
+        self.assertEqual(blob_path.read_bytes(), b"v2!")
+        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+
     def test_put_swap_stands_down_for_a_row_trashed_in_the_gap(self):
         # a trash in the gap carried the bytes off — recreating the path
         # would orphan a blob nothing references, and a later restore-from-
