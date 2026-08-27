@@ -379,17 +379,48 @@ def _compensate_failed_promotion(undo, stamped, revoke=None) -> None:
     writer commits and then shows its stamp, so the choice is race-free.
     revoke, by contrast, retracts only rows this PUT itself created (its
     audit trail) and runs either way: an edit that never took effect must not
-    stay recorded, however the row race went. Only a second, independent
-    failure inside this compensation can leave metadata ahead of bytes; that
-    gets the loudest trace available."""
+    stay recorded, however the row race went.
+
+    The compensation itself gets two attempts — a first failure is often a
+    deadlock victim or lock timeout that a fresh transaction survives. If
+    both fail, the drift is recorded on its own committed Error Log row (the
+    dispatcher rolls back after the 500, which would discard an uncommitted
+    one) and in the site's file log, which needs no database at all."""
     try:
-        if revoke is not None:
-            revoke()
-        if _carries_stamp(stamped):
-            undo()
+        _apply_compensation(undo, stamped, revoke)
+    except Exception:
+        try:
+            frappe.db.rollback()
+            _apply_compensation(undo, stamped, revoke)
+        except Exception:
+            _record_metadata_drift(stamped)
+
+
+def _apply_compensation(undo, stamped, revoke) -> None:
+    if revoke is not None:
+        revoke()
+    if _carries_stamp(stamped):
+        undo()
+    frappe.db.commit()
+
+
+def _record_metadata_drift(stamped) -> None:
+    trace = frappe.get_traceback()
+    # the database may be the very thing that is failing — file log first
+    frappe.logger("drive").error(
+        f"File {stamped.name}: metadata left ahead of bytes after failed promotion\n{trace}"
+    )
+    try:
+        frappe.db.rollback()  # clear any aborted transaction so the log row can commit
+        frappe.log_error(
+            "Drive: metadata left ahead of bytes after failed promotion",
+            trace,
+            reference_doctype="File",
+            reference_name=stamped.name,
+        )
         frappe.db.commit()
     except Exception:
-        frappe.log_error("Drive: metadata left ahead of bytes after failed promotion", frappe.get_traceback())
+        pass
 
 
 def _carries_stamp(stamped) -> bool:

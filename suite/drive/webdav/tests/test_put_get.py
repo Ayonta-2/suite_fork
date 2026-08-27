@@ -438,6 +438,78 @@ class TestWebDAVPut(IntegrationTestCase):
         # the create's rollup contribution stands — the newer write built on it
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), len(b"boo"))
 
+    DRIFT_LOG = "Drive: metadata left ahead of bytes after failed promotion"
+
+    def test_put_compensation_retries_on_a_fresh_transaction(self):
+        # a deadlock victim or lock timeout fails once and survives a retry —
+        # the compensation must not give up (and record drift) on first blood
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        real_delta = put_module.apply_file_size_delta
+        calls = []
+
+        def flaky_delta(*args):
+            calls.append(args)
+            if len(calls) == 1:
+                raise frappe.QueryTimeoutError
+            return real_delta(*args)
+
+        with (
+            patch("os.replace", side_effect=OSError),
+            patch.object(put_module, "apply_file_size_delta", side_effect=flaky_delta),
+            self.assertRaises(OSError),
+        ):
+            frappe.db.commit()
+
+        # second attempt landed: metadata and rollup reverted, no drift recorded
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
+        self.assertFalse(
+            frappe.db.exists("Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name})
+        )
+
+    def test_put_compensation_double_failure_leaves_durable_trace(self):
+        # when the compensation fails twice, the drift record must survive the
+        # rollback the dispatcher issues after the 500 — an uncommitted Error
+        # Log row would vanish with it, leaving the inconsistency invisible
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        with (
+            patch("os.replace", side_effect=OSError),
+            patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
+            self.assertRaises(OSError),
+        ):
+            frappe.db.commit()
+        frappe.db.rollback()  # what dispatch does before answering the 500
+
+        self.assertTrue(
+            frappe.db.exists("Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name})
+        )
+
     def test_put_overwrite_commit_failure_keeps_old_bytes(self):
         # the dispatcher commits only after the handler returns; if that
         # commit fails and degrades to a rollback, the staged bytes must be
