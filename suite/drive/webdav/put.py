@@ -10,6 +10,7 @@ streaming_request_paths hook), and `X-OC-Mtime` is honored so rclone's
 nextcloud vendor round-trips modification times.
 """
 
+import glob
 import hashlib
 import json
 import os
@@ -744,11 +745,31 @@ def _locked_content_state(name: str) -> frappe._dict | None:
 
 def _should_restore(stamped, current) -> bool:
     """Restore only when the row still claims the content this PUT wrote AND
-    the bytes at its current location do not actually deliver that claim.
-    The byte check settles the one case the row fingerprint cannot: a racing
-    PUT of the identical body whose promotion succeeded while ours failed —
-    the claim is then genuine, and restoring the snapshot would corrupt it."""
-    return _content_carries(stamped, current) and not _bytes_deliver_stamp(stamped, current)
+    that claim is neither already delivered nor about to be. The byte check
+    settles the case the row fingerprint cannot — a racing PUT of the
+    identical body whose promotion succeeded while ours failed — and the
+    pending-swap check settles its committed-but-not-yet-swapped variant."""
+    if not _content_carries(stamped, current):
+        return False
+    if _bytes_deliver_stamp(stamped, current):
+        return False
+    return not _pending_swap_delivers(stamped, current)
+
+
+def _pending_swap_delivers(stamped, current) -> bool:
+    """A twin-content PUT commits its stamp before its after-commit swap
+    installs the bytes: the row's claim is then genuine, just pending — and
+    its staged .putpart still sits beside the target, un-consumable while we
+    hold the row lock its swap is queued behind. Restoring over that would
+    hand the imminent install stale metadata and unbalance the rollup. Only
+    a staged file whose content actually delivers the claimed stamp counts;
+    an unrelated orphan does not stand in the way of a needed restore."""
+    try:
+        target = FileManager().get_local_path(current.file_url)
+        pattern = glob.escape(target.name) + ".*.putpart"
+        return any(_file_delivers_stamp(staged, stamped) for staged in target.parent.glob(pattern))
+    except Exception:
+        return False
 
 
 def _content_carries(stamped, current) -> bool:

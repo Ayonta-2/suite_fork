@@ -578,6 +578,52 @@ class TestWebDAVPut(IntegrationTestCase):
         expected = (base_size or 0) + len(b"v2!") - len(b"version-one")
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), expected)
 
+    def test_put_compensation_spares_a_committed_but_unswapped_twin(self):
+        # a twin-content PUT commits its stamp before its own swap installs
+        # the bytes — the fingerprint carries and the target still holds old
+        # bytes, but its staged .putpart proves the claim is pending: the
+        # restore must stand down or the imminent install lands under stale
+        # metadata with the rollup unbalanced
+        import hashlib
+        import os
+        from unittest.mock import patch
+
+        # drain swaps a prior test may have left queued — they must not meet
+        # this test's failure patches
+        frappe.db.commit()
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        blob_path = FileManager().get_local_path(target.file_url)
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        twin_staged = blob_path.with_name(f"{blob_path.name}.aaaabbbbcccc.putpart")
+
+        def twin_committed_then_fail(*args):
+            # what the twin leaves at our compensation's locked read: the
+            # same content stamp under its own clock, bytes still staged
+            frappe.db.set_value(
+                "File", target.name, "modified", frappe.utils.now_datetime(), update_modified=False
+            )
+            twin_staged.write_bytes(b"v2!")
+            raise OSError
+
+        with patch("os.replace", side_effect=twin_committed_then_fail), self.assertRaises(OSError):
+            frappe.db.commit()
+
+        # no restore: claim, delta and the staged twin all stand
+        expected_hash = hashlib.sha256(b"v2!").hexdigest()
+        self.assertEqual(frappe.db.get_value("File", target.name, "content_hash"), expected_hash)
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"v2!"))
+        expected = (base_size or 0) + len(b"v2!") - len(b"version-one")
+        self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), expected)
+
+        # the twin's swap then installs, and everything lines up
+        os.replace(twin_staged, blob_path)
+        self.assertEqual(blob_path.read_bytes(), b"v2!")
+
     def test_put_compensation_survives_a_metadata_only_writer(self):
         # a rename that slips in bumps the row clock but carries our stale
         # content claim along — that is no reason to yield: the content
