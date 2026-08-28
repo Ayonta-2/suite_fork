@@ -146,6 +146,9 @@ const transformEvent = (event) => {
 		role: getEventRole(event),
 		isAllDay,
 		isFullDay: isAllDay,
+		// The server's `draft` (JMAP isDraft): saved, but nothing sent. The pill draws it
+		// as an outline.
+		isDraft: !!event.draft,
 	}
 }
 
@@ -396,7 +399,8 @@ const handleUpdateRecurringEvent = (updateInstance: boolean) => {
 }
 
 const handleUpdateEvent = () => {
-	if (hasParticipantsOtherThanUser.value) showNotifyModal.value = true
+	// A draft has sent nothing, so there is no one to notify of a move.
+	if (hasParticipantsOtherThanUser.value && !eventToBeUpdated.isDraft) showNotifyModal.value = true
 	else submitEvent(false)
 }
 
