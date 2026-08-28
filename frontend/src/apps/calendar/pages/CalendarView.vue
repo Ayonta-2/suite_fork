@@ -291,6 +291,22 @@ const headerTitle = (title: string) => {
 	return { label: `${start.format('MMM D')} – ${endLabel}`, year: end.format('YYYY') }
 }
 
+// The header's "+ Event" opens on the period in view: starting an event while
+// looking at next week should land in next week. Today wins whenever it is on
+// screen, so the ordinary case still gets the modal's next-hour default.
+const newEventDate = () => {
+	const range = visibleRange.value
+	if (!range) return new Date()
+
+	const today = dayjs().format('YYYY-MM-DD')
+	if (today >= range.startDate && today <= range.endDate) return new Date()
+
+	// The Month strip's first week reaches back into the month before it, so a
+	// month in view opens on its own 1st rather than on the strip's first day.
+	const start = dayjs(range.startDate)
+	return range.view === 'Month' ? start.add(1, 'week').startOf('month').toDate() : start.toDate()
+}
+
 // A pill in the grid and a row in the sidebar's upcoming list toggle the
 // detail panel the way mail's does: a second click on the open event closes it.
 const toggleEventDetail = (calendarEvent) => {
@@ -533,7 +549,7 @@ const NOTIFY_MODAL_OPTIONS = {
 									variant="solid"
 									icon-left="lucide-calendar-plus"
 									:label="__('Event')"
-									@click="handleOpenEvent({ date: new Date() })"
+									@click="handleOpenEvent({ date: newEventDate() })"
 								/>
 							</div>
 						</div>
