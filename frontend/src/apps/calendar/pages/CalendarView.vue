@@ -149,8 +149,15 @@ const transformEvent = (event) => {
 		// The server's `draft` (JMAP isDraft): saved, but nothing sent. The pill draws it
 		// as an outline.
 		isDraft: !!event.draft,
+		// The viewer declined: struck through in the grid.
+		isDeclined: !!event.participants?.some(
+			(p) => p.participation_status === 'DECLINED' && isOwnEmail(p.email),
+		),
 	}
 }
+
+const isOwnEmail = (email: string) =>
+	!!participantIdentities.data?.some((id) => id.email === email?.replace('mailto:', ''))
 
 const getEventRole = (event) => {
 	if (participantIdentities.data?.some((id) => id.email === event.organizer.replace('mailto:', '')))
