@@ -1294,6 +1294,52 @@ class TestWebDAVPut(IntegrationTestCase):
             )
         )
 
+    def test_put_swap_settlement_verifies_before_recording_terminal_churn(self):
+        # churn that stops exactly at the last hop's final replace has in
+        # fact settled — the terminal lane's closing locked read must see
+        # that and exit quietly instead of recording a false drift alarm
+        import itertools
+        import os
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        frappe.db.commit()  # drain stray after_commit swaps
+        target, stamp, old_path, (rel_a, path_a), (rel_b, path_b) = self._settlement_churn_scaffold()
+
+        real_replace = os.replace
+        churn = itertools.cycle([(rel_b, path_b), (rel_a, path_a)])
+        ticks = []
+
+        # cap 2 + empty delays = three 3-iteration hops: eight ticks keep
+        # every read one step behind, and the ninth replace goes unanswered
+        def churn_until_the_final_replace(src, dst):
+            real_replace(src, dst)
+            if len(ticks) < 8:
+                ticks.append(True)
+                rel, path = next(churn)
+                frappe.db.set_value("File", target.name, "file_url", "/" + str(rel))
+                path.write_bytes(b"version-one")
+
+        with (
+            patch.object(put_module, "_SETTLE_DELAYS", ()),
+            patch.object(put_module, "_SETTLE_HOPS", 2),
+            patch("os.replace", side_effect=churn_until_the_final_replace),
+            patch("frappe.enqueue", side_effect=RuntimeError) as chained,
+            patch("time.sleep"),
+        ):
+            put_module.settle_swap_destination(target.name, stamp, str(old_path))
+
+        self.assertEqual(chained.call_count, 2)  # one per pre-cap hop
+        self.assertFalse(
+            frappe.db.exists(
+                "Error Log",
+                {"method": "Drive: swap settlement exhausted mid-churn", "reference_name": target.name},
+            )
+        )
+        final = FileManager().get_local_path(frappe.db.get_value("File", target.name, "file_url"))
+        self.assertEqual(final.read_bytes(), b"v2!")
+
     def test_put_swap_settlement_yields_to_a_newer_put(self):
         # a newer PUT that landed (and moved on) before the worker gets
         # there owns the row — the settlement must not replace its bytes,

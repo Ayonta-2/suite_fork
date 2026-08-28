@@ -520,6 +520,31 @@ def settle_swap_destination(file, stamp, placed, hops=0):
             # abandoning a verification that needs no queue at all; the hop
             # cap still bounds the recursion.
             return settle_swap_destination(file, stamp, str(placed), hops=hops + 1)
+    # the hop cap is spent: one last locked read classifies the outcome before
+    # anything is recorded — churn usually pauses the instant the chase stops,
+    # which makes the final replace the settled last word, and a false alarm
+    # here would send an operator replaying a settlement that already landed
+    try:
+        current = frappe.db.get_value(
+            "File", file, ["file_url", "status", "content_hash", "file_size"], as_dict=True, for_update=True
+        )
+        if current is None or current.status != STATUS_ACTIVE:
+            frappe.db.commit()
+            return
+        if FileManager().get_local_path(current.file_url) == placed:
+            frappe.db.commit()
+            return  # settled on the final replace after all
+        ours = _file_delivers_stamp(placed, stamp)
+        if not (ours and _content_carries(stamp, current) and not _bytes_deliver_stamp(stamp, current)):
+            # superseded, or equivalent bytes already delivered — mirror the
+            # loop's supersede exit: reap only a copy still provably ours
+            if ours:
+                placed.unlink(missing_ok=True)
+            frappe.db.commit()
+            return
+        frappe.db.commit()
+    except Exception:
+        pass  # classification is best-effort; the record below still lands
     note = (
         f"File {file}: swap settlement exhausted mid-churn; bytes at {placed}; replay with "
         f"settle_swap_destination(file={file!r}, stamp={json.dumps(stamp, default=str)}, placed={str(placed)!r})"
