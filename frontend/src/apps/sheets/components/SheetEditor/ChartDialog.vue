@@ -204,10 +204,10 @@ import { CHART_TYPES, CHART_PALETTES, ESPRESSO_PALETTE, CHART_AGGREGATIONS } fro
 
 const CHART_ICONS = {
   line:    'trending-up',
-  bar:     'bar-chart-2',
+  bar:     'chart-column',
   area:    'activity',
-  pie:     'pie-chart',
-  scatter: 'git-commit',
+  pie:     'chart-pie',
+  scatter: 'git-commit-horizontal',
 }
 
 const props = defineProps({

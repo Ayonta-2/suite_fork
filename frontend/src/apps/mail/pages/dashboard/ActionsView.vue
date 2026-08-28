@@ -97,16 +97,16 @@ const ACTION_FIELDS: Record<string, ActionField[]> = {
 
 // Icon per action, falling back to the section's icon for any action the server adds later.
 const ACTION_ICONS: Record<string, string> = {
-	ReloadSettings: 'sliders',
+	ReloadSettings: 'sliders-horizontal',
 	ReloadTlsCertificates: 'shield',
 	ReloadLookupStores: 'database',
 	ReloadBlockedIps: 'shield-off',
-	UpdateApps: 'download-cloud',
-	TroubleshootDmarc: 'tool',
-	ClassifySpam: 'filter',
+	UpdateApps: 'cloud-download',
+	TroubleshootDmarc: 'wrench',
+	ClassifySpam: 'funnel',
 	InvalidateCaches: 'trash-2',
 	InvalidateNegativeCaches: 'trash',
-	PauseMtaQueue: 'pause-circle',
+	PauseMtaQueue: 'circle-pause',
 	ResumeMtaQueue: 'play-circle',
 }
 const SECTION_ICONS: Record<string, string> = {
@@ -114,7 +114,7 @@ const SECTION_ICONS: Record<string, string> = {
 	Cache: 'trash-2',
 	MTA: 'send',
 	DMARC: 'shield',
-	'Spam Filter': 'filter',
+	'Spam Filter': 'funnel',
 	'Application Management': 'package',
 }
 const FALLBACK_ICON = 'zap'
