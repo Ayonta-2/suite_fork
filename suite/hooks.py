@@ -300,6 +300,7 @@ scheduler_events = {
     "hourly": [
         # drive
         "suite.drive.api.scripts.clear_download_archives",
+        "suite.drive.webdav.locks.purge_expired_locks",
         # mail
         "suite.mail.doctype.mail_exchange.mail_exchange.retry_stuck_mail_exchanges",
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
@@ -333,6 +334,14 @@ extend_bootinfo = "suite.suite_core.boot.extend_bootinfo"
 after_file_upload = "suite.drive.overrides.file.after_file_upload"
 after_request = "suite.drive.api.product.after_request"
 
+# drive — WebDAV protocol dispatcher (list hook, additive; answers all verbs under /dav)
+before_request = ["suite.drive.webdav.dispatch.handle_before_request"]
+
+# drive — the WebDAV dispatcher consumes /dav request bodies itself (frappe skips the
+# body cap and form_dict buffering; a no-op on frappe versions without this hook,
+# where PUT bodies fall back to buffered and capped)
+streaming_request_paths = ["/dav/"]
+
 # ============================================================================
 # Fixtures (concatenated; identical entries de-duplicated)
 # ============================================================================
@@ -365,6 +374,8 @@ ignore_links_on_delete = [
     "Drive Entity Log",
     "Drive Notification",
     "Drive Entity Activity Log",
+    "Drive DAV Property",
+    "Drive DAV Lock",
     # mail
     "Mail Account Request",
     "Mail Domain Request",
@@ -414,6 +425,8 @@ ALLOWED_PATHS = [
     "/api/method/frappe.website.doctype.web_form.web_form.accept",
     "/api/method/frappe.core.doctype.user.user.test_password_strength",
     "/api/method/frappe.core.doctype.user.user.update_password",
+    # drive — WebDAV mount root
+    "/dav",
 ]
 
 ALLOWED_WILDCARD_PATHS = [
@@ -431,6 +444,8 @@ ALLOWED_WILDCARD_PATHS = [
     "/api/method/writer.api.",
     "/api/method/suite.slides.api.",
     "/api/method/suite.sheets.api.",
+    # drive — WebDAV namespace
+    "/dav/",
 ]
 
 DENIED_PATHS = []
