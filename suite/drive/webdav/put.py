@@ -29,7 +29,13 @@ from suite.drive.api.activity import create_new_activity_log
 from suite.drive.api.files import get_upload_path
 from suite.drive.api.permissions import user_has_permission
 from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage, validate_quota
-from suite.drive.utils import STATUS_ACTIVE, apply_file_size_delta, create_drive_file, get_file_type
+from suite.drive.utils import (
+    STATUS_ACTIVE,
+    STATUS_TRASHED,
+    apply_file_size_delta,
+    create_drive_file,
+    get_file_type,
+)
 from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url, storage_key, stored_on_disk
 from suite.drive.webdav import pathmap, perms
 from suite.drive.webdav.conditional import evaluate_preconditions
@@ -379,9 +385,12 @@ def _stage_disk_swap(
             for _attempt in range(_SWAP_FOLLOW_LIMIT):
                 current = _swap_state(compensation.stamped.name)
                 if current is None:
-                    # trashed or deleted in the gap: its bytes went with it —
-                    # recreating a path would orphan a blob a later restore
-                    # would clobber, so the stamped metadata steps back
+                    # trashed or deleted in the gap: recreating a path would
+                    # orphan a blob a later restore would clobber, so stand
+                    # down. Whether the stamped metadata steps back is the
+                    # compensation's trash-aware call — bytes this swap placed
+                    # before the trash slipped in went with it into the trash
+                    # store: delivered, so the stamp stands
                     cleanup(placed)
                     compensation.run()
                     return
@@ -779,7 +788,7 @@ def _locked_content_state(name: str) -> frappe._dict | None:
     return frappe.db.get_value(
         "File",
         name,
-        ["content_hash", "file_size", "modified", "folder", "file_url", "status"],
+        ["name", "content_hash", "file_size", "modified", "folder", "file_url", "status"],
         as_dict=True,
         for_update=True,
     )
@@ -830,14 +839,28 @@ def _content_carries(stamped, current) -> bool:
 
 
 def _bytes_deliver_stamp(stamped, current) -> bool:
-    """Whether the file at the row's current location really holds the
-    stamped content. Any doubt (unresolvable path) counts as undelivered so
-    the restore proceeds."""
+    """Whether the row's claimed content is really delivered wherever its
+    bytes now live. For an Active row that is the file at file_url. A
+    Trashed row's blob sits under the trash prefix — trash moves the bytes
+    but not the pointer — so a swap that placed our bytes just before the
+    trash slipped in has genuinely taken effect: the trash store carried
+    them along, and restoring the prior metadata over it would hand a later
+    restore new content under stale size, hash and accounting. file_url
+    stays a candidate for trashed rows too: flat layouts never move the
+    blob. Any doubt (unresolvable paths) counts as undelivered so the
+    restore proceeds."""
+    manager = FileManager()
+    candidates = []
+    if current.get("status") == STATUS_TRASHED and current.get("name"):
+        try:
+            candidates.append(manager.site_folder / manager.get_trash_path(current))
+        except Exception:
+            pass
     try:
-        path = FileManager().get_local_path(current.file_url)
+        candidates.append(manager.get_local_path(current.file_url))
     except Exception:
-        return False
-    return _file_delivers_stamp(path, stamped)
+        pass
+    return any(_file_delivers_stamp(path, stamped) for path in candidates)
 
 
 def _file_delivers_stamp(path: Path, stamped) -> bool:

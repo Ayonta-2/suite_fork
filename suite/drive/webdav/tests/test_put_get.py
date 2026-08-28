@@ -1425,6 +1425,70 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
         trashed_blob.unlink()
 
+    def test_put_swap_spares_bytes_a_trash_carried_off(self):
+        # the other trash interleaving: the swap places the new bytes and
+        # releases the row lock, then trash slips in and carries those bytes
+        # into the trash store before the next pass. The edit took effect —
+        # the compensation's trash-aware delivery check must leave the stamp
+        # standing, or a later restore-from-trash serves the new content
+        # under the old size, hash and accounting
+        import hashlib
+        import os
+        from unittest.mock import patch
+
+        from suite.drive.utils import STATUS_TRASHED, apply_file_size_delta
+
+        frappe.db.commit()  # drain stray after_commit swaps
+        with self.set_user(OWNER):
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        manager = FileManager()
+        blob_path = manager.get_local_path(target.file_url)
+        trash_blob = manager.site_folder / manager.get_trash_path(target)
+        base_size = frappe.db.get_value("File", self.base.name, "file_size")
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        real_replace = os.replace
+        interleaved = []
+
+        def trash_after_the_placement(src, dst):
+            real_replace(src, dst)
+            if interleaved:
+                return
+            interleaved.append(True)
+            # what toggle_entity_status does once it wins the released lock:
+            # the blob — now the new bytes — off to the trash, row flagged,
+            # chain settled with the committed stamped size
+            size_now = frappe.db.get_value("File", target.name, "file_size")
+            trash_blob.parent.mkdir(exist_ok=True)
+            Path(dst).rename(trash_blob)
+            frappe.db.set_value(
+                "File",
+                target.name,
+                {"status": STATUS_TRASHED, "file_modified": frappe.utils.now_datetime()},
+            )
+            apply_file_size_delta(self.base.name, -size_now)
+
+        with patch("os.replace", side_effect=trash_after_the_placement):
+            frappe.db.commit()  # fires the swap; the trash interleaves
+
+        self.assertEqual(trash_blob.read_bytes(), b"v2!")  # trash carried the new bytes
+        # the stamp stands: the claimed content is delivered, in the trash store
+        self.assertEqual(
+            frappe.db.get_value("File", target.name, "content_hash"),
+            hashlib.sha256(b"v2!").hexdigest(),
+        )
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), 3)
+        self.assertEqual(
+            frappe.db.get_value("File", self.base.name, "file_size"),
+            (base_size or 0) - len(b"version-one"),
+        )
+        # restore-from-trash round-trips: the new bytes under the new metadata
+        manager.restore(frappe._dict(name=target.name, file_url=target.file_url))
+        self.assertEqual(blob_path.read_bytes(), b"v2!")
+        self.assertFalse(trash_blob.exists())
+
     def test_put_compensation_spec_reaches_stderr_when_all_else_fails(self):
         # logging, database persistence and queueing all down at once: the
         # replayable spec must still leave the process — stderr is an

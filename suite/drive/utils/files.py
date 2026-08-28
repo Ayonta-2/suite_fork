@@ -391,6 +391,11 @@ class FileManager:
         root now, and two teams could each trash a `readme.md`."""
         return Path(self.get_root_storage_key()) / TRASH_PREFIX / entity.name
 
+    def get_trash_path(self, entity):
+        """Where move_to_trash put (or will put) this entity's blob, relative
+        to the storage root."""
+        return self.__get_trash_path(entity)
+
     @_not_if_flat
     def rename(self, entity):
         if not entity.file_url or entity.mime_type == "frappe/slides":
