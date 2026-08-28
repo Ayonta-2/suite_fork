@@ -146,8 +146,18 @@ const transformEvent = (event) => {
 		role: getEventRole(event),
 		isAllDay,
 		isFullDay: isAllDay,
+		// The server's `draft` (JMAP isDraft): saved, but nothing sent. The pill draws it
+		// as an outline.
+		isDraft: !!event.draft,
+		// The viewer declined: struck through in the grid.
+		isDeclined: !!event.participants?.some(
+			(p) => p.participation_status === 'DECLINED' && isOwnEmail(p.email),
+		),
 	}
 }
+
+const isOwnEmail = (email: string) =>
+	!!participantIdentities.data?.some((id) => id.email === email?.replace('mailto:', ''))
 
 const getEventRole = (event) => {
 	if (participantIdentities.data?.some((id) => id.email === event.organizer.replace('mailto:', '')))
@@ -265,6 +275,38 @@ const splitYear = (title: string) => {
 	return match ? { label: match[1], year: match[2] } : { label: title, year: '' }
 }
 
+// The period the calendar is showing, as it reports it on every change of view or date.
+const visibleRange = ref<{ view: string; startDate: string; endDate: string } | null>(null)
+
+// The header names the period in view: the month for Month, the day for Day (the
+// calendar's own title serves both), and for Week the days themselves — "Aug 23 – 29",
+// or "Aug 30 – Sep 5" when the week straddles two months — rather than a month the
+// week only partly belongs to.
+const headerTitle = (title: string) => {
+	const range = visibleRange.value
+	if (range?.view !== 'Week') return splitYear(title)
+	const start = dayjs(range.startDate)
+	const end = dayjs(range.endDate)
+	const endLabel = end.isSame(start, 'month') ? end.format('D') : end.format('MMM D')
+	return { label: `${start.format('MMM D')} – ${endLabel}`, year: end.format('YYYY') }
+}
+
+// The header's "+ Event" opens on the period in view: starting an event while
+// looking at next week should land in next week. Today wins whenever it is on
+// screen, so the ordinary case still gets the modal's next-hour default.
+const newEventDate = () => {
+	const range = visibleRange.value
+	if (!range) return new Date()
+
+	const today = dayjs().format('YYYY-MM-DD')
+	if (today >= range.startDate && today <= range.endDate) return new Date()
+
+	// The Month strip's first week reaches back into the month before it, so a
+	// month in view opens on its own 1st rather than on the strip's first day.
+	const start = dayjs(range.startDate)
+	return range.view === 'Month' ? start.add(1, 'week').startOf('month').toDate() : start.toDate()
+}
+
 // A pill in the grid and a row in the sidebar's upcoming list toggle the
 // detail panel the way mail's does: a second click on the open event closes it.
 const toggleEventDetail = (calendarEvent) => {
@@ -380,7 +422,8 @@ const handleUpdateRecurringEvent = (updateInstance: boolean) => {
 }
 
 const handleUpdateEvent = () => {
-	if (hasParticipantsOtherThanUser.value) showNotifyModal.value = true
+	// A draft has sent nothing, so there is no one to notify of a move.
+	if (hasParticipantsOtherThanUser.value && !eventToBeUpdated.isDraft) showNotifyModal.value = true
 	else submitEvent(false)
 }
 
@@ -474,28 +517,39 @@ const NOTIFY_MODAL_OPTIONS = {
 					:on-dbl-click="(event) => handleOpenEvent(event)"
 					:on-cell-click="(event) => handleOpenEvent(event)"
 					@update="handleUpdate"
+					@range-change="(range) => (visibleRange = range)"
 				>
 					<!-- The month is a label, not a picker: the sidebar's mini month is
 					     where a date gets chosen. The year sits beside it, muted. -->
 					<template
 						#header="{ currentMonthYear, enabledModes, activeView, decrement, increment, updateActiveView, setCalendarDate }"
 					>
+						<!-- Navigation leads: back, Today, forward, then the title they change,
+						     so the title's length moves nothing. New event sits at the far
+						     right, past the view switcher. -->
 						<div class="mb-2 flex items-center justify-between">
-							<div class="flex items-baseline gap-1.5 px-2 text-lg leading-5">
-								<span class="font-medium text-ink-gray-9">{{ splitYear(currentMonthYear).label }}</span>
-								<span v-if="splitYear(currentMonthYear).year" class="text-ink-gray-4">
-									{{ splitYear(currentMonthYear).year }}
-								</span>
-							</div>
-							<div class="flex gap-x-1">
+							<div class="flex items-center gap-x-1">
 								<Button variant="ghost" icon="lucide-chevron-left" @click="decrement" />
 								<Button variant="ghost" :label="__('Today')" @click="setCalendarDate()" />
 								<Button variant="ghost" icon="lucide-chevron-right" @click="increment" />
+								<div class="flex items-baseline gap-1.5 px-2 text-lg leading-5">
+									<span class="font-medium text-ink-gray-9">{{ headerTitle(currentMonthYear).label }}</span>
+									<span v-if="headerTitle(currentMonthYear).year" class="text-ink-gray-4">
+										{{ headerTitle(currentMonthYear).year }}
+									</span>
+								</div>
+							</div>
+							<div class="flex items-center gap-x-2">
 								<TabButtons
-									class="ml-2"
 									:options="enabledModes"
 									:model-value="activeView"
 									@update:model-value="(view) => updateActiveView(view)"
+								/>
+								<Button
+									variant="solid"
+									icon-left="lucide-calendar-plus"
+									:label="__('Event')"
+									@click="handleOpenEvent({ date: newEventDate() })"
 								/>
 							</div>
 						</div>

@@ -120,6 +120,8 @@ const loadOn = (key: string) => {
 	let load = 0
 	const colors: string[] = []
 	for (const event of props.events) {
+		// Density answers "how busy am I": a draft claims the time, a decline does not.
+		if (event.isDeclined) continue
 		if (event.fromDate > key || event.toDate < key) continue
 		load++
 		const color = event.color || 'green'

@@ -40,7 +40,7 @@
         <!-- Rows -->
         <div class="pv-bucket">
           <p class="pv-bucket-label">
-            <FeatherIcon name="align-left" class="pv-bucket-icon" /> Rows
+            <FeatherIcon name="text-align-start" class="pv-bucket-icon" /> Rows
           </p>
           <div class="pv-bucket-body">
             <div v-for="f in rowFields" :key="f" class="pv-chip">
@@ -60,7 +60,7 @@
         <!-- Columns -->
         <div class="pv-bucket">
           <p class="pv-bucket-label">
-            <FeatherIcon name="columns" class="pv-bucket-icon" /> Columns
+            <FeatherIcon name="columns-2" class="pv-bucket-icon" /> Columns
           </p>
           <div class="pv-bucket-body">
             <div v-for="f in colFields" :key="f" class="pv-chip">

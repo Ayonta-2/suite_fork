@@ -29,7 +29,7 @@
       <!-- Action bar (visible while selected) -->
       <div v-if="selectedId === chart.id" class="co-actions" @mousedown.stop>
         <button class="co-action" title="Edit chart" @click="$emit('edit', chart.id)">
-          <FeatherIcon name="edit-2" class="co-action-icon" />
+          <FeatherIcon name="pencil" class="co-action-icon" />
         </button>
         <button class="co-action" title="Refresh data" @click="$emit('refresh', chart.id)">
           <FeatherIcon name="refresh-cw" class="co-action-icon" />

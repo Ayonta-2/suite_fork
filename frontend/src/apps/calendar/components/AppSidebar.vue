@@ -67,7 +67,7 @@ const upcoming = computed(() => {
 	const today = current.format('YYYY-MM-DD')
 	return (events || [])
 		.filter((event) => {
-			if (event.status === 'Cancelled') return false
+			if (event.status === 'Cancelled' || event.isDeclined) return false
 			if (event.fromDate > today || event.toDate < today) return false
 			// An all-day event covers the whole of today; a timed one is over once its end has passed.
 			return event.isAllDay || dayjs(`${event.toDate} ${event.toTime}`).isAfter(current)

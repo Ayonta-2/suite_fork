@@ -522,7 +522,7 @@
       <Dropdown v-if="activePivotConfig && pivotFabStyle" :options="pivotBannerMenuOptions">
         <template #default="{ open }">
           <button class="sn-pivot-fab" :class="{ open }" :style="pivotFabStyle" title="Pivot table options">
-            <FeatherIcon name="edit-2" class="sn-pivot-fab-icon" />
+            <FeatherIcon name="pencil" class="sn-pivot-fab-icon" />
           </button>
         </template>
       </Dropdown>

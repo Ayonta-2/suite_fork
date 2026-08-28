@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, reactive, ref, watch } from 'vue'
-import { AlignLeft, Bell, Briefcase, Clock, Copy, MapPin, Users, X } from 'lucide-vue-next'
+import { AlignLeft, Bell, Briefcase, ChevronDown, Clock, Copy, MapPin, Users, X } from 'lucide-vue-next'
 import { Button, Dialog, Dropdown, FormControl, Switch, createResource, toast } from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
@@ -22,6 +22,12 @@ const store = userStore()
 const { participantIdentities } = store
 
 const isNew = computed(() => !selectedEvent?.calendarEvent)
+// A saved draft: the server holds it but has sent nothing. Only a new event can become
+// one (the server refuses to turn a published event back into a draft), and saving it
+// as a draft again or publishing it are the two ways out of the modal.
+const isDraft = computed(() => !!selectedEvent?.calendarEvent?.isDraft)
+// Set for the length of one save: the resources read it into `draft`.
+const savingDraft = ref(false)
 
 // --- Event initialization ---
 
@@ -359,6 +365,7 @@ const createEvent = createResource({
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		...eventParams.value,
+		draft: savingDraft.value,
 		send_scheduling_messages: sendEmail,
 	}),
 	onSuccess: handleSuccess,
@@ -394,6 +401,7 @@ const editEvent = createResource({
 		id: selectedEvent.calendarEvent.master_id || selectedEvent.calendarEvent.id,
 		uid: selectedEvent.calendarEvent.uid,
 		...eventParams.value,
+		draft: savingDraft.value,
 		send_scheduling_messages: sendEmail,
 	}),
 	onSuccess: handleSuccess,
@@ -415,9 +423,11 @@ const submitEvent = (sendEmail: boolean) => {
 		: isInstance
 			? editEventInstance
 			: editEvent
-	const messages = isNew.value
-		? { loading: __('Creating event...'), success: __('Event created.') }
-		: { loading: __('Updating event...'), success: __('Event updated.') }
+	const messages = isDraft.value
+		? { loading: __('Sending event...'), success: __('Event sent.') }
+		: isNew.value
+			? { loading: __('Creating event...'), success: __('Event created.') }
+			: { loading: __('Updating event...'), success: __('Event updated.') }
 
 	// Attaching a Meet link to an existing event: mint the room first, then send the
 	// regular update with the link included (creation bundles this server-side).
@@ -438,6 +448,76 @@ const submitEvent = (sendEmail: boolean) => {
 		error: __('Action failed. Please try again in some time.'),
 	})
 	showNotifyParticipantsModal.value = false
+}
+
+// --- Leaving the modal ---
+//
+// Draft is not a button; it is what happens when you leave without sending,
+// the way mail's compose keeps what you typed. Cancel means "throw this away"
+// and asks first only if there is something to throw away. ✕, Escape and a
+// click outside mean "keep": a new event or a draft is saved as a draft with
+// a toast that can undo it. A published event cannot go back to being a
+// draft, so unsent edits there get the same question Cancel asks.
+
+const isDirty = computed(
+	() => Object.keys(patch.value).length > 0 || pendingMeetAttach.value,
+)
+
+const showDiscardModal = ref(false)
+
+const cancel = () => {
+	if (isDirty.value) showDiscardModal.value = true
+	else show.value = false
+}
+
+const discardChanges = () => {
+	showDiscardModal.value = false
+	show.value = false
+}
+
+const leave = () => {
+	if (!isDirty.value) {
+		show.value = false
+		return
+	}
+	if (isNew.value || isDraft.value) saveDraftAndLeave()
+	else showDiscardModal.value = true
+}
+
+const discardDraft = createResource({
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events',
+	makeParams: ({ id }: { id: string }) => ({
+		account: store.accountId,
+		ids: [id],
+		send_scheduling_messages: false,
+	}),
+	onSuccess: () => {
+		toast.success(__('Draft discarded.'))
+		emit('reloadEvents')
+	},
+})
+
+const saveDraftAndLeave = async () => {
+	if (!isDateTimeValid.value) {
+		// Nothing the server would keep; the form's own validation says why.
+		showDiscardModal.value = true
+		return
+	}
+	savingDraft.value = true
+	try {
+		// The plain create/update: a draft has no Meet room and no per-instance edit.
+		const result = await (isNew.value ? createEvent : editEvent).submit({ sendEmail: false })
+		const id = isNew.value
+			? result
+			: selectedEvent.calendarEvent.master_id || selectedEvent.calendarEvent.id
+		toast.success(__('Draft saved.'), {
+			action: { label: __('Discard'), onClick: () => discardDraft.submit({ id }) },
+		})
+	} catch {
+		toast.error(__('Could not save the draft. Please try again.'))
+	} finally {
+		savingDraft.value = false
+	}
 }
 
 const showNotifyParticipantsModal = ref(false)
@@ -497,20 +577,45 @@ const addAlertOptions = computed(() => [
 
 // --- Dialog options ---
 
+const isSaving = computed(
+	() =>
+		createEvent.loading || editEvent.loading || editEventInstance.loading || createMeetEvent.loading,
+)
+
 const disableSave = computed(() => {
-	if (createEvent.loading || editEvent.loading || editEventInstance.loading) return true
-	if (createMeetEvent.loading) return true
+	if (isSaving.value) return true
 	if (!isDateTimeValid.value) return true
+	// Publishing a draft is a change in itself, even with nothing else edited.
+	if (isDraft.value) return false
 	if (!isNew.value && !Object.keys(patch.value).length && !pendingMeetAttach.value) return true
 	return false
 })
+
+// The primary says what it does: "Send" while there are invitations to send —
+// a new event or a draft with participants — and "Save" otherwise.
+// The primary says what it does: "Send" while there are invitations to send
+// (a new event or a draft with participants), "Save" otherwise. A new event
+// or a draft can also be kept as a draft — the split beside the primary, as
+// mail's compose has it; a published event cannot go back to being one, so
+// it gets a plain button.
+const primaryLabel = computed(() =>
+	(isNew.value || isDraft.value) && hasParticipantsOtherThanUser(event.participants)
+		? __('Send')
+		: __('Save'),
+)
+const canSaveDraft = computed(() => isNew.value || isDraft.value)
+const draftOptions = computed(() => [
+	{ label: __('Save as draft'), icon: 'lucide-file-pen-line', onClick: saveDraftAndLeave },
+])
 
 const handleSaveClick = () => {
 	if (shouldShowRecurringEventModal.value) showRecurringEventModal.value = true
 	else handleSave()
 }
 
-const dialogTitle = computed(() => (isNew.value ? __('Add Event') : __('Edit Event')))
+const dialogTitle = computed(() =>
+	isNew.value ? __('Add Event') : isDraft.value ? __('Edit Draft') : __('Edit Event'),
+)
 
 const AVAILABILITY_OPTIONS = [
 	{ label: __('Free'), value: 'Free' },
@@ -525,9 +630,18 @@ const VISIBILITY_OPTIONS = [
 const showNotifyParticipantsOptions = computed(() => ({
 	title: __('Notify Participants'),
 	icon: { name: 'lucide-bell' },
+	message:
+		isNew.value || isDraft.value
+			? __("Send an email to let attendees know they've been invited?")
+			: __('Send an email to let attendees know this event has been updated?'),
+}))
+
+const DISCARD_MODAL_OPTIONS = computed(() => ({
+	title: __('Discard changes?'),
+	icon: { name: 'lucide-trash-2' },
 	message: isNew.value
-		? __("Send an email to let attendees know they've been invited?")
-		: __('Send an email to let attendees know this event has been updated?'),
+		? __('This event has not been saved and will be lost.')
+		: __('Your unsaved edits to this event will be lost.'),
 }))
 
 const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
@@ -538,13 +652,13 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 </script>
 
 <template>
-	<Dialog v-model:open="show" size="4xl" bare>
-		<template #default="{ close }">
+	<Dialog :open="show" size="4xl" bare @update:open="(open) => (open ? (show = true) : leave())">
+		<template #default>
 			<div class="flex max-h-[85vh] flex-col text-ink-gray-8">
 				<!-- header -->
 				<div class="flex items-center border-b px-6 py-4">
 					<span class="text-md font-semibold">{{ dialogTitle }}</span>
-					<Button variant="ghost" class="ml-auto" @click="close">
+					<Button variant="ghost" class="ml-auto" @click="leave">
 						<template #icon><X :size="18" class="icon text-ink-gray-5" /></template>
 					</Button>
 				</div>
@@ -751,14 +865,29 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 
 				<!-- footer -->
 				<div class="flex justify-end gap-2 border-t px-6 py-3.5">
-					<Button :label="__('Cancel')" variant="outline" @click="close" />
-					<Button
-						:label="__('Save')"
-						variant="solid"
-						:disabled="disableSave"
-						class="w-16"
-						@click="handleSaveClick"
-					/>
+					<Button :label="__('Cancel')" variant="outline" @click="cancel" />
+					<!-- Split button, as mail's compose: one pill, the 1px gap shows the
+					     footer background as the divider. -->
+					<div class="flex items-center gap-px">
+						<Button
+							:label="primaryLabel"
+							variant="solid"
+							:disabled="disableSave"
+							class="min-w-16"
+							:class="canSaveDraft && '!rounded-r-none'"
+							@click="handleSaveClick"
+						/>
+						<Dropdown v-if="canSaveDraft" :options="draftOptions">
+							<Button
+								variant="solid"
+								class="!rounded-l-none"
+								:disabled="isSaving || !isDateTimeValid"
+								:aria-label="__('More save options')"
+							>
+								<template #icon><ChevronDown class="h-4 w-4" /></template>
+							</Button>
+						</Dropdown>
+					</div>
 				</div>
 			</div>
 		</template>
@@ -770,6 +899,14 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 		:r-rule="event?.recurrence_rule"
 		@update-recurrence-rule="(val) => (event.recurrence_rule = val)"
 	/>
+	<Dialog v-model:open="showDiscardModal" v-bind="DISCARD_MODAL_OPTIONS">
+		<template #actions>
+			<div class="flex justify-end space-x-2">
+				<Button :label="__('Keep editing')" @click="showDiscardModal = false" />
+				<Button :label="__('Discard')" variant="solid" theme="red" @click="discardChanges" />
+			</div>
+		</template>
+	</Dialog>
 	<Dialog v-model:open="showRecurringEventModal" v-bind="SHOW_RECURRING_EVENT_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">

@@ -16,7 +16,7 @@ import {
 	Users,
 	X,
 } from 'lucide-vue-next'
-import { Button, Dialog, Dropdown, TabButtons, createResource, toast } from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, TabButtons, createResource, toast } from 'frappe-ui'
 import DOMPurify from 'dompurify'
 
 import meetLogo from '@/assets/app-logos/meet.png'
@@ -343,7 +343,8 @@ const confirmDelete = (submit: (sendEmail: boolean) => Promise<any>, recurring: 
 		})
 	}
 
-	if (isOrganizer.value && hasParticipantsOtherThanUser.value) {
+	// A draft never sent its invitations, so there is no one to tell it is gone.
+	if (isOrganizer.value && hasParticipantsOtherThanUser.value && !calendarEvent.isDraft) {
 		pendingDelete.value = run
 		showNotifyModal.value = true
 	} else {
@@ -465,8 +466,9 @@ const openUrl = (location: string) => {
 					<h3 class="text-ink-gray-8 break-words text-md font-semibold leading-6">
 						{{ calendarEvent.title || __('Untitled event') }}
 					</h3>
-					<div class="text-ink-gray-6 break-words text-sm">
-						{{ dateLabel }}
+					<div class="flex items-center gap-2 text-sm text-ink-gray-6">
+						<Badge v-if="calendarEvent.isDraft" theme="gray" :label="__('Draft')" />
+						<span class="break-words">{{ dateLabel }}</span>
 					</div>
 				</div>
 			</div>

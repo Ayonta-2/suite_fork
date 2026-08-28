@@ -20,7 +20,7 @@
 		@click="openCompose"
 	>
 		<template #icon>
-			<FeatherIcon name="edit" class="h-6 w-6" />
+			<FeatherIcon name="square-pen" class="h-6 w-6" />
 		</template>
 	</Button>
 
