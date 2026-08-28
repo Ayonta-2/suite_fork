@@ -19,6 +19,15 @@ from suite.tests.utils import ensure_user
 OWNER = "webdav-content-owner@example.com"
 STRANGER = "webdav-content-stranger@example.com"
 PASSWORD = "webdav-content-pw"
+
+
+def pending_putparts(name: str) -> list:
+    """This row's staged bytes in the id-keyed pending store."""
+    from suite.drive.webdav import put as put_module
+
+    return list(put_module._pending_swap_dir(FileManager()).glob(f"{name}.*.putpart"))
+
+
 DATA = b"0123456789abcdefghij"
 PIXEL_PNG = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
@@ -326,7 +335,7 @@ class TestWebDAVPut(IntegrationTestCase):
 
         self.assertFalse(frappe.db.exists("File", row.name))
         self.assertFalse(blob_path.exists())
-        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        self.assertEqual(pending_putparts(row.name), [])
 
     def test_put_create_rollback_leaves_no_orphan_blob(self):
         # the dispatcher commits only after the handler returns; if that
@@ -339,7 +348,7 @@ class TestWebDAVPut(IntegrationTestCase):
         frappe.db.rollback()
 
         self.assertFalse(blob_path.exists())
-        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        self.assertEqual(pending_putparts(row.name), [])
 
     def test_put_create_failure_leaves_no_orphan_blob(self):
         # the blob move is irreversible while the File insert rolls back with
@@ -378,7 +387,7 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
         self.assertIsNone(frappe.db.get_value("File", target.name, "content_hash"))
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
-        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        self.assertEqual(pending_putparts(target.name), [])
         # no history for an edit that never took effect
         self.assertFalse(
             frappe.db.exists("Drive Entity Activity Log", {"entity": target.name, "action_type": "edit"})
@@ -399,7 +408,7 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertFalse(frappe.db.exists("File", row.name))
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), 0)
         self.assertFalse(blob_path.exists())
-        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        self.assertEqual(pending_putparts(row.name), [])
 
     def test_put_overwrite_compensation_yields_to_newer_write(self):
         # a writer that slips in between our commit and the failed promotion
@@ -410,7 +419,6 @@ class TestWebDAVPut(IntegrationTestCase):
 
         with self.set_user(OWNER):
             target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
-        blob_path = FileManager().get_local_path(target.file_url)
         base_size = frappe.db.get_value("File", self.base.name, "file_size")
 
         response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
@@ -430,7 +438,7 @@ class TestWebDAVPut(IntegrationTestCase):
         # ...and so does our forward delta, which the newer writer built upon
         expected = (base_size or 0) + len(b"v2!") - len(b"version-one")
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), expected)
-        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        self.assertEqual(pending_putparts(target.name), [])
         # but the failed edit must not stay recorded as a successful one —
         # the audit row is ours alone, so yielding does not spare it
         self.assertFalse(
@@ -588,6 +596,8 @@ class TestWebDAVPut(IntegrationTestCase):
         import os
         from unittest.mock import patch
 
+        from suite.drive.webdav import put as put_module
+
         # drain swaps a prior test may have left queued — they must not meet
         # this test's failure patches
         frappe.db.commit()
@@ -599,7 +609,7 @@ class TestWebDAVPut(IntegrationTestCase):
         response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
         self.assertEqual(response.status_code, 204)
 
-        twin_staged = blob_path.with_name(f"{blob_path.name}.aaaabbbbcccc.putpart")
+        twin_staged = put_module._pending_swap_dir(FileManager()) / f"{target.name}.aaaabbbbcccc.putpart"
 
         def twin_committed_then_fail(*args):
             # what the twin leaves at our compensation's locked read: the
@@ -607,6 +617,7 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.set_value(
                 "File", target.name, "modified", frappe.utils.now_datetime(), update_modified=False
             )
+            twin_staged.parent.mkdir(exist_ok=True)
             twin_staged.write_bytes(b"v2!")
             raise OSError
 
@@ -623,6 +634,67 @@ class TestWebDAVPut(IntegrationTestCase):
         # the twin's swap then installs, and everything lines up
         os.replace(twin_staged, blob_path)
         self.assertEqual(blob_path.read_bytes(), b"v2!")
+
+    def test_put_compensation_spares_a_twin_across_a_move(self):
+        # the twin's staged bytes are keyed by row id, not by path: a MOVE
+        # that rewrites file_url between the twin's commit and our
+        # compensation must not hide the pending install — a probe beside
+        # the row's current path would miss it, and the restore would land
+        # stale metadata under the twin's imminent bytes
+        import hashlib
+        import os
+        from unittest.mock import patch
+
+        from suite.drive.webdav import put as put_module
+
+        frappe.db.commit()  # drain stray after_commit swaps
+        with self.set_user(OWNER):
+            dest = create_drive_file(
+                f"Dest-{frappe.generate_hash(length=6)}",
+                self.home,
+                "Folder",
+                lambda f: FileManager().create_folder(f),
+            )
+            target = write_file_fixture(self.base.name, "doc.txt", b"version-one")
+        manager = FileManager()
+        blob_path = manager.get_local_path(target.file_url)
+        moved_rel = Path(storage_key(frappe.db.get_value("File", dest.name, "file_url"))) / "doc.txt"
+        moved_path = manager.site_folder / moved_rel
+
+        response = self._put(f"/dav/Home/{self.base_name}/doc.txt", b"v2!")
+        self.assertEqual(response.status_code, 204)
+
+        twin_staged = put_module._pending_swap_dir(manager) / f"{target.name}.aaaabbbbcccc.putpart"
+
+        def twin_commits_then_move_lands_then_fail(*args):
+            # the twin's committed stamp and staged bytes, then a MOVE that
+            # relocates the old blob and rewrites the pointer — the id-keyed
+            # pending store is the only trace of the twin the row still has
+            frappe.db.set_value(
+                "File", target.name, "modified", frappe.utils.now_datetime(), update_modified=False
+            )
+            twin_staged.parent.mkdir(exist_ok=True)
+            twin_staged.write_bytes(b"v2!")
+            blob_path.rename(moved_path)
+            frappe.db.set_value("File", target.name, {"file_url": "/" + str(moved_rel), "folder": dest.name})
+            raise OSError
+
+        with (
+            patch("os.replace", side_effect=twin_commits_then_move_lands_then_fail),
+            self.assertRaises(OSError),
+        ):
+            frappe.db.commit()
+
+        # no restore: the pending twin was found by id at the moved row
+        self.assertEqual(
+            frappe.db.get_value("File", target.name, "content_hash"),
+            hashlib.sha256(b"v2!").hexdigest(),
+        )
+        self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"v2!"))
+
+        # the twin's swap then follows the pointer and installs
+        os.replace(twin_staged, moved_path)
+        self.assertEqual(moved_path.read_bytes(), b"v2!")
 
     def test_put_compensation_survives_a_metadata_only_writer(self):
         # a rename that slips in bumps the row clock but carries our stale
@@ -908,7 +980,7 @@ class TestWebDAVPut(IntegrationTestCase):
 
         self.assertEqual(new_path.read_bytes(), b"v2!")
         self.assertFalse(old_path.exists())
-        self.assertEqual(list(old_path.parent.glob("*.putpart")), [])
+        self.assertEqual(pending_putparts(target.name), [])
 
     def test_put_swap_waits_out_a_mid_flight_move(self):
         # a mover renames the blob away BEFORE it takes the row lock — the
@@ -950,7 +1022,7 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(waited.call_count, 1)
         self.assertEqual(new_path.read_bytes(), b"v2!")
         self.assertFalse(old_path.exists())
-        self.assertEqual(list(old_path.parent.glob("*.putpart")), [])
+        self.assertEqual(pending_putparts(target.name), [])
 
     def test_put_swap_still_heals_a_missing_blob(self):
         # a genuinely lost blob shows the same missing-target signature; the
@@ -971,7 +1043,7 @@ class TestWebDAVPut(IntegrationTestCase):
 
         self.assertEqual(waited.call_count, 3)
         self.assertEqual(blob_path.read_bytes(), b"v2!")
-        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        self.assertEqual(pending_putparts(target.name), [])
         # the timed-out wait hands a settlement check to a worker — a peer
         # stalled beyond the wait would surface exactly here
         self.assertEqual(queued.call_count, 1)
@@ -1422,7 +1494,7 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.get_value("File", self.base.name, "file_size"),
             (base_size or 0) - len(b"version-one"),
         )
-        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        self.assertEqual(pending_putparts(target.name), [])
         trashed_blob.unlink()
 
     def test_put_swap_spares_bytes_a_trash_carried_off(self):
@@ -1635,7 +1707,7 @@ class TestWebDAVPut(IntegrationTestCase):
         frappe.db.rollback()
 
         self.assertEqual(blob_path.read_bytes(), b"version-one")
-        self.assertEqual(list(blob_path.parent.glob("*.putpart")), [])
+        self.assertEqual(pending_putparts(target.name), [])
 
     def test_put_overwrite_failure_leaves_old_bytes(self):
         # the blob swap is irreversible while every DB write rolls back with the

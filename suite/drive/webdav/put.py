@@ -209,13 +209,7 @@ def _create(ctx: DavContext, resolved, scratch: Path, size: int, sha256: str) ->
         drive_file.file_url = get_s3_url(generation)
         drive_file.save()
     else:
-        _stage_disk_swap(
-            scratch,
-            manager.site_folder / storage_key(blob.file_url),
-            _Compensation(drive_file, undo, repair),
-            manager,
-            blob,
-        )
+        _stage_disk_swap(scratch, _Compensation(drive_file, undo, repair), manager, blob)
     stamped = {"content_hash": sha256}
     if (client_mtime := _client_mtime_datetime(ctx)) is not None:
         # not via create_drive_file: its fromtimestamp() reads the epoch in the
@@ -330,32 +324,35 @@ def _stage_blob_swap(manager, doc, scratch: Path, compensation: _Compensation) -
         # it in place — upload_file would write the new body to a stray S3 key
         # that GET (which serves on-disk blobs directly) never reads back. No
         # thumbnail either, matching the native path for adopted blobs.
-        _stage_disk_swap(
-            scratch, manager.get_local_path(doc.file_url), compensation, manager, expects_existing=True
-        )
+        _stage_disk_swap(scratch, compensation, manager, expects_existing=True)
     else:
-        _stage_disk_swap(
-            scratch,
-            manager.site_folder / storage_key(doc.file_url),
-            compensation,
-            manager,
-            doc,
-            expects_existing=True,
-        )
+        _stage_disk_swap(scratch, compensation, manager, doc, expects_existing=True)
     return None
 
 
 _SWAP_FOLLOW_LIMIT = 6
 _SWAP_WAITS = 3
 
+# one flat directory under the storage root for bytes awaiting their
+# commit-time swap, keyed by row id like the trash store: a MOVE or RENAME
+# committed between staging and a later probe rewrites file_url, so any
+# location derived from the path goes stale — the id does not
+_PENDING_SWAP_PREFIX = ".putpending"
+
+
+def _pending_swap_dir(manager) -> Path:
+    return manager.site_folder / manager.get_root_storage_key() / _PENDING_SWAP_PREFIX
+
 
 def _stage_disk_swap(
-    scratch: Path, target: Path, compensation: _Compensation, manager, doc=None, expects_existing=False
+    scratch: Path, compensation: _Compensation, manager, doc=None, expects_existing=False
 ) -> None:
-    """Rename the spooled body next to the target now (.uploads shares the
-    target's filesystem — the assumption upload_file's rename already makes),
-    so the commit-time swap is a single atomic os.replace and the only
-    mutation the old blob ever sees.
+    """Rename the spooled body into the pending store now (one filesystem —
+    the site files tree — end to end, the assumption upload_file's rename
+    already makes), so the commit-time swap is a single atomic os.replace
+    and the only mutation the old blob ever sees. The staged name is keyed
+    by row id, never by the target path: _pending_swap_delivers must find
+    these bytes however many relocations land before they install.
 
     The swap settles against concurrent relocations rather than trusting the
     staging-time path: a move or rename that lands in the commit-to-swap gap
@@ -371,7 +368,9 @@ def _stage_disk_swap(
     as defense in depth for out-of-band writers that bypass the controllers,
     and the missing-destination fallthrough still heals a blob that is
     simply gone (see settle_swap_destination)."""
-    staged = target.with_name(f"{target.name}.{frappe.generate_hash(length=12)}.putpart")
+    pending = _pending_swap_dir(manager)
+    pending.mkdir(exist_ok=True)
+    staged = pending / f"{compensation.stamped.name}.{frappe.generate_hash(length=12)}.putpart"
     os.rename(scratch, staged)
 
     def cleanup(placed):
@@ -810,15 +809,19 @@ def _should_restore(stamped, current) -> bool:
 def _pending_swap_delivers(stamped, current) -> bool:
     """A twin-content PUT commits its stamp before its after-commit swap
     installs the bytes: the row's claim is then genuine, just pending — and
-    its staged .putpart still sits beside the target, un-consumable while we
-    hold the row lock its swap is queued behind. Restoring over that would
-    hand the imminent install stale metadata and unbalance the rollup. Only
-    a staged file whose content actually delivers the claimed stamp counts;
-    an unrelated orphan does not stand in the way of a needed restore."""
+    its staged putpart still sits in the pending store, un-consumable while
+    we hold the row lock its swap is queued behind. The store is keyed by
+    row id, so the probe survives any MOVE or RENAME committed since the
+    twin staged — a probe beside the row's current path would go stale the
+    moment the pointer moved. Restoring over a pending twin would hand the
+    imminent install stale metadata and unbalance the rollup. Only a staged
+    file whose content actually delivers the claimed stamp counts; an
+    unrelated orphan does not stand in the way of a needed restore."""
     try:
-        target = FileManager().get_local_path(current.file_url)
-        pattern = glob.escape(target.name) + ".*.putpart"
-        return any(_file_delivers_stamp(staged, stamped) for staged in target.parent.glob(pattern))
+        pattern = glob.escape(current.name) + ".*.putpart"
+        return any(
+            _file_delivers_stamp(staged, stamped) for staged in _pending_swap_dir(FileManager()).glob(pattern)
+        )
     except Exception:
         return False
 
