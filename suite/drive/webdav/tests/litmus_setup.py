@@ -7,6 +7,8 @@ bench --site <site> execute suite.drive.webdav.tests.litmus_setup.teardown
 import frappe
 from frappe.utils.password import update_password
 
+from suite.drive.webdav.tests.utils import enable_user_webdav
+
 LITMUS_USER = "litmus@example.com"
 LITMUS_PASSWORD = "litmus-ci-password"
 
@@ -23,6 +25,7 @@ def prepare() -> str:
             }
         ).insert(ignore_permissions=True)
     update_password(LITMUS_USER, LITMUS_PASSWORD)
+    enable_user_webdav(LITMUS_USER)
     frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", 1)
     frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
     frappe.db.commit()

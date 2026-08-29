@@ -28,7 +28,9 @@ echo "litmus target: $URL"
 OUTPUT="$(mktemp)"
 trap 'bench --site "$SITE" execute suite.drive.webdav.tests.litmus_setup.teardown >/dev/null; rm -f "$OUTPUT"' EXIT
 
-"$LITMUS" -k "$URL" "litmus@example.com" "litmus-ci-password" | tee "$OUTPUT" || true
+# tr: litmus rewrites progress with \r; split those into real lines so the
+# anchored matchers below see the final verdict on its own line
+"$LITMUS" -k "$URL" "litmus@example.com" "litmus-ci-password" | tr '\r' '\n' | tee "$OUTPUT" || true
 
 status=0
 group=""
