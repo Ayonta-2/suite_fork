@@ -63,7 +63,14 @@
 						alignment="left"
 					/>
 
-					<form class="mt-7 space-y-3" @submit.prevent="handleJoin">
+					<div
+						v-if="terminalGuestSession"
+						class="mt-7 rounded-6 border border-outline-gray-2 bg-surface-gray-1 p-4"
+					>
+						<p class="text-sm text-ink-gray-7">You can’t join this meeting.</p>
+					</div>
+
+					<form v-else class="mt-7 space-y-3" @submit.prevent="handleJoin">
 						<FormControl
 							v-if="isGuest"
 							ref="guestNameInputRef"
@@ -103,6 +110,12 @@ import AvatarGroup from "../components/AvatarGroup.vue";
 import ParticipantTile from "../components/ParticipantTile.vue";
 import PreviewToolbar from "../components/PreviewToolbar.vue";
 import { useMeetingPreviewPresence } from "../composables/useMeetingPreviewPresence";
+import {
+	clearRetryableGuestSession,
+	readActiveGuestSession,
+	readGuestSession,
+	type StoredGuestSession,
+} from "../composables/useConnectionState";
 import { session } from "@/boot/session";
 import { getErrorMessage } from "../utils/error";
 import { getInitials } from "../utils/text";
@@ -138,11 +151,18 @@ const emit = defineEmits<{
 }>();
 
 const guestName = ref("");
+const terminalGuestSession = ref<StoredGuestSession | null>(null);
 
 onMounted(() => {
-	const savedGuestName = localStorage.getItem("guest_name");
+	const guestSession = readGuestSession(props.meetingId);
+	const savedGuestName = guestSession?.guestName;
 	if (savedGuestName && !session.isLoggedIn) {
 		guestName.value = savedGuestName;
+	}
+	if (guestSession?.status === "rejected" || guestSession?.status === "expired") {
+		clearRetryableGuestSession(props.meetingId);
+	} else if (guestSession?.status === "banned") {
+		terminalGuestSession.value = guestSession;
 	}
 });
 const guestNameInputRef = ref<VideoElement | null>(null);
@@ -150,9 +170,16 @@ const guestNameInputRef = ref<VideoElement | null>(null);
 const joinGuestAPI = createResource({
 	url: "suite.meet.api.meeting.join_meeting_as_guest",
 	makeParams: () => {
+		const guestSession = readActiveGuestSession(props.meetingId);
 		return {
 			meeting_id: props.meetingId,
 			guest_name: guestName.value.trim(),
+			...(guestSession
+				? {
+						guest_id: guestSession.guestId,
+						guest_session_token: guestSession.guestSessionToken,
+					}
+				: {}),
 		};
 	},
 });
@@ -205,14 +232,20 @@ const handleJoin = async () => {
 	}
 
 	if (isGuest.value) {
+		const storedSession = readGuestSession(props.meetingId);
+		if (storedSession?.status === "rejected" || storedSession?.status === "expired") {
+			clearRetryableGuestSession(props.meetingId);
+		} else if (storedSession?.status === "banned") {
+			terminalGuestSession.value = storedSession;
+			toast.error("You can’t join this meeting.");
+			return;
+		}
 		if (!guestName.value.trim()) {
 			return;
 		}
 
 		try {
 			const result = await joinGuestAPI.submit();
-
-			localStorage.setItem("guest_name", guestName.value.trim());
 
 			emit("guest-join-complete", {
 				guestName: guestName.value.trim(),
