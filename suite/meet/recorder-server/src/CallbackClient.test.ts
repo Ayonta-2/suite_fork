@@ -19,6 +19,88 @@ afterEach(async () => {
 });
 
 describe('CallbackClient', () => {
+	it('publishes an ordered startup milestone with its durable timestamp', async () => {
+		const fetch = vi.fn(
+			async () =>
+				new Response(JSON.stringify({ message: { status: 'Starting' } }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				}),
+		);
+		vi.stubGlobal('fetch', fetch);
+		const job = {
+			job: 'job',
+			site: 'site.test',
+			origin: 'https://site.test',
+			room: 'room',
+			recording: 'recording',
+			state: 'proof_complete',
+			event_sequence: 3,
+			configured_at: '2026-08-30T11:59:59.000Z',
+			proof_completed_at: '2026-08-30T12:00:00.000Z',
+		} as JobRecord;
+
+		await new CallbackClient({
+			origin: 'https://site.test',
+			site: 'site.test',
+			secret: 's'.repeat(32),
+			dataRoot: '/tmp',
+		}).startup(job);
+
+		expect(String(fetch.mock.calls[0]?.[0])).toContain(
+			'recorder_startup_progress',
+		);
+		expect(fetch).toHaveBeenCalledTimes(2);
+		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+			recording_id: 'recording',
+			job: 'job',
+			event_sequence: 2,
+			milestone: 'configured',
+			occurred_at: '2026-08-30T11:59:59.000Z',
+		});
+		expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({
+			recording_id: 'recording',
+			job: 'job',
+			event_sequence: 3,
+			milestone: 'proof_complete',
+			occurred_at: '2026-08-30T12:00:00.000Z',
+		});
+	});
+
+	it('keeps retrying the final startup milestone until acknowledged', async () => {
+		const fetch = vi
+			.fn()
+			.mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+			.mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+			.mockResolvedValue(
+				new Response(JSON.stringify({ message: { status: 'Recording' } }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				}),
+			);
+		vi.stubGlobal('fetch', fetch);
+		const job = {
+			job: 'job',
+			site: 'site.test',
+			origin: 'https://site.test',
+			room: 'room',
+			recording: 'recording',
+			state: 'configured',
+			event_sequence: 2,
+			configured_at: '2026-08-30T12:00:00.000Z',
+		} as JobRecord;
+
+		await new CallbackClient({
+			origin: 'https://site.test',
+			site: 'site.test',
+			secret: 's'.repeat(32),
+			dataRoot: '/tmp',
+			sleep: async () => undefined,
+		}).startup(job);
+
+		expect(fetch).toHaveBeenCalledTimes(3);
+	});
+
 	it('publishes recorder interruption with the next lifecycle sequence', async () => {
 		const fetch = vi.fn(
 			async () =>

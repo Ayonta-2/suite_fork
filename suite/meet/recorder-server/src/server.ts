@@ -70,6 +70,17 @@ async function main(): Promise<void> {
 			);
 		},
 		disk,
+		async (job) => {
+			try {
+				await callbacks.startup(job);
+			} catch (error) {
+				logger.error({
+					event: 'startup_callback_failed',
+					reason: error instanceof Error ? error.message : 'callback_failed',
+				});
+				throw error;
+			}
+		},
 	);
 	await jobs.initialize();
 	const auth = new AuthManager(

@@ -31,6 +31,14 @@ interface RecoveredRequest {
 	event_sequence: number;
 }
 
+interface StartupProgressRequest {
+	recording_id: string;
+	job: string;
+	event_sequence: number;
+	milestone: 'configured' | 'proof_complete' | 'joined' | 'capture_started';
+	occurred_at: string;
+}
+
 interface FailedRequest {
 	recording_id: string;
 	job: string;
@@ -57,6 +65,7 @@ interface CompleteUploadRequest {
 }
 
 type CallbackRequest =
+	| StartupProgressRequest
 	| InterruptedRequest
 	| RecoveredRequest
 	| FailedRequest
@@ -64,6 +73,7 @@ type CallbackRequest =
 	| CompleteUploadRequest;
 
 type CallbackMethod =
+	| 'recorder_startup_progress'
 	| 'recorder_interrupted'
 	| 'recorder_recovered'
 	| 'recorder_failed'
@@ -71,6 +81,7 @@ type CallbackMethod =
 	| 'recorder_complete_upload';
 
 type CallbackOperation =
+	| 'startup_progress'
 	| 'interrupted'
 	| 'recovered'
 	| 'failed'
@@ -99,6 +110,42 @@ export class CallbackClient {
 		this.sleep =
 			options.sleep ??
 			((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+	}
+
+	async startup(job: JobRecord): Promise<void> {
+		const milestones = [
+			['configured', 'configured', job.configured_at],
+			['proof_complete', 'proof_complete', job.proof_completed_at],
+			['joined', 'joined', job.joined_at],
+			['capture_ready', 'capture_started', job.capture_started_at],
+		] as const;
+		const current = milestones.findIndex(([state]) => state === job.state);
+		if (current < 0) throw new Error('invalid startup milestone');
+		for (const [index, [, milestone, occurredAt]] of milestones
+			.slice(0, current + 1)
+			.entries()) {
+			if (!occurredAt)
+				throw new Error('startup milestone timestamp is unavailable');
+			const sequence = index + 2;
+			await this.retryHealthCallback(
+				() =>
+					this.json(
+						'recorder_startup_progress',
+						job,
+						'startup_progress',
+						String(sequence),
+						{
+							recording_id: job.recording,
+							job: job.job,
+							event_sequence: sequence,
+							milestone,
+							occurred_at: occurredAt,
+						},
+						parseStatusResponse,
+					),
+				Number.POSITIVE_INFINITY,
+			);
+		}
 	}
 
 	async interrupted(job: JobRecord): Promise<void> {
@@ -250,6 +297,7 @@ export class CallbackClient {
 
 	private async retryHealthCallback(
 		callback: () => Promise<unknown>,
+		maxAttempts = 5,
 	): Promise<void> {
 		let delay = 250;
 		for (let attempt = 0; ; attempt += 1) {
@@ -257,7 +305,7 @@ export class CallbackClient {
 				await callback();
 				return;
 			} catch (error) {
-				if (attempt === 4) throw error;
+				if (attempt + 1 >= maxAttempts) throw error;
 				await this.sleep(delay);
 				delay *= 2;
 			}
