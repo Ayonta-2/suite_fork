@@ -21,7 +21,7 @@ import { mailServerUnavailable } from '@/boot/config'
 import { type RouteLocationRaw, useRouter } from 'vue-router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
-import { useScreenSize, useTheme } from '@/apps/mail/utils/composables'
+import { useScreenSize, useTheme, useUndo } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
 import dayjs from '@/apps/mail/utils/dayjs'
@@ -60,8 +60,9 @@ const gPrefix = useGPrefix()
 // `g` is also the prefix each list uses for its own g g / G jump to the ends. Both listeners
 // see the key and keep their own prefix state; this one only ever acts on a following letter,
 // so a `g g` falls through to the list untouched.
-// `g` then a letter. Beyond the account's own folders this reaches the two views that are not
-// folders at all — the merged list and the Screener — so the map holds routes, not mailbox ids.
+// `g` then a letter. Beyond the account's own folders this reaches the three views that are not
+// folders at all — the merged list, the Screener and the Outbox — so the map holds routes, not
+// mailbox ids.
 //
 // `a` is All Inboxes (as in Gmail's All Mail), which pushes Archive to `e` — the letter that
 // already archives a thread, so one letter means archive throughout. The Screener takes `r` for
@@ -71,6 +72,7 @@ const mailboxRoute = (mailbox: string) => ({ name: 'mail-mailbox', params: { acc
 const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
 	a: () => ({ name: 'mail-all-inboxes' }),
 	r: () => ({ name: 'mail-screener', params: { accountId } }),
+	o: () => ({ name: 'mail-outbox', params: { accountId } }),
 	i: () => mailboxRoute(mailboxIds.inbox),
 	f: () => mailboxRoute('starred'),
 	s: () => mailboxRoute(mailboxIds.sent),
@@ -80,8 +82,21 @@ const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
 	t: () => mailboxRoute(mailboxIds.trash),
 }
 
+// ⌘Z takes back the last undoable action, wherever it was taken. The slot is app-wide (useUndo),
+// and so is what can fill it: a send is undoable from the composer window, which is open on every
+// page — so the key lives here rather than in each list, where it was dead on the pages without one.
+const { undo } = useUndo()
+
 const handleGlobalShortcuts = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
+
+	// Above the guard, which drops every modified key: this is the one shortcut here that has one.
+	if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
+		e.preventDefault()
+		gPrefix.disarm()
+		return undo()
+	}
+
 	if (shouldIgnoreKeypress(e)) return
 
 	if (e.key === '?') {

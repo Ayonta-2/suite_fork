@@ -543,7 +543,7 @@ const router = useRouter()
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
 const { setMobileSelectionActive } = useMobileSelection()
-const { undo, setUndoAction } = useUndo()
+const { dropViewUndo } = useUndo()
 
 const socket = inject('$socket')
 const user = inject('$user') as UserResource
@@ -772,13 +772,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
 		e.preventDefault()
 		gPrefix.disarm()
 		return toggleSelectAll(true)
-	}
-
-	// Handle Ctrl/Cmd+Z (Undo)
-	if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
-		e.preventDefault()
-		gPrefix.disarm()
-		return undo()
 	}
 
 	if (shouldIgnoreKeypress(e)) return
@@ -1358,7 +1351,7 @@ onUnmounted(() => {
 	window.removeEventListener('keyup', handleKeyUp)
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
 	// Leaving the mailbox drops any pending undo so a lingering toast can't undo into another view.
-	setUndoAction(undefined)
+	dropViewUndo()
 })
 
 const goToMailbox = () =>

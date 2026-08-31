@@ -463,12 +463,6 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
 
 const handleKeyDown = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
-	if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
-		e.preventDefault()
-		gPrefix.disarm()
-		return undo()
-	}
-
 	if (shouldIgnoreKeypress(e)) return
 
 	// Escape backs out of the open thread, then clears the cursor.
@@ -754,7 +748,7 @@ const handleSetSpamStatus = (spam: boolean, target?: Thread) => {
 // The merged list is inbox-scoped, so its rows always summarise from the whole conversation — never
 // from a folder, as Sent and Drafts do. No undo yet: the undo requests would have to be scoped to the
 // row's own account rather than the active one.
-const { setUndoAction, undo } = useUndo()
+const { setUndoAction } = useUndo()
 
 const { runMailRemoval } = useMailRemoval({
 	row: () => openRow.value,

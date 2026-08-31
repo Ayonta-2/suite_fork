@@ -474,11 +474,12 @@ const handleKeydown = (e: KeyboardEvent) => {
 	handleDiscardShortcut(e)
 }
 
+// ⌘Enter sends; with Shift it asks when to, as the split button's menu does.
 const handleSendShortcut = (e: KeyboardEvent) => {
-	if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-		e.preventDefault()
-		sendMail()
-	}
+	if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter') return
+	e.preventDefault()
+	if (e.shiftKey) openScheduleModal()
+	else sendMail()
 }
 
 const handleDiscardShortcut = (e: KeyboardEvent) => {
