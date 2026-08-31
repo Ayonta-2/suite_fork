@@ -54,7 +54,7 @@
    "label": "Quota"
   },
   {
-   "description": "Where and how Drive lays out file contents — on the site's disk, or in the S3 bucket below.",
+   "description": "Where and how Drive lays out file contents \u2014 on the site's disk, or in the S3 bucket below.",
    "fieldname": "storage_section",
    "fieldtype": "Section Break",
    "label": "Storage Layout"
@@ -144,7 +144,7 @@
   },
   {
    "default": "0",
-   "description": "Let WebDAV clients (Windows Explorer, Finder, rclone…) connect to Drive at /dav using Frappe login credentials.",
+   "description": "Let WebDAV clients (Windows Explorer, Finder, rclone\u2026) connect to Drive at /dav using Frappe login credentials.",
    "fieldname": "webdav_enabled",
    "fieldtype": "Check",
    "label": "Enable WebDAV"
@@ -165,7 +165,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-25 12:30:00.000000",
+ "modified": "2026-08-31 09:40:05.165393",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Disk Settings",
@@ -195,5 +195,6 @@
  "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }
