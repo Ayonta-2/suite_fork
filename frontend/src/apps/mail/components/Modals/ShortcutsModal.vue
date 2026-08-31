@@ -55,6 +55,8 @@ const shortcutGroups = computed(() => [
 			shortcuts: [
 				[['C'], __('Compose New Mail')],
 				[[modifier.value, 'Enter'], __('Send Mail')],
+				[[modifier.value, 'Shift', 'Enter'], __('Schedule Send')],
+				[[modifier.value, 'Z'], __('Undo Send')],
 				[[modifier.value, 'D'], __('Discard Draft')],
 				[['R'], __('Reply to Mail')],
 				[['Shift', 'R'], __('Reply All to Mail')],
@@ -106,6 +108,7 @@ const shortcutGroups = computed(() => [
 				[['G', __('then'), 'F'], __('Go to Starred')],
 				[['G', __('then'), 'S'], __('Go to {0}', [mailboxName('sent')])],
 				[['G', __('then'), 'D'], __('Go to {0}', [mailboxName('drafts')])],
+				[['G', __('then'), 'O'], __('Go to Outbox')],
 				[['G', __('then'), 'J'], __('Go to {0}', [mailboxName('junk')])],
 				[['G', __('then'), 'E'], __('Go to {0}', [mailboxName('archive')])],
 				[['G', __('then'), 'T'], __('Go to {0}', [mailboxName('trash')])],

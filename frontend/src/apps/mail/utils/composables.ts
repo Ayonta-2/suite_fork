@@ -324,6 +324,13 @@ export const useUndo = () => {
 		undoAction.value = undefined
 	}
 
+	// Take one action out of the slot, and only if it is still the one there: for an undo that lapses
+	// on its own — a send, once the server's hold is over. Unlike clearing, it leaves the toasts alone:
+	// this action's is long gone by then, and whatever is on screen belongs to a later one.
+	const retireUndoAction = (action: () => void) => {
+		if (undoAction.value === action) undoAction.value = undefined
+	}
+
 	// Wrap the current undo so `step` runs first — lets a side effect (e.g. a junk-list entry) be
 	// reverted on top of the primary undo without replacing it.
 	const prependUndoAction = (step: () => void) => {
@@ -334,7 +341,7 @@ export const useUndo = () => {
 		}
 	}
 
-	return { setUndoAction, undo, prependUndoAction }
+	return { setUndoAction, undo, prependUndoAction, retireUndoAction }
 }
 
 // Shared state for the compose window. A single <SendMail> (rendered in DefaultLayout) reacts to

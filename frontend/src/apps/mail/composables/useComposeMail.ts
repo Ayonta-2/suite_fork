@@ -1,11 +1,12 @@
 import { computed, inject, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
-import { createResource } from 'frappe-ui'
+import { createResource, toast } from 'frappe-ui'
 import { Mention } from 'frappe-ui/editor'
 
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { processInlineImages, raiseToast } from '@/apps/mail/utils'
+import { useUndo } from '@/apps/mail/utils/composables'
 import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
@@ -337,6 +338,36 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		onError: (error: { message: string }) => raiseToast(error.message, 'error'),
 	})
 
+	const { setUndoAction, retireUndoAction } = useUndo()
+
+	// The sent toast, with Undo on it for as long as the server holds delivery. The same undo goes in
+	// the ⌘Z slot for the same time, so the key that takes back an archive takes back a send too.
+	// The two are one action: whichever fires takes the toast and the slot with it, so the other
+	// cannot cancel twice. When the window closes the slot is only vacated if it is still this
+	// send's — a list action taken since has its own undo in there, and the toasts are its.
+	const offerUndoSend = (submissionId: string, windowMs: number, threadId?: string) => {
+		const undoSendNow = () => {
+			toast.dismiss(sentToast)
+			retireUndoAction(undoSendNow)
+			undoSend.submit({ id: submissionId })
+		}
+		setUndoAction(undoSendNow)
+		setTimeout(() => retireUndoAction(undoSendNow), windowMs)
+
+		// Two buttons, and they are not equals: Undo expires with the toast, so it takes the urgent
+		// slot; View is an aside you could reach any time from Sent, offered only when the thread
+		// isn't already the one in front of you.
+		const sentToast = raiseToast(
+			__('Message sent.'),
+			'success',
+			{ label: __('Undo'), onClick: undoSendNow },
+			windowMs,
+			threadId && route.params.threadID !== threadId
+				? { label: __('View'), onClick: () => viewSentMessage(threadId) }
+				: undefined,
+		)
+	}
+
 	const onMailUpdateSuccess = ({
 		id,
 		status,
@@ -378,18 +409,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
 		if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
 		else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
-			// Two buttons, and they are not equals: Undo expires with the toast, so it takes the
-			// urgent slot; View is an aside you could reach any time from Sent, offered only when the
-			// thread isn't already the one in front of you.
-			raiseToast(
-				__('Message sent.'),
-				'success',
-				{ label: __('Undo'), onClick: () => undoSend.submit({ id: submission_id }) },
-				undoSendWindowMs(undo_send_period),
-				thread_id && route.params.threadID !== thread_id
-					? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
-					: undefined,
-			)
+			offerUndoSend(submission_id, undoSendWindowMs(undo_send_period), thread_id)
 		else if (status === 'Submitted' && send_at && sendMode.value === 'scheduled')
 			raiseToast(__('Send scheduled.'), 'success', {
 				label: __('View'),

@@ -668,14 +668,6 @@ watch(openSender, (sender) => {
 // allow the sender straight to Archive or Trash, and Esc closes. Else inert.
 const handleKeydown = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
-
-	// Above the guard below: a verdict is just as often given from a list row with nothing open, and
-	// that is exactly when you'd reach for undo — the row is gone and there is nothing else to press.
-	if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
-		e.preventDefault()
-		return undo()
-	}
-
 	if (!openSender.value || shouldIgnoreKeypress(e)) return
 
 	if (key === 'escape') {

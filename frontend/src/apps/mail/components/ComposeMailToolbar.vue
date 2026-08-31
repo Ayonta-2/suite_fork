@@ -73,7 +73,7 @@
 					<Dropdown :options="sendOptions">
 						<Button
 							variant="solid"
-							:tooltip="__('Schedule send')"
+							:tooltip="__('Schedule send ({0}+Shift+Enter)', [modifier])"
 							:disabled="isRecipientsEmpty || isUploading"
 							class="!rounded-l-none"
 						>
