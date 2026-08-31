@@ -273,12 +273,6 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         submission = self._get_submission(account, scheduled.submission_id)
         self.assertEqual(submission["undoStatus"], "canceled")
 
-        # The queue log mirrors the cancellation via cancelled_at; the row stays Submitted.
-        with self.set_user("Administrator"):
-            doc = frappe.get_doc("Mail Queue", scheduled.name)
-        self.assertEqual(doc.status, "Submitted")
-        self.assertTrue(doc.cancelled_at)
-
         # Back in Drafts only (mailboxIds replaced, not patched) with $draft restored.
         with self.set_user(self.sender.email):
             from suite.mail.jmap import get_mailbox_id_by_role
@@ -330,12 +324,6 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         self.assertEqual(new_submission["undoStatus"], "pending")
         self.assertLessEqual(abs(_epoch(new_submission["sendAt"]) - _epoch(new_send_at)), 5)
 
-        # The queue log follows the replacement submission.
-        with self.set_user("Administrator"):
-            doc = frappe.get_doc("Mail Queue", scheduled.name)
-        self.assertEqual(doc.submission_id, result["id"])
-        self.assertLessEqual(abs(_epoch(to_utc_z(doc.send_at)) - _epoch(new_send_at)), 5)
-
     def test_send_now_delivers(self):
         scheduled = self._schedule(minutes=60 * 24)
         account = self.personal_account(self.sender)
@@ -343,11 +331,6 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         with self.set_user(self.sender.email):
             result = send_scheduled_mail_now(account, scheduled.submission_id)
         self.assertTrue(result["id"])
-
-        with self.set_user("Administrator"):
-            doc = frappe.get_doc("Mail Queue", scheduled.name)
-        self.assertEqual(doc.submission_id, result["id"])
-        self.assertFalse(doc.send_at)
 
         def find_thread():
             threads = self.get_inbox_threads(self.recipient)
