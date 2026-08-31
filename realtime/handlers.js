@@ -1,8 +1,4 @@
 const suite_handlers = (socket) => {
-	socket.on("ping", () => {
-		socket.emit("pong");
-	});
-
 	// guest specific rooms
 	socket.on("guest_subscribe", async (payload, untrustedAcknowledge) => {
 		const acknowledge = safe_acknowledge(untrustedAcknowledge);

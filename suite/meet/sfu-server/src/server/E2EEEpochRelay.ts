@@ -151,18 +151,6 @@ export class E2EEEpochRelay {
 		return allowed;
 	}
 
-	requestKeyPackages(
-		roomId: string,
-		epochNumber: number,
-		reason: 'enable' | 'join' | 'reconnect',
-	): void {
-		this.emitToFullAccessParticipants(roomId, {
-			type: 'key-package-request',
-			epochNumber,
-			reason,
-		});
-	}
-
 	requestKeyPackageFromParticipant(
 		roomId: string,
 		participantId: string,
