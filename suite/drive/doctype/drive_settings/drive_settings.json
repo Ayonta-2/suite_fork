@@ -26,7 +26,7 @@
    "label": "Account"
   },
   {
-   "description": "The user these settings belong to — the document is named after them.",
+   "description": "The user these settings belong to \u2014 the document is named after them.",
    "fieldname": "user",
    "fieldtype": "Link",
    "label": "User",
@@ -93,7 +93,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-25 12:45:00.000000",
+ "modified": "2026-08-31 09:41:00.812051",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Settings",
@@ -127,5 +127,6 @@
  "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

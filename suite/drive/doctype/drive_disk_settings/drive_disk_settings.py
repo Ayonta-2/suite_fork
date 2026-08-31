@@ -8,6 +8,29 @@ from suite.drive.webdav import ALLOWED_METHODS, parse_webdav_methods
 
 
 class DriveDiskSettings(Document):
+    # begin: auto-generated types
+    # This code is auto-generated. Do not modify anything in this block.
+
+    from typing import TYPE_CHECKING
+
+    if TYPE_CHECKING:
+        from frappe.types import DF
+
+        aws_key: DF.Data | None
+        aws_secret: DF.Password | None
+        bucket: DF.Data | None
+        enabled: DF.Check
+        endpoint_url: DF.Data | None
+        flat: DF.Check
+        preview_size: DF.Int
+        quota: DF.Int
+        root_folder: DF.Data | None
+        signature_version: DF.Data | None
+        thumbnail_prefix: DF.Data | None
+        webdav_allowed_methods: DF.SmallText | None
+        webdav_enabled: DF.Check
+    # end: auto-generated types
+
     def validate(self):
         # A mirrored tree on S3 means a folder move copies and deletes every object
         # under it, which times out on large folders.
