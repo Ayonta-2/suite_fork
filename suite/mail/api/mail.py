@@ -2,6 +2,7 @@ import hashlib
 import io
 import os
 import zipfile
+from datetime import datetime
 
 import frappe
 import pydenticon
@@ -64,26 +65,36 @@ from suite.mail.store import get_email_address_index
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.delivery_status import parse_delivery_status
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
-from suite.mail.utils.user import get_account_emails, is_jmap_configured
+from suite.mail.utils.user import get_account_emails, get_undo_send_period, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils.rate_limiter import dynamic_rate_limit
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
 SCREENING_FETCH_LIMIT = 500
 
-# Undo send: the composer's default Send holds delivery (FUTURERELEASE) for the visible
-# undo window plus a grace that covers request latency, so an Undo clicked at the last
-# moment still reaches the server before the hold elapses. Computed on the server clock —
-# a skewed client clock must not be able to shorten (or invalidate) the hold. The window
-# half is mirrored by UNDO_SEND_WINDOW_MS in ComposeMailEditor.vue.
-UNDO_SEND_WINDOW_SECONDS = 10
-UNDO_SEND_HOLD_SECONDS = UNDO_SEND_WINDOW_SECONDS + 3
+# Undo send: the composer's default Send holds delivery (FUTURERELEASE) for the sender's
+# undo window (User Settings.undo_send_period, which also times the toast in
+# useComposeMail.ts) plus a grace that covers request latency, so an Undo clicked at the
+# last moment still reaches the server before the hold elapses. Computed on the server
+# clock: a skewed client clock must not be able to shorten (or invalidate) the hold.
+UNDO_SEND_GRACE_SECONDS = 3
 
 # All Inboxes bounds. limit/start are user-supplied, and per_account_limit (= start + limit) is fetched
 # from *every* account and merged in memory, so both are clamped. MAX_FETCH caps the deepest reachable
 # position (page length ~25 → ~20 pages), which is far beyond any real unified-inbox scroll.
 ALL_INBOX_MAX_LIMIT = 100
 ALL_INBOX_MAX_FETCH = 500
+
+
+def get_undo_send_hold() -> tuple[int, datetime]:
+    """Returns the session user's undo-send period and the time a plain Send made now is held until.
+
+    The period goes back to the composer with the send result, so the Undo toast is timed from
+    the hold the server applied rather than from whatever copy of the setting the client holds.
+    """
+
+    period = get_undo_send_period(frappe.session.user)
+    return period, add_to_date(now(), seconds=period + UNDO_SEND_GRACE_SECONDS)
 
 
 @frappe.whitelist()
@@ -636,8 +647,9 @@ def create_mail(
         ]
 
     send_at = from_utc_z(send_at)
+    undo_send_period = None
     if undo_send and not send_at and not save_as_draft:
-        send_at = add_to_date(now(), seconds=UNDO_SEND_HOLD_SECONDS)
+        undo_send_period, send_at = get_undo_send_hold()
 
     doc = MailQueue._create(
         user=get_user_for_jmap_account(account, raise_exception=True),
@@ -667,6 +679,7 @@ def create_mail(
         "thread_id": doc.thread_id,
         "submission_id": doc.submission_id,
         "send_at": to_utc_z(doc.send_at),
+        "undo_send_period": undo_send_period,
     }
 
 
@@ -739,8 +752,9 @@ def update_draft_mail(
             )
 
     send_at = from_utc_z(send_at)
+    undo_send_period = None
     if undo_send and submit and not send_at:
-        send_at = add_to_date(now(), seconds=UNDO_SEND_HOLD_SECONDS)
+        undo_send_period, send_at = get_undo_send_hold()
 
     queue = message.submit(send_at=send_at) if submit else message.save_draft()
 
@@ -756,6 +770,7 @@ def update_draft_mail(
         "thread_id": queue.thread_id,
         "submission_id": queue.submission_id,
         "send_at": to_utc_z(queue.send_at),
+        "undo_send_period": undo_send_period,
     }
 
 

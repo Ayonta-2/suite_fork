@@ -58,6 +58,8 @@ export interface User {
 	user_settings?: string
 	group_messages_by?: 'None' | 'Day' | 'Month'
 	show_reading_pane?: 0 | 1
+	// Seconds a plain Send is held so it can be undone; see utils/undoSend.ts.
+	undo_send_period?: '5' | '10' | '20' | '30'
 
 	enabled: boolean
 	is_suite_admin: boolean

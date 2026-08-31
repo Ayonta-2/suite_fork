@@ -32,6 +32,7 @@ class UserSettings(OwnerFromUser, Document):
         disable_push_subscriptions: DF.Check
         group_messages_by: DF.Literal["None", "Day", "Month"]
         show_reading_pane: DF.Check
+        undo_send_period: DF.Literal["5", "10", "20", "30"]
         user: DF.Link
         username: DF.Data | None
     # end: auto-generated types
