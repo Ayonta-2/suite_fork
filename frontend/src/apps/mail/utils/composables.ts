@@ -308,14 +308,27 @@ export const useKeyboardOpen = () => {
 
 const undoAction = ref<() => void>()
 
+// The action in the slot that is the app's rather than a view's, if that is what is there. A list's
+// undo puts rows back into a list that has to still be on screen, so it dies with its view; a send's
+// undo is a server call, as good from the next page as from this one, and stays.
+let outlivingAction: (() => void) | undefined
+
 export const useUndo = () => {
-	const setUndoAction = (action?: () => void) => {
+	const setUndoAction = (action?: () => void, { outlivesView = false } = {}) => {
 		undoAction.value = action
+		outlivingAction = outlivesView ? action : undefined
 		// Clearing the undo with no replacement toast (e.g. leaving the mailbox) leaves a lingering toast
 		// whose "Undo" button is now dead — dismiss toasts. When a new action is set instead, the toast it
 		// raises right after (via raiseOptimisticToast/raisePromiseToast) does the removeAll, and doing it
 		// here too would dismiss the reconcile paths' in-flight loading toast — so only clear on undefined.
 		if (!action) toast.removeAll()
+	}
+
+	// What a view does on the way out: its own undo goes, toast and all, so nothing can undo into a
+	// list that is no longer there. An undo that outlives views is left alone, toast included.
+	const dropViewUndo = () => {
+		if (undoAction.value && undoAction.value === outlivingAction) return
+		setUndoAction(undefined)
 	}
 
 	const undo = () => {
@@ -341,7 +354,7 @@ export const useUndo = () => {
 		}
 	}
 
-	return { setUndoAction, undo, prependUndoAction, retireUndoAction }
+	return { setUndoAction, undo, prependUndoAction, retireUndoAction, dropViewUndo }
 }
 
 // Shared state for the compose window. A single <SendMail> (rendered in DefaultLayout) reacts to

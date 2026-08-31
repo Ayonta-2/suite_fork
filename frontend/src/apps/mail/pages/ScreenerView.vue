@@ -487,7 +487,7 @@ const showReadingPane = useReadingPane()
 
 // The same undo the thread lists hang Cmd/Ctrl+Z off — one shared slot, so the last thing you did in
 // mail is the thing that key takes back, wherever you did it.
-const { setUndoAction, undo } = useUndo()
+const { setUndoAction, undo, dropViewUndo } = useUndo()
 
 // The Screener only exists when screening is enabled. If it's off, render nothing and send the user to
 // their inbox (the route is still reachable by URL even though the sidebar hides it).
@@ -742,7 +742,7 @@ onMounted(() => {
 onUnmounted(() => {
 	window.removeEventListener('keydown', handleKeydown)
 	// Don't leave a verdict undoable from a view that can't show what came back.
-	setUndoAction(undefined)
+	dropViewUndo()
 	clearInterval(pollInterval)
 	// Don't strand a queued batch on navigation — the acted rows were already removed optimistically.
 	if (flushTimer) {

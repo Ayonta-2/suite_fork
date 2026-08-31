@@ -543,7 +543,7 @@ const router = useRouter()
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
 const { setMobileSelectionActive } = useMobileSelection()
-const { setUndoAction } = useUndo()
+const { dropViewUndo } = useUndo()
 
 const socket = inject('$socket')
 const user = inject('$user') as UserResource
@@ -1351,7 +1351,7 @@ onUnmounted(() => {
 	window.removeEventListener('keyup', handleKeyUp)
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
 	// Leaving the mailbox drops any pending undo so a lingering toast can't undo into another view.
-	setUndoAction(undefined)
+	dropViewUndo()
 })
 
 const goToMailbox = () =>
