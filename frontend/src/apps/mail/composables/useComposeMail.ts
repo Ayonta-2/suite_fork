@@ -7,6 +7,7 @@ import { Mention } from 'frappe-ui/editor'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { processInlineImages, raiseToast } from '@/apps/mail/utils'
 import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
+import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 
 import type { ComposeMailData, Identity, UserResource } from '@/apps/mail/types'
@@ -257,9 +258,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		{ debounce: 2000 },
 	)
 
-	// Mirrors UNDO_SEND_WINDOW_SECONDS in api/mail.py; the server holds delivery a few seconds
-	// longer than this so a last-moment Undo still lands in time.
-	const UNDO_SEND_WINDOW_MS = 10000
+	// The sender's undo window (User Settings); the server holds delivery a few seconds longer than
+	// this so a last-moment Undo still lands in time (get_undo_send_hold_seconds in api/mail.py).
+	// Read per send, so a change made in Settings applies to the next send without a reopen.
+	const undoSendWindowMs = () => undoSendPeriodOf(user.data) * 1000
 
 	// A plain Send holds delivery for the undo window ('undo'); Schedule send passes an explicit time
 	// ('scheduled'). Both come back as 'Submitted' with a send_at, so the toast has to know which one
@@ -377,7 +379,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 				__('Message sent.'),
 				'success',
 				{ label: __('Undo'), onClick: () => undoSend.submit({ id: submission_id }) },
-				UNDO_SEND_WINDOW_MS,
+				undoSendWindowMs(),
 				thread_id && route.params.threadID !== thread_id
 					? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
 					: undefined,
