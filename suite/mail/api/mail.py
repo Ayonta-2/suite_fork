@@ -2,6 +2,7 @@ import hashlib
 import io
 import os
 import zipfile
+from datetime import datetime
 
 import frappe
 import pydenticon
@@ -85,10 +86,15 @@ ALL_INBOX_MAX_LIMIT = 100
 ALL_INBOX_MAX_FETCH = 500
 
 
-def get_undo_send_hold_seconds(user: str | None = None) -> int:
-    """Returns how long a plain Send by `user` (the session user by default) is held before delivery."""
+def get_undo_send_hold() -> tuple[int, datetime]:
+    """Returns the session user's undo-send period and the time a plain Send made now is held until.
 
-    return get_undo_send_period(user or frappe.session.user) + UNDO_SEND_GRACE_SECONDS
+    The period goes back to the composer with the send result, so the Undo toast is timed from
+    the hold the server applied rather than from whatever copy of the setting the client holds.
+    """
+
+    period = get_undo_send_period(frappe.session.user)
+    return period, add_to_date(now(), seconds=period + UNDO_SEND_GRACE_SECONDS)
 
 
 @frappe.whitelist()
@@ -641,8 +647,9 @@ def create_mail(
         ]
 
     send_at = from_utc_z(send_at)
+    undo_send_period = None
     if undo_send and not send_at and not save_as_draft:
-        send_at = add_to_date(now(), seconds=get_undo_send_hold_seconds())
+        undo_send_period, send_at = get_undo_send_hold()
 
     doc = MailQueue._create(
         user=get_user_for_jmap_account(account, raise_exception=True),
@@ -672,6 +679,7 @@ def create_mail(
         "thread_id": doc.thread_id,
         "submission_id": doc.submission_id,
         "send_at": to_utc_z(doc.send_at),
+        "undo_send_period": undo_send_period,
     }
 
 
@@ -744,8 +752,9 @@ def update_draft_mail(
             )
 
     send_at = from_utc_z(send_at)
+    undo_send_period = None
     if undo_send and submit and not send_at:
-        send_at = add_to_date(now(), seconds=get_undo_send_hold_seconds())
+        undo_send_period, send_at = get_undo_send_hold()
 
     queue = message.submit(send_at=send_at) if submit else message.save_draft()
 
@@ -761,6 +770,7 @@ def update_draft_mail(
         "thread_id": queue.thread_id,
         "submission_id": queue.submission_id,
         "send_at": to_utc_z(queue.send_at),
+        "undo_send_period": undo_send_period,
     }
 
 

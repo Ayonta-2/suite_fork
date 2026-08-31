@@ -443,11 +443,15 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
     def test_undo_send_holds_and_cancels(self):
         # The composer's default Send: the server computes a short hold so the sender
         # can cancel from the undo toast; Undo is just cancel_scheduled_mail.
-        from suite.mail.api.mail import get_undo_send_hold_seconds
+        from suite.mail.api.mail import UNDO_SEND_GRACE_SECONDS
+        from suite.mail.utils.user import get_undo_send_period
 
         result, hold = self._undo_send()
+        period = get_undo_send_period(self.sender.email)
         self.assertGreater(hold, 0)
-        self.assertLessEqual(hold, get_undo_send_hold_seconds(self.sender.email) + 5)
+        self.assertLessEqual(hold, period + UNDO_SEND_GRACE_SECONDS + 5)
+        # The composer times its Undo toast from the period the server applied.
+        self.assertEqual(result["undo_send_period"], period)
 
         account = self.personal_account(self.sender)
         with self.set_user(self.sender.email):
@@ -469,7 +473,8 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
             frappe.db.set_value, "User Settings", settings, "undo_send_period", str(DEFAULT_UNDO_SEND_PERIOD)
         )
 
-        _, hold = self._undo_send()
+        result, hold = self._undo_send()
+        self.assertEqual(result["undo_send_period"], 30)
         self.assertGreater(hold, DEFAULT_UNDO_SEND_PERIOD + UNDO_SEND_GRACE_SECONDS)
         self.assertLessEqual(hold, 30 + UNDO_SEND_GRACE_SECONDS + 5)
 

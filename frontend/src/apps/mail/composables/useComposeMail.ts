@@ -258,10 +258,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		{ debounce: 2000 },
 	)
 
-	// The sender's undo window (User Settings); the server holds delivery a few seconds longer than
-	// this so a last-moment Undo still lands in time (get_undo_send_hold_seconds in api/mail.py).
-	// Read per send, so a change made in Settings applies to the next send without a reopen.
-	const undoSendWindowMs = () => undoSendPeriodOf(user.data) * 1000
+	// The Undo toast lives for the period the server actually held delivery for (it echoes it back
+	// with the send result; the hold is that plus a few seconds' grace, so a last-moment Undo still
+	// lands in time). The user's own setting is only a fallback for a result without one: the
+	// setting can change under a mounted composer (Settings, Desk, another tab), and a toast timed
+	// from a stale copy would either vanish early or offer an Undo the server can no longer honour.
+	const undoSendWindowMs = (period?: number | null) =>
+		(period ?? undoSendPeriodOf(user.data)) * 1000
 
 	// A plain Send holds delivery for the undo window ('undo'); Schedule send passes an explicit time
 	// ('scheduled'). Both come back as 'Submitted' with a send_at, so the toast has to know which one
@@ -341,6 +344,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		thread_id,
 		submission_id,
 		send_at,
+		undo_send_period,
 	}: {
 		name: string
 		id: string
@@ -351,6 +355,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		submission_id?: string
 		/** Set when the server is holding delivery (undo window or scheduled send). */
 		send_at?: string
+		/** Seconds the server held an undo-send for, before its grace; null for a scheduled send. */
+		undo_send_period?: number | null
 	}) => {
 		if (id) mail.id = id
 		updateOriginalMail()
@@ -379,7 +385,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 				__('Message sent.'),
 				'success',
 				{ label: __('Undo'), onClick: () => undoSend.submit({ id: submission_id }) },
-				undoSendWindowMs(),
+				undoSendWindowMs(undo_send_period),
 				thread_id && route.params.threadID !== thread_id
 					? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
 					: undefined,

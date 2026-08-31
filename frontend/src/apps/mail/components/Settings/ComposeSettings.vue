@@ -40,7 +40,7 @@ import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { UNDO_SEND_PERIODS, undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
-import type { UserResource } from '@/apps/mail/types'
+import type { User, UserResource } from '@/apps/mail/types'
 
 const user = inject('$user') as UserResource
 const { isMobile } = useScreenSize()
@@ -60,6 +60,8 @@ const saveSettings = createResource({
 		value: undoSendPeriod.value,
 	}),
 	onSuccess: () => {
+		// Apply locally before the reload lands, so nothing reads the old period in between.
+		user.data.undo_send_period = undoSendPeriod.value as User['undo_send_period']
 		raiseToast(__('Compose settings updated.'))
 		user.reload()
 	},
