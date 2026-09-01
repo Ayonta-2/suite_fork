@@ -12,7 +12,6 @@ import {
 	Repeat,
 	SquarePen,
 	Text,
-	Trash2,
 	Users,
 	X,
 } from 'lucide-vue-next'
@@ -26,6 +25,7 @@ import { fromEventZone, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
+import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
 
@@ -277,134 +277,19 @@ const hasDetails = computed(
 
 // --- Actions dropdown (delete) ---
 
-const dropdownOptions = computed(() => {
-	const editOption = { label: __('Edit'), icon: SquarePen, onClick: () => emit('edit') }
-
-	if (calendarEvent.recurrence_id)
-		return [
-			editOption,
-			{
-				label: __('Delete'),
-				icon: Trash2,
-				submenu: [
-					{ label: __('This instance'), onClick: () => handleDeleteEventInstance() },
-					{
-						label: __('This and following instances'),
-						onClick: () => handleDeleteFollowingEventInstances(),
-					},
-					{ label: __('Entire series'), onClick: () => handleDeleteEvent() },
-				],
-			},
-		]
-	return [
-		editOption,
-		{ label: __('Delete'), icon: Trash2, onClick: () => handleDeleteEvent() },
-	]
-})
-
-// --- Server calls ---
-
-const editEvent = createResource({
-	url: 'suite.calendar.api.edit_calendar_event',
-	makeParams: ({ patch }) => ({
-		account: store.accountId,
-		// master_id is only set on recurring events; fall back to the event's own id
-		id: calendarEvent.master_id || calendarEvent.id,
-		...patch,
-		send_scheduling_messages: true,
-	}),
-	onSuccess: () => emit('reloadEvents'),
-})
-
-// When the organizer deletes an event with other participants, offer to email a cancellation
-// (mirrors the "Notify Participants" prompt shown when creating/editing an event).
-const isOrganizer = computed(
-	() =>
-		participantIdentities.data?.some(
-			(id) => id.email === (calendarEvent.organizer || '').replace('mailto:', ''),
-		) ?? false,
-)
-const hasParticipantsOtherThanUser = computed(
-	() =>
-		calendarEvent.participants?.some((p) => participantIdentities.data?.every((i) => i.email !== p.email)) ??
-		false,
-)
-
-const showNotifyModal = ref(false)
-const pendingDelete = ref<((sendEmail: boolean) => void) | null>(null)
-
-const confirmDelete = (submit: (sendEmail: boolean) => Promise<any>, recurring: boolean) => {
-	const run = (sendEmail: boolean) => {
-		showNotifyModal.value = false
-		toast.promise(submit(sendEmail), {
-			loading: recurring ? __('Deleting events...') : __('Deleting event...'),
-			success: recurring ? __('Events deleted.') : __('Event deleted.'),
-			error: __('Action failed. Please try again in some time.'),
-		})
-	}
-
-	// A draft never sent its invitations, so there is no one to tell it is gone.
-	if (isOrganizer.value && hasParticipantsOtherThanUser.value && !calendarEvent.isDraft) {
-		pendingDelete.value = run
-		showNotifyModal.value = true
-	} else {
-		run(false)
-	}
-}
-
-const handleDeleteEventInstance = () =>
-	confirmDelete((sendEmail) => deleteEventInstance.submit({ sendEmail }), false)
-
-const handleDeleteFollowingEventInstances = () => {
-	const recurrenceRule = { ...calendarEvent.recurrence_rule }
-	recurrenceRule.until = `${calendarEvent.date}T00:00:00Z`
-	const patch = { recurrence_rule: JSON.stringify(recurrenceRule) }
-
-	toast.promise(
-		editEvent.submit({ patch }).then(() => emit('close')),
-		{
-			loading: __('Deleting events...'),
-			success: __('Events deleted.'),
-			error: __('Action failed. Please try again in some time.'),
+const { deleteOption, isDeleting, showNotifyModal, pendingDelete, NOTIFY_DELETE_OPTIONS } =
+	useEventDelete(
+		() => calendarEvent,
+		() => {
+			emit('reloadEvents')
+			emit('close')
 		},
 	)
-}
 
-const handleDeleteEvent = () =>
-	confirmDelete((sendEmail) => deleteEvent.submit({ sendEmail }), !!calendarEvent.recurrence_id)
-
-const deleteEventInstance = createResource({
-	url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
-	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account: store.accountId,
-		master_id: calendarEvent.master_id,
-		recurrence_id: calendarEvent.recurrence_id,
-		send_scheduling_messages: sendEmail,
-	}),
-	onSuccess: () => {
-		emit('reloadEvents')
-		emit('close')
-	},
-})
-
-const deleteEvent = createResource({
-	url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events',
-	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account: store.accountId,
-		ids: [calendarEvent.master_id || calendarEvent.id],
-		send_scheduling_messages: sendEmail,
-	}),
-	onSuccess: () => {
-		emit('reloadEvents')
-		emit('close')
-	},
-})
-
-const NOTIFY_DELETE_OPTIONS = {
-	title: __('Notify Participants'),
-	icon: { name: 'lucide-bell' },
-	message: __('Send a cancellation email to let attendees know this event was deleted?'),
-}
+const dropdownOptions = computed(() => [
+	{ label: __('Edit'), icon: SquarePen, onClick: () => emit('edit') },
+	deleteOption.value,
+])
 
 const openUrl = (location: string) => {
 	if (isUrl(location)) window.open(location, '_blank')
@@ -433,7 +318,7 @@ const openUrl = (location: string) => {
 				<Dropdown :options="dropdownOptions">
 					<Button
 						variant="ghost"
-						:disabled="deleteEventInstance.loading || deleteEvent.loading"
+						:disabled="isDeleting"
 					>
 						<MoreHorizontal class="icon text-ink-gray-7" />
 					</Button>
