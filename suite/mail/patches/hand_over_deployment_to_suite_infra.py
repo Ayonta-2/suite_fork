@@ -27,7 +27,9 @@ def execute() -> None:
     With Suite Infra installed its own sync has already retagged them, so there is nothing to do.
     Otherwise the DocType records go, so nothing resolves to controllers Suite no longer ships.
     Tables that hold data stay (clusters carry the SSH keys that reach the servers) and are adopted
-    as they are when Suite Infra is installed later; empty ones are dropped.
+    as they are when Suite Infra is installed later; empty ones are dropped. The retired
+    cluster/server backfills (SSH keypair, recovery admin, recovery port, bootstrap plan) run again
+    in Suite Infra's installer at adoption, so rows that never saw them are completed there.
     """
 
     if "suite_infra" in frappe.get_installed_apps():
