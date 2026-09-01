@@ -45,7 +45,7 @@ def execute() -> None:
             delete_permanently=True,
         )
         if not keep_tables:
-            frappe.db.sql_ddl(f"drop table if exists `tab{doctype}`")
+            drop_table(doctype)
 
     if keep_tables:
         click.secho(
@@ -56,7 +56,15 @@ def execute() -> None:
 
 
 def has_deployment_data() -> bool:
-    return any(
-        frappe.db.table_exists(doctype) and frappe.db.sql(f"select 1 from `tab{doctype}` limit 1")
-        for doctype in DATA_DOCTYPES
-    )
+    return any(frappe.db.table_exists(doctype) and has_rows(doctype) for doctype in DATA_DOCTYPES)
+
+
+def has_rows(doctype: str) -> bool:
+    table = frappe.qb.DocType(doctype)
+    return bool(frappe.qb.from_(table).select(table.name).limit(1).run())
+
+
+def drop_table(doctype: str) -> None:
+    # DDL, so it goes through sql_ddl rather than the builder's run(); the builder still
+    # renders the name with the right quoting for the database in use.
+    frappe.db.sql_ddl(frappe.qb.drop_table(frappe.qb.DocType(doctype)).if_exists().get_sql())
