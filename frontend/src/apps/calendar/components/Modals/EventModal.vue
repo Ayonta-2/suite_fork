@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, reactive, ref, watch } from 'vue'
-import { AlignLeft, Bell, Briefcase, ChevronDown, Clock, Copy, MapPin, Users, X } from 'lucide-vue-next'
+import {
+	AlignLeft,
+	Bell,
+	Briefcase,
+	ChevronDown,
+	Clock,
+	Copy,
+	MapPin,
+	TriangleAlert,
+	Users,
+	X,
+} from 'lucide-vue-next'
 import { Button, Dialog, Dropdown, FormControl, Switch, createResource, toast } from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
@@ -8,6 +19,7 @@ import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
 import { fromEventZone, fromWallClock, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
+import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
@@ -91,11 +103,11 @@ const getDefaultEventData = () => {
 			? dayjs().add(1, 'hour').startOf('hour').format('HH:mm')
 			: '10:00'
 
-	const organizer = organizerParticipant()
+	const identity = store.defaultParticipantIdentity
 
 	return {
 		title: '',
-		organizer: organizer.email,
+		organizer: identity?.email,
 		isAllDay: !selectedEvent?.time,
 		repeat: false,
 		startDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
@@ -109,24 +121,28 @@ const getDefaultEventData = () => {
 		description: '',
 		free_busy_status: 'Busy',
 		privacy: 'Public',
-		participants: [organizer],
+		participants: identity ? [organizerParticipant(identity)] : [],
 		recurrence_rule: {},
 		addMeetLink: false,
 	}
 }
 
-// New events are organized by the account's default participant identity, which can
-// differ from the login user. The login user only stands in while the identities are
-// still loading, so the modal never opens without an organizer row.
-const organizerParticipant = () => {
-	const identity = store.defaultParticipantIdentity
-	return {
-		email: identity?.email ?? user.data.name,
-		user_image: user.data.user_image,
-		_name: identity?._name || user.data.full_name,
-		participation_status: 'ACCEPTED',
-	}
-}
+// The organizer row of a new event: the account's default participant identity, which
+// can differ from the login user. Without one the event has no organizer at all.
+const organizerParticipant = (identity: ParticipantIdentity) => ({
+	email: identity.email,
+	user_image: user.data.user_image,
+	_name: identity._name || user.data.full_name,
+	participation_status: 'ACCEPTED',
+})
+
+// A new event cannot be created, or kept as a draft, without a participant identity to
+// organize it. Editing keeps the organizer the event already has.
+const missingIdentity = computed(() => isNew.value && !store.defaultParticipantIdentity)
+// The notice waits for the list to load; until then Save is merely disabled.
+const showMissingIdentityNotice = computed(
+	() => missingIdentity.value && Array.isArray(participantIdentities.data),
+)
 
 const event = reactive({})
 let originalParams = {}
@@ -322,6 +338,17 @@ watch(show, (val) => {
 	previousStart = { date: event.startDate, time: event.startTime }
 	originalParams = JSON.parse(JSON.stringify(eventParams.value))
 })
+
+// Identities can land after the modal opened; give the new event its organizer then,
+// ahead of any attendee already added.
+watch(
+	() => store.defaultParticipantIdentity,
+	(identity) => {
+		if (!show.value || !identity || !isNew.value || event.organizer) return
+		event.organizer = identity.email
+		event.participants = [organizerParticipant(identity), ...(event.participants ?? [])]
+	},
+)
 
 watch(
 	() => [event.startDate, event.startTime],
@@ -530,7 +557,7 @@ const leave = () => {
 		show.value = false
 		return
 	}
-	if (isNew.value || isDraft.value) saveDraftAndLeave()
+	if (canSaveDraft.value) saveDraftAndLeave()
 	else showDiscardModal.value = true
 }
 
@@ -650,7 +677,7 @@ const isSaving = computed(
 )
 
 const disableSave = computed(() => {
-	if (isSaving.value) return true
+	if (isSaving.value || missingIdentity.value) return true
 	if (!isDateTimeValid.value) return true
 	// Publishing a draft is a change in itself, even with nothing else edited.
 	if (isDraft.value) return false
@@ -670,7 +697,7 @@ const primaryLabel = computed(() =>
 		? __('Send')
 		: __('Save'),
 )
-const canSaveDraft = computed(() => isNew.value || isDraft.value)
+const canSaveDraft = computed(() => (isNew.value || isDraft.value) && !missingIdentity.value)
 const draftOptions = computed(() => [
 	{ label: __('Save as draft'), icon: 'lucide-file-pen-line', onClick: saveDraftAndLeave },
 ])
@@ -728,6 +755,13 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 					<Button variant="ghost" class="ml-auto" @click="leave">
 						<template #icon><X :size="18" class="icon text-ink-gray-5" /></template>
 					</Button>
+				</div>
+				<div
+					v-if="showMissingIdentityNotice"
+					class="flex items-center gap-2 border-b bg-surface-amber-1 px-6 py-2.5 text-sm text-ink-amber-3"
+				>
+					<TriangleAlert :size="16" class="shrink-0" />
+					{{ __('No participant identity found. Add one in Calendar Settings to create events.') }}
 				</div>
 
 				<div class="flex min-h-0 flex-1">

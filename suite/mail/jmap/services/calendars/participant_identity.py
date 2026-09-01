@@ -101,13 +101,17 @@ class ParticipantIdentityService(CalendarsService):
 
     def get_default(self, raise_exception: bool = False) -> str | None:
         """
-        Returns the email address of the default participant identity, or None if no default participant identity is found.
-        If raise_exception is True, raises a ValueError if no default participant identity is found.
+        Returns the email address of the default participant identity, falling back to the first one when none
+        is flagged. Returns None if the account has no participant identities at all, or raises a ValueError
+        when raise_exception is True.
         """
 
-        for identity in self.participant_identities:
-            if identity.get("isDefault", False):
-                return identity["calendarAddress"].lower().replace("mailto:", "")
+        identities = self.participant_identities
+        flagged = [i for i in identities if i.get("isDefault", False)]
+        # Nothing flagged (say the default was deleted) shouldn't block the account.
+        default = flagged[0] if flagged else identities[0] if identities else None
+        if default:
+            return default["calendarAddress"].lower().replace("mailto:", "")
 
         if raise_exception:
-            raise ValueError("No default participant identity found.")
+            raise ValueError("No participant identity found.")

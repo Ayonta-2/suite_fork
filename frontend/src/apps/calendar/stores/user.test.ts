@@ -25,6 +25,12 @@ describe('defaultParticipantIdentity', () => {
 		expect(userStore().defaultParticipantIdentity).toBeUndefined()
 	})
 
+	it('is undefined when the account has no identities', () => {
+		const store = userStore()
+		store.participantIdentities.data = []
+		expect(store.defaultParticipantIdentity).toBeUndefined()
+	})
+
 	it('prefers the identity flagged default', () => {
 		const store = userStore()
 		store.participantIdentities.data = [identity('a@x.io'), identity('b@x.io', 1)]
