@@ -59,7 +59,10 @@ const getParticipantStatusValues = (status: string) => {
 							/>
 						</div>
 					</div>
-					<span class="text-ink-gray-5 text-sm">{{ p.email }}</span>
+					<!-- The paragraph variant, not `text-sm`: at 13px its 1.15 leading gives a
+					     line box shorter than the glyphs themselves, so the descender of a g or a
+					     y hung below it and the participants list clipped it at its scroll edge. -->
+					<span class="text-ink-gray-5 text-p-sm">{{ p.email }}</span>
 				</div>
 			</div>
 

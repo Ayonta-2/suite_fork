@@ -8,7 +8,7 @@ export const useTheme = () => {
 	const cycleTheme = () => {
 		const next = nextTheme(themeMode.value)
 		switchTheme(next)
-		toast.success(__('Appearance updated to {0}.', [__(next === 'automatic' ? 'Automatic' : next)]))
+		toast.success(__('Appearance updated to {0}.', [__(next)]))
 	}
 
 	return { dataTheme: resolvedTheme, themeMode, switchTheme, cycleTheme }
