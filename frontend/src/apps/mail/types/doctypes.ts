@@ -132,7 +132,7 @@ export interface MailSettings extends DocType {
   /** Enable Gravatar: Check */
   enable_gravatar: 0 | 1;
   /** Default Gravatar: Select */
-  default_gravatar: '404';
+  default_gravatar: '404' | 'mp' | 'identicon' | 'monsterid' | 'wavatar' | 'retro' | 'robohash' | 'blank';
   /** Push Log File Count: Int */
   push_log_file_count: number;
   /** Push Log Level: Select */

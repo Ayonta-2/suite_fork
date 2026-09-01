@@ -32,7 +32,9 @@ class MailSettings(Document):
         custom_event_invites: DF.Check
         default_disk_quota_gb: DF.Int
         default_dns_ttl: DF.Int
-        default_gravatar: DF.Literal["404"]
+        default_gravatar: DF.Literal[
+            "404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"
+        ]
         disabled_account_role: DF.Data | None
         enable_gravatar: DF.Check
         enable_jmap_push_encryption: DF.Check

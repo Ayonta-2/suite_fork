@@ -226,10 +226,11 @@
   {
    "default": "404",
    "depends_on": "eval: doc.enable_gravatar",
+   "description": "Image Gravatar serves for addresses that have no Gravatar. 404 uses a locally generated identicon instead.",
    "fieldname": "default_gravatar",
    "fieldtype": "Select",
    "label": "Default Gravatar",
-   "options": "404",
+   "options": "404\nmp\nidenticon\nmonsterid\nwavatar\nretro\nrobohash\nblank",
    "reqd": 1
   },
   {
@@ -583,7 +584,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-01 14:00:00.000000",
+ "modified": "2026-09-01 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",
