@@ -1,18 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, reactive, ref, watch } from 'vue'
-import {
-	AlignLeft,
-	Bell,
-	Briefcase,
-	ChevronDown,
-	Clock,
-	Copy,
-	MapPin,
-	TriangleAlert,
-	Users,
-	X,
-} from 'lucide-vue-next'
-import { Button, Dialog, Dropdown, FormControl, Switch, createResource, toast } from 'frappe-ui'
+import { AlignLeft, Bell, Briefcase, ChevronDown, Clock, Copy, MapPin, Users, X } from 'lucide-vue-next'
+import { Button, Dialog, Dropdown, FormControl, Switch, Tooltip, createResource, toast } from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
@@ -136,16 +125,12 @@ const organizerParticipant = (identity: ParticipantIdentity) => ({
 	participation_status: 'ACCEPTED',
 })
 
-// A new event cannot be created, or kept as a draft, without a participant identity to
-// organize it. Editing keeps the organizer the event already has.
-const missingIdentity = computed(() => isNew.value && !store.defaultParticipantIdentity)
-// The notice waits for the list to load; until then Save is merely disabled.
-const showMissingIdentityNotice = computed(
-	() => missingIdentity.value && Array.isArray(participantIdentities.data),
-)
-
 const event = reactive({})
 let originalParams = {}
+
+// A new event cannot be saved, or kept as a draft, without an organizer, and only a
+// participant identity provides one. Editing keeps the organizer the event already has.
+const missingOrganizer = computed(() => isNew.value && !event.organizer)
 
 // --- Computed params ---
 
@@ -557,7 +542,7 @@ const leave = () => {
 		show.value = false
 		return
 	}
-	if (canSaveDraft.value) saveDraftAndLeave()
+	if (canSaveDraft.value && !missingOrganizer.value) saveDraftAndLeave()
 	else showDiscardModal.value = true
 }
 
@@ -677,7 +662,7 @@ const isSaving = computed(
 )
 
 const disableSave = computed(() => {
-	if (isSaving.value || missingIdentity.value) return true
+	if (isSaving.value || missingOrganizer.value) return true
 	if (!isDateTimeValid.value) return true
 	// Publishing a draft is a change in itself, even with nothing else edited.
 	if (isDraft.value) return false
@@ -697,7 +682,7 @@ const primaryLabel = computed(() =>
 		? __('Send')
 		: __('Save'),
 )
-const canSaveDraft = computed(() => (isNew.value || isDraft.value) && !missingIdentity.value)
+const canSaveDraft = computed(() => isNew.value || isDraft.value)
 const draftOptions = computed(() => [
 	{ label: __('Save as draft'), icon: 'lucide-file-pen-line', onClick: saveDraftAndLeave },
 ])
@@ -755,13 +740,6 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 					<Button variant="ghost" class="ml-auto" @click="leave">
 						<template #icon><X :size="18" class="icon text-ink-gray-5" /></template>
 					</Button>
-				</div>
-				<div
-					v-if="showMissingIdentityNotice"
-					class="flex items-center gap-2 border-b bg-surface-amber-1 px-6 py-2.5 text-sm text-ink-amber-3"
-				>
-					<TriangleAlert :size="16" class="shrink-0" />
-					{{ __('No participant identity found. Add one in Calendar Settings to create events.') }}
 				</div>
 
 				<div class="flex min-h-0 flex-1">
@@ -969,27 +947,33 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 				<div class="flex justify-end gap-2 border-t px-6 py-3.5">
 					<Button :label="__('Cancel')" variant="outline" @click="cancel" />
 					<!-- Split button, as mail's compose: one pill, the 1px gap shows the
-					     footer background as the divider. -->
-					<div class="flex items-center gap-px">
-						<Button
-							:label="primaryLabel"
-							variant="solid"
-							:disabled="disableSave"
-							class="min-w-16"
-							:class="canSaveDraft && '!rounded-r-none'"
-							@click="handleSaveClick"
-						/>
-						<Dropdown v-if="canSaveDraft" :options="draftOptions">
+					     footer background as the divider. The tooltip sits on the wrapper:
+					     a disabled button doesn't get the hover events it would need. -->
+					<Tooltip
+						:text="__('No participant identity to organize the event. Add one in Calendar Settings.')"
+						:disabled="!missingOrganizer"
+					>
+						<div class="flex items-center gap-px">
 							<Button
+								:label="primaryLabel"
 								variant="solid"
-								class="!rounded-l-none"
-								:disabled="isSaving || !isDateTimeValid"
-								:aria-label="__('More save options')"
-							>
-								<template #icon><ChevronDown class="h-4 w-4" /></template>
-							</Button>
-						</Dropdown>
-					</div>
+								:disabled="disableSave"
+								class="min-w-16"
+								:class="canSaveDraft && '!rounded-r-none'"
+								@click="handleSaveClick"
+							/>
+							<Dropdown v-if="canSaveDraft" :options="draftOptions">
+								<Button
+									variant="solid"
+									class="!rounded-l-none"
+									:disabled="isSaving || !isDateTimeValid || missingOrganizer"
+									:aria-label="__('More save options')"
+								>
+									<template #icon><ChevronDown class="h-4 w-4" /></template>
+								</Button>
+							</Dropdown>
+						</div>
+					</Tooltip>
 				</div>
 			</div>
 		</template>

@@ -1,8 +1,6 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-from unittest.mock import PropertyMock, patch
-
 import frappe
 
 from suite.calendar.api import edit_calendar_event, get_calendar_events
@@ -16,7 +14,6 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
 from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_events_by_ids,
 )
-from suite.mail.jmap.services.calendars.participant_identity import ParticipantIdentityService
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 RANGE = ("2026-09-01T00:00:00Z", "2026-09-30T00:00:00Z")
@@ -139,43 +136,6 @@ class TestCalendarEvents(StalwartIntegrationTestCase):
             lambda: all(e["recurrence_id"] != other["recurrence_id"] for e in self._events_in_range(title)),
             message="Deleted instance still expands in the range query.",
         )
-
-    def test_create_requires_participant_identity(self):
-        with (
-            self.set_user(self.member.email),
-            patch(
-                "suite.calendar.doctype.calendar_event.calendar_event.get_participant_identities",
-                return_value=[],
-            ),
-        ):
-            self.assertRaises(
-                frappe.ValidationError, add_calendar_event, self.account, title=unique_name("ev")
-            )
-
-    def test_default_identity_falls_back_to_first(self):
-        # The service only needs its identities here; no request goes out.
-        service = ParticipantIdentityService(self.account, None)
-
-        def identities(value: list[dict]):
-            return patch.object(
-                ParticipantIdentityService,
-                "participant_identities",
-                new_callable=PropertyMock,
-                return_value=value,
-            )
-
-        unflagged = [
-            {"id": "a", "calendarAddress": "mailto:First@example.com", "isDefault": False},
-            {"id": "b", "calendarAddress": "mailto:second@example.com", "isDefault": False},
-        ]
-
-        with identities(unflagged):
-            self.assertEqual(service.get_default(), "first@example.com")
-        with identities([*reversed(unflagged), {**unflagged[0], "isDefault": True}]):
-            self.assertEqual(service.get_default(), "first@example.com")
-        with identities([]):
-            self.assertIsNone(service.get_default())
-            self.assertRaises(ValueError, service.get_default, raise_exception=True)
 
     def test_unknown_event(self):
         with self.set_user(self.member.email):

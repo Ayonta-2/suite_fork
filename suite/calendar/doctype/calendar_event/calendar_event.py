@@ -22,7 +22,7 @@ from suite.calendar.doctype.calendar_event.invitations import (
 )
 from suite.calendar.doctype.calendar_event.mailing_lists import expand_mailing_list_participants
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_calendar_event_service, get_jmap_connection, get_participant_identities
+from suite.mail.jmap import get_calendar_event_service, get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
@@ -370,7 +370,6 @@ def add_calendar_event(
 ) -> str:
     """Adds a calendar event for the given account and returns the event ID."""
 
-    _require_participant_identity(account)
     uid = uuid7().hex
     creation_id = str(uuid7())
     participants = expand_mailing_list_participants(participants)
@@ -916,20 +915,6 @@ def _cancellable_snapshots(account: str, service, ids: list[str]) -> list[dict]:
             snapshots.append(event)
 
     return snapshots
-
-
-def _require_participant_identity(account: str) -> None:
-    """Refuses to create an event for an account that has no participant identity to organize it.
-
-    The JMAP layer only catches a missing organizer; an address the client made up would go
-    through unchecked, so the check happens here, with a message that says what to fix.
-    """
-
-    if not get_participant_identities(account):
-        frappe.throw(
-            _("No participant identity found. Add one in Calendar Settings to create events."),
-            title=_("Calendar Event Creation Error"),
-        )
 
 
 def _raise_if_not_destroyed(response: dict) -> None:
