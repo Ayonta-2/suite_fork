@@ -1,8 +1,8 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { createResource } from 'frappe-ui'
 
-import type { UserAccount } from '@/apps/calendar/types/doctypes'
+import type { ParticipantIdentity, UserAccount } from '@/apps/calendar/types/doctypes'
 
 const ACCOUNT_STORAGE_KEY = 'mail-account-id'
 
@@ -53,5 +53,18 @@ export const userStore = defineStore('calendar-user', () => {
 		cache: ['participantIdentities', accountId.value],
 	})
 
-	return { accountId, resolveAccount, userResource, participantIdentities }
+	// The identity the server flags as default organizes new events; the first one
+	// stands in when none is flagged. Undefined until the identities have loaded.
+	const defaultParticipantIdentity = computed<ParticipantIdentity | undefined>(() => {
+		const identities: ParticipantIdentity[] = participantIdentities.data ?? []
+		return identities.find((i) => i.default) ?? identities[0]
+	})
+
+	return {
+		accountId,
+		resolveAccount,
+		userResource,
+		participantIdentities,
+		defaultParticipantIdentity,
+	}
 })

@@ -91,9 +91,11 @@ const getDefaultEventData = () => {
 			? dayjs().add(1, 'hour').startOf('hour').format('HH:mm')
 			: '10:00'
 
+	const organizer = organizerParticipant()
+
 	return {
 		title: '',
-		organizer: user.data.name,
+		organizer: organizer.email,
 		isAllDay: !selectedEvent?.time,
 		repeat: false,
 		startDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
@@ -107,16 +109,22 @@ const getDefaultEventData = () => {
 		description: '',
 		free_busy_status: 'Busy',
 		privacy: 'Public',
-		participants: [
-			{
-				email: user.data.name,
-				user_image: user.data.user_image,
-				_name: user.data.full_name,
-				participation_status: 'ACCEPTED',
-			},
-		],
+		participants: [organizer],
 		recurrence_rule: {},
 		addMeetLink: false,
+	}
+}
+
+// New events are organized by the account's default participant identity, which can
+// differ from the login user. The login user only stands in while the identities are
+// still loading, so the modal never opens without an organizer row.
+const organizerParticipant = () => {
+	const identity = store.defaultParticipantIdentity
+	return {
+		email: identity?.email ?? user.data.name,
+		user_image: user.data.user_image,
+		_name: identity?._name || user.data.full_name,
+		participation_status: 'ACCEPTED',
 	}
 }
 
