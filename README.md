@@ -40,7 +40,7 @@ Frappe Suite brings seven collaboration products into one Frappe app. Keep files
 
 ## Deploying Mail Servers
 
-Provisioning Stalwart mail servers (Mail Cluster, Mail Server, Server Deployment, Server Job, Ansible plays, DNS Records) lives in the separate [Suite Infra](https://github.com/frappe/suite_infra) app. Suite only needs the server URL and admin credentials in Mail Settings to talk to a Stalwart server. Sites that deployed servers through Suite keep their data: update Suite, run `bench --site yoursite migrate`, then `bench --site yoursite install-app suite_infra`. Installing it adopts the existing records and copies the root domain, DNS provider and timeouts that Mail Settings used to hold.
+Provisioning Stalwart mail servers (Mail Cluster, Mail Server, Server Deployment, Server Job, Ansible plays, DNS Records) lives in the separate [Suite Cloud](https://github.com/frappe/suite_cloud) app. Suite only needs the server URL and admin credentials in Mail Settings to talk to a Stalwart server. Sites that deployed servers through Suite keep their data: update Suite, run `bench --site yoursite migrate`, then `bench --site yoursite install-app suite_cloud`. Installing it adopts the existing records and copies the root domain, DNS provider and timeouts that Mail Settings used to hold.
 
 ## Under the Hood
 

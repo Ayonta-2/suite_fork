@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Boots a bootstrapped Stalwart server for the mail/calendar integration tests.
-# Mirrors the production sequence in the Suite Infra app's deploy-mail-server.yml playbook:
+# Mirrors the production sequence in the Suite Cloud app's deploy-mail-server.yml playbook:
 # start container -> wait for :8080 -> stalwart-cli apply bootstrap.ndjson -> restart -> wait.
 set -euo pipefail
 
