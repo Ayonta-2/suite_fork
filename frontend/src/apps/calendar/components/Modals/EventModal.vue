@@ -13,13 +13,14 @@ import {
 	Users,
 	X,
 } from 'lucide-vue-next'
-import { Button, Dialog, Dropdown, FormControl, Switch, createResource, toast } from 'frappe-ui'
+import { Button, Dialog, Dropdown, FormControl, Switch, Tooltip, createResource, toast } from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
 import { fromEventZone, fromWallClock, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
+import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
@@ -115,9 +116,11 @@ const getDefaultEventData = () => {
 			? dayjs().add(1, 'hour').startOf('hour').format('HH:mm')
 			: '10:00'
 
+	const identity = store.organizerIdentity
+
 	return {
 		title: '',
-		organizer: user.data.name,
+		organizer: identity?.email,
 		isAllDay: !selectedEvent?.time,
 		repeat: false,
 		startDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
@@ -131,21 +134,28 @@ const getDefaultEventData = () => {
 		description: '',
 		free_busy_status: 'Busy',
 		privacy: 'Public',
-		participants: [
-			{
-				email: user.data.name,
-				user_image: user.data.user_image,
-				_name: user.data.full_name,
-				participation_status: 'ACCEPTED',
-			},
-		],
+		participants: identity ? [organizerParticipant(identity)] : [],
 		recurrence_rule: {},
 		addMeetLink: false,
 	}
 }
 
+// The organizer row of a new event: the participant identity the store picked, which
+// can differ from the login user. Without one the event has no organizer at all.
+const organizerParticipant = (identity: ParticipantIdentity) => ({
+	email: identity.email,
+	user_image: user.data.user_image,
+	_name: identity._name || user.data.full_name,
+	participation_status: 'ACCEPTED',
+})
+
 const event = reactive({})
 let originalParams = {}
+
+// A new event cannot be saved, or kept as a draft, without an organizer, and only an
+// identity the account can both send from and attend as provides one (see the store).
+// Editing keeps the organizer the event already has.
+const missingOrganizer = computed(() => isNew.value && !event.organizer)
 
 // --- Computed params ---
 
@@ -338,6 +348,17 @@ watch(show, (val) => {
 	previousStart = { date: event.startDate, time: event.startTime }
 	originalParams = JSON.parse(JSON.stringify(eventParams.value))
 })
+
+// Identities can land after the modal opened; give the new event its organizer then,
+// ahead of any attendee already added.
+watch(
+	() => store.organizerIdentity,
+	(identity) => {
+		if (!show.value || !identity || !isNew.value || event.organizer) return
+		event.organizer = identity.email
+		event.participants = [organizerParticipant(identity), ...(event.participants ?? [])]
+	},
+)
 
 watch(
 	() => [event.startDate, event.startTime],
@@ -546,7 +567,7 @@ const leave = () => {
 		show.value = false
 		return
 	}
-	if (isNew.value || isDraft.value) saveDraftAndLeave()
+	if (canSaveDraft.value && !missingOrganizer.value) saveDraftAndLeave()
 	else showDiscardModal.value = true
 }
 
@@ -688,7 +709,7 @@ const isSaving = computed(
 )
 
 const disableSave = computed(() => {
-	if (isSaving.value) return true
+	if (isSaving.value || missingOrganizer.value) return true
 	if (!isDateTimeValid.value) return true
 	// Publishing a draft is a change in itself, even with nothing else edited.
 	if (isDraft.value) return false
@@ -1013,27 +1034,37 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 				<div class="flex justify-end gap-2 border-t px-6 py-3.5">
 					<Button :label="__('Cancel')" variant="outline" @click="cancel" />
 					<!-- Split button, as mail's compose: one pill, the 1px gap shows the
-					     footer background as the divider. -->
-					<div class="flex items-center gap-px">
-						<Button
-							:label="__('Save')"
-							variant="solid"
-							:disabled="disableSave"
-							class="min-w-16"
-							:class="canSaveDraft && '!rounded-r-none'"
-							@click="handleSaveClick"
-						/>
-						<Dropdown v-if="canSaveDraft" :options="draftOptions">
+					     footer background as the divider. The tooltip sits on the wrapper:
+					     a disabled button doesn't get the hover events it would need. -->
+					<Tooltip
+						:text="
+							__(
+								'No identity to organize the event. Add a participant identity in Calendar Settings whose email is also one of the account\'s mail identities.',
+							)
+						"
+						:disabled="!missingOrganizer"
+					>
+						<div class="flex items-center gap-px">
 							<Button
+								:label="__('Save')"
 								variant="solid"
-								class="!rounded-l-none"
-								:disabled="isSaving || !isDateTimeValid"
-								:aria-label="__('More save options')"
-							>
-								<template #icon><ChevronDown class="h-4 w-4" /></template>
-							</Button>
-						</Dropdown>
-					</div>
+								:disabled="disableSave"
+								class="min-w-16"
+								:class="canSaveDraft && '!rounded-r-none'"
+								@click="handleSaveClick"
+							/>
+							<Dropdown v-if="canSaveDraft" :options="draftOptions">
+								<Button
+									variant="solid"
+									class="!rounded-l-none"
+									:disabled="isSaving || !isDateTimeValid || missingOrganizer"
+									:aria-label="__('More save options')"
+								>
+									<template #icon><ChevronDown class="h-4 w-4" /></template>
+								</Button>
+							</Dropdown>
+						</div>
+					</Tooltip>
 				</div>
 			</div>
 		</template>
