@@ -1,7 +1,7 @@
 import click
 import frappe
 
-# Moved to the Suite Infra app, child tables included.
+# Moved to the Suite Cloud app, child tables included.
 MOVED_DOCTYPES = (
     "Mail Cluster",
     "Mail Cluster Store",
@@ -22,17 +22,17 @@ DATA_DOCTYPES = ("Mail Cluster", "Mail Server", "DNS Record")
 
 
 def execute() -> None:
-    """Releases the mail server deployment DocTypes to the Suite Infra app.
+    """Releases the mail server deployment DocTypes to the Suite Cloud app.
 
-    With Suite Infra installed its own sync has already retagged them, so there is nothing to do.
+    With Suite Cloud installed its own sync has already retagged them, so there is nothing to do.
     Otherwise the DocType records go, so nothing resolves to controllers Suite no longer ships.
     Tables that hold data stay (clusters carry the SSH keys that reach the servers) and are adopted
-    as they are when Suite Infra is installed later; empty ones are dropped. The retired
+    as they are when Suite Cloud is installed later; empty ones are dropped. The retired
     cluster/server backfills (SSH keypair, recovery admin, recovery port, bootstrap plan) run again
-    in Suite Infra's installer at adoption, so rows that never saw them are completed there.
+    in Suite Cloud's installer at adoption, so rows that never saw them are completed there.
     """
 
-    if "suite_infra" in frappe.get_installed_apps():
+    if "suite_cloud" in frappe.get_installed_apps():
         return
 
     keep_tables = has_deployment_data()
@@ -51,8 +51,8 @@ def execute() -> None:
 
     if keep_tables:
         click.secho(
-            "Mail server deployment data (clusters, servers, DNS records) was kept for the Suite Infra app. "
-            "Install suite_infra on this site to keep managing it.",
+            "Mail server deployment data (clusters, servers, DNS records) was kept for the Suite Cloud app. "
+            "Install suite_cloud on this site to keep managing it.",
             fg="yellow",
         )
 

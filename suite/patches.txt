@@ -96,7 +96,7 @@ suite.mail.patches.rename_skip_schedule_fetch_changes
 execute:frappe.db.set_single_value("Mail Settings", "expand_mailing_list_participants", 1)
 execute:frappe.db.set_single_value("Mail Settings", "max_mailing_list_participants", 100)
 suite.mail.patches.remove_held_queue_statuses
-suite.mail.patches.hand_over_deployment_to_suite_infra
+suite.mail.patches.hand_over_deployment_to_suite_cloud
 # --- calendar ---
 # (no patches)
 # --- suite_core ---
