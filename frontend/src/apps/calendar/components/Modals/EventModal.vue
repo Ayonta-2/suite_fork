@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, reactive, ref, watch } from 'vue'
-import { AlignLeft, Bell, Briefcase, ChevronDown, Clock, Copy, MapPin, Users, X } from 'lucide-vue-next'
+import {
+	AlignLeft,
+	Bell,
+	Briefcase,
+	ChevronDown,
+	Clock,
+	Copy,
+	MapPin,
+	MoreHorizontal,
+	Pencil,
+	Users,
+	X,
+} from 'lucide-vue-next'
 import { Button, Dialog, Dropdown, FormControl, Switch, Tooltip, createResource, toast } from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
@@ -9,6 +21,7 @@ import { fromEventZone, fromWallClock, inUserTimeZone } from '@/apps/calendar/ut
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
+import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
@@ -29,6 +42,17 @@ const isNew = computed(() => !selectedEvent?.calendarEvent)
 const isDraft = computed(() => !!selectedEvent?.calendarEvent?.isDraft)
 // Set for the length of one save: the resources read it into `draft`.
 const savingDraft = ref(false)
+
+// The lead title reads as plain bold text until you click it, so a pencil sits beside
+// it as the affordance; clicking it puts the caret in the field. Once the field has the
+// caret the hint has done its job and would only sit there restating it, so it goes.
+// Hovering the row dotted-underlines the title instead of tinting the pencil: the cue
+// belongs on the thing you are about to edit, and it stays out of the way while typing.
+// The underline colour goes through the raw token var — ink-gray-* are frappe-ui CSS
+// classes, not Tailwind palette colours, so `decoration-ink-gray-4` generates nothing
+// and the rule would silently fall back to the title's own near-black.
+const titleInput = ref<HTMLInputElement | null>(null)
+const isTitleFocused = ref(false)
 
 // --- Event initialization ---
 
@@ -654,6 +678,28 @@ const setAllDay = (isAllDay: boolean) => {
 	if (untouched) event.alerts = [defaultAlert(isAllDay, event.startDate)]
 }
 
+// --- Delete ---
+//
+// Only a saved event has something to delete; a new one is thrown away by
+// Cancel. Deleting leaves straight away — there is nothing left to keep, so
+// the unsaved-changes question would be noise.
+
+const {
+	deleteOption,
+	isDeleting,
+	showNotifyModal: showNotifyDeleteModal,
+	pendingDelete,
+	NOTIFY_DELETE_OPTIONS,
+} = useEventDelete(
+	() => selectedEvent?.calendarEvent,
+	() => {
+		show.value = false
+		emit('reloadEvents')
+	},
+)
+
+const eventOptions = computed(() => [deleteOption.value])
+
 // --- Dialog options ---
 
 const isSaving = computed(
@@ -670,18 +716,13 @@ const disableSave = computed(() => {
 	return false
 })
 
-// The primary says what it does: "Send" while there are invitations to send —
-// a new event or a draft with participants — and "Save" otherwise.
-// The primary says what it does: "Send" while there are invitations to send
-// (a new event or a draft with participants), "Save" otherwise. A new event
-// or a draft can also be kept as a draft — the split beside the primary, as
-// mail's compose has it; a published event cannot go back to being one, so
-// it gets a plain button.
-const primaryLabel = computed(() =>
-	(isNew.value || isDraft.value) && hasParticipantsOtherThanUser(event.participants)
-		? __('Send')
-		: __('Save'),
-)
+// The primary always reads "Save": whether anything is sent is the next
+// question, asked by the Notify Participants prompt behind it, and a button
+// that already said "Send" made that prompt look like a second one.
+//
+// A new event or a draft can also be kept as a draft — the split beside the
+// primary, as mail's compose has it; a published event cannot go back to
+// being one, so it gets a plain button.
 const canSaveDraft = computed(() => isNew.value || isDraft.value)
 const draftOptions = computed(() => [
 	{ label: __('Save as draft'), icon: 'lucide-file-pen-line', onClick: saveDraftAndLeave },
@@ -737,21 +778,66 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 				<!-- header -->
 				<div class="flex items-center border-b px-6 py-4">
 					<span class="text-md font-semibold">{{ dialogTitle }}</span>
-					<Button variant="ghost" class="ml-auto" @click="leave">
-						<template #icon><X :size="18" class="icon text-ink-gray-5" /></template>
-					</Button>
+					<div class="ml-auto flex items-center gap-1">
+						<Dropdown v-if="!isNew" :options="eventOptions">
+							<Button variant="ghost" :disabled="isDeleting" :aria-label="__('Event options')">
+								<template #icon>
+									<MoreHorizontal :size="18" class="icon text-ink-gray-5" />
+								</template>
+							</Button>
+						</Dropdown>
+						<Button variant="ghost" @click="leave">
+							<template #icon><X :size="18" class="icon text-ink-gray-5" /></template>
+						</Button>
+					</div>
 				</div>
 
 				<div class="flex min-h-0 flex-1">
 					<!-- left: event details -->
 					<div class="min-w-0 flex-1 overflow-y-auto px-6 py-5">
-						<!-- lead title -->
-						<input
-							v-model="event.title"
-							:autofocus="isNew"
-							:placeholder="__('Add title')"
-							class="w-full border-none bg-transparent p-0 pb-4 text-xl font-semibold tracking-tight text-ink-gray-8 outline-none placeholder:text-ink-gray-4 focus:ring-0"
-						/>
+						<!-- lead title. The field sizes to its own text — a mirror span shares
+						     the grid cell and sets the width — so the pencil sits against the
+						     title instead of adrift at the column's edge. The mirror falls back
+						     to the placeholder so an empty title still leaves something to click,
+						     and max-w-full keeps a long one inside the column, where the input
+						     scrolls internally as it did at full width. w-fit ends the hover
+						     group at the pencil, so the underline answers the title and the
+						     pencil only — not the empty column beside them, and the pb sits on
+						     a wrapper so the band below the title is outside it too. The click
+						     is on the row rather than its two children, which is what makes the
+						     gap between title and pencil live rather than dead space. -->
+						<div class="pb-4">
+							<div
+								class="group flex w-fit max-w-full items-center gap-2"
+								:class="{ 'cursor-pointer': !isTitleFocused }"
+								@click="titleInput?.focus()"
+							>
+								<div class="grid min-w-0 max-w-full">
+									<span
+										aria-hidden="true"
+										class="invisible col-start-1 row-start-1 whitespace-pre text-xl font-semibold tracking-tight"
+									>{{ event.title || __('Add title') }}</span>
+									<input
+										ref="titleInput"
+										v-model="event.title"
+										size="1"
+										:autofocus="isNew"
+										:placeholder="__('Add title')"
+										class="col-start-1 row-start-1 w-full border-none bg-transparent p-0 text-xl font-semibold tracking-tight text-ink-gray-8 decoration-[--ink-gray-4] decoration-dotted underline-offset-4 outline-none placeholder:text-ink-gray-4 focus:ring-0"
+										:class="{ 'cursor-pointer group-hover:underline': !isTitleFocused }"
+										@focus="isTitleFocused = true"
+										@blur="isTitleFocused = false"
+									/>
+								</div>
+								<button
+									v-if="event.title && !isTitleFocused"
+									class="shrink-0 cursor-pointer text-ink-gray-4"
+									:title="__('Edit title')"
+								>
+									<Pencil class="icon size-4" />
+								</button>
+							</div>
+						</div>
 
 						<!-- date & time — one grouped card -->
 						<div class="rounded-7 border border-outline-gray-2">
@@ -955,7 +1041,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 					>
 						<div class="flex items-center gap-px">
 							<Button
-								:label="primaryLabel"
+								:label="__('Save')"
 								variant="solid"
 								:disabled="disableSave"
 								class="min-w-16"
@@ -997,6 +1083,18 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 		<template #actions>
 			<div class="flex justify-end space-x-2">
 				<Button @click="handleSaveRecurringEvent(false)">{{ __('Entire Series') }}</Button>
+			</div>
+		</template>
+	</Dialog>
+	<Dialog v-model:open="showNotifyDeleteModal" v-bind="NOTIFY_DELETE_OPTIONS">
+		<template #actions>
+			<div class="flex justify-end space-x-2">
+				<Button variant="outline" @click="pendingDelete?.(false)">
+					{{ __('Skip') }}
+				</Button>
+				<Button variant="solid" @click="pendingDelete?.(true)">
+					{{ __('Send Email') }}
+				</Button>
 			</div>
 		</template>
 	</Dialog>
