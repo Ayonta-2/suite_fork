@@ -116,7 +116,7 @@ const getDefaultEventData = () => {
 			? dayjs().add(1, 'hour').startOf('hour').format('HH:mm')
 			: '10:00'
 
-	const identity = store.defaultParticipantIdentity
+	const identity = store.organizerIdentity
 
 	return {
 		title: '',
@@ -140,7 +140,7 @@ const getDefaultEventData = () => {
 	}
 }
 
-// The organizer row of a new event: the account's default participant identity, which
+// The organizer row of a new event: the participant identity the store picked, which
 // can differ from the login user. Without one the event has no organizer at all.
 const organizerParticipant = (identity: ParticipantIdentity) => ({
 	email: identity.email,
@@ -152,8 +152,9 @@ const organizerParticipant = (identity: ParticipantIdentity) => ({
 const event = reactive({})
 let originalParams = {}
 
-// A new event cannot be saved, or kept as a draft, without an organizer, and only a
-// participant identity provides one. Editing keeps the organizer the event already has.
+// A new event cannot be saved, or kept as a draft, without an organizer, and only an
+// identity the account can both send from and attend as provides one (see the store).
+// Editing keeps the organizer the event already has.
 const missingOrganizer = computed(() => isNew.value && !event.organizer)
 
 // --- Computed params ---
@@ -351,7 +352,7 @@ watch(show, (val) => {
 // Identities can land after the modal opened; give the new event its organizer then,
 // ahead of any attendee already added.
 watch(
-	() => store.defaultParticipantIdentity,
+	() => store.organizerIdentity,
 	(identity) => {
 		if (!show.value || !identity || !isNew.value || event.organizer) return
 		event.organizer = identity.email
@@ -1036,7 +1037,11 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 					     footer background as the divider. The tooltip sits on the wrapper:
 					     a disabled button doesn't get the hover events it would need. -->
 					<Tooltip
-						:text="__('No participant identity to organize the event. Add one in Calendar Settings.')"
+						:text="
+							__(
+								'No identity to organize the event. Add a participant identity in Calendar Settings whose email is also one of the account\'s mail identities.',
+							)
+						"
 						:disabled="!missingOrganizer"
 					>
 						<div class="flex items-center gap-px">

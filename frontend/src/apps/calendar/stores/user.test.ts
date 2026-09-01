@@ -9,7 +9,7 @@ vi.mock('frappe-ui', () => ({
 	createResource: () => reactive({ data: undefined, fetch: vi.fn() }),
 }))
 
-const identity = (email: string, isDefault: 0 | 1 = 0) => ({
+const participant = (email: string, isDefault: 0 | 1 = 0) => ({
 	name: `acc|${email}`,
 	id: email,
 	_name: email.split('@')[0],
@@ -17,29 +17,50 @@ const identity = (email: string, isDefault: 0 | 1 = 0) => ({
 	default: isDefault,
 	account: 'acc',
 })
+const identity = (email: string) => ({ name: `acc|${email}`, id: email, email })
 
-describe('defaultParticipantIdentity', () => {
+const storeWith = (participants?: object[], identities?: object[]) => {
+	const store = userStore()
+	store.participantIdentities.data = participants
+	store.identities.data = identities
+	return store
+}
+
+describe('organizerIdentity', () => {
 	beforeEach(() => setActivePinia(createPinia()))
 
-	it('is undefined until the identities load', () => {
-		expect(userStore().defaultParticipantIdentity).toBeUndefined()
+	it('is undefined until both lists load', () => {
+		expect(storeWith(undefined, undefined).organizerIdentity).toBeUndefined()
+		expect(storeWith([participant('a@x.io')], undefined).organizerIdentity).toBeUndefined()
+		expect(storeWith(undefined, [identity('a@x.io')]).organizerIdentity).toBeUndefined()
 	})
 
-	it('is undefined when the account has no identities', () => {
-		const store = userStore()
-		store.participantIdentities.data = []
-		expect(store.defaultParticipantIdentity).toBeUndefined()
+	it('is undefined when no address is both a mail and a participant identity', () => {
+		expect(storeWith([], []).organizerIdentity).toBeUndefined()
+		expect(storeWith([participant('a@x.io')], [identity('b@x.io')]).organizerIdentity).toBeUndefined()
 	})
 
-	it('prefers the identity flagged default', () => {
-		const store = userStore()
-		store.participantIdentities.data = [identity('a@x.io'), identity('b@x.io', 1)]
-		expect(store.defaultParticipantIdentity?.email).toBe('b@x.io')
+	it('prefers the participant identity flagged default when it can send', () => {
+		const store = storeWith(
+			[participant('a@x.io'), participant('b@x.io', 1)],
+			[identity('a@x.io'), identity('b@x.io')],
+		)
+		expect(store.organizerIdentity?.email).toBe('b@x.io')
 	})
 
-	it('falls back to the first identity when none is flagged', () => {
-		const store = userStore()
-		store.participantIdentities.data = [identity('a@x.io'), identity('b@x.io')]
-		expect(store.defaultParticipantIdentity?.email).toBe('a@x.io')
+	it('skips a default that has no mail identity', () => {
+		const store = storeWith(
+			[participant('a@x.io'), participant('b@x.io', 1)],
+			[identity('a@x.io')],
+		)
+		expect(store.organizerIdentity?.email).toBe('a@x.io')
+	})
+
+	it('falls back to the first common identity when none is flagged', () => {
+		const store = storeWith(
+			[participant('c@x.io'), participant('a@x.io'), participant('b@x.io')],
+			[identity('b@x.io'), identity('a@x.io')],
+		)
+		expect(store.organizerIdentity?.email).toBe('a@x.io')
 	})
 })
