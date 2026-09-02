@@ -368,9 +368,11 @@ def renew_push_subscription(user: str, id: str) -> None:
 def renew_expiring_push_subscriptions() -> None:
     """Renews soon-to-expire push subscriptions for all JMAP configured users.
 
-    Scheduled to run daily. A subscription is renewed when its expiry is within
-    ``RENEW_THRESHOLD_DAYS`` of the run; subscriptions without an expiry or expiring
-    later are left untouched. Users who disabled push subscriptions in their User
+    Scheduled to run daily. A subscription is renewed when its expiry is still ahead
+    but within ``RENEW_THRESHOLD_DAYS`` of the run; subscriptions without an expiry or
+    expiring later are left untouched, and already-expired ones are skipped (renewal
+    cannot revive them, and the server purges them). Users who disabled push
+    subscriptions in their User
     Settings are skipped. Users missing this site's subscription on the mail server get
     one created (self-healing — see ensure_push_subscription); healing and the expiry
     scan share a single fetch, and subscriptions healing deleted are not renewed.
@@ -379,7 +381,8 @@ def renew_expiring_push_subscriptions() -> None:
     if not frappe.utils.get_url().startswith("https://"):
         return
 
-    cutoff = get_utc_now() + timedelta(days=RENEW_THRESHOLD_DAYS)
+    now = get_utc_now()
+    cutoff = now + timedelta(days=RENEW_THRESHOLD_DAYS)
 
     for user in get_jmap_configured_users():
         if is_push_subscription_disabled(user):
@@ -397,7 +400,7 @@ def renew_expiring_push_subscriptions() -> None:
                 if subscription["id"] in deleted_ids:
                     continue
                 expires = subscription.get("expires")
-                if expires and parse_iso_datetime(expires, as_str=False) <= cutoff:
+                if expires and now < parse_iso_datetime(expires, as_str=False) <= cutoff:
                     expiring_ids.append(subscription["id"])
 
             if not expiring_ids:

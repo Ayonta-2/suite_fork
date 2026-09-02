@@ -150,6 +150,18 @@ class RenewExpiringPushSubscriptions(unittest.TestCase):
         service.update.assert_called_once_with([{"id": "exp-1"}])
         add.assert_not_called()
 
+    def test_already_expired_foreign_subscription_is_not_renewed(self):
+        service, add = self._run(
+            [
+                {"id": "site-sub", "deviceClientId": "site-device", "expires": "2999-01-01T00:00:00Z"},
+                {"id": "dead-1", "deviceClientId": "other-device", "expires": "2000-01-01T00:00:00Z"},
+            ]
+        )
+
+        service.update.assert_not_called()
+        service.delete.assert_not_called()
+        add.assert_not_called()
+
     def test_deleted_expired_subscription_is_not_renewed(self):
         service, add = self._run(
             [{"id": "sub-old", "deviceClientId": "site-device", "expires": "2000-01-01T00:00:00Z"}]
