@@ -221,7 +221,8 @@ def _heal_push_subscription(user: str, service, subscriptions: list[dict]) -> li
 def on_login(login_manager) -> None:
     """Login hook: heal the user's push subscription in the background.
 
-    Enqueued so the JMAP round trips never sit in the login path.
+    Enqueued so the JMAP round trips never sit in the login path, and deduplicated
+    per user so a burst of logins queues one job.
     """
 
     user = login_manager.user
@@ -238,6 +239,7 @@ def on_login(login_manager) -> None:
     )
 
 
+@frappe.whitelist()
 def add_push_subscription(
     user: str,
     device_client_id: str | None = None,

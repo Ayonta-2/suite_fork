@@ -190,6 +190,8 @@ class OnLogin(unittest.TestCase):
         enqueue_job.assert_called_once()
         self.assertIs(enqueue_job.call_args.args[0], push_subscription.ensure_push_subscription)
         self.assertEqual(enqueue_job.call_args.kwargs["user"], USER)
+        self.assertEqual(enqueue_job.call_args.kwargs["job_id"], f"ensure_push_subscription:{USER}")
+        self.assertTrue(enqueue_job.call_args.kwargs["deduplicate"])
 
     def test_skips_guest_and_administrator(self):
         self._run("Guest").assert_not_called()
