@@ -193,6 +193,12 @@ def _heal_push_subscription(user: str, service, subscriptions: list[dict]) -> li
     anyway, so a failure must not block the replacement). Creates a fresh subscription
     unless a live one remains. Returns the ids it deleted so a caller reusing
     ``subscriptions`` can drop them.
+
+    Subscriptions created before device ids were kept exclusive may wear the site id
+    over a custom URL. The server exposes nothing to tell them apart (url is never
+    returned on get, and Stalwart normalizes a null types filter to the full type
+    list), so pruning may remove such a legacy subscription once; recreating it
+    assigns a unique id, taking it permanently out of healing's reach.
     """
 
     device_client_id = get_site_device_client_id(user)
