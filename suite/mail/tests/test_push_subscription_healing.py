@@ -363,7 +363,7 @@ class DeleteSitePushSubscriptions(unittest.TestCase):
             ]
         )
 
-        service.assert_called_once_with(USER, ignore_permissions=True)
+        service.assert_called_once_with(USER, ignore_permissions=True, allow_disabled=True)
         service.return_value.delete.assert_called_once_with(["site-1", "site-2"])
 
     def test_nothing_to_delete_skips_the_delete_call(self):
@@ -431,3 +431,29 @@ class DeletePushSubscriptionsOnDisable(unittest.TestCase):
             events.delete_push_subscriptions_on_disable(doc)
 
         log_error.assert_called_once()
+
+
+class GetJMAPConnectionForDisabledUser(unittest.TestCase):
+    """The factory refuses disabled users unless the caller says the disabled state is expected."""
+
+    def _run(self, enabled: int | None, allow_disabled: bool = False) -> None:
+        from suite.mail import jmap
+
+        with (
+            mock.patch.object(jmap.frappe, "get_cached_value", return_value=enabled),
+            # No User Settings: a call that gets past the enabled check fails here instead.
+            mock.patch.object(jmap.frappe.db, "exists", return_value=None),
+            self.assertRaises(frappe.ValidationError) as raised,
+        ):
+            jmap.get_jmap_connection(USER, ignore_permissions=True, allow_disabled=allow_disabled)
+
+        return str(raised.exception)
+
+    def test_disabled_user_is_refused_by_default(self):
+        self.assertIn("disabled", self._run(enabled=0))
+
+    def test_allow_disabled_lets_the_call_through(self):
+        self.assertIn("JMAP settings", self._run(enabled=0, allow_disabled=True))
+
+    def test_allow_disabled_still_refuses_a_missing_user(self):
+        self.assertIn("does not exist", self._run(enabled=None, allow_disabled=True))

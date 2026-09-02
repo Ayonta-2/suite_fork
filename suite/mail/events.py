@@ -102,8 +102,8 @@ def delete_push_subscriptions_on_disable(doc: Document, method: str | None = Non
     """Delete this site's push subscriptions on the mail server when the user is disabled.
 
     Only the subscriptions wearing the site's device client id go; the user's custom ones stay.
-    Runs before save rather than on update: the JMAP connection refuses disabled users, and once
-    the flag is written the User record (cached or not) may already read as disabled.
+    Ordered ahead of apply_disabled_account_role: that role may revoke the account's access on
+    Stalwart, after which the JMAP delete would be refused.
     """
 
     if doc.flags.in_insert or doc.enabled or not doc.has_value_changed("enabled"):

@@ -253,12 +253,10 @@ doc_events = {
             "suite.drive.utils.users.create_drive_settings",
             "suite.mail.events.create_user_settings",
         ],
-        # Before save, not on update: the mail server is still reachable for the user while
-        # the record reads as enabled (see delete_push_subscriptions_on_disable).
-        "before_save": [
-            "suite.mail.events.delete_push_subscriptions_on_disable",
-        ],
         "on_update": [
+            # First: the disabled account role applied below may cut the JMAP access the
+            # deletion needs.
+            "suite.mail.events.delete_push_subscriptions_on_disable",
             "suite.mail.events.update_account_password",
             "suite.mail.events.clear_sessions_on_disable",
             "suite.mail.events.apply_disabled_account_role",

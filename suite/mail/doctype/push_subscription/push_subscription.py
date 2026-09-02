@@ -539,11 +539,12 @@ def delete_site_push_subscriptions(user: str) -> None:
     Used when the user is disabled: the subscriptions would otherwise keep webhooks flowing
     for an account the site no longer serves, and the server only purges them at expiry.
     Custom subscriptions carry their own device client id and are left alone. Login healing
-    recreates the site's subscription once the user is enabled again.
+    recreates the site's subscription once the user is enabled again. The user is already
+    disabled when this runs, so the connection is opened with that allowed explicitly.
     """
 
     device_client_id = get_site_device_client_id(user)
-    service = get_push_subscription_service(user, ignore_permissions=True)
+    service = get_push_subscription_service(user, ignore_permissions=True, allow_disabled=True)
 
     ids = [
         subscription["id"]
