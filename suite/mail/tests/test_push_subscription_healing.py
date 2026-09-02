@@ -8,6 +8,8 @@ verifiable and recoverable without any locally stored record."""
 import unittest
 from unittest import mock
 
+from frappe.utils.file_lock import LockTimeoutError
+
 from suite.mail.doctype.push_subscription import push_subscription
 
 USER = "user@example.test"
@@ -68,6 +70,21 @@ class EnsurePushSubscription(unittest.TestCase):
 
         add.assert_not_called()
         service.assert_not_called()
+
+    def test_skips_when_concurrent_run_holds_the_lock(self):
+        with (
+            mock.patch.object(
+                push_subscription.frappe.utils, "get_url", return_value="https://mail.example.test"
+            ),
+            mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=False),
+            mock.patch.object(push_subscription, "filelock", side_effect=LockTimeoutError),
+            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+            mock.patch.object(push_subscription, "_add_push_subscription") as add,
+        ):
+            push_subscription.ensure_push_subscription(USER)
+
+        service.assert_not_called()
+        add.assert_not_called()
 
 
 class OnLogin(unittest.TestCase):

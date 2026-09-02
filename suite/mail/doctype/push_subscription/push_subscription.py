@@ -10,6 +10,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
+from frappe.utils.file_lock import LockTimeoutError
+from frappe.utils.synchronization import filelock
 
 from suite.mail.jmap import get_push_subscription_service
 from suite.mail.utils import generate_uuid_style_hash, log_mail_error
@@ -165,7 +167,9 @@ def ensure_push_subscription(user: str) -> None:
     A subscription lost to a failed creation, an unrenewed expiry or a server-side delete
     silently ends the user's webhooks — and with them both realtime events and mailbox-count
     cache invalidation. The device client id is deterministic per site+user, so presence is
-    a plain lookup.
+    a plain lookup. A per-user lock serializes overlapping runs (login healing vs. the daily
+    renewal job) so they cannot both observe the subscription as missing and create it twice;
+    a run that cannot get the lock skips, since the holder is doing the same work.
     """
 
     if not frappe.utils.get_url().startswith("https://"):
@@ -173,17 +177,21 @@ def ensure_push_subscription(user: str) -> None:
     if is_push_subscription_disabled(user):
         return
 
-    device_client_id = get_site_device_client_id(user)
-    now = get_utc_now()
+    try:
+        with filelock(f"ensure_push_subscription_{user}"):
+            device_client_id = get_site_device_client_id(user)
+            now = get_utc_now()
 
-    for subscription in get_push_subscription_service(user, ignore_permissions=True).get():
-        if subscription.get("deviceClientId") != device_client_id:
-            continue
-        expires = subscription.get("expires")
-        if not expires or parse_iso_datetime(expires, as_str=False) > now:
-            return
+            for subscription in get_push_subscription_service(user, ignore_permissions=True).get():
+                if subscription.get("deviceClientId") != device_client_id:
+                    continue
+                expires = subscription.get("expires")
+                if not expires or parse_iso_datetime(expires, as_str=False) > now:
+                    return
 
-    _add_push_subscription(user, ignore_permissions=True)
+            _add_push_subscription(user, ignore_permissions=True)
+    except LockTimeoutError:
+        return
 
 
 def on_login(login_manager) -> None:
