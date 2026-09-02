@@ -289,8 +289,19 @@ def _add_push_subscription(
 
     is_push_subscription_disabled(user, raise_exception=True)
 
-    with filelock(f"ensure_push_subscription_{user}"):
-        return _create_push_subscription(user, device_client_id, url, types, ignore_permissions)
+    try:
+        # A healing run holds the lock for a couple of JMAP round trips; 10 seconds is
+        # generous. On timeout, surface a retryable message instead of the raw lock error
+        # (which advises deleting the lock file) after a 30 second modal hang.
+        with filelock(f"ensure_push_subscription_{user}", timeout=10):
+            return _create_push_subscription(user, device_client_id, url, types, ignore_permissions)
+    except LockTimeoutError:
+        frappe.throw(
+            _(
+                "Push subscriptions for {0} are currently being updated. Please try again in a few moments."
+            ).format(frappe.bold(user)),
+            title=_("Push Subscription Creation Error"),
+        )
 
 
 def _create_push_subscription(

@@ -139,8 +139,19 @@ class AddPushSubscription(unittest.TestCase):
             result = push_subscription._add_push_subscription(USER, ignore_permissions=True)
 
         self.assertEqual(result, "id-1")
-        filelock.assert_called_once_with(f"ensure_push_subscription_{USER}")
+        filelock.assert_called_once_with(f"ensure_push_subscription_{USER}", timeout=10)
         create.assert_called_once_with(USER, None, None, None, True)
+
+    def test_lock_timeout_surfaces_a_friendly_error(self):
+        with (
+            mock.patch.object(push_subscription, "filelock", side_effect=LockTimeoutError),
+            mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=False),
+            mock.patch.object(push_subscription, "_create_push_subscription") as create,
+            self.assertRaises(push_subscription.frappe.ValidationError),
+        ):
+            push_subscription._add_push_subscription(USER, ignore_permissions=True)
+
+        create.assert_not_called()
 
 
 class RenewExpiringPushSubscriptions(unittest.TestCase):
