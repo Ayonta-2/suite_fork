@@ -539,7 +539,8 @@ class TestWebDAVPut(IntegrationTestCase):
             patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
             patch("frappe.logger", side_effect=broken_drive_logger),
             patch("frappe.enqueue") as enqueue_mock,
-            contextlib.redirect_stderr(io.StringIO()),  # the stderr rung fires; keep it off the runner's console
+            # the stderr rung fires; keep it off the runner's console
+            contextlib.redirect_stderr(io.StringIO()),
             self.assertRaises(OSError),
         ):
             frappe.db.commit()
