@@ -253,6 +253,11 @@ doc_events = {
             "suite.drive.utils.users.create_drive_settings",
             "suite.mail.events.create_user_settings",
         ],
+        # Before save, not on update: the mail server is still reachable for the user while
+        # the record reads as enabled (see delete_push_subscriptions_on_disable).
+        "before_save": [
+            "suite.mail.events.delete_push_subscriptions_on_disable",
+        ],
         "on_update": [
             "suite.mail.events.update_account_password",
             "suite.mail.events.clear_sessions_on_disable",
