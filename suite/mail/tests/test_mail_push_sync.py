@@ -40,6 +40,30 @@ class EmailServiceChanges(unittest.TestCase):
         self.assertEqual(self._service({}).changes("s1"), {})
 
 
+class EmailServiceGetState(unittest.TestCase):
+    """``CoreService.get_state`` — unwrap the state from an empty 'get', None when unavailable."""
+
+    def _service(self, response: dict) -> EmailService:
+        service = EmailService("f7", mock.MagicMock())
+        service._exec = mock.MagicMock(return_value=response)
+        return service
+
+    def test_returns_state_from_first_method_response_via_an_empty_get(self):
+        body = {"accountId": "f7", "state": "s9", "list": [], "notFound": []}
+        service = self._service({"methodResponses": [["Email/get", body, "0"]]})
+
+        self.assertEqual(service.get_state(), "s9")
+        service._exec.assert_called_once_with("get", ids=[], properties=["id"])
+
+    def test_error_response_yields_none(self):
+        service = self._service({"methodResponses": [["error", FORBIDDEN, "0"]]})
+
+        self.assertIsNone(service.get_state())
+
+    def test_missing_method_responses_yield_none(self):
+        self.assertIsNone(self._service({}).get_state())
+
+
 class FetchChanges(unittest.TestCase):
     """``fetch_changes`` — server failures are logged and leave the sync state untouched."""
 
