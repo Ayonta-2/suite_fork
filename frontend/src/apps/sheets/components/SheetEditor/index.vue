@@ -32,31 +32,37 @@
     <!-- Bar 1 · Identity -->
     <div class="sn-topbar">
       <div class="sn-topbar-left">
-        <!-- Brand mark doubles as the "back to home" action. Clicking it runs
-             flushAndClose so any pending edits are saved before navigation. -->
-        <button class="sn-app-icon-btn" type="button" aria-label="Back to home" title="Back to home" @click="flushAndClose">
-          <svg class="sn-app-icon" width="28" height="28" viewBox="0 0 118 118" fill="none" aria-hidden="true">
-            <path d="M93.9278 0H23.1013C10.3428 0 0 10.3428 0 23.1013V93.9278C0 106.686 10.3428 117.029 23.1013 117.029H93.9278C106.686 117.029 117.029 106.686 117.029 93.9278V23.1013C117.029 10.3428 106.686 0 93.9278 0Z" fill="#278F5E"/>
-            <path d="M77.757 25.9364H23.5215V36.437H77.757C80.6447 36.437 83.0073 38.7996 83.0073 41.6873V75.3942C83.0073 78.2818 80.6447 80.6445 77.757 80.6445H39.2724C36.3847 80.6445 34.0221 78.2818 34.0221 75.3942V50.6653H23.5215V75.3942C23.5215 84.0572 30.6094 91.1451 39.2724 91.1451H77.757C86.42 91.1451 93.5079 84.0572 93.5079 75.3942V41.6873C93.5079 33.0243 86.42 25.9364 77.757 25.9364Z" fill="white"/>
-            <path d="M53.8678 59.6958H43.3672V70.0914H53.8678V59.6958Z" fill="white"/>
-            <path d="M73.6617 50.6653H63.1611V70.1439H73.6617V50.6653Z" fill="white"/>
-          </svg>
-        </button>
-        <!-- Auto-sizing title. A hidden ::after pseudo mirrors the text and
-             sizes the box via real DOM text layout, so the input grows
-             pixel-perfect and smooth per keystroke, with no JS canvas measuring
-             and no width animation lagging behind the caret. -->
-        <span class="sn-title-fit" :data-value="currentTitle || 'Untitled Sheet'">
-          <input
-            name="sheet-title"
-            class="sn-title-input"
-            v-model="currentTitle"
-            placeholder="Untitled Sheet"
-            spellcheck="false"
-            @focus="onTitleFocus"
-            @blur="onTitleBlur"
-          />
-        </span>
+        <div class="sn-identity">
+          <Dropdown :options="brandMenuOptions" :offset="16">
+            <template #default="{ open }">
+              <div class="sn-app-menu-trigger" aria-label="Open Sheets menu" title="Open Sheets menu">
+                <svg class="sn-app-icon" width="28" height="28" viewBox="0 0 118 118" fill="none" aria-hidden="true">
+                  <path d="M93.9278 0H23.1013C10.3428 0 0 10.3428 0 23.1013V93.9278C0 106.686 10.3428 117.029 23.1013 117.029H93.9278C106.686 117.029 117.029 106.686 117.029 93.9278V23.1013C117.029 10.3428 106.686 0 93.9278 0Z" fill="#278F5E"/>
+                  <path d="M77.757 25.9364H23.5215V36.437H77.757C80.6447 36.437 83.0073 38.7996 83.0073 41.6873V75.3942C83.0073 78.2818 80.6447 80.6445 77.757 80.6445H39.2724C36.3847 80.6445 34.0221 78.2818 34.0221 75.3942V50.6653H23.5215V75.3942C23.5215 84.0572 30.6094 91.1451 39.2724 91.1451H77.757C86.42 91.1451 93.5079 84.0572 93.5079 75.3942V41.6873C93.5079 33.0243 86.42 25.9364 77.757 25.9364Z" fill="white"/>
+                  <path d="M53.8678 59.6958H43.3672V70.0914H53.8678V59.6958Z" fill="white"/>
+                  <path d="M73.6617 50.6653H63.1611V70.1439H73.6617V50.6653Z" fill="white"/>
+                </svg>
+                <FeatherIcon :name="open ? 'chevron-up' : 'chevron-down'" class="size-4 text-ink-gray-7" />
+              </div>
+            </template>
+          </Dropdown>
+          <Breadcrumbs v-if="!isTitleEditing" :items="sheetBreadcrumbs" />
+          <template v-else>
+            <div class="flex min-w-0 items-center">
+              <Breadcrumbs class="sn-parent-breadcrumb" :items="sheetHomeBreadcrumbs" />
+              <span class="mx-0.5 text-base text-ink-gray-4" aria-hidden="true">/</span>
+              <InlineRenameInput
+                v-model="currentTitle"
+                :editing="isTitleEditing"
+                appearance="breadcrumb"
+                class="max-w-[520px]"
+                @submit="finishTitleEditing"
+                @cancel="cancelTitleEditing"
+                @blur="finishTitleEditing"
+              />
+            </div>
+          </template>
+        </div>
         <!-- Save status — muted inline text; never competes with the title -->
         <span v-if="isSaving" class="sn-save-status">
           <FeatherIcon name="loader" class="sn-save-icon sn-save-spin" />
@@ -1259,12 +1265,14 @@
 </template>
 
 <script setup>
-import { h, ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { h, ref, reactive, computed, customRef, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { createGrid }          from '../../canvas/index.js'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { colLabel, parseCellId, cellId } from '../../utils/cells.js'
 import { call } from '../../utils/api.js'
-import { useCurrentUser } from '@/boot/session'
+import { useCurrentUser, useSessionStore } from '@/boot/session'
+import { useAppSwitcher } from '@/composables/useAppSwitcher'
+import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
@@ -1320,13 +1328,14 @@ import { createChartEngine } from '../../engine/charts.js'
 import { useChartIntegration } from './useChartIntegration.js'
 import ChartDialog             from './ChartDialog.vue'
 import ChartOverlay            from './ChartOverlay.vue'
+import InlineRenameInput       from '@/apps/drive/components/InlineRenameInput.vue'
 import { createNamedRanges }   from '../../engine/named-ranges.js'
 import { getFunctionNames }    from '../../engine/formula.js'
 import NamedRangesDialog       from './NamedRangesDialog.vue'
 import { useSmartFill }        from './useSmartFill.js'
 import * as versionsApi        from '../../services/versions.js'
 import {
-   Avatar, Badge, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip } from 'frappe-ui'
+   Avatar, Badge, Breadcrumbs, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip } from 'frappe-ui'
 import {
   CommandPalette,
   CommandPaletteEmpty,
@@ -1339,6 +1348,35 @@ import {
 
 const props = defineProps({ id: { type: String, default: 'new' } })
 const emit  = defineEmits(['close', 'saved'])
+const sessionStore = useSessionStore()
+const appsMenuOption = useAppSwitcher('sheets', async () => {
+  await flushSave()
+  return !saveError.value
+})
+const themeMenuOption = useThemeMenuOption()
+const isTitleEditing = ref(false)
+const sheetHomeBreadcrumbs = computed(() => [
+  { label: 'Sheets', href: '/sheets', onClick: flushAndClose },
+])
+const sheetBreadcrumbs = computed(() => [
+  ...sheetHomeBreadcrumbs.value,
+  { label: currentTitle.value || 'Untitled Sheet', onClick: startTitleEditing },
+])
+const brandMenuOptions = computed(() => [
+  {
+    group: '',
+    options: [appsMenuOption.value],
+  },
+  {
+    group: '',
+    options: [
+      themeMenuOption,
+      ...(sessionStore.isLoggedIn
+        ? [{ label: 'Log out', icon: 'lucide-log-out', onClick: () => sessionStore.logout.submit() }]
+        : []),
+    ],
+  },
+])
 
 // ── Engine instances ──────────────────────────────────────────────────────────
 
@@ -1691,7 +1729,22 @@ const hasActiveHyperlink   = computed(() => !!activeFormat.value?.hyperlink)
 const showFormulas      = ref(false)
 
 const selectionStats    = ref(null)
-const isDirty           = ref(false)
+let _dirtyRevision = 0
+const isDirty = customRef((track, trigger) => {
+  let value = false
+  return {
+    get() {
+      track()
+      return value
+    },
+    set(next) {
+      if (next) _dirtyRevision += 1
+      if (next === value) return
+      value = next
+      trigger()
+    },
+  }
+})
 const isPaintingFormat  = ref(false)
 
 // ── Comment UI state ──────────────────────────────────────────────────────────
@@ -3462,6 +3515,8 @@ function onBeforeUnloadGuard(e) {
 }
 
 let _autoSaveTimer = null
+let _savePromise = null
+let _pendingSaveBatch = null
 
 // Operation queue — populated by _queueOp() at write sites (paste, fill,
 // import, cell edit, etc.).  Flushed after each successful save so each
@@ -3706,13 +3761,12 @@ function _diffRefs(before, after) {
 // the server returns an HTML 413 instead of JSON.
 const _MAX_OP_PAYLOAD_BYTES = 64 * 1024
 
-// Drains the queue and returns the ops as a single batch shaped for the
-// versioning save endpoint. We hand this directly to `saveExisting` so the
-// server allocates one contiguous block of op-log seqs in user-action order.
-function _drainOpsForSave() {
-	if (!_opQueue.length || props.id === 'new') return []
-	const batch = _opQueue.splice(0, _opQueue.length)
-	return batch.map(_serialiseOp)
+// Snapshot the queue without removing entries. They are removed only after the
+// save succeeds, so a failed save can retry without losing operation history.
+function _opsForSave() {
+	if (!_opQueue.length || props.id === 'new') return { ops: [], count: 0 }
+	const batch = _opQueue.slice()
+	return { ops: batch.map(_serialiseOp), count: batch.length }
 }
 
 function _serialiseOp(op) {
@@ -3743,6 +3797,7 @@ function _triggerAutoSave() {
 }
 
 async function _doAutoSave() {
+  if (_savePromise) await _savePromise
   if (!isDirty.value) return
   // Backstop: a viewer should never reach save_sheet (which would throw
   // PermissionError). The input layer already blocks their edits, so isDirty
@@ -3753,21 +3808,33 @@ async function _doAutoSave() {
   // bootstrap save failed for any reason, leave it to a subsequent reload
   // rather than spamming the server on every typed character.
   if (props.id === 'new') return
+  isDirty.value = false
   // Drain queued ops BEFORE the save so the batch lands atomically with the
   // implicit `save` op and keeps the canonical user-action ordering intact.
-  const ops = _drainOpsForSave()
-  await saveExisting(props.id, currentTitle.value, { ops })
-  if (!saveError.value) {
-    isDirty.value   = false
-    justSaved.value = true
-    setTimeout(() => { justSaved.value = false }, 2500)
+  const batch = _pendingSaveBatch || { ..._opsForSave(), revision: _dirtyRevision }
+  _pendingSaveBatch = batch
+  _savePromise = _pendingSaveBatch.failed
+    ? retrySave()
+    : saveExisting(props.id, currentTitle.value, { ops: batch.ops })
+  await _savePromise
+  _savePromise = null
+  if (saveError.value) {
+    batch.failed = true
+    isDirty.value = true
+    return
   }
+  _opQueue.splice(0, batch.count)
+  _pendingSaveBatch = null
+  isDirty.value = _dirtyRevision > batch.revision
+  justSaved.value = true
+  setTimeout(() => { justSaved.value = false }, 2500)
 }
 
 async function flushSave() {
-  if (!isDirty.value) return
   clearTimeout(_autoSaveTimer)
-  await _doAutoSave()
+  do {
+    await _doAutoSave()
+  } while (isDirty.value && !saveError.value)
 }
 
 // Manual retry handler — bound to the refresh button next to the
@@ -3820,13 +3887,20 @@ watch(showSortFilter, () => { grid?.render?.() })
 // → `flushSave` did the same. Snapshotting on focus avoids spurious saves
 // when the user just clicks into and out of the field without typing.
 let _titleAtFocus = ''
-function onTitleFocus() { _titleAtFocus = currentTitle.value }
-function onTitleBlur() {
+function startTitleEditing() {
+  _titleAtFocus = currentTitle.value
+  isTitleEditing.value = true
+}
+function finishTitleEditing() {
+  if (!isTitleEditing.value) return
   if (currentTitle.value !== _titleAtFocus) isDirty.value = true
+  isTitleEditing.value = false
   _triggerAutoSave()
 }
-
-watch(isSaving, (cur, prev) => { if (prev && !cur && !saveError.value) isDirty.value = false })
+function cancelTitleEditing() {
+  currentTitle.value = _titleAtFocus
+  isTitleEditing.value = false
+}
 
 function onSave() { _doAutoSave() }
 
@@ -6015,46 +6089,23 @@ function toggleShowFormulas() {
 .sn-load-error-sub   { font-size: 13px; color: var(--ink-gray-6); margin: 0 0 8px; max-width: 360px; }
 
 /* ── Bar 1 · Identity / topbar ───────────────────────────────────────────── */
-.sn-topbar       { display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 16px; border-bottom:1px solid var(--outline-gray-2); background:var(--surface-base); flex-shrink:0; }
+.sn-topbar       { position:relative; z-index:10; display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 12px; border-bottom:1px solid var(--outline-elevation-1); background:var(--surface-elevation-1); flex-shrink:0; }
 /* Left cluster groups: brand+title tight (gap:4); status chips sit further away
    (gap:12) so the title reads as the focal point, not crowded by badges. */
 .sn-topbar-left  { display:flex; align-items:center; gap:8px; min-width:0; }
-.sn-topbar-left  > .sn-app-icon-btn + .sn-title-fit { margin-left:-8px; }
 .sn-topbar-right { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.sn-identity { display:flex; min-width:0; align-items:center; }
 
 .sn-app-icon { width:28px; height:28px; flex-shrink:0; display:block; }
-.sn-app-icon-btn {
-  display:inline-flex; align-items:center; justify-content:center;
-  width:36px; height:36px; padding:4px; margin:0; border:none; background:transparent; cursor:pointer;
-  border-radius:8px; transition:background-color .12s;
-}
-.sn-app-icon-btn:hover  { background:var(--surface-gray-2); }
-.sn-app-icon-btn:focus-visible { outline:2px solid var(--outline-gray-4); outline-offset:2px; }
+.sn-app-menu-trigger { display:flex; width:fit-content; align-items:center; gap:8px; cursor:pointer; }
+.sn-parent-breadcrumb :deep(a) { color:var(--ink-gray-5); }
 
-/* Auto-sizing title. A hidden ::after mirror carries the exact same typography
-   and box as the input; being normal flow, ITS width sizes the wrapper to the
-   real rendered text. The input is positioned absolutely on top so its own
+/*
    intrinsic ~20ch width is taken out of the layout — otherwise it, not the
    text, would dictate the box. Result: the box hugs the text and grows smoothly
    per keystroke, with no width animation lagging the caret and no canvas
    measurement drifting from actual metrics. min/max-width keep the old
    click-target floor and runaway-title ceiling. */
-.sn-title-fit { position:relative; display:inline-block; min-width:56px; max-width:520px; }
-.sn-title-fit::after {
-  content:attr(data-value) ' ';
-  display:block;
-  visibility:hidden;
-  white-space:pre;
-  box-sizing:border-box;
-  height:32px; border:1px solid transparent; padding:0 10px;
-  max-width:520px; overflow:hidden;
-  font-size:15px; font-weight:600; font-family:inherit; letter-spacing:-.005em;
-}
-.sn-title-input { position:absolute; inset:0; box-sizing:border-box; width:100%; height:100%; border:1px solid transparent; border-radius:6px; padding:0 10px; font-size:15px; font-weight:600; color:var(--ink-gray-9); background:transparent; outline:none; font-family:inherit; letter-spacing:-.005em; transition:background-color .12s, border-color .12s; }
-
-.sn-title-input:hover { background:var(--surface-gray-2); }
-.sn-title-input:focus { border-color:var(--outline-gray-4); background:var(--surface-base); box-shadow:0 0 0 2px rgba(23,23,23,.10); }
-
 /* Hairline between action buttons and avatar — groups the cluster without
    relying on extra padding. */
 .sn-topbar-divider { width:1px; height:20px; background:var(--outline-gray-2); margin:0 4px; flex-shrink:0; }
