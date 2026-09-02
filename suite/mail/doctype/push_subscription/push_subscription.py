@@ -232,6 +232,8 @@ def on_login(login_manager) -> None:
         ensure_push_subscription,
         user=user,
         queue="short",
+        job_id=f"ensure_push_subscription:{user}",
+        deduplicate=True,
         enqueue_after_commit=True,
     )
 
