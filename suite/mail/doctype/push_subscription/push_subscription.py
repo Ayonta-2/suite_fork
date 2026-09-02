@@ -3,6 +3,7 @@
 
 import base64
 import json
+from contextlib import suppress
 from datetime import timedelta
 from uuid import uuid7
 
@@ -178,19 +179,43 @@ def ensure_push_subscription(user: str) -> None:
 
     try:
         with filelock(f"ensure_push_subscription_{user}"):
-            device_client_id = get_site_device_client_id(user)
-            now = get_utc_now()
-
-            for subscription in get_push_subscription_service(user, ignore_permissions=True).get():
-                if subscription.get("deviceClientId") != device_client_id:
-                    continue
-                expires = subscription.get("expires")
-                if not expires or parse_iso_datetime(expires, as_str=False) > now:
-                    return
-
-            _add_push_subscription(user, ignore_permissions=True)
+            service = get_push_subscription_service(user, ignore_permissions=True)
+            _heal_push_subscription(user, service, service.get())
     except LockTimeoutError:
         return
+
+
+def _heal_push_subscription(user: str, service, subscriptions: list[dict]) -> list[str]:
+    """Healing core over an already-fetched subscription list; call under the per-user lock.
+
+    Deletes this site's expired subscriptions (best-effort: they are dead weight the server
+    purges eventually anyway, so a failed delete must not block the replacement) and creates
+    a fresh one unless a live one exists. Returns the ids it deleted so a caller reusing
+    ``subscriptions`` can drop them.
+    """
+
+    device_client_id = get_site_device_client_id(user)
+    now = get_utc_now()
+
+    live = False
+    expired_ids = []
+    for subscription in subscriptions:
+        if subscription.get("deviceClientId") != device_client_id:
+            continue
+        expires = subscription.get("expires")
+        if not expires or parse_iso_datetime(expires, as_str=False) > now:
+            live = True
+        else:
+            expired_ids.append(subscription["id"])
+
+    if expired_ids:
+        with suppress(Exception):
+            service.delete(expired_ids)
+
+    if not live:
+        _add_push_subscription(user, ignore_permissions=True)
+
+    return expired_ids
 
 
 def on_login(login_manager) -> None:
@@ -345,7 +370,8 @@ def renew_expiring_push_subscriptions() -> None:
     ``RENEW_THRESHOLD_DAYS`` of the run; subscriptions without an expiry or expiring
     later are left untouched. Users who disabled push subscriptions in their User
     Settings are skipped. Users missing this site's subscription on the mail server get
-    one created (self-healing — see ensure_push_subscription).
+    one created (self-healing — see ensure_push_subscription); healing and the expiry
+    scan share a single fetch, and subscriptions healing deleted are not renewed.
     """
 
     if not frappe.utils.get_url().startswith("https://"):
@@ -358,11 +384,16 @@ def renew_expiring_push_subscriptions() -> None:
             continue
 
         try:
-            ensure_push_subscription(user)
             service = get_push_subscription_service(user, ignore_permissions=True)
 
+            with filelock(f"ensure_push_subscription_{user}"):
+                subscriptions = service.get()
+                deleted_ids = _heal_push_subscription(user, service, subscriptions)
+
             expiring_ids = []
-            for subscription in service.get():
+            for subscription in subscriptions:
+                if subscription["id"] in deleted_ids:
+                    continue
                 expires = subscription.get("expires")
                 if expires and parse_iso_datetime(expires, as_str=False) <= cutoff:
                     expiring_ids.append(subscription["id"])
@@ -377,6 +408,10 @@ def renew_expiring_push_subscriptions() -> None:
                     _("Push Subscription Renewal Failed"),
                     _("Failed to renew push subscriptions for user {0}:<br>{1}").format(user, errors),
                 )
+        except LockTimeoutError:
+            # Another process is healing this user right now; today's renewal scan can
+            # wait for tomorrow's run, the threshold leaves days of headroom.
+            continue
         except Exception as e:
             log_mail_error(
                 _("Push Subscription Renewal Failed"),
