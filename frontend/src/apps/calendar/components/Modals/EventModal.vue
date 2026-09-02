@@ -28,7 +28,12 @@ import {
 import meetLogo from '@/assets/app-logos/meet.png'
 import { submit as submitCall } from '@/apps/meet/utils/request'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
-import { fromEventZone, fromWallClock, inUserTimeZone } from '@/apps/calendar/utils/datetime'
+import {
+	fromEventZone,
+	fromWallClock,
+	inUserTimeZone,
+	shiftedMasterStart,
+} from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
@@ -67,13 +72,16 @@ const isTitleFocused = ref(false)
 
 // --- Event initialization ---
 
+// The occurrence's own start, as the form reads it. Timed events edit in the viewer's zone
+// (saving re-zones them to it, see eventParams); all-day events keep their calendar date.
+const occurrenceStart = (ev: any) =>
+	ev.isAllDay ? dayjs(ev.start) : fromEventZone(ev.start, ev.time_zone)
+
 const getEventData = () => {
 	if (isNew.value) return getDefaultEventData()
 
 	const { calendarEvent: ev } = selectedEvent
-	// Timed events edit in the viewer's zone (saving re-zones them to it, see eventParams);
-	// all-day events keep their calendar date.
-	const start = ev.isAllDay ? dayjs(ev.start) : fromEventZone(ev.start, ev.time_zone)
+	const start = occurrenceStart(ev)
 	const end = start.add(dayjs.duration(ev.duration))
 	const displayEnd = ev.isAllDay ? end.subtract(1, 'day') : end
 
@@ -120,12 +128,15 @@ const defaultAlert = (isAllDay: boolean, startDate: string) =>
 				relative_to: 'Start',
 			}
 
+// When an event on this day starts, absent a slot to put it in: the next full hour today,
+// ten in the morning on any other day.
+const defaultStartTime = (date: string) =>
+	dayjs(date).isToday() ? dayjs().add(1, 'hour').startOf('hour').format('HH:mm') : '10:00'
+
 const getDefaultEventData = () => {
 	const startTime = selectedEvent?.time
 		? dayjs(selectedEvent.time, 'h a').format('HH:mm')
-		: dayjs(selectedEvent.date).isToday()
-			? dayjs().add(1, 'hour').startOf('hour').format('HH:mm')
-			: '10:00'
+		: defaultStartTime(selectedEvent.date)
 
 	const identity = store.organizerIdentity
 
@@ -218,11 +229,20 @@ const eventParams = computed(() => {
 	if (event.title) params.title = event.title
 	if (dayjs?.tz) params.time_zone = dayjs.tz.guess()
 
-	if (selectedEvent.calendarEvent?.recurrence_id && !isUpdateInstance.value) {
-		// The master's start passes through unchanged, so it must keep the master's zone —
-		// pairing it with the browser's would silently shift the whole series.
-		params.start = selectedEvent.calendarEvent.master_start
-		params.time_zone = selectedEvent.calendarEvent.time_zone || params.time_zone
+	// Saving the whole series from one of its occurrences. The start on screen belongs to that
+	// occurrence, so what reaches the master is the shift the reader made to it — nothing at all
+	// when they made none, which is how the anchor used to pass through untouched. It keeps the
+	// master's zone either way: pairing the master's wall clock with the browser's zone would
+	// move the series on its own.
+	const ev = selectedEvent?.calendarEvent
+	if (ev?.recurrence_id && !isUpdateInstance.value) {
+		// An unresolved master (no master_start) is already past saving — the update is addressed by
+		// master_id too, and falls back to an id the server won't take — so it is left exactly as it
+		// was rather than given a start of this occurrence's, or of now.
+		params.start = ev.master_start
+			? shiftedMasterStart(ev.master_start, occurrenceStart(ev), startsAt.value)
+			: ev.master_start
+		params.time_zone = ev.time_zone || params.time_zone
 	}
 	if (event.recurrence_rule && Object.keys(event.recurrence_rule).length)
 		params.recurrence_rule = event.recurrence_rule
@@ -700,6 +720,16 @@ const setAllDay = (isAllDay: boolean) => {
 		JSON.stringify(event.alerts[0]) === JSON.stringify(defaultAlert(event.isAllDay, event.startDate))
 	event.isAllDay = isAllDay
 	if (untouched) event.alerts = [defaultAlert(isAllDay, event.startDate)]
+
+	// A saved all-day event carries midnight at both ends of the same day: its duration counts
+	// whole days, so taking the exclusive last day off the end lands it back on the start. As a
+	// timed event that is a zero-length range, which the form won't save — and the reader is left
+	// with a disabled Save and nothing saying why. Give it the slot a new event on that day would
+	// get; the end follows an hour later, dragged along by the start watcher (the gap it reads is
+	// zero, so it falls back to the default duration). A range that already spans days is a real
+	// one and keeps its own hours.
+	if (!isAllDay && !endsAt.value.isAfter(startsAt.value))
+		event.startTime = defaultStartTime(event.startDate)
 }
 
 // --- Delete ---
@@ -822,17 +852,20 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 						<!-- lead title. The field sizes to its own text — a mirror span shares
 						     the grid cell and sets the width — so the pencil sits against the
 						     title instead of adrift at the column's edge. The mirror falls back
-						     to the placeholder so an empty title still leaves something to click,
+						     to the placeholder so an empty title still leaves something to read,
 						     and max-w-full keeps a long one inside the column, where the input
-						     scrolls internally as it did at full width. w-fit ends the hover
-						     group at the pencil, so the underline answers the title and the
-						     pencil only — not the empty column beside them, and the pb sits on
-						     a wrapper so the band below the title is outside it too. The click
-						     is on the row rather than its two children, which is what makes the
-						     gap between title and pencil live rather than dead space. -->
+						     scrolls internally as it did at full width. The click is on the row
+						     rather than its two children, which is what makes the gap between
+						     title and pencil live rather than dead space — and the row runs the
+						     width of the column, so the whole line answers, not just the words:
+						     an empty title is a short word to aim at, and the line beside it read
+						     as dead. The underline still only spans the title, since it is the
+						     input that carries it and the input is only as wide as its text. The
+						     pb sits on a wrapper so the band below the title stays outside the
+						     target. -->
 						<div class="pb-4">
 							<div
-								class="group flex w-fit max-w-full items-center gap-2"
+								class="group flex w-full items-center gap-2"
 								:class="{ 'cursor-pointer': !isTitleFocused }"
 								@click="titleInput?.focus()"
 							>
