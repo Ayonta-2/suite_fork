@@ -286,7 +286,8 @@ def _add_push_subscription(
     exists, perhaps created by a healing run while this request waited on the lock, its
     id is returned instead of creating a duplicate. A custom creation without an explicit
     device client id gets a unique one, keeping the site's deterministic id exclusive to
-    the site subscription so healing never prunes a custom webhook as its duplicate.
+    the site subscription so healing never prunes a custom webhook as its duplicate;
+    explicitly claiming the site id for a custom creation is rejected.
     """
 
     if not ignore_permissions:
@@ -330,10 +331,19 @@ def _create_push_subscription(
     """Unlocked creation core for :func:`_add_push_subscription` and the healing path,
     which already holds the per-user lock."""
 
+    site_device_client_id = get_site_device_client_id(user)
     if not device_client_id:
         # The deterministic site id marks the site's own subscription for healing; a custom
         # creation must not wear it, or healing would prune one of the two as a duplicate.
-        device_client_id = get_site_device_client_id(user) if not url and not types else str(uuid7())
+        device_client_id = site_device_client_id if not url and not types else str(uuid7())
+    elif device_client_id == site_device_client_id and (url or types):
+        frappe.throw(
+            _(
+                "The device client id {0} is reserved for this site's own subscription and cannot be"
+                " used with a custom URL or types. Leave it empty to have a unique id assigned."
+            ).format(frappe.bold(device_client_id)),
+            title=_("Push Subscription Creation Error"),
+        )
     if url:
         if not url.startswith("https://"):
             frappe.throw(_("The URL must start with 'https://'."))

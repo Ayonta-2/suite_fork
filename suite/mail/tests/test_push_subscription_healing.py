@@ -236,6 +236,18 @@ class CreatePushSubscription(unittest.TestCase):
     def test_custom_types_creation_gets_a_unique_device_id(self):
         self.assertNotEqual(self._create(types=["Email"])["device_client_id"], "site-device")
 
+    def test_site_device_id_with_custom_parameters_is_rejected(self):
+        with (
+            mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
+            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+            self.assertRaises(push_subscription.frappe.ValidationError),
+        ):
+            push_subscription._create_push_subscription(
+                USER, "site-device", "https://elsewhere.example.test/hook", ignore_permissions=True
+            )
+
+        service.return_value.create.assert_not_called()
+
     def test_explicit_device_id_is_honored(self):
         sub = self._create(device_client_id="my-device", url="https://elsewhere.example.test/hook")
 
