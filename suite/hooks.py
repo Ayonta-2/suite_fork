@@ -276,6 +276,10 @@ user_invitation = {
 # Suite's onboarding replaces the built-in desk setup wizard
 setup_wizard_url = "/suite/setup"
 
+# Heal the user's JMAP push subscription on login (enqueued; a lost subscription silently
+# ends webhooks — realtime events and mailbox-count invalidation both ride on them)
+on_login = ["suite.mail.doctype.push_subscription.push_subscription.on_login"]
+
 # ============================================================================
 # Scheduled Tasks (per-frequency lists combined; cron keys de-duplicated)
 # ============================================================================
