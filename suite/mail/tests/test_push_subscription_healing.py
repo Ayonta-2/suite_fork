@@ -128,19 +128,69 @@ class EnsurePushSubscription(unittest.TestCase):
 
 
 class AddPushSubscription(unittest.TestCase):
-    """``_add_push_subscription`` — manual creations serialize under the healing lock."""
+    """``_add_push_subscription`` — manual creations serialize under the healing lock, and
+    the default creation is idempotent against an existing live site subscription."""
 
-    def test_manual_creation_takes_the_per_user_lock(self):
+    def _add(
+        self,
+        subscriptions: list[dict],
+        device_client_id: str | None = None,
+        url: str | None = None,
+        types: list[str] | None = None,
+    ) -> tuple[str, mock.Mock, mock.Mock]:
         with (
             mock.patch.object(push_subscription, "filelock") as filelock,
             mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=False),
-            mock.patch.object(push_subscription, "_create_push_subscription", return_value="id-1") as create,
+            mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
+            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+            mock.patch.object(
+                push_subscription, "_create_push_subscription", return_value="new-id"
+            ) as create,
         ):
-            result = push_subscription._add_push_subscription(USER, ignore_permissions=True)
+            service.return_value.get.return_value = subscriptions
+            result = push_subscription._add_push_subscription(
+                USER, device_client_id, url, types, ignore_permissions=True
+            )
 
-        self.assertEqual(result, "id-1")
+        return result, create, filelock
+
+    def test_manual_creation_takes_the_per_user_lock(self):
+        result, create, filelock = self._add([])
+
+        self.assertEqual(result, "new-id")
         filelock.assert_called_once_with(f"ensure_push_subscription_{USER}", timeout=10)
         create.assert_called_once_with(USER, None, None, None, True)
+
+    def test_default_creation_returns_the_existing_live_site_subscription(self):
+        result, create, _ = self._add(
+            [
+                {"id": "old", "deviceClientId": "site-device", "expires": "2998-01-01T00:00:00Z"},
+                {"id": "keeper", "deviceClientId": "site-device", "expires": None},
+            ]
+        )
+
+        self.assertEqual(result, "keeper")
+        create.assert_not_called()
+
+    def test_expired_or_foreign_subscriptions_do_not_shortcut_creation(self):
+        result, create, _ = self._add(
+            [
+                {"id": "dead", "deviceClientId": "site-device", "expires": "2000-01-01T00:00:00Z"},
+                {"id": "other", "deviceClientId": "other-device", "expires": None},
+            ]
+        )
+
+        self.assertEqual(result, "new-id")
+        create.assert_called_once()
+
+    def test_custom_parameters_always_create(self):
+        result, create, _ = self._add(
+            [{"id": "existing", "deviceClientId": "site-device", "expires": None}],
+            url="https://elsewhere.example.test/hook",
+        )
+
+        self.assertEqual(result, "new-id")
+        create.assert_called_once_with(USER, None, "https://elsewhere.example.test/hook", None, True)
 
     def test_lock_timeout_surfaces_a_friendly_error(self):
         with (

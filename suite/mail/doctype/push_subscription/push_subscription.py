@@ -281,7 +281,10 @@ def _add_push_subscription(
     user's account.
 
     Serialized under the same per-user lock healing uses, so a manual creation cannot
-    interleave with a healing run's check-then-create.
+    interleave with a healing run's check-then-create. A default creation (no explicit
+    device client id, url or types) is idempotent: when a live site subscription already
+    exists, perhaps created by a healing run while this request waited on the lock, its
+    id is returned instead of creating a duplicate.
     """
 
     if not ignore_permissions:
@@ -289,11 +292,22 @@ def _add_push_subscription(
 
     is_push_subscription_disabled(user, raise_exception=True)
 
+    site_device_client_id = get_site_device_client_id(user)
+    is_site_default = (
+        not url and not types and (device_client_id or site_device_client_id) == site_device_client_id
+    )
+
     try:
         # A healing run holds the lock for a couple of JMAP round trips; 10 seconds is
         # generous. On timeout, surface a retryable message instead of the raw lock error
         # (which advises deleting the lock file) after a 30 second modal hang.
         with filelock(f"ensure_push_subscription_{user}", timeout=10):
+            # Healing may have created the site's subscription while this request waited
+            # on the lock, or one may simply already exist: the default creation is
+            # idempotent and returns the live subscription instead of adding a duplicate.
+            if is_site_default and (existing_id := _live_site_subscription_id(user, ignore_permissions)):
+                return existing_id
+
             return _create_push_subscription(user, device_client_id, url, types, ignore_permissions)
     except LockTimeoutError:
         frappe.throw(
@@ -349,6 +363,25 @@ def _create_push_subscription(
         frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
     else:
         frappe.throw(_(response["description"]), title=title)
+
+
+def _live_site_subscription_id(user: str, ignore_permissions: bool = False) -> str | None:
+    """Returns the id of the longest-lived live subscription bearing this site's device
+    client id (the one healing's pruning would keep), or None when none is live."""
+
+    device_client_id = get_site_device_client_id(user)
+    now = get_utc_now()
+
+    live = []
+    for subscription in get_push_subscription_service(user, ignore_permissions=ignore_permissions).get():
+        if subscription.get("deviceClientId") != device_client_id:
+            continue
+        expires = subscription.get("expires")
+        if not expires or parse_iso_datetime(expires, as_str=False) > now:
+            live.append(subscription)
+
+    if live:
+        return max(live, key=_subscription_longevity)["id"]
 
 
 @frappe.whitelist()
