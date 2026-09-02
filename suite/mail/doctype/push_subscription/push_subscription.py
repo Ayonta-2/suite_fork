@@ -4,7 +4,7 @@
 import base64
 import json
 from contextlib import suppress
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid7
 
 import frappe
@@ -188,34 +188,49 @@ def ensure_push_subscription(user: str) -> None:
 def _heal_push_subscription(user: str, service, subscriptions: list[dict]) -> list[str]:
     """Healing core over an already-fetched subscription list; call under the per-user lock.
 
-    Deletes this site's expired subscriptions (best-effort: they are dead weight the server
-    purges eventually anyway, so a failed delete must not block the replacement) and creates
-    a fresh one unless a live one exists. Returns the ids it deleted so a caller reusing
+    Deletes this site's expired subscriptions and, when duplicates exist, every live one
+    but the longest-lived (deletion is best-effort: dead weight the server purges eventually
+    anyway, so a failure must not block the replacement). Creates a fresh subscription
+    unless a live one remains. Returns the ids it deleted so a caller reusing
     ``subscriptions`` can drop them.
     """
 
     device_client_id = get_site_device_client_id(user)
     now = get_utc_now()
 
-    live = False
+    live = []
     expired_ids = []
     for subscription in subscriptions:
         if subscription.get("deviceClientId") != device_client_id:
             continue
         expires = subscription.get("expires")
         if not expires or parse_iso_datetime(expires, as_str=False) > now:
-            live = True
+            live.append(subscription)
         else:
             expired_ids.append(subscription["id"])
 
-    if expired_ids:
+    # Converge on one live subscription: a duplicate (say a manual creation landing next
+    # to a healing run's) would otherwise ride the daily renewal forever.
+    surplus_ids = []
+    if len(live) > 1:
+        live.sort(key=_subscription_longevity, reverse=True)
+        surplus_ids = [subscription["id"] for subscription in live[1:]]
+
+    if delete_ids := expired_ids + surplus_ids:
         with suppress(Exception):
-            service.delete(expired_ids)
+            service.delete(delete_ids)
 
     if not live:
-        _add_push_subscription(user, ignore_permissions=True)
+        _create_push_subscription(user, ignore_permissions=True)
 
-    return expired_ids
+    return delete_ids
+
+
+def _subscription_longevity(subscription: dict) -> datetime:
+    """Sort key: when the subscription dies; no expiry means never."""
+
+    expires = subscription.get("expires")
+    return parse_iso_datetime(expires, as_str=False) if expires else datetime.max.replace(tzinfo=UTC)
 
 
 def on_login(login_manager) -> None:
@@ -264,12 +279,29 @@ def _add_push_subscription(
     parameters onto a whitelisted function's named arguments, so exposing it would let any caller
     turn off the ownership check and register an attacker-controlled callback URL against another
     user's account.
+
+    Serialized under the same per-user lock healing uses, so a manual creation cannot
+    interleave with a healing run's check-then-create.
     """
 
     if not ignore_permissions:
         has_permission_for_user(user, raise_exception=True)
 
     is_push_subscription_disabled(user, raise_exception=True)
+
+    with filelock(f"ensure_push_subscription_{user}"):
+        return _create_push_subscription(user, device_client_id, url, types, ignore_permissions)
+
+
+def _create_push_subscription(
+    user: str,
+    device_client_id: str | None = None,
+    url: str | None = None,
+    types: list[str] | None = None,
+    ignore_permissions: bool = False,
+) -> str:
+    """Unlocked creation core for :func:`_add_push_subscription` and the healing path,
+    which already holds the per-user lock."""
 
     device_client_id = device_client_id or get_site_device_client_id(user)
     if url:

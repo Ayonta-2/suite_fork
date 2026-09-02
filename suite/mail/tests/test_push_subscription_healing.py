@@ -30,7 +30,7 @@ class EnsurePushSubscription(unittest.TestCase):
             mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=disabled),
             mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
             mock.patch.object(push_subscription, "get_push_subscription_service") as service,
-            mock.patch.object(push_subscription, "_add_push_subscription") as add,
+            mock.patch.object(push_subscription, "_create_push_subscription") as add,
         ):
             service.return_value.get.return_value = subscriptions
             if delete_error:
@@ -106,12 +106,41 @@ class EnsurePushSubscription(unittest.TestCase):
             mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=False),
             mock.patch.object(push_subscription, "filelock", side_effect=LockTimeoutError),
             mock.patch.object(push_subscription, "get_push_subscription_service") as service,
-            mock.patch.object(push_subscription, "_add_push_subscription") as add,
+            mock.patch.object(push_subscription, "_create_push_subscription") as add,
         ):
             push_subscription.ensure_push_subscription(USER)
 
         service.assert_not_called()
         add.assert_not_called()
+
+    def test_surplus_live_duplicates_are_pruned_keeping_the_longest_lived(self):
+        add, service = self._run(
+            [
+                {"id": "sub-a", "deviceClientId": "site-device", "expires": "2998-01-01T00:00:00Z"},
+                {"id": "sub-b", "deviceClientId": "site-device", "expires": None},
+                {"id": "sub-c", "deviceClientId": "site-device", "expires": "2999-01-01T00:00:00Z"},
+            ]
+        )
+
+        add.assert_not_called()
+        (deleted,), _ = service.return_value.delete.call_args
+        self.assertCountEqual(deleted, ["sub-a", "sub-c"])
+
+
+class AddPushSubscription(unittest.TestCase):
+    """``_add_push_subscription`` — manual creations serialize under the healing lock."""
+
+    def test_manual_creation_takes_the_per_user_lock(self):
+        with (
+            mock.patch.object(push_subscription, "filelock") as filelock,
+            mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=False),
+            mock.patch.object(push_subscription, "_create_push_subscription", return_value="id-1") as create,
+        ):
+            result = push_subscription._add_push_subscription(USER, ignore_permissions=True)
+
+        self.assertEqual(result, "id-1")
+        filelock.assert_called_once_with(f"ensure_push_subscription_{USER}")
+        create.assert_called_once_with(USER, None, None, None, True)
 
 
 class RenewExpiringPushSubscriptions(unittest.TestCase):
@@ -126,7 +155,7 @@ class RenewExpiringPushSubscriptions(unittest.TestCase):
             mock.patch.object(push_subscription, "is_push_subscription_disabled", return_value=False),
             mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
             mock.patch.object(push_subscription, "get_push_subscription_service") as service_factory,
-            mock.patch.object(push_subscription, "_add_push_subscription") as add,
+            mock.patch.object(push_subscription, "_create_push_subscription") as add,
             mock.patch.object(push_subscription, "log_mail_error") as log_mail_error,
         ):
             service = service_factory.return_value
