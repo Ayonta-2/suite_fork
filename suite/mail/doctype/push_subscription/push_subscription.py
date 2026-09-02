@@ -150,7 +150,6 @@ def bulk_delete(names: str | list[str]) -> None:
     frappe.msgprint(_("Push Subscriptions deleted successfully."), alert=True)
 
 
-@frappe.whitelist()
 def get_site_device_client_id(user: str) -> str:
     """Returns this site's deterministic device client id for the user.
 
