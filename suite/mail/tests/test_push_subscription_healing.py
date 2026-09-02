@@ -204,6 +204,44 @@ class AddPushSubscription(unittest.TestCase):
         create.assert_not_called()
 
 
+class CreatePushSubscription(unittest.TestCase):
+    """``_create_push_subscription`` — the site's deterministic device id stays exclusive
+    to the site-default subscription; custom creations get their own identity."""
+
+    def _create(self, **kwargs) -> dict:
+        with (
+            mock.patch.object(
+                push_subscription.frappe.utils, "get_url", return_value="https://site.example.test"
+            ),
+            mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
+            mock.patch.object(push_subscription, "get_push_subscription_keys", return_value=None),
+            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+        ):
+            service.return_value.create.side_effect = lambda subs: {
+                "created": {subs[0]["creation_id"]: {"id": "new-id"}}
+            }
+            push_subscription._create_push_subscription(USER, ignore_permissions=True, **kwargs)
+            (subs,), _ = service.return_value.create.call_args
+
+        return subs[0]
+
+    def test_default_creation_wears_the_site_device_id(self):
+        self.assertEqual(self._create()["device_client_id"], "site-device")
+
+    def test_custom_url_creation_gets_a_unique_device_id(self):
+        sub = self._create(url="https://elsewhere.example.test/hook")
+
+        self.assertNotEqual(sub["device_client_id"], "site-device")
+
+    def test_custom_types_creation_gets_a_unique_device_id(self):
+        self.assertNotEqual(self._create(types=["Email"])["device_client_id"], "site-device")
+
+    def test_explicit_device_id_is_honored(self):
+        sub = self._create(device_client_id="my-device", url="https://elsewhere.example.test/hook")
+
+        self.assertEqual(sub["device_client_id"], "my-device")
+
+
 class RenewExpiringPushSubscriptions(unittest.TestCase):
     """``renew_expiring_push_subscriptions`` — healing and the expiry scan share one fetch."""
 

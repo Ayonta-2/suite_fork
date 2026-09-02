@@ -284,7 +284,9 @@ def _add_push_subscription(
     interleave with a healing run's check-then-create. A default creation (no explicit
     device client id, url or types) is idempotent: when a live site subscription already
     exists, perhaps created by a healing run while this request waited on the lock, its
-    id is returned instead of creating a duplicate.
+    id is returned instead of creating a duplicate. A custom creation without an explicit
+    device client id gets a unique one, keeping the site's deterministic id exclusive to
+    the site subscription so healing never prunes a custom webhook as its duplicate.
     """
 
     if not ignore_permissions:
@@ -328,7 +330,10 @@ def _create_push_subscription(
     """Unlocked creation core for :func:`_add_push_subscription` and the healing path,
     which already holds the per-user lock."""
 
-    device_client_id = device_client_id or get_site_device_client_id(user)
+    if not device_client_id:
+        # The deterministic site id marks the site's own subscription for healing; a custom
+        # creation must not wear it, or healing would prune one of the two as a duplicate.
+        device_client_id = get_site_device_client_id(user) if not url and not types else str(uuid7())
     if url:
         if not url.startswith("https://"):
             frappe.throw(_("The URL must start with 'https://'."))
