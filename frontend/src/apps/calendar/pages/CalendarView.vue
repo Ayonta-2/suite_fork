@@ -7,12 +7,16 @@ import { Calendar } from 'frappe-ui/experimental'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { appPageMeta } from '@/utils/documentTitle'
 import { raiseToast } from '@/apps/calendar/utils'
-import { fromEventZone } from '@/apps/calendar/utils/datetime'
+import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
+import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
+import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
 import EventDetailSidebar from '@/apps/calendar/components/EventDetailSidebar.vue'
 import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
+import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 
 const dayjs = inject('$dayjs')
 
@@ -236,11 +240,13 @@ const handleOpenEvent = (e) => {
 	// from the detail sidebar's ?event=: the sidebar is derived from that one,
 	// so sharing it would open the sidebar under every double-clicked pill.
 	const opened = e.calendarEvent
-	if (opened?.id && route.query.edit !== opened.id)
+	const editing = opened?.master_id || opened?.id
+	if (editing && route.query.edit !== editing)
 		router.replace({
 			query: {
 				...route.query,
-				edit: opened.id,
+				// The master's id, for the same reason as the event link above.
+				edit: editing,
 				editRecurrence: opened.recurrence_id || undefined,
 			},
 		})
@@ -260,7 +266,13 @@ const handleEventClick = ({ calendarEvent }) =>
 	router.replace({
 		query: {
 			...route.query,
-			event: calendarEvent.id,
+			// The master's id, not the row's. A row's id is synthetic — the server derives it
+			// from the occurrence's position in the expansion — and it changes the moment that
+			// occurrence gains an override, which editing or answering one gives it. A link
+			// built from it stops resolving as soon as it is acted on, and the panel loses the
+			// event it is showing. The master's id does not move, and the recurrence id beside
+			// it names the occurrence.
+			event: calendarEvent.master_id || calendarEvent.id,
 			recurrence: calendarEvent.recurrence_id || undefined,
 		},
 	})
@@ -395,7 +407,7 @@ watch(
 
 const eventToBeUpdated = reactive({})
 const showRecurringEventModal = ref(false)
-const isUpdateInstance = ref(false)
+const updateScope = ref<RecurringScope>('series')
 const showNotifyModal = ref(false)
 
 // The calendar draws a move or resize before it is confirmed here. Until a
@@ -411,13 +423,22 @@ watch([showRecurringEventModal, showNotifyModal], ([recurring, notify]) => {
 
 const handleUpdate = (e) => {
 	Object.assign(eventToBeUpdated, withActualTitle(e))
+	// Both remembered before the drag overwrites them: an occurrence's override has to keep the
+	// zone the event arrived with, and saving the whole series needs the start the reader was
+	// looking at to measure what they changed.
+	eventToBeUpdated.masterTimeZone = e.time_zone
+	eventToBeUpdated.startBeforeDrag = e.start
 	confirmed = false
+	// Each drag asks again. Left standing, the last drag's answer would decide this one — and a
+	// one-off event dragged after an instance edit would be written as an override of a series
+	// it isn't part of.
+	updateScope.value = 'series'
 	if (e.recurrence_id) showRecurringEventModal.value = true
 	else handleUpdateEvent()
 }
 
-const handleUpdateRecurringEvent = (updateInstance: boolean) => {
-	isUpdateInstance.value = updateInstance
+const handleUpdateRecurringEvent = (scope: RecurringScope) => {
+	updateScope.value = scope
 	showRecurringEventModal.value = false
 	handleUpdateEvent()
 }
@@ -438,10 +459,6 @@ const hasParticipantsOtherThanUser = computed(
 const submitEvent = (sendEmail: boolean) => {
 	confirmed = true
 	showNotifyModal.value = false
-	// Editing a single instance of a series is not supported yet; the move is undone rather
-	// than left on screen as if it had been saved.
-	if (isUpdateInstance.value) return revertUpdate()
-
 	eventToBeUpdated.start = dayjs(eventToBeUpdated.fromDateTime).format('YYYY-MM-DDTHH:mm:ss')
 	if (!eventToBeUpdated.isAllDay) {
 		// The dragged wall clock is in the viewer's zone; re-zone the event to match, or the
@@ -454,8 +471,124 @@ const submitEvent = (sendEmail: boolean) => {
 		const minutes = diff.minutes()
 		eventToBeUpdated.duration = dayjs.duration({ hours, minutes }).toISOString()
 	}
+
+	// One occurrence moved on its own: the series keeps its rule and this date gets an
+	// override. The series is addressed by master_id and the occurrence within it by its
+	// recurrence id — the start it was expanded at, which the drag leaves alone. The id the
+	// grid holds is no use for that: the server derives it from the occurrence's position in
+	// the expansion, and a later override renumbers it onto a different date.
+	if (updateScope.value === 'instance') return editEventInstance.submit({ sendEmail })
+
+	// Saving the whole series from one of its occurrences. The grid is showing one occurrence,
+	// so its start is that occurrence's — sending it as the master's drags the anchor onto this
+	// week and drops every occurrence before it, which is the first one vanishing when the
+	// second is moved. What carries over is the difference the reader made, applied to the
+	// master's own start, and the master keeps its own zone: pairing its wall clock with the
+	// viewer's would move the series again on its own.
+	if (updateScope.value === 'series' && eventToBeUpdated.master_start) {
+		eventToBeUpdated.start = shiftedMasterStart(
+			eventToBeUpdated.master_start,
+			shownStart(eventToBeUpdated.startBeforeDrag),
+			dayjs(eventToBeUpdated.fromDateTime),
+		)
+		eventToBeUpdated.time_zone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
+	}
+
+	// A rule reads its days off the start once and never again, so an anchor dragged onto
+	// another weekday leaves the series repeating on the old one — and the occurrence just
+	// dragged matches nothing the rule generates, so it is not drawn at all. The selectors
+	// follow the anchor, and which start was the anchor depends on what is being written: the
+	// whole series is anchored at the master's start, while the half a split begins is
+	// anchored at the occurrence the reader dragged.
+	// Both ends of the move read in the same zone. The recurrence id and the master start are
+	// wall clocks in the event's; the dragged start has just been written in the viewer's for
+	// the series path, and left in the event's for a split.
+	// The half a split begins is anchored where the reader saw this occurrence, and starts at
+	// the clock they dragged it to — both the viewer's. The whole series is anchored at the
+	// master's start and moves to the shifted one — both the event's. Reading one of each would
+	// measure a change nobody made.
+	const anchorWas =
+		updateScope.value === 'following'
+			? shownStart(eventToBeUpdated.startBeforeDrag)
+			: dayjs(eventToBeUpdated.master_start)
+	if (
+		anchorWas?.isValid() &&
+		eventToBeUpdated.recurrence_rule &&
+		!anchorWas.isSame(dayjs(eventToBeUpdated.start), 'day')
+	)
+		eventToBeUpdated.recurrence_rule = reanchoredRule(
+			eventToBeUpdated.recurrence_rule,
+			anchorWas,
+			dayjs(eventToBeUpdated.start),
+		)
+
+	// This occurrence and the ones after it: the series is cut here and the move starts its
+	// second half, since a rule has no way to change partway through. The new half is a new
+	// event, so unlike an override it carries the zone the drag was made in.
+	if (updateScope.value === 'following') return splitSeries.submit({ sendEmail })
+
 	editEvent.submit({ sendEmail })
 }
+
+// The clock the grid was showing for a start it holds. An all-day event is drawn on its stored
+// date without being re-read in the viewer's zone, so re-reading one here would measure a change
+// against a time nobody saw — and move the event by the zone's offset.
+const shownStart = (start: string) =>
+	eventToBeUpdated.isAllDay ? dayjs(start) : fromEventZone(start, eventToBeUpdated.masterTimeZone)
+
+// The dragged numbers are a wall clock in the viewer's zone; an occurrence keeps the series'
+// zone, so the instant is re-expressed in it. An all-day occurrence has no clock to convert.
+const instanceStart = () => {
+	const eventZone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
+	if (eventToBeUpdated.isAllDay || !eventZone || !dayjs?.tz) return eventToBeUpdated.start
+	return dayjs
+		.tz(eventToBeUpdated.fromDateTime, dayjs.tz.guess())
+		.tz(eventZone)
+		.format('YYYY-MM-DD[T]HH:mm:ss')
+}
+
+// Both writes land the same way: the calendar has already drawn the move, so success only has
+// to confirm it and refresh, and a failure has to put the pill back where it was.
+const onEventSaved = {
+	onSuccess: () => {
+		raiseToast(__('Event updated.'), 'success')
+		events.reload()
+	},
+	onError: (error) => {
+		revertUpdate()
+		raiseToast(error.message, 'error')
+	},
+}
+
+const editEventInstance = createResource({
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+		account: eventToBeUpdated.account,
+		master_id: eventToBeUpdated.master_id,
+		recurrence_id: eventToBeUpdated.recurrence_id,
+		// Only what a drag can change, and never the zone: an occurrence is keyed by the start
+		// it was expanded at, and a zone here makes the server re-key it into that zone while
+		// the override stays under the old key — the two stop matching and the occurrence
+		// keeps nothing the series says. The dragged wall clock is converted instead.
+		patch: {
+			start: instanceStart(),
+			duration: eventToBeUpdated.duration,
+		},
+		send_scheduling_messages: sendEmail,
+	}),
+	...onEventSaved,
+})
+
+const splitSeries = createResource({
+	url: 'suite.calendar.api.split_calendar_event_series',
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+		...eventToBeUpdated,
+		master_id: eventToBeUpdated.master_id,
+		recurrence_id: eventToBeUpdated.recurrence_id,
+		send_scheduling_messages: sendEmail,
+	}),
+	...onEventSaved,
+})
 
 const editEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
@@ -465,21 +598,17 @@ const editEvent = createResource({
 		id: eventToBeUpdated.master_id || eventToBeUpdated.id,
 		send_scheduling_messages: sendEmail,
 	}),
-	onSuccess: () => {
-		raiseToast(__('Event updated.'), 'success')
-		events.reload()
-	},
-	onError: (error) => {
-		revertUpdate()
-		raiseToast(error.message, 'error')
-	},
+	...onEventSaved,
 })
 
-const RECURRING_EVENT_MODAL_OPTIONS = {
-	title: __('Update Recurring Event'),
-	icon: { name: 'lucide-repeat' },
-	message: __('Do you want to update just this instance, or all events in the series?'),
-}
+const recurringScopeModalProps = computed(() => ({
+	title: __('Update repeating event'),
+	// See the event modal: nothing precedes the first occurrence, so the narrower answer
+	// there is the wider one.
+	options: scopeOptions({ isFirst: isFirstOccurrence(eventToBeUpdated) }),
+	confirmLabel: __('Update'),
+	loading: editEvent.loading || editEventInstance.loading || splitSeries.loading,
+}))
 
 const NOTIFY_MODAL_OPTIONS = {
 	title: __('Notify Participants'),
@@ -573,15 +702,11 @@ const NOTIFY_MODAL_OPTIONS = {
 		</div>
 	</div>
 	<EventModal v-model="showEditEvent" :selected-event="event" @reload-events="events.reload()" />
-	<Dialog v-model:open="showRecurringEventModal" v-bind="RECURRING_EVENT_MODAL_OPTIONS">
-		<template #actions>
-			<div class="flex justify-end space-x-2">
-				<Button @click="handleUpdateRecurringEvent(false)">
-					{{ __('Entire series') }}
-				</Button>
-			</div>
-		</template>
-	</Dialog>
+	<RecurringScopeModal
+		v-model="showRecurringEventModal"
+		v-bind="recurringScopeModalProps"
+		@confirm="handleUpdateRecurringEvent"
+	/>
 	<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">

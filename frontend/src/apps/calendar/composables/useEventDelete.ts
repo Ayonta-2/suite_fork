@@ -3,6 +3,8 @@ import { Trash2 } from 'lucide-vue-next'
 import { createResource, toast } from 'frappe-ui'
 
 import { userStore } from '@/apps/calendar/stores/user'
+import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
+import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 
 /** The part of a calendar event that deleting one reads. */
@@ -12,9 +14,9 @@ export interface DeletableEvent {
 	master_id?: string
 	/** Set on an instance of a recurring series; absent on a one-off. */
 	recurrence_id?: string
+	/** The series' own start — the same date on its first occurrence, and only there. */
+	master_start?: string
 	recurrence_rule?: Record<string, unknown>
-	/** The instance's own day — where "this and following" ends the series. */
-	date?: string
 	organizer?: string
 	participants?: { email: string }[]
 	/** A draft sent no invitations, so it never asks about a cancellation email. */
@@ -32,9 +34,10 @@ export interface DeletableEvent {
  * @param onDeleted - What the host does once the server confirms: reload the
  *   calendar, close itself.
  * @returns `deleteOption` for the host's own dropdown, `isDeleting` for the
- *   trigger's disabled state, and the three pieces of the cancellation-email
- *   prompt the host renders: `showNotifyModal`, `pendingDelete` and
- *   `NOTIFY_DELETE_OPTIONS`.
+ *   trigger's disabled state, the three pieces of the scope question a
+ *   recurring event asks first (`showScopeModal`, `deleteScopeModalProps`,
+ *   `deleteScope`), and the three of the cancellation-email prompt that follows
+ *   it: `showNotifyModal`, `pendingDelete` and `NOTIFY_DELETE_OPTIONS`.
  */
 export function useEventDelete(
 	getEvent: () => DeletableEvent | undefined,
@@ -67,20 +70,23 @@ export function useEventDelete(
 		onSuccess: onDeleted,
 	})
 
-	// "This and following" is an edit, not a delete: the series stops the day before.
-	const editEvent = createResource({
-		url: 'suite.calendar.api.edit_calendar_event',
-		makeParams: ({ patch }: { patch: object }) => ({
+	// "This and following" is an edit, not a delete: the series stops at the occurrence before
+	// this one. The server does the arithmetic — where a counted series stops, and which of its
+	// overrides belonged to the occurrences going away — because a rule truncated here without
+	// them leaves every edited occurrence behind as an event of its own.
+	const deleteFollowing = createResource({
+		url: 'suite.calendar.api.delete_calendar_event_series_from',
+		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 			account: store.accountId,
-			id: eventId.value,
-			...patch,
-			send_scheduling_messages: true,
+			master_id: eventId.value,
+			recurrence_id: calendarEvent.value.recurrence_id,
+			send_scheduling_messages: sendEmail,
 		}),
 		onSuccess: onDeleted,
 	})
 
 	const isDeleting = computed(
-		() => deleteEventInstance.loading || deleteEvent.loading || editEvent.loading,
+		() => deleteEventInstance.loading || deleteEvent.loading || deleteFollowing.loading,
 	)
 
 	// When the organizer deletes an event with other participants, offer to email a
@@ -130,33 +136,50 @@ export function useEventDelete(
 			!!calendarEvent.value.recurrence_id,
 		)
 
-	const handleDeleteFollowingEventInstances = () => {
-		const recurrenceRule = { ...calendarEvent.value.recurrence_rule }
-		recurrenceRule.until = `${calendarEvent.value.date}T00:00:00Z`
-		const patch = { recurrence_rule: JSON.stringify(recurrenceRule) }
+	// Through the same prompt as the other two answers. Ending a series cancels the occurrences
+	// after it for everyone on them, so it asks about the cancellation email exactly as deleting
+	// one occurrence or the whole thing does — and a draft, which invited nobody, still asks
+	// nobody.
+	const handleDeleteFollowingEventInstances = () =>
+		confirmDelete((sendEmail) => deleteFollowing.submit({ sendEmail }), true)
 
-		toast.promise(editEvent.submit({ patch }), {
-			loading: __('Deleting events...'),
-			success: __('Events deleted.'),
-			error: __('Action failed. Please try again in some time.'),
-		})
+	// How far the delete reaches used to be a submenu off the Delete item: three
+	// commands hidden behind a hover, each firing the moment it was touched. It
+	// is one question with three answers, so it is asked once, in the dialog
+	// every other recurring action asks it in.
+	const showScopeModal = ref(false)
+
+	const requestDelete = () => {
+		if (calendarEvent.value.recurrence_id) showScopeModal.value = true
+		else handleDeleteEvent()
 	}
 
-	// The one entry a host drops into its own dropdown: a plain item, or the
-	// three choices a recurring event has.
-	const deleteOption = computed(() =>
-		calendarEvent.value.recurrence_id
-			? {
-					label: __('Delete'),
-					icon: Trash2,
-					submenu: [
-						{ label: __('This instance'), onClick: handleDeleteEventInstance },
-						{ label: __('This and following instances'), onClick: handleDeleteFollowingEventInstances },
-						{ label: __('Entire series'), onClick: handleDeleteEvent },
-					],
-				}
-			: { label: __('Delete'), icon: Trash2, onClick: handleDeleteEvent },
-	)
+	const deleteScopeModalProps = computed(() => ({
+		title: __('Delete repeating event'),
+		icon: { name: 'lucide-trash-2', theme: 'red' as const },
+		// No line above the list: the title already says what is being deleted.
+		// Every answer is the server's to give here: an instance delete, a rule that ends
+		// earlier, the series itself. Editing has no equivalent of the middle one yet.
+		options: scopeOptions({ isFirst: isFirstOccurrence(calendarEvent.value) }),
+		confirmLabel: __('Delete'),
+		theme: 'red' as const,
+		loading: isDeleting.value,
+	}))
+
+	const deleteScope = (scope: RecurringScope) => {
+		showScopeModal.value = false
+		if (scope === 'instance') handleDeleteEventInstance()
+		else if (scope === 'following') handleDeleteFollowingEventInstances()
+		else handleDeleteEvent()
+	}
+
+	// The one entry a host drops into its own dropdown. A recurring event asks
+	// which occurrences first; a one-off has nothing to ask.
+	const deleteOption = computed(() => ({
+		label: __('Delete'),
+		icon: Trash2,
+		onClick: requestDelete,
+	}))
 
 	const NOTIFY_DELETE_OPTIONS = {
 		title: __('Notify Participants'),
@@ -167,6 +190,9 @@ export function useEventDelete(
 	return {
 		deleteOption,
 		isDeleting,
+		showScopeModal,
+		deleteScopeModalProps,
+		deleteScope,
 		showNotifyModal,
 		pendingDelete,
 		NOTIFY_DELETE_OPTIONS,

@@ -35,9 +35,13 @@ import {
 	shiftedMasterStart,
 } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
+import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
+import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
+import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
@@ -235,7 +239,7 @@ const eventParams = computed(() => {
 	// master's zone either way: pairing the master's wall clock with the browser's zone would
 	// move the series on its own.
 	const ev = selectedEvent?.calendarEvent
-	if (ev?.recurrence_id && !isUpdateInstance.value) {
+	if (ev?.recurrence_id && editScope.value === 'series') {
 		// An unresolved master (no master_start) is already past saving — the update is addressed by
 		// master_id too, and falls back to an id the server won't take — so it is left exactly as it
 		// was rather than given a start of this occurrence's, or of now.
@@ -244,8 +248,23 @@ const eventParams = computed(() => {
 			: ev.master_start
 		params.time_zone = ev.time_zone || params.time_zone
 	}
-	if (event.recurrence_rule && Object.keys(event.recurrence_rule).length)
-		params.recurrence_rule = event.recurrence_rule
+	if (event.recurrence_rule && Object.keys(event.recurrence_rule).length) {
+		// A rule names its days by reading them off the start, and does not re-read them when the
+		// anchor moves. Left alone, a Monday series edited onto a Wednesday starts on Wednesday
+		// and repeats on Mondays — so the occurrence just edited matches nothing the rule
+		// generates and is not drawn at all. Which start was the anchor depends on what is being
+		// written: the series is anchored at the master's start, the half a split begins at the
+		// occurrence the reader opened.
+		// Both ends read the same way. A split is anchored where the form opened this occurrence
+		// and starts where the form now says — both the viewer's clock. The series is anchored
+		// at the master's start and moves to the one computed from it — both the event's.
+		const anchorWas =
+			editScope.value === 'following' ? occurrenceStart(ev) : dayjs(ev?.master_start)
+		params.recurrence_rule =
+			ev?.recurrence_id && anchorWas?.isValid() && !anchorWas.isSame(dayjs(params.start), 'day')
+				? reanchoredRule(event.recurrence_rule, anchorWas, dayjs(params.start))
+				: event.recurrence_rule
+	}
 	if (event.privacy) params.privacy = event.privacy
 	if (event.free_busy_status) params.free_busy_status = event.free_busy_status
 	if (event.description) params.description = event.description
@@ -507,13 +526,49 @@ const createMeetEvent = {
 		}),
 }
 
+// One occurrence's override keeps the series' zone. An occurrence is keyed by the start it was
+// expanded at, and a zone in the patch makes the server re-key it into that zone while the
+// override stays under the old key — the two stop matching, and the occurrence is left with
+// nothing the series says about it. So the edited wall clock is converted into the event's own
+// zone and the zone itself is not sent.
+const instancePatch = computed(() => {
+	const { time_zone: zone, ...rest } = patch.value
+	const eventZone = selectedEvent.calendarEvent?.time_zone
+	// An all-day start is a date, held and shown in the event's own terms — there is no viewer
+	// clock to translate, and translating anyway moves the occurrence off its day.
+	if (!('start' in rest) || !eventZone || !dayjs?.tz || event.isAllDay) return rest
+
+	return {
+		...rest,
+		start: dayjs
+			.tz(rest.start, zone || dayjs.tz.guess())
+			.tz(eventZone)
+			.format('YYYY-MM-DD[T]HH:mm:ss'),
+	}
+})
+
 const editEventInstance = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		master_id: selectedEvent.calendarEvent.master_id,
 		recurrence_id: selectedEvent.calendarEvent.recurrence_id,
-		patch: patch.value,
+		patch: instancePatch.value,
+		send_scheduling_messages: sendEmail,
+	}),
+	onSuccess: handleSuccess,
+})
+
+// "This and following" is neither of the other two writes: JSCalendar can say "this date" or
+// "the series" and nothing in between, so the server cuts the series in two and this edit
+// starts the second half.
+const splitSeries = createResource({
+	url: 'suite.calendar.api.split_calendar_event_series',
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+		account: store.accountId,
+		master_id: selectedEvent.calendarEvent.master_id,
+		recurrence_id: selectedEvent.calendarEvent.recurrence_id,
+		...eventParams.value,
 		send_scheduling_messages: sendEmail,
 	}),
 	onSuccess: handleSuccess,
@@ -539,17 +594,21 @@ const createMeetLink = useCall<{ meeting_url: string }>({
 	immediate: false,
 })
 
-const isUpdateInstance = ref(false)
+// How far the save reaches. A one-off event is its own series, so nothing asks and nothing
+// else reads this.
+const editScope = ref<RecurringScope>('series')
 
 const submitEvent = (sendEmail: boolean) => {
-	const isInstance = isUpdateInstance.value && selectedEvent.calendarEvent?.recurrence_id
+	const recurring = !!selectedEvent.calendarEvent?.recurrence_id
 	const resource = isNew.value
 		? event.addMeetLink
 			? createMeetEvent
 			: createEvent
-		: isInstance
+		: recurring && editScope.value === 'instance'
 			? editEventInstance
-			: editEvent
+			: recurring && editScope.value === 'following'
+				? splitSeries
+				: editEvent
 	const messages = isDraft.value
 		? { loading: __('Sending event...'), success: __('Event sent.') }
 		: isNew.value
@@ -666,8 +725,8 @@ const handleSave = () => {
 	else submitEvent(false)
 }
 
-const handleSaveRecurringEvent = (updateInstance: boolean) => {
-	isUpdateInstance.value = updateInstance
+const handleSaveRecurringEvent = (scope: RecurringScope) => {
+	editScope.value = scope
 	showRecurringEventModal.value = false
 	handleSave()
 }
@@ -741,6 +800,9 @@ const setAllDay = (isAllDay: boolean) => {
 const {
 	deleteOption,
 	isDeleting,
+	showScopeModal: showDeleteScopeModal,
+	deleteScopeModalProps,
+	deleteScope,
 	showNotifyModal: showNotifyDeleteModal,
 	pendingDelete,
 	NOTIFY_DELETE_OPTIONS,
@@ -758,7 +820,11 @@ const eventOptions = computed(() => [deleteOption.value])
 
 const isSaving = computed(
 	() =>
-		createEvent.loading || editEvent.loading || editEventInstance.loading || createMeetEvent.loading,
+		createEvent.loading ||
+		editEvent.loading ||
+		editEventInstance.loading ||
+		splitSeries.loading ||
+		createMeetEvent.loading,
 )
 
 const disableSave = computed(() => {
@@ -783,8 +849,11 @@ const draftOptions = computed(() => [
 ])
 
 const handleSaveClick = () => {
-	if (shouldShowRecurringEventModal.value) showRecurringEventModal.value = true
-	else handleSave()
+	if (shouldShowRecurringEventModal.value) return (showRecurringEventModal.value = true)
+	// Nothing to ask, so nothing may be left over from the last time it was asked: an answer
+	// standing from an earlier event would send this one's edit somewhere it never chose.
+	editScope.value = 'series'
+	handleSave()
 }
 
 const dialogTitle = computed(() =>
@@ -818,11 +887,14 @@ const DISCARD_MODAL_OPTIONS = computed(() => ({
 		: __('Your unsaved edits to this event will be lost.'),
 }))
 
-const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
-	title: __('Update Recurring Event'),
-	icon: { name: 'lucide-repeat' },
-	message: __('Do you want to update just this instance, or all events in the series?'),
-}
+const recurringScopeModalProps = computed(() => ({
+	title: __('Update repeating event'),
+	// At the head of a series "this and following" reaches exactly what "all events"
+	// reaches, so the list does not ask the same question twice.
+	options: scopeOptions({ isFirst: isFirstOccurrence(selectedEvent?.calendarEvent) }),
+	confirmLabel: __('Update'),
+	loading: isSaving.value,
+}))
 </script>
 
 <template>
@@ -1140,13 +1212,16 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 			</div>
 		</template>
 	</Dialog>
-	<Dialog v-model:open="showRecurringEventModal" v-bind="SHOW_RECURRING_EVENT_MODAL_OPTIONS">
-		<template #actions>
-			<div class="flex justify-end space-x-2">
-				<Button @click="handleSaveRecurringEvent(false)">{{ __('Entire Series') }}</Button>
-			</div>
-		</template>
-	</Dialog>
+	<RecurringScopeModal
+		v-model="showRecurringEventModal"
+		v-bind="recurringScopeModalProps"
+		@confirm="handleSaveRecurringEvent"
+	/>
+	<RecurringScopeModal
+		v-model="showDeleteScopeModal"
+		v-bind="deleteScopeModalProps"
+		@confirm="deleteScope"
+	/>
 	<Dialog v-model:open="showNotifyDeleteModal" v-bind="NOTIFY_DELETE_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">

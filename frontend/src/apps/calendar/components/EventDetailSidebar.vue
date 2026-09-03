@@ -21,13 +21,21 @@ import DOMPurify from 'dompurify'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 
-import { getMeetUrl, getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
+import {
+	getMeetUrl,
+	getReorderedParticipants,
+	isUrl,
+	participationStatusDisplay,
+} from '@/apps/calendar/utils'
 import { fromEventZone, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
+import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
+import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
 
 const { calendarEvent } = defineProps<{ calendarEvent: any }>()
@@ -58,23 +66,81 @@ const RSVP_OPTIONS = [
 // event_response template when custom event invites are enabled.
 const rsvpEvent = createResource({
 	url: 'suite.calendar.api.rsvp_calendar_event',
-	makeParams: (response: string) => ({
+	makeParams: ({ response, scope }: { response: string; scope: RecurringScope }) => ({
 		account: store.accountId,
 		// master_id is only set on recurring events; fall back to the event's own id
 		id: calendarEvent.master_id || calendarEvent.id,
 		response: response.toLowerCase(),
+		// One occurrence answered on its own is an override on the series, addressed by this
+		// occurrence's recurrence id. The whole series is the same call without one.
+		recurrence_id: scope === 'instance' ? calendarEvent.recurrence_id : null,
 	}),
 	onSuccess: () => emit('reloadEvents'),
 })
 
-const handleSetResponse = (response: string) => {
-	if (!response || response === userResponse.value) return
-	toast.promise(rsvpEvent.submit(response), {
+// A recurring event asks the same question an edit or a delete asks — a standup you miss one
+// week is not a standup you have left. Only the series-wide answer reaches the server so far,
+// so the other is greyed out rather than absent. The tab buttons stay where they were until
+// the server confirms, so cancelling the question leaves the shown answer alone.
+const showRsvpScopeModal = ref(false)
+const pendingResponse = ref('')
+
+const submitResponse = (response: string, scope: RecurringScope) => {
+	showRsvpScopeModal.value = false
+	toast.promise(rsvpEvent.submit({ response, scope }), {
 		loading: __('Sending response...'),
 		success: __('Response sent.'),
 		error: __('Action failed. Please try again in some time.'),
 	})
 }
+
+const handleSetResponse = (response: string) => {
+	if (!response || response === userResponse.value) return
+	if (!calendarEvent.recurrence_id) return submitResponse(response, 'series')
+	pendingResponse.value = response
+	showRsvpScopeModal.value = true
+}
+
+// An event this account organizes is one whose series it can write an override on; an
+// invitation delivered from elsewhere is not, whoever else is on it.
+const isOwnEvent = computed(
+	() =>
+		!calendarEvent.organizer ||
+		(participantIdentities.data?.some(
+			(id) => id.email === calendarEvent.organizer.replace('mailto:', ''),
+		) ??
+			false),
+)
+
+const rsvpScopeModalProps = computed(() => ({
+	title: __('Respond to repeating event'),
+	// The answer about to be sent, drawn as the participant list draws it: the dialog is
+	// about this yes or this no, not about responding in general.
+	icon: {
+		name: participationStatusDisplay(pendingResponse.value).name,
+		theme: participationStatusDisplay(pendingResponse.value).theme,
+	},
+	// No "this and following": ending a series partway is the organizer's act, and an attendee
+	// answering an invitation is not editing the event at all.
+	//
+	// And no "this event only" on an event this account did not call. An invitation can arrive
+	// as a set of separate occurrences beside a copy that holds nothing but the answer, and
+	// answering one date of one of those is what makes it so: the server finds no series on the
+	// copy to hang the status on and gives it to the whole event, which then reads onto every
+	// occurrence. The copy only loses its rule at that moment, so nothing about the event before
+	// the answer tells the two apart — only whose event it is.
+	options: scopeOptions({
+		unavailable: isOwnEvent.value ? [] : ['instance'],
+	}).filter((option) => option.value !== 'following'),
+	confirmLabel: __('Send response'),
+	loading: rsvpEvent.loading,
+}))
+
+// An occurrence whose series has no readable rule left has nothing to say here,
+// and the row goes with the sentence rather than standing empty beside an icon.
+const repeatMessage = computed(() =>
+	calendarEvent.recurrence_id ? getRepeatMessage(calendarEvent.recurrence_rule) : '',
+)
 
 // --- Calendar (colour + account) ---
 
@@ -279,14 +345,22 @@ const hasDetails = computed(
 
 // --- Actions dropdown (delete) ---
 
-const { deleteOption, isDeleting, showNotifyModal, pendingDelete, NOTIFY_DELETE_OPTIONS } =
-	useEventDelete(
-		() => calendarEvent,
-		() => {
-			emit('reloadEvents')
-			emit('close')
-		},
-	)
+const {
+	deleteOption,
+	isDeleting,
+	showScopeModal: showDeleteScopeModal,
+	deleteScopeModalProps,
+	deleteScope,
+	showNotifyModal,
+	pendingDelete,
+	NOTIFY_DELETE_OPTIONS,
+} = useEventDelete(
+	() => calendarEvent,
+	() => {
+		emit('reloadEvents')
+		emit('close')
+	},
+)
 
 const dropdownOptions = computed(() => [
 	{ label: __('Edit'), icon: SquarePen, onClick: () => emit('edit') },
@@ -367,14 +441,9 @@ const openUrl = (location: string) => {
 			     panel reads title / date / participants. -->
 			<div v-if="hasDetails" class="flex flex-col py-2">
 				<!-- Recurrence -->
-				<div
-					v-if="calendarEvent.recurrence_id"
-					class="flex items-center gap-2.5 px-4.5 py-2"
-				>
+				<div v-if="repeatMessage" class="flex items-center gap-2.5 px-4.5 py-2">
 					<Repeat class="icon text-ink-gray-5 size-4 shrink-0" />
-					<span class="text-ink-gray-7 min-w-0 break-words text-sm">
-						{{ getRepeatMessage(calendarEvent.recurrence_rule) }}
-					</span>
+					<span class="text-ink-gray-7 min-w-0 break-words text-sm">{{ repeatMessage }}</span>
 				</div>
 
 				<!-- Meet link -->
@@ -532,6 +601,16 @@ const openUrl = (location: string) => {
 			/>
 		</div>
 
+		<RecurringScopeModal
+			v-model="showDeleteScopeModal"
+			v-bind="deleteScopeModalProps"
+			@confirm="deleteScope"
+		/>
+		<RecurringScopeModal
+			v-model="showRsvpScopeModal"
+			v-bind="rsvpScopeModalProps"
+			@confirm="(scope) => submitResponse(pendingResponse, scope)"
+		/>
 		<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_DELETE_OPTIONS">
 			<template #actions>
 				<div class="flex justify-end space-x-2">
