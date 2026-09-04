@@ -21,9 +21,9 @@ concurrency:
   cancel-in-progress: false   # on laisse le run en cours finir plutôt que de le tuer à moitié
 
 env:
-  UPSTREAM_URL: https://github.com/e3426754-hash/code.git   # 🔧 À ADAPTER : URL du repo source
-  BRANCH: master                                             # 🔧 À ADAPTER : branche à suivre côté upstream ET côté fork
-  SYNC_BRANCH: sync/upstream-master                          # nom fixe -> idempotent, pas de doublon de branche
+  UPSTREAM_URL: https://github.com/frappe/suite.git   # 🔧 À ADAPTER : URL du repo source
+  BRANCH: develop                                             # 🔧 À ADAPTER : branche à suivre côté upstream ET côté fork
+  SYNC_BRANCH: sync/upstream-develop                          # nom fixe -> idempotent, pas de doublon de branche
 
 jobs:
   sync:
