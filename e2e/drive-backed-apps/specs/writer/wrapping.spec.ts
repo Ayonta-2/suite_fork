@@ -15,8 +15,10 @@ const LINK =
 	"https://example.com/a/very/long/path/that/has/no/place/to/break/" +
 	"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-// Widths that put the wrap point in a different word each time.
-const VIEWPORTS = [960, 1120, 1280, 1440];
+// Widths that put the wrap point in a different word each time. The editor
+// column is capped at 48rem, so a viewport sweep leaves it unchanged on a wide
+// screen. The width goes on the editor element instead.
+const WIDTHS = [320, 400, 480, 560, 640];
 
 function computed(locator: Locator, property: string) {
 	return locator.evaluate(
@@ -42,6 +44,12 @@ function splitWords(paragraph: Locator): Promise<string[]> {
 		}
 		return split;
 	});
+}
+
+function setEditorWidth(editor: Locator, width: number): Promise<void> {
+	return editor.evaluate((node, value) => {
+		(node as HTMLElement).style.width = `${value}px`;
+	}, width);
 }
 
 async function typeParagraphs(page: Page, editor: Locator): Promise<void> {
@@ -74,8 +82,8 @@ test("the editor keeps a word whole and still wraps a long link", async ({
 
 	const paragraph = editor.locator("p").first();
 	const link = editor.locator("p").nth(1);
-	for (const width of VIEWPORTS) {
-		await page.setViewportSize({ width, height: 900 });
+	for (const width of WIDTHS) {
+		await setEditorWidth(editor, width);
 		await expect.poll(() => splitWords(paragraph)).toEqual([]);
 		// The link has no place to break, so it may be cut — but it must stay
 		// inside the page rather than push the column wider.
