@@ -84,12 +84,18 @@ class _Expansion:
 
     def run(self) -> list[dict]:
         expanded: list[dict] = []
+        members: dict[str, dict] = {}
         seen: set[str] = set()
         dropped: list[str] = []
         invited = 0
 
         for address, entry, is_member in self._slots():
-            if address and (address in seen or (is_member and address in self.explicit)):
+            if address and address in seen:
+                # The same address through a second list: the one entry belongs to both.
+                if is_member and address in members:
+                    members[address]["member_of"].update(entry["member_of"])
+                continue
+            if is_member and address in self.explicit:
                 continue
             if is_member and invited >= self.limit:
                 dropped.append(address)
@@ -97,6 +103,8 @@ class _Expansion:
 
             if address:
                 seen.add(address)
+            if is_member:
+                members[address] = entry
             expanded.append(entry)
             # A list kept for display is not invited, so it does not use up the cap.
             if entry.get("schedule_agent") != "none":

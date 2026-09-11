@@ -205,6 +205,42 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
         # The explicit uid survives; a member entry would reset the RSVP recorded against it.
         self.assertEqual(expanded[-1]["uid"], "uid-alice@example.com")
 
+    def test_a_member_on_two_invited_lists_points_at_both(self):
+        team, alice, bob, everyone, carol = self.expand(
+            [participant("team@example.com"), participant("everyone@example.com")]
+        )
+
+        self.assertEqual(
+            emails([team, alice, bob, everyone, carol]),
+            [
+                "team@example.com",
+                "alice@example.com",
+                "bob@example.com",
+                "everyone@example.com",
+                "carol@example.com",
+            ],
+        )
+        # Stored once, but the membership behind both invitations is kept (RFC 8984 memberOf is a set).
+        self.assertEqual(alice["member_of"], {team["uid"]: True, everyone["uid"]: True})
+        self.assertEqual(carol["member_of"], {everyone["uid"]: True})
+
+    def test_a_later_save_forgets_a_list_the_member_left(self):
+        team, alice, bob, everyone, carol = self.expand(
+            [participant("team@example.com"), participant("everyone@example.com")]
+        )
+        alice["uid"] = "uid-alice"
+
+        # Alice leaves team but is named on everyone directly, so one membership remains.
+        index = INDEX | {
+            "team@example.com": ["bob@example.com"],
+            "everyone@example.com": ["team@example.com", "alice@example.com", "carol@example.com"],
+        }
+        expanded = self.expand([team, alice, bob, everyone, carol], index=index)
+
+        alice_after = next(p for p in expanded if p["email"] == "alice@example.com")
+        self.assertEqual(alice_after["uid"], "uid-alice")
+        self.assertEqual(alice_after["member_of"], {everyone["uid"]: True})
+
     def test_a_later_save_keeps_members_and_drops_those_who_left(self):
         team, alice, bob = self.expand([participant("team@example.com")])
         alice["uid"], alice["participation_status"] = "uid-alice", "accepted"
