@@ -9,12 +9,14 @@ from suite.calendar.doctype.calendar_event.calendar_event import add_calendar_ev
 from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_events_by_ids,
 )
+from suite.calendar.doctype.calendar_event.invitations import _attendees
 from suite.calendar.doctype.calendar_event.mailing_lists import (
     DEFAULT_MAX_PARTICIPANTS,
     _expansion_enabled,
     _max_participants,
     expand_mailing_list_participants,
 )
+from suite.calendar.doctype.calendar_exchange.calendar_exchange import jscalendar_to_vevent
 from suite.mail.api.admin import add_mailing_list_recipients, get_mailing_list
 from suite.mail.stalwart import get_domains, get_mailing_list_index
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
@@ -49,70 +51,100 @@ def participant(email: str, **overrides) -> dict:
     } | overrides
 
 
+def emails(participants: list[dict]) -> list[str]:
+    return [p["email"] for p in participants]
+
+
 class TestMailingListParticipantExpansion(IntegrationTestCase):
-    """Mailing list participants are replaced by their members before an event is stored.
+    """Mailing list participants are joined by their members before an event is stored.
 
     The server expands a list only at delivery time, so an ATTENDEE naming the list matches no
     account on ingest and the event lands on nobody's calendar. These cover the expansion that
-    replaces the list with its members up front.
+    adds the members up front, keeping the list itself as an unscheduled group they point back to.
     """
 
-    def expand(self, participants: list[dict], limit: int = 100) -> list[dict]:
+    def expand(self, participants: list[dict], limit: int = 100, index: dict | None = None) -> list[dict]:
         """Runs the expansion against a fixed directory, bypassing Stalwart."""
 
         with (
             patch(f"{MODULE}._expansion_enabled", return_value=True),
             patch(f"{MODULE}._max_participants", return_value=limit),
             patch(f"{MODULE}._domains", return_value=DOMAINS),
-            patch(f"{MODULE}._mailing_list_index", return_value=INDEX),
+            patch(f"{MODULE}._mailing_list_index", return_value=INDEX if index is None else index),
         ):
             return expand_mailing_list_participants(participants)
 
-    def test_list_is_replaced_by_its_members(self):
+    def test_list_is_followed_by_its_members(self):
         expanded = self.expand([participant("team@example.com")])
 
-        self.assertEqual([p["email"] for p in expanded], ["alice@example.com", "bob@example.com"])
+        self.assertEqual(emails(expanded), ["team@example.com", "alice@example.com", "bob@example.com"])
+
+    def test_the_list_stays_as_a_group_nobody_schedules(self):
+        team = self.expand([participant("team@example.com")])[0]
+
+        self.assertEqual(team["kind"], "group")
+        self.assertEqual(team["schedule_agent"], "none")
+        self.assertIsNone(team["send_to"])
+        self.assertIsNone(team["schedule_id"])
+        # The organizer's reply expectation is what the members inherit, so it is left alone.
+        self.assertTrue(team["expect_reply"])
+
+    def test_members_point_back_at_the_list(self):
+        team, alice, bob = self.expand([participant("team@example.com")])
+
+        self.assertEqual(alice["member_of"], {team["uid"]: True})
+        self.assertEqual(bob["member_of"], {team["uid"]: True})
+
+    def test_a_list_without_a_uid_is_given_one_up_front(self):
+        team, alice, _ = self.expand([participant("team@example.com", uid=None)])
+
+        # The server would mint one, but the members' memberOf has to name it before that.
+        self.assertTrue(team["uid"])
+        self.assertEqual(alice["member_of"], {team["uid"]: True})
 
     def test_an_alias_of_the_list_resolves_to_the_same_members(self):
         expanded = self.expand([participant("team-alias@example.com")])
 
-        self.assertEqual([p["email"] for p in expanded], ["alice@example.com", "bob@example.com"])
+        self.assertEqual(emails(expanded), ["team-alias@example.com", "alice@example.com", "bob@example.com"])
 
     def test_other_participants_are_untouched_and_order_is_kept(self):
         outsider = participant("someone@example.org")
         expanded = self.expand([outsider, participant("team@example.com")])
 
         self.assertEqual(
-            [p["email"] for p in expanded],
-            ["someone@example.org", "alice@example.com", "bob@example.com"],
+            emails(expanded),
+            ["someone@example.org", "team@example.com", "alice@example.com", "bob@example.com"],
         )
         self.assertEqual(expanded[0], outsider)
 
     def test_a_member_invited_separately_is_not_duplicated(self):
         expanded = self.expand([participant("alice@example.com"), participant("team@example.com")])
 
-        self.assertEqual([p["email"] for p in expanded], ["alice@example.com", "bob@example.com"])
+        self.assertEqual(emails(expanded), ["alice@example.com", "team@example.com", "bob@example.com"])
         # The explicit entry wins, so a response already recorded against it is not discarded.
         self.assertEqual(expanded[0]["uid"], "uid-alice@example.com")
+        self.assertNotIn("member_of", expanded[0])
 
     def test_nested_lists_are_flattened(self):
         expanded = self.expand([participant("everyone@example.com")])
 
         self.assertEqual(
-            [p["email"] for p in expanded],
-            ["alice@example.com", "bob@example.com", "carol@example.com"],
+            emails(expanded),
+            ["everyone@example.com", "alice@example.com", "bob@example.com", "carol@example.com"],
         )
+        # Members point at the list the organizer named, not the nested one they sit on.
+        self.assertEqual(expanded[1]["member_of"], {expanded[0]["uid"]: True})
 
     def test_a_membership_cycle_terminates(self):
         expanded = self.expand([participant("loop-a@example.com")])
 
         # loop-b is expanded where it sits, ahead of dave, and its reference back to loop-a is
         # dropped as already visited.
-        self.assertEqual([p["email"] for p in expanded], ["erin@example.com", "dave@example.com"])
+        self.assertEqual(emails(expanded), ["loop-a@example.com", "erin@example.com", "dave@example.com"])
 
     def test_members_inherit_the_lists_role_but_get_their_own_identity(self):
         source = participant("team@example.com", roles={"attendee": True, "optional": True})
-        alice = self.expand([source])[0]
+        alice = self.expand([source])[1]
 
         self.assertEqual(alice["roles"], {"attendee": True, "optional": True})
         self.assertTrue(alice["expect_reply"])
@@ -122,12 +154,18 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
         self.assertIsNone(alice["uid"])
         self.assertIsNone(alice["send_to"])
         self.assertIsNone(alice["schedule_id"])
+        self.assertIsNone(alice["schedule_agent"])
+
+    def test_members_do_not_inherit_the_lists_group_kind(self):
+        alice = self.expand([participant("team@example.com", kind="Group")])[1]
+
+        self.assertIsNone(alice["kind"])
 
     def test_the_size_cap_truncates_and_is_reported(self):
         with patch(f"{MODULE}._report_truncation") as report:
             expanded = self.expand([participant("everyone@example.com")], limit=2)
 
-        self.assertEqual([p["email"] for p in expanded], ["alice@example.com", "bob@example.com"])
+        self.assertEqual(emails(expanded), ["everyone@example.com", "alice@example.com", "bob@example.com"])
         report.assert_called_once()
         self.assertEqual(report.call_args.args[0], 2)
         self.assertEqual(report.call_args.args[1], ["carol@example.com"])
@@ -142,8 +180,8 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
             )
 
         self.assertEqual(
-            [p["email"] for p in expanded],
-            ["alice@example.com", "bob@example.com", "boss@example.org"],
+            emails(expanded),
+            ["everyone@example.com", "alice@example.com", "bob@example.com", "boss@example.org"],
         )
 
     def test_explicit_participants_consume_the_cap_before_members(self):
@@ -152,16 +190,49 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
                 [participant("boss@example.org"), participant("everyone@example.com")], limit=2
             )
 
-        # The cap bounds the total, so boss takes one of the two slots and expansion adds one member.
-        self.assertEqual([p["email"] for p in expanded], ["boss@example.org", "alice@example.com"])
+        # The cap bounds the invited total, so boss takes one of the two slots and expansion adds
+        # one member; the list itself is never mailed and does not use up a slot.
+        self.assertEqual(emails(expanded), ["boss@example.org", "everyone@example.com", "alice@example.com"])
         self.assertEqual(report.call_args.args[1], ["bob@example.com", "carol@example.com"])
 
     def test_an_explicit_participant_wins_even_when_the_list_comes_first(self):
         expanded = self.expand([participant("team@example.com"), participant("alice@example.com")])
 
-        self.assertEqual([p["email"] for p in expanded], ["bob@example.com", "alice@example.com"])
+        self.assertEqual(emails(expanded), ["team@example.com", "bob@example.com", "alice@example.com"])
         # The explicit uid survives; a member entry would reset the RSVP recorded against it.
         self.assertEqual(expanded[-1]["uid"], "uid-alice@example.com")
+
+    def test_a_later_save_keeps_members_and_drops_those_who_left(self):
+        team, alice, bob = self.expand([participant("team@example.com")])
+        alice["uid"], alice["participation_status"] = "uid-alice", "accepted"
+        bob["uid"] = "uid-bob"
+
+        index = INDEX | {"team@example.com": ["alice@example.com", "carol@example.com"]}
+        expanded = self.expand([team, alice, bob], index=index)
+
+        self.assertEqual(emails(expanded), ["team@example.com", "alice@example.com", "carol@example.com"])
+        # Alice's entry survives as it is, so her RSVP stays recorded; Carol is new.
+        self.assertEqual(expanded[1]["uid"], "uid-alice")
+        self.assertEqual(expanded[1]["participation_status"], "accepted")
+        self.assertIsNone(expanded[2]["uid"])
+        self.assertEqual(expanded[0]["uid"], team["uid"])
+
+    def test_removing_the_list_uninvites_its_members(self):
+        _, alice, bob = self.expand([participant("team@example.com")])
+
+        expanded = self.expand([participant("boss@example.org"), alice, bob])
+
+        self.assertEqual(emails(expanded), ["boss@example.org"])
+
+    def test_members_of_a_list_gone_from_the_directory_are_kept(self):
+        team, alice, bob = self.expand([participant("team@example.com")])
+
+        index = {k: v for k, v in INDEX.items() if k != "team@example.com"}
+        expanded = self.expand([team, alice, bob], index=index)
+
+        # Deleting the list is an admin's doing, not the organizer's; nobody is uninvited over it.
+        self.assertEqual(emails(expanded), ["team@example.com", "alice@example.com", "bob@example.com"])
+        self.assertEqual(expanded[1], alice)
 
     def test_expansion_can_be_turned_off(self):
         participants = [participant("team@example.com")]
@@ -198,6 +269,75 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
         self.assertEqual(expand_mailing_list_participants([]), [])
 
 
+def stored_event(**participants: dict) -> dict:
+    """Builds an event the way the JMAP server returns it: participants keyed by uid."""
+
+    return {"participants": {uid: {"@type": "Participant", **p} for uid, p in participants.items()}}
+
+
+class TestMailingListInviteAddressing(IntegrationTestCase):
+    """A member is mailed individually, but the mail names the list the way list mail does."""
+
+    ORGANIZER = "org@example.com"
+
+    def event(self) -> dict:
+        return stored_event(
+            owner={"calendarAddress": f"mailto:{self.ORGANIZER}", "roles": {"owner": True}},
+            team={
+                "calendarAddress": "mailto:team@example.com",
+                "name": "Team",
+                "kind": "group",
+                "scheduleAgent": "none",
+                "expectReply": True,
+            },
+            alice={
+                "calendarAddress": "mailto:alice@example.com",
+                "name": "Alice",
+                "expectReply": True,
+                "memberOf": {"team": True},
+            },
+            boss={"calendarAddress": "mailto:boss@example.org", "name": "Boss", "expectReply": True},
+        )
+
+    def test_the_list_itself_is_never_mailed(self):
+        attendees = _attendees(self.event(), self.ORGANIZER)
+
+        self.assertEqual(set(attendees), {"alice@example.com", "boss@example.org"})
+
+    def test_a_member_is_addressed_through_the_list(self):
+        attendees = _attendees(self.event(), self.ORGANIZER)
+
+        self.assertEqual(attendees["alice@example.com"]["to"], "Team <team@example.com>")
+        self.assertEqual(attendees["boss@example.org"]["to"], "boss@example.org")
+
+    def test_a_list_named_by_its_address_is_not_doubled_up(self):
+        event = self.event()
+        event["participants"]["team"]["name"] = "team@example.com"
+
+        self.assertEqual(_attendees(event, self.ORGANIZER)["alice@example.com"]["to"], "team@example.com")
+
+    def test_the_itip_attendee_records_the_membership(self):
+        event = self.event() | {
+            "uid": "abc",
+            "title": "Standup",
+            "start": "2026-11-09T10:00:00",
+            "duration": "PT1H",
+            "timeZone": "UTC",
+        }
+
+        # Unfolded, so a long ATTENDEE line can be matched whole.
+        ics = jscalendar_to_vevent(event).to_ical().decode().replace("\r\n ", "")
+        attendees = [line for line in ics.splitlines() if line.startswith("ATTENDEE")]
+        team = next(line for line in attendees if line.endswith(":mailto:team@example.com"))
+        alice = next(line for line in attendees if line.endswith(":mailto:alice@example.com"))
+
+        self.assertIn('MEMBER="mailto:team@example.com"', alice)
+        self.assertIn("CUTYPE=GROUP", team)
+        # The list is on the event for display, so it is not asked to reply.
+        self.assertIn("RSVP=FALSE", team)
+        self.assertIn("RSVP=TRUE", alice)
+
+
 class TestMailingListExpansionConfig(IntegrationTestCase):
     """The toggle and the cap resolve through ``get_config``, so site config can supply either."""
 
@@ -228,7 +368,7 @@ class TestMailingListInvite(StalwartIntegrationTestCase):
         cls.second = cls.create_member()
         cls.organizer_account = cls.personal_account(cls.organizer)
 
-    def test_the_list_address_is_stored_as_its_members(self):
+    def test_the_list_address_is_stored_with_its_members(self):
         list_id = self.create_mailing_list()
         with self.set_user("Administrator"):
             add_mailing_list_recipients(list_id, [self.first.email, self.second.email])
@@ -254,11 +394,20 @@ class TestMailingListInvite(StalwartIntegrationTestCase):
             )
             participants = get_events_by_ids(self.organizer_account, [event_id])[0]["participants"]
 
-        emails = {p["email"] for p in participants}
-        self.assertNotIn(list_email, emails)
-        self.assertEqual(emails, {self.organizer.email, self.first.email, self.second.email})
+        by_email = {p["email"]: p for p in participants}
+        self.assertEqual(
+            set(by_email), {self.organizer.email, list_email, self.first.email, self.second.email}
+        )
 
-        # A distinct uid per member is what gives each of them their own RSVP link.
-        members = [p for p in participants if p["email"] != self.organizer.email]
+        # The list stays for display only: a group with scheduling off and no routing.
+        team = by_email[list_email]
+        self.assertEqual(team["kind"], "Group")
+        self.assertEqual(team["schedule_agent"], "none")
+        self.assertEqual(team["send_to"], {})
+
+        # A distinct uid per member is what gives each of them their own RSVP link, and the
+        # link back to the list is what puts the list in their invitation's To header.
+        members = [by_email[self.first.email], by_email[self.second.email]]
         self.assertEqual(len({p["uid"] for p in members}), 2)
         self.assertTrue(all(p["expect_reply"] for p in members))
+        self.assertTrue(all(p["member_of"] == {team["uid"]: True} for p in members))

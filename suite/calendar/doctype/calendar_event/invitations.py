@@ -305,7 +305,9 @@ def _send(
 
     from_name = _organizer_name(account, event, organizer)
     subject, html = _render(kind, event, organizer, from_name, participant, links)
-    message = _build_mime(from_name, organizer, email, subject, html, ics, method)
+    # The header may name the mailing list a member came through; the envelope stays theirs.
+    to_header = participant["to"] if participant else email
+    message = _build_mime(from_name, organizer, to_header, subject, html, ics, method)
 
     MailQueue._create(
         user=user,
@@ -479,16 +481,47 @@ def _image_bytes(*path_parts: str) -> bytes | None:
 
 
 def _attendees(event: dict, organizer: str) -> dict[str, dict]:
-    """Returns {email: {uid, name}} for every participant except the organizer."""
+    """Returns {email: {uid, name, to}} for every participant the organizer mails.
 
+    A participant with scheduling turned off is skipped: that is a mailing list kept on the event
+    for display, whose members are invited one by one. `to` is what the To header shows, the list
+    a member came through when there is one, so the mail reads like any other mail to the list.
+    """
+
+    participants = event.get("participants") or {}
     attendees = {}
-    for uid, participant in (event.get("participants") or {}).items():
-        email = (participant.get("calendarAddress") or "").lower().replace("mailto:", "")
-        email = email or (participant.get("email") or "").lower()
+    for uid, participant in participants.items():
+        if participant.get("scheduleAgent") == "none":
+            continue
+
+        email = _address(participant)
         if email and email != organizer:
-            attendees[email] = {"uid": uid, "name": participant.get("name") or email}
+            attendees[email] = {
+                "uid": uid,
+                "name": participant.get("name") or email,
+                "to": _to_header(participants, participant) or email,
+            }
 
     return attendees
+
+
+def _to_header(participants: dict, participant: dict) -> str | None:
+    """Returns the formatted address of the first group a participant was invited through."""
+
+    for group_id in participant.get("memberOf") or {}:
+        group = participants.get(group_id) or {}
+        if address := _address(group):
+            name = (group.get("name") or "").strip()
+            return formataddr((name, address)) if name and name.lower() != address else address
+
+    return None
+
+
+def _address(participant: dict) -> str:
+    """Returns a participant's bare email address, lowercased."""
+
+    address = (participant.get("calendarAddress") or participant.get("email") or "").lower()
+    return address.replace("mailto:", "")
 
 
 def _format_when(event: dict) -> str:
@@ -510,8 +543,7 @@ def _display_name(event: dict, email: str) -> str:
     """Returns the participant display name for an email, if the event lists one."""
 
     for participant in (event.get("participants") or {}).values():
-        address = (participant.get("calendarAddress") or participant.get("email") or "").lower()
-        if address.replace("mailto:", "") == email and participant.get("name"):
+        if _address(participant) == email and participant.get("name"):
             return participant["name"]
 
     return ""

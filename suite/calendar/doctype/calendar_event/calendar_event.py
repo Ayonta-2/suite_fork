@@ -151,6 +151,8 @@ class CalendarEvent(Document):
                     "expect_reply": bool(p.expect_reply),
                     "description": p.description,
                     "comment": p.comment,
+                    "schedule_agent": p.schedule_agent,
+                    "member_of": json.loads(p.member_of),
                 }
                 for p in self.participants
             ]
@@ -750,6 +752,8 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
                 "expect_reply": cint(p.get("expectReply", False)),
                 "description": p.get("description", ""),
                 "comment": p.get("comment", ""),
+                "schedule_agent": p.get("scheduleAgent") or "",
+                "member_of": p.get("memberOf") or {},
             }
         )
 
@@ -948,7 +952,10 @@ def _previous_invite_state(account: str, id: str) -> tuple[list[str], int]:
         return [], 1
 
     event = events[0]
-    emails = [p["email"] for p in event["participants"] if p.get("email")]
+    # A mailing list kept on the event is never mailed, so it is not an attendee to diff.
+    emails = [
+        p["email"] for p in event["participants"] if p.get("email") and p.get("schedule_agent") != "none"
+    ]
     return emails, cint(event.get("sequence")) + 1
 
 
