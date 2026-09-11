@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+from email import message_from_string
 from unittest.mock import patch
 
 from frappe.tests import IntegrationTestCase
@@ -9,7 +10,7 @@ from suite.calendar.doctype.calendar_event.calendar_event import add_calendar_ev
 from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_events_by_ids,
 )
-from suite.calendar.doctype.calendar_event.invitations import _attendees
+from suite.calendar.doctype.calendar_event.invitations import mail_attendees, notify_participants
 from suite.calendar.doctype.calendar_event.mailing_lists import (
     DEFAULT_MAX_PARTICIPANTS,
     _expansion_enabled,
@@ -23,6 +24,7 @@ from suite.mail.stalwart import get_domains, get_mailing_list_index
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 MODULE = "suite.calendar.doctype.calendar_event.mailing_lists"
+INVITATIONS = "suite.calendar.doctype.calendar_event.invitations"
 
 DOMAINS = [{"name": "example.com"}]
 INDEX = {
@@ -287,7 +289,10 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
 def stored_event(**participants: dict) -> dict:
     """Builds an event the way the JMAP server returns it: participants keyed by uid."""
 
-    return {"participants": {uid: {"@type": "Participant", **p} for uid, p in participants.items()}}
+    return {
+        "id": "evt",
+        "participants": {uid: {"@type": "Participant", **p} for uid, p in participants.items()},
+    }
 
 
 class TestMailingListInviteAddressing(IntegrationTestCase):
@@ -296,7 +301,7 @@ class TestMailingListInviteAddressing(IntegrationTestCase):
     ORGANIZER = "org@example.com"
 
     def event(self) -> dict:
-        return stored_event(
+        return {"organizerCalendarAddress": f"mailto:{self.ORGANIZER}"} | stored_event(
             owner={"calendarAddress": f"mailto:{self.ORGANIZER}", "roles": {"owner": True}},
             team={
                 "calendarAddress": "mailto:team@example.com",
@@ -315,12 +320,12 @@ class TestMailingListInviteAddressing(IntegrationTestCase):
         )
 
     def test_the_list_itself_is_never_mailed(self):
-        attendees = _attendees(self.event(), self.ORGANIZER)
+        attendees = mail_attendees(self.event(), self.ORGANIZER)
 
         self.assertEqual(set(attendees), {"alice@example.com", "boss@example.org"})
 
     def test_a_member_is_addressed_through_the_list(self):
-        attendees = _attendees(self.event(), self.ORGANIZER)
+        attendees = mail_attendees(self.event(), self.ORGANIZER)
 
         self.assertEqual(attendees["alice@example.com"]["to"], "Team <team@example.com>")
         self.assertEqual(attendees["boss@example.org"]["to"], "boss@example.org")
@@ -329,7 +334,29 @@ class TestMailingListInviteAddressing(IntegrationTestCase):
         event = self.event()
         event["participants"]["team"]["name"] = "team@example.com"
 
-        self.assertEqual(_attendees(event, self.ORGANIZER)["alice@example.com"]["to"], "team@example.com")
+        self.assertEqual(mail_attendees(event, self.ORGANIZER)["alice@example.com"]["to"], "team@example.com")
+
+    def test_a_member_who_left_the_list_is_cancelled_through_it(self):
+        before = mail_attendees(self.event(), self.ORGANIZER)
+        after = self.event()
+        del after["participants"]["alice"]
+        sent = []
+
+        with (
+            patch(f"{INVITATIONS}.get_user_for_jmap_account", return_value="organizer@example.com"),
+            patch(f"{INVITATIONS}.get_participant_identities", return_value=[]),
+            patch(f"{INVITATIONS}.MailQueue._create", side_effect=lambda **kw: sent.append(kw)),
+            # The sender logs and moves on; a failure here should fail the test instead.
+            patch(f"{INVITATIONS}.log_error", side_effect=AssertionError),
+        ):
+            notify_participants("acc", "update", event_snapshot=after, previous_attendees=before)
+
+        cancel = next(kw for kw in sent if kw["recipients"][0]["email"] == "alice@example.com")
+        self.assertEqual(message_from_string(cancel["raw_message"])["To"], "Team <team@example.com>")
+        # The list itself is still never mailed, and the organizer is not diffed as gone.
+        self.assertEqual(
+            {kw["recipients"][0]["email"] for kw in sent}, {"alice@example.com", "boss@example.org"}
+        )
 
     def test_the_itip_attendee_records_the_membership(self):
         event = self.event() | {

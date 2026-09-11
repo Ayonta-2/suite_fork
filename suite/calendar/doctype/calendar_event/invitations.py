@@ -93,16 +93,18 @@ def notify_participants(
     action: str,
     event_id: str | None = None,
     event_snapshot: dict | None = None,
-    previous_emails: list[str] | None = None,
+    previous_attendees: dict[str, dict] | None = None,
     recurrence_id: str | None = None,
 ) -> None:
     """Sends invite/update/cancel emails for an event's participants.
 
     `action` is one of "invite", "update", "cancel". Pass `event_id` to fetch the current
     event, or a pre-fetched `event_snapshot` (needed for cancellations after deletion).
-    For updates, `previous_emails` enables new -> invite / kept -> update / gone -> cancel;
-    omit it to send a plain update to everyone. `recurrence_id` scopes a cancellation to a
-    single occurrence of a recurring event.
+    For updates, `previous_attendees` (as `mail_attendees` returned them before the write)
+    enables new -> invite / kept -> update / gone -> cancel; omit it to send a plain update to
+    everyone. A cancellation to someone gone from the event is addressed from their previous
+    record, so a member who left a mailing list still sees the list in the To header.
+    `recurrence_id` scopes a cancellation to a single occurrence of a recurring event.
 
     Note: the snapshot arg is named `event_snapshot`, not `event` — `event` is a reserved
     kwarg of `frappe.enqueue` and would be swallowed before reaching this function.
@@ -116,8 +118,8 @@ def notify_participants(
         event = events[0]
 
     organizer = (event.get("organizerCalendarAddress") or "").lower().replace("mailto:", "")
-    attendees = _attendees(event, organizer)
-    plan = _plan(action, set(attendees), previous_emails)
+    attendees = mail_attendees(event, organizer)
+    plan = _plan(action, set(attendees), None if previous_attendees is None else set(previous_attendees))
     if not plan:
         return
 
@@ -125,10 +127,9 @@ def notify_participants(
     expires_at = _rsvp_expiry(event)
 
     for email, kind in plan.items():
+        participant = attendees.get(email) or (previous_attendees or {}).get(email)
         try:
-            _send(
-                account, user, event, organizer, email, attendees.get(email), kind, expires_at, recurrence_id
-            )
+            _send(account, user, event, organizer, email, participant, kind, expires_at, recurrence_id)
         except Exception:
             log_error("Calendar", title=_("Failed to send event {0} email to {1}").format(kind, email))
 
@@ -262,7 +263,7 @@ def _response_inline_images() -> list[dict]:
     return [{"filename": RESPONSE_LOGO_EMBED, "filecontent": logo}] if logo else []
 
 
-def _plan(action: str, current: set[str], previous_emails: list[str] | None) -> dict[str, str]:
+def _plan(action: str, current: set[str], previous: set[str] | None) -> dict[str, str]:
     """Maps each recipient email to the email kind (invite/update/cancel) to send."""
 
     if action == "invite":
@@ -271,10 +272,9 @@ def _plan(action: str, current: set[str], previous_emails: list[str] | None) -> 
         return {email: "cancel" for email in current}
 
     # action == "update"
-    if previous_emails is None:
+    if previous is None:
         return {email: "update" for email in current}
 
-    previous = set(previous_emails)
     plan = {email: ("update" if email in previous else "invite") for email in current}
     for email in previous - current:
         plan[email] = "cancel"
@@ -480,7 +480,7 @@ def _image_bytes(*path_parts: str) -> bytes | None:
     return _IMAGE_CACHE[key] or None
 
 
-def _attendees(event: dict, organizer: str) -> dict[str, dict]:
+def mail_attendees(event: dict, organizer: str) -> dict[str, dict]:
     """Returns {email: {uid, name, to}} for every participant the organizer mails.
 
     A participant with scheduling turned off is skipped: that is a mailing list kept on the event
