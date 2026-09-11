@@ -18,6 +18,7 @@ from suite.calendar.doctype.calendar_event.mailing_lists import (
 )
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import jscalendar_to_vevent
 from suite.mail.api.admin import add_mailing_list_recipients, get_mailing_list
+from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
 from suite.mail.stalwart import get_domains, get_mailing_list_index
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
@@ -264,6 +265,20 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
         ):
             self.assertEqual(expand_mailing_list_participants(participants), participants)
 
+    def test_expanded_participants_serialise_for_the_server(self):
+        # Members reset fields to None rather than leaving them out, which the serialiser must take.
+        team, alice, _ = self.expand([participant("team@example.com", kind=None)])
+
+        serialised = CalendarEventService._get_participants_map([team, alice])
+
+        self.assertEqual(serialised[team["uid"]]["scheduleAgent"], "none")
+        self.assertEqual(serialised[team["uid"]]["kind"], "group")
+        self.assertIsNone(serialised[team["uid"]]["sendTo"])
+        member = next(v for k, v in serialised.items() if k != team["uid"])
+        self.assertIsNone(member["kind"])
+        self.assertEqual(member["memberOf"], {team["uid"]: True})
+        self.assertEqual(member["sendTo"], {"imip": "mailto:alice@example.com"})
+
     def test_nothing_to_do_without_participants(self):
         self.assertIsNone(expand_mailing_list_participants(None))
         self.assertEqual(expand_mailing_list_participants([]), [])
@@ -403,7 +418,7 @@ class TestMailingListInvite(StalwartIntegrationTestCase):
         team = by_email[list_email]
         self.assertEqual(team["kind"], "Group")
         self.assertEqual(team["schedule_agent"], "none")
-        self.assertEqual(team["send_to"], {})
+        self.assertFalse(team["send_to"])
 
         # A distinct uid per member is what gives each of them their own RSVP link, and the
         # link back to the list is what puts the list in their invitation's To header.
