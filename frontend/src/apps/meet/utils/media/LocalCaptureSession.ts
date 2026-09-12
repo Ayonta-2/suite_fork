@@ -1,6 +1,6 @@
 import type { DeviceType } from "./DeviceManager";
 
-export interface LocalCaptureDeviceManager {
+interface LocalCaptureDeviceManager {
 	enumerateDevices: () => Promise<void>;
 	isDeviceAvailable: (deviceId: string, deviceType: DeviceType) => boolean;
 	getDefaultDevice: (
@@ -19,22 +19,22 @@ export interface LocalCaptureOperation {
 	publicationOwner?: object | null;
 }
 
-export type LocalCaptureKindPublicationResult =
+type LocalCaptureKindPublicationResult =
 	| { status: "published" }
 	| { status: "failed"; error: unknown };
 
-export interface LocalCapturePublicationResult {
+interface LocalCapturePublicationResult {
 	video?: LocalCaptureKindPublicationResult;
 	audio?: LocalCaptureKindPublicationResult;
 }
 
-export interface PreparedMicrophoneTrack {
+interface PreparedMicrophoneTrack {
 	track: MediaStreamTrack;
 	commit: () => void;
 	discard: () => void;
 }
 
-export interface LocalCapturePublication {
+interface LocalCapturePublication {
 	getOwner: () => object | null;
 	reconcileCamera: (
 		track: MediaStreamTrack | null,
@@ -98,7 +98,7 @@ export interface MediaDeviceOverrides {
 	micDeviceId?: string;
 }
 
-export interface ReacquireMediaOptions {
+interface ReacquireMediaOptions {
 	needsCamera?: boolean;
 	needsMicrophone?: boolean;
 }
