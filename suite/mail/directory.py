@@ -16,6 +16,7 @@ GB = 1024**3
 # Suite Cloud hands out recipients a page at a time; this is its largest page.
 RECIPIENT_PAGE = 1000
 LIST_PAGE = 500  # groups and lists per call, the cap Suite Cloud allows
+MAX_PAGES = 200  # more than any site holds; a peer that never ends must not hold a worker
 
 
 def get_domains() -> list[dict]:
@@ -58,12 +59,14 @@ def all_pages(method: str, limit: int = LIST_PAGE, **params) -> list[dict]:
     client = get_client()
     items: list[dict] = []
     start = 0
-    while True:
+    for _page in range(MAX_PAGES):
         page = client.call(method, start=start, limit=limit, **params)
         items.extend(page["items"])
         start += len(page["items"])
         if not page["items"] or start >= page["total"]:
             return items
+    log_mail_error(f"{method} kept answering after {MAX_PAGES} pages; the listing was cut short")
+    return items
 
 
 def get_group_addresses() -> set[str]:

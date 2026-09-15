@@ -23,7 +23,9 @@ export function usePagedList<T>(url: string, params: () => Record<string, unknow
 
 	const fetch = (start: number) => {
 		const appending = start > 0
-		if (!appending) generation += 1
+		// Every fetch is a new generation: a second Load More while one is in flight, or a reload
+		// racing it, must not append the same rows twice.
+		generation += 1
 		const mine = generation
 		return resource.submit({ ...params(), start, page_length: pageLength.value }).then((page: Page<T>) => {
 			if (mine !== generation) return page
@@ -34,7 +36,7 @@ export function usePagedList<T>(url: string, params: () => Record<string, unknow
 		})
 	}
 	const reload = () => fetch(0)
-	const loadMore = () => fetch(rows.value.length)
+	const loadMore = () => (resource.loading ? Promise.resolve(null) : fetch(rows.value.length))
 	const setPageLength = (value: PageLength) => {
 		pageLength.value = value
 		return reload()

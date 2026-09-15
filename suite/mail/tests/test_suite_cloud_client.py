@@ -72,6 +72,14 @@ class TestSuiteCloudClient(UnitTestCase):
             with self.assertRaisesRegex(SuiteCloudCredentialsError, "check Mail Settings"):
                 self._call(response)
 
+    def test_address_refusals_point_at_the_allowed_list(self) -> None:
+        from suite.mail.suite_cloud import SuiteCloudAddressError
+
+        with self.assertRaisesRegex(SuiteCloudAddressError, "allowed addresses"):
+            self._call(
+                _frappe_error(403, "SiteAddressError", "Site x does not accept requests from this address.")
+            )
+
     def test_server_failures_are_unavailable(self) -> None:
         for status in (500, 502, 503):
             with self.subTest(status=status), self.assertRaises(SuiteCloudUnavailableError):

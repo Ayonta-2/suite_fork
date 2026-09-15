@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 import frappe
 from frappe import _
-from frappe.query_builder.functions import Count, Max
+from frappe.query_builder.functions import Count, IfNull, Max
 from frappe.utils import cint, flt, validate_email_address
 from pypika import Case, Order
 
@@ -163,7 +163,7 @@ def get_domain_ownership_record(name: str) -> dict:
     return get_client().call("mail.domains.check_domain", domain=name)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @dynamic_rate_limit()
 def add_domain(name: str, description: str | None = None) -> str:
     """Adds the domain to the site; Suite Cloud requires its ownership record to resolve first."""
@@ -200,7 +200,7 @@ def get_domain(domain_id: str) -> dict:
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def verify_domain(domain_id: str) -> dict:
     """Asks Suite Cloud to resolve the domain's records now instead of at the next hourly check."""
 
@@ -209,7 +209,7 @@ def verify_domain(domain_id: str) -> dict:
     return result
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def update_domain(
     domain_id: str,
     description: str | None = None,
@@ -241,7 +241,7 @@ def update_domain(
     return _domain_row(get_client().call("mail.domains.update_domain", domain=domain_id, **changes))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def set_domain_enabled(domain_id: str, enabled: bool) -> dict:
     """Disabling also drops the domain's verification on Suite Cloud; enabling needs a fresh verify."""
 
@@ -251,7 +251,7 @@ def set_domain_enabled(domain_id: str, enabled: bool) -> dict:
     )
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def delete_domain(domain_id: str) -> None:
     check_admin_permission("delete domains", domain_id)
     get_client().call("mail.domains.delete_domain", domain=domain_id)
@@ -310,7 +310,7 @@ def get_domain_dns_json(domain_id: str) -> str:
 # --- members --------------------------------------------------------------------------------------
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @dynamic_rate_limit()
 def add_member(
     username: str,
@@ -393,7 +393,7 @@ def get_members(
             USER_SETTINGS.username.as_("account"),
             is_admin_expr.as_("is_admin"),
         )
-        .where(USER_SETTINGS.username.isnotnull())
+        .where(IfNull(USER_SETTINGS.username, "") != "")
         .groupby(USER.name)
     )
     if is_enabled is not None:
@@ -438,7 +438,10 @@ def _attach_quotas(users: list[dict]) -> None:
         for user in users:
             quota = quotas.get(user.get("account"))
             if quota:
-                user["quota_gb"] = flt(quota.get("disk_quota_gb"))
+                allotted = quota.get("disk_quota_gb")
+                user["quota_gb"] = (
+                    flt(allotted) if allotted is not None else None
+                )  # None: unknown, not unlimited
                 user["used_bytes"] = _bytes_or_none(quota.get("used_disk_bytes"))
 
 
@@ -507,6 +510,7 @@ def get_member(member_id: str) -> dict:
     """
 
     check_admin_permission("view members")
+    check_member_target(member_id)  # the read half of what the write endpoints refuse
 
     user = frappe.db.get_value(
         "User",
@@ -575,6 +579,11 @@ def get_account_requests(
             ACC_REQ.backup_email,
             ACC_REQ.invited_by,
             ACC_REQ.is_verified,
+            Case()
+            .when(ACC_REQ.is_verified == 1, "Accepted")
+            .when(ACC_REQ.expires_at <= frappe.utils.now(), "Expired")
+            .else_("Pending")
+            .as_("status"),
         )
         .orderby(ACC_REQ.creation, order=Order.desc)
     )
@@ -590,14 +599,14 @@ def get_account_requests(
     return {"items": query.limit(page_length).offset(start).run(as_dict=True), "total": total}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def delete_account_requests(names: list) -> None:
     check_admin_permission("delete account requests", names)
     for name in names:
         frappe.delete_doc("Mail Account Request", name)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def delete_members(names: list) -> None:
     user = check_admin_permission("delete members", names)
     if user in names:
@@ -607,7 +616,7 @@ def delete_members(names: list) -> None:
         frappe.delete_doc("User", name)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def disable_members(names: list) -> None:
     user = check_admin_permission("disable members", names)
     if user in names:
@@ -621,7 +630,7 @@ def disable_members(names: list) -> None:
         member.save(ignore_permissions=True)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def enable_members(names: list) -> None:
     check_admin_permission("enable members", names)
     for name in names:
@@ -633,13 +642,16 @@ def enable_members(names: list) -> None:
         member.save(ignore_permissions=True)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @dynamic_rate_limit()
 def change_member_password(member_id: str, new_password: str) -> None:
     """Saving the User with ``new_password`` triggers the update_account_password hook, which
     propagates the new password to the member's mail account."""
 
-    check_admin_permission("change member password", member_id)
+    user = check_admin_permission("change member password", member_id)
+    if member_id == user:
+        # One's own password changes through the flow that asks for the current one.
+        frappe.throw(_("Change your own password from your account settings."), frappe.PermissionError)
     check_member_target(member_id)
     if not new_password:
         frappe.throw(_("New password is required."))
@@ -649,6 +661,9 @@ def change_member_password(member_id: str, new_password: str) -> None:
 
 
 def _require_member_account(member_id: str) -> str:
+    """The mailbox address of a member the caller may act on (see check_member_target)."""
+
+    check_member_target(member_id)
     email = get_account_email(member_id)
     if not email:
         frappe.throw(_("This account has no mailbox on the mail server."))
@@ -661,7 +676,7 @@ def get_account_options() -> dict:
     return get_account_metadata()
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def update_member(
     member_id: str,
     role: str | None = None,
@@ -747,19 +762,19 @@ def _set_alias_enabled(kind: str, email_id: str, alias: str, enabled: bool) -> N
     )
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_member_email(member_id: str, email: str, description: str | None = None) -> None:
     check_admin_permission("update members", f"{member_id} ({email})")
     _add_alias("accounts", _require_member_account(member_id), email, description)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def remove_member_email(member_id: str, email: str) -> None:
     check_admin_permission("update members", f"{member_id} ({email})")
     _remove_alias("accounts", _require_member_account(member_id), email)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def set_member_email_enabled(member_id: str, email: str, enabled: int) -> None:
     check_admin_permission("update members", f"{member_id} ({email})")
     _set_alias_enabled("accounts", _require_member_account(member_id), email, bool(cint(enabled)))
@@ -768,7 +783,7 @@ def set_member_email_enabled(member_id: str, email: str, enabled: int) -> None:
 # --- membership ----------------------------------------------------------------------------------------
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_member_to_groups(member_id: str, group_ids: list) -> None:
     check_admin_permission("update members", member_id)
     email = _require_member_account(member_id)
@@ -777,7 +792,7 @@ def add_member_to_groups(member_id: str, group_ids: list) -> None:
     get_client().call("mail.accounts.set_groups", email=email, groups=groups)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def remove_member_from_group(member_id: str, group_id: str) -> None:
     check_admin_permission("update members", f"{member_id} ({group_id})")
     email = _require_member_account(member_id)
@@ -786,7 +801,7 @@ def remove_member_from_group(member_id: str, group_id: str) -> None:
     get_client().call("mail.accounts.set_groups", email=email, groups=groups)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_member_to_mailing_lists(member_id: str, list_ids: list) -> None:
     check_admin_permission("update members", member_id)
     email = _require_member_account(member_id)
@@ -794,7 +809,7 @@ def add_member_to_mailing_lists(member_id: str, list_ids: list) -> None:
         get_client().call("mail.mailing_lists.add_recipients", email=list_id, recipients=[email])
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def remove_member_from_mailing_list(member_id: str, list_id: str) -> None:
     """Removes every address of the member from the list, aliases included."""
 
@@ -881,11 +896,11 @@ def get_group(group_id: str) -> dict:
             group["email"], group.get("description"), group.get("aliases") or []
         ),
         "members": [_address_ref(m) for m in group.get("members") or []],
-        "quota": _build_quota_usage(int(flt(group.get("disk_quota_gb")) * GB), 0),
+        "quota": _quota_usage(group),  # the group detail asks the cluster for usage
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @dynamic_rate_limit()
 def add_group(
     name: str,
@@ -908,7 +923,7 @@ def add_group(
     return group["email"]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def update_group(group_id: str, description: str | None = None, quota_gb: float | None = None) -> None:
     check_admin_permission("update groups", group_id)
     changes = {}
@@ -920,25 +935,25 @@ def update_group(group_id: str, description: str | None = None, quota_gb: float 
         get_client().call("mail.groups.update_group", email=group_id, **changes)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_group_email(group_id: str, email: str, description: str | None = None) -> None:
     check_admin_permission("update groups", f"{group_id} ({email})")
     _add_alias("groups", group_id, email, description)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def remove_group_email(group_id: str, email: str) -> None:
     check_admin_permission("update groups", f"{group_id} ({email})")
     _remove_alias("groups", group_id, email)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def set_group_email_enabled(group_id: str, email: str, enabled: int) -> None:
     check_admin_permission("update groups", f"{group_id} ({email})")
     _set_alias_enabled("groups", group_id, email, bool(cint(enabled)))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_group_members(group_id: str, account_ids: list) -> None:
     check_admin_permission("update groups", group_id)
     group = get_client().call("mail.groups.get_group", email=group_id)
@@ -946,7 +961,7 @@ def add_group_members(group_id: str, account_ids: list) -> None:
     get_client().call("mail.groups.set_group_members", email=group_id, members=members)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def remove_group_member(group_id: str, account_id: str) -> None:
     check_admin_permission("update groups", f"{group_id} ({account_id})")
     group = get_client().call("mail.groups.get_group", email=group_id)
@@ -954,7 +969,7 @@ def remove_group_member(group_id: str, account_id: str) -> None:
     get_client().call("mail.groups.set_group_members", email=group_id, members=members)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def delete_groups(ids: list) -> None:
     check_admin_permission("delete groups", ids)
     for group_id in _listify(ids):
@@ -996,8 +1011,8 @@ def get_mailing_list(list_id: str, start: int = 0, limit: int = 200, search: str
     page = client.call(
         "mail.mailing_lists.list_recipients",
         email=list_id,
-        start=cint(start),
-        limit=cint(limit) or 200,
+        start=max(cint(start), 0),
+        limit=max(1, min(cint(limit) or 200, 1000)),
         search=search,
     )
     return {
@@ -1032,7 +1047,7 @@ def get_mailing_list_recipients(
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @dynamic_rate_limit()
 def add_mailing_list(
     name: str, domain: str, recipients: list | None = None, description: str | None = None
@@ -1048,32 +1063,32 @@ def add_mailing_list(
     return mailing_list["email"]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def update_mailing_list(list_id: str, description: str | None = None) -> None:
     check_admin_permission("update mailing lists", list_id)
     if description is not None:
         get_client().call("mail.mailing_lists.update_mailing_list", email=list_id, description=description)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_mailing_list_email(list_id: str, email: str, description: str | None = None) -> None:
     check_admin_permission("update mailing lists", f"{list_id} ({email})")
     _add_alias("mailing_lists", list_id, email, description)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def remove_mailing_list_email(list_id: str, email: str) -> None:
     check_admin_permission("update mailing lists", f"{list_id} ({email})")
     _remove_alias("mailing_lists", list_id, email)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def set_mailing_list_email_enabled(list_id: str, email: str, enabled: int) -> None:
     check_admin_permission("update mailing lists", f"{list_id} ({email})")
     _set_alias_enabled("mailing_lists", list_id, email, bool(cint(enabled)))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_mailing_list_recipients(list_id: str, recipients: list) -> None:
     check_admin_permission("update mailing lists", list_id)
     emails = [e.strip() for e in _listify(recipients) if e and str(e).strip()]
@@ -1081,7 +1096,7 @@ def add_mailing_list_recipients(list_id: str, recipients: list) -> None:
         get_client().call("mail.mailing_lists.add_recipients", email=list_id, recipients=emails)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def remove_mailing_list_recipient(list_id: str, email: str) -> None:
     check_admin_permission("update mailing lists", f"{list_id} ({email})")
     get_client().call(
@@ -1089,7 +1104,7 @@ def remove_mailing_list_recipient(list_id: str, email: str) -> None:
     )
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def delete_mailing_lists(ids: list) -> None:
     check_admin_permission("delete mailing lists", ids)
     for list_id in _listify(ids):
@@ -1176,7 +1191,7 @@ def _member_count() -> int:
         .join(USER_SETTINGS)
         .on(USER.name == USER_SETTINGS.user)
         .select(Count("*"))
-        .where(USER_SETTINGS.username.isnotnull())
+        .where(IfNull(USER_SETTINGS.username, "") != "")
     ).run()[0][0]
 
 
@@ -1203,7 +1218,7 @@ def _disabled_accounts() -> list[dict]:
         .join(USER_SETTINGS)
         .on(USER.name == USER_SETTINGS.user)
         .select(USER.name, USER.full_name)
-        .where(USER_SETTINGS.username.isnotnull() & (USER.enabled == 0))
+        .where((IfNull(USER_SETTINGS.username, "") != "") & (USER.enabled == 0))
         .orderby(USER.name, order=Order.asc)
     ).run(as_dict=True)
 
@@ -1218,7 +1233,7 @@ def _recent_accounts(limit: int) -> list[dict]:
         .join(USER_SETTINGS)
         .on(USER.name == USER_SETTINGS.user)
         .select(USER.name, USER.full_name, USER.user_image, USER.enabled, USER.creation)
-        .where(USER_SETTINGS.username.isnotnull())
+        .where(IfNull(USER_SETTINGS.username, "") != "")
         .orderby(USER.creation, order=Order.desc)
         .limit(limit)
     ).run(as_dict=True)

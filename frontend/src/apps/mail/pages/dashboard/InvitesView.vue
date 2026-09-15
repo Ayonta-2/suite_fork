@@ -122,7 +122,7 @@ const selectedInvite = ref('')
 const showEditInvite = ref(false)
 const showDeleteInvites = ref(false)
 
-const list = usePagedList<Omit<InviteRow, 'status'>>('suite.mail.api.admin.get_account_requests', () => ({
+const list = usePagedList<InviteRow>('suite.mail.api.admin.get_account_requests', () => ({
 	search: search.value,
 	...(status.value !== 'All' ? { status: status.value } : {}),
 }))
@@ -131,12 +131,17 @@ const inviteRows = computed<InviteRow[]>(() =>
 	list.rows.map((row) => ({
 		...row,
 		is_admin: Boolean(row.is_admin),
-		status: status.value !== 'All' ? status.value : row.is_verified ? 'Accepted' : 'Pending',
+		status: row.status,
 	})),
 )
 
 watchDebounced(() => search.value, list.reload, { debounce: 300 })
 watch(() => status.value, list.reload)
+
+const listView = useTemplateRef<{
+	selections?: Set<string>
+	toggleAllRows?: () => void
+}>('listView')
 
 // Names no longer listed leave the selection, as on the accounts list.
 watch(
@@ -154,10 +159,6 @@ watch(
 const reloadInvites = () => list.reload()
 defineExpose({ reloadInvites })
 
-const listView = useTemplateRef<{
-	selections?: Set<string>
-	toggleAllRows?: () => void
-}>('listView')
 
 const deleteInvites = createResource({
 	url: 'suite.mail.api.admin.delete_account_requests',

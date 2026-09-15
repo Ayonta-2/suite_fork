@@ -73,6 +73,18 @@ class MailSettings(Document):
         if not frappe.flags.in_migrate:
             self.validate_jmap_push_subscription_keys()
             self.validate_signup()
+            self.warn_about_plain_http()
+
+    def warn_about_plain_http(self) -> None:
+        """The site key travels with every request; over http it is readable on the way."""
+
+        url = (self.suite_cloud_url or "").strip().lower()
+        if url and not url.startswith("https://") and not frappe.conf.developer_mode:
+            frappe.msgprint(
+                _("Suite Cloud URL is not https: the site's API key would travel in the clear."),
+                indicator="orange",
+                alert=True,
+            )
 
     def on_update(self) -> None:
         self.clear_cache()

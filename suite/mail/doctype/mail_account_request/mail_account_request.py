@@ -21,6 +21,7 @@ from frappe.utils import (
 )
 
 from suite.mail.directory import create_account, delete_account_by_email, get_domains
+from suite.mail.suite_cloud import SuiteCloudUnavailableError
 from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
@@ -361,22 +362,13 @@ class MailAccountRequest(Document):
 
         # Steps 1 and 2: the account, its aliases, group and list memberships and a Suite app
         # password are created on the cluster through Suite Cloud in one call.
-        account = execute_with_logging(
-            func=lambda: create_account(
-                email=self.account,
-                password=password,
-                display_name=f"{first_name} {last_name}" if last_name else first_name,
-                aliases=self._aliases,
-                groups=self._surviving("mail.groups.list_groups", self._groups),
-                mailing_lists=self._surviving("mail.mailing_lists.list_mailing_lists", self._mailing_lists),
-                disk_quota_gb=self._quota_gb,
-                locale=locale,
-                time_zone=time_zone,
-            ),
-            title="Failed to create the mail account",
-            user_message=_("Failed to create the mail account, check error log for details."),
-            module="Mail",
-        )
+        try:
+            account = self._create_cluster_account(password, first_name, last_name, locale, time_zone)
+        except SuiteCloudUnavailableError:
+            # A timeout after Suite Cloud created the account would leave a mailbox nobody owns
+            # and make every retry meet "already exists"; the delete tolerates "not found".
+            self._discard_cluster_account()
+            raise
         app_password = account["app_password"]
 
         # Steps 3 and 4 happen on this site, outside the cluster's transaction: if either fails, the
@@ -414,6 +406,26 @@ class MailAccountRequest(Document):
                 title="Failed to create push subscription",
                 module="Mail",
             )
+
+    def _create_cluster_account(self, password, first_name, last_name, locale, time_zone) -> dict:
+        # Steps 1 and 2: the account, its aliases, group and list memberships and a Suite app
+        # password are created on the cluster through Suite Cloud in one call.
+        return execute_with_logging(
+            func=lambda: create_account(
+                email=self.account,
+                password=password,
+                display_name=f"{first_name} {last_name}" if last_name else first_name,
+                aliases=self._aliases,
+                groups=self._surviving("mail.groups.list_groups", self._groups),
+                mailing_lists=self._surviving("mail.mailing_lists.list_mailing_lists", self._mailing_lists),
+                disk_quota_gb=self._quota_gb,
+                locale=locale,
+                time_zone=time_zone,
+            ),
+            title="Failed to create the mail account",
+            user_message=_("Failed to create the mail account, check error log for details."),
+            module="Mail",
+        )
 
     def _surviving(self, method: str, wanted: list[str]) -> list[str]:
         """The groups or lists named at invite time that still exist.

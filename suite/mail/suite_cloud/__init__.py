@@ -31,6 +31,10 @@ class SuiteCloudCredentialsError(frappe.PermissionError):
     session with this site is fine)."""
 
 
+class SuiteCloudAddressError(frappe.PermissionError):
+    """The key is fine but this server's address is not on the site's allowed list at Suite Cloud."""
+
+
 # Suite Cloud names the exception it raised (Frappe's ``exc_type``); the site re-raises the
 # matching class so callers can tell a duplicate from a limit from a refusal. Suite Cloud's own
 # classes map onto the Frappe ones they subclass.
@@ -43,7 +47,10 @@ _EXCEPTIONS_BY_TYPE = {
     "SiteAuthError": SuiteCloudCredentialsError,
     "AuthenticationError": SuiteCloudCredentialsError,
     "SiteSuspendedError": frappe.PermissionError,
+    "SiteAddressError": SuiteCloudAddressError,
     "PermissionError": frappe.PermissionError,
+    "ClusterMisconfiguredError": SuiteCloudUnavailableError,
+    "StalwartUnavailableError": SuiteCloudUnavailableError,
 }
 
 # Without a type, the status code decides.
@@ -88,7 +95,10 @@ class SuiteCloudClient:
         url = f"{self.base_url}{API_PREFIX}{method}"
         body = {k: v for k, v in params.items() if v is not None}
         try:
-            response = self.session.post(url, data=json.dumps(body, default=str), timeout=self.timeout)
+            # No redirects: the token must not follow a Location header to another host.
+            response = self.session.post(
+                url, data=json.dumps(body, default=str), timeout=self.timeout, allow_redirects=False
+            )
         except requests.RequestException as e:
             log_mail_error(f"Suite Cloud unreachable ({method})", str(e))
             frappe.throw(_("Suite Cloud is unreachable; try again shortly."), SuiteCloudUnavailableError)
@@ -110,6 +120,19 @@ class SuiteCloudClient:
             frappe.throw(
                 _("Suite Cloud rejected this site's credentials; check Mail Settings."),
                 SuiteCloudCredentialsError,
+            )
+        if exc is SuiteCloudAddressError:
+            log_mail_error(f"Suite Cloud refused this server's address ({method})", response.text[:2000])
+            frappe.throw(
+                _(
+                    "Suite Cloud does not accept requests from this server's address; ask Frappe Cloud to update the site's allowed addresses."
+                ),
+                SuiteCloudAddressError,
+            )
+        if exc is SuiteCloudUnavailableError:
+            log_mail_error(f"Suite Cloud error {response.status_code} ({method})", response.text[:4000])
+            frappe.throw(
+                _("Suite Cloud is temporarily unavailable; try again shortly."), SuiteCloudUnavailableError
             )
         if exc is not None:
             frappe.throw(message or _("Suite Cloud refused the request."), exc)

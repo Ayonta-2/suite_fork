@@ -275,6 +275,25 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         admin.delete_groups([group])
         self.assertEqual(admin.get_groups(), {"items": [], "total": 0})
 
+    def test_member_endpoints_refuse_targets_that_are_not_members(self) -> None:
+        # Administrator is never a mail member; the alias and membership endpoints must say so
+        # before doing anything, like the rest of the member API.
+        for call in (
+            lambda: admin.get_member("Administrator"),
+            lambda: admin.add_member_email("Administrator", f"x@{DOMAIN}"),
+            lambda: admin.remove_member_email("Administrator", f"x@{DOMAIN}"),
+            lambda: admin.add_member_to_groups("Administrator", [f"sales@{DOMAIN}"]),
+        ):
+            self.assertRaisesRegex(frappe.PermissionError, "not a mail account", call)
+        # Nobody changes their own password through the admin endpoint.
+        self.assertRaisesRegex(
+            frappe.PermissionError,
+            "own password",
+            admin.change_member_password,
+            "Administrator",
+            "new-password-9",
+        )
+
     def test_lists_and_pickers_search_on_suite_cloud(self) -> None:
         for name in ("ops", "sales", "support"):
             self.fake.groups__create_group(f"{name}@{DOMAIN}", description=f"{name.title()} team")
