@@ -49,13 +49,16 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 		return forceCoalesce || Date.now() - lastRecordedAt <= COALESCE_WINDOW
 	}
 
+	const isUnchanged = (command) =>
+		(command.commands ?? [command]).every((c) => c.oldValue === c.newValue)
+
 	// files a command whose change is already applied
 	const record = (command, { forceCoalesce } = {}) => {
 		const top = prevCommands.value.at(-1)
 
 		if (canCoalesce(command, top, forceCoalesce)) {
 			top.coalesceWith(command)
-			if (top.oldValue === top.newValue) {
+			if (isUnchanged(top)) {
 				prevCommands.value.pop()
 				// the entry now on top is an older burst the next keystroke must not join
 				lastRecordedAt = 0

@@ -8,13 +8,13 @@ vi.mock('@/apps/slides/utils/helpers', () => ({
 }))
 
 const { useCommandHistory } = await import('./useCommandHistory')
-const { editElementCommand } = await import('@/apps/slides/stores/commands')
+const { batchCommand, editElementCommand } = await import('@/apps/slides/stores/commands')
 
 const COALESCE_WINDOW = 500
 
 const actionOrder = {
-	execute: { editElement: ['execute'] },
-	undo: { editElement: ['undo'] },
+	execute: { editElement: ['execute'], batch: ['execute'] },
+	undo: { editElement: ['undo'], batch: ['undo'] },
 }
 
 const makeState = (overrides = {}) => [
@@ -41,6 +41,22 @@ const keylessEdit = (oldValue: string, newValue: string) =>
 		property: 'content',
 		oldValue,
 		newValue,
+	})
+
+const batchEdit = (edits: [string, string][]) =>
+	batchCommand({
+		slideId: 'c1',
+		elementIds: [1, 2],
+		coalesceKey: 'content:c1:1,2',
+		commands: edits.map(([oldValue, newValue], i) =>
+			editElementCommand({
+				slideId: 'c1',
+				elementIds: [i + 1],
+				property: 'content',
+				oldValue,
+				newValue,
+			}),
+		),
 	})
 
 let state: any
@@ -116,6 +132,25 @@ describe('record coalescing', () => {
 	it('drops the step when typing lands back on the original value', () => {
 		history.record(contentEdit('a', 'ab'))
 		history.record(contentEdit('ab', 'a'))
+
+		expect(history.canUndo.value).toBe(false)
+	})
+
+	it('keeps a batch whose lead lands back while another element changed', async () => {
+		state.value[0].elements.push({ id: 2, type: 'text', content: 'x', locked: false })
+		history.record(batchEdit([['a', 'ab'], ['x', 'xy']]))
+		history.record(batchEdit([['ab', 'a'], ['xy', 'xyz']]))
+
+		expect(history.canUndo.value).toBe(true)
+
+		await history.undo()
+
+		expect(state.value[0].elements[1].content).toBe('x')
+	})
+
+	it('drops a batch once every element lands back on its original value', () => {
+		history.record(batchEdit([['a', 'ab'], ['x', 'xy']]))
+		history.record(batchEdit([['ab', 'a'], ['xy', 'x']]))
 
 		expect(history.canUndo.value).toBe(false)
 	})
