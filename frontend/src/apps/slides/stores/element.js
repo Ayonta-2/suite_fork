@@ -348,7 +348,7 @@ const addShapeElement = async (shapeType, bounds = null, overrides = {}) => {
 	)
 }
 
-const measureHTML = (html) => {
+const createMeasuringDiv = (html) => {
 	const tempTextElement = document.createElement('div')
 
 	// the element's own markup and CSS, or the measurement drifts by sub-pixels
@@ -359,15 +359,26 @@ const measureHTML = (html) => {
 	})
 	tempTextElement.innerHTML = html
 
-	document.body.appendChild(tempTextElement)
+	return tempTextElement
+}
+
+// every rect read after every append, so the lot costs one layout
+const measureHTMLList = (htmls) => {
+	const divs = htmls.map(createMeasuringDiv)
+	divs.forEach((div) => document.body.appendChild(div))
 
 	// fractional, to agree with the selection bounds the resize observer writes
-	const { width: elementWidth, height: elementHeight } = tempTextElement.getBoundingClientRect()
+	const sizes = divs.map((div) => {
+		const { width: elementWidth, height: elementHeight } = div.getBoundingClientRect()
+		return { elementWidth, elementHeight }
+	})
 
-	document.body.removeChild(tempTextElement)
+	divs.forEach((div) => document.body.removeChild(div))
 
-	return { elementWidth, elementHeight }
+	return sizes
 }
+
+const measureHTML = (html) => measureHTMLList([html])[0]
 
 const getTextElementDimensions = (presets) => measureHTML(getElementContent(presets))
 
@@ -1479,4 +1490,5 @@ export {
 	getElementCenter,
 	getShapeDefaults,
 	rememberMarkers,
+	measureHTMLList,
 }

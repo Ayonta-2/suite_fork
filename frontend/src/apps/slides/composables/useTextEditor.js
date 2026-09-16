@@ -1,6 +1,6 @@
 import { ref, reactive, watch, nextTick } from 'vue'
 import { Editor } from '@tiptap/vue-3'
-import { createDocument } from '@tiptap/core'
+import { Editor as HeadlessEditor, createDocument } from '@tiptap/core'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
 import { Selection, TextSelection } from 'prosemirror-state'
 import { cellAround } from '@tiptap/pm/tables'
@@ -8,8 +8,12 @@ import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { markDirty } from '@/apps/slides/stores/saving'
 import {
 	activeElement,
+	activeElementIds,
+	activeElements,
 	findSlideElement,
+	firstEditableElement,
 	getInitialShapeTextContent,
+	measureHTMLList,
 } from '@/apps/slides/stores/element'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
 import { getElementDiv } from '@/apps/slides/stores/elementRegistry'
@@ -57,6 +61,25 @@ const withRecordingSuppressed = (fn) => {
 }
 
 const patchedHTML = (html) => (html ? patchEmptyParagraphs(html).updatedHTML : html)
+
+// no view, so no DOM, no plugins and nothing the live editor could mistake for itself
+let scratchEditor = null
+
+const loadScratchEditor = (element) => {
+	scratchEditor ??= new HeadlessEditor({ element: null, editable: false, extensions, parseOptions })
+	scratchEditor.commands.setContent(element.content, { emitUpdate: false, parseOptions })
+
+	// the same legacy seed initTextEditor applies, or the write bakes in the parsed default
+	const lineHeight = element.editorMetadata?.lineHeight
+	if (lineHeight != null) scratchEditor.commands.setGlobalLineHeight(lineHeight)
+
+	// setContent leaves the selection at the end; the builders and the panel read the start
+	scratchEditor.commands.setTextSelection(0)
+	return scratchEditor
+}
+
+const canGrow = (element, anchor) =>
+	element.type === 'text' && !element.width && (anchor === 'center' || anchor === 'right')
 
 const isEditorLive = () => activeEditor.value && editorElement?.id === activeElement.value?.id
 
@@ -370,6 +393,60 @@ export const useTextEditor = () => {
 
 	const updateProperty = (property, value) => setPropertyOn(activeEditor.value, property, value)
 
+	// three commands per element, so every batch of a burst has the shape coalescing folds
+	const buildContentCommands = (runChain) => {
+		const slideId = currentSlide.value.clientId
+		const targets = activeElements.value.filter(
+			(el) => !el.locked && ['text', 'table'].includes(el.type),
+		)
+
+		const edits = targets.map((element) => {
+			const editor = loadScratchEditor(element)
+			runChain(editor)
+			return {
+				element,
+				oldContent: patchedHTML(element.content),
+				newContent: patchedHTML(editor.getHTML()),
+				anchor: growthAnchor(editor),
+				left: element.left,
+			}
+		})
+
+		const growing = edits.filter(({ element, anchor }) => canGrow(element, anchor))
+		const sizes = measureHTMLList(growing.flatMap((e) => [e.oldContent, e.newContent]))
+		growing.forEach((edit, i) => {
+			const delta = sizes[2 * i + 1].elementWidth - sizes[2 * i].elementWidth
+			edit.left -= edit.anchor === 'center' ? delta / 2 : delta
+		})
+
+		const command = (element, property, oldValue, newValue) =>
+			editElementCommand({ slideId, elementIds: [element.id], property, oldValue, newValue })
+
+		return edits.flatMap(({ element, oldContent, newContent, left }) => [
+			command(element, 'content', oldContent, newContent),
+			command(element, 'left', element.left, left),
+			command(element, 'editorMetadata', element.editorMetadata, undefined),
+		])
+	}
+
+	const formatSelectedText = (property, value) => {
+		const commands = buildContentCommands((editor) => setPropertyOn(editor, property, value))
+		if (commands.every((c) => c.oldValue === c.newValue)) return
+
+		const slideId = currentSlide.value.clientId
+		const elementIds = activeElementIds.value
+		commandHistory.execute(
+			batchCommand({
+				slideId,
+				elementIds,
+				commands,
+				coalesceKey: `content:${slideId}:${elementIds.join()}`,
+			}),
+		)
+
+		setEditorStyles(loadScratchEditor(firstEditableElement.value))
+	}
+
 	const initTextEditor = (id, content, isEditable = false, initialLineHeight = null) => {
 		editorElement = findSlideElement(id)
 		editorSlideId = currentSlide.value?.clientId
@@ -415,6 +492,7 @@ export const useTextEditor = () => {
 		editorStyles,
 		toggleMark,
 		updateProperty,
+		formatSelectedText,
 		initTextEditor,
 	}
 }
