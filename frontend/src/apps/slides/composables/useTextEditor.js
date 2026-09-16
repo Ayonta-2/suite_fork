@@ -255,8 +255,7 @@ export const useTextEditor = () => {
 	}
 
 	// a cursor in a cell styles that cell, the whole element otherwise
-	const selectStyleTarget = (chain) => {
-		const editor = activeEditor.value
+	const selectStyleTarget = (editor, chain) => {
 		const $cell = editor.isEditable ? cellAround(editor.state.selection.$head) : null
 		if (!$cell) return chain.selectAll()
 
@@ -269,19 +268,19 @@ export const useTextEditor = () => {
 		})
 	}
 
-	const toggleMark = (property) => {
-		const currentEditor = activeEditor.value
+	const toggleMarkOn = (editor, property) => {
+		const chain = editor.chain()
 
-		const chain = currentEditor.chain()
-
-		const { empty } = currentEditor.state.selection
-		if (empty) selectStyleTarget(chain)
+		const { empty } = editor.state.selection
+		if (empty) selectStyleTarget(editor, chain)
 
 		chain[markCommands[property]](property).run()
 	}
 
-	const selectListBlock = () => {
-		const { state } = activeEditor.value
+	const toggleMark = (property) => toggleMarkOn(activeEditor.value, property)
+
+	const selectListBlock = (editor) => {
+		const { state } = editor
 		const doc = state.doc
 
 		let selectionStart = null,
@@ -300,7 +299,7 @@ export const useTextEditor = () => {
 		if (selectionStart && selectionEnd) {
 			const selection = TextSelection.create(doc, selectionStart, selectionEnd)
 			const transaction = state.tr.setSelection(selection)
-			activeEditor.value.view.dispatch(transaction)
+			editor.view.dispatch(transaction)
 		}
 	}
 
@@ -312,20 +311,20 @@ export const useTextEditor = () => {
 		return currentStyle ? `${currentStyle}; ${newStyle}` : newStyle
 	}
 
-	const getActiveListType = () => {
-		if (activeEditor.value.isActive('orderedList')) return 'ordered'
-		if (activeEditor.value.isActive('bulletList')) return 'bullet'
+	const getActiveListType = (editor) => {
+		if (editor.isActive('orderedList')) return 'ordered'
+		if (editor.isActive('bulletList')) return 'bullet'
 		return 'none'
 	}
 
-	const setListProperty = (value) => {
-		if (!activeEditor.value.isEditable) selectListBlock()
+	const setListProperty = (editor, value) => {
+		if (!editor.isEditable) selectListBlock(editor)
 
-		const current = getActiveListType()
+		const current = getActiveListType(editor)
 
 		if (value == current) return
 
-		const chain = activeEditor.value.chain()
+		const chain = editor.chain()
 
 		if (value == 'none') {
 			chain.liftListItem('listItem').run()
@@ -341,15 +340,13 @@ export const useTextEditor = () => {
 		}
 	}
 
-	const updateProperty = (property, value) => {
-		const currentEditor = activeEditor.value
+	const setPropertyOn = (editor, property, value) => {
+		const chain = editor.chain()
 
-		const chain = currentEditor.chain()
+		if (property == 'list') return setListProperty(editor, value)
 
-		if (property == 'list') return setListProperty(value)
-
-		const { empty } = currentEditor.state.selection
-		if (empty) selectStyleTarget(chain)
+		const { empty } = editor.state.selection
+		if (empty) selectStyleTarget(editor, chain)
 
 		switch (property) {
 			case 'textAlign':
@@ -359,7 +356,7 @@ export const useTextEditor = () => {
 				chain.setColor(value).run()
 				break
 			case 'lineHeight':
-				activeEditor.value.commands.setGlobalLineHeight(value)
+				editor.commands.setGlobalLineHeight(value)
 				break
 			default:
 				chain
@@ -370,6 +367,8 @@ export const useTextEditor = () => {
 				break
 		}
 	}
+
+	const updateProperty = (property, value) => setPropertyOn(activeEditor.value, property, value)
 
 	const initTextEditor = (id, content, isEditable = false, initialLineHeight = null) => {
 		editorElement = findSlideElement(id)
