@@ -68,7 +68,7 @@ import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { activeElement } from '@/apps/slides/stores/element'
-import { setElementProperties, useElementProperty } from '@/apps/slides/composables/editProperty'
+import { useElementProperty } from '@/apps/slides/composables/editProperty'
 import { defaultShadowColor } from '@/apps/slides/utils/constants'
 
 const defaultShadowBlur = 10
@@ -77,41 +77,20 @@ const hasShadow = computed(() =>
 	Boolean(activeElement.value.shadowBlur || activeElement.value.shadowOffset),
 )
 
-let shadowSnapshot = null
+const useShadowProperty = (property) => {
+	const elementProperty = useElementProperty(property)
 
-const beginShadowEdit = () => {
-	const el = activeElement.value
-	shadowSnapshot = {
-		shadowColor: el.shadowColor,
-		shadowOpacity: el.shadowOpacity,
-		shadowAngle: el.shadowAngle,
-		shadowBlur: el.shadowBlur,
+	const setWithShadow = (el, value) => {
+		el[property] = value
+		if (!el.shadowBlur && !el.shadowOffset) el.shadowBlur = defaultShadowBlur
+	}
+
+	return {
+		...elementProperty,
+		set: (value) => elementProperty.setEach((el) => setWithShadow(el, value)),
+		begin: () => elementProperty.begin([property, 'shadowBlur']),
 	}
 }
-
-const commitShadowEdit = () => {
-	if (!shadowSnapshot) return
-	const el = activeElement.value
-	setElementProperties(
-		Object.keys(shadowSnapshot).map((property) => ({
-			property,
-			oldValue: shadowSnapshot[property],
-			newValue: el[property],
-		})),
-	)
-	shadowSnapshot = null
-}
-
-// color, opacity and angle are invisible until a blur or offset exists
-const useShadowProperty = (property) => ({
-	set: (value) => {
-		const el = activeElement.value
-		el[property] = value
-		if (!hasShadow.value) el.shadowBlur = defaultShadowBlur
-	},
-	begin: beginShadowEdit,
-	commit: commitShadowEdit,
-})
 
 const shadowColor = useShadowProperty('shadowColor')
 const shadowOpacity = useShadowProperty('shadowOpacity')

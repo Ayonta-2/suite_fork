@@ -102,6 +102,27 @@ describe('editing a property over a selection', () => {
 		expect(command.elementIds).toEqual(['a'])
 	})
 
+	it('commits coupled writes decided per element as one step', () => {
+		select(shapes([{ shadowBlur: 10 }, {}]))
+
+		const shadowColor = useElementProperty('shadowColor')
+		shadowColor.begin(['shadowColor', 'shadowBlur'])
+		shadowColor.setEach((el: any) => {
+			el.shadowColor = 'black'
+			if (!el.shadowBlur) el.shadowBlur = 4
+		})
+		shadowColor.commit()
+
+		expect(element('a')).toMatchObject({ shadowColor: 'black', shadowBlur: 10 })
+		expect(element('b')).toMatchObject({ shadowColor: 'black', shadowBlur: 4 })
+
+		history.undo()
+
+		expect(element('a')).toMatchObject({ shadowColor: undefined, shadowBlur: 10 })
+		expect(element('b')).toMatchObject({ shadowColor: undefined, shadowBlur: undefined })
+		expect(history.canUndo.value).toBe(false)
+	})
+
 	it('sets a property directly on every element that differs', () => {
 		select(shapes([{}, { strokeStyle: 'dashed' }]))
 
