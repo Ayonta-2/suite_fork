@@ -9,14 +9,14 @@
 		</PropertyRow>
 		<PropertyRow label="Color">
 			<ColorPicker
-				:modelValue="activeElement.borderColor || defaultBorderColor"
+				:modelValue="firstEditableElement.borderColor || defaultBorderColor"
 				@update:modelValue="borderColor.set"
 				@colordown="borderColor.begin"
 				@colorup="borderColor.commit"
 			/>
 		</PropertyRow>
 		<NumberControl
-			:modelValue="activeElement.borderWidth ?? 0"
+			:modelValue="firstEditableElement.borderWidth ?? 0"
 			label="Weight"
 			suffix="px"
 			:min="0"
@@ -28,7 +28,7 @@
 			@change-end="borderWidth.commit"
 		/>
 		<NumberControl
-			:modelValue="activeElement.borderRadius ?? 0"
+			:modelValue="firstEditableElement.borderRadius ?? 0"
 			label="Radius"
 			suffix="px"
 			:min="0"
@@ -51,7 +51,7 @@ import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 import LineStyleSelect from '@/apps/slides/components/controls/LineStyleSelect.vue'
 
-import { activeElement } from '@/apps/slides/stores/element'
+import { firstEditableElement } from '@/apps/slides/stores/element'
 import { useElementProperty } from '@/apps/slides/composables/editProperty'
 import { defaultBorderColor, MAX_BORDER_RADIUS } from '@/apps/slides/utils/constants'
 
@@ -64,11 +64,12 @@ const borderStyleOptions = [
 	{ label: 'Dotted', value: 'dotted' },
 ]
 
-const hasBorder = computed(() =>
-	Boolean(Number(activeElement.value.borderWidth) || Number(activeElement.value.borderRadius)),
-)
+const hasBorder = computed(() => {
+	const { borderWidth, borderRadius } = firstEditableElement.value
+	return Boolean(Number(borderWidth) || Number(borderRadius))
+})
 
-const displayStyle = computed(() => activeElement.value.borderStyle || 'none')
+const displayStyle = computed(() => firstEditableElement.value.borderStyle || 'none')
 
 const borderProperties = ['borderColor', 'borderWidth', 'borderStyle']
 
