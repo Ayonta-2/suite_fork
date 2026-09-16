@@ -1,7 +1,7 @@
 <template>
 	<Section label="Appearance">
 		<NumberControl
-			v-if="activeElement.type == 'text'"
+			v-if="firstEditableElement.type == 'text'"
 			:modelValue="textOpacity"
 			label="Opacity"
 			suffix="%"
@@ -13,7 +13,7 @@
 		/>
 		<NumberControl
 			v-else
-			:modelValue="activeElement.opacity"
+			:modelValue="firstEditableElement.opacity"
 			label="Opacity"
 			suffix="%"
 			:min="0"
@@ -36,7 +36,7 @@ import Section from '@/apps/slides/components/controls/Section.vue'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 import { useElementProperty } from '@/apps/slides/composables/editProperty'
 
-import { activeElement } from '@/apps/slides/stores/element'
+import { firstEditableElement } from '@/apps/slides/stores/element'
 
 const { editorStyles, updateProperty } = useTextEditor()
 

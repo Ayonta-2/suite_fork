@@ -8,7 +8,7 @@
 			/>
 		</PropertyRow>
 		<NumberControl
-			:modelValue="activeElement.strokeWidth ?? 0"
+			:modelValue="firstEditableElement.strokeWidth ?? 0"
 			label="Stroke Width"
 			suffix="px"
 			:min="strokeMin"
@@ -21,23 +21,23 @@
 		/>
 		<PropertyRow label="Stroke Color">
 			<ColorPicker
-				:modelValue="activeElement.strokeColor"
+				:modelValue="firstEditableElement.strokeColor"
 				@update:modelValue="strokeColor.set"
 				@colordown="strokeColor.begin"
 				@colorup="strokeColor.commit"
 			/>
 		</PropertyRow>
-		<PropertyRow v-if="activeElement.shapeType != 'line'" label="Fill Color">
+		<PropertyRow v-if="!hasLine" label="Fill Color">
 			<ColorPicker
-				:modelValue="activeElement.fillColor"
+				:modelValue="firstEditableElement.fillColor"
 				@update:modelValue="fillColor.set"
 				@colordown="fillColor.begin"
 				@colorup="fillColor.commit"
 			/>
 		</PropertyRow>
 		<NumberControl
-			v-if="activeElement.shapeType == 'rectangle'"
-			:modelValue="activeElement.borderRadius ?? 0"
+			v-if="isRectangleSelection"
+			:modelValue="firstEditableElement.borderRadius ?? 0"
 			label="Corner Radius"
 			suffix="px"
 			:min="0"
@@ -48,7 +48,7 @@
 			@change-start="borderRadius.begin"
 			@change-end="borderRadius.commit"
 		/>
-		<template v-if="activeElement.shapeType == 'line'">
+		<template v-if="isLineSelection">
 			<PropertyRow v-if="activeElement.connector" label="Line Type">
 				<TabButtons
 					:modelValue="activeElement.connector.route"
@@ -58,14 +58,14 @@
 			</PropertyRow>
 			<PropertyRow label="Line Start">
 				<ArrowheadSelect
-					:modelValue="normalizeMarker(activeElement.markerStart) ?? 'none'"
+					:modelValue="normalizeMarker(firstEditableElement.markerStart) ?? 'none'"
 					mirrored
 					@update:modelValue="(value) => setMarker('markerStart', value)"
 				/>
 			</PropertyRow>
 			<PropertyRow label="Line End">
 				<ArrowheadSelect
-					:modelValue="normalizeMarker(activeElement.markerEnd) ?? 'none'"
+					:modelValue="normalizeMarker(firstEditableElement.markerEnd) ?? 'none'"
 					@update:modelValue="(value) => setMarker('markerEnd', value)"
 				/>
 			</PropertyRow>
@@ -90,7 +90,12 @@ import { normalizeMarker } from '@/apps/slides/utils/lineMarkers'
 import { routeConnector } from '@/apps/slides/utils/connectors'
 import { setStrokeWidthInPlace } from '@/apps/slides/utils/shapeGeometry'
 
-import { activeElement, rememberMarkers } from '@/apps/slides/stores/element'
+import {
+	activeElement,
+	activeElements,
+	firstEditableElement,
+	rememberMarkers,
+} from '@/apps/slides/stores/element'
 import { getTargetBox } from '@/apps/slides/stores/interaction'
 import {
 	setElementProperties,
@@ -104,7 +109,7 @@ const strokeStyleOptions = [
 	{ label: 'Dotted', value: 'dotted' },
 ]
 
-const displayStrokeStyle = computed(() => activeElement.value.strokeStyle || 'solid')
+const displayStrokeStyle = computed(() => firstEditableElement.value.strokeStyle || 'solid')
 
 const setStrokeStyle = (value) => setElementProperty('strokeStyle', value)
 
@@ -135,10 +140,18 @@ const setLineType = (route) => {
 
 const setMarker = (property, value) => {
 	setElementProperty(property, value)
-	rememberMarkers(activeElement.value)
+	rememberMarkers(firstEditableElement.value)
 }
 
-const strokeMin = computed(() => (activeElement.value.shapeType === 'line' ? 0.5 : 0))
+const hasLine = computed(() => activeElements.value.some((el) => el.shapeType === 'line'))
+const isLineSelection = computed(() =>
+	activeElements.value.every((el) => el.shapeType === 'line'),
+)
+const isRectangleSelection = computed(() =>
+	activeElements.value.every((el) => el.shapeType === 'rectangle'),
+)
+
+const strokeMin = computed(() => (hasLine.value ? 0.5 : 0))
 
 const borderRadius = useElementProperty('borderRadius')
 
@@ -151,5 +164,4 @@ const strokeWidth = {
 
 const fillColor = useElementProperty('fillColor')
 const strokeColor = useElementProperty('strokeColor')
-
 </script>

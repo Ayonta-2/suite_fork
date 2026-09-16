@@ -2,14 +2,14 @@
 	<Section label="Shadow" :initialState="hasShadow">
 		<PropertyRow label="Color">
 			<ColorPicker
-				:modelValue="activeElement.shadowColor ?? defaultShadowColor"
+				:modelValue="firstEditableElement.shadowColor ?? defaultShadowColor"
 				@update:modelValue="shadowColor.set"
 				@colordown="shadowColor.begin"
 				@colorup="shadowColor.commit"
 			/>
 		</PropertyRow>
 		<NumberControl
-			:modelValue="activeElement.shadowBlur ?? 0"
+			:modelValue="firstEditableElement.shadowBlur ?? 0"
 			label="Blur"
 			suffix="%"
 			:min="0"
@@ -21,7 +21,7 @@
 			@change-end="shadowBlur.commit"
 		/>
 		<NumberControl
-			:modelValue="activeElement.shadowOpacity ?? 100"
+			:modelValue="firstEditableElement.shadowOpacity ?? 100"
 			label="Opacity"
 			suffix="%"
 			:min="0"
@@ -33,7 +33,7 @@
 			@change-end="shadowOpacity.commit"
 		/>
 		<NumberControl
-			:modelValue="activeElement.shadowOffset ?? 0"
+			:modelValue="firstEditableElement.shadowOffset ?? 0"
 			label="Offset"
 			suffix="%"
 			:min="0"
@@ -45,7 +45,7 @@
 			@change-end="shadowOffset.commit"
 		/>
 		<NumberControl
-			:modelValue="activeElement.shadowAngle ?? 45"
+			:modelValue="firstEditableElement.shadowAngle ?? 45"
 			label="Angle"
 			suffix="°"
 			:min="0"
@@ -67,14 +67,14 @@ import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
-import { activeElement } from '@/apps/slides/stores/element'
+import { firstEditableElement } from '@/apps/slides/stores/element'
 import { useElementProperty } from '@/apps/slides/composables/editProperty'
 import { defaultShadowColor } from '@/apps/slides/utils/constants'
 
 const defaultShadowBlur = 10
 
 const hasShadow = computed(() =>
-	Boolean(activeElement.value.shadowBlur || activeElement.value.shadowOffset),
+	Boolean(firstEditableElement.value.shadowBlur || firstEditableElement.value.shadowOffset),
 )
 
 const useShadowProperty = (property) => {

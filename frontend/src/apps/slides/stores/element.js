@@ -75,6 +75,12 @@ const activeElement = computed(() => {
 	}
 })
 
+const firstEditableElement = computed(() => {
+	if (activeElement.value) return activeElement.value
+	const selected = activeElementIds.value.map(findSlideElement)
+	return selected.find((el) => el && !el.locked) ?? selected[0]
+})
+
 const setActiveElements = (ids) => {
 	if (ids.length == 1 && activeElementIds.value.includes(ids[0])) return
 	activeElementIds.value = ids
@@ -1433,6 +1439,7 @@ export {
 	dragOccurred,
 	activeElements,
 	activeElement,
+	firstEditableElement,
 	isSelectionLocked,
 	hasLockedElements,
 	hasUnlockedElements,

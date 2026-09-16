@@ -35,7 +35,7 @@
 					<hr class="border-t" />
 					<ParagraphSection />
 				</template>
-				<template v-if="activeElement?.type === 'shape' && !isEditingShapeText">
+				<template v-if="isShapeSelection && !isEditingShapeText">
 					<hr class="border-t" />
 					<ShapeStyleSection />
 				</template>
@@ -51,11 +51,11 @@
 					<hr class="border-t" />
 					<BorderSection :key="activeElement?.id" />
 				</template>
-				<template v-if="['image', 'video', 'shape'].includes(activeElement?.type)">
+				<template v-if="['image', 'video'].includes(activeElement?.type) || isShapeSelection">
 					<hr class="border-t" />
-					<ShadowSection :key="activeElement?.id" />
+					<ShadowSection :key="activeElementIds.join()" />
 				</template>
-				<template v-if="activeElement">
+				<template v-if="activeElement || isShapeSelection">
 					<hr class="border-t" />
 					<AppearanceSection />
 				</template>
@@ -75,8 +75,10 @@ import { computed, provide } from 'vue'
 import {
 	activeElement,
 	activeElementIds,
+	activeElements,
 	focusElementId,
 	isSelectionLocked,
+	firstEditableElement,
 	toggleLock,
 } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
@@ -103,6 +105,10 @@ provide('sectionInert', isSelectionLocked)
 
 const isEditingShapeText = computed(
 	() => activeElement.value?.type === 'shape' && focusElementId.value === activeElement.value?.id,
+)
+
+const isShapeSelection = computed(
+	() => Boolean(firstEditableElement.value) && activeElements.value.every((el) => el.type === 'shape'),
 )
 
 const selectionLabel = computed(() => {
