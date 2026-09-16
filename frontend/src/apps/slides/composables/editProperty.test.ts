@@ -9,6 +9,7 @@ const { dirty } = await import('@/apps/slides/stores/saving')
 const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
 const { useCommandHistory } = await import('./useCommandHistory')
 const { setElementProperty, useElementProperty } = await import('./editProperty')
+const { setStrokeWidthInPlace } = await import('@/apps/slides/utils/shapeGeometry')
 
 const actionOrder = {
 	execute: { editElement: ['execute'], batch: ['execute'] },
@@ -121,6 +122,28 @@ describe('editing a property over a selection', () => {
 		expect(element('a')).toMatchObject({ shadowColor: undefined, shadowBlur: 10 })
 		expect(element('b')).toMatchObject({ shadowColor: undefined, shadowBlur: undefined })
 		expect(history.canUndo.value).toBe(false)
+	})
+
+	it('shifts a line but not a rectangle when the stroke width is dragged', () => {
+		select([
+			{ id: 'a', type: 'shape', shapeType: 'line', strokeWidth: 2, top: 100, height: 2 },
+			{ id: 'b', type: 'shape', shapeType: 'rectangle', strokeWidth: 2, top: 100, height: 50 },
+		])
+
+		const strokeWidth = useElementProperty('strokeWidth')
+		strokeWidth.begin(['strokeWidth', 'top', 'height'])
+		strokeWidth.setEach((el: any) => setStrokeWidthInPlace(el, 4))
+		strokeWidth.setEach((el: any) => setStrokeWidthInPlace(el, 6))
+		strokeWidth.commit()
+
+		expect(element('a')).toMatchObject({ strokeWidth: 6, top: 98, height: 6 })
+		expect(element('b')).toMatchObject({ strokeWidth: 6, top: 100, height: 50 })
+		expect(executed).toHaveBeenCalledTimes(1)
+
+		history.undo()
+
+		expect(element('a')).toMatchObject({ strokeWidth: 2, top: 100, height: 2 })
+		expect(element('b')).toMatchObject({ strokeWidth: 2, top: 100, height: 50 })
 	})
 
 	it('sets a property directly on every element that differs', () => {

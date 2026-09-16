@@ -88,11 +88,9 @@ import LineElbow from '@/apps/slides/icons/LineElbow.vue'
 import { MAX_BORDER_RADIUS } from '@/apps/slides/utils/constants'
 import { normalizeMarker } from '@/apps/slides/utils/lineMarkers'
 import { routeConnector } from '@/apps/slides/utils/connectors'
+import { setStrokeWidthInPlace } from '@/apps/slides/utils/shapeGeometry'
 
 import { activeElement, rememberMarkers } from '@/apps/slides/stores/element'
-import { currentSlide } from '@/apps/slides/stores/slide'
-import { commandHistory } from '@/apps/slides/stores/historyMeta'
-import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
 import { getTargetBox } from '@/apps/slides/stores/interaction'
 import {
 	setElementProperties,
@@ -143,47 +141,14 @@ const setMarker = (property, value) => {
 const strokeMin = computed(() => (activeElement.value.shapeType === 'line' ? 0.5 : 0))
 
 const borderRadius = useElementProperty('borderRadius')
-const shapeStrokeWidth = useElementProperty('strokeWidth')
 
-// the top shifts with the stroke so the visible line stays put
-let lineStart = null
-const lineStrokeWidth = {
-	begin: () => {
-		const { strokeWidth, top, height } = activeElement.value
-		lineStart = { strokeWidth, top, height }
-	},
-	set: (value) => {
-		const element = activeElement.value
-		element.strokeWidth = value
-		if (element.points) return
-		element.top = lineStart.top + (lineStart.strokeWidth - value) / 2
-		element.height = value
-	},
-	commit: () => {
-		if (!lineStart) return
-		const element = activeElement.value
-		const commands = ['strokeWidth', 'top', 'height']
-			.filter((property) => element[property] !== lineStart[property])
-			.map((property) =>
-				editElementCommand({
-					slideId: currentSlide.value.clientId,
-					elementIds: [element.id],
-					property,
-					oldValue: lineStart[property],
-					newValue: element[property],
-				}),
-			)
-		lineStart = null
-		if (!commands.length) return
-		commandHistory.execute(
-			batchCommand({ slideId: currentSlide.value.clientId, elementIds: [element.id], commands }),
-		)
-	},
+const strokeWidthProperty = useElementProperty('strokeWidth')
+const strokeWidth = {
+	...strokeWidthProperty,
+	begin: () => strokeWidthProperty.begin(['strokeWidth', 'top', 'height']),
+	set: (value) => strokeWidthProperty.setEach((el) => setStrokeWidthInPlace(el, value)),
 }
 
-const strokeWidth = computed(() =>
-	activeElement.value.shapeType === 'line' ? lineStrokeWidth : shapeStrokeWidth,
-)
 const fillColor = useElementProperty('fillColor')
 const strokeColor = useElementProperty('strokeColor')
 
