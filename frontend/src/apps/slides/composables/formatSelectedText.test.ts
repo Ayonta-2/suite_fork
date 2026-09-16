@@ -9,7 +9,7 @@ const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
 const { useCommandHistory } = await import('./useCommandHistory')
 const { useTextEditor } = await import('./useTextEditor')
 
-const { activeEditor, editorStyles, formatSelectedText } = useTextEditor()
+const { activeEditor, editorStyles, formatSelectedText, toggleMark } = useTextEditor()
 
 const actionOrder = {
 	execute: { editElement: ['execute'], batch: ['execute'] },
@@ -111,6 +111,40 @@ describe('a style written to every selected box', () => {
 		expect(element('a').content).toContain('color: rgb(1, 2, 3)')
 		expect(element('t').content.match(/color: rgb\(1, 2, 3\)/g)).toHaveLength(2)
 		expect(element('t').width).toBe(300)
+	})
+})
+
+describe('a mark toggled across boxes', () => {
+	const bold = line('<strong>one</strong>')
+	const plain = line('two')
+
+	it.each([
+		['the plain box first', plain, bold],
+		['the bold box first', bold, plain],
+	])('marks every box before it unmarks any, with %s', (_, first, second) => {
+		select({ id: 'a', content: first }, { id: 'b', content: second })
+
+		toggleMark('bold')
+		expect(element('a').content).toContain('<strong>')
+		expect(element('b').content).toContain('<strong>')
+		expect(editorStyles.bold).toBe(true)
+
+		toggleMark('bold')
+		expect(element('a').content).not.toContain('<strong>')
+		expect(element('b').content).not.toContain('<strong>')
+		expect(editorStyles.bold).toBe(false)
+	})
+
+	it('undoes a quick double press back to the mixed start', () => {
+		select({ id: 'a', content: plain }, { id: 'b', content: bold })
+
+		toggleMark('bold')
+		toggleMark('bold')
+		history.undo()
+
+		expect(element('a').content).toBe(plain)
+		expect(element('b').content).toBe(bold)
+		expect(history.canUndo.value).toBe(false)
 	})
 })
 

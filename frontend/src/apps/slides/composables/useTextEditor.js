@@ -300,7 +300,10 @@ export const useTextEditor = () => {
 		chain[markCommands[property]](property).run()
 	}
 
-	const toggleMark = (property) => toggleMarkOn(activeEditor.value, property)
+	const toggleMark = (property) =>
+		activeElementIds.value.length > 1
+			? toggleSelectedMark(property)
+			: toggleMarkOn(activeEditor.value, property)
 
 	const selectListBlock = (editor) => {
 		const { state } = editor
@@ -393,14 +396,14 @@ export const useTextEditor = () => {
 
 	const updateProperty = (property, value) => setPropertyOn(activeEditor.value, property, value)
 
+	const selectedTextTargets = () =>
+		activeElements.value.filter((el) => !el.locked && ['text', 'table'].includes(el.type))
+
 	// three commands per element, so every batch of a burst has the shape coalescing folds
 	const buildContentCommands = (runChain) => {
 		const slideId = currentSlide.value.clientId
-		const targets = activeElements.value.filter(
-			(el) => !el.locked && ['text', 'table'].includes(el.type),
-		)
 
-		const edits = targets.map((element) => {
+		const edits = selectedTextTargets().map((element) => {
 			const editor = loadScratchEditor(element)
 			runChain(editor)
 			return {
@@ -429,8 +432,8 @@ export const useTextEditor = () => {
 		])
 	}
 
-	const formatSelectedText = (property, value) => {
-		const commands = buildContentCommands((editor) => setPropertyOn(editor, property, value))
+	const editSelectedText = (runChain) => {
+		const commands = buildContentCommands(runChain)
 		if (commands.every((c) => c.oldValue === c.newValue)) return
 
 		const slideId = currentSlide.value.clientId
@@ -445,6 +448,21 @@ export const useTextEditor = () => {
 		)
 
 		setEditorStyles(loadScratchEditor(firstEditableElement.value))
+	}
+
+	const formatSelectedText = (property, value) =>
+		editSelectedText((editor) => setPropertyOn(editor, property, value))
+
+	// tiptap's own rule, stretched across boxes: set unless every box is fully marked
+	const toggleSelectedMark = (property) => {
+		const marked = selectedTextTargets().every((element) => {
+			const editor = loadScratchEditor(element)
+			editor.commands.selectAll()
+			return editor.isActive(property)
+		})
+
+		const command = marked ? 'unsetMark' : 'setMark'
+		editSelectedText((editor) => editor.chain().selectAll()[command](property).run())
 	}
 
 	const initTextEditor = (id, content, isEditable = false, initialLineHeight = null) => {
