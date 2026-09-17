@@ -168,6 +168,17 @@ describe('what the panel shows for two boxes', () => {
 		expect(editorStyles.fontSize).toBe(25)
 	})
 
+	it('skips a locked first box', async () => {
+		select(
+			{ id: 'a', content: sized(20, 'one'), locked: true },
+			{ id: 'b', content: sized(30, 'two') },
+		)
+
+		await nextTick()
+
+		expect(editorStyles.fontSize).toBe(30)
+	})
+
 	it('follows an undo', async () => {
 		select({ id: 'a', content: sized(20, 'one') }, { id: 'b', content: sized(30, 'two') })
 
@@ -264,7 +275,7 @@ describe('a box that still carries a legacy line height', () => {
 
 		formatSelectedText('fontSize', 40)
 		nextFrame()
-		expect(() => formatSelectedText('fontSize', 50)).not.toThrow()
+		formatSelectedText('fontSize', 50)
 		history.undo()
 
 		expect(element('a').content).toBe('<p>one</p>')
