@@ -15,7 +15,7 @@
 				:label="__('Calendar')"
 				type="select"
 				variant="outline"
-				:options="store.calendarOptions"
+				:options="importOptions"
 			/>
 			<input
 				ref="fileInput"
@@ -64,6 +64,7 @@ import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import { raiseToast } from '@/apps/calendar/utils'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
 import { userStore } from '@/apps/calendar/stores/user'
+import { destinationOptions } from '@/apps/calendar/utils/calendars'
 
 const store = userStore()
 const { accountId } = store
@@ -99,10 +100,13 @@ const onFileSelected = async (event: Event) => {
 	}
 }
 
+// Only a calendar the account can write to takes the events.
+const importOptions = computed(() => destinationOptions(store.accountCalendarOptions(accountId)))
+
 // Kept while it is still one of the account's calendars; otherwise the first — a calendar
 // that was deleted, or belongs to the account switched away from, is no target at all.
 watch(
-	() => store.calendarOptions,
+	importOptions,
 	(options) => {
 		if (!options.some((option) => option.value === calendarImport.calendar))
 			calendarImport.calendar = options[0]?.value ?? ''

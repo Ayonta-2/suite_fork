@@ -59,7 +59,7 @@ def get_user_for_jmap_account(
                 or is_administrator(user)
                 or (allow_system_manager and is_system_manager(user))
             ):
-                return account_users[0]
+                return _account_owner(account, account_users)
 
             elif raise_exception:
                 frappe.throw(
@@ -115,22 +115,111 @@ def get_user_personal_jmap_account(user: str | None = None, raise_exception: boo
     user = user or frappe.session.user
     user_accounts = get_user_jmap_accounts(user, raise_exception=raise_exception)
     personal_accounts = frappe.db.get_all(
-        "JMAP Account", {"is_personal": True, "name": ("in", user_accounts)}, pluck="name"
+        "JMAP Account", {"is_personal": True, "name": ("in", user_accounts)}, ["name", "_name"]
     )
 
     if personal_accounts:
-        if len(personal_accounts) > 1:
-            if raise_exception:
-                frappe.throw(
-                    _("User {0} has multiple personal JMAP accounts configured.").format(frappe.bold(user))
-                )
-        else:
-            return personal_accounts[0]
+        if account := pick_personal_account(personal_accounts, get_username(user)):
+            return account
+        if raise_exception:
+            frappe.throw(
+                _("User {0} has multiple personal JMAP accounts configured.").format(frappe.bold(user))
+            )
 
     elif raise_exception:
         frappe.throw(
             _("User {0} does not have a personal JMAP account configured.").format(frappe.bold(user))
         )
+
+
+def get_username(user: str) -> str | None:
+    """The user's login on the mail server."""
+
+    return frappe.db.get_value("User Settings", {"user": user}, "username")
+
+
+def pick_personal_account(personal_accounts: list[dict], username: str | None) -> str | None:
+    """Which of a user's accounts flagged personal is theirs.
+
+    `is_personal` is the account's own flag, the same for everyone linked to it: a colleague's
+    account that shares a calendar with the user is personal — to the colleague. So where the
+    user has more than one, theirs is the one named after their login, and it is ambiguous only
+    when none or several are.
+    """
+
+    if len(personal_accounts) == 1:
+        return personal_accounts[0]["name"]
+    own = [account["name"] for account in personal_accounts if username and account["_name"] == username]
+    return own[0] if len(own) == 1 else None
+
+
+def _account_owner(account: str, users: list[str]) -> str:
+    """Of the users linked to an account, the one whose login it is — the rest have something in
+    it shared with them, and acting as one of them would reach only that. A team account nobody
+    logs into as has no owner, and any member will do."""
+
+    if len(users) > 1:
+        name = frappe.db.get_value("JMAP Account", account, "_name")
+        if owner := frappe.db.get_value("User Settings", {"user": ("in", users), "username": name}, "user"):
+            return owner
+    return users[0]
+
+
+ACCOUNT_APPS_CACHE_SECONDS = 600
+
+
+def account_apps_cache_key(user: str) -> str:
+    return f"mail|account_apps|{user}"
+
+
+def get_account_apps(user: str | None = None) -> dict[str, dict[str, bool]]:
+    """For each of the user's accounts, whether it has anything for them in mail and in calendar.
+
+    Sharing one calendar puts the sharer's whole account in the user's session, and so among
+    their accounts, though nothing else in it is theirs to see. Mail lists an account only where
+    the user can see a mailbox; calendar only where they can write to a calendar — one shared
+    read-only shows under Shared Calendars instead. The user's own account always has both.
+
+    Asked of the mail server per account, so kept for a few minutes, and dropped whenever the
+    user's accounts change.
+    """
+
+    from suite.mail.jmap import get_calendar_service, get_mailbox_service
+
+    user = user or frappe.session.user
+    cache_key = account_apps_cache_key(user)
+    if (cached := frappe.cache.get_value(cache_key)) is not None:
+        return cached
+
+    accounts = get_user_jmap_accounts(user)
+    personal = get_user_personal_jmap_account(user)
+    others = [account for account in accounts if account != personal]
+    apps = {account: {"mail": True, "calendar": True} for account in accounts if account == personal}
+    try:
+        if others:
+            mailboxes = get_mailbox_service(others[0]).get_across_accounts(others, ["id"])
+            try:
+                calendars = get_calendar_service(others[0]).get_across_accounts(others, ["myRights"])
+            except NotImplementedError:
+                calendars = {}
+            for account in others:
+                apps[account] = {
+                    "mail": bool(mailboxes.get(account)),
+                    "calendar": any(
+                        (row.get("myRights") or {}).get("mayWriteAll") for row in calendars.get(account) or []
+                    ),
+                }
+    except Exception:
+        # Better every account listed than one hidden for a failed request. log_error keeps the
+        # traceback. Kept only briefly: long enough that a mail server that is down doesn't hold
+        # up every page load and fill the error log, short enough to be asked again soon.
+        frappe.log_error(title="Account apps check failed")
+        apps = {account: {"mail": True, "calendar": True} for account in accounts}
+        frappe.cache.set_value(cache_key, apps, expires_in_sec=60)
+        return apps
+
+    frappe.cache.set_value(cache_key, apps, expires_in_sec=ACCOUNT_APPS_CACHE_SECONDS)
+    return apps
 
 
 def on_doctype_update() -> None:

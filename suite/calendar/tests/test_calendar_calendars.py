@@ -3,7 +3,13 @@
 
 import frappe
 
-from suite.calendar.api import create_calendar, delete_calendar, edit_calendar, get_calendars
+from suite.calendar.api import (
+    create_calendar,
+    delete_calendar,
+    edit_calendar,
+    get_calendars,
+    get_calendars_with_shared,
+)
 from suite.calendar.doctype.calendar.calendar import (
     add_calendar,
     bulk_delete,
@@ -114,6 +120,19 @@ class TestCalendarCalendars(StalwartIntegrationTestCase):
             delete_calendar(self.account, calendar_id)
             self.assertNotIn(calendar, [c["name"] for c in get_calendars(self.account)])
 
+    def test_hidden_calendar_stays_hidden(self):
+        with self.set_user(self.member.email):
+            calendar = create_calendar(self.account, unique_name("cal"))
+            calendar_id = calendar.split("|")[1]
+            row = next(c for c in get_calendars_with_shared(self.account) if c["name"] == calendar)
+            self.assertEqual((row["account"], row["visible"]), (self.account, 1))
+
+            edit_calendar(self.account, calendar_id, visible=False)
+            row = next(c for c in get_calendars_with_shared(self.account) if c["name"] == calendar)
+            self.assertEqual(row["visible"], 0)
+
+            delete_calendar(self.account, calendar_id)
+
     def test_foreign_account_denied(self):
         other = self.create_member()
         with self.set_user(other.email):
@@ -121,3 +140,4 @@ class TestCalendarCalendars(StalwartIntegrationTestCase):
             self.assertRaises(Exception, create_calendar, self.account, unique_name("cal"))
             self.assertRaises(Exception, edit_calendar, self.account, "b", name=unique_name("cal"))
             self.assertRaises(Exception, delete_calendar, self.account, "b")
+            self.assertRaises(Exception, get_calendars_with_shared, self.account)

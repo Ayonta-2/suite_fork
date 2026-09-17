@@ -80,6 +80,13 @@ export const userStore = defineStore('mail-user', () => {
 
 	const userResource: UserResource = createResource({
 		url: 'suite.mail.api.account.get_user_info',
+		// Only the accounts with mail for the user: one that shares a calendar and nothing else
+		// is among their accounts, and has no inbox to show. In place, so onSuccess — which is
+		// handed the response rather than this — reads the same list.
+		transform: (data) => {
+			if (data?.accounts) data.accounts = data.accounts.filter((account) => account.in_mail)
+			return data
+		},
 		onSuccess: (data) => {
 			if (data?.is_suite_admin) domains.fetch()
 			// The unified All Inboxes badge only applies when there's more than one account to merge.

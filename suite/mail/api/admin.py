@@ -11,7 +11,10 @@ from frappe.utils import cint, flt, validate_email_address
 from pypika import Case, Order
 
 from suite.mail.api.utils import get_avatar_url
-from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
+from suite.mail.doctype.user_account.user_account import (
+    get_user_personal_jmap_account,
+    pick_personal_account,
+)
 from suite.mail.stalwart import (
     get_account_metadata,
     get_account_service,
@@ -448,22 +451,35 @@ def _attach_quota_usage(users: list[dict]) -> None:
         filters={"user": ("in", [user["name"] for user in users])},
         fields=["user", "account"],
     )
-    personal_accounts = set(
-        frappe.get_all(
+    personal_accounts = {
+        account.name: account
+        for account in frappe.get_all(
             "JMAP Account",
             filters={"is_personal": True, "name": ("in", [row.account for row in user_accounts])},
-            pluck="name",
+            fields=["name", "_name"],
         )
-    )
-    personal_by_user: dict[str, set[str]] = {}
+    }
+    personal_by_user: dict[str, dict[str, dict]] = {}
     for row in user_accounts:
         if row.account in personal_accounts:
-            personal_by_user.setdefault(row.user, set()).add(row.account)
+            personal_by_user.setdefault(row.user, {})[row.account] = personal_accounts[row.account]
 
-    # Mirror get_user_personal_jmap_account: a user with several distinct personal accounts is
-    # ambiguous and resolves to no account, rather than showing quota for an arbitrary mailbox.
+    usernames = dict(
+        frappe.get_all(
+            "User Settings",
+            filters={"user": ("in", list(personal_by_user))},
+            fields=["user", "username"],
+            as_list=True,
+        )
+    )
+
+    # Mirror get_user_personal_jmap_account: an account shared with a member is someone else's
+    # personal one, and a member left with several of their own resolves to none rather than
+    # showing quota for an arbitrary mailbox.
     account_by_user = {
-        user: next(iter(accounts)) for user, accounts in personal_by_user.items() if len(accounts) == 1
+        user: account
+        for user, accounts in personal_by_user.items()
+        if (account := pick_personal_account(list(accounts.values()), usernames.get(user)))
     }
     if not account_by_user:
         return

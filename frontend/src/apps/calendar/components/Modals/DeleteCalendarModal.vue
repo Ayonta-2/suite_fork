@@ -35,7 +35,7 @@ const store = userStore()
 
 const deleteCalendar = createResource({
 	url: 'suite.calendar.api.delete_calendar',
-	makeParams: () => ({ account: store.accountId, id: calendar!.id }),
+	makeParams: () => ({ account: calendar!.account, id: calendar!.id }),
 	onSuccess: () => {
 		raiseToast(__('Calendar deleted.'))
 		show.value = false

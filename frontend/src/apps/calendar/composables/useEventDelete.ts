@@ -19,6 +19,8 @@ interface DeletableEvent {
 	recurrence_rule?: Record<string, unknown>
 	organizer?: string
 	participants?: { email: string }[]
+	/** The account it belongs to: ids are only unique within one. */
+	account?: string
 	/** A draft sent no invitations, so it never asks about a cancellation email. */
 	isDraft?: boolean
 }
@@ -52,7 +54,7 @@ export function useEventDelete(
 	const deleteEventInstance = createResource({
 		url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
 		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: store.accountId,
+			account: calendarEvent.value.account,
 			master_id: calendarEvent.value.master_id,
 			recurrence_id: calendarEvent.value.recurrence_id,
 			send_scheduling_messages: sendEmail,
@@ -63,7 +65,7 @@ export function useEventDelete(
 	const deleteEvent = createResource({
 		url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events',
 		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: store.accountId,
+			account: calendarEvent.value.account,
 			ids: [eventId.value],
 			send_scheduling_messages: sendEmail,
 		}),
@@ -77,7 +79,7 @@ export function useEventDelete(
 	const deleteFollowing = createResource({
 		url: 'suite.calendar.api.delete_calendar_event_series_from',
 		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: store.accountId,
+			account: calendarEvent.value.account,
 			master_id: eventId.value,
 			recurrence_id: calendarEvent.value.recurrence_id,
 			send_scheduling_messages: sendEmail,

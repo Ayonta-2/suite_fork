@@ -114,7 +114,7 @@ const filter = reactive({
 	before: '',
 })
 
-const calendarOptions = computed(() => [{ label: __(''), value: ' ' }, ...store.calendarOptions])
+const calendarOptions = computed(() => [{ label: __(''), value: ' ' }, ...store.accountCalendarOptions(accountId)])
 
 const sortOptions = computed(() => [
 	{ label: __('Oldest Events'), value: 'Start (ASC)' },
