@@ -370,7 +370,8 @@ def format_calendar(account: str, calendar: dict) -> dict:
     """Formats calendar data for display."""
 
     share_with = []
-    for pid, r in calendar.get("shareWith", {}).items():
+    # Null, not empty, on a calendar shared with the account: only its owner sees who it is shared with.
+    for pid, r in (calendar.get("shareWith") or {}).items():
         share_with.append(
             {
                 "principal_id": pid,
