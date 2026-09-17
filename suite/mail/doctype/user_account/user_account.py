@@ -193,27 +193,25 @@ def get_account_apps(user: str | None = None) -> dict[str, dict[str, bool]]:
 
     accounts = get_user_jmap_accounts(user)
     personal = get_user_personal_jmap_account(user)
-    apps = {}
+    others = [account for account in accounts if account != personal]
+    apps = {account: {"mail": True, "calendar": True} for account in accounts if account == personal}
     try:
-        for account in accounts:
-            if account == personal:
-                apps[account] = {"mail": True, "calendar": True}
-                continue
-
-            method, result, _id = get_mailbox_service(account)._get(properties=["id"])["methodResponses"][0]
-            has_mail = method != "error" and bool(result.get("list"))
-
+        if others:
+            mailboxes = get_mailbox_service(others[0]).get_across_accounts(others, ["id"])
             try:
-                calendars = get_calendar_service(account)._get(properties=["myRights"])
-                rows = calendars["methodResponses"][0][1].get("list") or []
-                has_calendar = any((row.get("myRights") or {}).get("mayWriteAll") for row in rows)
+                calendars = get_calendar_service(others[0]).get_across_accounts(others, ["myRights"])
             except NotImplementedError:
-                has_calendar = False
-
-            apps[account] = {"mail": has_mail, "calendar": has_calendar}
+                calendars = {}
+            for account in others:
+                apps[account] = {
+                    "mail": bool(mailboxes.get(account)),
+                    "calendar": any(
+                        (row.get("myRights") or {}).get("mayWriteAll") for row in calendars.get(account) or []
+                    ),
+                }
     except Exception:
         # Better every account listed than one hidden for a failed request; not kept, so the
-        # next load asks again.
+        # next load asks again. log_error keeps the traceback.
         frappe.log_error(title="Account apps check failed")
         return {account: {"mail": True, "calendar": True} for account in accounts}
 

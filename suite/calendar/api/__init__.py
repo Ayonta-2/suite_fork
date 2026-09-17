@@ -74,7 +74,7 @@ def _shared_calendars() -> list[str]:
     can't write to. One they can write to is in an account they work in, like a team's, and is
     reached through the account switcher (see get_account_apps).
 
-    Asking means listing every account's calendars, so the answer is kept for a few minutes.
+    Every account's calendars are listed in one request, and the answer is kept for a few minutes.
     """
 
     cache_key = f"calendar|shared_calendars|{frappe.session.user}"
@@ -82,12 +82,18 @@ def _shared_calendars() -> list[str]:
         return cached
 
     shared = []
-    for account in frappe.get_all("User Account", {"user": frappe.session.user}, pluck="account"):
+    accounts = frappe.get_all("User Account", {"user": frappe.session.user}, pluck="account")
+    if accounts:
         try:
-            calendars = fetch_calendars(account, limit=MAX_CALENDARS)
+            calendars = get_calendar_service(accounts[0]).get_across_accounts(accounts, ["id", "myRights"])
         except NotImplementedError:
-            continue
-        shared.extend(calendar["name"] for calendar in calendars if not calendar["may_write_all"])
+            calendars = {}
+        for account, rows in calendars.items():
+            shared.extend(
+                f"{account}|{row['id']}"
+                for row in rows or []
+                if not (row.get("myRights") or {}).get("mayWriteAll")
+            )
 
     frappe.cache.set_value(cache_key, shared, expires_in_sec=300)
     return shared
