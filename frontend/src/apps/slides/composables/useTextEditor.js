@@ -13,6 +13,8 @@ import {
 	findSlideElement,
 	firstEditableElement,
 	getInitialShapeTextContent,
+	hasTextContent,
+	isMultiSelection,
 	measureHTMLList,
 } from '@/apps/slides/stores/element'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
@@ -323,7 +325,7 @@ export const useTextEditor = () => {
 	}
 
 	const toggleMark = (property) =>
-		activeElementIds.value.length > 1
+		isMultiSelection.value
 			? toggleSelectedMark(property)
 			: toggleMarkOn(activeEditor.value, property)
 
@@ -417,17 +419,17 @@ export const useTextEditor = () => {
 	}
 
 	const updateProperty = (property, value) =>
-		activeElementIds.value.length > 1
+		isMultiSelection.value
 			? formatSelectedText(property, value)
 			: setPropertyOn(activeEditor.value, property, value)
 
 	const showFirstEditableStyles = () => {
 		const element = firstEditableElement.value
-		if (['text', 'table'].includes(element?.type)) setEditorStyles(loadScratchEditor(element))
+		if (hasTextContent(element)) setEditorStyles(loadScratchEditor(element))
 	}
 
 	const selectedTextTargets = () =>
-		activeElements.value.filter((el) => !el.locked && ['text', 'table'].includes(el.type))
+		activeElements.value.filter((el) => !el.locked && hasTextContent(el))
 
 	// one element run through the chain, with what the step before already knows about it
 	const editContent = (element, runChain) => {

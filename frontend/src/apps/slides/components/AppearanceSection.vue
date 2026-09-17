@@ -36,13 +36,11 @@ import Section from '@/apps/slides/components/controls/Section.vue'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 import { useElementProperty } from '@/apps/slides/composables/editProperty'
 
-import { activeElementIds, firstEditableElement } from '@/apps/slides/stores/element'
+import { firstEditableElement, isMultiSelection } from '@/apps/slides/stores/element'
 
 const { editorStyles, updateProperty, setSelectedOpacity } = useTextEditor()
 
 const opacity = useElementProperty('opacity')
-
-const isMultiSelection = computed(() => activeElementIds.value.length > 1)
 
 const textOpacity = computed(() => {
 	const value = parseFloat(editorStyles.opacity)

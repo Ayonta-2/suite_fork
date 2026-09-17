@@ -75,6 +75,10 @@ const activeElement = computed(() => {
 	}
 })
 
+const isMultiSelection = computed(() => activeElementIds.value.length > 1)
+
+const hasTextContent = (element) => ['text', 'table'].includes(element?.type)
+
 const firstEditableElement = computed(() => {
 	if (activeElement.value) return activeElement.value
 	const selected = activeElementIds.value.map(findSlideElement)
@@ -82,9 +86,7 @@ const firstEditableElement = computed(() => {
 })
 
 const isTextSelection = computed(
-	() =>
-		activeElementIds.value.length > 1 &&
-		activeElements.value.every((el) => ['text', 'table'].includes(el.type)),
+	() => isMultiSelection.value && activeElements.value.every(hasTextContent),
 )
 
 const setActiveElements = (ids) => {
@@ -1311,7 +1313,7 @@ watch(
 watch(
 	[activeElementIds, () => firstEditableElement.value?.content, activeEditor],
 	() => {
-		if (!activeEditor.value && activeElementIds.value.length > 1) showFirstEditableStyles()
+		if (!activeEditor.value && isMultiSelection.value) showFirstEditableStyles()
 	},
 )
 
@@ -1465,6 +1467,8 @@ export {
 	activeElements,
 	activeElement,
 	firstEditableElement,
+	isMultiSelection,
+	hasTextContent,
 	isTextSelection,
 	isSelectionLocked,
 	hasLockedElements,
