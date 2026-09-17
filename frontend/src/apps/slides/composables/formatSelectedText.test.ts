@@ -153,10 +153,12 @@ describe('the second step of a burst', () => {
 		nextFrame()
 
 		const parse = vi.spyOn(DOMParser.prototype, 'parse')
+		const parseHTML = vi.spyOn(globalThis.DOMParser.prototype, 'parseFromString')
 		const append = vi.spyOn(document.body, 'appendChild')
 		formatSelectedText('fontSize', 50)
 
 		expect(parse).not.toHaveBeenCalled()
+		expect(parseHTML).not.toHaveBeenCalled()
 		expect(append).toHaveBeenCalledTimes(2)
 		expect(element('a').left).toBe(355)
 	})

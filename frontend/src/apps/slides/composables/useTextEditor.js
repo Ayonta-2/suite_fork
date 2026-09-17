@@ -65,6 +65,17 @@ const withRecordingSuppressed = (fn) => {
 
 const patchedHTML = (html) => (html ? patchEmptyParagraphs(html).updatedHTML : html)
 
+// only an empty line takes anything from the patch, so a document without one skips the parse
+const hasEmptyLine = (doc) => {
+	let found = false
+	doc.descendants((node) => {
+		if (found || node.type.spec.isolating) return false
+		if (node.type.name === 'paragraph') found = !node.textContent.trim()
+		return !found
+	})
+	return found
+}
+
 // no view, so no DOM, no plugins and nothing the live editor could mistake for itself
 let scratchEditor = null
 
@@ -437,12 +448,13 @@ export const useTextEditor = () => {
 		const last = lastEdit(element)
 		const editor = loadScratchEditor(element)
 		runChain(editor)
+		const html = editor.getHTML()
 		return {
 			element,
 			doc: editor.state.doc,
 			oldContent: last ? element.content : patchedHTML(element.content),
 			oldWidth: last?.newWidth,
-			newContent: patchedHTML(editor.getHTML()),
+			newContent: hasEmptyLine(editor.state.doc) ? patchedHTML(html) : html,
 			anchor: growthAnchor(editor),
 			left: element.left,
 		}
