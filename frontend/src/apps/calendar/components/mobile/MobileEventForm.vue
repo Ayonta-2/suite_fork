@@ -448,7 +448,6 @@ import {
 	UNIT_OPTIONS,
 	VISIBILITY_OPTIONS,
 } from '@/apps/calendar/utils/eventOptions'
-import { userStore } from '@/apps/calendar/stores/user'
 import { requestAlertPermission } from '@/utils/calendarAlert'
 import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
@@ -479,7 +478,6 @@ const emit = defineEmits<{
 	joinMeet: []
 }>()
 
-const store = userStore()
 const { height: viewportHeight, top: keyboardTop } = useKeyboardInsets()
 
 const SCREENS = ['form', 'participants'] as const
