@@ -2,7 +2,7 @@
 import { computed, inject, nextTick, onMounted, onScopeDispose, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNow } from '@vueuse/core'
-import { Button, Dialog, TabButtons, createResource, useKeyboardShortcut, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, TabButtons, createResource, toast, useKeyboardShortcut, usePageMeta } from 'frappe-ui'
 import { Calendar, CalendarActiveEvent, calendarDaySpan } from 'frappe-ui/experimental'
 
 import { useScreenSize } from '@/composables/useScreenSize'
@@ -873,8 +873,12 @@ watch([showRecurringEventModal, showNotifyModal], ([recurring, notify]) => {
 })
 
 const handleUpdate = (e) => {
-	// The grid lets every pill be dragged; one on a calendar shared read-only goes back.
-	if (!canEditEvent(e, calendars.data)) return revertUpdate()
+	// The grid lets every pill be dragged; one on a calendar shared read-only goes back, with
+	// word of why, or it reads as the drag not taking.
+	if (!canEditEvent(e, calendars.data)) {
+		revertUpdate()
+		return toast.info(__("This event can't be edited."))
+	}
 	Object.assign(eventToBeUpdated, withActualTitle(e))
 	// Both remembered before the drag overwrites them: an occurrence's override has to keep the
 	// zone the event arrived with, and saving the whole series needs the start the reader was
