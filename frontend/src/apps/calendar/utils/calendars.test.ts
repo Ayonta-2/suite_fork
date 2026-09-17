@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
 	calendarColor,
+	canEditEvent,
 	defaultCalendar,
 	destinationOptions,
 } from '@/apps/calendar/utils/calendars'
@@ -60,5 +61,24 @@ describe('destinationOptions', () => {
 
 	it('keeps the read-only calendar an event is already on', () => {
 		expect(destinationOptions(options, 'shared').map((o) => o.value)).toEqual(['a', 'shared'])
+	})
+})
+
+describe('canEditEvent', () => {
+	const calendars = [cal('mine'), cal('shared', { may_write_all: 0 })]
+	const on = (...names: string[]) => ({ calendars: names.map((name) => ({ calendar: `acc|${name}` })) })
+
+	it('is false on a calendar shared read-only', () => {
+		expect(canEditEvent(on('shared'), calendars)).toBe(false)
+	})
+
+	it('is true when any of its calendars can be written to', () => {
+		expect(canEditEvent(on('mine'), calendars)).toBe(true)
+		expect(canEditEvent(on('shared', 'mine'), calendars)).toBe(true)
+	})
+
+	it('is true on a calendar the list does not know', () => {
+		expect(canEditEvent(on('elsewhere'), calendars)).toBe(true)
+		expect(canEditEvent(on('shared'), undefined)).toBe(true)
 	})
 })

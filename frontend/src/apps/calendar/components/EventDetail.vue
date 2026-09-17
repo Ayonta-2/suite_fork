@@ -45,6 +45,7 @@ import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
+import { canEditEvent } from '@/apps/calendar/utils/calendars'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
@@ -73,7 +74,7 @@ const emit = defineEmits(['close', 'edit', 'reloadEvents', 'emailParticipants'])
 
 const dayjs = inject('$dayjs')
 
-const { participantIdentities } = userStore()
+const { participantIdentities, calendars } = userStore()
 
 // --- User / RSVP ---
 
@@ -479,12 +480,15 @@ const {
 	},
 )
 
+// An event on a calendar shared read-only can be read and copied, not changed or answered.
+const canEdit = computed(() => canEditEvent(calendarEvent, calendars.data))
+
 const dropdownOptions = computed(() => [
-	{ label: __('Edit'), icon: SquarePen, onClick: () => emit('edit') },
+	{ label: __('Edit'), icon: SquarePen, onClick: () => emit('edit'), condition: () => canEdit.value },
 	// Beside Edit rather than beside the Meet row's copy: that button copies the link,
 	// which is a property of the call, where this copies the event.
 	{ label: __('Copy Invite'), icon: Copy, onClick: copyInvite },
-	deleteOption.value,
+	{ ...deleteOption.value, condition: () => canEdit.value },
 ])
 
 const openUrl = (location: string) => {
@@ -847,12 +851,12 @@ const openUrl = (location: string) => {
 				<!-- RSVP. Ruled off the way the title above is: both sit outside the scroll,
 				     and a pinned block with nothing between it and moving content reads as
 				     the end of that content rather than as a shelf of its own. -->
-				<div v-if="userParticipant?.expect_reply" class="shrink-0 border-t" />
+				<div v-if="canEdit && userParticipant?.expect_reply" class="shrink-0 border-t" />
 				<!-- The page's own bottom padding clears the home indicator, so the block
 				     inside it carries none of its own; the column, which ends at the window
 				     edge, still does. -->
 				<div
-					v-if="userParticipant?.expect_reply"
+					v-if="canEdit && userParticipant?.expect_reply"
 					class="flex shrink-0 flex-col gap-2 px-4.5 pt-3"
 					:class="variant === 'sheet' ? 'pb-1' : 'pb-3'"
 				>

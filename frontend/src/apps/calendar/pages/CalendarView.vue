@@ -9,7 +9,7 @@ import { useScreenSize } from '@/composables/useScreenSize'
 import { appPageMeta } from '@/utils/documentTitle'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
-import { calendarColor as colorOf } from '@/apps/calendar/utils/calendars'
+import { calendarColor as colorOf, canEditEvent } from '@/apps/calendar/utils/calendars'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
@@ -434,6 +434,8 @@ const event = reactive({})
 const withActualTitle = (event) => ({ ...event, title: event.actualTitle })
 
 const handleOpenEvent = async (e) => {
+	// A calendar shared read-only has nothing to open a form on; its events open as a card.
+	if (e.calendarEvent && !canEditEvent(e.calendarEvent, calendars.data)) return
 	// Cleared on the way in rather than on the way out. Emptying it when the modal closed
 	// re-rendered the modal while it was still fading: with no calendarEvent left it read
 	// as a new event mid-animation, which enabled Save and put a remove button on every
@@ -871,6 +873,8 @@ watch([showRecurringEventModal, showNotifyModal], ([recurring, notify]) => {
 })
 
 const handleUpdate = (e) => {
+	// The grid lets every pill be dragged; one on a calendar shared read-only goes back.
+	if (!canEditEvent(e, calendars.data)) return revertUpdate()
 	Object.assign(eventToBeUpdated, withActualTitle(e))
 	// Both remembered before the drag overwrites them: an occurrence's override has to keep the
 	// zone the event arrived with, and saving the whole series needs the start the reader was

@@ -69,3 +69,16 @@ export const destinationOptions = <T extends { value: string; writable: boolean 
 	options: T[],
 	current?: string,
 ): T[] => options.filter((option) => option.writable || option.value === current)
+
+/**
+ * Whether the user can change an event: it sits on a calendar they can write to. An event on a
+ * calendar the list does not know — before it loads, or opened from mail — is left editable,
+ * and the server has the last word either way.
+ */
+export const canEditEvent = (
+	event: { calendars?: { calendar: string }[] },
+	calendars: CalendarRow[] | undefined,
+): boolean => {
+	const rows = (event.calendars ?? []).map((c) => calendars?.find((cal) => cal.name === c.calendar))
+	return !rows.length || rows.some((row) => !row || row.may_write_all)
+}
