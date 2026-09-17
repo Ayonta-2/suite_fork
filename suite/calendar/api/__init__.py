@@ -47,9 +47,68 @@ def get_calendars(account: str) -> list[dict[str, str]]:
     calendars = fetch_calendars(account, limit=MAX_CALENDARS)
 
     return [
-        {key: cal[key] for key in ["name", "id", "_name", "color", "default", "may_write_all", "may_delete"]}
+        {
+            key: cal[key]
+            for key in [
+                "name",
+                "account",
+                "id",
+                "_name",
+                "color",
+                "default",
+                "visible",
+                "may_write_all",
+                "may_delete",
+            ]
+        }
         for cal in calendars
     ]
+
+
+def _shared_accounts() -> list[str]:
+    """The user's accounts that only share calendars with them.
+
+    A calendar shared with the user lives in its owner's account, not the user's, so the
+    calendar would only show it after switching to an account nobody thinks of as theirs.
+    JMAP marks no account as "shared with me", so it is read off the rights: an account with
+    calendars, none of which the user can write to. An account the user works in, like a
+    team's, has calendars they can write to and stays behind the account switcher.
+
+    Asking means listing every account's calendars, so the answer is kept for a few minutes.
+    """
+
+    cache_key = f"calendar|shared_accounts|{frappe.session.user}"
+    if (cached := frappe.cache.get_value(cache_key)) is not None:
+        return cached
+
+    shared = []
+    for account in frappe.get_all("User Account", {"user": frappe.session.user}, pluck="account"):
+        try:
+            calendars = fetch_calendars(account, limit=MAX_CALENDARS)
+        except NotImplementedError:
+            continue
+        if calendars and not any(calendar["may_write_all"] for calendar in calendars):
+            shared.append(account)
+
+    frappe.cache.set_value(cache_key, shared, expires_in_sec=300)
+    return shared
+
+
+def _with_shared(account: str, fetch) -> list:
+    """`fetch` for the account, then for each account sharing calendars with the user."""
+
+    rows = list(fetch(account))
+    for shared in _shared_accounts():
+        if shared != account:
+            rows.extend(fetch(shared))
+    return rows
+
+
+@frappe.whitelist()
+def get_calendars_with_shared(account: str) -> list[dict]:
+    """The account's calendars, and the calendars shared with the user from elsewhere."""
+
+    return _with_shared(account, get_calendars)
 
 
 @frappe.whitelist()
@@ -72,8 +131,10 @@ def edit_calendar(
     name: str | None = None,
     color: str | None = None,
     default: bool = False,
+    visible: bool | None = None,
 ) -> None:
-    """Renames, recolours or makes default one calendar, touching nothing else on it.
+    """Renames, recolours, shows or hides, or makes default one calendar, touching nothing
+    else on it.
 
     The doctype's `update_calendar` writes every property, so renaming through it
     clears the description and time zone another client may have set. This patches
@@ -84,6 +145,10 @@ def edit_calendar(
         patch["name"] = _calendar_name(name)
     if color is not None:
         patch["color"] = color or None
+    # JMAP's own flag for whether a calendar's events are shown, so the choice follows the
+    # user to every client rather than living in one browser.
+    if visible is not None:
+        patch["isVisible"] = visible
 
     kwargs = {"onSuccessSetIsDefault": id} if default else {}
     service = get_calendar_service(account)
@@ -188,6 +253,13 @@ def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: s
 
 
 @frappe.whitelist()
+def get_calendar_events_with_shared(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
+    """`get_calendar_events` for the account and the calendars shared with the user."""
+
+    return _with_shared(account, lambda each: get_calendar_events(each, from_date, to_date, time_zone))
+
+
+@frappe.whitelist()
 def get_calendar_event_density(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
     """The bare minimum needed to mark a day as busy, for the sidebar's mini month.
 
@@ -223,6 +295,15 @@ def get_calendar_event_density(account: str, from_date: str, to_date: str, time_
         }
         for event in events
     ]
+
+
+@frappe.whitelist()
+def get_calendar_event_density_with_shared(
+    account: str, from_date: str, to_date: str, time_zone: str
+) -> list[dict]:
+    """`get_calendar_event_density` for the account and the calendars shared with the user."""
+
+    return _with_shared(account, lambda each: get_calendar_event_density(each, from_date, to_date, time_zone))
 
 
 def _declined_by_viewer(event: dict, own_emails: set[str]) -> bool:

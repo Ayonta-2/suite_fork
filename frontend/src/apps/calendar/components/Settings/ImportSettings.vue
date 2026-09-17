@@ -101,7 +101,7 @@ const onFileSelected = async (event: Event) => {
 }
 
 // Only a calendar the account can write to takes the events.
-const importOptions = computed(() => destinationOptions(store.calendarOptions))
+const importOptions = computed(() => destinationOptions(store.accountCalendarOptions(accountId)))
 
 // Kept while it is still one of the account's calendars; otherwise the first — a calendar
 // that was deleted, or belongs to the account switched away from, is no target at all.

@@ -4,15 +4,16 @@ import {
 	calendarColor,
 	defaultCalendar,
 	destinationOptions,
-	visibleAfterReload,
 } from '@/apps/calendar/utils/calendars'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
 const cal = (name: string, extra: Partial<CalendarRow> = {}): CalendarRow => ({
 	name: `acc|${name}`,
+	account: 'acc',
 	id: name,
 	_name: name,
 	default: 0,
+	visible: 1,
 	may_write_all: 1,
 	may_delete: 1,
 	...extra,
@@ -59,21 +60,5 @@ describe('destinationOptions', () => {
 
 	it('keeps the read-only calendar an event is already on', () => {
 		expect(destinationOptions(options, 'shared').map((o) => o.value)).toEqual(['a', 'shared'])
-	})
-})
-
-describe('visibleAfterReload', () => {
-	it('ticks everything on the first load', () => {
-		expect(visibleAfterReload([], [], [cal('a'), cal('b')])).toEqual(['acc|a', 'acc|b'])
-	})
-
-	it('keeps a calendar the reader switched off switched off', () => {
-		const known = ['acc|a', 'acc|b']
-		expect(visibleAfterReload(known, ['acc|a'], [cal('a'), cal('b')])).toEqual(['acc|a'])
-	})
-
-	it('ticks a calendar that is new, and drops one that is gone', () => {
-		const known = ['acc|a', 'acc|b']
-		expect(visibleAfterReload(known, ['acc|b'], [cal('b'), cal('c')])).toEqual(['acc|b', 'acc|c'])
 	})
 })

@@ -73,8 +73,7 @@ const emit = defineEmits(['close', 'edit', 'reloadEvents', 'emailParticipants'])
 
 const dayjs = inject('$dayjs')
 
-const store = userStore()
-const { participantIdentities } = store
+const { participantIdentities } = userStore()
 
 // --- User / RSVP ---
 
@@ -95,7 +94,7 @@ const RSVP_OPTIONS = [
 const rsvpEvent = createResource({
 	url: 'suite.calendar.api.rsvp_calendar_event',
 	makeParams: ({ response, scope }: { response: string; scope: RecurringScope }) => ({
-		account: store.accountId,
+		account: calendarEvent.account,
 		// master_id is only set on recurring events; fall back to the event's own id
 		id: calendarEvent.master_id || calendarEvent.id,
 		response: response.toLowerCase(),

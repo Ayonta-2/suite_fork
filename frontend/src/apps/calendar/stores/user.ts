@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useStorage } from '@vueuse/core'
 import { createResource } from 'frappe-ui'
 
 import type { ParticipantIdentity, UserAccount } from '@/apps/calendar/types/doctypes'
@@ -64,23 +65,47 @@ export const userStore = defineStore('calendar-user', () => {
 		cache: ['participantIdentities', accountId.value],
 	})
 
-	// The account's calendars. One list for the grid, the sidebar, the event form
-	// and settings, so a calendar added or renamed in one is there in the others.
+	// The account's calendars, and those shared with the user from other accounts. One list
+	// for the grid, the sidebar, the event form and settings, so a calendar added or renamed
+	// in one is there in the others.
 	const calendars = createResource<CalendarRow[]>({
-		url: 'suite.calendar.api.get_calendars',
+		url: 'suite.calendar.api.get_calendars_with_shared',
 		makeParams: () => ({ account: accountId.value }),
 		cache: ['calendars', accountId.value],
+		transform: (rows: CalendarRow[]) =>
+			rows.map((cal) =>
+				cal.may_write_all ? cal : { ...cal, visible: hiddenShared.value.includes(cal.name) ? 0 : 1 },
+			),
 	})
 
-	// The calendars as select options, each in the colour it is drawn in.
-	const calendarOptions = computed(() =>
-		(calendars.data ?? []).map((cal) => ({
+	// Showing or hiding a calendar is its own `isVisible`, which the mail server only lets
+	// someone who can write to it change — so a calendar shared read-only is hidden in this
+	// browser instead.
+	const hiddenShared = useStorage<string[]>('calendar-hidden-shared', [])
+
+	// The calendars as select options, keyed by `account|id`, each in the colour it is drawn in.
+	// A calendar shared from another account names that account beneath.
+	const calendarOptions = computed(() => {
+		const accounts: UserAccount[] = userResource.data?.accounts ?? []
+		return (calendars.data ?? []).map((cal) => ({
 			label: cal._name,
-			value: cal.id,
+			description:
+				cal.account === accountId.value
+					? undefined
+					: accounts.find((a) => a.id === cal.account)?._name,
+			value: cal.name,
+			account: cal.account,
 			color: calendarColor(calendars.data, cal.name),
 			writable: !!cal.may_write_all,
-		})),
-	)
+		}))
+	})
+
+	// One account's calendars, keyed by their bare id, for what works on a single account:
+	// import and export.
+	const accountCalendarOptions = (account: string) =>
+		calendarOptions.value
+			.filter((option) => option.account === account)
+			.map((option) => ({ ...option, value: option.value.split('|')[1] }))
 
 	// The organizer of a new event. Invites go out as mail from the organizer's address,
 	// so only a participant identity that is also a mail identity qualifies. Among those
@@ -101,7 +126,9 @@ export const userStore = defineStore('calendar-user', () => {
 		identities,
 		participantIdentities,
 		calendars,
+		hiddenShared,
 		calendarOptions,
+		accountCalendarOptions,
 		organizerIdentity,
 	}
 })

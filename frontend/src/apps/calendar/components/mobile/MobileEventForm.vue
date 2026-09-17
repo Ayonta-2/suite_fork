@@ -291,7 +291,7 @@
 						<div class="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-1">
 							<ParticipantSelector
 								v-model="event.participants"
-								:account="store.accountId"
+								:account="event.account"
 								:display-participants="participants"
 								label=""
 								variant="inline"
@@ -439,7 +439,6 @@ import { Avatar, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 import dayjs from '@/apps/calendar/utils/dayjs'
-import { destinationOptions } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
 import { formatAlertPhrase, getRepeatMessage } from '@/apps/calendar/utils/format'
 import {
@@ -455,16 +454,21 @@ import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 
-const { event, participants } = defineProps<{
+const { event, participants, calendarChoices } = defineProps<{
 	/** The form state EventModal owns; the rows edit it in place. */
 	event: any
 	title: string
 	isNew: boolean
 	disableSave: boolean
 	participants: any[]
+	/** The calendars the event can go on, as `account|id` options; see EventModal. */
+	calendarChoices: { label: string; value: string; color: string }[]
 	meetUrl?: string
 	meetLinkDisplay?: string
 }>()
+
+/** The calendar it is on, as `account|id`. */
+const calendar = defineModel<string>('calendar')
 
 const emit = defineEmits<{
 	cancel: []
@@ -561,16 +565,14 @@ const asDropdownOptions = (
 	}))
 
 const calendarOptions = computed(() =>
-	destinationOptions(store.calendarOptions, event.calendar_ids?.[0]).map(
-		({ label, value, color }) => ({
-			label,
-			icon: h('span', { class: 'grid place-items-center' }, [
-				h('span', { class: 'size-2.5 rounded-full', style: { background: eventColor(color) } }),
-			]),
-			selected: event.calendar_ids?.[0] === value,
-			onClick: () => (event.calendar_ids = [value]),
-		}),
-	),
+	calendarChoices.map(({ label, value, color }) => ({
+		label,
+		icon: h('span', { class: 'grid place-items-center' }, [
+			h('span', { class: 'size-2.5 rounded-full', style: { background: eventColor(color) } }),
+		]),
+		selected: calendar.value === value,
+		onClick: () => (calendar.value = value),
+	})),
 )
 
 const availabilityOptions = computed(() =>

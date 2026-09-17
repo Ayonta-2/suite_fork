@@ -2,10 +2,13 @@
 export type CalendarRow = {
 	/** `account|id` — what events name their calendar by. */
 	name: string
+	account: string
 	id: string
 	_name: string
 	color?: string | null
 	default: 0 | 1
+	/** Whether its events are drawn: JMAP's `isVisible`, so the choice follows the user. */
+	visible: 0 | 1
 	/**
 	 * Whether the account may change the calendar and what is on it. Only false on a
 	 * calendar shared with it read-only: Stalwart asks for this right to rename or
@@ -66,20 +69,3 @@ export const destinationOptions = <T extends { value: string; writable: boolean 
 	options: T[],
 	current?: string,
 ): T[] => options.filter((option) => option.writable || option.value === current)
-
-/**
- * Which calendars are ticked once the list comes back.
- *
- * The list reloads after every rename, recolour or new calendar, and a reload
- * that ticked everything again undid whatever the reader had switched off. So a
- * calendar keeps its tick, and only one the reader has not seen before arrives
- * ticked — a calendar just created is one they want to see.
- */
-export const visibleAfterReload = (
-	known: string[],
-	visible: string[],
-	calendars: CalendarRow[],
-): string[] =>
-	calendars
-		.map((cal) => cal.name)
-		.filter((name) => !known.includes(name) || visible.includes(name))

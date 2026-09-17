@@ -9,7 +9,7 @@ import { useScreenSize } from '@/composables/useScreenSize'
 import { appPageMeta } from '@/utils/documentTitle'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
-import { calendarColor as colorOf, visibleAfterReload } from '@/apps/calendar/utils/calendars'
+import { calendarColor as colorOf } from '@/apps/calendar/utils/calendars'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
@@ -290,17 +290,9 @@ const getEventRole = (event) => {
 
 const { calendars } = store
 
-// Calendars switched off in the sidebar stay off through a reload — see visibleAfterReload.
-const visibleCalendars = ref<string[]>([])
-let knownCalendars: string[] = []
-watch(
-	() => calendars.data,
-	(data) => {
-		if (!data) return
-		visibleCalendars.value = visibleAfterReload(knownCalendars, visibleCalendars.value, data)
-		knownCalendars = data.map((cal) => cal.name)
-	},
-	{ immediate: true },
+// Which calendars are drawn is the calendar's own `visible`, set from the sidebar.
+const visibleCalendars = computed(
+	() => new Set(calendars.data?.filter((cal) => cal.visible).map((cal) => cal.name)),
 )
 watch(
 	() => calendars.error,
@@ -348,7 +340,7 @@ const windowFor = (anchor: dayjs.Dayjs) => {
 }
 
 const events = createResource({
-	url: 'suite.calendar.api.get_calendar_events',
+	url: 'suite.calendar.api.get_calendar_events_with_shared',
 	makeParams: () => {
 		const { from, to } = windowFor(anchorMonth.value)
 		fetchedRange = { from: from.format('YYYY-MM-DD'), to: to.format('YYYY-MM-DD') }
@@ -370,7 +362,7 @@ const events = createResource({
 // the sidebar is on screen from the start, and the same shape as the grid's rows
 // so the list and the card it opens read it the same way.
 const todayEvents = createResource({
-	url: 'suite.calendar.api.get_calendar_events',
+	url: 'suite.calendar.api.get_calendar_events_with_shared',
 	makeParams: () => {
 		const start = dayjs().startOf('day')
 		return {
@@ -425,7 +417,7 @@ const eventsPending = computed(
 )
 
 const onVisibleCalendar = (event) =>
-	event.calendars.map((c) => c.calendar).some((cal) => visibleCalendars.value.includes(cal))
+	event.calendars.some((c) => visibleCalendars.value.has(c.calendar))
 
 const visibleEvents = computed(
 	() => events.data?.filter(onVisibleCalendar).map(withCalendarColor) || [],
@@ -472,6 +464,7 @@ const handleOpenEvent = async (e) => {
 				// The master's id, for the same reason as the event link above.
 				edit: editing,
 				editRecurrence: opened.recurrence_id || undefined,
+				account: opened.account,
 			},
 		})
 }
@@ -498,6 +491,8 @@ const handleEventClick = ({ calendarEvent }) =>
 			// it names the occurrence.
 			event: calendarEvent.master_id || calendarEvent.id,
 			recurrence: calendarEvent.recurrence_id || undefined,
+			// Ids are only unique within an account, and shared calendars bring in another's.
+			account: calendarEvent.account,
 		},
 	})
 
@@ -509,13 +504,14 @@ const handleEventClick = ({ calendarEvent }) =>
 // after an RSVP swaps in the fresh copy and a delete closes it. Today's list first,
 // since that is where the rows come from, and it holds today when the grid's
 // window has been paged away from it.
-const railOpen = ref<{ id: string; recurrence?: string } | null>(null)
+const railOpen = ref<{ id: string; recurrence?: string; account: string } | null>(null)
 
 const railEvent = computed(() => {
 	if (!railOpen.value) return null
-	const { id, recurrence } = railOpen.value
+	const { id, recurrence, account } = railOpen.value
 	const linked =
-		findLinkedEvent(todayEvents.data, id, recurrence) ?? findLinkedEvent(events.data, id, recurrence)
+		findLinkedEvent(todayEvents.data, id, recurrence, account) ??
+		findLinkedEvent(events.data, id, recurrence, account)
 	return linked && withCalendarColor(linked)
 })
 
@@ -526,7 +522,7 @@ const openEvent = computed(() => selectedCalendarEvent.value ?? railEvent.value)
 const closeEventDetail = () => {
 	railOpen.value = null
 	if (!route.query.event) return Promise.resolve()
-	const { event: _event, recurrence: _recurrence, ...query } = route.query
+	const { event: _event, recurrence: _recurrence, account: _account, ...query } = route.query
 	return router.replace({ query })
 }
 
@@ -658,6 +654,7 @@ const toggleEventDetail = (calendarEvent, anchor: Element | null = null, viaRail
 	if (
 		open &&
 		open.id === calendarEvent.id &&
+		open.account === calendarEvent.account &&
 		(open.recurrence_id ?? '') === (calendarEvent.recurrence_id ?? '')
 	)
 		return closeEventDetail()
@@ -669,6 +666,7 @@ const toggleEventDetail = (calendarEvent, anchor: Element | null = null, viaRail
 		// The master's id, as the URL carries it — see handleEventClick.
 		id: calendarEvent.master_id || calendarEvent.id,
 		recurrence: calendarEvent.recurrence_id || undefined,
+		account: calendarEvent.account,
 	}
 }
 
@@ -772,8 +770,27 @@ const emailParticipants = (emails: string[]) => {
 // invite strip resolves an invite's UID to that master id, which matches
 // nothing here. So a link that misses on id falls back to the master, narrowed
 // to the instance covering the routed day (the day the link itself picked).
-const findLinkedEvent = (data, id, recurrence) => {
+//
+// Ids are only unique within an account, and shared calendars bring another account's events
+// in, so a link looks among its own account's events first: the one it names, else the account
+// the calendar is switched to, which is where mail's links come from. Only then anywhere.
+const findLinkedEvent = (
+	data,
+	id,
+	recurrence,
+	account = (route.query.account || route.params.accountId) as string,
+) => {
 	if (!data || !id) return null
+	return (
+		matchLinkedEvent(
+			data.filter((e) => e.account === account),
+			id,
+			recurrence,
+		) ?? matchLinkedEvent(data, id, recurrence)
+	)
+}
+
+const matchLinkedEvent = (data, id, recurrence) => {
 
 	const rec = (recurrence as string) ?? ''
 	const exact = data.find((e) => e.id === id && (e.recurrence_id ?? '') === rec)
@@ -813,7 +830,7 @@ watch(
 		// to draw while it fades. Closing the modal drops only its own keys — the detail
 		// sidebar (?event=) stays.
 		if (route.query.edit) {
-			const { edit: _edit, editRecurrence: _rec, ...query } = route.query
+			const { edit: _edit, editRecurrence: _rec, account: _account, ...query } = route.query
 			router.replace({ query })
 		}
 	},
@@ -1059,18 +1076,11 @@ const NOTIFY_MODAL_OPTIONS = {
 		<div v-if="!isMobile" class="flex min-h-0 min-w-0 flex-1">
 			<AppSidebar
 				:calendar-color="calendarColor"
-				:visible-calendars
 				:month="calendarRef?.currentMonth"
 				:year="calendarRef?.currentYear"
 				:day="calendarRef?.currentDay"
 				:events="visibleTodayEvents"
 				:selected-event="openEvent"
-				@update:visible-calendars="
-					(name) =>
-						visibleCalendars.includes(name)
-							? visibleCalendars.splice(visibleCalendars.indexOf(name), 1)
-							: visibleCalendars.push(name)
-				"
 				@select-date="(date) => calendarRef?.setCalendarDate(date)"
 				@select-event="(event, e) => toggleEventDetail(event, rowOf(e), true)"
 			/>

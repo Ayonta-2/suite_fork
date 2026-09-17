@@ -23,7 +23,7 @@ export const useCalendarActions = () => {
 	const makeDefault = createResource({
 		url: 'suite.calendar.api.edit_calendar',
 		makeParams: (calendar: CalendarRow) => ({
-			account: store.accountId,
+			account: calendar.account,
 			id: calendar.id,
 			default: true,
 		}),
@@ -33,6 +33,28 @@ export const useCalendarActions = () => {
 		},
 		onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
 	})
+
+	// Shown at once and saved behind: a toggle that waited on the server would feel broken,
+	// and one that failed puts the calendar back as it was.
+	const toggleVisible = (calendar: CalendarRow) => {
+		const visible = calendar.visible ? 0 : 1
+		calendar.visible = visible
+		if (!calendar.may_write_all) {
+			store.hiddenShared = visible
+				? store.hiddenShared.filter((name) => name !== calendar.name)
+				: [...store.hiddenShared, calendar.name]
+			return
+		}
+		createResource({
+			url: 'suite.calendar.api.edit_calendar',
+			params: { account: calendar.account, id: calendar.id, visible: !!visible },
+			auto: true,
+			onError: (error) => {
+				calendar.visible = visible ? 0 : 1
+				raiseToast(error.messages?.[0] || error.message, 'error')
+			},
+		})
+	}
 
 	const create = () => edit(undefined)
 
@@ -75,5 +97,15 @@ export const useCalendarActions = () => {
 	const hasMenuOptions = (calendar: CalendarRow) =>
 		menuOptions(calendar).some((option) => !option.condition || option.condition())
 
-	return { selected, showEdit, showDelete, create, edit, canEdit, menuOptions, hasMenuOptions }
+	return {
+		selected,
+		showEdit,
+		showDelete,
+		create,
+		edit,
+		canEdit,
+		toggleVisible,
+		menuOptions,
+		hasMenuOptions,
+	}
 }

@@ -111,7 +111,7 @@ const createCalendar = createResource({
 const editCalendar = createResource({
 	url: 'suite.calendar.api.edit_calendar',
 	makeParams: () => ({
-		account: store.accountId,
+		account: calendar!.account,
 		id: calendar!.id,
 		name: form.name,
 		color: form.color,
