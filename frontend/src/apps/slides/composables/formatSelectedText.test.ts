@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
+const { DOMParser } = await import('@tiptap/pm/model')
 const { slides, slideIndex } = await import('@/apps/slides/stores/slide')
 const { activeElementIds, focusElementId } = await import('@/apps/slides/stores/element')
 const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
@@ -32,7 +33,8 @@ const element = (id: string) => slides.value[0].elements.find((el: any) => el.id
 const line = (text: string, align = '') =>
 	`<p style="${align && `text-align: ${align}; `}line-height: 1.5;">${text}</p>`
 
-const sized = (px: number, text: string) => line(`<span style="font-size: ${px}px;">${text}</span>`)
+const sized = (px: number, text: string, align = '') =>
+	line(`<span style="font-size: ${px}px;">${text}</span>`, align)
 
 const table = (cell: string) =>
 	`<table><tbody><tr><td><p>${cell}</p></td><td><p>${cell}</p></td></tr></tbody></table>`
@@ -113,6 +115,22 @@ describe('a style written to every selected box', () => {
 		expect(element('a').content).toContain('color: rgb(1, 2, 3)')
 		expect(element('t').content.match(/color: rgb\(1, 2, 3\)/g)).toHaveLength(2)
 		expect(element('t').width).toBe(300)
+	})
+})
+
+describe('the second step of a burst', () => {
+	it('parses nothing and measures only the new text', () => {
+		const centred = sized(20, 'one', 'center')
+		select({ id: 'a', content: centred, left: 400 }, { id: 'b', content: centred, left: 400 })
+		formatSelectedText('fontSize', 40)
+
+		const parse = vi.spyOn(DOMParser.prototype, 'parse')
+		const append = vi.spyOn(document.body, 'appendChild')
+		formatSelectedText('fontSize', 50)
+
+		expect(parse).not.toHaveBeenCalled()
+		expect(append).toHaveBeenCalledTimes(2)
+		expect(element('a').left).toBe(355)
 	})
 })
 
@@ -231,15 +249,16 @@ describe('a box that still carries a legacy line height', () => {
 // the scratch editor runs without ProseMirror plugins, so the cases a plugin could
 // have carried on the live editor are proven here
 describe('content the live editor leans on plugins for', () => {
-	it('keeps an empty line between two styled lines styled', () => {
+	it('keeps an empty line between two styled lines styled, step after step', () => {
 		const content = `${sized(20, 'one')}<p></p>${sized(20, 'two')}`
 		select({ id: 'a', content }, { id: 'b', content })
 
 		formatSelectedText('fontSize', 40)
+		formatSelectedText('fontSize', 50)
 
 		const lines = element('a').content.match(/<p[^>]*>.*?<\/p>/g)
 		expect(lines).toHaveLength(3)
-		expect(lines[1]).toContain('font-size: 40px')
+		expect(lines[1]).toContain('font-size: 50px')
 	})
 
 	it('gives a font family to cells holding only the placeholder', () => {

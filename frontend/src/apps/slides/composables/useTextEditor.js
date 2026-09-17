@@ -2,7 +2,7 @@ import { ref, reactive, watch, nextTick } from 'vue'
 import { Editor } from '@tiptap/vue-3'
 import { Editor as HeadlessEditor, createDocument } from '@tiptap/core'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
-import { Selection, TextSelection } from 'prosemirror-state'
+import { EditorState, Selection, TextSelection } from 'prosemirror-state'
 import { cellAround } from '@tiptap/pm/tables'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { markDirty } from '@/apps/slides/stores/saving'
@@ -65,13 +65,34 @@ const patchedHTML = (html) => (html ? patchEmptyParagraphs(html).updatedHTML : h
 // no view, so no DOM, no plugins and nothing the live editor could mistake for itself
 let scratchEditor = null
 
-const loadScratchEditor = (element) => {
-	scratchEditor ??= new HeadlessEditor({ element: null, editable: false, extensions, parseOptions })
+// the edit the last step made per element, good while its content is still what that step
+// wrote: the document skips the parse, the content the patch and the width the measure
+let lastEdits = new Map()
+
+const lastEdit = (element) => {
+	const last = lastEdits.get(element.id)
+	return last?.newContent === element.content ? last : null
+}
+
+const restoreDocument = (doc) => {
+	const { schema, plugins } = scratchEditor.state
+	scratchEditor.view.updateState(EditorState.create({ schema, plugins, doc }))
+}
+
+const parseContent = (element) => {
 	scratchEditor.commands.setContent(element.content, { emitUpdate: false, parseOptions })
 
 	// the same legacy seed initTextEditor applies, or the write bakes in the parsed default
 	const lineHeight = element.editorMetadata?.lineHeight
 	if (lineHeight != null) scratchEditor.commands.setGlobalLineHeight(lineHeight)
+}
+
+const loadScratchEditor = (element) => {
+	scratchEditor ??= new HeadlessEditor({ element: null, editable: false, extensions, parseOptions })
+
+	const last = lastEdit(element)
+	if (last) restoreDocument(last.doc)
+	else parseContent(element)
 
 	// setContent leaves the selection at the end; the builders and the panel read the start
 	scratchEditor.commands.setTextSelection(0)
@@ -407,37 +428,60 @@ export const useTextEditor = () => {
 	const selectedTextTargets = () =>
 		activeElements.value.filter((el) => !el.locked && ['text', 'table'].includes(el.type))
 
-	// three commands per element, so every batch of a burst has the shape coalescing folds
-	const buildContentCommands = (targets, runChain) => {
-		const slideId = currentSlide.value.clientId
+	// one element run through the chain, with what the step before already knows about it
+	const editContent = (element, runChain) => {
+		const last = lastEdit(element)
+		const editor = loadScratchEditor(element)
+		runChain(editor)
+		return {
+			element,
+			doc: editor.state.doc,
+			oldContent: last ? element.content : patchedHTML(element.content),
+			oldWidth: last?.newWidth,
+			newContent: patchedHTML(editor.getHTML()),
+			anchor: growthAnchor(editor),
+			left: element.left,
+		}
+	}
 
-		const edits = targets.map((element) => {
-			const editor = loadScratchEditor(element)
-			runChain(editor)
-			return {
-				element,
-				oldContent: patchedHTML(element.content),
-				newContent: patchedHTML(editor.getHTML()),
-				anchor: growthAnchor(editor),
-				left: element.left,
-			}
-		})
-
+	// centred and right-aligned auto-width boxes pay their growth out of left, as when typing
+	const shiftGrowingEdits = (edits) => {
 		const growing = edits.filter(({ element, anchor }) => canGrow(element, anchor))
-		const sizes = measureHTMLList(growing.flatMap((e) => [e.oldContent, e.newContent]))
-		growing.forEach((edit, i) => {
-			const delta = sizes[2 * i + 1].elementWidth - sizes[2 * i].elementWidth
+		const widths = measureHTMLList(
+			growing.flatMap((e) => (e.oldWidth == null ? [e.oldContent, e.newContent] : [e.newContent])),
+		).map((size) => size.elementWidth)
+
+		growing.forEach((edit) => {
+			edit.oldWidth ??= widths.shift()
+			edit.newWidth = widths.shift()
+			const delta = edit.newWidth - edit.oldWidth
 			edit.left -= edit.anchor === 'center' ? delta / 2 : delta
 		})
+	}
 
-		const command = (element, property, oldValue, newValue) =>
-			editElementCommand({ slideId, elementIds: [element.id], property, oldValue, newValue })
+	// three commands per element, so every batch of a burst has the shape coalescing folds
+	const editCommands = ({ element, oldContent, newContent, left }) => {
+		const command = (property, oldValue, newValue) =>
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property,
+				oldValue,
+				newValue,
+			})
 
-		return edits.flatMap(({ element, oldContent, newContent, left }) => [
-			command(element, 'content', oldContent, newContent),
-			command(element, 'left', element.left, left),
-			command(element, 'editorMetadata', element.editorMetadata, undefined),
-		])
+		return [
+			command('content', oldContent, newContent),
+			command('left', element.left, left),
+			command('editorMetadata', element.editorMetadata, undefined),
+		]
+	}
+
+	const buildContentCommands = (targets, runChain) => {
+		const edits = targets.map((element) => editContent(element, runChain))
+		shiftGrowingEdits(edits)
+		lastEdits = new Map(edits.map((edit) => [edit.element.id, edit]))
+		return edits.flatMap(editCommands)
 	}
 
 	const runSelectedBatch = (key, commands) => {
