@@ -513,8 +513,6 @@ export const useTextEditor = () => {
 				coalesceKey: `${key}:${slideId}:${elementIds.join()}`,
 			}),
 		)
-
-		showFirstEditableStyles()
 	}
 
 	const editSelectedText = (runChain) =>

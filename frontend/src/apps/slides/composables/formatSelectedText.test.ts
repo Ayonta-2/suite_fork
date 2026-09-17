@@ -69,10 +69,11 @@ afterEach(() => {
 })
 
 describe('a style written to every selected box', () => {
-	it('lands on both and shows in the panel', () => {
+	it('lands on both and shows in the panel', async () => {
 		select({ id: 'a', content: sized(20, 'one') }, { id: 'b', content: sized(30, 'two') })
 
 		formatSelectedText('fontSize', 40)
+		await nextTick()
 
 		expect(element('a').content).toContain('font-size: 40px')
 		expect(element('b').content).toContain('font-size: 40px')
@@ -219,15 +220,17 @@ describe('a mark toggled across boxes', () => {
 	it.each([
 		['the plain box first', plain, bold],
 		['the bold box first', bold, plain],
-	])('marks every box before it unmarks any, with %s', (_, first, second) => {
+	])('marks every box before it unmarks any, with %s', async (_, first, second) => {
 		select({ id: 'a', content: first }, { id: 'b', content: second })
 
 		toggleMark('bold')
+		await nextTick()
 		expect(element('a').content).toContain('<strong>')
 		expect(element('b').content).toContain('<strong>')
 		expect(editorStyles.bold).toBe(true)
 
 		toggleMark('bold')
+		await nextTick()
 		expect(element('a').content).not.toContain('<strong>')
 		expect(element('b').content).not.toContain('<strong>')
 		expect(editorStyles.bold).toBe(false)
