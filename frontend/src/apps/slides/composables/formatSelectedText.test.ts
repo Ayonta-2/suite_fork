@@ -21,6 +21,9 @@ const actionOrder = {
 
 let history: ReturnType<typeof useCommandHistory>
 
+const frames: Array<() => void> = []
+const nextFrame = () => frames.splice(0).forEach((frame) => frame())
+
 // jsdom lays nothing out, so a measuring div is as wide as its font size times its text
 const measuredWidth = function (this: HTMLElement) {
 	const fontSize = Number(this.innerHTML.match(/font-size: (\d+)px/)?.[1] ?? 10)
@@ -47,12 +50,15 @@ const select = (...elements: Record<string, any>[]) => {
 }
 
 beforeEach(() => {
+	vi.stubGlobal('requestAnimationFrame', (frame: () => void) => frames.push(frame))
 	vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(measuredWidth)
 	history = useCommandHistory(slides, { actionOrder, actions: {} })
 	setCommandHistory(history)
 })
 
 afterEach(() => {
+	nextFrame()
+	vi.unstubAllGlobals()
 	vi.restoreAllMocks()
 	activeEditor.value?.destroy()
 	activeEditor.value = null
@@ -76,6 +82,7 @@ describe('a style written to every selected box', () => {
 		select({ id: 'a', content: sized(20, 'one') }, { id: 'b', content: sized(30, 'two') })
 
 		formatSelectedText('fontSize', 40)
+		nextFrame()
 		formatSelectedText('fontSize', 50)
 		history.undo()
 
@@ -123,6 +130,7 @@ describe('the second step of a burst', () => {
 		const centred = sized(20, 'one', 'center')
 		select({ id: 'a', content: centred, left: 400 }, { id: 'b', content: centred, left: 400 })
 		formatSelectedText('fontSize', 40)
+		nextFrame()
 
 		const parse = vi.spyOn(DOMParser.prototype, 'parse')
 		const append = vi.spyOn(document.body, 'appendChild')
@@ -131,6 +139,23 @@ describe('the second step of a burst', () => {
 		expect(parse).not.toHaveBeenCalled()
 		expect(append).toHaveBeenCalledTimes(2)
 		expect(element('a').left).toBe(355)
+	})
+})
+
+describe('a burst inside one frame', () => {
+	it('writes the first value now and only the last at the frame', () => {
+		select({ id: 'a', content: sized(20, 'one') }, { id: 'b', content: sized(20, 'two') })
+		const execute = vi.spyOn(history, 'execute')
+
+		formatSelectedText('fontSize', 40)
+		formatSelectedText('fontSize', 50)
+		formatSelectedText('fontSize', 60)
+		expect(element('a').content).toContain('font-size: 40px')
+
+		nextFrame()
+		expect(element('a').content).toContain('font-size: 60px')
+		expect(element('b').content).toContain('font-size: 60px')
+		expect(execute).toHaveBeenCalledTimes(2)
 	})
 })
 
@@ -238,6 +263,7 @@ describe('a box that still carries a legacy line height', () => {
 		select(legacy, { id: 'b', content: '<p>two</p>' })
 
 		formatSelectedText('fontSize', 40)
+		nextFrame()
 		expect(() => formatSelectedText('fontSize', 50)).not.toThrow()
 		history.undo()
 
@@ -254,6 +280,7 @@ describe('content the live editor leans on plugins for', () => {
 		select({ id: 'a', content }, { id: 'b', content })
 
 		formatSelectedText('fontSize', 40)
+		nextFrame()
 		formatSelectedText('fontSize', 50)
 
 		const lines = element('a').content.match(/<p[^>]*>.*?<\/p>/g)
@@ -276,6 +303,7 @@ describe('content the live editor leans on plugins for', () => {
 		expect(element('a').content).toMatch(/^<ul>/)
 		expect(element('b').content).toMatch(/^<ul>/)
 
+		nextFrame()
 		formatSelectedText('list', 'none')
 		expect(element('a').content).toBe(line('one'))
 		expect(element('b').content).toBe(line('two'))

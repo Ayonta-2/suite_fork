@@ -18,6 +18,7 @@ import {
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
 import { getElementDiv } from '@/apps/slides/stores/elementRegistry'
 import { currentSlide } from '@/apps/slides/stores/slide'
+import { throttleToFrame } from '@/apps/slides/utils/helpers'
 
 export const activeEditor = ref(null)
 
@@ -505,7 +506,7 @@ export const useTextEditor = () => {
 		runSelectedBatch('content', buildContentCommands(selectedTextTargets(), runChain))
 
 	// opacity is a text-style mark on a text box and an element property on everything else
-	const setSelectedOpacity = (value) => {
+	const setSelectedOpacity = throttleToFrame((value) => {
 		const editable = activeElements.value.filter((el) => !el.locked)
 		const textBoxes = editable.filter((el) => el.type === 'text')
 		const others = editable.filter((el) => el.type !== 'text')
@@ -524,10 +525,11 @@ export const useTextEditor = () => {
 			...buildContentCommands(textBoxes, markOpacity),
 			...others.map(opacityCommand),
 		])
-	}
+	})
 
-	const formatSelectedText = (property, value) =>
-		editSelectedText((editor) => setPropertyOn(editor, property, value))
+	const formatSelectedText = throttleToFrame((property, value) =>
+		editSelectedText((editor) => setPropertyOn(editor, property, value)),
+	)
 
 	// tiptap's own rule, stretched across boxes: set unless every box is fully marked
 	const toggleSelectedMark = (property) => {
