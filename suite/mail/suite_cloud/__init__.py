@@ -17,6 +17,11 @@ from frappe.utils import cint
 from frappe.utils.caching import request_cache
 
 from suite.mail.utils import get_config, log_mail_error
+from suite.suite_core.utils import (
+    SUITE_CLOUD_CONFIG_KEYS,
+    get_suite_cloud_config,
+    is_suite_cloud_configured,
+)
 
 API_PREFIX = "/api/method/suite_cloud.api."
 DEFAULT_TIMEOUT = (5, 60)
@@ -118,7 +123,7 @@ class SuiteCloudClient:
         if exc is SuiteCloudCredentialsError:
             log_mail_error(f"Suite Cloud rejected the site credentials ({method})", response.text[:2000])
             frappe.throw(
-                _("Suite Cloud rejected this site's credentials; check Mail Settings."),
+                _("Suite Cloud rejected this site's credentials; check Suite Settings."),
                 SuiteCloudCredentialsError,
             )
         if exc is SuiteCloudAddressError:
@@ -172,22 +177,9 @@ def _error_payload(response: requests.Response) -> tuple[str | None, str | None]
     return exc_type, None
 
 
-def is_suite_cloud_configured(raise_exception: bool = False) -> bool:
-    """Whether the site knows where its Suite Cloud is and how to authenticate to it."""
-
-    url, key, secret = get_config(("suite_cloud_url", "site_api_key", "site_api_secret"))
-    if url and key and secret:
-        return True
-    if raise_exception:
-        frappe.throw(_("Suite Cloud is not configured. Please check your Mail Settings."))
-    return False
-
-
 @request_cache
 def get_client() -> SuiteCloudClient:
     is_suite_cloud_configured(raise_exception=True)
-    url, key, secret, verify_ssl = get_config(
-        ("suite_cloud_url", "site_api_key", "site_api_secret", "verify_ssl")
-    )
+    url, key, secret = get_suite_cloud_config(SUITE_CLOUD_CONFIG_KEYS)
     # The same Verify SSL as the JMAP URL: Suite Cloud and the cluster share a deployment.
-    return SuiteCloudClient(url, key, secret, verify_ssl=bool(cint(verify_ssl)))
+    return SuiteCloudClient(url, key, secret, verify_ssl=bool(cint(get_config("verify_ssl"))))

@@ -10,6 +10,11 @@
   "workspace_logo",
   "contact_section",
   "contact_email",
+  "suite_cloud_section",
+  "suite_cloud_url",
+  "column_break_suite_cloud",
+  "site_api_key",
+  "site_api_secret",
   "setup_section",
   "is_onboarded"
  ],
@@ -48,6 +53,36 @@
    "description": "Where connected services send notices about this workspace, such as planned downtime or quota warnings."
   },
   {
+   "fieldname": "suite_cloud_section",
+   "fieldtype": "Section Break",
+   "label": "Suite Cloud"
+  },
+  {
+   "fieldname": "suite_cloud_url",
+   "fieldtype": "Data",
+   "label": "Suite Cloud URL",
+   "options": "URL",
+   "description": "Suite Cloud that manages this site's mail domains, accounts, groups and lists, e.g. https://cloud.frappemail.com. Frappe Cloud writes it into the site config; set it here to override."
+  },
+  {
+   "fieldname": "column_break_suite_cloud",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "site_api_key",
+   "fieldtype": "Data",
+   "label": "Site API Key",
+   "mandatory_depends_on": "eval: doc.site_api_secret",
+   "description": "This site's key at Suite Cloud, issued when Frappe Cloud registered the site."
+  },
+  {
+   "fieldname": "site_api_secret",
+   "fieldtype": "Password",
+   "label": "Site API Secret",
+   "mandatory_depends_on": "eval: doc.site_api_key",
+   "description": "This site's secret at Suite Cloud, shown once by Frappe Cloud. Rotate it from Frappe Cloud if it leaks."
+  },
+  {
    "fieldname": "setup_section",
    "fieldtype": "Section Break",
    "label": "Setup"
@@ -63,7 +98,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-09 11:30:00.000000",
+ "modified": "2026-09-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Suite Core",
  "name": "Suite Settings",

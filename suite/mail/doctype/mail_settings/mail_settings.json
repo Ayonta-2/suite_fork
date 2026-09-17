@@ -7,14 +7,13 @@
   "config_tab",
   "jmap_section",
   "server_url",
-  "verify_ssl",
   "column_break_xvlo",
-  "suite_cloud_url",
-  "site_api_key",
-  "site_api_secret",
+  "verify_ssl",
   "mail_client_config_section",
   "show_mail_client_config",
+  "column_break_mccs",
   "show_calendar_client_config",
+  "mail_client_configurations_section",
   "mail_client_configurations",
   "spamassassin_section",
   "spamd_host",
@@ -83,12 +82,16 @@
    "label": "Mail Server"
   },
   {
-   "description": "Mail cluster users connect to, e.g. https://mail.blr.frappemail.com. Frappe Cloud writes it into the site config; set it here to override.",
+   "description": "Mail cluster users connect to, e.g. https://mail.c1.frappemail.com. Frappe Cloud writes it into the site config; set it here to override.",
    "fieldname": "server_url",
    "fieldtype": "Data",
    "label": "JMAP URL",
    "options": "URL",
-   "placeholder": "https://mail.frappemail.com"
+   "placeholder": "https://mail.c1.frappemail.com"
+  },
+  {
+   "fieldname": "column_break_xvlo",
+   "fieldtype": "Column Break"
   },
   {
    "default": "1",
@@ -98,35 +101,9 @@
    "label": "Verify SSL"
   },
   {
-   "fieldname": "column_break_xvlo",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Suite Cloud that manages this site's domains, accounts, groups and lists, e.g. https://cloud.frappemail.com. Frappe Cloud writes it into the site config; set it here to override.",
-   "fieldname": "suite_cloud_url",
-   "fieldtype": "Data",
-   "label": "Suite Cloud URL",
-   "options": "URL"
-  },
-  {
-   "description": "This site's key at Suite Cloud, issued when Frappe Cloud registered the site.",
-   "fieldname": "site_api_key",
-   "fieldtype": "Data",
-   "label": "Site API Key",
-   "mandatory_depends_on": "eval: doc.site_api_secret"
-  },
-  {
-   "description": "This site's secret at Suite Cloud, shown once by Frappe Cloud. Rotate it from Frappe Cloud if it leaks.",
-   "fieldname": "site_api_secret",
-   "fieldtype": "Password",
-   "label": "Site API Secret",
-   "mandatory_depends_on": "eval: doc.site_api_key"
-  },
-  {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
    "fieldname": "mail_client_config_section",
    "fieldtype": "Section Break",
+   "hide_border": 1,
    "label": "Mail Client Configuration"
   },
   {
@@ -137,11 +114,20 @@
    "label": "Show Connection Details in Mail UI"
   },
   {
+   "fieldname": "column_break_mccs",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "1",
    "description": "Show CalDAV connection details in the Calendar UI so users can set up third-party calendar clients.",
    "fieldname": "show_calendar_client_config",
    "fieldtype": "Check",
    "label": "Show Connection Details in Calendar UI"
+  },
+  {
+   "depends_on": "eval: doc.show_mail_client_config",
+   "fieldname": "mail_client_configurations_section",
+   "fieldtype": "Section Break"
   },
   {
    "depends_on": "eval: doc.show_mail_client_config",
@@ -508,7 +494,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-08 12:00:00.000000",
+ "modified": "2026-09-17 13:30:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",

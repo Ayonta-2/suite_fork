@@ -50,11 +50,17 @@ tenant of a cluster:
   Cloud's site API. Suite Cloud checks that the site owns what it is touching and pushes the change
   to the cluster. The site never holds cluster admin credentials.
 
-Mail Settings therefore carries five connection values, which Frappe Cloud writes into
-`site_config.json` under a `mail` key when it registers the site (Mail Settings overrides them on a
-self-managed site): `server_url` (the JMAP URL users connect to), `verify_ssl`, `suite_cloud_url`,
-`site_api_key` and `site_api_secret`. **Validate Suite Cloud Credentials** on Mail Settings confirms
-them. The client lives in `suite/mail/suite_cloud/`, the facade the rest of Mail uses in
+A site therefore carries five connection values, which Frappe Cloud writes into `site_config.json`
+when it registers the site (the settings override them on a self-managed site):
+
+- Mail Settings, or the `mail` key of the site config: `server_url` (the JMAP URL users connect to)
+  and `verify_ssl`.
+- Suite Settings, or top-level keys of the same name in the site config: `suite_cloud_url`,
+  `site_api_key` and `site_api_secret`. They are read through `get_suite_cloud_config` in
+  `suite/suite_core/utils.py`, and **Validate Suite Cloud Credentials** on Suite Settings confirms
+  them.
+
+The client lives in `suite/mail/suite_cloud/`, the facade the rest of Mail uses in
 `suite/mail/directory.py`, and the Admin Dashboard's endpoints in `suite/mail/api/admin.py`.
 
 Sites that deployed servers through Suite before this split keep their data: update Suite, run

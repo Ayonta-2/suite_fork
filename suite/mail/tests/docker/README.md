@@ -14,18 +14,21 @@ The backend tests in `suite/mail/tests/` and `suite/calendar/tests/` come in two
 
 The simplest setup is one bench with both apps on the same site: install `suite_cloud`, register a
 cluster and bootstrap a node as its README describes, create a Suite Site for this site (the desk
-form or `suite_cloud.api.fc.create_site`), and point Mail Settings, or the `mail` site config, at
-it:
+form or `suite_cloud.api.fc.create_site`), and point Mail Settings and Suite Settings, or the site
+config, at it:
 
 ```sh
 bench --site <site> set-config allow_tests true
 bench --site <site> set-config mute_emails 1  # unless the site has an outgoing Email Account
-bench --site <site> set-config mail "{'server_url': 'https://mail.blr.frappemail.com', 'suite_cloud_url': 'http://<site>:8000', 'site_api_key': '<key>', 'site_api_secret': '<secret>', 'verify_ssl': 1}" --parse
+bench --site <site> set-config mail "{'server_url': 'https://mail.c1.frappemail.com', 'verify_ssl': 1}" --parse
+bench --site <site> set-config suite_cloud_url 'http://<site>:8000'
+bench --site <site> set-config site_api_key '<key>'
+bench --site <site> set-config site_api_secret '<secret>'
 bench --site <site> clear-cache
 ```
 
-Mail Settings takes priority over `site_config.json`, so leave its Mail Server fields empty on a
-test site. Test data uses unique per-run names, so repeated runs against the same cluster are fine;
+Mail Settings and Suite Settings take priority over `site_config.json`, so leave their Mail Server
+and Suite Cloud fields empty on a test site. Test data uses unique per-run names, so repeated runs against the same cluster are fine;
 cleanup is best-effort.
 
 ## A standalone Stalwart container

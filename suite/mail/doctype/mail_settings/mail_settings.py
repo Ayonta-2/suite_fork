@@ -8,9 +8,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from suite.mail import suite_cloud
 from suite.mail.directory import get_active_domain_names
-from suite.mail.utils import get_config, is_stalwart_configured
+from suite.mail.utils import is_stalwart_configured
 
 
 class MailSettings(Document):
@@ -59,13 +58,10 @@ class MailSettings(Document):
         show_calendar_client_config: DF.Check
         show_mail_client_config: DF.Check
         signup_domains: DF.SmallText | None
-        site_api_key: DF.Data | None
-        site_api_secret: DF.Password | None
         spamd_host: DF.Data | None
         spamd_hybrid_scanning_threshold: DF.Float
         spamd_port: DF.Int
         spamd_scanning_mode: DF.Literal["Exclude Attachments", "Include Attachments", "Hybrid Approach"]
-        suite_cloud_url: DF.Data | None
         verify_ssl: DF.Check
     # end: auto-generated types
 
@@ -73,18 +69,6 @@ class MailSettings(Document):
         if not frappe.flags.in_migrate:
             self.validate_jmap_push_subscription_keys()
             self.validate_signup()
-            self.warn_about_plain_http()
-
-    def warn_about_plain_http(self) -> None:
-        """The site key travels with every request; over http it is readable on the way."""
-
-        url = (self.suite_cloud_url or "").strip().lower()
-        if url and not url.startswith("https://") and not frappe.conf.developer_mode:
-            frappe.msgprint(
-                _("Suite Cloud URL is not https: the site's API key would travel in the clear."),
-                indicator="orange",
-                alert=True,
-            )
 
     def on_update(self) -> None:
         self.clear_cache()
@@ -184,32 +168,6 @@ class MailSettings(Document):
             raise
         except Exception as e:
             frappe.throw(_("Invalid JMAP Push Subscription keys: {0}").format(str(e)))
-
-    @frappe.whitelist()
-    def validate_suite_cloud_credentials(self) -> dict:
-        """Pings Suite Cloud with the configured URL, key and secret and reports what it answered.
-
-        Reads the effective configuration, so credentials written to the site config by Frappe
-        Cloud are checked too; unsaved edits on the form are not.
-        """
-
-        frappe.only_for("System Manager")
-        suite_cloud.is_suite_cloud_configured(raise_exception=True)
-        site = suite_cloud.get_client().call("site.ping")
-
-        message = _("Connected to Suite Cloud as site {0} on cluster {1}.").format(
-            frappe.bold(site.get("site")), frappe.bold(site.get("cluster") or site.get("jmap_url"))
-        )
-        indicator = "green"
-        jmap_url = (site.get("jmap_url") or "").rstrip("/")
-        server_url = (get_config("server_url") or "").rstrip("/")
-        if jmap_url and jmap_url != server_url:
-            message += "<br>" + _("Suite Cloud expects the JMAP URL {0}, but this site uses {1}.").format(
-                frappe.bold(jmap_url), frappe.bold(server_url or _("none"))
-            )
-            indicator = "orange"
-        frappe.msgprint(message, title=_("Suite Cloud"), indicator=indicator)
-        return site
 
     @frappe.whitelist()
     def generate_jmap_push_keys(self) -> None:

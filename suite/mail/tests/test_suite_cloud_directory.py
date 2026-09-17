@@ -4,6 +4,7 @@
 import csv
 import io
 import json
+from contextlib import ExitStack
 from unittest.mock import patch
 
 import frappe
@@ -24,18 +25,22 @@ def run_queued_job_now(method, **kwargs):
 
 
 class SuiteCloudTestCase(IntegrationTestCase):
-    """Mail Settings point at a Suite Cloud, and every call lands on an in-memory fake."""
+    """The settings point at a Suite Cloud, and every call lands on an in-memory fake."""
 
     def setUp(self) -> None:
         super().setUp()
-        self._settings = self.change_settings(
-            "Mail Settings",
-            server_url="https://mail.blr.example.test",
-            suite_cloud_url="https://cloud.example.test",
-            site_api_key="key",
-            site_api_secret="secret",
+        self._settings = ExitStack()
+        self._settings.enter_context(
+            self.change_settings("Mail Settings", server_url="https://mail.c1.example.test")
         )
-        self._settings.__enter__()
+        self._settings.enter_context(
+            self.change_settings(
+                "Suite Settings",
+                suite_cloud_url="https://cloud.example.test",
+                site_api_key="key",
+                site_api_secret="secret",
+            )
+        )
         frappe.local.request_cache.clear()
         self._fake_context = fake_suite_cloud()
         self.fake: FakeSuiteCloud = self._fake_context.__enter__()
@@ -49,7 +54,7 @@ class SuiteCloudTestCase(IntegrationTestCase):
 
     def tearDown(self) -> None:
         self._fake_context.__exit__(None, None, None)
-        self._settings.__exit__(None, None, None)
+        self._settings.close()
         frappe.local.request_cache.clear()
         super().tearDown()
 
@@ -57,12 +62,12 @@ class SuiteCloudTestCase(IntegrationTestCase):
 class TestClient(IntegrationTestCase):
     def test_configuration_needs_all_three_values(self) -> None:
         with self.change_settings(
-            "Mail Settings", suite_cloud_url="https://cloud.test", site_api_key="k", site_api_secret=""
+            "Suite Settings", suite_cloud_url="https://cloud.test", site_api_key="k", site_api_secret=""
         ):
             frappe.local.request_cache.clear()
             self.assertFalse(is_suite_cloud_configured())
         with self.change_settings(
-            "Mail Settings", suite_cloud_url="https://cloud.test", site_api_key="k", site_api_secret="s"
+            "Suite Settings", suite_cloud_url="https://cloud.test", site_api_key="k", site_api_secret="s"
         ):
             frappe.local.request_cache.clear()
             self.assertTrue(is_suite_cloud_configured())
@@ -107,14 +112,20 @@ class TestClient(IntegrationTestCase):
         self.assertEqual(client.session.headers["Authorization"], "token k:s")
 
 
-class TestMailSettings(SuiteCloudTestCase):
+class TestSuiteSettings(SuiteCloudTestCase):
     def test_validate_credentials_pings_and_flags_jmap_url_mismatch(self) -> None:
-        settings = frappe.get_doc("Mail Settings")
+        settings = frappe.get_doc("Suite Settings")
         site = settings.validate_suite_cloud_credentials()
         self.assertEqual(site["site"], "acme.frappe.test")
         self.assertEqual(self.fake.calls[-1][0], "site.ping")
-        # The fake's cluster answers https://mail.test while the settings point elsewhere.
-        self.assertIn("expects the JMAP URL", frappe.get_message_log()[-1]["message"])
+        self.assertNotIn("expects the JMAP URL", frappe.get_message_log()[-1]["message"])
+
+        # The site is registered on c1; a JMAP URL of another cluster is worth a warning.
+        with self.change_settings("Mail Settings", server_url="https://mail.c2.example.test"):
+            frappe.local.request_cache.clear()
+            settings.validate_suite_cloud_credentials()
+            self.assertIn("expects the JMAP URL", frappe.get_message_log()[-1]["message"])
+        frappe.local.request_cache.clear()
 
     def test_workspace_name_and_contact_reach_suite_cloud(self) -> None:
         with self.change_settings(
@@ -134,12 +145,12 @@ class TestMailSettings(SuiteCloudTestCase):
         self.assertEqual([c for c in self.fake.calls[calls:] if c[0] == "site.update_site_profile"], [])
 
     def test_validate_credentials_needs_configuration(self) -> None:
-        with self.change_settings("Mail Settings", site_api_secret=""):
+        with self.change_settings("Suite Settings", site_api_secret=""):
             frappe.local.request_cache.clear()
             self.assertRaisesRegex(
                 frappe.ValidationError,
                 "not configured",
-                frappe.get_doc("Mail Settings").validate_suite_cloud_credentials,
+                frappe.get_doc("Suite Settings").validate_suite_cloud_credentials,
             )
         frappe.local.request_cache.clear()
 
@@ -174,11 +185,11 @@ class TestDomains(SuiteCloudTestCase):
         self.assertEqual((spf["priority"], spf["weight"], spf["port"]), (None, None, None))
         self.assertEqual(
             (srv["host"], srv["value"], srv["priority"], srv["weight"], srv["port"]),
-            ("_imaps._tcp", "mail.blr.example.test.", 0, 1, 993),
+            ("_imaps._tcp", "mail.c1.example.test.", 0, 1, 993),
         )
 
         self.assertIn(
-            f"_imaps._tcp.{DOMAIN}.\t300\tIN\tSRV\t0 1 993 mail.blr.example.test.",
+            f"_imaps._tcp.{DOMAIN}.\t300\tIN\tSRV\t0 1 993 mail.c1.example.test.",
             admin.get_domain_dns_zone(DOMAIN),
         )
         rows = list(csv.DictReader(io.StringIO(admin.get_domain_dns_csv(DOMAIN))))
@@ -532,7 +543,7 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual(
             (overview["domains"], overview["groups"], overview["limits"]["max_domains"]), (1, 1, 10)
         )
-        self.assertEqual(overview["site"]["cluster"], "mail.blr.example.test")
+        self.assertEqual(overview["site"]["cluster"], "mail.c1.example.test")
         self.assertEqual(overview["storage"]["max_gb"], 100)
         self.assertEqual(overview["domains_needing_attention"], [])
         self.assertEqual(overview["invites"], {"pending": 0, "expiring_soon": 0, "expired": 0})

@@ -7,15 +7,13 @@ from frappe import _
 from frappe.utils import get_bench_path
 from frappe.utils.caching import request_cache
 
+from suite.suite_core.utils import is_suite_cloud_configured
 from suite.utils import log_error
 
 CONFIG_KEYS = [
-    # Mail server: the JMAP URL end users connect to, and the Suite Cloud that manages the directory
+    # Mail server: the JMAP URL end users connect to
     "server_url",
     "verify_ssl",
-    "suite_cloud_url",
-    "site_api_key",
-    "site_api_secret",
     # SpamAssassin
     "spamd_host",
     "spamd_port",
@@ -60,10 +58,7 @@ def get_config(key: str | tuple[str, ...] | None = None) -> dict[str, Any] | tup
 
     config = {}
     for field in CONFIG_KEYS:
-        if field == "site_api_secret":
-            config[field] = password_or_none(settings, field) or mail_conf.get(field)
-        else:
-            config[field] = settings.get(field) or mail_conf.get(field)
+        config[field] = settings.get(field) or mail_conf.get(field)
 
     if key:
         if isinstance(key, str):
@@ -81,21 +76,17 @@ def get_config(key: str | tuple[str, ...] | None = None) -> dict[str, Any] | tup
 def is_stalwart_configured(raise_exception: bool = False) -> bool:
     """Whether the site has a mail server: a JMAP URL for users and a Suite Cloud for the directory.
 
-    Frappe Cloud writes all three into the site config when it registers the site; Mail Settings
-    can override them on a self-managed site.
+    Frappe Cloud writes both into the site config when it registers the site; Mail Settings (the
+    JMAP URL) and Suite Settings (Suite Cloud) can override them on a self-managed site.
     """
 
-    config = get_config()
-    if (
-        config.get("server_url")
-        and config.get("suite_cloud_url")
-        and config.get("site_api_key")
-        and config.get("site_api_secret")
-    ):
+    if get_config("server_url") and is_suite_cloud_configured():
         return True
 
     if raise_exception:
-        frappe.throw(_("The mail server is not configured. Please check your Mail Settings."))
+        frappe.throw(
+            _("The mail server is not configured. Please check your Mail Settings and Suite Settings.")
+        )
 
     return False
 
@@ -129,12 +120,6 @@ def flatten_dict(d, parent_key="", sep=".") -> dict:
         else:
             items[new_key] = v
     return items
-
-
-def password_or_none(doc, field: str) -> str | None:
-    """Returns the password if the field is set, otherwise returns None."""
-
-    return doc.get_password(field) if doc.get(field) else None
 
 
 def generate_uuid_style_hash(input_str: str) -> str:

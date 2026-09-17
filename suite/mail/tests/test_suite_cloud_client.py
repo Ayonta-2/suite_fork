@@ -69,7 +69,7 @@ class TestSuiteCloudClient(UnitTestCase):
 
     def test_bad_credentials_keep_the_settings_hint(self) -> None:
         for response in (_frappe_error(401, "SiteAuthError", "Site authentication failed."), _response(403)):
-            with self.assertRaisesRegex(SuiteCloudCredentialsError, "check Mail Settings"):
+            with self.assertRaisesRegex(SuiteCloudCredentialsError, "check Suite Settings"):
                 self._call(response)
 
     def test_address_refusals_point_at_the_allowed_list(self) -> None:
