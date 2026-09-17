@@ -65,19 +65,19 @@ def get_calendars(account: str) -> list[dict[str, str]]:
     ]
 
 
-def _shared_accounts() -> list[str]:
-    """The user's accounts that only share calendars with them.
+def _shared_calendars() -> list[str]:
+    """The calendars shared with the user read-only, as `account|id`, from any of their accounts.
 
     A calendar shared with the user lives in its owner's account, not the user's, so the
     calendar would only show it after switching to an account nobody thinks of as theirs.
-    JMAP marks no account as "shared with me", so it is read off the rights: an account with
-    calendars, none of which the user can write to. An account the user works in, like a
-    team's, has calendars they can write to and stays behind the account switcher.
+    JMAP marks nothing as "shared with me", so it is read off the rights: a calendar the user
+    can't write to. One they can write to is in an account they work in, like a team's, and is
+    reached through the account switcher (see get_account_apps).
 
     Asking means listing every account's calendars, so the answer is kept for a few minutes.
     """
 
-    cache_key = f"calendar|shared_accounts|{frappe.session.user}"
+    cache_key = f"calendar|shared_calendars|{frappe.session.user}"
     if (cached := frappe.cache.get_value(cache_key)) is not None:
         return cached
 
@@ -87,28 +87,28 @@ def _shared_accounts() -> list[str]:
             calendars = fetch_calendars(account, limit=MAX_CALENDARS)
         except NotImplementedError:
             continue
-        if calendars and not any(calendar["may_write_all"] for calendar in calendars):
-            shared.append(account)
+        shared.extend(calendar["name"] for calendar in calendars if not calendar["may_write_all"])
 
     frappe.cache.set_value(cache_key, shared, expires_in_sec=300)
     return shared
 
 
-def _with_shared(account: str, fetch) -> list:
-    """`fetch` for the account, then for each account sharing calendars with the user."""
+def _with_shared(account: str, fetch, calendars_of) -> list:
+    """`fetch` for the account, then the rows of other accounts that are on a calendar shared with
+    the user. `calendars_of(row)` names the calendars a row is on."""
 
     rows = list(fetch(account))
-    for shared in _shared_accounts():
-        if shared != account:
-            rows.extend(fetch(shared))
+    shared = {name for name in _shared_calendars() if not name.startswith(f"{account}|")}
+    for other in dict.fromkeys(name.split("|")[0] for name in shared):
+        rows.extend(row for row in fetch(other) if shared & set(calendars_of(row)))
     return rows
 
 
 @frappe.whitelist()
 def get_calendars_with_shared(account: str) -> list[dict]:
-    """The account's calendars, and the calendars shared with the user from elsewhere."""
+    """The account's calendars, and the calendars shared with the user read-only from elsewhere."""
 
-    return _with_shared(account, get_calendars)
+    return _with_shared(account, get_calendars, lambda calendar: [calendar["name"]])
 
 
 @frappe.whitelist()
@@ -256,7 +256,11 @@ def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: s
 def get_calendar_events_with_shared(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
     """`get_calendar_events` for the account and the calendars shared with the user."""
 
-    return _with_shared(account, lambda each: get_calendar_events(each, from_date, to_date, time_zone))
+    return _with_shared(
+        account,
+        lambda each: get_calendar_events(each, from_date, to_date, time_zone),
+        lambda event: [calendar["calendar"] for calendar in event.get("calendars") or []],
+    )
 
 
 @frappe.whitelist()
@@ -303,7 +307,11 @@ def get_calendar_event_density_with_shared(
 ) -> list[dict]:
     """`get_calendar_event_density` for the account and the calendars shared with the user."""
 
-    return _with_shared(account, lambda each: get_calendar_event_density(each, from_date, to_date, time_zone))
+    return _with_shared(
+        account,
+        lambda each: get_calendar_event_density(each, from_date, to_date, time_zone),
+        lambda row: row["calendars"],
+    )
 
 
 def _declined_by_viewer(event: dict, own_emails: set[str]) -> bool:

@@ -400,7 +400,7 @@ def _sync_user_accounts(user: str, account_ids: set[str]) -> None:
     if accounts_to_add or accounts_to_remove:
         # What each app lists is worked out from the accounts; a new or lost one changes it.
         frappe.cache.delete_value(account_apps_cache_key(user))
-        frappe.cache.delete_value(f"calendar|shared_accounts|{user}")
+        frappe.cache.delete_value(f"calendar|shared_calendars|{user}")
 
 
 def maybe_create_archive_mailbox(account: str) -> None:
