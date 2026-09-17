@@ -44,6 +44,12 @@ def get_calendars(account: str) -> list[dict[str, str]]:
     """
 
     ensure_default_alerts(account)
+    return _calendar_rows(account)
+
+
+def _calendar_rows(account: str) -> list[dict]:
+    """The account's calendars, in the shape the app reads, without seeding their reminders."""
+
     calendars = fetch_calendars(account, limit=MAX_CALENDARS)
 
     return [
@@ -99,14 +105,20 @@ def _shared_calendars() -> list[str]:
     return shared
 
 
-def _with_shared(account: str, fetch, calendars_of) -> list:
-    """`fetch` for the account, then the rows of other accounts that are on a calendar shared with
-    the user. `calendars_of(row)` names the calendars a row is on."""
+def _with_shared(account: str, fetch) -> list:
+    """`fetch(account, None)` for the account, then `fetch(other, calendar_ids)` for each other
+    account with calendars shared with the user — asked for those calendars alone, so an account
+    that also holds calendars the user can write to isn't read in full to throw most of it away."""
 
-    rows = list(fetch(account))
-    shared = {name for name in _shared_calendars() if not name.startswith(f"{account}|")}
-    for other in dict.fromkeys(name.split("|")[0] for name in shared):
-        rows.extend(row for row in fetch(other) if shared & set(calendars_of(row)))
+    shared: dict[str, list[str]] = {}
+    for name in _shared_calendars():
+        other, calendar_id = name.split("|")
+        if other != account:
+            shared.setdefault(other, []).append(calendar_id)
+
+    rows = list(fetch(account, None))
+    for other, calendar_ids in shared.items():
+        rows.extend(fetch(other, calendar_ids))
     return rows
 
 
@@ -114,7 +126,15 @@ def _with_shared(account: str, fetch, calendars_of) -> list:
 def get_calendars_with_shared(account: str) -> list[dict]:
     """The account's calendars, and the calendars shared with the user read-only from elsewhere."""
 
-    return _with_shared(account, get_calendars, lambda calendar: [calendar["name"]])
+    # Reminders are seeded on the account's own calendars only: a shared one isn't the user's to
+    # change, and its account's seeded mark is shared by everyone who can see it.
+    ensure_default_alerts(account)
+    return _with_shared(
+        account,
+        lambda each, calendar_ids: [
+            row for row in _calendar_rows(each) if calendar_ids is None or row["id"] in calendar_ids
+        ],
+    )
 
 
 @frappe.whitelist()
@@ -206,11 +226,22 @@ EVENT_PAGE_SIZE = 999
 MAX_EVENTS_IN_WINDOW = 5000
 
 
-def _events_in_window(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
-    """Every event in the window, page by page rather than the first page alone."""
+def _events_in_window(
+    account: str, from_date: str, to_date: str, time_zone: str, calendar_ids: list[str] | None = None
+) -> list[dict]:
+    """Every event in the window, page by page rather than the first page alone; only those on
+    `calendar_ids` when given."""
 
     # The API listens UTC: a naive range value is read as UTC, not system time.
     query = {"after": normalize_utc_z(from_date), "before": normalize_utc_z(to_date)}
+    if calendar_ids:
+        query = {
+            "operator": "AND",
+            "conditions": [
+                query,
+                {"operator": "OR", "conditions": [{"inCalendar": id} for id in calendar_ids]},
+            ],
+        }
     events: list[dict] = []
     position = 0
     total = 0
@@ -249,7 +280,13 @@ def _events_in_window(account: str, from_date: str, to_date: str, time_zone: str
 def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
     """Fetches calendar events between from_date and to_date for the specified account."""
 
-    events = _events_in_window(account, from_date, to_date, time_zone)
+    return _calendar_events(account, from_date, to_date, time_zone)
+
+
+def _calendar_events(
+    account: str, from_date: str, to_date: str, time_zone: str, calendar_ids: list[str] | None = None
+) -> list[dict]:
+    events = _events_in_window(account, from_date, to_date, time_zone, calendar_ids)
 
     enrich_events_with_master_data(account, events)
     events = merge_own_copies(account, events)
@@ -264,8 +301,7 @@ def get_calendar_events_with_shared(account: str, from_date: str, to_date: str, 
 
     return _with_shared(
         account,
-        lambda each: get_calendar_events(each, from_date, to_date, time_zone),
-        lambda event: [calendar["calendar"] for calendar in event.get("calendars") or []],
+        lambda each, calendar_ids: _calendar_events(each, from_date, to_date, time_zone, calendar_ids),
     )
 
 
@@ -286,11 +322,25 @@ def get_calendar_event_density(account: str, from_date: str, to_date: str, time_
     the same code it places real events with.
     """
 
-    events = _events_in_window(account, from_date, to_date, time_zone)
+    return _event_density(account, from_date, to_date, time_zone, _own_emails(account))
 
-    # A decline gives the time back, so a declined event is not density. Matching the
-    # viewer's own addresses is what tells a decline of theirs from anyone else's.
-    own_emails = {(identity.get("email") or "").lower() for identity in get_participant_identities(account)}
+
+def _own_emails(account: str) -> set[str]:
+    """The account's own addresses — what tells a decline of the viewer's from anyone else's."""
+
+    return {(identity.get("email") or "").lower() for identity in get_participant_identities(account)}
+
+
+def _event_density(
+    account: str,
+    from_date: str,
+    to_date: str,
+    time_zone: str,
+    own_emails: set[str],
+    calendar_ids: list[str] | None = None,
+) -> list[dict]:
+    # A decline gives the time back, so a declined event is not density.
+    events = _events_in_window(account, from_date, to_date, time_zone, calendar_ids)
 
     return [
         {
@@ -313,10 +363,13 @@ def get_calendar_event_density_with_shared(
 ) -> list[dict]:
     """`get_calendar_event_density` for the account and the calendars shared with the user."""
 
+    # Declines are the viewer's, so their own addresses are read once, from their account.
+    own_emails = _own_emails(account)
     return _with_shared(
         account,
-        lambda each: get_calendar_event_density(each, from_date, to_date, time_zone),
-        lambda row: row["calendars"],
+        lambda each, calendar_ids: _event_density(
+            each, from_date, to_date, time_zone, own_emails, calendar_ids
+        ),
     )
 
 

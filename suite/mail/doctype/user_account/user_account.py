@@ -210,10 +210,13 @@ def get_account_apps(user: str | None = None) -> dict[str, dict[str, bool]]:
                     ),
                 }
     except Exception:
-        # Better every account listed than one hidden for a failed request; not kept, so the
-        # next load asks again. log_error keeps the traceback.
+        # Better every account listed than one hidden for a failed request. log_error keeps the
+        # traceback. Kept only briefly: long enough that a mail server that is down doesn't hold
+        # up every page load and fill the error log, short enough to be asked again soon.
         frappe.log_error(title="Account apps check failed")
-        return {account: {"mail": True, "calendar": True} for account in accounts}
+        apps = {account: {"mail": True, "calendar": True} for account in accounts}
+        frappe.cache.set_value(cache_key, apps, expires_in_sec=60)
+        return apps
 
     frappe.cache.set_value(cache_key, apps, expires_in_sec=ACCOUNT_APPS_CACHE_SECONDS)
     return apps
