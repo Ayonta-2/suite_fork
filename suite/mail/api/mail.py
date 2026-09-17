@@ -52,7 +52,9 @@ from suite.mail.doctype.sieve_script.sieve_script import (
     pause_automation_sieve_build,
 )
 from suite.mail.doctype.user_account.user_account import (
+    get_account_apps,
     get_user_for_jmap_account,
+    get_user_personal_jmap_account,
     is_jmap_account_belongs_to_user,
 )
 from suite.mail.jmap import (
@@ -410,16 +412,19 @@ def get_user_jmap_accounts() -> list[dict]:
     two accounts have threads at the same timestamp.
     """
 
-    account_names = frappe.db.get_all("User Account", {"user": frappe.session.user}, pluck="account")
+    # Only the accounts with mail for the user: one that shares just a calendar has no inbox.
+    apps = get_account_apps()
+    account_names = [account for account, has in apps.items() if has["mail"]]
     if not account_names:
         return []
 
     accounts = frappe.db.get_all(
         "JMAP Account",
         filters={"name": ["in", account_names]},
-        fields=["name", "_name", "is_personal"],
+        fields=["name", "_name"],
     )
-    accounts.sort(key=lambda a: (not a["is_personal"], a["_name"] or ""))
+    personal = get_user_personal_jmap_account()
+    accounts.sort(key=lambda a: (a["name"] != personal, a["_name"] or ""))
     return accounts
 
 

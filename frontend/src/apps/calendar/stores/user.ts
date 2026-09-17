@@ -44,6 +44,17 @@ export const userStore = defineStore('calendar-user', () => {
 
 	const userResource = createResource({
 		url: 'suite.mail.api.account.get_user_info',
+		// Only the accounts with a calendar the user can write to: one that only shares calendars
+		// with them is under Shared Calendars, not an account to switch to. All of them stay in
+		// `all_accounts`, to name where a shared calendar is from. In place, so onSuccess — handed
+		// the response rather than this — reads the same list.
+		transform: (data) => {
+			if (data?.accounts) {
+				data.all_accounts = data.accounts
+				data.accounts = data.accounts.filter((account) => account.in_calendar)
+			}
+			return data
+		},
 		onSuccess: (data) => resolveAccount(data?.accounts),
 		onError: (error) => {
 			if (error && error.exc_type === 'AuthenticationError')
@@ -86,7 +97,7 @@ export const userStore = defineStore('calendar-user', () => {
 	// The calendars as select options, keyed by `account|id`, each in the colour it is drawn in.
 	// A calendar shared from another account names that account beneath.
 	const calendarOptions = computed(() => {
-		const accounts: UserAccount[] = userResource.data?.accounts ?? []
+		const accounts: UserAccount[] = userResource.data?.all_accounts ?? []
 		return (calendars.data ?? []).map((cal) => ({
 			label: cal._name,
 			description:

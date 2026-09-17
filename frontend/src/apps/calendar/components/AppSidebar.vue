@@ -77,7 +77,7 @@ const setSectionCollapsed = (key: string, collapsed: boolean) =>
 const ownerName = (calendar: CalendarRow) =>
 	calendar.account === store.accountId
 		? ''
-		: (user.data.accounts.find((a) => a.id === calendar.account)?._name ?? '')
+		: (user.data.all_accounts.find((a) => a.id === calendar.account)?._name ?? '')
 
 // A JMAP calendar is often named after its account — "Frappe Calendar
 // (akash@frappe.io)" — which never fits a sidebar row. The email moves to a
