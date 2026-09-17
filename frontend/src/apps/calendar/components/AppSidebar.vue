@@ -239,7 +239,10 @@ const menuItems = computed(() => [
 							</span>
 						</Tooltip>
 						<template #suffix>
-							<Dropdown :options="calendarActions.menuOptions(calendar)">
+							<Dropdown
+								v-if="calendarActions.hasMenuOptions(calendar)"
+								:options="calendarActions.menuOptions(calendar)"
+							>
 								<Button
 									variant="ghost"
 									class="!bg-transparent"

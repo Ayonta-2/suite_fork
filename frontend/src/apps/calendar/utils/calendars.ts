@@ -6,6 +6,12 @@ export type CalendarRow = {
 	_name: string
 	color?: string | null
 	default: 0 | 1
+	/**
+	 * Whether the account may change the calendar and what is on it. Only false on a
+	 * calendar shared with it read-only: Stalwart asks for this right to rename or
+	 * recolour one, and to add an event to it.
+	 */
+	may_write_all: 0 | 1
 	may_delete: 0 | 1
 }
 
@@ -43,9 +49,23 @@ export const calendarColor = (calendars: CalendarRow[] | undefined, name: string
 	return calendars?.[index]?.color || PALETTE[Math.max(index, 0) % PALETTE.length]
 }
 
-/** Where a new event goes unless the reader picks another: the account's default, else its first. */
-export const defaultCalendar = (calendars: CalendarRow[] | undefined): CalendarRow | undefined =>
-	calendars?.find((cal) => cal.default) ?? calendars?.[0]
+/**
+ * Where a new event goes unless the reader picks another: the account's default, else its
+ * first — among the calendars it can write to, since the server refuses an event anywhere else.
+ */
+export const defaultCalendar = (calendars: CalendarRow[] | undefined): CalendarRow | undefined => {
+	const writable = calendars?.filter((cal) => cal.may_write_all)
+	return writable?.find((cal) => cal.default) ?? writable?.[0]
+}
+
+/**
+ * The calendars an event can be put on: those the account can write to. The one it is
+ * already on stays offered even when read-only, so the picker still names where it is.
+ */
+export const destinationOptions = <T extends { value: string; writable: boolean }>(
+	options: T[],
+	current?: string,
+): T[] => options.filter((option) => option.writable || option.value === current)
 
 /**
  * Which calendars are ticked once the list comes back.

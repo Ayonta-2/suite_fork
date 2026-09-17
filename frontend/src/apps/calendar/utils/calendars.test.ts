@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { calendarColor, defaultCalendar, visibleAfterReload } from '@/apps/calendar/utils/calendars'
+import {
+	calendarColor,
+	defaultCalendar,
+	destinationOptions,
+	visibleAfterReload,
+} from '@/apps/calendar/utils/calendars'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
 const cal = (name: string, extra: Partial<CalendarRow> = {}): CalendarRow => ({
@@ -8,6 +13,7 @@ const cal = (name: string, extra: Partial<CalendarRow> = {}): CalendarRow => ({
 	id: name,
 	_name: name,
 	default: 0,
+	may_write_all: 1,
 	may_delete: 1,
 	...extra,
 })
@@ -32,6 +38,27 @@ describe('defaultCalendar', () => {
 	it('falls back to the first, and to nothing before the list loads', () => {
 		expect(defaultCalendar([cal('a'), cal('b')])?.id).toBe('a')
 		expect(defaultCalendar(undefined)).toBeUndefined()
+	})
+
+	it('passes over a calendar the account cannot write to', () => {
+		const shared = cal('shared', { default: 1, may_write_all: 0 })
+		expect(defaultCalendar([shared, cal('b')])?.id).toBe('b')
+		expect(defaultCalendar([shared])).toBeUndefined()
+	})
+})
+
+describe('destinationOptions', () => {
+	const options = [
+		{ value: 'a', writable: true },
+		{ value: 'shared', writable: false },
+	]
+
+	it('offers only the calendars that can be written to', () => {
+		expect(destinationOptions(options).map((o) => o.value)).toEqual(['a'])
+	})
+
+	it('keeps the read-only calendar an event is already on', () => {
+		expect(destinationOptions(options, 'shared').map((o) => o.value)).toEqual(['a', 'shared'])
 	})
 })
 

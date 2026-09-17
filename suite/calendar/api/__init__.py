@@ -39,14 +39,15 @@ def get_calendars(account: str) -> list[dict[str, str]]:
 
     The colour comes with them: it is the calendar's own, set wherever its owner
     set it, and the views draw their events and their dots in it rather than in
-    a colour assigned by position.
+    a colour assigned by position. So do the rights the account holds on it, for
+    the app to offer only what the server will allow.
     """
 
     ensure_default_alerts(account)
     calendars = fetch_calendars(account, limit=MAX_CALENDARS)
 
     return [
-        {key: cal[key] for key in ["name", "id", "_name", "color", "default", "may_delete"]}
+        {key: cal[key] for key in ["name", "id", "_name", "color", "default", "may_write_all", "may_delete"]}
         for cal in calendars
     ]
 

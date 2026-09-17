@@ -78,6 +78,7 @@ export const userStore = defineStore('calendar-user', () => {
 			label: cal._name,
 			value: cal.id,
 			color: calendarColor(calendars.data, cal.name),
+			writable: !!cal.may_write_all,
 		})),
 	)
 

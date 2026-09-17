@@ -245,7 +245,7 @@
 							<!-- where it is kept, and how it reads to everyone else -->
 							<div :class="GROUP">
 								<button
-									v-if="store.calendarOptions.length > 1"
+									v-if="calendarOptions.length > 1"
 									:class="ROW"
 									@click="showCalendarSheet = true"
 								>
@@ -439,6 +439,7 @@ import { Avatar, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 import dayjs from '@/apps/calendar/utils/dayjs'
+import { destinationOptions } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
 import { formatAlertPhrase, getRepeatMessage } from '@/apps/calendar/utils/format'
 import {
@@ -560,14 +561,16 @@ const asDropdownOptions = (
 	}))
 
 const calendarOptions = computed(() =>
-	store.calendarOptions.map(({ label, value, color }) => ({
-		label,
-		icon: h('span', { class: 'grid place-items-center' }, [
-			h('span', { class: 'size-2.5 rounded-full', style: { background: eventColor(color) } }),
-		]),
-		selected: event.calendar_ids?.[0] === value,
-		onClick: () => (event.calendar_ids = [value]),
-	})),
+	destinationOptions(store.calendarOptions, event.calendar_ids?.[0]).map(
+		({ label, value, color }) => ({
+			label,
+			icon: h('span', { class: 'grid place-items-center' }, [
+				h('span', { class: 'size-2.5 rounded-full', style: { background: eventColor(color) } }),
+			]),
+			selected: event.calendar_ids?.[0] === value,
+			onClick: () => (event.calendar_ids = [value]),
+		}),
+	),
 )
 
 const availabilityOptions = computed(() =>

@@ -41,16 +41,21 @@ export const useCalendarActions = () => {
 		showEdit.value = true
 	}
 
+	// A calendar shared read-only can't be renamed or recoloured, and is no place for new
+	// events and invitations to land.
+	const canEdit = (calendar: CalendarRow) => !!calendar.may_write_all
+
 	const menuOptions = (calendar: CalendarRow) => [
 		{
 			label: __('Edit'),
 			icon: Pencil,
+			condition: () => canEdit(calendar),
 			onClick: () => edit(calendar),
 		},
 		{
 			label: __('Set as Default'),
 			icon: Pin,
-			condition: () => !calendar.default,
+			condition: () => canEdit(calendar) && !calendar.default,
 			onClick: () => makeDefault.submit(calendar),
 		},
 		// The default is where new events and invitations land, so it stays until another takes over.
@@ -66,5 +71,9 @@ export const useCalendarActions = () => {
 		},
 	]
 
-	return { selected, showEdit, showDelete, create, edit, menuOptions }
+	// With nothing to offer, the options button is left out rather than opening an empty menu.
+	const hasMenuOptions = (calendar: CalendarRow) =>
+		menuOptions(calendar).some((option) => !option.condition || option.condition())
+
+	return { selected, showEdit, showDelete, create, edit, canEdit, menuOptions, hasMenuOptions }
 }

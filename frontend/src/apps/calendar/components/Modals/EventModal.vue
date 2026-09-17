@@ -39,7 +39,7 @@ import {
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
-import { defaultCalendar } from '@/apps/calendar/utils/calendars'
+import { defaultCalendar, destinationOptions } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
@@ -520,6 +520,8 @@ const eventCalendar = computed({
 	get: () => event.calendar_ids?.[0],
 	set: (id: string) => (event.calendar_ids = [id]),
 })
+
+const eventCalendarOptions = computed(() => destinationOptions(store.calendarOptions, eventCalendar.value))
 
 const repeatLabel = computed(() => {
 	if (!event.recurrence_rule?.frequency) return __('Repeat')
@@ -1203,13 +1205,13 @@ const recurringScopeModalProps = computed(() => ({
 
 							<!-- calendar -->
 							<!-- Only where there is a choice: with one calendar the row would name it and do nothing. -->
-							<div v-if="store.calendarOptions.length > 1" class="flex gap-3">
+							<div v-if="eventCalendarOptions.length > 1" class="flex gap-3">
 								<CalendarDays :size="FIELD_ICON_SIZE" class="icon mt-7 shrink-0 text-ink-gray-5" />
 								<FormControl
 									v-model="eventCalendar"
 									type="select"
 									:label="__('Calendar')"
-									:options="store.calendarOptions"
+									:options="eventCalendarOptions"
 									class="min-w-0 flex-1"
 								>
 									<template #item-prefix="{ item }">
