@@ -474,14 +474,15 @@ const {
 	},
 )
 
-// An event on a calendar shared read-only can be read and copied, not changed or answered.
+// An event on a calendar shared read-only is only read: not changed, answered, or passed on
+// as an invitation to something the reader doesn't run. With nothing left, the menu goes.
 const canEdit = computed(() => canEditEvent(calendarEvent, calendars.data))
 
 const dropdownOptions = computed(() => [
 	{ label: __('Edit'), icon: SquarePen, onClick: () => emit('edit'), condition: () => canEdit.value },
 	// Beside Edit rather than beside the Meet row's copy: that button copies the link,
 	// which is a property of the call, where this copies the event.
-	{ label: __('Copy Invite'), icon: Copy, onClick: copyInvite },
+	{ label: __('Copy Invite'), icon: Copy, onClick: copyInvite, condition: () => canEdit.value },
 	{ ...deleteOption.value, condition: () => canEdit.value },
 ])
 
@@ -562,7 +563,7 @@ const openUrl = (location: string) => {
 					     a Tooltip, and the growing is the wrapper's to do or not — pushing from
 					     this side puts the actions on the edge whatever it decides. -->
 					<div class="ml-auto flex shrink-0 items-center gap-1">
-						<Dropdown :options="dropdownOptions">
+						<Dropdown v-if="canEdit" :options="dropdownOptions">
 							<Button
 								variant="ghost"
 								:disabled="isDeleting"
@@ -705,8 +706,12 @@ const openUrl = (location: string) => {
 							</div>
 						</div>
 
-						<!-- Availability -->
-						<div v-if="calendarEvent.free_busy_status" class="flex items-center gap-2.5 px-4.5 py-2">
+						<!-- Availability: whether the event blocks its calendar's time. Not on a calendar
+						     shared read-only, where it is the owner's setting and not the reader's time. -->
+						<div
+							v-if="canEdit && calendarEvent.free_busy_status"
+							class="flex items-center gap-2.5 px-4.5 py-2"
+						>
 							<Briefcase class="icon text-ink-gray-5 size-4 shrink-0" />
 							<span class="text-ink-gray-7 text-sm">{{ __(calendarEvent.free_busy_status) }}</span>
 						</div>
