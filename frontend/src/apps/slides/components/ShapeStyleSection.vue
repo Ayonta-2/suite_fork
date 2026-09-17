@@ -49,7 +49,7 @@
 			@change-end="borderRadius.commit"
 		/>
 		<template v-if="isLineSelection">
-			<PropertyRow v-if="activeElement.connector" label="Line Type">
+			<PropertyRow v-if="activeElement?.connector" label="Line Type">
 				<TabButtons
 					:modelValue="activeElement.connector.route"
 					:options="lineTypes"
