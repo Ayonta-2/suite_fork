@@ -32,10 +32,46 @@ SFU_LOAD_JWT_SECRET=local-secret SFU_METRICS_TOKEN=local-metrics \
   --output /tmp/meet-load-local.json
 ```
 
+`--scenario representative-camera` publishes deterministic first `--cameras`
+(default `min(40, count)`, maximum 40) Participant Connections and leaves the rest
+idle. Each camera is a moving, time-coded 1280x720 canvas captured at a requested 30
+fps; it does not use Chromium's generic fake camera. Reports keep requested source
+properties separate from observed track settings, sender `outbound-rtp` bytes,
+`framesEncoded` and fps, `media-source` dimensions/fps, and every eager receiver's
+`inbound-rtp` bytes, decoded frames, dimensions, and fps. Missing browser stats are
+`null`; short runs do not establish bitrate or sustained fps. Producer IDs, enabled
+and unpaused state, RTP/frame progression, decoded delivery when exposed, and SFU
+Producer/Consumer counts are checked across the hold window. One muted 1x1 off-screen
+video probe per Participant Connection drives playback and exposes Chromium's browser
+decoded-frame count; this avoids O(N) rendered elements. Full rendering remains off
+unless explicitly requested.
+
+`--scenario representative-screen` publishes the first `--screens` Participant
+Connections (default `min(2, count)`, maximum 2) as distinct moving, time-coded
+1920x1080 canvases captured at requested 30 fps. Producers use screen semantics and
+an encoding `maxBitrate` target of 4,000,000 bps; the configured target is reported
+separately from elapsed-window sender and receiver bitrate observations. Every
+intended receiver renders every screen for a browser decoded-frame probe. Stable
+Producer identity/state, delivery, progress, eager SFU resources, dimensions, fps,
+and nullable WebRTC stats are reported. For windows of at least five seconds an
+observed sender average over the cap plus 10% tolerance fails correctness, but the
+target is not a strict instantaneous network ceiling and a short local run does not
+establish sustained <=4 Mbps.
+
 `--media audio|video|both` uses Chromium's synthetic fake devices. Reports retain
 actual capture settings and observed RTP byte counters, but synthetic devices do not
 model representative speech/cameras and requested settings do not prove delivered
 resolution, frame rate, or bitrate. `--consume none` isolates publication.
+
+`--scenario rotating-audio --media audio` gives every participant one persistent,
+enabled, unpaused microphone Producer sourced from a 440 Hz Web Audio oscillator.
+Only a `GainNode` changes: `--talkers` (default 10, never above `--count`) rotate on
+the configured `--rotation-interval-ms` cadence. Reports include each expected
+active set, actual gain-state boundaries and duration, per-publisher outbound RTP and
+optional audio-energy deltas, per-receiver inbound continuity, Producer IDs, and SFU
+Producer/Consumer gauges for every window.
+Configured gain is not proof of acoustic delivery; `totalAudioEnergy` is recorded
+when Chromium exposes it, otherwise the report says `null`.
 
 Server measurements need a dedicated authorized SFU, valid full-scope participant
 tokens matching the generated room/site (or its signing secret), and authenticated
@@ -47,12 +83,33 @@ cleanup outcome.
 
 ## Progressive Scenarios
 
-Only admission plus idle hold and uniform synthetic media are implemented. The
-intended representative suite remains: participant admission plus idle, ten rotating
-audio talkers, forty 720p30 cameras, two 1080p30 screens capped at 4 Mbps, and one
-Recorder Endpoint. Rotation, pinned representative media, actual delivered media
-constraints, screen publication, and recorder support must be implemented and
-measured before those scenario names or properties are claimed.
+Admission plus idle hold, uniform synthetic media, rotating audio, representative
+camera, two-screen, and Recorder Endpoint measurement are implemented. Pinned
+representative video and actual delivered video constraints remain before those
+properties are claimed.
+
+The focused Recorder Endpoint measurement uses the existing containerized recorder
+integration service because recorder capture requires Linux Xvfb and PulseAudio:
+
+```bash
+yarn --cwd suite/meet/recorder-server measure:recorder
+```
+
+It starts only Compose-owned SFU and recorder integration containers, uses an
+ephemeral proof-bound Recording Grant, and composes four human Participant
+Connections: two alternating synthetic talkers with one camera each, plus two screen
+publishers. The Recorder Endpoint attaches through production WebRTC and is excluded
+from the human participant count. The ignored `integration/output/shared-stage`
+report records grant-to-ready and ready-to-capture latency, capture and encoded
+duration, interruption count, artifact size, ffprobe video resolution/fps and audio
+presence, full decode warnings, content samples, and process cleanup.
+
+This is designed as an honest local integration scenario, not a production result. Deterministic
+publishers use development-only plain RTP ingress, and the fixture drives current
+recorder classes rather than the HTTP control endpoint because that endpoint's stop
+path finalizes through authenticated Frappe/Drive callbacks unavailable in this
+standalone harness. SFU attachment, browser composition, capture, and the artifact
+are real and are not mocked when the scenario completes successfully.
 
 ## Verification
 

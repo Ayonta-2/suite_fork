@@ -18,8 +18,6 @@
 		</div>
 		<HeaderActions
 			v-model:show-search="showSearchModal"
-			v-model:show-advanced="showSearchAdvanced"
-			v-model:edit-filter="searchEditFilter"
 		/>
 	</header>
 
@@ -75,15 +73,13 @@
 					<SearchResultsHeader
 						v-if="mailbox === 'search'"
 						v-model:show-search="showSearchModal"
-						v-model:show-advanced="showSearchAdvanced"
-						v-model:edit-filter="searchEditFilter"
 					/>
 
-					<!-- Mobile header: title row (folders · mailbox + count · search · compose) over
+					<!-- Mobile header: title row (folders · mailbox + count · search) over
 					     a toolbar row (filter selector on the left, filter/refresh pills on the
 					     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
-					     Search skips both rows (SearchResultsHeader is the header there; the tab
-					     bar carries the "you are in search" cue), keeping only the selection
+					     Search skips both rows (SearchResultsHeader is the header there; no tab
+					     in the bar reads as active), keeping only the selection
 					     toolbar and the loading bar — the border goes with the rows it underlines. -->
 					<div
 						v-if="isMobile"
@@ -93,6 +89,7 @@
 						<MobileTitleHeader
 							v-if="mailbox !== 'search'"
 							with-menu
+							with-search
 							:title="mailboxName"
 							:count="threadCount ? __('{0} threads', [threadCount]) : undefined"
 						/>
@@ -494,8 +491,8 @@ import {
 	raisePromiseToast,
 	raiseToast,
 	shouldIgnoreKeypress,
-	stripShortcutHint,
 } from '@/apps/mail/utils'
+import { stripShortcutHint } from '@/utils/actionLabel'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
 import {
 	hasCursor,
@@ -522,7 +519,7 @@ import {
 } from '@/apps/mail/composables/usePaginatedThreads'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
@@ -1598,7 +1595,7 @@ const emptyMailbox = createResource({
 const emptyMailboxOptions = computed(() => ({
 	title: __('Empty {0}', [mailboxName.value]),
 	message: __(`Are you sure you want to empty the contents of this mailbox?`),
-	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [
 		{
 			label: __('Confirm'),
@@ -1657,8 +1654,6 @@ const title = computed(() => {
 // search view's header — so its state sits here, between them. Everything else about the query surface
 // belongs to SearchResultsHeader.
 const showSearchModal = ref(false)
-const showSearchAdvanced = ref(false)
-const searchEditFilter = ref('')
 
 const threadCount = computed(() => {
 	const count = mailboxObj.value?.total_threads

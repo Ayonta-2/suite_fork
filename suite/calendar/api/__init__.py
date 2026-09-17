@@ -8,7 +8,13 @@ from frappe.utils import cint
 from icalendar.prop import vRecur
 
 from suite.calendar.api.rsvp import record_rsvp
-from suite.calendar.doctype.calendar.calendar import ensure_default_alerts, fetch_calendars
+from suite.calendar.doctype.calendar.calendar import (
+    add_calendar,
+    delete_calendars,
+    ensure_default_alerts,
+    fetch_calendars,
+    forget_default_alerts_seeded,
+)
 from suite.calendar.doctype.calendar_event.calendar_event import (
     add_calendar_event,
     delete_calendar_events,
@@ -19,39 +25,364 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_calendar_events_by_ids,
 )
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
-from suite.mail.jmap import get_calendar_event_service, get_participant_identities
+from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_participant_identities
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
+
+# `fetch_calendars` pages ten at a time for the desk list view; the app wants all of them.
+MAX_CALENDARS = 1000
 
 
 @frappe.whitelist()
 def get_calendars(account: str) -> list[dict[str, str]]:
-    """Returns a list of the specified account's calendars."""
+    """Returns a list of the specified account's calendars.
+
+    The colour comes with them: it is the calendar's own, set wherever its owner
+    set it, and the views draw their events and their dots in it rather than in
+    a colour assigned by position. So do the rights the account holds on it, for
+    the app to offer only what the server will allow.
+    """
 
     ensure_default_alerts(account)
-    calendars = fetch_calendars(account)
+    return _calendar_rows(account)
 
-    return [{key: cal[key] for key in ["name", "_name"]} for cal in calendars]
+
+def _calendar_rows(account: str) -> list[dict]:
+    """The account's calendars, in the shape the app reads, without seeding their reminders."""
+
+    calendars = fetch_calendars(account, limit=MAX_CALENDARS)
+
+    return [
+        {
+            key: cal[key]
+            for key in [
+                "name",
+                "account",
+                "id",
+                "_name",
+                "color",
+                "default",
+                "visible",
+                "may_write_all",
+                "may_delete",
+            ]
+        }
+        for cal in calendars
+    ]
+
+
+def _shared_calendars() -> list[str]:
+    """The calendars shared with the user read-only, as `account|id`, from any of their accounts.
+
+    A calendar shared with the user lives in its owner's account, not the user's, so the
+    calendar would only show it after switching to an account nobody thinks of as theirs.
+    JMAP marks nothing as "shared with me", so it is read off the rights: a calendar the user
+    can't write to. One they can write to is in an account they work in, like a team's, and is
+    reached through the account switcher (see get_account_apps).
+
+    Every account's calendars are listed in one request, and the answer is kept for a few minutes.
+    """
+
+    cache_key = f"calendar|shared_calendars|{frappe.session.user}"
+    if (cached := frappe.cache.get_value(cache_key)) is not None:
+        return cached
+
+    shared = []
+    accounts = frappe.get_all("User Account", {"user": frappe.session.user}, pluck="account")
+    if accounts:
+        try:
+            calendars = get_calendar_service(accounts[0]).get_across_accounts(accounts, ["id", "myRights"])
+        except NotImplementedError:
+            calendars = {}
+        for account, rows in calendars.items():
+            shared.extend(
+                f"{account}|{row['id']}"
+                for row in rows or []
+                if not (row.get("myRights") or {}).get("mayWriteAll")
+            )
+
+    frappe.cache.set_value(cache_key, shared, expires_in_sec=300)
+    return shared
+
+
+def _with_shared(account: str, fetch) -> list:
+    """`fetch(account, None)` for the account, then `fetch(other, calendar_ids)` for each other
+    account with calendars shared with the user — asked for those calendars alone, so an account
+    that also holds calendars the user can write to isn't read in full to throw most of it away."""
+
+    shared: dict[str, list[str]] = {}
+    for name in _shared_calendars():
+        other, calendar_id = name.split("|")
+        if other != account:
+            shared.setdefault(other, []).append(calendar_id)
+
+    rows = list(fetch(account, None))
+    for other, calendar_ids in shared.items():
+        rows.extend(fetch(other, calendar_ids))
+    return rows
+
+
+@frappe.whitelist()
+def get_calendars_with_shared(account: str) -> list[dict]:
+    """The account's calendars, and the calendars shared with the user read-only from elsewhere."""
+
+    # Reminders are seeded on the account's own calendars only: a shared one isn't the user's to
+    # change, and its account's seeded mark is shared by everyone who can see it.
+    ensure_default_alerts(account)
+    return _with_shared(
+        account,
+        lambda each, calendar_ids: [
+            row for row in _calendar_rows(each) if calendar_ids is None or row["id"] in calendar_ids
+        ],
+    )
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def create_calendar(account: str, name: str, color: str | None = None) -> str:
+    """Creates a calendar and returns its `account|id` name."""
+
+    name = _calendar_name(name)
+    calendar_id = add_calendar(account, name, color=color)
+    # Seeded on the next listing, which the app asks for straight after creating.
+    forget_default_alerts_seeded(account)
+    return f"{account}|{calendar_id}"
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def edit_calendar(
+    account: str,
+    id: str,
+    name: str | None = None,
+    color: str | None = None,
+    default: bool = False,
+    visible: bool | None = None,
+) -> None:
+    """Renames, recolours, shows or hides, or makes default one calendar, touching nothing
+    else on it.
+
+    The doctype's `update_calendar` writes every property, so renaming through it
+    clears the description and time zone another client may have set. This patches
+    only what it is given."""
+
+    patch = {}
+    if name is not None:
+        patch["name"] = _calendar_name(name)
+    if color is not None:
+        patch["color"] = color or None
+    # JMAP's own flag for whether a calendar's events are shown, so the choice follows the
+    # user to every client rather than living in one browser.
+    if visible is not None:
+        patch["isVisible"] = visible
+
+    kwargs = {"onSuccessSetIsDefault": id} if default else {}
+    service = get_calendar_service(account)
+    response = service._update({id: patch}, **kwargs)
+
+    method_responses = response.get("methodResponses") or []
+    result = method_responses[0][1] if method_responses else {}
+    if id not in (result.get("updated") or {}):
+        error = (result.get("notUpdated") or {}).get(id) or result
+        frappe.throw(
+            error.get("description") or _("Could not update the calendar."),
+            title=_("Calendar Update Error"),
+        )
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def delete_calendar(account: str, id: str) -> None:
+    """Deletes a calendar and the events on it. The default calendar stays: it is
+    where new events go, invitations included."""
+
+    service = get_calendar_service(account)
+    calendar = next((c for c in service.get([id])), None)
+    if not calendar:
+        frappe.throw(_("Calendar not found."), frappe.DoesNotExistError)
+    if calendar.get("isDefault"):
+        frappe.throw(_("The default calendar can't be deleted. Make another calendar the default first."))
+
+    delete_calendars(account, [id], remove_events=True)
+
+
+def _calendar_name(name: str) -> str:
+    name = (name or "").strip()
+    if not name:
+        frappe.throw(_("A calendar needs a name."))
+    return name
+
+
+# Stalwart answers a range query one page at a time, and a window wide enough for the
+# Agenda — plus the months either side of it — can outrun a single page once a calendar
+# carries a few daily recurrences. Asking for one page of 999 and returning it took the
+# first 999 and said nothing about the rest: the grid simply stopped, with nothing on
+# screen to say why.
+EVENT_PAGE_SIZE = 999
+
+# Where walking the pages stops. Past this the answer is not something anyone is reading
+# day by day, and an unbounded loop against a shared server is its own kind of bug — so
+# it stops, and says so in the error log rather than silently.
+MAX_EVENTS_IN_WINDOW = 5000
+
+
+def _events_in_window(
+    account: str, from_date: str, to_date: str, time_zone: str, calendar_ids: list[str] | None = None
+) -> list[dict]:
+    """Every event in the window, page by page rather than the first page alone; only those on
+    `calendar_ids` when given."""
+
+    # The API listens UTC: a naive range value is read as UTC, not system time.
+    query = {"after": normalize_utc_z(from_date), "before": normalize_utc_z(to_date)}
+    if calendar_ids:
+        query = {
+            "operator": "AND",
+            "conditions": [
+                query,
+                {"operator": "OR", "conditions": [{"inCalendar": id} for id in calendar_ids]},
+            ],
+        }
+    events: list[dict] = []
+    position = 0
+    total = 0
+
+    while len(events) < MAX_EVENTS_IN_WINDOW:
+        # The last page asks for what is left under the ceiling, not a whole one:
+        # a full page on top of 4,995 is a thousand events past the bound.
+        page, total = fetch_calendar_events(
+            account,
+            query,
+            position=position,
+            limit=min(EVENT_PAGE_SIZE, MAX_EVENTS_IN_WINDOW - len(events)),
+            time_zone=time_zone,
+            expand_recurrences=True,
+        )
+        events.extend(page)
+        position += len(page)
+        # An empty page ends it whatever the total claims: a total that never comes
+        # down is how a loop against a paging server runs forever.
+        if not page or position >= total:
+            break
+
+    if position < total:
+        frappe.log_error(
+            title="Calendar range query truncated",
+            message=(
+                f"Account {account} has {total} events between {from_date} and {to_date}; "
+                f"{len(events)} were returned (ceiling {MAX_EVENTS_IN_WINDOW})."
+            ),
+        )
+
+    return events
 
 
 @frappe.whitelist()
 def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
     """Fetches calendar events between from_date and to_date for the specified account."""
 
-    # The API listens UTC: a naive range value is read as UTC, not system time.
-    events = fetch_calendar_events(
-        account,
-        {"after": normalize_utc_z(from_date), "before": normalize_utc_z(to_date)},
-        limit=999,
-        time_zone=time_zone,
-        expand_recurrences=True,
-    )[0]
+    return _calendar_events(account, from_date, to_date, time_zone)
+
+
+def _calendar_events(
+    account: str, from_date: str, to_date: str, time_zone: str, calendar_ids: list[str] | None = None
+) -> list[dict]:
+    events = _events_in_window(account, from_date, to_date, time_zone, calendar_ids)
 
     enrich_events_with_master_data(account, events)
     events = merge_own_copies(account, events)
     enrich_participants_with_avatars(events)
 
     return events
+
+
+@frappe.whitelist()
+def get_calendar_events_with_shared(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
+    """`get_calendar_events` for the account and the calendars shared with the user."""
+
+    return _with_shared(
+        account,
+        lambda each, calendar_ids: _calendar_events(each, from_date, to_date, time_zone, calendar_ids),
+    )
+
+
+@frappe.whitelist()
+def get_calendar_event_density(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
+    """The bare minimum needed to mark a day as busy, for the sidebar's mini month.
+
+    That card is a navigation aid: it has to draw a tick under any day with something on
+    it, in whatever month it is paged to, which is not the window the main view fetched.
+    Asking `get_calendar_events` for a month to draw at most three dots a day would pull
+    every description, location, link and participant avatar in it, so this returns only
+    what a tick is made of — when the event runs, and whose calendar it is on.
+
+    Deliberately NOT bucketed into days here. Which day an event lands on is the viewer's
+    zone, all-day-ness and inclusive-end arithmetic that the client already does for the
+    grid (`isAllDayEvent`, `eventLastDay`); a second implementation of it in Python is a
+    second implementation to disagree with the first. The client places these rows with
+    the same code it places real events with.
+    """
+
+    return _event_density(account, from_date, to_date, time_zone, _own_emails(account))
+
+
+def _own_emails(account: str) -> set[str]:
+    """The account's own addresses — what tells a decline of the viewer's from anyone else's."""
+
+    return {(identity.get("email") or "").lower() for identity in get_participant_identities(account)}
+
+
+def _event_density(
+    account: str,
+    from_date: str,
+    to_date: str,
+    time_zone: str,
+    own_emails: set[str],
+    calendar_ids: list[str] | None = None,
+) -> list[dict]:
+    # A decline gives the time back, so a declined event is not density.
+    events = _events_in_window(account, from_date, to_date, time_zone, calendar_ids)
+
+    return [
+        {
+            "start": event.get("start"),
+            "duration": event.get("duration"),
+            "time_zone": event.get("time_zone"),
+            "show_without_time": event.get("show_without_time"),
+            "calendars": [
+                cal.get("calendar") for cal in (event.get("calendars") or []) if cal.get("calendar")
+            ],
+            "is_declined": _declined_by_viewer(event, own_emails),
+        }
+        for event in events
+    ]
+
+
+@frappe.whitelist()
+def get_calendar_event_density_with_shared(
+    account: str, from_date: str, to_date: str, time_zone: str
+) -> list[dict]:
+    """`get_calendar_event_density` for the account and the calendars shared with the user."""
+
+    # Declines are the viewer's, so their own addresses are read once, from their account.
+    own_emails = _own_emails(account)
+    return _with_shared(
+        account,
+        lambda each, calendar_ids: _event_density(
+            each, from_date, to_date, time_zone, own_emails, calendar_ids
+        ),
+    )
+
+
+def _declined_by_viewer(event: dict, own_emails: set[str]) -> bool:
+    """True when one of the account's own addresses said no to this event."""
+
+    for participant in event.get("participants") or []:
+        if participant.get("participation_status") != "DECLINED":
+            continue
+        email = (participant.get("email") or "").lower().replace("mailto:", "")
+        if email in own_emails:
+            return True
+    return False
 
 
 # What an occurrence inherits from its series, as (our name, the JMAP name the override uses).

@@ -75,6 +75,9 @@ export interface User {
 		on_mark_as_junk?: OnMarkAsJunk
 		enable_screening?: boolean
 		block_remote_images?: boolean
+		/** Whether the account has anything for the user in mail, and in calendar. */
+		in_mail?: boolean
+		in_calendar?: boolean
 	})[]
 }
 

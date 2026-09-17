@@ -13,12 +13,6 @@ import VideoIcon from '@/apps/mail/components/Icons/VideoIcon.vue'
 
 import type { ComposeMailData, MailboxData, Recipient } from '@/apps/mail/types'
 
-// Keyboard hints in action labels — "Archive Thread (E)", "Move to Trash (Delete)" —
-// are noise on touch surfaces. Strips only trailing parentheticals that look like
-// shortcuts, so a folder named "Work (old)" is never clipped.
-const SHORTCUT_HINT =
-	/\s*\((?:(?:Shift|Ctrl|Cmd|Alt|⌘|⇧|⌥)\+)*(?:[A-Z!,.;]|Delete|Backspace|Esc(?:ape)?|Enter|Tab|Space|↑\/K|↓\/J)\)$/
-export const stripShortcutHint = (label: string) => label.replace(SHORTCUT_HINT, '')
 
 export const toTitleCase = (str: string) =>
 	str
@@ -425,6 +419,7 @@ export const getIcon = (mailbox: MailboxData) => {
 	// The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a
 	// stray Mailbox Settings icon (it must never render as a generic folder).
 	if (mailbox._name === SCREENER_MAILBOX_NAME) return 'eye'
+	if (mailbox.icon === 'spam') return 'mail-warning'
 	if (mailbox.icon) return mailbox.icon
 	if (mailbox.role && mailbox.role in FOLDER_ICON_MAP) return FOLDER_ICON_MAP[mailbox.role]
 	return 'folder'
