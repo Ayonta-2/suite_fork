@@ -9,7 +9,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from suite.mail.directory import get_active_domain_names
-from suite.mail.utils import is_stalwart_configured
+from suite.suite_core.utils import is_suite_cloud_configured
 
 
 class MailSettings(Document):
@@ -73,6 +73,11 @@ class MailSettings(Document):
     def on_update(self) -> None:
         self.clear_cache()
         frappe.clear_document_cache(self.doctype)
+        if self.has_value_changed("server_url"):
+            # Mail and Calendar are offered on a site with a JMAP server, so the launcher's answer changes.
+            from suite.api.account import forget_logged_in_users
+
+            forget_logged_in_users()
 
     def validate_signup(self) -> None:
         """Validates the Signup."""
@@ -86,7 +91,7 @@ class MailSettings(Document):
         if not (self.has_value_changed("allow_signup") or self.has_value_changed("signup_domains")):
             return
 
-        is_stalwart_configured(raise_exception=True)
+        is_suite_cloud_configured(raise_exception=True)  # the domains are Suite Cloud's to tell
 
         if not self.signup_domains:
             frappe.throw(_("Please add at least one Signup Domain."))

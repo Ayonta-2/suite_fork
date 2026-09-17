@@ -9,8 +9,8 @@ from frappe.model.document import Document
 from suite.mail.directory import delete_account as delete_mail_account
 from suite.mail.directory import set_account_enabled
 from suite.mail.directory import update_password as update_mail_password
-from suite.mail.utils import is_stalwart_configured
 from suite.mail.utils.user import is_jmap_configured
+from suite.suite_core.utils import is_suite_cloud_configured
 from suite.utils import execute_with_logging
 
 
@@ -45,7 +45,7 @@ def update_password(
 
     frappe.flags.in_update_password = True
 
-    if not is_stalwart_configured(raise_exception=False):
+    if not is_suite_cloud_configured():
         return update_frappe_password(
             new_password=new_password,
             logout_all_sessions=logout_all_sessions,
@@ -78,7 +78,7 @@ def update_account_password(doc: Document, method: str | None = None) -> None:
         frappe.flags.in_update_password
         or doc.flags.in_insert
         or not doc.enabled
-        or not is_stalwart_configured(raise_exception=False)
+        or not is_suite_cloud_configured()
         or not is_jmap_configured(doc.name)
     ):
         return
@@ -150,7 +150,7 @@ def apply_disabled_account_role(doc: Document, method: str | None = None) -> Non
         doc.flags.in_insert
         or doc.enabled
         or not doc.has_value_changed("enabled")
-        or not is_stalwart_configured(raise_exception=False)
+        or not is_suite_cloud_configured()
         or not is_jmap_configured(doc.name)
     ):
         return
@@ -170,7 +170,7 @@ def remove_disabled_account_role(doc: Document, method: str | None = None) -> No
         doc.flags.in_insert
         or not doc.enabled
         or not doc.has_value_changed("enabled")
-        or not is_stalwart_configured(raise_exception=False)
+        or not is_suite_cloud_configured()
         or not is_jmap_configured(doc.name)
     ):
         return
@@ -184,7 +184,7 @@ def remove_disabled_account_role(doc: Document, method: str | None = None) -> No
 
 
 def delete_account(doc: Document, method: str | None = None) -> None:
-    if not is_stalwart_configured(raise_exception=False) or not is_jmap_configured(doc.name):
+    if not is_suite_cloud_configured() or not is_jmap_configured(doc.name):
         return
 
     user = doc.name

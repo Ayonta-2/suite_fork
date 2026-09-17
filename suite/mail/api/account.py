@@ -18,12 +18,13 @@ from suite.mail.doctype.user_account.user_account import (
     get_user_personal_jmap_account,
     is_jmap_account_belongs_to_user,
 )
-from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
+from suite.mail.utils import get_config, is_jmap_server_configured, log_mail_error
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.user import (
+    can_use_mail,
     has_user_settings,
-    is_jmap_configured,
 )
+from suite.suite_core.utils import is_suite_cloud_configured
 from suite.utils import user_context
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.user import is_suite_admin, is_system_manager
@@ -228,7 +229,12 @@ def get_user_info() -> dict | None:
 
     data.is_suite_admin = is_suite_admin(user)
     data.is_system_manager = is_system_manager(user)
-    data.is_jmap_configured = is_jmap_configured(user)
+    data.is_jmap_configured = can_use_mail(user)
+    # The Admin Dashboard is offered only on a site connected to a Suite Cloud, and only admins
+    # are told whether it is.
+    data.is_suite_cloud_configured = (
+        data.is_suite_admin or data.is_system_manager
+    ) and is_suite_cloud_configured()
     data.accounts = frappe.db.get_all("User Account", {"user": user}, ["account"])
     # An account shared with the user is personal to its owner, not to them; see
     # pick_personal_account. And each app lists only the accounts with something for the user
@@ -295,7 +301,7 @@ def get_mail_client_config() -> list[dict]:
             for row in settings.mail_client_configurations
         ]
 
-    if is_stalwart_configured():
+    if is_suite_cloud_configured():  # the DNS records are Suite Cloud's to tell
         return _get_client_config_from_dns()
 
     return []
@@ -312,7 +318,7 @@ def get_calendar_client_config() -> dict:
     """
 
     settings = frappe.get_cached_doc("Mail Settings")
-    if not settings.show_calendar_client_config or not is_stalwart_configured():
+    if not settings.show_calendar_client_config or not is_jmap_server_configured():
         return {}
 
     username = frappe.db.get_value("User Settings", {"user": frappe.session.user}, "username")

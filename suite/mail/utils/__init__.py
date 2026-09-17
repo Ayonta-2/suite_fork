@@ -7,7 +7,6 @@ from frappe import _
 from frappe.utils import get_bench_path
 from frappe.utils.caching import request_cache
 
-from suite.suite_core.utils import is_suite_cloud_configured
 from suite.utils import log_error
 
 CONFIG_KEYS = [
@@ -73,20 +72,18 @@ def get_config(key: str | tuple[str, ...] | None = None) -> dict[str, Any] | tup
     return config
 
 
-def is_stalwart_configured(raise_exception: bool = False) -> bool:
-    """Whether the site has a mail server: a JMAP URL for users and a Suite Cloud for the directory.
+def is_jmap_server_configured(raise_exception: bool = False) -> bool:
+    """Whether the site knows its JMAP server, in Mail Settings or the site config.
 
-    Frappe Cloud writes both into the site config when it registers the site; Mail Settings (the
-    JMAP URL) and Suite Settings (Suite Cloud) can override them on a self-managed site.
+    That is all Mail and Calendar need: users read, send and schedule straight against the
+    server. Suite Cloud is only behind the Admin Dashboard and the creation of accounts.
     """
 
-    if get_config("server_url") and is_suite_cloud_configured():
+    if get_config("server_url"):
         return True
 
     if raise_exception:
-        frappe.throw(
-            _("The mail server is not configured. Please check your Mail Settings and Suite Settings.")
-        )
+        frappe.throw(_("The JMAP server is not configured. Please check your Mail Settings."))
 
     return False
 

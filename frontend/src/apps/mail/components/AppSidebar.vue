@@ -279,6 +279,7 @@ const menuItems = computed(() => [
 				condition: () =>
 					user.data.is_jmap_configured &&
 					user.data.is_suite_admin &&
+					user.data.is_suite_cloud_configured &&
 					!route.meta.isDashboard &&
 					!isMobile.value,
 			},

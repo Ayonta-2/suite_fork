@@ -13,7 +13,8 @@ import requests
 from frappe.tests import IntegrationTestCase
 
 from suite.mail.jmap.connection import JMAPConnection
-from suite.mail.utils import get_config, is_stalwart_configured
+from suite.mail.utils import get_config, is_jmap_server_configured
+from suite.suite_core.utils import is_suite_cloud_configured
 
 # Names embed a fresh per-run token: Stalwart state never rolls back with the test database, and
 # deleted accounts reuse ids on recreation (see stalwart/connection.py), so nothing created by a
@@ -51,7 +52,8 @@ def _stalwart_available() -> bool:
 
     global _stalwart_probe
     if _stalwart_probe is None:
-        if not is_stalwart_configured():
+        # Accounts are made through Suite Cloud and used over JMAP: these tests need both.
+        if not (is_suite_cloud_configured() and is_jmap_server_configured()):
             _stalwart_probe = False
         else:
             server_url, verify_ssl = get_config(("server_url", "verify_ssl"))

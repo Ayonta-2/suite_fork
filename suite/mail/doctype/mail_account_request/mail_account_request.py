@@ -22,9 +22,10 @@ from frappe.utils import (
 
 from suite.mail.directory import account_exists, create_account, delete_account_by_email, get_domains
 from suite.mail.suite_cloud import SuiteCloudUnavailableError
-from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
+from suite.mail.utils import get_config, is_jmap_server_configured, log_mail_error
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
+from suite.suite_core.utils import is_suite_cloud_configured
 from suite.utils import execute_with_logging, generate_otp
 from suite.utils.user import is_suite_admin, is_system_manager
 
@@ -115,7 +116,7 @@ class MailAccountRequest(Document):
         return flt(self.quota_gb) or flt(get_config("default_disk_quota_gb")) or None
 
     def before_insert(self) -> None:
-        is_stalwart_configured(raise_exception=True)
+        is_suite_cloud_configured(raise_exception=True)
         self.validate_backup_email()
         self.set_request_key()
         self.set_expires_at()
@@ -357,7 +358,10 @@ class MailAccountRequest(Document):
 
         self.validate_expired()
 
-        is_stalwart_configured(raise_exception=True)
+        is_suite_cloud_configured(raise_exception=True)
+        # The account is created through Suite Cloud, then its credentials are checked against the
+        # JMAP server on save; without one that would fail halfway and undo the creation.
+        is_jmap_server_configured(raise_exception=True)
         self.validate_account()
 
         account = self._create_cluster_account(password, first_name, last_name, locale, time_zone)

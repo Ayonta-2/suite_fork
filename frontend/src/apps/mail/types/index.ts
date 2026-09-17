@@ -65,6 +65,8 @@ export interface User {
 	is_suite_admin: boolean
 	is_system_manager: boolean
 	is_jmap_configured: boolean
+	// Admins only: whether the site is connected to a Suite Cloud, which the Admin Dashboard needs.
+	is_suite_cloud_configured: boolean
 
 	mailboxes: { id: string; name: string; role: string }[]
 	// `get_user_info` enriches each account with its per-account outgoing default and

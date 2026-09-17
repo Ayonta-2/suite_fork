@@ -88,7 +88,8 @@ export const userStore = defineStore('mail-user', () => {
 			return data
 		},
 		onSuccess: (data) => {
-			if (data?.is_suite_admin) domains.fetch()
+			// The domains are for the Admin Dashboard, and come from Suite Cloud like the rest of it.
+			if (data?.is_suite_admin && data?.is_suite_cloud_configured) domains.fetch()
 			// The unified All Inboxes badge only applies when there's more than one account to merge.
 			if ((data?.accounts?.length ?? 0) > 1) allInboxesUnread.fetch()
 			resolveAccount(data?.accounts)

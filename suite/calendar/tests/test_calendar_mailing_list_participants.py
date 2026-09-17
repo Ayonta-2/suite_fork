@@ -420,10 +420,18 @@ class TestMailingListExpansionConfig(IntegrationTestCase):
     """The toggle and the cap resolve through ``get_config``, so site config can supply either."""
 
     def test_the_toggle_is_coerced_to_a_bool(self):
-        with patch(f"{MODULE}.get_config", return_value=1):
-            self.assertTrue(_expansion_enabled())
+        with patch(f"{MODULE}.is_suite_cloud_configured", return_value=True):
+            with patch(f"{MODULE}.get_config", return_value=1):
+                self.assertTrue(_expansion_enabled())
 
-        with patch(f"{MODULE}.get_config", return_value=None):
+            with patch(f"{MODULE}.get_config", return_value=None):
+                self.assertFalse(_expansion_enabled())
+
+    def test_the_toggle_means_nothing_without_a_directory_to_expand_from(self):
+        with (
+            patch(f"{MODULE}.is_suite_cloud_configured", return_value=False),
+            patch(f"{MODULE}.get_config", return_value=1),
+        ):
             self.assertFalse(_expansion_enabled())
 
     def test_the_cap_accepts_a_string_from_site_config(self):

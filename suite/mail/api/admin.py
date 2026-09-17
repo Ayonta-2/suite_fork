@@ -27,6 +27,7 @@ from suite.mail.utils.dt import from_utc_z, to_utc_z
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.user import get_account_email
 from suite.mail.utils.validation import is_subaddressed_email
+from suite.suite_core.utils import is_suite_cloud_configured
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.user import is_suite_admin, is_system_manager, is_user_enabled
 
@@ -48,6 +49,10 @@ def check_admin_permission(action: str, target: Any = None) -> str:
     API key) must not be able to perform admin actions, e.g. re-enable their own account via
     enable_members. Throws frappe.PermissionError otherwise.
 
+    The Admin Dashboard is Suite Cloud's face on the site, so without a Suite Cloud there is nothing
+    to administer and every endpoint refuses. Checked after the role: whether the site is connected
+    is not for anyone else to learn.
+
     Every action that changes something is also written to the admin log with ``target`` (the object
     acted on), so a shared inbox of administrators stays accountable. Reads are not logged: each
     dashboard page issues several and they change nothing.
@@ -59,6 +64,7 @@ def check_admin_permission(action: str, target: Any = None) -> str:
             _("User {0} does not have permission to {1}.").format(frappe.bold(user), action),
             frappe.PermissionError,
         )
+    is_suite_cloud_configured(raise_exception=True)
     if not action.startswith("view "):
         log_admin_action(action, target)
     return user

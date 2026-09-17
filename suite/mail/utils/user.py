@@ -70,6 +70,15 @@ def is_jmap_configured(user: str, raise_exception: bool = False) -> bool:
     return False
 
 
+def can_use_mail(user: str) -> bool:
+    """Whether Mail and Calendar are open to the user: the site knows its JMAP server and the user
+    has an account on it. Suite Cloud plays no part; it is only behind the Admin Dashboard."""
+
+    from suite.mail.utils import is_jmap_server_configured
+
+    return is_jmap_server_configured() and is_jmap_configured(user)
+
+
 @request_cache
 def get_user_account_ids(user: str) -> list[str]:
     """Returns the JMAP account IDs the user has access to.

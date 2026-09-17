@@ -60,6 +60,11 @@ when it registers the site (the settings override them on a self-managed site):
   `suite/suite_core/utils.py`, and **Validate Suite Cloud Credentials** on Suite Settings confirms
   them.
 
+The two halves stand apart. Mail and Calendar need only the JMAP server: a site with `server_url`
+and no Suite Cloud is fully usable by anyone who has an account. The Admin Dashboard, account
+creation and signup need Suite Cloud: without it the dashboard is hidden from admins, its routes
+lead back to the mailbox, and every endpoint in `suite/mail/api/admin.py` refuses.
+
 The client lives in `suite/mail/suite_cloud/`, the facade the rest of Mail uses in
 `suite/mail/directory.py`, and the Admin Dashboard's endpoints in `suite/mail/api/admin.py`.
 
