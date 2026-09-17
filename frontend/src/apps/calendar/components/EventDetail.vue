@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import {
 	Bell,
 	Briefcase,
+	CalendarDays,
 	ChevronLeft,
 	ChevronRight,
 	Copy,
@@ -190,16 +191,9 @@ const dotColor = computed(() =>
 	eventColor((calendarEvent.color as string) || eventCalendar.value?.color),
 )
 
-// The organizer beats the viewer's own address (redundant in their own card);
-// for self-organized events they coincide. Fall back to the account's address
-// (from participantIdentities — the calendar id only carries an opaque JMAP account id),
-// then the calendar's display name.
-const calendarOwnerLabel = computed(
-	() =>
-		calendarEvent.organizer?.replace('mailto:', '') ||
-		participantIdentities.data?.[0]?.email ||
-		eventCalendar.value?.calendar_name,
-)
+// Whose event it is: its organizer. An event nobody organizes — a holiday on a shared calendar,
+// say — has no one to name and no one invited, so it names the calendar it is on instead.
+const organizerEmail = computed(() => calendarEvent.organizer?.replace('mailto:', ''))
 
 // --- Date / time label ---
 
@@ -724,21 +718,25 @@ const openUrl = (location: string) => {
 						</div>
 
 						<!-- Whose event it is, last: the row that is always here, and the one a
-						     reader is least often after — what it is and when comes first. A person,
-						     not a calendar: the label is the organizer's address, falling back to
-						     the account's own, and only names a calendar when an event carries no
-						     organizer at all. The colour it draws in is up beside the name, where
-						     matching it against the grid starts. -->
+						     reader is least often after — what it is and when comes first. The
+						     organizer where there is one, and otherwise the calendar. The colour it
+						     draws in is up beside the name, where matching it against the grid
+						     starts. -->
 						<div class="flex items-center gap-2.5 px-4.5 py-2">
-							<User class="icon text-ink-gray-5 size-4 shrink-0" />
-							<span class="text-ink-gray-7 min-w-0 truncate text-sm">{{ calendarOwnerLabel }}</span>
+							<component
+								:is="organizerEmail ? User : CalendarDays"
+								class="icon text-ink-gray-5 size-4 shrink-0"
+							/>
+							<span class="text-ink-gray-7 min-w-0 truncate text-sm">
+								{{ organizerEmail || eventCalendar?.calendar_name }}
+							</span>
 						</div>
 					</div>
 
 					<!-- No rule above the participants in the sheet: there the section is one
 					     row, and a row ruled off from the rows above it read as a section of
 					     its own with nothing in it. The card keeps the rule over its list. -->
-					<div v-if="variant !== 'sheet'" class="border-t" />
+					<div v-if="variant !== 'sheet' && orderedParticipants.length" class="border-t" />
 
 					<!-- Participants: the section's own y padding matches the header row's
 					     py-2, so it reads as evenly spaced. Counting the row's padding
@@ -747,7 +745,11 @@ const openUrl = (location: string) => {
 					<!-- pb only in the sheet: with no rule above it, the section's top
 					     padding would hold its row off the owner row by more than the rows
 					     above it are held off each other. -->
-					<div class="flex flex-col" :class="variant === 'sheet' ? 'pb-2' : 'py-2'">
+					<div
+						v-if="orderedParticipants.length"
+						class="flex flex-col"
+						:class="variant === 'sheet' ? 'pb-2' : 'py-2'"
+					>
 						<!-- In the sheet, the row is the whole of it: one line that says how
 						     many and how they answered, and opens the list as a page of the
 						     sheet — see `sheetPage`. The chevron says there is more behind
