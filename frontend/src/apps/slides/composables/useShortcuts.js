@@ -30,6 +30,7 @@ import {
 	deleteElements,
 	duplicateElements,
 	isSelectionLocked,
+	isTextSelection,
 } from '@/apps/slides/stores/element'
 import {
 	changeSlideInSlideshow,
@@ -51,7 +52,8 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const inReadonly = () => inReadonlyMode.value && !inSlideShowMode.value
 	const inSlideShow = () => inSlideShowMode.value
 	const hasElements = () => activeElementIds.value.length > 0
-	const hasActiveTextEditor = () => hasElements() && !!activeEditor.value
+	const hasActiveTextEditor = () =>
+		hasElements() && (!!activeEditor.value || isTextSelection.value)
 
 	const nudge = (key, step = 1) => {
 		if (isSelectionLocked.value) return
