@@ -242,8 +242,18 @@
 								</button>
 							</div>
 
-							<!-- how it reads to everyone else -->
+							<!-- where it is kept, and how it reads to everyone else -->
 							<div :class="GROUP">
+								<button
+									v-if="store.calendarOptions.length > 1"
+									:class="ROW"
+									@click="showCalendarSheet = true"
+								>
+									<CalendarDays :class="ICON" />
+									<span class="shrink-0">{{ __('Calendar') }}</span>
+									<span :class="VALUE_LONG">{{ calendarOptions.find((option) => option.selected)?.label }}</span>
+									<ChevronRight :class="CHEVRON" />
+								</button>
 								<button :class="ROW" @click="showAvailabilitySheet = true">
 									<Briefcase :class="ICON" />
 									<span class="flex-1">{{ __('Availability') }}</span>
@@ -392,6 +402,11 @@
 	     sheet on a phone, the same options as a dropdown on a desktop. It closes itself when
 	     one is picked, so the row's own flag only has to open it. -->
 	<AdaptiveDropdown
+		v-model:open="showCalendarSheet"
+		:title="__('Calendar')"
+		:options="calendarOptions"
+	/>
+	<AdaptiveDropdown
 		v-model:open="showAvailabilitySheet"
 		:title="__('Availability')"
 		:options="availabilityOptions"
@@ -424,6 +439,7 @@ import { Avatar, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 import dayjs from '@/apps/calendar/utils/dayjs'
+import { eventColor } from '@/apps/calendar/utils/color'
 import { formatAlertPhrase, getRepeatMessage } from '@/apps/calendar/utils/format'
 import {
 	ALERT_ACTION_OPTIONS,
@@ -542,6 +558,17 @@ const asDropdownOptions = (
 		selected: current() === option.value,
 		onClick: () => choose(option.value),
 	}))
+
+const calendarOptions = computed(() =>
+	store.calendarOptions.map(({ label, value, color }) => ({
+		label,
+		icon: h('span', { class: 'grid place-items-center' }, [
+			h('span', { class: 'size-2.5 rounded-full', style: { background: eventColor(color) } }),
+		]),
+		selected: event.calendar_ids?.[0] === value,
+		onClick: () => (event.calendar_ids = [value]),
+	})),
+)
 
 const availabilityOptions = computed(() =>
 	asDropdownOptions(
@@ -726,6 +753,7 @@ watch(
 	(count: number, previous: number) => count > previous && requestAlertPermission(),
 )
 
+const showCalendarSheet = ref(false)
 const showAvailabilitySheet = ref(false)
 const showVisibilitySheet = ref(false)
 </script>

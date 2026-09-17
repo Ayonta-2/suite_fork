@@ -9,6 +9,7 @@ import { useScreenSize } from '@/composables/useScreenSize'
 import { appPageMeta } from '@/utils/documentTitle'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
+import { calendarColor as colorOf, visibleAfterReload } from '@/apps/calendar/utils/calendars'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
@@ -141,7 +142,7 @@ watch(
 watch(
 	() => store.accountId,
 	() => {
-		calendars.reload()
+		// The store fetches the account's calendars itself when it switches.
 		reloadEvents()
 	},
 )
@@ -287,28 +288,26 @@ const getEventRole = (event) => {
 	return 'Viewer'
 }
 
-const calendars = createResource({
-	url: 'suite.calendar.api.get_calendars',
-	makeParams: () => ({ account: store.accountId }),
-	auto: true,
-	onSuccess: (data) => (visibleCalendars.value = data.map((cal) => cal.name)),
-	onError: (error) => raiseToast(error.message, 'error'),
-})
+const { calendars } = store
 
+// Calendars switched off in the sidebar stay off through a reload — see visibleAfterReload.
 const visibleCalendars = ref<string[]>([])
-
-// A calendar's colour is its own — set wherever its owner set it, and sent with
-// the calendar. Only where it has none does one come from the palette by
-// position, which is what every calendar used to get; its events and its dot in
-// the sidebar share whichever it is.
-const PALETTE = ['green', 'blue', 'violet', 'amber', 'pink', 'cyan', 'orange']
-const calendarColor = (name: string) => {
-	const index = calendars.data?.findIndex((cal) => cal.name === name) ?? -1
-	return calendars.data?.[index]?.color || PALETTE[Math.max(index, 0) % PALETTE.length]
-}
-const coloredCalendars = computed(
-	() => calendars.data?.map((cal) => ({ ...cal, color: calendarColor(cal.name) })) || [],
+let knownCalendars: string[] = []
+watch(
+	() => calendars.data,
+	(data) => {
+		if (!data) return
+		visibleCalendars.value = visibleAfterReload(knownCalendars, visibleCalendars.value, data)
+		knownCalendars = data.map((cal) => cal.name)
+	},
+	{ immediate: true },
 )
+watch(
+	() => calendars.error,
+	(error) => error && raiseToast(error.message, 'error'),
+)
+
+const calendarColor = (name: string) => colorOf(calendars.data, name)
 
 // The period the calendar is showing, as it reports it on every change of view or
 // date. Declared above the resource that reads it: makeParams runs late enough
@@ -1059,7 +1058,6 @@ const NOTIFY_MODAL_OPTIONS = {
 	<div class="flex h-full min-h-0 w-full min-w-0 flex-col sm:h-screen">
 		<div v-if="!isMobile" class="flex min-h-0 min-w-0 flex-1">
 			<AppSidebar
-				:calendars="coloredCalendars"
 				:calendar-color="calendarColor"
 				:visible-calendars
 				:month="calendarRef?.currentMonth"
