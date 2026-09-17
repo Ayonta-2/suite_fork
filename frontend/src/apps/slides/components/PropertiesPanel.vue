@@ -55,10 +55,8 @@
 					<hr class="border-t" />
 					<ShadowSection :key="activeElementIds.join()" />
 				</template>
-				<template v-if="showAppearance">
-					<hr class="border-t" />
-					<AppearanceSection />
-				</template>
+				<hr class="border-t" />
+				<AppearanceSection />
 			</div>
 			<div v-else-if="currentSlide">
 				<BackgroundSection />
@@ -114,9 +112,6 @@ const showFont = computed(() => isSelectionOf('text', 'table') || isEditingShape
 const isShapeSelection = computed(() => isSelectionOf('shape'))
 const isMediaSelection = computed(() => isSelectionOf('image', 'video'))
 const showShadow = computed(() => isSelectionOf('image', 'video', 'shape'))
-const showAppearance = computed(
-	() => Boolean(activeElement.value) || isSelectionOf('image', 'video', 'shape', 'table'),
-)
 
 const selectionLabel = computed(() => {
 	const count = activeElementIds.value.length

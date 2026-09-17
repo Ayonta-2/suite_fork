@@ -1311,7 +1311,7 @@ watch(
 watch(
 	[activeElementIds, () => firstEditableElement.value?.content, activeEditor],
 	() => {
-		if (!activeEditor.value && isTextSelection.value) showFirstEditableStyles()
+		if (!activeEditor.value && activeElementIds.value.length > 1) showFirstEditableStyles()
 	},
 )
 

@@ -399,17 +399,19 @@ export const useTextEditor = () => {
 			? formatSelectedText(property, value)
 			: setPropertyOn(activeEditor.value, property, value)
 
-	const showFirstEditableStyles = () =>
-		setEditorStyles(loadScratchEditor(firstEditableElement.value))
+	const showFirstEditableStyles = () => {
+		const element = firstEditableElement.value
+		if (['text', 'table'].includes(element?.type)) setEditorStyles(loadScratchEditor(element))
+	}
 
 	const selectedTextTargets = () =>
 		activeElements.value.filter((el) => !el.locked && ['text', 'table'].includes(el.type))
 
 	// three commands per element, so every batch of a burst has the shape coalescing folds
-	const buildContentCommands = (runChain) => {
+	const buildContentCommands = (targets, runChain) => {
 		const slideId = currentSlide.value.clientId
 
-		const edits = selectedTextTargets().map((element) => {
+		const edits = targets.map((element) => {
 			const editor = loadScratchEditor(element)
 			runChain(editor)
 			return {
@@ -438,8 +440,7 @@ export const useTextEditor = () => {
 		])
 	}
 
-	const editSelectedText = (runChain) => {
-		const commands = buildContentCommands(runChain)
+	const runSelectedBatch = (key, commands) => {
 		if (commands.every((c) => c.oldValue === c.newValue)) return
 
 		const slideId = currentSlide.value.clientId
@@ -449,11 +450,36 @@ export const useTextEditor = () => {
 				slideId,
 				elementIds,
 				commands,
-				coalesceKey: `content:${slideId}:${elementIds.join()}`,
+				coalesceKey: `${key}:${slideId}:${elementIds.join()}`,
 			}),
 		)
 
 		showFirstEditableStyles()
+	}
+
+	const editSelectedText = (runChain) =>
+		runSelectedBatch('content', buildContentCommands(selectedTextTargets(), runChain))
+
+	// opacity is a text-style mark on a text box and an element property on everything else
+	const setSelectedOpacity = (value) => {
+		const editable = activeElements.value.filter((el) => !el.locked)
+		const textBoxes = editable.filter((el) => el.type === 'text')
+		const others = editable.filter((el) => el.type !== 'text')
+
+		const markOpacity = (editor) => setPropertyOn(editor, 'opacity', value)
+		const opacityCommand = (element) =>
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property: 'opacity',
+				oldValue: element.opacity,
+				newValue: value,
+			})
+
+		runSelectedBatch('opacity', [
+			...buildContentCommands(textBoxes, markOpacity),
+			...others.map(opacityCommand),
+		])
 	}
 
 	const formatSelectedText = (property, value) =>
@@ -517,6 +543,7 @@ export const useTextEditor = () => {
 		toggleMark,
 		updateProperty,
 		formatSelectedText,
+		setSelectedOpacity,
 		showFirstEditableStyles,
 		initTextEditor,
 	}

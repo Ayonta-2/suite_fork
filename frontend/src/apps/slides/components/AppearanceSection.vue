@@ -1,15 +1,15 @@
 <template>
 	<Section label="Appearance">
 		<NumberControl
-			v-if="firstEditableElement.type == 'text'"
-			:modelValue="textOpacity"
+			v-if="isMultiSelection || firstEditableElement.type == 'text'"
+			:modelValue="selectionOpacity"
 			label="Opacity"
 			suffix="%"
 			:min="0"
 			:max="100"
 			:max-digits="3"
 			:step="1"
-			@update:modelValue="(value) => updateProperty('opacity', parseFloat(value))"
+			@update:modelValue="(value) => setOpacity(parseFloat(value))"
 		/>
 		<NumberControl
 			v-else
@@ -36,14 +36,23 @@ import Section from '@/apps/slides/components/controls/Section.vue'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 import { useElementProperty } from '@/apps/slides/composables/editProperty'
 
-import { firstEditableElement } from '@/apps/slides/stores/element'
+import { activeElementIds, firstEditableElement } from '@/apps/slides/stores/element'
 
-const { editorStyles, updateProperty } = useTextEditor()
+const { editorStyles, updateProperty, setSelectedOpacity } = useTextEditor()
 
 const opacity = useElementProperty('opacity')
+
+const isMultiSelection = computed(() => activeElementIds.value.length > 1)
 
 const textOpacity = computed(() => {
 	const value = parseFloat(editorStyles.opacity)
 	return Number.isNaN(value) ? 100 : value
 })
+
+const selectionOpacity = computed(() =>
+	firstEditableElement.value.type == 'text' ? textOpacity.value : firstEditableElement.value.opacity,
+)
+
+const setOpacity = (value) =>
+	isMultiSelection.value ? setSelectedOpacity(value) : updateProperty('opacity', value)
 </script>

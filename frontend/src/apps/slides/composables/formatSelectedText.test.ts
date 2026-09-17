@@ -10,7 +10,8 @@ const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
 const { useCommandHistory } = await import('./useCommandHistory')
 const { useTextEditor } = await import('./useTextEditor')
 
-const { activeEditor, editorStyles, formatSelectedText, toggleMark } = useTextEditor()
+const { activeEditor, editorStyles, formatSelectedText, setSelectedOpacity, toggleMark } =
+	useTextEditor()
 
 const actionOrder = {
 	execute: { editElement: ['execute'], batch: ['execute'] },
@@ -165,6 +166,28 @@ describe('a mark toggled across boxes', () => {
 
 		expect(element('a').content).toBe(plain)
 		expect(element('b').content).toBe(bold)
+		expect(history.canUndo.value).toBe(false)
+	})
+})
+
+describe('opacity over a mixed selection', () => {
+	it('marks the text box, sets the others as elements, and undoes all in one step', () => {
+		select(
+			{ id: 'a', content: line('one') },
+			{ id: 'r', type: 'shape', opacity: 100 },
+			{ id: 't', type: 'table', content: table('x') },
+		)
+
+		setSelectedOpacity(50)
+		expect(element('a').content).toContain('opacity: 0.5')
+		expect(element('r').opacity).toBe(50)
+		expect(element('t').opacity).toBe(50)
+		expect(element('t').content).toBe(table('x'))
+
+		history.undo()
+		expect(element('a').content).toBe(line('one'))
+		expect(element('r').opacity).toBe(100)
+		expect(element('t').opacity).toBeUndefined()
 		expect(history.canUndo.value).toBe(false)
 	})
 })
