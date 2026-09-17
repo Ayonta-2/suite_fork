@@ -87,6 +87,14 @@ def get_account_metadata() -> dict:
     }
 
 
+def account_exists(email: str) -> bool:
+    try:
+        get_client().call("mail.accounts.get_account", email=email)
+    except frappe.DoesNotExistError:
+        return False
+    return True
+
+
 def create_account(
     email: str,
     password: str,

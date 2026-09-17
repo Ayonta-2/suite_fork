@@ -395,6 +395,47 @@ class TestMembers(SuiteCloudTestCase):
         # The answer never arrived, but the account did; a retry must not meet "already exists".
         self.assertNotIn(f"erin@{DOMAIN}", self.fake.accounts)
 
+    def test_timeout_before_the_creation_leaves_an_existing_mailbox_alone(self) -> None:
+        # A mailbox can outlive its user on this site; the cleanup must not take it for its own.
+        self.fake.accounts__create_account(f"frank@{DOMAIN}", "secret-pw", display_name="Frank of old")
+        with patch(
+            "suite.mail.doctype.mail_account_request.mail_account_request.MailAccountRequest._surviving",
+            side_effect=SuiteCloudUnavailableError("Suite Cloud is unreachable; try again shortly."),
+        ):
+            self.assertRaises(
+                frappe.ValidationError,
+                admin.add_member,
+                "frank",
+                DOMAIN,
+                is_admin=False,
+                send_invite=False,
+                backup_email="frank@backup.test",
+                first_name="Frank",
+                password="a-strong-password-9",
+                groups=[f"sales@{DOMAIN}"],
+            )
+        self.assertEqual(self.fake.accounts[f"frank@{DOMAIN}"]["display_name"], "Frank of old")
+
+    def test_an_address_the_cluster_already_has_is_refused_before_the_creation(self) -> None:
+        self.fake.accounts__create_account(f"grace@{DOMAIN}", "secret-pw", display_name="Grace of old")
+        with patch(
+            "suite.mail.doctype.mail_account_request.mail_account_request.create_account"
+        ) as create_account:
+            self.assertRaisesRegex(
+                frappe.ValidationError,
+                "Failed to create the mail account",
+                admin.add_member,
+                "grace",
+                DOMAIN,
+                is_admin=False,
+                send_invite=False,
+                backup_email="grace@backup.test",
+                first_name="Grace",
+                password="a-strong-password-9",
+            )
+        create_account.assert_not_called()
+        self.assertEqual(self.fake.accounts[f"grace@{DOMAIN}"]["display_name"], "Grace of old")
+
     def test_unset_quota_takes_the_mail_settings_default(self) -> None:
         with self.change_settings("Mail Settings", default_disk_quota_gb=7):
             frappe.local.request_cache.clear()

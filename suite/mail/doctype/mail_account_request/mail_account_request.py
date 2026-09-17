@@ -20,7 +20,7 @@ from frappe.utils import (
     validate_email_address,
 )
 
-from suite.mail.directory import create_account, delete_account_by_email, get_domains
+from suite.mail.directory import account_exists, create_account, delete_account_by_email, get_domains
 from suite.mail.suite_cloud import SuiteCloudUnavailableError
 from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
 from suite.mail.utils.logger import log_admin_action
@@ -403,16 +403,22 @@ class MailAccountRequest(Document):
         # Steps 1 and 2: the account, its aliases, group and list memberships and a Suite app
         # password are created on the cluster through Suite Cloud in one call.
         def create() -> dict:
+            # Looked up before the creation: a failure here has made nothing to clean up.
+            groups = self._surviving("mail.groups.list_groups", self._groups)
+            mailing_lists = self._surviving("mail.mailing_lists.list_mailing_lists", self._mailing_lists)
+            # A mailbox can outlive its user on this site. Refusing it here is what lets the cleanup
+            # below trust that whatever holds the address after a timeout is this attempt's own.
+            if account_exists(self.account):
+                frappe.throw(_("A mail account {0} already exists.").format(frappe.bold(self.account)))
+
             try:
                 return create_account(
                     email=self.account,
                     password=password,
                     display_name=f"{first_name} {last_name}" if last_name else first_name,
                     aliases=self._aliases,
-                    groups=self._surviving("mail.groups.list_groups", self._groups),
-                    mailing_lists=self._surviving(
-                        "mail.mailing_lists.list_mailing_lists", self._mailing_lists
-                    ),
+                    groups=groups,
+                    mailing_lists=mailing_lists,
                     disk_quota_gb=self._quota_gb,
                     locale=locale,
                     time_zone=time_zone,
