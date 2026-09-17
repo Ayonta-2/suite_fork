@@ -5,6 +5,7 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
 const { DOMParser } = await import('@tiptap/pm/model')
+const { Editor: HeadlessEditor } = await import('@tiptap/core')
 const { slides, slideIndex } = await import('@/apps/slides/stores/slide')
 const { activeElementIds, focusElementId } = await import('@/apps/slides/stores/element')
 const historyMeta = await import('@/apps/slides/stores/historyMeta')
@@ -161,6 +162,24 @@ describe('the second step of a burst', () => {
 		expect(parse).not.toHaveBeenCalled()
 		expect(parseHTML).not.toHaveBeenCalled()
 		expect(append).toHaveBeenCalledTimes(2)
+		expect(element('a').left).toBe(355)
+	})
+
+	it('neither serialises nor measures a box the step leaves as it is', () => {
+		select(
+			{ id: 'a', content: sized(20, 'one', 'center'), left: 400 },
+			{ id: 'b', content: sized(50, 'two', 'center'), left: 400 },
+		)
+		formatSelectedText('fontSize', 50)
+		nextFrame()
+
+		const serialise = vi.spyOn(HeadlessEditor.prototype, 'getHTML')
+		const append = vi.spyOn(document.body, 'appendChild')
+		formatSelectedText('fontSize', 50)
+
+		expect(serialise).not.toHaveBeenCalled()
+		expect(append).not.toHaveBeenCalled()
+		expect(element('a').content).toBe(sized(50, 'one', 'center'))
 		expect(element('a').left).toBe(355)
 	})
 })

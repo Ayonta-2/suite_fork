@@ -448,6 +448,10 @@ export const useTextEditor = () => {
 		const last = lastEdit(element)
 		const editor = loadScratchEditor(element)
 		runChain(editor)
+		// a step that leaves the box as it is has nothing new to serialise or measure
+		if (last && editor.state.doc.eq(last.doc)) {
+			return { ...last, element, oldContent: last.newContent, oldWidth: last.newWidth }
+		}
 		const html = editor.getHTML()
 		return {
 			element,
@@ -462,7 +466,9 @@ export const useTextEditor = () => {
 
 	// centred and right-aligned auto-width boxes pay their growth out of left, as when typing
 	const shiftGrowingEdits = (edits) => {
-		const growing = edits.filter(({ element, anchor }) => canGrow(element, anchor))
+		const growing = edits.filter(
+			(edit) => edit.oldContent !== edit.newContent && canGrow(edit.element, edit.anchor),
+		)
 		const widths = measureHTMLList(
 			growing.flatMap((e) => (e.oldWidth == null ? [e.oldContent, e.newContent] : [e.newContent])),
 		).map((size) => size.elementWidth)
