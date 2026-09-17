@@ -394,7 +394,13 @@ export const useTextEditor = () => {
 		}
 	}
 
-	const updateProperty = (property, value) => setPropertyOn(activeEditor.value, property, value)
+	const updateProperty = (property, value) =>
+		activeElementIds.value.length > 1
+			? formatSelectedText(property, value)
+			: setPropertyOn(activeEditor.value, property, value)
+
+	const showFirstEditableStyles = () =>
+		setEditorStyles(loadScratchEditor(firstEditableElement.value))
 
 	const selectedTextTargets = () =>
 		activeElements.value.filter((el) => !el.locked && ['text', 'table'].includes(el.type))
@@ -447,7 +453,7 @@ export const useTextEditor = () => {
 			}),
 		)
 
-		setEditorStyles(loadScratchEditor(firstEditableElement.value))
+		showFirstEditableStyles()
 	}
 
 	const formatSelectedText = (property, value) =>
@@ -511,6 +517,7 @@ export const useTextEditor = () => {
 		toggleMark,
 		updateProperty,
 		formatSelectedText,
+		showFirstEditableStyles,
 		initTextEditor,
 	}
 }

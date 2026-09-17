@@ -81,6 +81,12 @@ const firstEditableElement = computed(() => {
 	return selected.find((el) => el && !el.locked) ?? selected[0]
 })
 
+const isTextSelection = computed(
+	() =>
+		activeElementIds.value.length > 1 &&
+		activeElements.value.every((el) => ['text', 'table'].includes(el.type)),
+)
+
 const setActiveElements = (ids) => {
 	if (ids.length == 1 && activeElementIds.value.includes(ids[0])) return
 	activeElementIds.value = ids
@@ -1159,7 +1165,7 @@ const ensureExplicitHeight = (element) => {
 	element.height = elementDiv.offsetHeight
 }
 
-const { initTextEditor, activeEditor } = useTextEditor()
+const { initTextEditor, activeEditor, showFirstEditableStyles } = useTextEditor()
 let editorOldText = ''
 
 const getEditorHTML = () => {
@@ -1298,6 +1304,14 @@ watch(
 			blurAndSaveContent(oldElement)
 		}
 		replaceEditor(() => initEditorForElement(element))
+	},
+)
+
+// several boxes have no editor to refresh the panel from, so the first editable one is read instead
+watch(
+	[activeElementIds, () => firstEditableElement.value?.content, activeEditor],
+	() => {
+		if (!activeEditor.value && isTextSelection.value) showFirstEditableStyles()
 	},
 )
 
@@ -1451,6 +1465,7 @@ export {
 	activeElements,
 	activeElement,
 	firstEditableElement,
+	isTextSelection,
 	isSelectionLocked,
 	hasLockedElements,
 	hasUnlockedElements,

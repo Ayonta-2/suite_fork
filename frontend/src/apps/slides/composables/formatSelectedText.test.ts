@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
@@ -111,6 +112,26 @@ describe('a style written to every selected box', () => {
 		expect(element('a').content).toContain('color: rgb(1, 2, 3)')
 		expect(element('t').content.match(/color: rgb\(1, 2, 3\)/g)).toHaveLength(2)
 		expect(element('t').width).toBe(300)
+	})
+})
+
+describe('what the panel shows for two boxes', () => {
+	it('reads the first box once they are selected', async () => {
+		select({ id: 'a', content: sized(25, 'one') }, { id: 'b', content: sized(30, 'two') })
+
+		await nextTick()
+
+		expect(editorStyles.fontSize).toBe(25)
+	})
+
+	it('follows an undo', async () => {
+		select({ id: 'a', content: sized(20, 'one') }, { id: 'b', content: sized(30, 'two') })
+
+		formatSelectedText('fontSize', 40)
+		history.undo()
+		await nextTick()
+
+		expect(editorStyles.fontSize).toBe(20)
 	})
 })
 

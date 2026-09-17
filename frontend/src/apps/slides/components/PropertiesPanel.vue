@@ -29,7 +29,7 @@
 					<hr class="border-t" />
 					<TableCellSection />
 				</template>
-				<template v-if="['text', 'table'].includes(activeElement?.type) || isEditingShapeText">
+				<template v-if="showFont">
 					<hr class="border-t" />
 					<FontSection />
 					<hr class="border-t" />
@@ -110,6 +110,7 @@ const isEditingShapeText = computed(
 const isSelectionOf = (...types) =>
 	Boolean(firstEditableElement.value) && activeElements.value.every((el) => types.includes(el.type))
 
+const showFont = computed(() => isSelectionOf('text', 'table') || isEditingShapeText.value)
 const isShapeSelection = computed(() => isSelectionOf('shape'))
 const isMediaSelection = computed(() => isSelectionOf('image', 'video'))
 const showShadow = computed(() => isSelectionOf('image', 'video', 'shape'))
