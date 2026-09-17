@@ -191,6 +191,10 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     include: [
       'debug',
+      // Imported from @iframe-resizer/vue's raw .vue source, which is never pre-bundled, so
+      // left alone Vite resolves it through its `browser` field to a UMD build that has no
+      // default export, and the page fails to load.
+      '@iframe-resizer/core',
       'frappe-ui > lowlight',
       'yjs',
       'tailwind.config.js',
