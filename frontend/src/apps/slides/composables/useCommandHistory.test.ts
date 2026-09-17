@@ -155,6 +155,17 @@ describe('record coalescing', () => {
 		expect(history.canUndo.value).toBe(false)
 	})
 
+	it('starts a new entry when the next batch has fewer boxes', async () => {
+		state.value[0].elements.push({ id: 2, type: 'text', content: 'x', locked: false })
+		history.record(batchEdit([['a', 'ab'], ['x', 'xy']]))
+		history.record(batchEdit([['ab', 'abc']]))
+
+		await history.undo()
+
+		expect(state.value[0].elements[0].content).toBe('ab')
+		expect(history.canUndo.value).toBe(true)
+	})
+
 	it('does not fold the next edit into the burst before a dropped step', async () => {
 		history.record(contentEdit('a', 'ab'))
 		vi.advanceTimersByTime(COALESCE_WINDOW + 1)

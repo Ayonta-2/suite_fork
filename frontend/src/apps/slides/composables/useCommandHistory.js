@@ -43,6 +43,8 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 	const canCoalesce = (command, top, forceCoalesce) => {
 		// key-less commands would match on undefined === undefined
 		if (!command.coalesceKey || command.coalesceKey !== top?.coalesceKey) return false
+		// a batch folds pairwise into the one on top, so a box lost to a lock starts a new entry
+		if ((command.commands?.length ?? 0) !== (top.commands?.length ?? 0)) return false
 		// a zeroed clock marks the top as no continuation target, and a forced
 		// fold must not reach past that either
 		if (!lastRecordedAt) return false
