@@ -9,7 +9,7 @@
 			:max="100"
 			:max-digits="3"
 			:step="1"
-			@update:modelValue="(value) => setOpacity(parseFloat(value))"
+			@update:modelValue="(value) => updateProperty('opacity', parseFloat(value))"
 		/>
 		<NumberControl
 			v-else
@@ -38,7 +38,7 @@ import { useElementProperty } from '@/apps/slides/composables/editProperty'
 
 import { firstEditableElement, isMultiSelection } from '@/apps/slides/stores/element'
 
-const { editorStyles, updateProperty, setSelectedOpacity } = useTextEditor()
+const { editorStyles, updateProperty } = useTextEditor()
 
 const opacity = useElementProperty('opacity')
 
@@ -50,7 +50,4 @@ const textOpacity = computed(() => {
 const selectionOpacity = computed(() =>
 	firstEditableElement.value.type == 'text' ? textOpacity.value : firstEditableElement.value.opacity,
 )
-
-const setOpacity = (value) =>
-	isMultiSelection.value ? setSelectedOpacity(value) : updateProperty('opacity', value)
 </script>

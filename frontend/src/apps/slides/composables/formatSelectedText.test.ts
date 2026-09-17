@@ -11,7 +11,7 @@ const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
 const { useCommandHistory } = await import('./useCommandHistory')
 const { useTextEditor } = await import('./useTextEditor')
 
-const { activeEditor, editorStyles, formatSelectedText, setSelectedOpacity, toggleMark } =
+const { activeEditor, editorStyles, formatSelectedText, toggleMark, updateProperty } =
 	useTextEditor()
 
 const actionOrder = {
@@ -232,7 +232,7 @@ describe('opacity over a mixed selection', () => {
 			{ id: 't', type: 'table', content: table('x') },
 		)
 
-		setSelectedOpacity(50)
+		updateProperty('opacity', 50)
 		expect(element('a').content).toContain('opacity: 0.5')
 		expect(element('r').opacity).toBe(50)
 		expect(element('t').opacity).toBe(50)

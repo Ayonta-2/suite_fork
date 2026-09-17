@@ -418,10 +418,11 @@ export const useTextEditor = () => {
 		}
 	}
 
-	const updateProperty = (property, value) =>
-		isMultiSelection.value
-			? formatSelectedText(property, value)
-			: setPropertyOn(activeEditor.value, property, value)
+	const updateProperty = (property, value) => {
+		if (!isMultiSelection.value) return setPropertyOn(activeEditor.value, property, value)
+		if (property === 'opacity') return setSelectedOpacity(value)
+		formatSelectedText(property, value)
+	}
 
 	const showFirstEditableStyles = () => {
 		const element = firstEditableElement.value
@@ -591,7 +592,6 @@ export const useTextEditor = () => {
 		toggleMark,
 		updateProperty,
 		formatSelectedText,
-		setSelectedOpacity,
 		showFirstEditableStyles,
 		initTextEditor,
 	}
