@@ -156,6 +156,14 @@ class TestSuiteSettings(SuiteCloudTestCase):
 
 
 class TestDomains(SuiteCloudTestCase):
+    def test_an_outage_is_not_passed_off_as_a_site_without_domains(self) -> None:
+        self.assertEqual(admin.get_enabled_domains(), [DOMAIN])
+        with patch(
+            "suite.mail.directory.get_domains",
+            side_effect=SuiteCloudUnavailableError("Suite Cloud is unreachable; try again shortly."),
+        ):
+            self.assertRaisesRegex(SuiteCloudUnavailableError, "unreachable", admin.get_enabled_domains)
+
     def test_domains_are_listed_added_exported_and_deleted(self) -> None:
         self.fake.domains[DOMAIN]["is_verified"] = 0  # walk the domain from pending to active
         rows = admin.get_domains()["items"]

@@ -48,7 +48,7 @@
 					/>
 				</div>
 				<ErrorMessage
-					:message="addGroup.error && (addGroup.error?.messages?.[0] || addGroup.error?.message || __('Request failed.'))"
+					:message="domainsError || (addGroup.error && (addGroup.error?.messages?.[0] || addGroup.error?.message || __('Request failed.')))"
 				/>
 			</div>
 		</template>
@@ -60,6 +60,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dialog, ErrorMessage, FormControl, MultiSelect, createResource } from 'frappe-ui'
 
+import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 import { useAccountPicker } from '@/apps/mail/utils/accountPicker'
 
@@ -73,7 +74,7 @@ const description = ref('')
 const quotaGb = ref<string | number>('')
 const memberIds = ref<string[]>([])
 
-const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', auto: true })
+const { domains, domainsError } = useEnabledDomains(show)
 const picker = useAccountPicker(memberIds)
 
 const domainOptions = computed(() => (domains.data || []).map((d: string) => ({ label: d, value: d })))

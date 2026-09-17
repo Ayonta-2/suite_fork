@@ -153,7 +153,7 @@
 					</div>
 				</template>
 				<ErrorMessage
-					:message="addMember.error && (addMember.error?.messages?.[0] || addMember.error?.message || __('Request failed.'))"
+					:message="domainsError || (addMember.error && (addMember.error?.messages?.[0] || addMember.error?.message || __('Request failed.')))"
 				/>
 			</div>
 			</div>
@@ -167,14 +167,14 @@ import {
 	Button, Combobox, Dialog, ErrorMessage, FormControl, MultiSelect, Switch, createResource, LoadingIndicator } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
+import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 import { fromLocalInput, toLocalInput, utcFromNow } from '@/apps/mail/utils/datetime'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
-import { userStore } from '@/apps/mail/stores/user'
 
 const show = defineModel<boolean>()
 
-const { domains } = userStore()
+const { domains, domainsError } = useEnabledDomains(show)
 
 const ROLE_OPTIONS = [
 	{ label: __('User'), value: 'user' },

@@ -88,8 +88,6 @@ export const userStore = defineStore('mail-user', () => {
 			return data
 		},
 		onSuccess: (data) => {
-			// The domains are for the Admin Dashboard, and come from Suite Cloud like the rest of it.
-			if (data?.is_suite_admin && data?.is_suite_cloud_configured) domains.fetch()
 			// The unified All Inboxes badge only applies when there's more than one account to merge.
 			if ((data?.accounts?.length ?? 0) > 1) allInboxesUnread.fetch()
 			resolveAccount(data?.accounts)
@@ -177,8 +175,6 @@ export const userStore = defineStore('mail-user', () => {
 		cache: ['sieveScripts', accountId.value],
 	})
 
-	const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains' })
-
 	// Clear all user/account state so the next sign-in starts from a clean slate. Without
 	// resetting accountId, resolveAccount() would see the resolved account as unchanged and skip
 	// setAccount(), so the per-account resources (mailboxes, etc.) would never re-fetch until a
@@ -192,7 +188,6 @@ export const userStore = defineStore('mail-user', () => {
 		screenedAddresses.reset()
 		globalScreenedAddresses.reset()
 		sieveScripts.reset()
-		domains.reset()
 		allInboxesUnread.reset()
 	}
 
@@ -205,7 +200,6 @@ export const userStore = defineStore('mail-user', () => {
 		accountShortNames,
 		addressBooks,
 		identities,
-		domains,
 		sieveScripts,
 		screenedAddresses,
 		globalScreenedAddresses,

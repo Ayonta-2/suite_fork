@@ -265,13 +265,14 @@ def delete_domain(domain_id: str) -> None:
 
 @frappe.whitelist()
 def get_enabled_domains() -> list[str]:
-    """Domains offered when adding accounts, groups and lists: only active ones take them."""
+    """Domains offered when adding accounts, groups and lists: only active ones take them.
+
+    A Suite Cloud that cannot be reached is an error, not an empty list: the dialogs that offer
+    these would otherwise tell an admin that the site has no domains.
+    """
 
     check_admin_permission("view domains")
-    try:
-        return get_active_domain_names()
-    except Exception:
-        return []
+    return get_active_domain_names()
 
 
 def _domain_records(domain_id: str) -> list[dict]:
