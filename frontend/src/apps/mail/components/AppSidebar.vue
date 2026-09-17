@@ -29,6 +29,9 @@
 				/>
 
 				<div class="flex-1 overflow-y-auto overflow-x-hidden px-2">
+					<SidebarSection>
+						<CommandPaletteSidebarItem />
+					</SidebarSection>
 					<SidebarSection
 						v-for="section in sidebarItems"
 						:key="section.key ?? section.label"
@@ -42,7 +45,7 @@
 							:key="item.label"
 								:label="item.label"
 								:icon="item.icon"
-								:to="item.to"
+								:route="item.to"
 								:class="
 									threadDrag.overMailbox.value === item.mailboxId &&
 									'ring-2 ring-outline-gray-3 ring-inset'
@@ -99,24 +102,8 @@
 		</Sidebar>
 	</Transition>
 
-	<SettingsModal v-if="!isMobile" v-model="showSettings" />
-	<!-- Mobile settings pushes in from the right like a thread: its back-chevron
-	     header is push-navigation language (slide-up is reserved for summoned
-	     tasks — compose/search). Teleported to body: inside the layout's isolate
-	     stacking context the tab bar/FAB would paint over it. -->
-	<Teleport v-else to="body">
-		<Transition
-			enter-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
-			enter-from-class="translate-x-full"
-			leave-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
-			leave-to-class="translate-x-full"
-		>
-			<PWASettings v-if="showSettings" @close="showSettings = false" />
-		</Transition>
-	</Teleport>
 	<FolderModal v-model="showFolderModal" :mailbox="selectedMailbox" />
 	<DeleteFolderModal v-model="showDeleteMailbox" :mailbox="selectedMailbox" />
-	<ShortcutsModal v-model="showShortcuts" />
 </template>
 
 <script setup lang="ts">
@@ -139,18 +126,16 @@ import { accountSubmenu } from '@/composables/accountSubmenu'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { canMoveToMailbox, getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
-import { useAccountSwitch, useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
+import { useAccountSwitch, useScreenSize, useSettings, useShortcuts, useSidebar } from '@/apps/mail/utils/composables'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
 import MailLogo from '@/apps/mail/components/Icons/MailLogo.vue'
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
-import SettingsModal from '@/apps/mail/components/Modals/SettingsModal.vue'
-import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
-import PWASettings from '@/apps/mail/components/PWASettings.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
 import UpcomingEvents from '@/apps/mail/components/UpcomingEvents.vue'
+import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
 
 import type { MailboxData } from '@/apps/mail/types'
 
@@ -249,7 +234,7 @@ const { showSettings } = useSettings()
 const showFolderModal = ref(false)
 const selectedMailbox = ref()
 const showDeleteMailbox = ref(false)
-const showShortcuts = ref(false)
+const { openShortcuts } = useShortcuts()
 
 const title = computed(() =>
 	branding.data?.brand_name && branding.data?.brand_name != 'Frappe'
@@ -320,7 +305,7 @@ const menuItems = computed(() => [
 			{
 				icon: Keyboard,
 				label: __('Shortcuts'),
-				onClick: () => (showShortcuts.value = true),
+				onClick: openShortcuts,
 				condition: () => !isMobile.value,
 			},
 		],
