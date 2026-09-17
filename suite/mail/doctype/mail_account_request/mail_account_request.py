@@ -360,15 +360,7 @@ class MailAccountRequest(Document):
         is_stalwart_configured(raise_exception=True)
         self.validate_account()
 
-        # Steps 1 and 2: the account, its aliases, group and list memberships and a Suite app
-        # password are created on the cluster through Suite Cloud in one call.
-        try:
-            account = self._create_cluster_account(password, first_name, last_name, locale, time_zone)
-        except SuiteCloudUnavailableError:
-            # A timeout after Suite Cloud created the account would leave a mailbox nobody owns
-            # and make every retry meet "already exists"; the delete tolerates "not found".
-            self._discard_cluster_account()
-            raise
+        account = self._create_cluster_account(password, first_name, last_name, locale, time_zone)
         app_password = account["app_password"]
 
         # Steps 3 and 4 happen on this site, outside the cluster's transaction: if either fails, the
@@ -410,18 +402,30 @@ class MailAccountRequest(Document):
     def _create_cluster_account(self, password, first_name, last_name, locale, time_zone) -> dict:
         # Steps 1 and 2: the account, its aliases, group and list memberships and a Suite app
         # password are created on the cluster through Suite Cloud in one call.
+        def create() -> dict:
+            try:
+                return create_account(
+                    email=self.account,
+                    password=password,
+                    display_name=f"{first_name} {last_name}" if last_name else first_name,
+                    aliases=self._aliases,
+                    groups=self._surviving("mail.groups.list_groups", self._groups),
+                    mailing_lists=self._surviving(
+                        "mail.mailing_lists.list_mailing_lists", self._mailing_lists
+                    ),
+                    disk_quota_gb=self._quota_gb,
+                    locale=locale,
+                    time_zone=time_zone,
+                )
+            except SuiteCloudUnavailableError:
+                # A timeout after Suite Cloud created the account would leave a mailbox nobody owns
+                # and make every retry meet "already exists"; the delete tolerates "not found".
+                # Caught in here: execute_with_logging rethrows everything as a plain validation error.
+                self._discard_cluster_account()
+                raise
+
         return execute_with_logging(
-            func=lambda: create_account(
-                email=self.account,
-                password=password,
-                display_name=f"{first_name} {last_name}" if last_name else first_name,
-                aliases=self._aliases,
-                groups=self._surviving("mail.groups.list_groups", self._groups),
-                mailing_lists=self._surviving("mail.mailing_lists.list_mailing_lists", self._mailing_lists),
-                disk_quota_gb=self._quota_gb,
-                locale=locale,
-                time_zone=time_zone,
-            ),
+            func=create,
             title="Failed to create the mail account",
             user_message=_("Failed to create the mail account, check error log for details."),
             module="Mail",

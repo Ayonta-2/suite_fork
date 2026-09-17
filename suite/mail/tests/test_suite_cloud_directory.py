@@ -10,7 +10,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.mail.api import admin
-from suite.mail.suite_cloud import SuiteCloudClient, is_suite_cloud_configured
+from suite.mail.suite_cloud import SuiteCloudClient, SuiteCloudUnavailableError, is_suite_cloud_configured
 from suite.mail.tests.fake_suite_cloud import FakeSuiteCloud, fake_suite_cloud
 
 DOMAIN = "acme.test"
@@ -369,6 +369,30 @@ class TestMembers(SuiteCloudTestCase):
                 password="a-strong-password-9",
             )
         # Suite Cloud had already created the account; it must not survive as an orphan.
+        self.assertNotIn(f"erin@{DOMAIN}", self.fake.accounts)
+
+    def test_timeout_after_the_cluster_created_the_account_removes_it(self) -> None:
+        def create_then_time_out(email, password, **kwargs):
+            self.fake.accounts__create_account(email, password, **kwargs)
+            raise SuiteCloudUnavailableError("Suite Cloud is unreachable; try again shortly.")
+
+        with patch(
+            "suite.mail.doctype.mail_account_request.mail_account_request.create_account",
+            side_effect=create_then_time_out,
+        ):
+            self.assertRaisesRegex(
+                frappe.ValidationError,
+                "Failed to create the mail account",
+                admin.add_member,
+                "erin",
+                DOMAIN,
+                is_admin=False,
+                send_invite=False,
+                backup_email="erin@backup.test",
+                first_name="Erin",
+                password="a-strong-password-9",
+            )
+        # The answer never arrived, but the account did; a retry must not meet "already exists".
         self.assertNotIn(f"erin@{DOMAIN}", self.fake.accounts)
 
     def test_unset_quota_takes_the_mail_settings_default(self) -> None:
