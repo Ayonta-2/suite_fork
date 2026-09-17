@@ -7,7 +7,8 @@ vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolv
 const { DOMParser } = await import('@tiptap/pm/model')
 const { slides, slideIndex } = await import('@/apps/slides/stores/slide')
 const { activeElementIds, focusElementId } = await import('@/apps/slides/stores/element')
-const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
+const historyMeta = await import('@/apps/slides/stores/historyMeta')
+const { setCommandHistory } = historyMeta
 const { useCommandHistory } = await import('./useCommandHistory')
 const { useTextEditor } = await import('./useTextEditor')
 
@@ -109,6 +110,25 @@ describe('a style written to every selected box', () => {
 
 		expect(element('a').content).toContain('font-size: 40px')
 		expect(element('b').content).toBe(sized(30, 'two'))
+	})
+
+	it('keeps a locked box selected, so a scrub past it is still one entry', async () => {
+		history = useCommandHistory(slides, historyMeta)
+		setCommandHistory(history)
+		select(
+			{ id: 'a', content: sized(20, 'one') },
+			{ id: 'b', content: sized(30, 'two'), locked: true },
+		)
+
+		formatSelectedText('fontSize', 40)
+		await nextTick()
+		nextFrame()
+		formatSelectedText('fontSize', 50)
+		history.undo()
+
+		expect(activeElementIds.value).toEqual(['a', 'b'])
+		expect(element('a').content).toBe(sized(20, 'one'))
+		expect(history.canUndo.value).toBe(false)
 	})
 
 	it('reaches every cell of a table without touching its width', () => {
