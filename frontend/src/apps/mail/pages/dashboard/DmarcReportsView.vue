@@ -56,9 +56,9 @@
 							class="hover:!bg-surface-gray-1"
 						>
 							<ListRowItem :item="item">
-								<!-- Like the counts, a rate of 0 (or none, when nothing was counted) stays blank. -->
+								<!-- A rate of 0 is real and shown; only a row that counted nothing has no rate. -->
 								<template v-if="column.key === 'pass_rate'">
-									<Badge v-if="item" :theme="passRateTheme(item)" :label="formatPassRate(item)" />
+									<Badge v-if="row.messages && item != null" :theme="passRateTheme(item)" :label="formatPassRate(item)" />
 								</template>
 								<span v-else-if="column.key === 'date_range_end'" class="text-ink-gray-5 text-sm">
 									{{ formatPeriod(row) }}
