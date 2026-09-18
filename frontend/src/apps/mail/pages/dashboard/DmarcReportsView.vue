@@ -117,7 +117,8 @@ usePageMeta(() => appPageMeta(__('DMARC Reports'), 'Mail'))
 
 const search = ref('')
 const domain = ref('')
-const period = ref('30')
+const DEFAULT_PERIOD = '30'
+const period = ref(DEFAULT_PERIOD)
 
 // Every domain the site holds, live or not: a domain taken offline still has a history.
 const domains = createResource({
@@ -161,7 +162,9 @@ const LIST_COLUMNS = [
 	{ label: __('Received'), key: 'received_at' },
 ]
 
-const hasActiveFilters = computed(() => !!search.value || !!domain.value || period.value !== '365')
+const hasActiveFilters = computed(
+	() => !!search.value || !!domain.value || period.value !== DEFAULT_PERIOD,
+)
 
 const listOptions = computed(() => ({
 	selectable: false,
