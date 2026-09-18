@@ -19,14 +19,14 @@ from suite.calendar.doctype.calendar_event.mailing_lists import (
 )
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import jscalendar_to_vevent
 from suite.mail.api.admin import add_mailing_list_recipients, get_mailing_list
+from suite.mail.directory import get_mailing_list_index
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
-from suite.mail.stalwart import get_domains, get_mailing_list_index
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 MODULE = "suite.calendar.doctype.calendar_event.mailing_lists"
 INVITATIONS = "suite.calendar.doctype.calendar_event.invitations"
 
-DOMAINS = [{"name": "example.com"}]
+DOMAINS = [{"domain": "example.com"}]
 INDEX = {
     "team@example.com": ["alice@example.com", "bob@example.com"],
     "team-alias@example.com": ["alice@example.com", "bob@example.com"],
@@ -420,10 +420,18 @@ class TestMailingListExpansionConfig(IntegrationTestCase):
     """The toggle and the cap resolve through ``get_config``, so site config can supply either."""
 
     def test_the_toggle_is_coerced_to_a_bool(self):
-        with patch(f"{MODULE}.get_config", return_value=1):
-            self.assertTrue(_expansion_enabled())
+        with patch(f"{MODULE}.is_suite_cloud_configured", return_value=True):
+            with patch(f"{MODULE}.get_config", return_value=1):
+                self.assertTrue(_expansion_enabled())
 
-        with patch(f"{MODULE}.get_config", return_value=None):
+            with patch(f"{MODULE}.get_config", return_value=None):
+                self.assertFalse(_expansion_enabled())
+
+    def test_the_toggle_means_nothing_without_a_directory_to_expand_from(self):
+        with (
+            patch(f"{MODULE}.is_suite_cloud_configured", return_value=False),
+            patch(f"{MODULE}.get_config", return_value=1),
+        ):
             self.assertFalse(_expansion_enabled())
 
     def test_the_cap_accepts_a_string_from_site_config(self):
@@ -452,8 +460,7 @@ class TestMailingListInvite(StalwartIntegrationTestCase):
             add_mailing_list_recipients(list_id, [self.first.email, self.second.email])
             list_email = get_mailing_list(list_id)["email"]
 
-        # The directory is cached, and the list was created after this run started.
-        get_domains.clear_cache()
+        # The list index is cached, and the list was created after this run started.
         get_mailing_list_index.clear_cache()
 
         with self.set_user(self.organizer.email):
