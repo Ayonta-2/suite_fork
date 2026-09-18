@@ -558,6 +558,7 @@ export class RoomRegistry {
 		data: {
 			participantId: string;
 			producerId: string;
+			kind: 'audio' | 'video';
 			isScreen: boolean;
 			reason?: ProducerCloseReason;
 			source?: ProducerCloseSource;
@@ -572,6 +573,7 @@ export class RoomRegistry {
 			roomId,
 			participantId: data.participantId,
 			producerId: data.producerId,
+			kind: data.kind,
 			isScreen: data.isScreen,
 		});
 		const state = this.getRecorderProjectionState(roomId);
@@ -845,6 +847,11 @@ export class RoomRegistry {
 		participantId: string,
 		userData: UserData,
 	): void {
+		this.emitToFullAccessParticipants(roomId, 'participant_updated', {
+			roomId,
+			participantId,
+			userData,
+		});
 		const state = this.getRecorderProjectionState(roomId);
 		if (!state.participants.has(participantId)) return;
 		const observedAt = this.observeProjectionAt(state);

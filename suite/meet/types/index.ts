@@ -217,6 +217,12 @@ export interface ParticipantJoinedEvent {
 	userData: UserData | Pick<UserData, 'name' | 'avatar'>;
 }
 
+export interface ParticipantUpdatedEvent {
+	roomId: string;
+	participantId: string;
+	userData: UserData;
+}
+
 export interface ParticipantLeftEvent {
 	roomId: string;
 	participantId: string;
@@ -237,6 +243,7 @@ export interface ProducerClosedEvent {
 	roomId: string;
 	producerId: string;
 	participantId: string;
+	kind: ProducerKind;
 	isScreen: boolean;
 	reason?: ProducerCloseReason;
 	source?: ProducerCloseSource;
