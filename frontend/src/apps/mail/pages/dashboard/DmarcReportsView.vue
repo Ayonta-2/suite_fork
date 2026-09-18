@@ -56,11 +56,10 @@
 							class="hover:!bg-surface-gray-1"
 						>
 							<ListRowItem :item="item">
-								<Badge
-									v-if="column.key === 'pass_rate'"
-									:theme="passRateTheme(item)"
-									:label="formatPassRate(item)"
-								/>
+								<!-- Like the counts, a rate of 0 (or none, when nothing was counted) stays blank. -->
+								<template v-if="column.key === 'pass_rate'">
+									<Badge v-if="item" :theme="passRateTheme(item)" :label="formatPassRate(item)" />
+								</template>
 								<span v-else-if="column.key === 'date_range_end'" class="text-ink-gray-5 text-sm">
 									{{ formatPeriod(row) }}
 								</span>
