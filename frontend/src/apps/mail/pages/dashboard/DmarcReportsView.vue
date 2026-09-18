@@ -137,20 +137,19 @@ const summary = createResource({
 	makeParams: () => ({ domain_id: domain.value || undefined, days: Number(period.value) }),
 })
 
+// The list and the summary take the same domain and period, so the page never shows a
+// period's totals beside reports from outside it.
 const list = usePagedList<DmarcReportRow>('suite.mail.api.admin.get_dmarc_reports', () => ({
 	txt: search.value,
 	domain_id: domain.value || undefined,
+	days: Number(period.value),
 }))
 
 watchDebounced(() => search.value, list.reload, { debounce: 300 })
-watch(
-	() => domain.value,
-	() => {
-		list.reload()
-		summary.reload()
-	},
-)
-watch(() => period.value, summary.reload)
+watch([() => domain.value, () => period.value], () => {
+	list.reload()
+	summary.reload()
+})
 
 const LIST_COLUMNS = [
 	{ label: __('Domain'), key: 'domain' },
@@ -162,13 +161,13 @@ const LIST_COLUMNS = [
 	{ label: __('Received'), key: 'received_at' },
 ]
 
-const hasActiveFilters = computed(() => !!search.value || !!domain.value)
+const hasActiveFilters = computed(() => !!search.value || !!domain.value || period.value !== '365')
 
 const listOptions = computed(() => ({
 	selectable: false,
 	showTooltip: false,
 	emptyState: hasActiveFilters.value
-		? { title: __('No matching reports'), description: __('Try another search or domain.') }
+		? { title: __('No matching reports'), description: __('Try another search, domain or period.') }
 		: {
 				title: __('No DMARC reports yet'),
 				description: __(

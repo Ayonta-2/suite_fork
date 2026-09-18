@@ -325,9 +325,7 @@ def get_dmarc_summary(domain_id: str | None = None, days: int = 30) -> dict:
     """Pass rates over the reports whose period ended in the last ``days``, by domain, source and reporter."""
 
     check_admin_permission("view domains")
-    days = cint(days) or 30
-    if days not in DMARC_PERIODS:
-        frappe.throw(_("Period must be one of {0} days.").format(", ".join(map(str, DMARC_PERIODS))))
+    days = _dmarc_period(days)
     summary = get_client().call("mail.dmarc.get_dmarc_summary", domain=domain_id or None, days=days)
     return {
         "since": to_utc_z(summary.get("since")),
@@ -347,10 +345,11 @@ def get_dmarc_summary(domain_id: str | None = None, days: int = 30) -> dict:
 def get_dmarc_reports(
     domain_id: str | None = None,
     txt: str | None = None,
+    days: int = 30,
     start: int = 0,
     page_length: int = DEFAULT_PAGE_LENGTH,
 ) -> dict:
-    """The reports Suite Cloud fetched for this site's domains, newest period first."""
+    """The reports whose period ended in the last ``days``, newest first: the same window as the summary."""
 
     check_admin_permission("view domains")
     start, page_length = _paging(start, page_length)
@@ -358,6 +357,7 @@ def get_dmarc_reports(
         "mail.dmarc.list_dmarc_reports",
         domain=domain_id or None,
         search=(txt or "").strip() or None,
+        days=_dmarc_period(days),
         start=start,
         limit=page_length,
     )
@@ -377,6 +377,13 @@ def get_dmarc_report(report_id: str) -> dict:
         **_dmarc_report_row(report),
         "records": [_dmarc_record_row(r) for r in report.get("records") or []],
     }
+
+
+def _dmarc_period(days) -> int:
+    days = cint(days) or 30
+    if days not in DMARC_PERIODS:
+        frappe.throw(_("Period must be one of {0} days.").format(", ".join(map(str, DMARC_PERIODS))))
+    return days
 
 
 def _dmarc_report_row(report: dict) -> dict:

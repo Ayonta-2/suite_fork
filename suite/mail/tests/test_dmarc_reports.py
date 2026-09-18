@@ -26,6 +26,9 @@ class TestDmarcReports(SuiteCloudTestCase):
         )
         self.assertEqual(admin.get_dmarc_reports(txt="yahoo")["total"], 1)
         self.assertEqual(admin.get_dmarc_reports(domain_id=DOMAIN, page_length=20)["total"], 2)
+        self.assertEqual(self.fake.calls[-1][1]["days"], 30)  # the list takes the summary's window
+        self.assertEqual(admin.get_dmarc_reports(days=90)["total"], 2)
+        self.assertRaises(frappe.ValidationError, admin.get_dmarc_reports, days=45)
         self.assertRaises(frappe.DoesNotExistError, admin.get_dmarc_reports, domain_id="nobody.test")
 
         report = admin.get_dmarc_report(first["name"])

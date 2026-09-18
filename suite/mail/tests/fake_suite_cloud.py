@@ -105,7 +105,9 @@ class FakeSuiteCloud:
         }
         return self.dmarc_reports[name]
 
-    def dmarc__list_dmarc_reports(self, domain=None, search=None, since=None, until=None, start=0, limit=50):
+    def dmarc__list_dmarc_reports(
+        self, domain=None, search=None, since=None, until=None, days=None, start=0, limit=50
+    ):
         if domain:
             self._require(self.domains, domain)
         rows = [r for r in self.dmarc_reports.values() if not domain or r["policy_domain"] == domain]
