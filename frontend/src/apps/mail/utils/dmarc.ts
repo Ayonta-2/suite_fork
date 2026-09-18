@@ -81,10 +81,11 @@ export const resultBadge = (result?: string | null): { label: string; theme: Bad
 	return { label: result || __('None'), theme: 'gray' }
 }
 
-// What the receiver did with the messages once the check was evaluated.
+// What the receiver did with the messages once the check was evaluated: delivered is the good
+// outcome, so it reads green; quarantined and rejected escalate through orange to red.
 export const dispositionBadge = (disposition?: string | null): { label: string; theme: BadgeTheme } => {
 	const value = (disposition || '').toLowerCase()
 	if (value === 'reject') return { label: __('Rejected'), theme: 'red' }
 	if (value === 'quarantine') return { label: __('Quarantined'), theme: 'orange' }
-	return { label: __('Delivered'), theme: 'gray' }
+	return { label: __('Delivered'), theme: 'green' }
 }
