@@ -54,7 +54,8 @@ export type DmarcSummary = {
 	reporters: (DmarcTotals & { reporter: string })[]
 }
 
-export type BadgeTheme = 'gray' | 'green' | 'red' | 'orange' | 'blue'
+// The themes frappe-ui's Badge knows; there is no orange, amber is the warning step.
+export type BadgeTheme = 'gray' | 'green' | 'red' | 'amber' | 'blue'
 
 // Below this share of passing mail the rate is shown as something to act on.
 export const PASS_RATE_WARN_BELOW = 90
@@ -86,6 +87,8 @@ export const resultBadge = (result?: string | null): { label: string; theme: Bad
 export const dispositionBadge = (disposition?: string | null): { label: string; theme: BadgeTheme } => {
 	const value = (disposition || '').toLowerCase()
 	if (value === 'reject') return { label: __('Rejected'), theme: 'red' }
-	if (value === 'quarantine') return { label: __('Quarantined'), theme: 'orange' }
-	return { label: __('Delivered'), theme: 'green' }
+	if (value === 'quarantine') return { label: __('Quarantined'), theme: 'amber' }
+	// Some reporters still write the pre-standard "pass" for a message they delivered.
+	if (value === 'none' || value === 'pass' || !value) return { label: __('Delivered'), theme: 'green' }
+	return { label: disposition as string, theme: 'gray' }
 }
