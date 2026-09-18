@@ -159,18 +159,18 @@ onBeforeMount(() => normalizeContent())
 .tiptap ul li,
 .textElement ul li,
 .tableElement ul li {
-	position: relative;
 	padding-left: 0.8em;
 }
 
-.tiptap ul li::before,
-.textElement ul li::before,
-.tableElement ul li::before {
+/* inline on the first line, so the marker keeps that line's baseline and alignment */
+.tiptap ul li > p:first-child::before,
+.textElement ul li > p:first-child::before,
+.tableElement ul li > p:first-child::before {
 	content: '\2022';
-	position: absolute;
-	left: 0;
-	top: 0;
-	font-size: 1em;
+	display: inline-block;
+	width: 0.8em;
+	margin-left: -0.8em;
+	text-align: left;
 }
 
 .tiptap ol,
@@ -186,18 +186,17 @@ onBeforeMount(() => normalizeContent())
 .textElement ol li,
 .tableElement ol li {
 	counter-increment: step;
-	position: relative;
 	padding-left: calc(2ch + 0.2em);
 }
 
-.tiptap ol li::before,
-.textElement ol li::before,
-.tableElement ol li::before {
+.tiptap ol li > p:first-child::before,
+.textElement ol li > p:first-child::before,
+.tableElement ol li > p:first-child::before {
 	content: counter(step) '.';
-	position: absolute;
-	left: 0;
-	top: 0;
+	display: inline-block;
 	width: 2ch;
+	margin-left: calc(-2ch - 0.2em);
+	margin-right: 0.2em;
 	text-align: right;
 }
 
