@@ -67,9 +67,9 @@
 								<span v-else-if="column.key === 'received_at'" class="text-ink-gray-5 text-sm">
 									{{ fromNow(item) || '—' }}
 								</span>
-								<!-- Rendered by hand: the default cell shows a count of 0 as an empty cell. -->
+								<!-- A count of 0 stays blank: a row with nothing failed reads cleaner without a 0. -->
 								<span v-else-if="column.key === 'messages' || column.key === 'failed'" class="text-base tabular-nums">
-									{{ Number(item).toLocaleString() }}
+									{{ item ? Number(item).toLocaleString() : '' }}
 								</span>
 							</ListRowItem>
 						</ListRow>
