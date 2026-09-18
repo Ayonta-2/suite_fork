@@ -9,7 +9,9 @@ import { createResource } from 'frappe-ui'
  * empty list would tell the admin that the site has no domains.
  */
 export const useEnabledDomains = (show: Ref<boolean | undefined>) => {
-	const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains' })
+	// The dialogs hand `domains.data` straight to a Combobox, which cannot take the `null` a
+	// resource holds before its first read; an empty list keeps the field rendered meanwhile.
+	const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', initialData: [] })
 
 	watch(show, (open) => open && domains.fetch(), { immediate: true })
 
