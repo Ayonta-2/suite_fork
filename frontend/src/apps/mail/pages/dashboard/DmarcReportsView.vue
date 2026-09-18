@@ -67,6 +67,10 @@
 								<span v-else-if="column.key === 'received_at'" class="text-ink-gray-5 text-sm">
 									{{ fromNow(item) || '—' }}
 								</span>
+								<!-- Rendered by hand: the default cell shows a count of 0 as an empty cell. -->
+								<span v-else-if="column.key === 'messages' || column.key === 'failed'" class="text-base tabular-nums">
+									{{ Number(item).toLocaleString() }}
+								</span>
 							</ListRowItem>
 						</ListRow>
 					</template>
@@ -153,8 +157,8 @@ const LIST_COLUMNS = [
 	{ label: __('Domain'), key: 'domain' },
 	{ label: __('Reporter'), key: 'reporter' },
 	{ label: __('Period'), key: 'date_range_end' },
-	{ label: __('Messages'), key: 'messages', align: 'right' },
-	{ label: __('Failed'), key: 'failed', align: 'right' },
+	{ label: __('Messages'), key: 'messages' },
+	{ label: __('Failed'), key: 'failed' },
 	{ label: __('Pass Rate'), key: 'pass_rate' },
 	{ label: __('Received'), key: 'received_at' },
 ]
