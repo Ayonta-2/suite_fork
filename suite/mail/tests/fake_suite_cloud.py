@@ -84,7 +84,6 @@ class FakeSuiteCloud:
         name = f"c1-dma{len(self.dmarc_reports) + 1}"
         self.dmarc_reports[name] = {
             "name": name,
-            "domain": domain,
             "policy_domain": domain,
             "reporter": reporter,
             "reporter_email": f"noreply-dmarc@{reporter}",
@@ -109,7 +108,7 @@ class FakeSuiteCloud:
     def dmarc__list_dmarc_reports(self, domain=None, search=None, since=None, until=None, start=0, limit=50):
         if domain:
             self._require(self.domains, domain)
-        rows = [r for r in self.dmarc_reports.values() if not domain or r["domain"] == domain]
+        rows = [r for r in self.dmarc_reports.values() if not domain or r["policy_domain"] == domain]
         if search:
             rows = [r for r in rows if search.lower() in f"{r['policy_domain']} {r['reporter']}".lower()]
         rows.sort(key=lambda r: r["date_range_end"], reverse=True)
@@ -122,7 +121,7 @@ class FakeSuiteCloud:
     def dmarc__get_dmarc_summary(self, domain=None, days=30) -> dict:
         if domain:
             self._require(self.domains, domain)
-        rows = [r for r in self.dmarc_reports.values() if not domain or r["domain"] == domain]
+        rows = [r for r in self.dmarc_reports.values() if not domain or r["policy_domain"] == domain]
 
         def totals(group: list[dict]) -> dict:
             sums = {
@@ -151,8 +150,8 @@ class FakeSuiteCloud:
             if rows
             else {"reports": 0, "messages": 0, "passed": 0, "failed": 0, "dkim_passed": 0, "spf_passed": 0},
             "domains": [
-                {"domain": d, **totals([r for r in rows if r["domain"] == d])}
-                for d in sorted({r["domain"] for r in rows})
+                {"domain": d, **totals([r for r in rows if r["policy_domain"] == d])}
+                for d in sorted({r["policy_domain"] for r in rows})
             ],
             "sources": [
                 {"source_ip": ip, **s, "failed": s["messages"] - s["passed"]}
