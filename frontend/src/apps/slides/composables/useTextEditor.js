@@ -388,7 +388,8 @@ export const useTextEditor = () => {
 		const chain = editor.chain()
 
 		if (value == 'none') {
-			chain.liftListItem('listItem').run()
+			// one lift only takes a nested item up a level
+			while (editor.isActive('listItem') && editor.commands.liftListItem('listItem'));
 			return
 		}
 
