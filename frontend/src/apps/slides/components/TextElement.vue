@@ -180,13 +180,20 @@ onBeforeMount(() => normalizeContent())
 	margin: 0;
 	padding: 0;
 	counter-reset: step;
+	--marker-width: 2ch;
+}
+
+.tiptap ol:has(> li:nth-child(10)),
+.textElement ol:has(> li:nth-child(10)),
+.tableElement ol:has(> li:nth-child(10)) {
+	--marker-width: 3ch;
 }
 
 .tiptap ol li,
 .textElement ol li,
 .tableElement ol li {
 	counter-increment: step;
-	padding-left: calc(2ch + 0.2em);
+	padding-left: calc(var(--marker-width) + 0.2em);
 }
 
 .tiptap ol li > p:first-child::before,
@@ -194,8 +201,8 @@ onBeforeMount(() => normalizeContent())
 .tableElement ol li > p:first-child::before {
 	content: counter(step) '.';
 	display: inline-block;
-	width: 2ch;
-	margin-left: calc(-2ch - 0.2em);
+	width: var(--marker-width);
+	margin-left: calc(-1 * var(--marker-width) - 0.2em);
 	margin-right: 0.2em;
 	text-align: right;
 }
