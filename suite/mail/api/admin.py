@@ -325,8 +325,9 @@ def get_dmarc_summary(domain_id: str | None = None, days: int = 30) -> dict:
     """Pass rates over the reports whose period ended in the last ``days``, by domain, source and reporter."""
 
     check_admin_permission("view domains")
-    days = _dmarc_period(days)
-    summary = get_client().call("mail.dmarc.get_dmarc_summary", domain=domain_id or None, days=days)
+    summary = get_client().call(
+        "mail.dmarc.get_dmarc_summary", domain=_dmarc_domain(domain_id), days=_dmarc_period(days)
+    )
     return {
         "since": to_utc_z(summary.get("since")),
         "until": to_utc_z(summary.get("until")),
@@ -355,7 +356,7 @@ def get_dmarc_reports(
     start, page_length = _paging(start, page_length)
     page = get_client().call(
         "mail.dmarc.list_dmarc_reports",
-        domain=domain_id or None,
+        domain=_dmarc_domain(domain_id),
         search=(txt or "").strip() or None,
         days=_dmarc_period(days),
         start=start,
@@ -372,11 +373,23 @@ def get_dmarc_report(report_id: str) -> dict:
     """One report with its per-source records, as the reporter sent them."""
 
     check_admin_permission("view domains")
+    report_id = (report_id or "").strip()
+    if not report_id:
+        frappe.throw(_("Report not found."), frappe.DoesNotExistError)
     report = get_client().call("mail.dmarc.get_dmarc_report", report=report_id)
     return {
         **_dmarc_report_row(report),
         "records": [_dmarc_record_row(r) for r in report.get("records") or []],
     }
+
+
+def _dmarc_domain(domain_id: str | None) -> str | None:
+    """A domain the way Suite Cloud names one, or None for all of the site's domains.
+
+    Frappe checks the annotated types on the way in; this only settles the spelling.
+    """
+
+    return (domain_id or "").strip().lower() or None
 
 
 def _dmarc_period(days) -> int:
