@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, ref } from 'vue'
 
 const resource = reactive({ data: null as string[] | null, error: null as unknown, fetch: vi.fn() })
-vi.mock('frappe-ui', () => ({ createResource: () => resource }))
+const createResource = vi.fn(() => resource)
+vi.mock('frappe-ui', () => ({ createResource: (options: unknown) => createResource(options) }))
 vi.stubGlobal('__', (text: string) => text)
 
 import { useEnabledDomains } from './useEnabledDomains'
@@ -31,6 +32,12 @@ describe('the domains offered by an add dialog', () => {
 	it('are read at once by a dialog that mounts already open', () => {
 		useEnabledDomains(ref(true))
 		expect(resource.fetch).toHaveBeenCalledTimes(1)
+	})
+
+	// A Combobox given `null` options fails to render, and the dialog's domain field with it.
+	it('are an empty list, not null, until the read answers', () => {
+		useEnabledDomains(ref(true))
+		expect(createResource).toHaveBeenCalledWith(expect.objectContaining({ initialData: [] }))
 	})
 
 	it('say why they are missing when Suite Cloud cannot be reached', () => {
