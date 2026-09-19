@@ -181,11 +181,14 @@ const editorStyles = reactive({
 	cellFill: null,
 })
 
+const listValues = { bulletList: 'bullet', orderedList: 'ordered' }
+
 export const useTextEditor = () => {
 	const setEditorStyles = (editor) => {
 		if (!editor) return
 
 		const activeStyles = editor.getAttributes('textStyle')
+		const listType = getActiveListType(editor)
 
 		Object.assign(editorStyles, {
 			textAlign: editor.getAttributes('paragraph').textAlign || 'left',
@@ -194,8 +197,8 @@ export const useTextEditor = () => {
 			italic: editor.isActive('italic'),
 			strike: editor.isActive('strike'),
 			underline: editor.isActive('underline'),
-			bulletList: editor.isActive('bulletList'),
-			orderedList: editor.isActive('orderedList'),
+			bulletList: listType == 'bullet',
+			orderedList: listType == 'ordered',
 			textTransform: activeStyles.textTransform || 'none',
 			fontSize: parseInt(activeStyles.fontSize, 10) || null,
 			fontFamily: activeStyles.fontFamily || null,
@@ -372,10 +375,15 @@ export const useTextEditor = () => {
 		return currentStyle ? `${currentStyle}; ${newStyle}` : newStyle
 	}
 
+	// the list each selected paragraph sits in directly, never an outer one
 	const getActiveListType = (editor) => {
-		if (editor.isActive('orderedList')) return 'ordered'
-		if (editor.isActive('bulletList')) return 'bullet'
-		return 'none'
+		const { doc, selection } = editor.state
+		const found = new Set()
+		doc.nodesBetween(selection.from, selection.to, (node, pos) => {
+			if (!node.isTextblock) return
+			found.add(listValues[doc.resolve(pos).node(-1)?.type.name] || 'none')
+		})
+		return found.size == 1 ? [...found][0] : 'mixed'
 	}
 
 	const setListProperty = (editor, value) => {
@@ -385,20 +393,62 @@ export const useTextEditor = () => {
 
 		if (value == current) return
 
-		const chain = editor.chain()
+		if (value == 'none') return clearLists(editor)
 
-		if (value == 'none') {
-			chain.liftListItem('listItem').run()
-			return
-		}
+		applyListType(editor, value == 'ordered' ? 'orderedList' : 'bulletList')
+	}
 
-		const listType = value == 'ordered' ? 'orderedList' : 'bulletList'
+	// every selected paragraph leaves every list level it sits in
+	const clearLists = (editor) =>
+		editor.commands.command(({ tr, state, commands }) => {
+			const { from, to } = state.selection
+			const { listItem } = state.schema.nodes
+			const paragraphs = []
+			state.doc.nodesBetween(from, to, (node, pos) => {
+				if (node.isTextblock) paragraphs.push(pos + 1)
+			})
 
-		if (current == 'none') {
-			chain.wrapInList(listType).run()
-		} else {
-			chain.liftListItem('listItem').wrapInList(listType).run()
-		}
+			// back to front, so a lift never moves one still to come
+			paragraphs.reverse().forEach((pos) => {
+				commands.setTextSelection(pos)
+				// tiptap's chained state only catches up with the transaction when its tr is read
+				while (state.tr.selection.$from.node(-1)?.type == listItem) {
+					if (!commands.liftListItem('listItem')) break
+				}
+			})
+
+			joinNeighbouringLists(tr)
+			tr.setSelection(TextSelection.create(tr.doc, tr.mapping.map(from), tr.mapping.map(to)))
+			return true
+		})
+
+	// every selected paragraph ends up in a list of this type
+	const applyListType = (editor, listType) =>
+		editor.commands.command(({ tr, state }) => {
+			const { from, to } = state.selection
+			const { listItem, [listType]: list } = state.schema.nodes
+
+			state.doc.nodesBetween(from, to, (node, pos) => {
+				if (!node.isTextblock) return
+				const $paragraph = tr.doc.resolve(tr.mapping.map(pos))
+				const end = tr.doc.resolve($paragraph.pos + node.nodeSize)
+
+				if ($paragraph.parent.type == listItem) tr.setNodeMarkup($paragraph.before(-1), list)
+				else tr.wrap($paragraph.blockRange(end), [{ type: list }, { type: listItem }])
+			})
+
+			joinNeighbouringLists(tr)
+			return true
+		})
+
+	const joinNeighbouringLists = (tr) => {
+		const joins = []
+		tr.doc.descendants((node, pos, parent, index) => {
+			const previous = index && parent.child(index - 1)
+			if (listValues[node.type.name] && previous?.type == node.type) joins.push(pos)
+		})
+		// back to front, so a join never moves one still to come
+		joins.reverse().forEach((pos) => tr.join(pos))
 	}
 
 	const setPropertyOn = (editor, property, value) => {
