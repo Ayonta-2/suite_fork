@@ -1087,6 +1087,11 @@ export const extensions = [
 		orderedList: false,
 		listItem: false,
 		trailingNode: false,
+		// a text box holds paragraphs and lists only
+		heading: false,
+		blockquote: false,
+		codeBlock: false,
+		horizontalRule: false,
 	}),
 	CustomParagraph,
 	CustomListItem,
