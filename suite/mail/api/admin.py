@@ -316,8 +316,9 @@ def get_domain_dns_json(domain_id: str) -> str:
 
 # --- DMARC reports -------------------------------------------------------------------------------
 
-# The periods the DMARC page offers; the summary is one aggregate query on Suite Cloud per call.
-DMARC_PERIODS = (7, 30, 90)
+# The periods the DMARC page offers, 0 being everything Suite Cloud still holds (its retention is
+# the operator's choice and may run to years); the summary is one aggregate query per call.
+DMARC_PERIODS = (0, 7, 30, 90)
 
 
 @frappe.whitelist()
@@ -393,7 +394,7 @@ def _dmarc_domain(domain_id: str | None) -> str | None:
 
 
 def _dmarc_period(days) -> int:
-    days = cint(days) or 30
+    days = cint(days)
     if days not in DMARC_PERIODS:
         frappe.throw(_("Period must be one of {0} days.").format(", ".join(map(str, DMARC_PERIODS))))
     return days

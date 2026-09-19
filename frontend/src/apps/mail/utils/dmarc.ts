@@ -67,6 +67,8 @@ export const PERIOD_OPTIONS = [
 	{ label: __('Last 7 days'), value: '7' },
 	{ label: __('Last 30 days'), value: '30' },
 	{ label: __('Last 90 days'), value: '90' },
+	// Everything Suite Cloud still holds; how long that is depends on its retention setting.
+	{ label: __('All reports'), value: '0' },
 ]
 
 export const formatPassRate = (rate: number | null | undefined) => (rate == null ? '—' : `${rate}%`)

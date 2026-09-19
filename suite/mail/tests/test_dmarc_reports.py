@@ -29,6 +29,7 @@ class TestDmarcReports(SuiteCloudTestCase):
         self.assertEqual(self.fake.calls[-1][1]["days"], 30)  # the list takes the summary's window
         self.assertEqual(admin.get_dmarc_reports(days=90)["total"], 2)
         self.assertRaises(frappe.ValidationError, admin.get_dmarc_reports, days=45)
+        self.assertEqual(admin.get_dmarc_reports(days=0)["total"], 2)  # everything held, no window
         self.assertRaises(frappe.DoesNotExistError, admin.get_dmarc_reports, domain_id="nobody.test")
         self.assertEqual(admin.get_dmarc_reports(domain_id=f"  {DOMAIN.upper()} ")["total"], 2)
         self.assertEqual(admin.get_dmarc_summary(domain_id="")["totals"]["reports"], 2)
