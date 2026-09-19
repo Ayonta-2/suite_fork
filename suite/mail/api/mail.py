@@ -35,7 +35,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     set_spam_status,
 )
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
-from suite.mail.doctype.mailbox.mailbox import add_mailbox, delete_mailboxes
+from suite.mail.doctype.mailbox.mailbox import add_mailbox, delete_mailboxes, fetch_mailboxes
 from suite.mail.doctype.mailbox_settings.mailbox_settings import (
     automation_rules_to_settings,
     set_mailbox_settings,
@@ -52,7 +52,9 @@ from suite.mail.doctype.sieve_script.sieve_script import (
     pause_automation_sieve_build,
 )
 from suite.mail.doctype.user_account.user_account import (
+    get_account_apps,
     get_user_for_jmap_account,
+    get_user_personal_jmap_account,
     is_jmap_account_belongs_to_user,
 )
 from suite.mail.jmap import (
@@ -104,6 +106,14 @@ def get_mailboxes(account: str) -> list[dict]:
     user = frappe.session.user
     if not is_jmap_configured(user):
         return []
+
+    # Whose account it is, not merely whether the caller has one of their own. Everything
+    # below reads the local tables through frappe.get_all, which bypasses permissions by
+    # design, and nothing here goes near a JMAP service — so unlike the endpoints that do,
+    # there is no ownership check further down to fall back on. Without this an account id
+    # was enough to read another user's mailbox names, counts and automation rules, and
+    # those rules carry the addresses and subjects they filter on.
+    is_jmap_account_belongs_to_user(account, raise_exception=True)
 
     mailboxes = get_user_mailboxes(account)
     if not mailboxes:
@@ -164,9 +174,17 @@ def get_mailboxes(account: str) -> list[dict]:
 
 
 def get_user_mailboxes(account: str) -> list[dict]:
-    """Returns the user's mailboxes."""
+    """Returns the user's mailboxes.
 
-    return frappe.get_all("Mailbox", filters={"account": account})
+    Straight to fetch_mailboxes rather than through frappe.get_all("Mailbox"): Mailbox is a virtual
+    doctype, so a list query is routed to Mailbox.get_list, and frappe fixes the page length there
+    at `page_length or limit or limit_page_length or 20`. get_all asks for everything by passing
+    limit_page_length=0, which is falsy and so loses to the 20 — accounts with more folders than
+    that silently lost the ones sorting last (the Screener among them, since it sorts after the
+    named folders).
+    """
+
+    return fetch_mailboxes(account, limit=None)
 
 
 def add_user_images_to_emails(account: str, mails: list[dict], is_thread: bool = False) -> list[dict]:
@@ -394,16 +412,19 @@ def get_user_jmap_accounts() -> list[dict]:
     two accounts have threads at the same timestamp.
     """
 
-    account_names = frappe.db.get_all("User Account", {"user": frappe.session.user}, pluck="account")
+    # Only the accounts with mail for the user: one that shares just a calendar has no inbox.
+    apps = get_account_apps()
+    account_names = [account for account, has in apps.items() if has["mail"]]
     if not account_names:
         return []
 
     accounts = frappe.db.get_all(
         "JMAP Account",
         filters={"name": ["in", account_names]},
-        fields=["name", "_name", "is_personal"],
+        fields=["name", "_name"],
     )
-    accounts.sort(key=lambda a: (not a["is_personal"], a["_name"] or ""))
+    personal = get_user_personal_jmap_account()
+    accounts.sort(key=lambda a: (a["name"] != personal, a["_name"] or ""))
     return accounts
 
 

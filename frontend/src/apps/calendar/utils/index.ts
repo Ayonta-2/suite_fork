@@ -14,32 +14,6 @@ export const raiseToast = (message: string, type = 'success') => {
 	toast.error(text)
 }
 
-export const raisePromiseToast = (
-	action: () => Promise<unknown>,
-	loading: string,
-	success: string,
-	undoAction?: () => void,
-) => {
-	toast.dismiss()
-
-	const error = __('Action failed. Please try again later.')
-
-	if (undoAction)
-		return toast.promise(action(), {
-			loading,
-			// The button rides on the success slot itself. `successAction` was a frappe-ui 0.1.x
-			// extension to toast.promise, dropped in v1 — sonner has no such key, so it went
-			// nowhere and the toast came up without its Undo.
-			success: {
-				message: success,
-				action: { label: __('Undo'), onClick: () => undoAction() },
-			},
-			error,
-		})
-
-	toast.promise(action(), { loading, success, error })
-}
-
 export const isUrl = (str: string) => {
 	if (typeof str !== 'string' || !str.trim()) return false
 	str = str.trim()
@@ -66,21 +40,6 @@ export const getReorderedParticipants = (
 		.map((p) => ({ ...p, isOrganizer: false, isNew: !original.has(p.email) }))
 
 	return organizer ? [{ ...organizer, isOrganizer: true }, ...rest] : rest
-}
-
-export const shouldIgnoreKeypress = (
-	e: KeyboardEvent,
-	allowCtrlAndMeta: boolean = false,
-): boolean => {
-	if (!allowCtrlAndMeta && (e.ctrlKey || e.metaKey)) return true
-
-	const target = e.target as HTMLElement
-	return (
-		(target.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'checkbox') ||
-		target.tagName === 'TEXTAREA' ||
-		target.isContentEditable ||
-		e.altKey
-	)
 }
 
 // Meet links are stored as absolute URLs built from the site origin (get_url),

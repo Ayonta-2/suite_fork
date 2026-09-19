@@ -8,7 +8,7 @@ import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 
 /** The part of a calendar event that deleting one reads. */
-export interface DeletableEvent {
+interface DeletableEvent {
 	/** The event's own id. A recurring instance carries the series id in `master_id`. */
 	id?: string
 	master_id?: string
@@ -19,6 +19,8 @@ export interface DeletableEvent {
 	recurrence_rule?: Record<string, unknown>
 	organizer?: string
 	participants?: { email: string }[]
+	/** The account it belongs to: ids are only unique within one. */
+	account?: string
 	/** A draft sent no invitations, so it never asks about a cancellation email. */
 	isDraft?: boolean
 }
@@ -52,7 +54,7 @@ export function useEventDelete(
 	const deleteEventInstance = createResource({
 		url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
 		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: store.accountId,
+			account: calendarEvent.value.account,
 			master_id: calendarEvent.value.master_id,
 			recurrence_id: calendarEvent.value.recurrence_id,
 			send_scheduling_messages: sendEmail,
@@ -63,7 +65,7 @@ export function useEventDelete(
 	const deleteEvent = createResource({
 		url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events',
 		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: store.accountId,
+			account: calendarEvent.value.account,
 			ids: [eventId.value],
 			send_scheduling_messages: sendEmail,
 		}),
@@ -77,7 +79,7 @@ export function useEventDelete(
 	const deleteFollowing = createResource({
 		url: 'suite.calendar.api.delete_calendar_event_series_from',
 		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: store.accountId,
+			account: calendarEvent.value.account,
 			master_id: eventId.value,
 			recurrence_id: calendarEvent.value.recurrence_id,
 			send_scheduling_messages: sendEmail,
@@ -156,7 +158,8 @@ export function useEventDelete(
 
 	const deleteScopeModalProps = computed(() => ({
 		title: __('Delete repeating event'),
-		icon: { name: 'lucide-trash-2', theme: 'red' as const },
+		icon: 'lucide-trash-2',
+		iconTheme: 'red' as const,
 		// No line above the list: the title already says what is being deleted.
 		// Every answer is the server's to give here: an instance delete, a rule that ends
 		// earlier, the series itself. Editing has no equivalent of the middle one yet.
@@ -175,15 +178,19 @@ export function useEventDelete(
 
 	// The one entry a host drops into its own dropdown. A recurring event asks
 	// which occurrences first; a one-off has nothing to ask.
+	// Red: the one item in these menus that does not come back. Every host of this
+	// option is a menu of ordinary actions, and the colour is what tells them apart
+	// before the word is read.
 	const deleteOption = computed(() => ({
 		label: __('Delete'),
 		icon: Trash2,
+		theme: 'red',
 		onClick: requestDelete,
 	}))
 
 	const NOTIFY_DELETE_OPTIONS = {
 		title: __('Notify Participants'),
-		icon: { name: 'lucide-bell' },
+		icon: 'lucide-bell',
 		message: __('Send a cancellation email to let attendees know this event was deleted?'),
 	}
 

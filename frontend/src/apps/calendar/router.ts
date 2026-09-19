@@ -1,19 +1,17 @@
 import type { RouteLocationNormalized } from 'vue-router'
 
-import suiteRouter from '@/router'
+import '@/router'
+import { useScreenSize } from '@/composables/useScreenSize'
 
 import { userStore } from '@/apps/calendar/stores/user'
+import { lastCalendarView } from '@/apps/calendar/utils/lastView'
 
 /**
  * Calendar-local guard on the shared suite router: setup-wizard escape,
  * user-data wait, account resolution and shortcut-route expansion.
  * Early-returns for any route whose name doesn't start with `calendar-`;
  * auth itself is the suite router's `beforeEach`.
- *
- * Re-exports the suite router instance as `router` for calendar views.
  */
-export const router = suiteRouter
-
 type Params = Record<string, string | string[]>
 
 const resolveShortcut = (
@@ -21,7 +19,15 @@ const resolveShortcut = (
 	params: Params,
 	accountId: string,
 ) => {
-	const defaultRoute = { name: 'calendar-month', params: { accountId } }
+	// Home is the view the calendar was last left in. Failing that, the month grid
+	// on a desktop and the agenda on a phone, which is where each device starts.
+	// The phone draws all four views on the same routes the desktop uses, at phone
+	// width, so a remembered view opens wherever it was remembered.
+	const { isMobile } = useScreenSize()
+	const defaultRoute = {
+		name: lastCalendarView() ?? (isMobile.value ? 'calendar-agenda' : 'calendar-month'),
+		params: { accountId },
+	}
 
 	switch (name) {
 		case 'calendar-month-shortcut':
@@ -30,6 +36,8 @@ const resolveShortcut = (
 			return { name: 'calendar-week', params: { accountId, ...params } }
 		case 'calendar-day-shortcut':
 			return { name: 'calendar-day', params: { accountId, ...params } }
+		case 'calendar-agenda-shortcut':
+			return { name: 'calendar-agenda', params: { accountId, ...params } }
 		default:
 			return defaultRoute
 	}
@@ -51,5 +59,3 @@ export const calendarGuard = async (to: RouteLocationNormalized) => {
 	// query rides along — it carries the open event's deep link (?event=).
 	if (to.meta.shortcut) return { ...resolveShortcut(to.name, to.params, accountId), query: to.query }
 }
-
-export default router

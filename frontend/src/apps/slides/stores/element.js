@@ -75,6 +75,20 @@ const activeElement = computed(() => {
 	}
 })
 
+const isMultiSelection = computed(() => activeElementIds.value.length > 1)
+
+const hasTextContent = (element) => ['text', 'table'].includes(element?.type)
+
+const firstEditableElement = computed(() => {
+	if (activeElement.value) return activeElement.value
+	const selected = activeElementIds.value.map(findSlideElement)
+	return selected.find((el) => el && !el.locked) ?? selected[0]
+})
+
+const isTextSelection = computed(
+	() => isMultiSelection.value && activeElements.value.every(hasTextContent),
+)
+
 const setActiveElements = (ids) => {
 	if (ids.length == 1 && activeElementIds.value.includes(ids[0])) return
 	activeElementIds.value = ids
@@ -342,7 +356,7 @@ const addShapeElement = async (shapeType, bounds = null, overrides = {}) => {
 	)
 }
 
-const measureHTML = (html) => {
+const createMeasuringDiv = (html) => {
 	const tempTextElement = document.createElement('div')
 
 	// the element's own markup and CSS, or the measurement drifts by sub-pixels
@@ -353,15 +367,26 @@ const measureHTML = (html) => {
 	})
 	tempTextElement.innerHTML = html
 
-	document.body.appendChild(tempTextElement)
+	return tempTextElement
+}
+
+// every rect read after every append, so the lot costs one layout
+const measureHTMLList = (htmls) => {
+	const divs = htmls.map(createMeasuringDiv)
+	divs.forEach((div) => document.body.appendChild(div))
 
 	// fractional, to agree with the selection bounds the resize observer writes
-	const { width: elementWidth, height: elementHeight } = tempTextElement.getBoundingClientRect()
+	const sizes = divs.map((div) => {
+		const { width: elementWidth, height: elementHeight } = div.getBoundingClientRect()
+		return { elementWidth, elementHeight }
+	})
 
-	document.body.removeChild(tempTextElement)
+	divs.forEach((div) => document.body.removeChild(div))
 
-	return { elementWidth, elementHeight }
+	return sizes
 }
+
+const measureHTML = (html) => measureHTMLList([html])[0]
 
 const getTextElementDimensions = (presets) => measureHTML(getElementContent(presets))
 
@@ -971,10 +996,11 @@ const selectAllElements = (e) => {
 }
 
 const resetFocus = () => {
+	// a jump that empties the selection keeps a live caret, so the focus can outlast it
+	focusElementId.value = null
 	if (!activeElementIds.value.length) return
 
 	activeElementIds.value = []
-	focusElementId.value = null
 	pairElementId.value = null
 }
 
@@ -1141,7 +1167,7 @@ const ensureExplicitHeight = (element) => {
 	element.height = elementDiv.offsetHeight
 }
 
-const { initTextEditor, activeEditor } = useTextEditor()
+const { initTextEditor, activeEditor, showFirstEditableStyles } = useTextEditor()
 let editorOldText = ''
 
 const getEditorHTML = () => {
@@ -1280,6 +1306,14 @@ watch(
 			blurAndSaveContent(oldElement)
 		}
 		replaceEditor(() => initEditorForElement(element))
+	},
+)
+
+// several boxes have no editor to refresh the panel from, so the first editable one is read instead
+watch(
+	[activeElementIds, () => firstEditableElement.value?.content, activeEditor],
+	() => {
+		if (!activeEditor.value && isMultiSelection.value) showFirstEditableStyles()
 	},
 )
 
@@ -1432,6 +1466,10 @@ export {
 	dragOccurred,
 	activeElements,
 	activeElement,
+	firstEditableElement,
+	isMultiSelection,
+	hasTextContent,
+	isTextSelection,
 	isSelectionLocked,
 	hasLockedElements,
 	hasUnlockedElements,
@@ -1471,4 +1509,5 @@ export {
 	getElementCenter,
 	getShapeDefaults,
 	rememberMarkers,
+	measureHTMLList,
 }
