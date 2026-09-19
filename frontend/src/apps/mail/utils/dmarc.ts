@@ -13,7 +13,7 @@ export type DmarcTotals = {
 export type DmarcPolicy = {
 	p?: string | null
 	sp?: string | null
-	pct?: number | null
+	testing_mode?: boolean
 	adkim?: string | null
 	aspf?: string | null
 }
@@ -24,6 +24,9 @@ export type DmarcReportRow = DmarcTotals & {
 	reporter: string
 	reporter_email?: string | null
 	report_id?: string | null
+	version?: number | null
+	subject?: string | null
+	to?: string[]
 	date_range_begin?: string | null
 	date_range_end?: string | null
 	received_at?: string | null

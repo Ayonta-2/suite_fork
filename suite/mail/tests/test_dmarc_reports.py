@@ -35,6 +35,11 @@ class TestDmarcReports(SuiteCloudTestCase):
         self.assertRaises(frappe.DoesNotExistError, admin.get_dmarc_report, "  ")
 
         report = admin.get_dmarc_report(first["name"])
+        self.assertEqual(
+            (report["subject"], report["to"], report["version"]),
+            (first["subject"], [f"postmaster@{DOMAIN}"], 1.0),
+        )
+        self.assertIs(report["policy"]["testing_mode"], False)
         self.assertEqual([r["source_ip"] for r in report["records"]], ["203.0.113.5", "198.51.100.9"])
         self.assertEqual(report["records"][1]["disposition"], "reject")
         self.assertRaises(frappe.DoesNotExistError, admin.get_dmarc_report, "c1-missing")

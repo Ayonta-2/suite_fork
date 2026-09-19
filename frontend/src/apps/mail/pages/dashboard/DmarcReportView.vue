@@ -153,7 +153,7 @@ const policyRows = computed(() => {
 	return [
 		{ label: __('Policy (p)'), value: policy.p },
 		{ label: __('Subdomains (sp)'), value: policy.sp },
-		{ label: __('Applies to (pct)'), value: policy.pct != null ? `${policy.pct}%` : '' },
+		{ label: __('Testing mode'), value: policy.testing_mode ? __('Yes') : __('No') },
 		{ label: __('DKIM alignment'), value: policy.adkim },
 		{ label: __('SPF alignment'), value: policy.aspf },
 	]
@@ -163,5 +163,8 @@ const reportRows = computed(() => [
 	{ label: __('Reporter'), value: data.value?.reporter },
 	{ label: __('Contact'), value: data.value?.reporter_email },
 	{ label: __('Report ID'), value: data.value?.report_id },
+	{ label: __('Version'), value: data.value?.version != null ? String(data.value.version) : '' },
+	{ label: __('Subject'), value: data.value?.subject },
+	{ label: __('Sent to'), value: (data.value?.to || []).join(', ') },
 ])
 </script>
