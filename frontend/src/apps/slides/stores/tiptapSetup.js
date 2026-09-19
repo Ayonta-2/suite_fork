@@ -225,6 +225,21 @@ const getItemAttributes = (node) => {
 	return attrs
 }
 
+const getItemStyle = (node, style = '') => {
+	const { color, fontSize, fontFamily, letterSpacing, opacity } = getItemAttributes(node)
+
+	const styleAttrs = [style]
+
+	if (color != null) styleAttrs.push(`color: ${color};`)
+	if (fontSize != null) styleAttrs.push(`font-size: ${fontSize}px;`)
+	if (fontFamily != null) styleAttrs.push(`font-family: ${fontFamily};`)
+	if (letterSpacing != null) styleAttrs.push(`letter-spacing: ${letterSpacing};`)
+	if (opacity != null) styleAttrs.push(`--marker-opacity: ${opacity / 100};`)
+	styleAttrs.push(`line-height: ${node.attrs.lineHeight || '1.5'};`)
+
+	return styleAttrs.join(' ')
+}
+
 const CustomListItem = ListItem.extend({
 	addAttributes() {
 		return {
@@ -242,20 +257,25 @@ const CustomListItem = ListItem.extend({
 	renderHTML({ node, HTMLAttributes, ...rest }) {
 		const liAttrs = { ...HTMLAttributes }
 
-		const { color, fontSize, fontFamily, letterSpacing, opacity } = getItemAttributes(node)
-
-		const styleAttrs = [liAttrs.style || '']
-
-		if (color != null) styleAttrs.push(`color: ${color};`)
-		if (fontSize != null) styleAttrs.push(`font-size: ${fontSize}px;`)
-		if (fontFamily != null) styleAttrs.push(`font-family: ${fontFamily};`)
-		if (letterSpacing != null) styleAttrs.push(`letter-spacing: ${letterSpacing};`)
-		if (opacity != null) styleAttrs.push(`--marker-opacity: ${opacity / 100};`)
-		styleAttrs.push(`line-height: ${node.attrs.lineHeight || '1.5'};`)
-
-		liAttrs.style = styleAttrs.join(' ')
+		liAttrs.style = getItemStyle(node, liAttrs.style)
 
 		return ['li', liAttrs, 0]
+	},
+
+	// ProseMirror keeps an item's <li> while its text changes, so the style is rewritten here
+	addNodeView() {
+		return ({ node }) => {
+			const dom = document.createElement('li')
+			dom.style.cssText = getItemStyle(node)
+
+			const update = (updated) => {
+				if (updated.type != node.type) return false
+				dom.style.cssText = getItemStyle(updated)
+				return true
+			}
+
+			return { dom, contentDOM: dom, update }
+		}
 	},
 })
 

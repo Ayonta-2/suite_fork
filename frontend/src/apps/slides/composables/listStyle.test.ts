@@ -58,3 +58,11 @@ it('takes a nested item out of its lists and leaves the rest one list', () => {
 		'<ol><li><p>one</p></li></ol><p>two</p><ol><li><p>three</p></li><li><p>four</p></li></ol>',
 	)
 })
+
+it('recolours the marker with the text while the box is open', () => {
+	const editor = edit('<ul><li><p>one</p></li></ul>')
+
+	updateProperty('color', 'rgb(255, 0, 0)')
+
+	expect(editor.view.dom.querySelector('li').style.color).toBe('rgb(255, 0, 0)')
+})
