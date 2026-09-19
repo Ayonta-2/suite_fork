@@ -44,3 +44,17 @@ it('changes only the level the caret is in', () => {
 
 	expect(markup()).toBe('<ul><li><p>one</p><ol><li><p>two</p></li></ol></li></ul>')
 })
+
+it('takes a nested item out of its lists and leaves the rest one list', () => {
+	const editor = edit(
+		'<ol><li><p>one</p><ol><li><p>two</p></li><li><p>three</p></li></ol></li><li><p>four</p></li></ol>',
+		true,
+	)
+	editor.commands.setTextSelection(11)
+
+	updateProperty('list', 'none')
+
+	expect(markup()).toBe(
+		'<ol><li><p>one</p></li></ol><p>two</p><ol><li><p>three</p></li><li><p>four</p></li></ol>',
+	)
+})

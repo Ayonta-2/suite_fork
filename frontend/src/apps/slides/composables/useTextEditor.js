@@ -393,14 +393,34 @@ export const useTextEditor = () => {
 
 		if (value == current) return
 
-		if (value == 'none') {
-			// one lift only takes a nested item up a level
-			while (editor.isActive('listItem') && editor.commands.liftListItem('listItem'));
-			return
-		}
+		if (value == 'none') return clearLists(editor)
 
 		applyListType(editor, value == 'ordered' ? 'orderedList' : 'bulletList')
 	}
+
+	// every selected paragraph leaves every list level it sits in
+	const clearLists = (editor) =>
+		editor.commands.command(({ tr, state, commands }) => {
+			const { from, to } = state.selection
+			const { listItem } = state.schema.nodes
+			const paragraphs = []
+			state.doc.nodesBetween(from, to, (node, pos) => {
+				if (node.isTextblock) paragraphs.push(pos + 1)
+			})
+
+			// back to front, so a lift never moves one still to come
+			paragraphs.reverse().forEach((pos) => {
+				commands.setTextSelection(pos)
+				// tiptap's chained state only catches up with the transaction when its tr is read
+				while (state.tr.selection.$from.node(-1)?.type == listItem) {
+					if (!commands.liftListItem('listItem')) break
+				}
+			})
+
+			joinNeighbouringLists(tr)
+			tr.setSelection(TextSelection.create(tr.doc, tr.mapping.map(from), tr.mapping.map(to)))
+			return true
+		})
 
 	// every selected paragraph ends up in a list of this type
 	const applyListType = (editor, listType) =>
@@ -417,15 +437,15 @@ export const useTextEditor = () => {
 				else tr.wrap($paragraph.blockRange(end), [{ type: list }, { type: listItem }])
 			})
 
-			joinNeighbouringLists(tr, list)
+			joinNeighbouringLists(tr)
 			return true
 		})
 
-	const joinNeighbouringLists = (tr, list) => {
+	const joinNeighbouringLists = (tr) => {
 		const joins = []
 		tr.doc.descendants((node, pos, parent, index) => {
 			const previous = index && parent.child(index - 1)
-			if (node.type == list && previous?.type == list) joins.push(pos)
+			if (listValues[node.type.name] && previous?.type == node.type) joins.push(pos)
 		})
 		// back to front, so a join never moves one still to come
 		joins.reverse().forEach((pos) => tr.join(pos))
