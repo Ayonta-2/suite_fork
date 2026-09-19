@@ -181,11 +181,14 @@ const editorStyles = reactive({
 	cellFill: null,
 })
 
+const listValues = { bulletList: 'bullet', orderedList: 'ordered' }
+
 export const useTextEditor = () => {
 	const setEditorStyles = (editor) => {
 		if (!editor) return
 
 		const activeStyles = editor.getAttributes('textStyle')
+		const listType = getActiveListType(editor)
 
 		Object.assign(editorStyles, {
 			textAlign: editor.getAttributes('paragraph').textAlign || 'left',
@@ -194,8 +197,8 @@ export const useTextEditor = () => {
 			italic: editor.isActive('italic'),
 			strike: editor.isActive('strike'),
 			underline: editor.isActive('underline'),
-			bulletList: editor.isActive('bulletList'),
-			orderedList: editor.isActive('orderedList'),
+			bulletList: listType == 'bullet',
+			orderedList: listType == 'ordered',
 			textTransform: activeStyles.textTransform || 'none',
 			fontSize: parseInt(activeStyles.fontSize, 10) || null,
 			fontFamily: activeStyles.fontFamily || null,
@@ -372,10 +375,15 @@ export const useTextEditor = () => {
 		return currentStyle ? `${currentStyle}; ${newStyle}` : newStyle
 	}
 
+	// the list each selected paragraph sits in directly, never an outer one
 	const getActiveListType = (editor) => {
-		if (editor.isActive('orderedList')) return 'ordered'
-		if (editor.isActive('bulletList')) return 'bullet'
-		return 'none'
+		const { doc, selection } = editor.state
+		const found = new Set()
+		doc.nodesBetween(selection.from, selection.to, (node, pos) => {
+			if (!node.isTextblock) return
+			found.add(listValues[doc.resolve(pos).node(-1)?.type.name] || 'none')
+		})
+		return found.size == 1 ? [...found][0] : 'mixed'
 	}
 
 	const setListProperty = (editor, value) => {
