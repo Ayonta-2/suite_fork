@@ -171,6 +171,7 @@ onBeforeMount(() => normalizeContent())
 	width: 0.8em;
 	margin-left: -0.8em;
 	text-align: left;
+	opacity: var(--marker-opacity, 1);
 }
 
 .tiptap ol,
@@ -205,6 +206,7 @@ onBeforeMount(() => normalizeContent())
 	margin-left: calc(-1 * var(--marker-width) - 0.2em);
 	margin-right: 0.2em;
 	text-align: right;
+	opacity: var(--marker-opacity, 1);
 }
 
 .text-auto-width,

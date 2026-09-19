@@ -250,7 +250,7 @@ const CustomListItem = ListItem.extend({
 		if (fontSize != null) styleAttrs.push(`font-size: ${fontSize}px;`)
 		if (fontFamily != null) styleAttrs.push(`font-family: ${fontFamily};`)
 		if (letterSpacing != null) styleAttrs.push(`letter-spacing: ${letterSpacing};`)
-		if (opacity != null) styleAttrs.push(`opacity: ${opacity};`)
+		if (opacity != null) styleAttrs.push(`--marker-opacity: ${opacity / 100};`)
 		styleAttrs.push(`line-height: ${node.attrs.lineHeight || '1.5'};`)
 
 		liAttrs.style = styleAttrs.join(' ')
