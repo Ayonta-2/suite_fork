@@ -55,22 +55,21 @@
 							:row="row"
 							class="hover:!bg-surface-gray-1"
 						>
-							<ListRowItem :item="item">
-								<!-- A rate of 0 is real and shown; only a row that counted nothing has no rate. -->
-								<template v-if="column.key === 'pass_rate'">
-									<Badge v-if="row.messages && item != null" :theme="passRateTheme(item)" :label="formatPassRate(item)" />
-								</template>
-								<span v-else-if="column.key === 'date_range_end'" class="text-ink-gray-5 text-sm">
-									{{ formatPeriod(row) }}
-								</span>
-								<span v-else-if="column.key === 'received_at'" class="text-ink-gray-5 text-sm">
-									{{ fromNow(item) || '—' }}
-								</span>
-								<!-- A count of 0 stays blank: a row with nothing failed reads cleaner without a 0. -->
-								<span v-else-if="column.key === 'messages' || column.key === 'failed'" class="text-base tabular-nums">
-									{{ item ? Number(item).toLocaleString() : '' }}
-								</span>
-							</ListRowItem>
+							<!-- Plain cells rather than the list's own cell component, which wraps each cell
+							     in a Tooltip: a page of 500 rows would mount thousands and stall the page. -->
+							<template v-if="column.key === 'pass_rate'">
+								<Badge v-if="row.messages && item != null" :theme="passRateTheme(item)" :label="formatPassRate(item)" />
+							</template>
+							<span v-else-if="column.key === 'date_range_end'" class="text-ink-gray-5 truncate text-sm">
+								{{ formatPeriod(row) }}
+							</span>
+							<span v-else-if="column.key === 'received_at'" class="text-ink-gray-5 truncate text-sm">
+								{{ fromNow(item) || '—' }}
+							</span>
+							<span v-else-if="column.key === 'messages' || column.key === 'failed'" class="text-base tabular-nums">
+								{{ item ? Number(item).toLocaleString() : '' }}
+							</span>
+							<span v-else class="truncate text-base">{{ item }}</span>
 						</ListRow>
 					</template>
 					<ListEmptyState v-else />
@@ -96,7 +95,7 @@ import { computed, ref, watch } from 'vue'
 import { appPageMeta } from '@/utils/documentTitle'
 import { watchDebounced } from '@vueuse/core'
 import { Badge, FormControl, createResource, usePageMeta } from 'frappe-ui'
-import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
+import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRow, ListRows, ListView } from 'frappe-ui/experimental'
 
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import {
