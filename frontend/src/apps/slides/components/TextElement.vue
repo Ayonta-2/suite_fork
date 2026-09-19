@@ -190,6 +190,12 @@ onBeforeMount(() => normalizeContent())
 	--marker-width: 3ch;
 }
 
+.tiptap ol:has(> li:nth-child(100)),
+.textElement ol:has(> li:nth-child(100)),
+.tableElement ol:has(> li:nth-child(100)) {
+	--marker-width: 4ch;
+}
+
 .tiptap ol > li,
 .textElement ol > li,
 .tableElement ol > li {
