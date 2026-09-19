@@ -385,21 +385,42 @@ export const useTextEditor = () => {
 
 		if (value == current) return
 
-		const chain = editor.chain()
-
 		if (value == 'none') {
 			// one lift only takes a nested item up a level
 			while (editor.isActive('listItem') && editor.commands.liftListItem('listItem'));
 			return
 		}
 
-		const listType = value == 'ordered' ? 'orderedList' : 'bulletList'
+		applyListType(editor, value == 'ordered' ? 'orderedList' : 'bulletList')
+	}
 
-		if (current == 'none') {
-			chain.wrapInList(listType).run()
-		} else {
-			chain.liftListItem('listItem').wrapInList(listType).run()
-		}
+	// every selected paragraph ends up in a list of this type
+	const applyListType = (editor, listType) =>
+		editor.commands.command(({ tr, state }) => {
+			const { from, to } = state.selection
+			const { listItem, [listType]: list } = state.schema.nodes
+
+			state.doc.nodesBetween(from, to, (node, pos) => {
+				if (!node.isTextblock) return
+				const $paragraph = tr.doc.resolve(tr.mapping.map(pos))
+				const end = tr.doc.resolve($paragraph.pos + node.nodeSize)
+
+				if ($paragraph.parent.type == listItem) tr.setNodeMarkup($paragraph.before(-1), list)
+				else tr.wrap($paragraph.blockRange(end), [{ type: list }, { type: listItem }])
+			})
+
+			joinNeighbouringLists(tr, list)
+			return true
+		})
+
+	const joinNeighbouringLists = (tr, list) => {
+		const joins = []
+		tr.doc.descendants((node, pos, parent, index) => {
+			const previous = index && parent.child(index - 1)
+			if (node.type == list && previous?.type == list) joins.push(pos)
+		})
+		// back to front, so a join never moves one still to come
+		joins.reverse().forEach((pos) => tr.join(pos))
 	}
 
 	const setPropertyOn = (editor, property, value) => {
