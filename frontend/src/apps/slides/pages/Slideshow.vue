@@ -394,8 +394,16 @@ useKeyboardShortcut([
 	cursor: none !important;
 }
 
-.forward-transition .textElement span {
+.forward-transition .textElement span,
+.forward-transition .textElement li {
 	transition-property: all;
+	transition-duration: var(--transition-duration);
+	transition-timing-function: ease-in-out;
+}
+
+/* the marker inherits the rest from its item, only its fade is its own */
+.forward-transition .textElement li > p:first-child::before {
+	transition-property: opacity;
 	transition-duration: var(--transition-duration);
 	transition-timing-function: ease-in-out;
 }
