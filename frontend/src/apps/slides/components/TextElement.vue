@@ -156,16 +156,16 @@ onBeforeMount(() => normalizeContent())
 	padding-left: 0;
 }
 
-.tiptap ul li,
-.textElement ul li,
-.tableElement ul li {
+.tiptap ul > li,
+.textElement ul > li,
+.tableElement ul > li {
 	padding-left: 0.8em;
 }
 
 /* inline on the first line, so the marker keeps that line's baseline and alignment */
-.tiptap ul li > p:first-child::before,
-.textElement ul li > p:first-child::before,
-.tableElement ul li > p:first-child::before {
+.tiptap ul > li > p:first-child::before,
+.textElement ul > li > p:first-child::before,
+.tableElement ul > li > p:first-child::before {
 	content: '\2022';
 	display: inline-block;
 	width: 0.8em;
@@ -189,16 +189,16 @@ onBeforeMount(() => normalizeContent())
 	--marker-width: 3ch;
 }
 
-.tiptap ol li,
-.textElement ol li,
-.tableElement ol li {
+.tiptap ol > li,
+.textElement ol > li,
+.tableElement ol > li {
 	counter-increment: step;
 	padding-left: calc(var(--marker-width) + 0.2em);
 }
 
-.tiptap ol li > p:first-child::before,
-.textElement ol li > p:first-child::before,
-.tableElement ol li > p:first-child::before {
+.tiptap ol > li > p:first-child::before,
+.textElement ol > li > p:first-child::before,
+.tableElement ol > li > p:first-child::before {
 	content: counter(step) '.';
 	display: inline-block;
 	width: var(--marker-width);
