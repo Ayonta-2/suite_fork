@@ -153,7 +153,11 @@ const policyRows = computed(() => {
 	return [
 		{ label: __('Policy (p)'), value: policy.p },
 		{ label: __('Subdomains (sp)'), value: policy.sp },
-		{ label: __('Testing mode'), value: policy.testing_mode ? __('Yes') : __('No') },
+		{
+			label: __('Testing mode'),
+			// An absent value is unknown, not "No"; the row then shows the usual placeholder.
+			value: policy.testing_mode == null ? '' : policy.testing_mode ? __('Yes') : __('No'),
+		},
 		{ label: __('DKIM alignment'), value: policy.adkim },
 		{ label: __('SPF alignment'), value: policy.aspf },
 	]
