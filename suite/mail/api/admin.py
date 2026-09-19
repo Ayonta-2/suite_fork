@@ -314,6 +314,143 @@ def get_domain_dns_json(domain_id: str) -> str:
     return json.dumps(_domain_records(domain_id), indent=4)
 
 
+# --- DMARC reports -------------------------------------------------------------------------------
+
+# The periods the DMARC page offers, 0 being everything Suite Cloud still holds (its retention is
+# the operator's choice and may run to years); the summary is one aggregate query per call.
+DMARC_PERIODS = (0, 7, 30, 90)
+
+
+@frappe.whitelist()
+def get_dmarc_summary(domain_id: str | None = None, days: int = 30) -> dict:
+    """Pass rates over the reports whose period ended in the last ``days``, by domain, source and reporter."""
+
+    check_admin_permission("view domains")
+    summary = get_client().call(
+        "mail.dmarc.get_dmarc_summary", domain=_dmarc_domain(domain_id), days=_dmarc_period(days)
+    )
+    return {
+        "since": to_utc_z(summary.get("since")),
+        "until": to_utc_z(summary.get("until")),
+        "totals": _dmarc_totals(summary.get("totals") or {}),
+        "domains": [{"domain": r.get("domain"), **_dmarc_totals(r)} for r in summary.get("domains") or []],
+        "sources": [
+            {"source_ip": r.get("source_ip"), **_dmarc_totals(r)} for r in summary.get("sources") or []
+        ],
+        "reporters": [
+            {"reporter": r.get("reporter"), **_dmarc_totals(r)} for r in summary.get("reporters") or []
+        ],
+    }
+
+
+@frappe.whitelist()
+def get_dmarc_reports(
+    domain_id: str | None = None,
+    txt: str | None = None,
+    days: int = 30,
+    start: int = 0,
+    page_length: int = DEFAULT_PAGE_LENGTH,
+) -> dict:
+    """The reports whose period ended in the last ``days``, newest first: the same window as the summary."""
+
+    check_admin_permission("view domains")
+    start, page_length = _paging(start, page_length)
+    page = get_client().call(
+        "mail.dmarc.list_dmarc_reports",
+        domain=_dmarc_domain(domain_id),
+        search=(txt or "").strip() or None,
+        days=_dmarc_period(days),
+        start=start,
+        limit=page_length,
+    )
+    return {
+        "items": [_dmarc_report_row(r) for r in page.get("items") or []],
+        "total": cint(page.get("total")),
+    }
+
+
+@frappe.whitelist()
+def get_dmarc_report(report_id: str) -> dict:
+    """One report with its per-source records, as the reporter sent them."""
+
+    check_admin_permission("view domains")
+    report_id = (report_id or "").strip()
+    if not report_id:
+        frappe.throw(_("Report not found."), frappe.DoesNotExistError)
+    report = get_client().call("mail.dmarc.get_dmarc_report", report=report_id)
+    return {
+        **_dmarc_report_row(report),
+        "records": [_dmarc_record_row(r) for r in report.get("records") or []],
+    }
+
+
+def _dmarc_domain(domain_id: str | None) -> str | None:
+    """A domain the way Suite Cloud names one, or None for all of the site's domains.
+
+    Frappe checks the annotated types on the way in; this only settles the spelling.
+    """
+
+    return (domain_id or "").strip().lower() or None
+
+
+def _dmarc_period(days) -> int:
+    days = cint(days)
+    if days not in DMARC_PERIODS:
+        frappe.throw(_("Period must be one of {0} days.").format(", ".join(map(str, DMARC_PERIODS))))
+    return days
+
+
+def _dmarc_report_row(report: dict) -> dict:
+    return {
+        "id": report["name"],
+        "domain": report.get("policy_domain"),
+        "reporter": report.get("reporter"),
+        "reporter_email": report.get("reporter_email"),
+        "report_id": report.get("report_id"),
+        "version": report.get("version"),
+        "subject": report.get("subject"),
+        "to": report.get("to") or [],
+        "date_range_begin": to_utc_z(report.get("date_range_begin")),
+        "date_range_end": to_utc_z(report.get("date_range_end")),
+        "received_at": to_utc_z(report.get("received_at")),
+        "policy": report.get("policy") or {},
+        "errors": report.get("errors"),
+        **_dmarc_totals(report.get("totals") or {}),
+    }
+
+
+def _dmarc_record_row(record: dict) -> dict:
+    return {
+        "source_ip": record.get("source_ip"),
+        "count": cint(record.get("count")),
+        "disposition": record.get("disposition"),
+        "dkim": record.get("dkim"),
+        "spf": record.get("spf"),
+        "header_from": record.get("header_from"),
+        "envelope_from": record.get("envelope_from"),
+        "envelope_to": record.get("envelope_to"),
+        "override_reasons": record.get("override_reasons"),
+        "dkim_results": record.get("dkim_results") or [],
+        "spf_results": record.get("spf_results") or [],
+    }
+
+
+def _dmarc_totals(row: dict) -> dict:
+    """Counts as integers plus the pass rate the tiles show; ``None`` when nothing was counted."""
+
+    messages = cint(row.get("messages"))
+    passed = cint(row.get("passed"))
+    return {
+        "reports": cint(row.get("reports")),
+        "messages": messages,
+        "passed": passed,
+        "failed": cint(row.get("failed")),
+        "dkim_passed": cint(row.get("dkim_passed")),
+        "spf_passed": cint(row.get("spf_passed")),
+        "pass_rate": round(passed * 100 / messages) if messages else None,
+    }
+
+
 # --- members --------------------------------------------------------------------------------------
 
 

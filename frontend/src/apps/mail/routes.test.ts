@@ -40,6 +40,14 @@ describe('mail route matching', () => {
 		expect(router.resolve('/mail/signup').name).toBe('mail-signup')
 	})
 
+	it('dashboard DMARC routes resolve as dashboard pages', () => {
+		const router = makeRouter()
+		const list = router.resolve('/mail/dashboard/dmarc')
+		expect([list.name, list.meta.isDashboard]).toEqual(['mail-dmarc-reports', true])
+		const detail = router.resolve('/mail/dashboard/dmarc/c1-dma1')
+		expect([detail.name, detail.params.reportId]).toEqual(['mail-dmarc-report', 'c1-dma1'])
+	})
+
 	it('account-scoped routes still resolve', () => {
 		expect(makeRouter().resolve('/mail/account/ih/mailbox/a').name).toBe('mail-mailbox')
 	})

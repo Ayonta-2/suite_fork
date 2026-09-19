@@ -18,6 +18,7 @@ class FakeSuiteCloud:
         self.accounts: dict[str, dict] = {}
         self.groups: dict[str, dict] = {}
         self.lists: dict[str, dict] = {}
+        self.dmarc_reports: dict[str, dict] = {}
         self.passwords: dict[str, str] = {}
         self.calls: list[tuple[str, dict]] = []
 
@@ -67,6 +68,110 @@ class FakeSuiteCloud:
                 "mailing_lists": len(self.lists),
                 "allocated_disk_gb": sum(a["disk_quota_gb"] for a in self.accounts.values()),
             },
+        }
+
+    # --- DMARC reports ---------------------------------------------------------------------
+
+    def add_dmarc_report(self, domain: str, reporter: str = "google.com", records=None, **fields) -> dict:
+        """A stored report the way Suite Cloud lists one; records default to one pass and one fail."""
+
+        records = records or [
+            {"source_ip": "203.0.113.5", "count": 3, "disposition": "none", "dkim": "pass", "spf": "pass"},
+            {"source_ip": "198.51.100.9", "count": 2, "disposition": "reject", "dkim": "fail", "spf": "fail"},
+        ]
+        passed = sum(r["count"] for r in records if r["dkim"] == "pass" or r["spf"] == "pass")
+        total = sum(r["count"] for r in records)
+        name = f"c1-dma{len(self.dmarc_reports) + 1}"
+        self.dmarc_reports[name] = {
+            "name": name,
+            "policy_domain": domain,
+            "reporter": reporter,
+            "reporter_email": f"noreply-dmarc@{reporter}",
+            "report_id": f"{reporter}-{name}",
+            "version": 1.0,
+            "subject": f"Report Domain: {domain} Submitter: {reporter}",
+            "to": [f"postmaster@{domain}"],
+            "date_range_begin": "2026-09-16T00:00:00Z",
+            "date_range_end": "2026-09-17T00:00:00Z",
+            "received_at": "2026-09-17T06:00:00Z",
+            "policy": {
+                "p": "reject",
+                "sp": "reject",
+                "testing_mode": False,
+                "adkim": "relaxed",
+                "aspf": "relaxed",
+            },
+            "totals": {
+                "messages": total,
+                "passed": passed,
+                "failed": total - passed,
+                "dkim_passed": sum(r["count"] for r in records if r["dkim"] == "pass"),
+                "spf_passed": sum(r["count"] for r in records if r["spf"] == "pass"),
+            },
+            "errors": None,
+            "records": [{"header_from": domain, "dkim_results": [], "spf_results": [], **r} for r in records],
+            **fields,
+        }
+        return self.dmarc_reports[name]
+
+    def dmarc__list_dmarc_reports(
+        self, domain=None, search=None, since=None, until=None, days=None, start=0, limit=50
+    ):
+        if domain:
+            self._require(self.domains, domain)
+        rows = [r for r in self.dmarc_reports.values() if not domain or r["policy_domain"] == domain]
+        if search:
+            rows = [r for r in rows if search.lower() in f"{r['policy_domain']} {r['reporter']}".lower()]
+        rows.sort(key=lambda r: r["date_range_end"], reverse=True)
+        listing = [{k: v for k, v in r.items() if k != "records"} for r in rows[start : start + limit]]
+        return {"items": listing, "total": len(rows)}
+
+    def dmarc__get_dmarc_report(self, report: str) -> dict:
+        return self._require(self.dmarc_reports, report)
+
+    def dmarc__get_dmarc_summary(self, domain=None, days=30) -> dict:
+        if domain:
+            self._require(self.domains, domain)
+        rows = [r for r in self.dmarc_reports.values() if not domain or r["policy_domain"] == domain]
+
+        def totals(group: list[dict]) -> dict:
+            sums = {
+                k: sum(r["totals"][k] for r in group)
+                for k in ("messages", "passed", "failed", "dkim_passed", "spf_passed")
+            }
+            return {"reports": len(group), **sums}
+
+        by_source: dict[str, dict] = {}
+        for r in rows:
+            for rec in r["records"]:
+                s = by_source.setdefault(
+                    rec["source_ip"],
+                    {"reports": 0, "messages": 0, "passed": 0, "dkim_passed": 0, "spf_passed": 0},
+                )
+                ok = rec["dkim"] == "pass" or rec["spf"] == "pass"
+                s["reports"] += 1
+                s["messages"] += rec["count"]
+                s["passed"] += rec["count"] if ok else 0
+                s["dkim_passed"] += rec["count"] if rec["dkim"] == "pass" else 0
+                s["spf_passed"] += rec["count"] if rec["spf"] == "pass" else 0
+        return {
+            "since": "2026-08-19T00:00:00Z",
+            "until": "2026-09-18T00:00:00Z",
+            "totals": totals(rows)
+            if rows
+            else {"reports": 0, "messages": 0, "passed": 0, "failed": 0, "dkim_passed": 0, "spf_passed": 0},
+            "domains": [
+                {"domain": d, **totals([r for r in rows if r["policy_domain"] == d])}
+                for d in sorted({r["policy_domain"] for r in rows})
+            ],
+            "sources": [
+                {"source_ip": ip, **s, "failed": s["messages"] - s["passed"]}
+                for ip, s in sorted(by_source.items(), key=lambda i: -i[1]["messages"])
+            ],
+            "reporters": [
+                {"reporter": o, **totals([r for r in rows if r["reporter"] == o])}
+                for o in sorted({r["reporter"] for r in rows})
+            ],
         }
 
     # --- domains ---------------------------------------------------------------------------

@@ -153,6 +153,7 @@ import Mails from '~icons/lucide/mails'
 import Megaphone from '~icons/lucide/megaphone'
 import Plus from '~icons/lucide/plus'
 import Settings from '~icons/lucide/settings'
+import ShieldCheck from '~icons/lucide/shield-check'
 import Star from '~icons/lucide/star'
 import Trash2 from '~icons/lucide/trash-2'
 import Users from '~icons/lucide/users'
@@ -351,6 +352,12 @@ const dashboardItems = [
 				icon: Globe,
 				to: { name: 'mail-domains' },
 				activeFor: ['mail-domains', 'mail-domain'],
+			},
+			{
+				label: __('DMARC Reports'),
+				icon: ShieldCheck,
+				to: { name: 'mail-dmarc-reports' },
+				activeFor: ['mail-dmarc-reports', 'mail-dmarc-report'],
 			},
 		],
 	},
