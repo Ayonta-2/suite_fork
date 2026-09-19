@@ -317,7 +317,7 @@ def get_domain_dns_json(domain_id: str) -> str:
 # --- DMARC reports -------------------------------------------------------------------------------
 
 # The periods the DMARC page offers; the summary is one aggregate query on Suite Cloud per call.
-DMARC_PERIODS = (7, 30, 90, 365)
+DMARC_PERIODS = (7, 30, 90)
 
 
 @frappe.whitelist()

@@ -67,7 +67,6 @@ export const PERIOD_OPTIONS = [
 	{ label: __('Last 7 days'), value: '7' },
 	{ label: __('Last 30 days'), value: '30' },
 	{ label: __('Last 90 days'), value: '90' },
-	{ label: __('Last year'), value: '365' },
 ]
 
 export const formatPassRate = (rate: number | null | undefined) => (rate == null ? '—' : `${rate}%`)
