@@ -37,6 +37,26 @@ const MAX_FILL_WINDOWS = 20
 // until the mutation lands, so a refresh or append in that window would put it back.
 const REMOVAL_SUPPRESSION_MS = 15000
 
+// Windows a refresh may span (see refreshWindowSize). It re-fetches every loaded row so that rows
+// below the first window can be found missing, but that fetch runs on every poll and every change
+// event, so its depth is bounded.
+const MAX_REFRESH_WINDOWS = 8
+
+/**
+ * Rows a refresh must ask the server for, given how many are loaded.
+ *
+ * The window is what a refresh reconciles the loaded list against (see refreshLoadedThreads): a row
+ * the window doesn't reach can never be found missing, so sizing it to one page left a thread the
+ * reader had scrolled past sitting in the list forever once it was deleted on another device. It
+ * spans the loaded list instead.
+ *
+ * Bounded, because this runs on the 30s poll and on every change event: past `MAX_REFRESH_WINDOWS`
+ * a row deleted elsewhere waits for the next reset rather than turning each poll into a walk of the
+ * whole mailbox. Deeper than any reader scrolls between two polls.
+ */
+export const refreshWindowSize = (loadedCount: number) =>
+	Math.min(Math.max(loadedCount, PAGE_LENGTH), PAGE_LENGTH * MAX_REFRESH_WINDOWS)
+
 /**
  * Merges two newest-first runs of threads into one, keeping newest-first order. Both inputs are
  * already sorted (the server returns them that way), so this is a plain two-pointer merge; ties keep
@@ -61,6 +81,9 @@ export const mergeByReceivedAt = (fresh: Thread[], loaded: Thread[]): Thread[] =
  * is dropped: one newer than the window's last row, or any missing row when the window is the whole
  * list (`windowComplete`). A row tied with the last one may simply have been cut off, so it stays.
  * `keep` spares rows the server doesn't know about yet (an undo still in flight).
+ *
+ * How far this reaches is the caller's choice of window: only rows the window covers can be found
+ * missing, which is why a refresh asks for the whole loaded list (see refreshWindowSize).
  *
  * The result is re-sorted: a thread that just got a reply carries a newer received_at than the loaded
  * list was ordered by, and belongs further up. The sort is stable, so untouched rows keep their order.
@@ -147,6 +170,10 @@ export const usePaginatedThreads = ({
 	// The mirror image: rows put back by an undo whose request is still in flight. The server doesn't
 	// return them yet, so a refresh in that window would take them for deleted elsewhere.
 	const recentlyRestored = new Set<string>()
+	// Rows the in-flight reset/refresh asked for: one page for a reset, the loaded list for a refresh
+	// (see refreshWindowSize). Captured when the fetch is triggered rather than read off the list when
+	// it lands, so an optimistic removal in between can't leave the window and its reader disagreeing.
+	let windowSize = PAGE_LENGTH
 
 	const list = () => resource().data ?? []
 
@@ -184,9 +211,16 @@ export const usePaginatedThreads = ({
 	 */
 	const takeResetWindow = (rows: Thread[]): Thread[] => {
 		if (refreshMode.value) refreshSnapshot = list()
-		hasMore.value = rows.length > PAGE_LENGTH
-		return rows.slice(0, PAGE_LENGTH)
+		hasMore.value = rows.length > windowSize
+		return rows.slice(0, windowSize)
 	}
+
+	/**
+	 * Rows a reset or refresh fetch must ask for: the window it will take, plus the lookahead row that
+	 * says whether more exist beyond it. The views' `makeParams` read this — a refresh asks for more
+	 * than a reset, so it can no longer be the constant it was.
+	 */
+	const resetLimit = () => windowSize + 1
 
 	/**
 	 * Reset-to-top: the caller is about to refetch the first window, replacing the loaded list.
@@ -194,12 +228,14 @@ export const usePaginatedThreads = ({
 	 */
 	const beginReset = () => {
 		refreshMode.value = false
+		windowSize = PAGE_LENGTH
 		epoch.value++
 	}
 
 	/**
-	 * Check for new mail without losing the reader's place: the caller is about to refetch the newest
-	 * window, which onResetSuccess will merge into the loaded list instead of replacing it.
+	 * Check for new mail without losing the reader's place: the caller is about to refetch the window,
+	 * which onResetSuccess will merge into the loaded list instead of replacing it. The window spans
+	 * every loaded row rather than just the first page, so the merge can reconcile all of them.
 	 *
 	 * Returns false when a fetch is already in flight, which is the caller's cue to do nothing.
 	 * Bumping the epoch discards an append still in flight (appendThreads checks it) instead of
@@ -209,6 +245,9 @@ export const usePaginatedThreads = ({
 	const beginRefresh = () => {
 		if (isFetching.value) return false
 		refreshMode.value = true
+		// Span the loaded list, not just its first page: the window is what the merge reconciles
+		// against, and it can only drop rows it reaches.
+		windowSize = refreshWindowSize(list().length)
 		epoch.value++
 		refreshEpoch = epoch.value
 		return true
@@ -442,6 +481,7 @@ export const usePaginatedThreads = ({
 		threadByOffset,
 		scrollListToTop,
 		takeResetWindow,
+		resetLimit,
 		beginReset,
 		beginRefresh,
 		onResetSuccess,

@@ -574,6 +574,7 @@ const {
 	threadIDs,
 	threadByOffset,
 	takeResetWindow,
+	resetLimit,
 	beginReset,
 	beginRefresh,
 	onResetSuccess,
@@ -1080,13 +1081,14 @@ const searchFilter = () => {
 	return filter
 }
 
-// Reset resource for search: always the first window, over-fetching one row to drive `hasMore`.
+// Reset resource for search: the window starts at the top and runs as deep as the composable asks
+// (one page on a reset, the loaded list on a refresh), over-fetching one row to drive `hasMore`.
 const searchResults = createResource({
 	url: 'suite.mail.api.mail.search_mails',
 	makeParams: () => ({
 		account: store.accountId,
 		filter: searchFilter(),
-		limit: PAGE_LENGTH + 1,
+		limit: resetLimit(),
 		start: 0,
 		all_accounts: isAllAccountsSearch.value,
 	}),
@@ -1125,14 +1127,16 @@ const { filter, reloadFilter, FILTER_OPTIONS, filterTitle } = useStoredFilter({
 
 const isMailboxLoaded = ref(false)
 
-// Reset resource for a mailbox: always the first window. Over-fetches one row (PAGE_LENGTH + 1) to
-// detect whether more exist without relying on the (flaky) stored count.
+// Reset resource for a mailbox: the window starts at the top and runs as deep as the composable asks
+// (see resetLimit) — one page on a reset, the loaded list on a refresh, so a refresh can tell which
+// loaded rows are gone. Over-fetches one row to detect whether more exist without relying on the
+// (flaky) stored count.
 const threads = createResource({
 	url: 'suite.mail.api.mail.get_threads',
 	makeParams: () => ({
 		account: store.accountId,
 		mailbox,
-		limit: PAGE_LENGTH + 1,
+		limit: resetLimit(),
 		start: 0,
 		filter_by: filter.value,
 	}),

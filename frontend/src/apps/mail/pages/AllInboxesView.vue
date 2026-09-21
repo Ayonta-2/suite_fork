@@ -260,6 +260,7 @@ const {
 	threadIDs,
 	threadByOffset,
 	takeResetWindow,
+	resetLimit,
 	beginReset,
 	beginRefresh,
 	onResetSuccess,
@@ -289,12 +290,13 @@ const { filter, FILTER_OPTIONS, filterTitle: title } = useStoredFilter({
 	onChange: () => resetThreads(),
 })
 
-// Reset resource: always the first window, over-fetching one row (PAGE_LENGTH + 1) to detect whether
-// more exist without a total.
+// Reset resource: the window starts at the top and runs as deep as the composable asks (see
+// resetLimit) — one page on a reset, the loaded list on a refresh, so a refresh can tell which loaded
+// rows are gone. Over-fetches one row to detect whether more exist without a total.
 const threads = createResource({
 	url: 'suite.mail.api.mail.get_all_inbox_threads',
 	makeParams: () => ({
-		limit: PAGE_LENGTH + 1,
+		limit: resetLimit(),
 		start: 0,
 		filter_by: filter.value,
 	}),
