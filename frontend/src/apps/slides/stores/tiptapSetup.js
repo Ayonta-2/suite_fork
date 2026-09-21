@@ -634,7 +634,8 @@ const handleKeyDown = (view, event) => {
 		return true
 	}
 
-	if (prevNode && prevNode.isTextblock && prevNode.textContent === ZWSP) {
+	const caretAtLineStart = selection.empty && $from.parentOffset === 0
+	if (caretAtLineStart && prevNode && prevNode.isTextblock && prevNode.textContent === ZWSP) {
 		return joinBackwardAfterPlaceholder(view)
 	}
 
