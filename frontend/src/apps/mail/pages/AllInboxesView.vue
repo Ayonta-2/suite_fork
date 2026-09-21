@@ -260,6 +260,7 @@ const {
 	threadIDs,
 	threadByOffset,
 	takeResetWindow,
+	resetLimit,
 	beginReset,
 	beginRefresh,
 	onResetSuccess,
@@ -289,12 +290,13 @@ const { filter, FILTER_OPTIONS, filterTitle: title } = useStoredFilter({
 	onChange: () => resetThreads(),
 })
 
-// Reset resource: always the first window, over-fetching one row (PAGE_LENGTH + 1) to detect whether
-// more exist without a total.
+// Reset resource: the window starts at the top and runs as deep as the composable asks (see
+// resetLimit) — one page on a reset, the loaded list on a refresh, so a refresh can tell which loaded
+// rows are gone. Over-fetches one row to detect whether more exist without a total.
 const threads = createResource({
 	url: 'suite.mail.api.mail.get_all_inbox_threads',
 	makeParams: () => ({
-		limit: PAGE_LENGTH + 1,
+		limit: resetLimit(),
 		start: 0,
 		filter_by: filter.value,
 	}),
@@ -1037,20 +1039,23 @@ const unreadPrefix = computed(() =>
 
 usePageMeta(() => appPageMeta(`${unreadPrefix.value} ${__('All Inboxes')}`, 'Mail'))
 
-// Keep the merged list fresh: poll periodically and react to new-mail push events (which can arrive
-// for any account). Both merge the newest window at the top, preserving scroll.
+// Keep the merged list fresh: poll periodically and react to push events — new mail, or mail changed
+// on another device — which can arrive for any account. Either way the newest window is merged into
+// the list, preserving scroll.
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
 const onNewMail = () => refreshThreads()
 
 onMounted(() => {
 	reloadInterval.value = setInterval(onNewMail, 30000)
 	socket.on('new_mail_created', onNewMail)
+	socket.on('mail_changed', onNewMail)
 	window.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
 	socket.off('new_mail_created', onNewMail)
+	socket.off('mail_changed', onNewMail)
 	window.removeEventListener('keydown', handleKeyDown)
 })
 </script>
