@@ -78,6 +78,14 @@ class TestTlsReports(SuiteCloudTestCase):
         summary = admin.get_tls_summary()
         self.assertEqual((summary["totals"]["success_rate"], summary["failures"]), (None, []))
 
+    def test_ids_and_searches_must_be_strings(self) -> None:
+        # Frappe checks the annotated types, so a filter never stands in for an id or a search.
+        self.assertRaises(frappe.FrappeTypeError, admin.get_tls_report, report_id=["like", "%"])
+        self.assertRaises(frappe.FrappeTypeError, admin.get_tls_reports, domain_id=["!=", ""])
+        self.assertRaises(frappe.FrappeTypeError, admin.get_tls_reports, txt={"like": "%"})
+        self.assertRaises(frappe.FrappeTypeError, admin.get_tls_summary, domain_id=["!=", ""])
+        self.assertEqual(self.fake.calls, [])  # nothing reached Suite Cloud
+
     def test_reads_need_an_admin(self) -> None:
         report = self.fake.add_tls_report(DOMAIN)
         for user in ("test1@example.com", "Guest"):
