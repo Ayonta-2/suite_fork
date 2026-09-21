@@ -109,8 +109,11 @@
 								<RecipientInput
 									ref="toInput"
 									v-model="mail.to"
+									field="to"
 									:suggestions-to="toSuggestions"
 									class="min-w-0 flex-1"
+									@move="moveRecipient"
+									@show-cc-bcc="showCcBcc = true"
 								/>
 								<Button variant="ghost" :label="__('Cc and Bcc')" @click="showCcBcc = !showCcBcc">
 									<template #icon>
@@ -133,8 +136,11 @@
 									<RecipientInput
 										ref="ccInput"
 										v-model="mail.cc"
+										field="cc"
 										:suggestions-to="ccSuggestions"
 										class="min-w-0 flex-1"
+										@move="moveRecipient"
+										@show-cc-bcc="showCcBcc = true"
 									/>
 								</div>
 								<div ref="ccSuggestions" />
@@ -146,8 +152,11 @@
 									}}</span>
 									<RecipientInput
 										v-model="mail.bcc"
+										field="bcc"
 										:suggestions-to="bccSuggestions"
 										class="min-w-0 flex-1"
+										@move="moveRecipient"
+										@show-cc-bcc="showCcBcc = true"
 									/>
 								</div>
 								<div ref="bccSuggestions" />
@@ -318,6 +327,7 @@ const {
 	mail,
 	identities,
 	isRecipientsEmpty,
+	moveRecipient,
 	saveDraft,
 	sendMail,
 	discardMail,
