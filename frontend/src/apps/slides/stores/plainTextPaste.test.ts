@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { Editor } from '@tiptap/vue-3'
+import { Fragment, Slice } from 'prosemirror-model'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
@@ -19,7 +20,8 @@ const paste = (target: Editor, plain: string) => {
 		clipboardData: { getData: (type: string) => (type === 'text/plain' ? plain : '') },
 		preventDefault: () => {},
 	} as any
-	target.view.someProp('handlePaste', (f: any) => f(target.view, event))
+	const slice = new Slice(Fragment.from(target.schema.text(plain)), 0, 0)
+	target.view.someProp('handlePaste', (f: any) => f(target.view, event, slice))
 }
 
 const caretAfter = (target: Editor, text: string) => {
@@ -63,13 +65,14 @@ describe('pasting plain text with line breaks', () => {
 		expect(textblocks(editor)).toEqual(['xa', 'b'])
 	})
 
-	it('keeps the rest of the line after the last pasted line', () => {
+	it('keeps the rest of the line after the caret at the end of the paste', () => {
 		const editor = mountEditor('<p>onetwo</p>')
 		caretAfter(editor, 'one')
 
 		paste(editor, 'a\nb')
+		editor.commands.insertContent('!')
 
-		expect(textblocks(editor)).toEqual(['onea', 'btwo'])
+		expect(textblocks(editor)).toEqual(['onea', 'b!two'])
 	})
 
 	it('carries the text styles and alignment onto every line', () => {
@@ -97,6 +100,48 @@ describe('pasting plain text with line breaks', () => {
 		expect(textblocks(editor)).toEqual(['xa', 'b', 'c'])
 		expect(editor.state.doc.childCount).toBe(1)
 		expect(editor.state.doc.firstChild?.childCount).toBe(3)
+	})
+
+	it('gives every line the styles of the text it replaces', () => {
+		const editor = mountEditor(
+			'<p><span style="color: red">red</span><span style="color: blue">blue</span></p>',
+		)
+		const start = editor.state.doc.firstChild!.content.size - 'blue'.length + 1
+		editor.commands.setTextSelection({ from: start, to: start + 'blue'.length })
+
+		paste(editor, 'a\nb')
+
+		const spans = Array.from(editor.view.dom.querySelectorAll('span'))
+		expect(spans.map((span) => [span.textContent, span.style.color])).toEqual([
+			['red', 'red'],
+			['a', 'blue'],
+			['b', 'blue'],
+		])
+	})
+
+	it('replaces the whole text when everything is selected', () => {
+		const editor = mountEditor('<p>hello</p><p>world</p>')
+		editor.commands.selectAll()
+
+		paste(editor, 'a\nb')
+		editor.commands.insertContent('!')
+
+		expect(textblocks(editor)).toEqual(['a', 'b!'])
+	})
+
+	it('replaces whole selected list items with a leading line break', () => {
+		const editor = mountEditor('<p>q</p><ol><li><p>cd</p></li><li><p>ef</p></li></ol>')
+		let from = -1
+		let to = -1
+		editor.state.doc.descendants((node, pos) => {
+			if (node.isText && node.text === 'cd') from = pos
+			if (node.isText && node.text === 'ef') to = pos + 2
+		})
+		editor.commands.setTextSelection({ from, to })
+
+		paste(editor, '\nb')
+
+		expect(textblocks(editor)).toEqual(['q', '', 'b'])
 	})
 
 	it('keeps a blank line blank', () => {

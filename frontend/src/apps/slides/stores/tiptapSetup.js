@@ -158,26 +158,26 @@ const PastePlainText = Extension.create({
 			if (!plainText) return false
 
 			const { state, dispatch } = view
-			const { tr } = state
-			const { from, to, $from } = state.selection
-
-			const [firstLine, ...otherLines] = plainText.split(/\r?\n/)
-			const marks = state.storedMarks || $from.marks()
+			const { selection, schema } = state
+			// select all starts at the doc, not in a line
+			const $line = selection.$from.parent.isTextblock
+				? selection.$from
+				: TextSelection.findFrom(selection.$from, 1, true).$from
+			const marks =
+				state.storedMarks ||
+				(selection.empty ? $line.marks() : $line.marksAcross(selection.$to) || $line.marks())
 			// inside a list a pasted line is a new item, not a second paragraph in this one
-			const depth = isInList($from) ? 2 : 1
+			const inList = isInList($line)
+			const line = $line.parent
+			const item = $line.node(-1)
 
-			tr.insertText(firstLine, from, to)
-			let pos = tr.mapping.map(to)
-
-			otherLines.forEach((line) => {
-				tr.split(pos, depth)
-				pos += 2 * depth
-				if (!line) return
-				tr.insert(pos, state.schema.text(line, marks))
-				pos += line.length
+			const blocks = plainText.split(/\r\n?|\n/).map((text) => {
+				const paragraph = line.type.create(line.attrs, text ? schema.text(text, marks) : null)
+				return inList ? item.type.create(item.attrs, paragraph) : paragraph
 			})
+			const depth = inList ? 2 : 1
 
-			dispatch(tr.setSelection(TextSelection.create(tr.doc, pos)))
+			dispatch(state.tr.replaceSelection(new Slice(Fragment.from(blocks), depth, depth)))
 			return true
 		}
 
