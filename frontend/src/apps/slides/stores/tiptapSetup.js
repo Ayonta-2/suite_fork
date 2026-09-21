@@ -159,8 +159,25 @@ const PastePlainText = Extension.create({
 
 			const { state, dispatch } = view
 			const { tr } = state
+			const { from, to, $from } = state.selection
 
-			dispatch(tr.insertText(plainText, state.selection.from, state.selection.to))
+			const [firstLine, ...otherLines] = plainText.split(/\r?\n/)
+			const marks = state.storedMarks || $from.marks()
+			// inside a list a pasted line is a new item, not a second paragraph in this one
+			const depth = isInList($from) ? 2 : 1
+
+			tr.insertText(firstLine, from, to)
+			let pos = tr.mapping.map(to)
+
+			otherLines.forEach((line) => {
+				tr.split(pos, depth)
+				pos += 2 * depth
+				if (!line) return
+				tr.insert(pos, state.schema.text(line, marks))
+				pos += line.length
+			})
+
+			dispatch(tr.setSelection(TextSelection.create(tr.doc, pos)))
 			return true
 		}
 
