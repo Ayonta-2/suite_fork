@@ -58,7 +58,7 @@
 							<!-- Plain cells rather than the list's own cell component, which wraps each cell
 							     in a Tooltip: a page of 500 rows would mount thousands and stall the page. -->
 							<template v-if="column.key === 'pass_rate'">
-								<Badge v-if="row.messages && item != null" :theme="passRateTheme(item)" :label="formatPassRate(item)" />
+								<Badge v-if="row.messages && item != null" :theme="rateTheme(item)" :label="formatRate(item)" />
 							</template>
 							<span v-else-if="column.key === 'date_range_end'" class="text-ink-gray-5 truncate text-sm">
 								{{ formatPeriod(row) }}
@@ -98,12 +98,8 @@ import { Badge, FormControl, createResource, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRow, ListRows, ListView } from 'frappe-ui/experimental'
 
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
-import {
-	type DmarcReportRow,
-	PERIOD_OPTIONS,
-	formatPassRate,
-	passRateTheme,
-} from '@/apps/mail/utils/dmarc'
+import type { DmarcReportRow } from '@/apps/mail/utils/dmarc'
+import { DEFAULT_PERIOD, PERIOD_OPTIONS, formatRate, rateTheme } from '@/apps/mail/utils/reports'
 import { usePagedList } from '@/apps/mail/utils/pagedList'
 import BreakdownRows from '@/apps/mail/components/DmarcBreakdownRows.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
@@ -116,7 +112,6 @@ usePageMeta(() => appPageMeta(__('DMARC Reports'), 'Mail'))
 
 const search = ref('')
 const domain = ref('')
-const DEFAULT_PERIOD = '30'
 const period = ref(DEFAULT_PERIOD)
 
 // Every domain the site holds, live or not: a domain taken offline still has a history.

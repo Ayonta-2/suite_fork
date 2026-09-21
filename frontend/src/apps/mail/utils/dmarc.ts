@@ -1,5 +1,7 @@
 // What the DMARC pages share: the shapes Suite's admin API answers and how a result reads.
 
+import type { BadgeTheme } from '@/apps/mail/utils/reports'
+
 export type DmarcTotals = {
 	reports: number
 	messages: number
@@ -55,27 +57,6 @@ export type DmarcSummary = {
 	domains: (DmarcTotals & { domain: string })[]
 	sources: (DmarcTotals & { source_ip: string })[]
 	reporters: (DmarcTotals & { reporter: string })[]
-}
-
-// The themes frappe-ui's Badge knows; there is no orange, amber is the warning step.
-export type BadgeTheme = 'gray' | 'green' | 'red' | 'amber' | 'blue'
-
-// Below this share of passing mail the rate is shown as something to act on.
-export const PASS_RATE_WARN_BELOW = 90
-
-export const PERIOD_OPTIONS = [
-	{ label: __('Last 7 days'), value: '7' },
-	{ label: __('Last 30 days'), value: '30' },
-	{ label: __('Last 90 days'), value: '90' },
-	// Everything Suite Cloud still holds; how long that is depends on its retention setting.
-	{ label: __('All reports'), value: '0' },
-]
-
-export const formatPassRate = (rate: number | null | undefined) => (rate == null ? '—' : `${rate}%`)
-
-export const passRateTheme = (rate: number | null | undefined): BadgeTheme => {
-	if (rate == null) return 'gray'
-	return rate < PASS_RATE_WARN_BELOW ? 'red' : 'green'
 }
 
 // An aligned DKIM or SPF check as the reporter evaluated it.

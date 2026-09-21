@@ -14,7 +14,7 @@
 				{{ __('{0} failed', [row.failed.toLocaleString()]) }}
 			</span>
 			<span v-else class="w-20 shrink-0" />
-			<Badge class="w-14 shrink-0 justify-center" :theme="passRateTheme(row.pass_rate)" :label="formatPassRate(row.pass_rate)" />
+			<Badge class="w-14 shrink-0 justify-center" :theme="rateTheme(row.pass_rate)" :label="formatRate(row.pass_rate)" />
 		</div>
 	</div>
 	<div v-else class="text-ink-gray-5 px-5 py-4 text-sm">{{ empty }}</div>
@@ -23,7 +23,8 @@
 <script setup lang="ts">
 import { Badge } from 'frappe-ui'
 
-import { type DmarcTotals, formatPassRate, passRateTheme } from '@/apps/mail/utils/dmarc'
+import type { DmarcTotals } from '@/apps/mail/utils/dmarc'
+import { formatRate, rateTheme } from '@/apps/mail/utils/reports'
 
 type Row = DmarcTotals & Record<string, string | number | null>
 

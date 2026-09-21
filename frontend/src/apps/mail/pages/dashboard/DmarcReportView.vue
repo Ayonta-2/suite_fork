@@ -3,8 +3,8 @@
 		<template #default>
 			<DashboardDetailHeader
 				:title="report.data.domain"
-				:badge-label="__('{0} passed', [formatPassRate(report.data.pass_rate)])"
-				:badge-theme="passRateTheme(report.data.pass_rate)"
+				:badge-label="__('{0} passed', [formatRate(report.data.pass_rate)])"
+				:badge-theme="rateTheme(report.data.pass_rate)"
 				:meta="metaItems"
 			>
 				<template #icon><ShieldCheck class="h-5 w-5" /></template>
@@ -97,14 +97,8 @@ import ShieldCheck from '~icons/lucide/shield-check'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
-import {
-	type DmarcRecord,
-	type DmarcReportRow,
-	dispositionBadge,
-	formatPassRate,
-	passRateTheme,
-	resultBadge,
-} from '@/apps/mail/utils/dmarc'
+import { type DmarcRecord, type DmarcReportRow, dispositionBadge, resultBadge } from '@/apps/mail/utils/dmarc'
+import { formatRate, rateTheme } from '@/apps/mail/utils/reports'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
