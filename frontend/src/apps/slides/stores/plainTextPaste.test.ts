@@ -4,7 +4,7 @@ import { Fragment, Slice } from 'prosemirror-model'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
-const { extensions } = await import('./tiptapSetup')
+const { extensions, ZWSP } = await import('./tiptapSetup')
 
 let editor: Editor | null = null
 
@@ -141,15 +141,17 @@ describe('pasting plain text with line breaks', () => {
 
 		paste(editor, '\nb')
 
-		expect(textblocks(editor)).toEqual(['q', '', 'b'])
+		expect(textblocks(editor)).toEqual(['q', ZWSP, 'b'])
 	})
 
-	it('keeps a blank line blank', () => {
-		const editor = mountEditor('<p>x</p>')
+	it('keeps a blank line blank but styled', () => {
+		const editor = mountEditor('<p><span style="font-size: 24px">x</span></p>')
 		caretAfter(editor, 'x')
 
 		paste(editor, 'a\n\nb')
 
-		expect(textblocks(editor)).toEqual(['xa', '', 'b'])
+		expect(textblocks(editor)).toEqual(['xa', ZWSP, 'b'])
+		const blank = editor.view.dom.querySelectorAll('p')[1]
+		expect(blank.querySelector('span')?.style.fontSize).toBe('24px')
 	})
 })

@@ -177,7 +177,15 @@ const PastePlainText = Extension.create({
 			})
 			const depth = inList ? 2 : 1
 
-			dispatch(state.tr.replaceSelection(new Slice(Fragment.from(blocks), depth, depth)))
+			const tr = state.tr.replaceSelection(new Slice(Fragment.from(blocks), depth, depth))
+			const emptyLines = []
+			tr.doc.nodesBetween(tr.mapping.map(selection.from, -1), tr.selection.to, (node, pos) => {
+				if (node.isTextblock && !node.content.size) emptyLines.push(pos)
+			})
+			// same placeholder Enter leaves on a new line
+			emptyLines.reverse().forEach((pos) => tr.insert(pos + 1, schema.text(ZWSP, marks)))
+
+			dispatch(tr)
 			return true
 		}
 
