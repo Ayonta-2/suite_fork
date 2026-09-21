@@ -249,6 +249,19 @@ export const routes: RouteRecordRaw[] = [
 				meta: { isDashboard: true },
 			},
 			{
+				path: 'dashboard/tls',
+				name: 'mail-tls-reports',
+				component: () => import('@/apps/mail/pages/dashboard/TlsReportsView.vue'),
+				meta: { isDashboard: true },
+			},
+			{
+				path: 'dashboard/tls/:reportId',
+				name: 'mail-tls-report',
+				component: () => import('@/apps/mail/pages/dashboard/TlsReportView.vue'),
+				props: true,
+				meta: { isDashboard: true },
+			},
+			{
 				path: 'dashboard/accounts',
 				name: 'mail-accounts',
 				component: () => import('@/apps/mail/pages/dashboard/AccountsView.vue'),

@@ -316,9 +316,9 @@ def get_domain_dns_json(domain_id: str) -> str:
 
 # --- DMARC reports -------------------------------------------------------------------------------
 
-# The periods the DMARC page offers, 0 being everything Suite Cloud still holds (its retention is
-# the operator's choice and may run to years); the summary is one aggregate query per call.
-DMARC_PERIODS = (0, 7, 30, 90)
+# The periods the DMARC and TLS report pages offer, 0 being everything Suite Cloud still holds (its
+# retention is the operator's choice and may run to years); a summary is one aggregate query per call.
+REPORT_PERIODS = (0, 7, 30, 90)
 
 
 @frappe.whitelist()
@@ -327,7 +327,7 @@ def get_dmarc_summary(domain_id: str | None = None, days: int = 30) -> dict:
 
     check_admin_permission("view domains")
     summary = get_client().call(
-        "mail.dmarc.get_dmarc_summary", domain=_dmarc_domain(domain_id), days=_dmarc_period(days)
+        "mail.dmarc.get_dmarc_summary", domain=_report_domain(domain_id), days=_report_period(days)
     )
     return {
         "since": to_utc_z(summary.get("since")),
@@ -357,9 +357,9 @@ def get_dmarc_reports(
     start, page_length = _paging(start, page_length)
     page = get_client().call(
         "mail.dmarc.list_dmarc_reports",
-        domain=_dmarc_domain(domain_id),
+        domain=_report_domain(domain_id),
         search=(txt or "").strip() or None,
-        days=_dmarc_period(days),
+        days=_report_period(days),
         start=start,
         limit=page_length,
     )
@@ -382,22 +382,6 @@ def get_dmarc_report(report_id: str) -> dict:
         **_dmarc_report_row(report),
         "records": [_dmarc_record_row(r) for r in report.get("records") or []],
     }
-
-
-def _dmarc_domain(domain_id: str | None) -> str | None:
-    """A domain the way Suite Cloud names one, or None for all of the site's domains.
-
-    Frappe checks the annotated types on the way in; this only settles the spelling.
-    """
-
-    return (domain_id or "").strip().lower() or None
-
-
-def _dmarc_period(days) -> int:
-    days = cint(days)
-    if days not in DMARC_PERIODS:
-        frappe.throw(_("Period must be one of {0} days.").format(", ".join(map(str, DMARC_PERIODS))))
-    return days
 
 
 def _dmarc_report_row(report: dict) -> dict:
@@ -449,6 +433,156 @@ def _dmarc_totals(row: dict) -> dict:
         "spf_passed": cint(row.get("spf_passed")),
         "pass_rate": round(passed * 100 / messages) if messages else None,
     }
+
+
+# --- TLS reports ---------------------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def get_tls_summary(domain_id: str | None = None, days: int = 30) -> dict:
+    """Success rates over the reports whose period ended in the last ``days``, by domain and
+    reporter, and the failed sessions by result type."""
+
+    check_admin_permission("view domains")
+    summary = get_client().call(
+        "mail.tls.get_tls_summary", domain=_report_domain(domain_id), days=_report_period(days)
+    )
+    return {
+        "since": to_utc_z(summary.get("since")),
+        "until": to_utc_z(summary.get("until")),
+        "totals": _tls_totals(summary.get("totals") or {}),
+        "domains": [{"domain": r.get("domain"), **_tls_totals(r)} for r in summary.get("domains") or []],
+        "reporters": [
+            {"reporter": r.get("reporter"), **_tls_totals(r)} for r in summary.get("reporters") or []
+        ],
+        "failures": [
+            {
+                "result_type": r.get("result_type"),
+                "reports": cint(r.get("reports")),
+                "failed": cint(r.get("failed")),
+            }
+            for r in summary.get("failures") or []
+        ],
+    }
+
+
+@frappe.whitelist()
+def get_tls_reports(
+    domain_id: str | None = None,
+    txt: str | None = None,
+    days: int = 30,
+    start: int = 0,
+    page_length: int = DEFAULT_PAGE_LENGTH,
+) -> dict:
+    """The reports whose period ended in the last ``days``, newest first: the same window as the summary."""
+
+    check_admin_permission("view domains")
+    start, page_length = _paging(start, page_length)
+    page = get_client().call(
+        "mail.tls.list_tls_reports",
+        domain=_report_domain(domain_id),
+        search=(txt or "").strip() or None,
+        days=_report_period(days),
+        start=start,
+        limit=page_length,
+    )
+    return {
+        "items": [_tls_report_row(r) for r in page.get("items") or []],
+        "total": cint(page.get("total")),
+    }
+
+
+@frappe.whitelist()
+def get_tls_report(report_id: str) -> dict:
+    """One report with the policies the sender applied and the failures it ran into."""
+
+    check_admin_permission("view domains")
+    report_id = (report_id or "").strip()
+    if not report_id:
+        frappe.throw(_("Report not found."), frappe.DoesNotExistError)
+    report = get_client().call("mail.tls.get_tls_report", report=report_id)
+    return {
+        **_tls_report_row(report),
+        "policies": [_tls_policy_row(p) for p in report.get("policies") or []],
+        "failures": [_tls_failure_row(f) for f in report.get("failures") or []],
+    }
+
+
+def _tls_report_row(report: dict) -> dict:
+    return {
+        "id": report["name"],
+        "domain": report.get("policy_domain"),
+        "reporter": report.get("reporter"),
+        "reporter_email": report.get("reporter_email"),
+        "contact_info": report.get("contact_info"),
+        "report_id": report.get("report_id"),
+        "subject": report.get("subject"),
+        "to": report.get("to") or [],
+        "date_range_begin": to_utc_z(report.get("date_range_begin")),
+        "date_range_end": to_utc_z(report.get("date_range_end")),
+        "received_at": to_utc_z(report.get("received_at")),
+        "policy_types": report.get("policy_types") or [],
+        **_tls_totals(report.get("totals") or {}),
+    }
+
+
+def _tls_policy_row(policy: dict) -> dict:
+    return {
+        "policy_type": policy.get("policy_type"),
+        "policy_domain": policy.get("policy_domain"),
+        "mx_hosts": policy.get("mx_hosts") or [],
+        "policy_strings": policy.get("policy_strings") or [],
+        "successful": cint(policy.get("successful")),
+        "failed": cint(policy.get("failed")),
+    }
+
+
+def _tls_failure_row(failure: dict) -> dict:
+    return {
+        "result_type": failure.get("result_type"),
+        "count": cint(failure.get("count")),
+        "policy_type": failure.get("policy_type"),
+        "policy_domain": failure.get("policy_domain"),
+        "sending_mta_ip": failure.get("sending_mta_ip"),
+        "receiving_mx_hostname": failure.get("receiving_mx_hostname"),
+        "receiving_mx_helo": failure.get("receiving_mx_helo"),
+        "receiving_ip": failure.get("receiving_ip"),
+        "failure_reason_code": failure.get("failure_reason_code"),
+        "additional_information": failure.get("additional_information"),
+    }
+
+
+def _tls_totals(row: dict) -> dict:
+    """Counts as integers plus the success rate the tiles show; ``None`` when nothing was counted."""
+
+    sessions = cint(row.get("sessions"))
+    successful = cint(row.get("successful"))
+    return {
+        "reports": cint(row.get("reports")),
+        "sessions": sessions,
+        "successful": successful,
+        "failed": cint(row.get("failed")),
+        "success_rate": round(successful * 100 / sessions) if sessions else None,
+    }
+
+
+# --- reports (DMARC and TLS alike) ---------------------------------------------------------------
+
+
+def _report_domain(domain_id: str | None) -> str | None:
+    """A domain the way Suite Cloud names one, or None for all of the site's domains.
+
+    Frappe checks the annotated types on the way in; this only settles the spelling.
+    """
+
+    return (domain_id or "").strip().lower() or None
+
+
+def _report_period(days) -> int:
+    days = cint(days)
+    if days not in REPORT_PERIODS:
+        frappe.throw(_("Period must be one of {0} days.").format(", ".join(map(str, REPORT_PERIODS))))
+    return days
 
 
 # --- members --------------------------------------------------------------------------------------

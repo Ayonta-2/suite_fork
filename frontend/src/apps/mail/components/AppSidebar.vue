@@ -147,6 +147,7 @@ import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
 import Globe from '~icons/lucide/globe'
 import House from '~icons/lucide/house'
+import Lock from '~icons/lucide/lock'
 import LogOut from '~icons/lucide/log-out'
 import Mailbox from '~icons/lucide/mailbox'
 import Mails from '~icons/lucide/mails'
@@ -358,6 +359,12 @@ const dashboardItems = [
 				icon: ShieldCheck,
 				to: { name: 'mail-dmarc-reports' },
 				activeFor: ['mail-dmarc-reports', 'mail-dmarc-report'],
+			},
+			{
+				label: __('TLS Reports'),
+				icon: Lock,
+				to: { name: 'mail-tls-reports' },
+				activeFor: ['mail-tls-reports', 'mail-tls-report'],
 			},
 		],
 	},

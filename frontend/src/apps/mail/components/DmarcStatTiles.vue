@@ -19,15 +19,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { type DmarcTotals, PASS_RATE_WARN_BELOW, formatPassRate } from '@/apps/mail/utils/dmarc'
+import type { DmarcTotals } from '@/apps/mail/utils/dmarc'
+import { RATE_WARN_BELOW, formatRate, share } from '@/apps/mail/utils/reports'
 
 const { totals } = defineProps<{ totals: DmarcTotals }>()
 
-const share = (part: number, whole: number) => (whole ? Math.round((part * 100) / whole) : null)
-
 const tiles = computed(() => {
 	const { messages, passed, failed, dkim_passed, spf_passed, reports, pass_rate } = totals
-	const warn = pass_rate !== null && pass_rate < PASS_RATE_WARN_BELOW
+	const warn = pass_rate !== null && pass_rate < RATE_WARN_BELOW
 	return [
 		{
 			label: __('Messages'),
@@ -36,25 +35,25 @@ const tiles = computed(() => {
 		},
 		{
 			label: __('Passed DMARC'),
-			value: formatPassRate(pass_rate),
+			value: formatRate(pass_rate),
 			sub: failed ? __('{0} failed', [failed.toLocaleString()]) : passed ? __('All passed') : '',
 			bar: pass_rate ?? 0,
 			warn,
 		},
 		{
 			label: __('Passed DKIM'),
-			value: formatPassRate(share(dkim_passed, messages)),
+			value: formatRate(share(dkim_passed, messages)),
 			sub: __('{0} messages', [dkim_passed.toLocaleString()]),
 		},
 		{
 			label: __('Passed SPF'),
-			value: formatPassRate(share(spf_passed, messages)),
+			value: formatRate(share(spf_passed, messages)),
 			sub: __('{0} messages', [spf_passed.toLocaleString()]),
 		},
 		{
 			label: __('Failed DMARC'),
 			value: failed.toLocaleString(),
-			sub: messages ? __('{0} of all messages', [formatPassRate(share(failed, messages))]) : '',
+			sub: messages ? __('{0} of all messages', [formatRate(share(failed, messages))]) : '',
 			warn: warn && failed > 0,
 		},
 	]
