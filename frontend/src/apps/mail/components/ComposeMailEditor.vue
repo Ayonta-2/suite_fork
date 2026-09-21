@@ -61,7 +61,7 @@
 								})) || []
 							"
 							trigger="button"
-							class="min-w-0 max-w-full"
+							class="min-w-0 max-w-full !text-ink-gray-8"
 						/>
 					</div>
 					<!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
@@ -95,6 +95,8 @@
 							<RecipientInput
 								ref="toInput"
 								v-model="mail.to"
+								field="to"
+								@move="moveRecipient"
 								@show-cc-bcc="showCcBcc = true"
 							/>
 							<div class="flex gap-1.5">
@@ -122,7 +124,12 @@
 										{{ __('Cc') }}
 									</span>
 								</Tooltip>
-								<RecipientInput ref="ccInput" v-model="mail.cc" />
+								<RecipientInput
+									ref="ccInput"
+									v-model="mail.cc"
+									field="cc"
+									@move="moveRecipient"
+								/>
 							</div>
 							<div class="flex gap-2">
 								<Tooltip :text="__('Select from contacts')">
@@ -133,7 +140,7 @@
 										{{ __('Bcc') }}
 									</span>
 								</Tooltip>
-								<RecipientInput v-model="mail.bcc" />
+								<RecipientInput v-model="mail.bcc" field="bcc" @move="moveRecipient" />
 							</div>
 						</template>
 					</div>
@@ -326,6 +333,7 @@ const {
 	isLoading,
 	isDraftUpdated,
 	isRecipientsEmpty,
+	moveRecipient,
 	updateOriginalMail,
 	saveDraft,
 	payListDebt,

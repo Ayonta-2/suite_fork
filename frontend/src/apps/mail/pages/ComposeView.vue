@@ -86,11 +86,14 @@
 							     fixed intrinsic width of its own, so sizing to content around one cut the
 							     address off rather than fitting it. min-w-0 keeps a long address shrinking
 							     inside the row instead of pushing it wide. -->
+							<!-- Ink to match the recipient chips below: frappe-ui's button trigger carries
+							     text-ink-gray-7, a shade softer than a field's value (its own inputs use
+							     gray-8), and From reads as one of the addresses on the mail, not as chrome. -->
 							<Combobox
 								v-model="mail.from_email"
 								:options="identityOptions"
 								trigger="button"
-								class="min-w-0"
+								class="min-w-0 !text-ink-gray-8"
 							/>
 						</div>
 
@@ -109,8 +112,11 @@
 								<RecipientInput
 									ref="toInput"
 									v-model="mail.to"
+									field="to"
 									:suggestions-to="toSuggestions"
 									class="min-w-0 flex-1"
+									@move="moveRecipient"
+									@show-cc-bcc="showCcBcc = true"
 								/>
 								<Button variant="ghost" :label="__('Cc and Bcc')" @click="showCcBcc = !showCcBcc">
 									<template #icon>
@@ -133,8 +139,11 @@
 									<RecipientInput
 										ref="ccInput"
 										v-model="mail.cc"
+										field="cc"
 										:suggestions-to="ccSuggestions"
 										class="min-w-0 flex-1"
+										@move="moveRecipient"
+										@show-cc-bcc="showCcBcc = true"
 									/>
 								</div>
 								<div ref="ccSuggestions" />
@@ -146,8 +155,11 @@
 									}}</span>
 									<RecipientInput
 										v-model="mail.bcc"
+										field="bcc"
 										:suggestions-to="bccSuggestions"
 										class="min-w-0 flex-1"
+										@move="moveRecipient"
+										@show-cc-bcc="showCcBcc = true"
 									/>
 								</div>
 								<div ref="bccSuggestions" />
@@ -318,6 +330,7 @@ const {
 	mail,
 	identities,
 	isRecipientsEmpty,
+	moveRecipient,
 	saveDraft,
 	sendMail,
 	discardMail,
