@@ -19,6 +19,7 @@ class FakeSuiteCloud:
         self.groups: dict[str, dict] = {}
         self.lists: dict[str, dict] = {}
         self.dmarc_reports: dict[str, dict] = {}
+        self.tls_reports: dict[str, dict] = {}
         self.passwords: dict[str, str] = {}
         self.calls: list[tuple[str, dict]] = []
 
@@ -172,6 +173,106 @@ class FakeSuiteCloud:
                 {"reporter": o, **totals([r for r in rows if r["reporter"] == o])}
                 for o in sorted({r["reporter"] for r in rows})
             ],
+        }
+
+    # --- TLS reports -----------------------------------------------------------------------
+
+    def add_tls_report(
+        self, domain: str, reporter: str = "Google Inc.", policies=None, failures=None, **fields
+    ):
+        """A stored report the way Suite Cloud lists one; by default an MTA-STS policy with 8
+        good sessions and 2 failed ones, one with an expired certificate and one without STARTTLS."""
+
+        policies = policies or [
+            {"policy_type": "sts", "policy_domain": domain, "successful": 8, "failed": 2},
+        ]
+        failures = (
+            failures
+            if failures is not None
+            else [
+                {"result_type": "certificate-expired", "count": 1},
+                {"result_type": "starttls-not-supported", "count": 1},
+            ]
+        )
+        successful = sum(p["successful"] for p in policies)
+        failed = sum(p["failed"] for p in policies)
+        name = f"c1-tls{len(self.tls_reports) + 1}"
+        self.tls_reports[name] = {
+            "name": name,
+            "policy_domain": domain,
+            "reporter": reporter,
+            "reporter_email": "noreply-smtp-tls-reporting@google.com",
+            "contact_info": "mailto:smtp-tls-reporting@google.com",
+            "report_id": f"2026-09-16T00:00:00Z_{domain}",
+            "subject": f"Report Domain: {domain} Submitter: google.com",
+            "to": [f"postmaster@{domain}"],
+            "date_range_begin": "2026-09-16T00:00:00Z",
+            "date_range_end": "2026-09-17T00:00:00Z",
+            "received_at": "2026-09-17T06:00:00Z",
+            "policy_types": list(dict.fromkeys(p["policy_type"] for p in policies)),
+            "totals": {"sessions": successful + failed, "successful": successful, "failed": failed},
+            "policies": [{"mx_hosts": [], "policy_strings": [], **p} for p in policies],
+            "failures": [
+                {
+                    "policy_type": "sts",
+                    "policy_domain": domain,
+                    "receiving_mx_hostname": "mail.c1.example.test",
+                    **f,
+                }
+                for f in failures
+            ],
+            **fields,
+        }
+        return self.tls_reports[name]
+
+    def tls__list_tls_reports(
+        self, domain=None, search=None, since=None, until=None, days=None, start=0, limit=50
+    ):
+        if domain:
+            self._require(self.domains, domain)
+        rows = [r for r in self.tls_reports.values() if not domain or r["policy_domain"] == domain]
+        if search:
+            rows = [r for r in rows if search.lower() in f"{r['policy_domain']} {r['reporter']}".lower()]
+        rows.sort(key=lambda r: r["date_range_end"], reverse=True)
+        listing = [
+            {k: v for k, v in r.items() if k not in ("policies", "failures")}
+            for r in rows[start : start + limit]
+        ]
+        return {"items": listing, "total": len(rows)}
+
+    def tls__get_tls_report(self, report: str) -> dict:
+        return self._require(self.tls_reports, report)
+
+    def tls__get_tls_summary(self, domain=None, days=30) -> dict:
+        if domain:
+            self._require(self.domains, domain)
+        rows = [r for r in self.tls_reports.values() if not domain or r["policy_domain"] == domain]
+
+        def totals(group: list[dict]) -> dict:
+            sums = {k: sum(r["totals"][k] for r in group) for k in ("sessions", "successful", "failed")}
+            return {"reports": len(group), **sums}
+
+        by_type: dict[str, dict] = {}
+        for r in rows:
+            for f in r["failures"]:
+                entry = by_type.setdefault(
+                    f["result_type"], {"result_type": f["result_type"], "reports": 0, "failed": 0}
+                )
+                entry["reports"] += 1
+                entry["failed"] += f["count"]
+        return {
+            "since": "2026-08-19T00:00:00Z",
+            "until": "2026-09-18T00:00:00Z",
+            "totals": totals(rows),
+            "domains": [
+                {"domain": d, **totals([r for r in rows if r["policy_domain"] == d])}
+                for d in sorted({r["policy_domain"] for r in rows})
+            ],
+            "reporters": [
+                {"reporter": o, **totals([r for r in rows if r["reporter"] == o])}
+                for o in sorted({r["reporter"] for r in rows})
+            ],
+            "failures": sorted(by_type.values(), key=lambda e: -e["failed"]),
         }
 
     # --- domains ---------------------------------------------------------------------------
