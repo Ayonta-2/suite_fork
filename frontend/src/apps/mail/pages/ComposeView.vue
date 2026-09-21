@@ -86,11 +86,14 @@
 							     fixed intrinsic width of its own, so sizing to content around one cut the
 							     address off rather than fitting it. min-w-0 keeps a long address shrinking
 							     inside the row instead of pushing it wide. -->
+							<!-- Ink to match the recipient chips below: frappe-ui's button trigger carries
+							     text-ink-gray-7, a shade softer than a field's value (its own inputs use
+							     gray-8), and From reads as one of the addresses on the mail, not as chrome. -->
 							<Combobox
 								v-model="mail.from_email"
 								:options="identityOptions"
 								trigger="button"
-								class="min-w-0"
+								class="min-w-0 !text-ink-gray-8"
 							/>
 						</div>
 

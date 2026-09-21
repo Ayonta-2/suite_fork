@@ -61,7 +61,7 @@
 								})) || []
 							"
 							trigger="button"
-							class="min-w-0 max-w-full"
+							class="min-w-0 max-w-full !text-ink-gray-8"
 						/>
 					</div>
 					<!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
