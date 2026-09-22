@@ -2,10 +2,7 @@
 	<CommandPalette
 		v-model:open="root.paletteOpen"
 		v-model:query="query"
-		:class="{
-			'mail-mobile-search-page': isMailSearchRoute,
-			'mail-mobile-search-page--keyboard': isMailSearchRoute && keyboardOpen,
-		}"
+		:class="{ 'mail-mobile-search-page': mailSearchOnly }"
 		:filterable="false"
 		title="Search Suite"
 		@keydown.capture="handlePaletteEnter"
@@ -29,11 +26,11 @@
 		>
 			<template #prefix>
 				<button
-					v-if="isMailSearchRoute && isMobile"
+					v-if="mailSearchOnly"
 					type="button"
 					class="flex shrink-0"
 					aria-label="Back"
-					@click="history.back()"
+					@click="leaveMobileSearch"
 				>
 					<span class="lucide-arrow-left size-4 text-ink-gray-5" />
 				</button>
@@ -122,7 +119,7 @@
 				variant="ghost"
 				icon="lucide-x"
 				size="sm"
-				class="absolute right-4 top-2 !size-7 !p-0"
+				class="mail-search-clear absolute right-4 top-2 !size-7 !p-0"
 				aria-label="Clear all filters"
 				tooltip="Clear filters"
 				@mousedown.prevent
@@ -395,7 +392,10 @@
 					>
 					<span>to close</span>
 				</span>
-				<span v-if="!navigationMode" class="flex items-center gap-1">
+				<span
+					v-if="!navigationMode && !mailSearchOnly"
+					class="flex items-center gap-1"
+				>
 					<span
 						class="inline-flex items-center rounded-1 bg-surface-gray-2 px-1 py-0.5 text-[11px] text-ink-gray-5"
 						>&gt;</span
@@ -452,7 +452,7 @@ import {
 import MailFilterPanel from '@/apps/mail/components/CommandPalette/MailFilterPanel.vue'
 import MailSearchResult from '@/apps/mail/components/CommandPalette/MailSearchResult.vue'
 import MailSearchSuggestions from '@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue'
-import { useKeyboardOpen, useScreenSize } from '@/apps/mail/utils/composables'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import type {
 	MailContactSuggestion,
 	MailFilterSuggestion,
@@ -553,17 +553,30 @@ const DriveSearchResultModified = defineAsyncComponent(
 const root = useRootStore()
 const route = useRoute()
 const router = useRouter()
-const keyboardOpen = useKeyboardOpen()
 const { isMobile } = useScreenSize()
 const removeMailFilterShortcut = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
 	? '⌘⌫'
 	: 'Ctrl+Backspace'
 const paletteInput = ref<{ $el: HTMLElement } | null>(null)
 const query = ref('')
+// On a phone the palette is mail's search and nothing else: it is raised by the search button on
+// the mail route and by nothing anywhere else, so the app switcher and the commands are weight
+// with no way in — and a row of app icons is not what a thumb reached for the search for.
+//
+// Keyed on the app, not on the search route, because the search page's look has to survive
+// leaving that route: Back out of an empty search pops the route while the editor is still
+// fading, and a page-mode class tied to the route fell off mid-fade, leaving the ordinary
+// centred dialog to finish the animation.
+const mailSearchOnly = computed(
+	() => isMobile.value && activeApp.value === 'mail'
+)
+
 // App switching is a `>` on the query line rather than a flag remembered beside it: the mode is
 // then something you can see you are in, and deleting the character is the way out — no keystroke
 // of its own to learn, and nothing to get out of step with what the line says.
-const navigationMode = computed(() => query.value.trimStart().startsWith('>'))
+const navigationMode = computed(
+	() => !mailSearchOnly.value && query.value.trimStart().startsWith('>')
+)
 const activeApp = computed(() => String(route.meta.appId ?? ''))
 const paletteRecents = computed<DriveResult[]>(() => {
 	if (!Array.isArray(getRecents.data)) return []
@@ -843,6 +856,7 @@ const remainingApps = computed(() =>
 const filteredCommands = computed(() => {
 	if (
 		navigationMode.value ||
+		mailSearchOnly.value ||
 		(activeApp.value === 'mail' && mailAppliedFilters.value.length)
 	)
 		return []
@@ -954,7 +968,14 @@ watch(
 		mailSuggestions,
 	],
 	async (groups) => {
-		if (!root.paletteOpen || !groups.some((items) => items.length)) return
+		// Not on a phone: a highlighted row there reads as a selection nobody made, and the arrow
+		// keys it exists for are not on the screen.
+		if (
+			!root.paletteOpen ||
+			mailSearchOnly.value ||
+			!groups.some((items) => items.length)
+		)
+			return
 		await nextTick()
 		const input =
 			paletteInput.value?.$el.querySelector<HTMLInputElement>('input')
@@ -1151,11 +1172,13 @@ function handleMailFilterBackspace(event: KeyboardEvent) {
 
 function handlePaletteEnter(event: KeyboardEvent) {
 	if (event.key !== 'Enter') return
-	const activeItem = (
-		event.currentTarget as HTMLElement
-	).querySelector<HTMLElement>(
-		'[data-slot="command-palette-item"][data-state="active"]'
-	)
+	// The listbox still highlights its first row as you type on a phone — that is reka's, not
+	// ours — but the page hides it, and Enter must not open a row nobody can see is chosen.
+	const activeItem = mailSearchOnly.value
+		? null
+		: (event.currentTarget as HTMLElement).querySelector<HTMLElement>(
+				'[data-slot="command-palette-item"][data-state="active"]'
+		  )
 
 	// Held, Enter opens the highlighted row in a new tab.
 	if (event.metaKey || event.ctrlKey) {
@@ -1177,8 +1200,32 @@ function handlePaletteEnter(event: KeyboardEvent) {
 	void openMailSearchPage()
 }
 
+// On a phone the palette is opened on top of a search route pushed to host it, so the results
+// replace that entry rather than stacking on it: pushing left an empty "Search your mail" page
+// between the results and the folder they were searched from, which is what Back landed on.
+async function goToMailSearch() {
+	const location = mailSearchLocation()
+	if (isMobile.value && isMailSearchRoute.value) await router.replace(location)
+	else await router.push(location)
+}
+
+// Back from the editor goes to what is worth standing on. Over results, that is the results:
+// the editor closes and the page's own header takes this row's place, a search icon and the
+// query as it stands. Over an empty search page there is nothing to return to, so it leaves
+// search altogether — the route that hosted the editor goes with it, back to the folder it was
+// opened from, or to the inbox when there is no folder behind it.
+function leaveMobileSearch() {
+	const hasSearch = Object.keys(route.query).some((key) => key !== 'all_accounts')
+	// Closed first either way, so the fade starts from here rather than from whichever watcher
+	// notices the route has gone.
+	root.paletteOpen = false
+	if (hasSearch) return
+	if (window.history.state?.back) history.back()
+	else router.replace('/mail')
+}
+
 async function openMailSearchPage() {
-	await router.push(mailSearchLocation())
+	await goToMailSearch()
 	root.paletteOpen = false
 }
 
@@ -1198,12 +1245,15 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 		return
 	}
 	if ('resultType' in item && item.resultType === 'mail-search-page') {
-		const location = mailSearchLocation()
 		if (openInNewTab) {
-			window.open(router.resolve(location).href, '_blank', 'noopener')
+			window.open(
+				router.resolve(mailSearchLocation()).href,
+				'_blank',
+				'noopener'
+			)
 			return
 		}
-		await router.push(location)
+		await goToMailSearch()
 		return
 	}
 	if ('run' in item) {
@@ -1304,22 +1354,38 @@ onScopeDispose(() => {
 	background-color: var(--surface-base);
 }
 
+/* The filter row already puts its own padding between the chips and what follows. The list's
+   first group adds its top margin on top of that, and the two together read as a hole under the
+   chips — twice the space that sits above them. */
+.mail-search-filters
+	+ [data-slot='command-palette-list']
+	> [data-slot='command-palette-group']:first-child {
+	margin-top: 0;
+}
+
 @media (max-width: 767px) {
+	/* Hidden, not removed. The dialog fires `after-leave` — which the palette answers by
+	   clearing the query — when the overlay's exit animation ends, and an overlay that is not
+	   displayed has no animation to end: the query was wiped the instant close began, so the
+	   text vanished behind a still-opaque panel and came back as the page showed through. An
+	   invisible overlay still animates for its 150ms, so the reset waits for the fade. */
 	.dialog-overlay:has(+ .dialog-scroll-container .mail-mobile-search-page) {
-		display: none;
+		visibility: hidden;
 	}
 
+	/* The whole screen, not the screen above the tab bar: the strip left for the bar showed the
+	   search page behind this one — its "Search your mail" over this one's own empty state. The
+	   way out is the back arrow in the query line, which is where a thumb already is. */
 	.dialog-scroll-container:has(.mail-mobile-search-page) {
-		bottom: calc(3.75rem + 1px + env(safe-area-inset-bottom));
+		bottom: 0;
 		overflow: hidden;
 	}
 
-	.dialog-scroll-container:has(.mail-mobile-search-page--keyboard) {
-		bottom: 0;
-	}
-
+	/* A definite height, not a minimum: the page below fills what it is given, and a
+	   percentage height inside a min-height box is given nothing — the editor stopped at
+	   its own content and the search page showed through below it. */
 	.dialog-scroll-container:has(.mail-mobile-search-page) > div {
-		min-height: 100%;
+		height: 100%;
 		align-items: stretch;
 		padding: env(safe-area-inset-top) 0 0;
 	}
@@ -1339,19 +1405,69 @@ onScopeDispose(() => {
 		background-color: var(--surface-base);
 	}
 
+	/* A fade and nothing else. The dialog's own animation shrinks to 98% and stops at half
+	   opacity, leaving the overlay to finish the dimming — but this page has no overlay, so
+	   the editor drifted and half-faded, then vanished, and the search page's identical row
+	   beneath snapped to full strength. Fading all the way, in place, the two rows cross into
+	   each other and only the body appears to come and go. */
+	.dialog-content:has(> .mail-mobile-search-page)[data-state='open'] {
+		animation: mail-search-page-in 100ms ease-out;
+	}
+
+	.dialog-content:has(> .mail-mobile-search-page)[data-state='closed'] {
+		animation: mail-search-page-out 150ms ease-in;
+	}
+
+	@keyframes mail-search-page-in {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes mail-search-page-out {
+		from {
+			opacity: 1;
+		}
+		to {
+			opacity: 0;
+		}
+	}
+
 	.mail-mobile-search-page [data-slot='command-palette-input'] {
 		gap: 12px;
 		padding-inline: 16px;
 	}
 
+	/* The same row height as the search page's own header, so dismissing the editor onto that
+	   page swaps the row rather than resizing it. That row is py-2 around a bare input — which
+	   the forms plugin gives py-2 of its own — so its text sits 16px from either edge; this
+	   field's py-3 has to become the same 16px. Horizontally they already agree: 16px gutter, the
+	   icon, then 12px to the text, which there is the plugin's px-3 and here the row's gap. */
+	.mail-mobile-search-page [data-slot='command-palette-input'] input {
+		padding-block: 16px;
+	}
+
+	/* The chips, by name rather than by position: `:not(:last-child)` was meant to spare the
+	   clear-all ×, but that is the last child only while filters are applied — otherwise the
+	   last chip was the one left small, and reordering moved which chip that was. */
 	.mail-mobile-search-page .mail-search-filters > span,
-	.mail-mobile-search-page .mail-search-filters > button:not(:last-child) {
+	.mail-mobile-search-page .mail-search-filters > button:not(.mail-search-clear) {
 		height: 32px;
 		font-size: 14px;
 	}
 
 	.mail-mobile-search-page [data-slot='command-palette-footer'] {
 		display: none;
+	}
+
+	/* No highlighted row. The listbox highlights its first row as you type and there is no
+	   prop to stop it, so the styling is stopped instead: on a phone the highlight can only
+	   be read as a selection, and nothing there can move it. */
+	.mail-mobile-search-page [data-slot='command-palette-item'][data-state='active'] {
+		background-color: transparent;
 	}
 }
 </style>
