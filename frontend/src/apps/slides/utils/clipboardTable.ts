@@ -89,18 +89,17 @@ const readSpan = (cell: Element, name: string, max: number) => {
 	return span > 0 ? Math.min(span, max) : 1
 }
 
-// null: a filled cell sits past the limit, so the table is over it however it is trimmed
-const readGrid = (table: HTMLTableElement) => {
-	const baseSize = readFontSize(table.style.fontSize)
+// null: a filled cell sits past the column limit, so the table is over it however it is trimmed
+const readGrid = (rows: HTMLTableRowElement[], baseSize: number | null) => {
 	const grid: (Slot | undefined)[][] = []
-	for (const [row, tableRow] of Array.from(table.rows).entries()) {
+	for (const [row, tableRow] of rows.entries()) {
 		let column = 0
 		for (const cell of tableRow.cells) {
 			while (grid[row]?.[column] !== undefined) column++
 			const colspan = readSpan(cell, 'colspan', MAX_COLUMNS)
-			const rowspan = readSpan(cell, 'rowspan', Math.min(MAX_ROWS, table.rows.length - row))
+			const rowspan = readSpan(cell, 'rowspan', rows.length - row)
 			const lines = readLines(cell)
-			if (lines.length && (row + rowspan > MAX_ROWS || column + colspan > MAX_COLUMNS)) return null
+			if (lines.length && column + colspan > MAX_COLUMNS) return null
 			for (let r = row; r < row + rowspan; r++) {
 				grid[r] ??= []
 				for (let c = column; c < column + colspan; c++) grid[r][c] = null
@@ -112,7 +111,7 @@ const readGrid = (table: HTMLTableElement) => {
 	return grid
 }
 
-// a whole-column copy brings every empty row of the sheet along
+// a whole-row copy brings every empty column of the sheet along
 const trimToFilled = (grid: (Slot | undefined)[][]) => {
 	let rows = 0
 	let columns = 0
@@ -150,7 +149,11 @@ const readColumnRatios = (table: HTMLTableElement, columns: number) => {
 export const getClipboardTable = (html: string) => {
 	const table = getWholeTable(html)
 	if (!table) return null
-	const grid = readGrid(table)
+	// a whole-column copy brings every empty row of the sheet along
+	const rows = Array.from(table.rows)
+	while (rows.length && !cleanText(rows[rows.length - 1].textContent || '')) rows.pop()
+	if (rows.length > MAX_ROWS) return null
+	const grid = readGrid(rows, readFontSize(table.style.fontSize))
 	if (!grid) return null
 	const cells = trimToFilled(grid)
 	const columns = cells[0]?.length || 0
