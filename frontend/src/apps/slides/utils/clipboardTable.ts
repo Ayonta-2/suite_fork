@@ -154,13 +154,6 @@ const readColumnRatios = (table: HTMLTableElement, columns: number) => {
 	return ratios.length === columns && ratios.every((width) => width > 0) ? ratios : null
 }
 
-// the slide rule sets the total, the source's column ratios share it out, and a column
-// keeps at least the width the editor lets it shrink to
-export const shareTableWidth = (total: number, ratios: number[], cellMinWidth = 25) => {
-	const sum = ratios.reduce((a, b) => a + b, 0)
-	return ratios.map((ratio) => Math.max(cellMinWidth, Math.round((total * ratio) / sum)))
-}
-
 // null keeps today's paste: no table, a single cell, or more than the limit
 export const getClipboardTable = (html: string) => {
 	const table = getWholeTable(html)
