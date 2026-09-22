@@ -24,7 +24,7 @@ type PastedCell = { lines: string[]; colspan: number; rowspan: number; style?: C
 // null under a merged cell: the slot is covered and holds no cell of its own
 type Slot = PastedCell | null
 
-const cleanText = (text: string) => text.replace(/​/g, '').replace(/\s+/g, ' ').trim()
+const cleanText = (text: string) => text.replace(/\u200b/g, '').replace(/\s+/g, ' ').trim()
 
 // a wrapper or a <style> around the table is fine, text outside it is not:
 // taking the table alone would drop that text
