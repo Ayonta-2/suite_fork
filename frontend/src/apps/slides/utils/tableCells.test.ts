@@ -10,7 +10,11 @@ const { setCellFill } = await import('./tableCells')
 const { activeEditor, initTextEditor } = useTextEditor()
 
 const openTable = (rows: number, columns: number, editable = false) =>
-	initTextEditor('t1', getInitialTableContent(rows, columns, 150, { fontFamily: 'Inter' }), editable)
+	initTextEditor(
+		't1',
+		getInitialTableContent(rows, columns, Array(columns).fill(150), { fontFamily: 'Inter' }),
+		editable,
+	)
 
 const filledCells = () => activeEditor.value.getHTML().match(/background-color/g)?.length ?? 0
 

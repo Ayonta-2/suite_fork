@@ -20,7 +20,10 @@ const { CellSelection } = await import('@tiptap/pm/tables')
 const { activeEditor, initTextEditor } = useTextEditor()
 
 const openTable = (rows: number, columns: number) =>
-	initTextEditor('t1', getInitialTableContent(rows, columns, 150, { fontFamily: 'Inter' }))
+	initTextEditor(
+		't1',
+		getInitialTableContent(rows, columns, Array(columns).fill(150), { fontFamily: 'Inter' }),
+	)
 
 const html = () => activeEditor.value.getHTML()
 

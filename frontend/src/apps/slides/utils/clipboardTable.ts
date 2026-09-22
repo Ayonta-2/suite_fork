@@ -1,16 +1,30 @@
+import tinycolor from 'tinycolor2'
 import { getDocFromHTML } from './helpers'
 
 const MAX_ROWS = 50
 const MAX_COLUMNS = 20
 
 const BLOCK_TAGS = new Set(['P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'])
+const ALIGNS = new Set(['left', 'center', 'right'])
 
-type PastedCell = { lines: string[]; colspan: number; rowspan: number }
+type CellStyle = {
+	bold: boolean
+	italic: boolean
+	underline: boolean
+	strike: boolean
+	align: string | null
+	color: string | null
+	fill: string | null
+	// the cell's font size over the table's, 1 when either is unknown
+	size: number
+}
+
+type PastedCell = { lines: string[]; colspan: number; rowspan: number; style?: CellStyle }
 
 // null under a merged cell: the slot is covered and holds no cell of its own
 type Slot = PastedCell | null
 
-const cleanText = (text: string) => text.replace(/\u200b/g, '').replace(/\s+/g, ' ').trim()
+const cleanText = (text: string) => text.replace(/​/g, '').replace(/\s+/g, ' ').trim()
 
 // a wrapper or a <style> around the table is fine, text outside it is not:
 // taking the table alone would drop that text
@@ -46,6 +60,36 @@ const readLines = (cell: Element) => {
 	return lines
 }
 
+// transparent, rgba(0, 0, 0, 0) and what a url() leaves behind are no colour
+const readColor = (value: string) => {
+	const color = tinycolor(value)
+	return color.isValid() && color.getAlpha() > 0 ? color.toHex8String() : null
+}
+
+// pt and px only, any other unit counts as the table's own size
+const readFontSize = (value: string) => {
+	const size = parseFloat(value)
+	if (!(size > 0)) return null
+	if (value.endsWith('pt')) return size * (4 / 3)
+	return value.endsWith('px') ? size : null
+}
+
+const readStyle = (cell: HTMLTableCellElement, baseSize: number | null): CellStyle => {
+	const { style } = cell
+	const align = style.textAlign || cell.getAttribute('align') || ''
+	const size = readFontSize(style.fontSize)
+	return {
+		bold: style.fontWeight === 'bold' || parseInt(style.fontWeight, 10) >= 600,
+		italic: style.fontStyle === 'italic',
+		underline: style.textDecoration.includes('underline'),
+		strike: style.textDecoration.includes('line-through'),
+		align: ALIGNS.has(align) ? align : null,
+		color: readColor(style.color),
+		fill: readColor(style.backgroundColor),
+		size: baseSize && size ? size / baseSize : 1,
+	}
+}
+
 const readSpan = (cell: Element, name: string, max: number) => {
 	const span = parseInt(cell.getAttribute(name) || '', 10)
 	return span > 0 ? Math.min(span, max) : 1
@@ -54,6 +98,7 @@ const readSpan = (cell: Element, name: string, max: number) => {
 // a span reserves every slot it covers, so the cells after it in its row and in the
 // rows below land in their own columns
 const readGrid = (table: HTMLTableElement) => {
+	const baseSize = readFontSize(table.style.fontSize)
 	const grid: (Slot | undefined)[][] = []
 	Array.from(table.rows).forEach((tableRow, row) => {
 		let column = 0
@@ -65,7 +110,8 @@ const readGrid = (table: HTMLTableElement) => {
 				grid[r] ??= []
 				for (let c = column; c < column + colspan; c++) grid[r][c] = null
 			}
-			grid[row][column] = { lines: readLines(cell), colspan, rowspan }
+			const style = readStyle(cell, baseSize)
+			grid[row][column] = { lines: readLines(cell), colspan, rowspan, style }
 			column += colspan
 		}
 	})
@@ -98,13 +144,30 @@ const trimToFilled = (grid: (Slot | undefined)[][]) => {
 	)
 }
 
+// only the ratios matter, and a <col span> counts for each column it covers
+const readColumnRatios = (table: HTMLTableElement, columns: number) => {
+	const widths = Array.from(table.querySelectorAll('col')).flatMap((col) => {
+		const width = parseFloat(col.getAttribute('width') || col.style.width)
+		return Array(parseInt(col.getAttribute('span') || '', 10) || 1).fill(width)
+	})
+	const ratios = widths.slice(0, columns)
+	return ratios.length === columns && ratios.every((width) => width > 0) ? ratios : null
+}
+
+// the slide rule sets the total, the source's column ratios share it out, and a column
+// keeps at least the width the editor lets it shrink to
+export const shareTableWidth = (total: number, ratios: number[], cellMinWidth = 25) => {
+	const sum = ratios.reduce((a, b) => a + b, 0)
+	return ratios.map((ratio) => Math.max(cellMinWidth, Math.round((total * ratio) / sum)))
+}
+
 // null keeps today's paste: no table, a single cell, or more than the limit
-export const getClipboardTableCells = (html: string) => {
+export const getClipboardTable = (html: string) => {
 	const table = getWholeTable(html)
 	if (!table) return null
 	const cells = trimToFilled(readGrid(table))
 	const rows = cells.length
 	const columns = cells[0]?.length || 0
 	if (rows * columns < 2 || rows > MAX_ROWS || columns > MAX_COLUMNS) return null
-	return cells
+	return { cells, columnRatios: readColumnRatios(table, columns) }
 }

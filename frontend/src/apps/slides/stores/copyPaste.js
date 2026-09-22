@@ -20,7 +20,7 @@ import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
 import { getDocFromHTML, hasListMarkup, sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
-import { getClipboardTableCells } from '@/apps/slides/utils/clipboardTable'
+import { getClipboardTable } from '@/apps/slides/utils/clipboardTable'
 import { v4 as uuid4 } from 'uuid'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 
@@ -109,9 +109,10 @@ const handlePastedText = async (clipboardText, clipboardHTML = '') => {
 	addTextElement(clipboardText, undefined, listHTML)
 }
 
-const handlePastedTable = async (cells) => {
+const handlePastedTable = async (pastedTable) => {
 	await resetFocus()
-	addTableElement(cells.length, cells[0].length, cells)
+	const { cells } = pastedTable
+	addTableElement(cells.length, cells[0].length, pastedTable)
 }
 
 const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) => {
@@ -188,8 +189,8 @@ const handleClipboardText = (clipboardText, clipboardHTML = '') => {
 	if (clipboardText?.trim().startsWith('<svg') && clipboardText?.trim().endsWith('</svg>')) {
 		handleSvgText(clipboardText)
 	} else if (clipboardText && !focusElementId.value) {
-		const tableCells = getClipboardTableCells(clipboardHTML)
-		if (tableCells) handlePastedTable(tableCells)
+		const pastedTable = getClipboardTable(clipboardHTML)
+		if (pastedTable) handlePastedTable(pastedTable)
 		else handlePastedText(clipboardText, clipboardHTML)
 	}
 }

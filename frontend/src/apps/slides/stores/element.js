@@ -19,6 +19,7 @@ import { getMinSizeForElement } from '../utils/resize'
 import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
 import { getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
+import { shareTableWidth } from '../utils/clipboardTable'
 import { presentationId } from './presentation'
 import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from './transition'
 import { commandHistory } from './historyMeta'
@@ -166,30 +167,54 @@ const getElementContent = (element) => {
 	return generateHTML(contentJSON, extensions)
 }
 
-const getInitialTableContent = (rows, cols, columnWidth, cellStyles, cells) => {
-	const getParagraph = (line) => ({
+const getInitialTableContent = (rows, cols, columnWidths, cellStyles, cells) => {
+	// a cell keeps the colour it came with; without one it reads against its own fill,
+	// or the slide when it has none
+	const getTextColor = ({ color, fill }) =>
+		color || (fill ? guessTextColorFromBackground(fill) : cellStyles.color)
+
+	// the size control's range
+	const getFontSize = ({ size = 1 }) =>
+		Math.min(800, Math.max(5, Math.round(cellStyles.fontSize * size)))
+
+	const getMarks = (style) => [
+		{
+			type: 'textStyle',
+			attrs: { ...cellStyles, color: getTextColor(style), fontSize: getFontSize(style) },
+		},
+		...['bold', 'italic', 'underline', 'strike']
+			.filter((mark) => style[mark])
+			.map((type) => ({ type })),
+	]
+
+	const getParagraph = (line, style) => ({
 		type: 'paragraph',
-		attrs: { textAlign: 'left', lineHeight: 1.5 },
+		attrs: { textAlign: style.align || 'left', lineHeight: 1.5 },
 		content: [
 			{
 				type: 'text',
 				// marks need text to sit on, so an empty line has nothing to style
 				text: line || ZWSP,
-				marks: [{ type: 'textStyle', attrs: cellStyles }],
+				marks: getMarks(style),
 			},
 		],
 	})
 
-	const getCell = (type, { lines = [], colspan = 1, rowspan = 1 } = {}) => ({
+	const getCell = (type, col, { lines = [], colspan = 1, rowspan = 1, style = {} } = {}) => ({
 		type,
-		attrs: { colspan, rowspan, colwidth: Array(colspan).fill(columnWidth) },
-		content: (lines.length ? lines : ['']).map(getParagraph),
+		attrs: {
+			colspan,
+			rowspan,
+			colwidth: columnWidths.slice(col, col + colspan),
+			backgroundColor: style.fill,
+		},
+		content: (lines.length ? lines : ['']).map((line) => getParagraph(line, style)),
 	})
 
 	// a null slot sits under a merged cell and gets no cell of its own
 	const getRow = (cellType, rowCells = Array.from({ length: cols })) => ({
 		type: 'tableRow',
-		content: rowCells.filter((cell) => cell !== null).map((cell) => getCell(cellType, cell)),
+		content: rowCells.flatMap((cell, col) => (cell === null ? [] : [getCell(cellType, col, cell)])),
 	})
 
 	const tableRows = cells
@@ -447,12 +472,15 @@ const addTextElement = async (text, position, contentHTML = null) => {
 	)
 }
 
-const addTableElement = async (rows = 3, cols = 3, cells) => {
+const addTableElement = async (rows = 3, cols = 3, pastedTable) => {
 	// a table states its own width, so one wider than the slide is placed hanging
 	// off both edges instead of being fitted to it
 	const slideWidth = slideBounds.width / slideBounds.scale
-	const columnWidth = Math.min(150, Math.floor(slideWidth / cols))
-	const width = cols * columnWidth
+	const columnWidths = shareTableWidth(
+		cols * Math.min(150, Math.floor(slideWidth / cols)),
+		pastedTable?.columnRatios || Array(cols).fill(1),
+	)
+	const width = columnWidths.reduce((total, columnWidth) => total + columnWidth, 0)
 
 	// rows size themselves to their content, so this only places the new element
 	const position = getLeftTopForCenteredElement(width, rows * 40)
@@ -475,7 +503,7 @@ const addTableElement = async (rows = 3, cols = 3, cells) => {
 		opacity: 100,
 		type: 'table',
 		color: cellStyles.color,
-		content: getInitialTableContent(rows, cols, columnWidth, cellStyles, cells),
+		content: getInitialTableContent(rows, cols, columnWidths, cellStyles, pastedTable?.cells),
 	}
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []

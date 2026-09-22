@@ -22,7 +22,10 @@ const filled =
 	'<table><tbody><tr><td><p>one</p></td><td><p>two</p></td></tr><tr><td><p>three</p></td><td><p>four</p></td></tr></tbody></table>'
 
 const seeded = (rows = 2, columns = 2) =>
-	getInitialTableContent(rows, columns, 150, { fontFamily: 'Inter', fontSize: 18 })
+	getInitialTableContent(rows, columns, Array(columns).fill(150), {
+		fontFamily: 'Inter',
+		fontSize: 18,
+	})
 
 const bareTable = (rows: number, columns: number) =>
 	`<table><tbody>${`<tr>${'<td><p>x</p></td>'.repeat(columns)}</tr>`.repeat(rows)}</tbody></table>`
