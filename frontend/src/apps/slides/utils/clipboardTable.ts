@@ -89,24 +89,26 @@ const readSpan = (cell: Element, name: string, max: number) => {
 	return span > 0 ? Math.min(span, max) : 1
 }
 
+// null: a filled cell sits past the limit, so the table is over it however it is trimmed
 const readGrid = (table: HTMLTableElement) => {
 	const baseSize = readFontSize(table.style.fontSize)
 	const grid: (Slot | undefined)[][] = []
-	Array.from(table.rows).forEach((tableRow, row) => {
+	for (const [row, tableRow] of Array.from(table.rows).entries()) {
 		let column = 0
 		for (const cell of tableRow.cells) {
 			while (grid[row]?.[column] !== undefined) column++
 			const colspan = readSpan(cell, 'colspan', MAX_COLUMNS)
 			const rowspan = readSpan(cell, 'rowspan', Math.min(MAX_ROWS, table.rows.length - row))
+			const lines = readLines(cell)
+			if (lines.length && (row + rowspan > MAX_ROWS || column + colspan > MAX_COLUMNS)) return null
 			for (let r = row; r < row + rowspan; r++) {
 				grid[r] ??= []
 				for (let c = column; c < column + colspan; c++) grid[r][c] = null
 			}
-			const style = readStyle(cell, baseSize)
-			grid[row][column] = { lines: readLines(cell), colspan, rowspan, style }
+			grid[row][column] = { lines, colspan, rowspan, style: readStyle(cell, baseSize) }
 			column += colspan
 		}
-	})
+	}
 	return grid
 }
 
@@ -148,9 +150,10 @@ const readColumnRatios = (table: HTMLTableElement, columns: number) => {
 export const getClipboardTable = (html: string) => {
 	const table = getWholeTable(html)
 	if (!table) return null
-	const cells = trimToFilled(readGrid(table))
-	const rows = cells.length
+	const grid = readGrid(table)
+	if (!grid) return null
+	const cells = trimToFilled(grid)
 	const columns = cells[0]?.length || 0
-	if (rows * columns < 2 || rows > MAX_ROWS || columns > MAX_COLUMNS) return null
+	if (cells.length * columns < 2) return null
 	return { cells, columnRatios: readColumnRatios(table, columns) }
 }
