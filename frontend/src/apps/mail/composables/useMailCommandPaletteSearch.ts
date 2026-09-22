@@ -1,4 +1,4 @@
-import { computed, ref, type Ref } from "vue";
+import { computed, ref, watch, type Ref } from "vue";
 import { createResource } from "frappe-ui";
 
 import { FOLDER_ICON_COLOR_MAP } from "@/apps/mail/constants";
@@ -18,19 +18,42 @@ import type {
   MailSearchResult,
 } from "@/apps/mail/components/CommandPalette/types";
 
-export const mailFilterOptions = [
-  { key: "inMailbox", label: "Folder", operator: "in:" },
-  { key: "from", label: "From", operator: "from:" },
-  { key: "to", label: "To", operator: "to:" },
-  {
-    key: "hasAttachment",
-    label: "With attachments",
-    value: "true",
-    displayValue: "With attachments",
-  },
-  { key: "isRead", label: "Unread", value: "false", displayValue: "Unread" },
+export interface MailFilterOption {
+  key: string;
+  label: string;
+  /** The query operator this filter is typed as, for the ones whose value is free text or a
+   *  contact. Without the colon: the query line's punctuation belongs to whoever writes it. */
+  operator?: string;
+  /** Applied directly, for filters that are a single choice. */
+  value?: string;
+}
+
+// The few filters worth reaching for without leaving the query line. The rest of them — the ones
+// that want a field of their own — live in the filter panel behind the palette's filters button.
+export const mailFilterOptions: MailFilterOption[] = [
+  { key: "inMailbox", label: "Folder", operator: "in" },
+  { key: "from", label: "From", operator: "from" },
+  { key: "to", label: "To", operator: "to" },
+  { key: "hasAttachment", label: "With attachments", value: "true" },
+  { key: "isRead", label: "Unread", value: "false" },
 ];
 
+const ALL_ACCOUNTS_STORAGE_KEY = "mail-search-all-accounts";
+
+// As many mails as the palette shows at once, with the way past them being the row at the bottom
+// of the results rather than a longer list to scroll.
+const RESULT_LIMIT = 10;
+
+// The filters that hold one of two answers, and the word each answer goes by in a query. A badge
+// for one of these is worth clicking: there is somewhere for the click to go.
+const INVERTIBLE_FILTERS: Record<string, { true: string; false: string }> = {
+  hasAttachment: { true: "attachments", false: "no-attachments" },
+  isRead: { true: "read", false: "unread" },
+};
+
+// Every badge is shown as the query it stands for — `from:alice@example.com`, `in:Inbox`,
+// `has:attachment` — which is both the one register for all of them and the thing you would type
+// to get the same filter back.
 const FILTER_OPERATORS: Record<string, string> = {
   inMailbox: "in",
   from: "from",
@@ -40,6 +63,8 @@ const FILTER_OPERATORS: Record<string, string> = {
   subject: "subject",
   after: "after",
   before: "before",
+  hasAttachment: "has",
+  isRead: "is",
 };
 
 export function useMailCommandPaletteSearch(
@@ -50,11 +75,33 @@ export function useMailCommandPaletteSearch(
   let mailUser: ReturnType<typeof userStore> | undefined;
   const getMailUser = () => (mailUser ??= userStore());
 
+  // Searching every account is a property of the search, not a filter on it: it widens where the
+  // same filters are asked, so it sits beside them rather than among them. The choice is
+  // remembered, because someone who keeps several accounts open searches the same way each time.
+  const hasMultipleAccounts = computed(
+    () => (getMailUser().userResource.data?.accounts?.length ?? 0) > 1,
+  );
+  const allAccounts = ref(
+    localStorage.getItem(ALL_ACCOUNTS_STORAGE_KEY) === "true",
+  );
+  // A preference remembered from when there were several accounts must not quietly widen a search
+  // for someone who now has one — it is the toggle's own state that is kept, not its effect.
+  const searchesAllAccounts = computed(
+    () => allAccounts.value && hasMultipleAccounts.value,
+  );
+  watch(allAccounts, (value) => {
+    localStorage.setItem(ALL_ACCOUNTS_STORAGE_KEY, String(value));
+    // A folder belongs to one account, so it cannot survive the widening.
+    if (value) removeFilter("inMailbox");
+  });
+
   const searchResource = createResource({
     auto: false,
     method: "POST",
     url: "suite.mail.api.mail.search_mails",
     debounce: 180,
+    onSuccess: () => settle(),
+    onError: () => settle(),
   });
   const contactResource = createResource({
     auto: false,
@@ -84,6 +131,25 @@ export function useMailCommandPaletteSearch(
     active.value ? getMailChoiceOperator(query.value) : null,
   );
 
+  // Whether the results on screen answer the search as it now stands. Asked of the request rather
+  // than of `loading`, because a request that is aborted or reset — which every keystroke does to
+  // the one before it — stops loading without ever answering anything.
+  const requestKey = computed(() =>
+    JSON.stringify([requestFilter.value, searchesAllAccounts.value]),
+  );
+  const answeredKey = ref<string | null>(null);
+  const pending = computed(
+    () => active.value && answeredKey.value !== requestKey.value,
+  );
+  const settle = () => (answeredKey.value = requestKey.value);
+  // How many mails matched in all, which `search_mails` returns beside the page it hands back.
+  // What the palette shows is capped at RESULT_LIMIT, so this is how it knows whether there is
+  // anything past the rows on screen.
+  const total = computed(() =>
+    active.value && Array.isArray(searchResource.data?.[0])
+      ? Number(searchResource.data[1] ?? 0)
+      : 0,
+  );
   const results = computed<MailSearchResult[]>(() => {
     if (!active.value || !Array.isArray(searchResource.data?.[0])) return [];
     return searchResource.data[0].map(
@@ -202,34 +268,129 @@ export function useMailCommandPaletteSearch(
   });
 
   function getFilterLabel(filter: MailSearchFilterBadge) {
-    if (filter.key === "hasAttachment") return filter.displayValue;
-    if (filter.key === "isRead")
-      return `is:${filter.value === "true" ? "read" : "unread"}`;
     return `${FILTER_OPERATORS[filter.key] ?? filter.key}:${filter.displayValue}`;
   }
 
-  function applyFilter(key: string, value: string, displayValue = value) {
+  // One rule for what a badge says, so a filter reads the same however it arrived: typed as an
+  // operator, chosen from a suggestion, set in the filter panel, or flipped where it stands.
+  function badgeFor(
+    key: string,
+    value: string,
+    displayValue?: string,
+  ): MailSearchFilterBadge {
+    const answers = INVERTIBLE_FILTERS[key];
+    if (answers)
+      return { key, value, displayValue: answers[value === "true" ? "true" : "false"] };
+    if (displayValue) return { key, value, displayValue };
+    if (key === "inMailbox")
+      return {
+        key,
+        value,
+        displayValue:
+          (getMailUser().mailboxes.data ?? []).find(
+            (mailbox: { id: string }) => mailbox.id === value,
+          )?._name ?? value,
+      };
+    return { key, value, displayValue: value };
+  }
+
+  function applyFilter(key: string, value: string, displayValue?: string) {
     appliedFilters.value = [
       ...appliedFilters.value.filter((filter) => filter.key !== key),
-      { key, value, displayValue },
+      badgeFor(key, value, displayValue),
     ];
   }
 
+  // What the filter panel edits: the filters that are held as badges, without the ones still being
+  // typed as operators in the query. `absorbQueryFilters` moves those across first, so opening the
+  // panel never loses a `from:` half-typed on the query line.
+  const filterValues = computed(() =>
+    Object.fromEntries(
+      appliedFilters.value.map(({ key, value }) => [key, value]),
+    ),
+  );
+
+  function absorbQueryFilters() {
+    const { text = "", ...operators } = parseMailSearchQuery(query.value.trim());
+    if (!Object.keys(operators).length) return;
+    setFilters({ ...filterValues.value, ...operators });
+    query.value = text;
+  }
+
+  const canInvert = (key: string) => Boolean(INVERTIBLE_FILTERS[key]);
+
+  // Inverted where it stands, rather than removed and re-applied: a badge that jumped to the end of
+  // the row on every click would be a poor thing to click twice.
+  function invertFilter(key: string) {
+    if (!INVERTIBLE_FILTERS[key]) return;
+    appliedFilters.value = appliedFilters.value.map((filter) =>
+      filter.key === key
+        ? badgeFor(key, filter.value === "true" ? "false" : "true")
+        : filter,
+    );
+  }
+
+  // The badge already reads as the token that set it, so clicking it hands that token back to the
+  // query line — where it can be corrected, finished, or deleted like anything else typed there.
+  // It stays text until a space closes it again, which is what `consumeFilterToken` waits for.
+  //
+  // Returns where the value sits in the new query, so the caller can select it: the operator was
+  // never in question, and typing should replace what the filter was set to.
+  function editFilter(key: string) {
+    const filter = appliedFilters.value.find((entry) => entry.key === key);
+    if (!filter) return null;
+    removeFilter(key);
+    const operator = FILTER_OPERATORS[key] ?? key;
+    const value = /\s/.test(filter.displayValue)
+      ? `"${filter.displayValue}"`
+      : filter.displayValue;
+    const existing = findOperatorValue(operator);
+    if (existing) {
+      query.value =
+        query.value.slice(0, existing.start) +
+        value +
+        query.value.slice(existing.end);
+      return { start: existing.start, end: existing.start + value.length };
+    }
+    return appendOperator(operator, value);
+  }
+
+  // Asks the query line for an operator, for the filter row's buttons: the one already there if it
+  // has one — pointing at its value, so a second press lands on what was typed rather than adding
+  // another empty `from:` — and a fresh one at the end otherwise.
+  function useOperator(operator: string) {
+    return findOperatorValue(operator) ?? appendOperator(operator);
+  }
+
+  // Where an operator's value sits on the query line, if that operator is already on it. Two
+  // `from:` tokens are not two senders, they are one sender and a question about which one means
+  // it — so everything that writes an operator asks here first.
+  function findOperatorValue(operator: string) {
+    const match = query.value.match(
+      new RegExp(`(^|\\s)${operator}:("[^"]*"|\\S*)`, "i"),
+    );
+    if (match?.index == null) return null;
+    const start = match.index + match[1].length + operator.length + 1;
+    return { start, end: start + match[2].length };
+  }
+
+  function appendOperator(operator: string, value = "") {
+    const text = query.value.trimEnd();
+    const prefix = `${text}${text ? " " : ""}${operator}:`;
+    query.value = `${prefix}${value}`;
+    return { start: prefix.length, end: prefix.length + value.length };
+  }
+
+  function removeFilter(key: string) {
+    appliedFilters.value = appliedFilters.value.filter(
+      (filter) => filter.key !== key,
+    );
+  }
+
   function setFilters(filters: Record<string, string>) {
-    appliedFilters.value = Object.entries(filters).map(([key, value]) => {
-      let displayValue = value;
-      if (key === "inMailbox") {
-        displayValue =
-          (getMailUser().mailboxes.data ?? []).find(
-            (mailbox: { id: string }) => mailbox.id === value,
-          )?._name ?? value;
-      } else if (key === "hasAttachment") {
-        displayValue = value === "true" ? "With attachments" : "Without attachments";
-      } else if (key === "isRead") {
-        displayValue = value === "true" ? "Read" : "Unread";
-      }
-      return { key, value, displayValue };
-    });
+    appliedFilters.value = Object.entries(filters).map(([key, value]) =>
+      badgeFor(key, value),
+    );
   }
 
   function consumeFilterToken(value: string) {
@@ -255,15 +416,7 @@ export function useMailCommandPaletteSearch(
     const entry = Object.entries(parsed).find(([key]) => key !== "text");
     if (!entry) return false;
     const [key, filterValue] = entry;
-    applyFilter(
-      key,
-      filterValue,
-      key === "hasAttachment"
-        ? filterValue === "true"
-          ? "With attachments"
-          : "Without attachments"
-        : filterValue,
-    );
+    applyFilter(key, filterValue);
     query.value = value.slice(0, match.index).trim();
     return true;
   }
@@ -286,7 +439,7 @@ export function useMailCommandPaletteSearch(
       .trim();
   }
 
-  function search(value: string, account: string, allAccounts = false) {
+  function search(value: string, account: string) {
     if (consumeFilterToken(value)) return;
     const text = value.trim();
     if (account && contactOperator.value?.partial) {
@@ -298,18 +451,24 @@ export function useMailCommandPaletteSearch(
     }
     if (operatorContext.value) {
       searchResource.reset();
+      settle();
       return;
     }
     if (account && (text || appliedFilters.value.length)) {
+      // The same question, already answered: the rows on screen are that answer. Asking again
+      // would blank them for as long as it took the very same rows to come back — which is what
+      // going into the filter panel and straight back out used to do.
+      if (!pending.value && searchResource.data) return;
       searchResource.reset();
       searchResource.submit({
         account,
         filter: requestFilter.value,
-        limit: 20,
-        all_accounts: allAccounts,
+        limit: RESULT_LIMIT,
+        all_accounts: searchesAllAccounts.value,
       });
-    } else if (!appliedFilters.value.length) {
-      reset();
+    } else {
+      if (!appliedFilters.value.length) reset();
+      settle();
     }
   }
 
@@ -321,19 +480,32 @@ export function useMailCommandPaletteSearch(
   }
 
   function reset() {
+    settle();
     cancel();
     searchResource.reset();
     contactResource.reset();
   }
 
   return {
+    allAccounts,
     appliedFilters,
+    searchesAllAccounts,
     availableFilterOptions,
     filter,
+    filterValues,
+    pending,
+    hasMultipleAccounts,
     operatorContext,
     results,
     suggestions,
+    total,
+    absorbQueryFilters,
     applyFilter,
+    canInvert,
+    editFilter,
+    invertFilter,
+    useOperator,
+    removeFilter,
     setFilters,
     getFilterLabel,
     selectContact,

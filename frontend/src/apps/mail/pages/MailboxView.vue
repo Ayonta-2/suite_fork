@@ -16,9 +16,7 @@
 				]"
 			/>
 		</div>
-		<HeaderActions
-			v-model:show-search="showSearchModal"
-		/>
+		<HeaderActions />
 	</header>
 
 	<!-- Unscreened-thread nudge on the inbox, mirroring the trash/junk info bar: shown while Hey-style
@@ -70,10 +68,7 @@
 				<template #list>
 					<!-- The search view's own header: the query (click to edit) + removable filter pills, above
 					     the results toolbar. It owns the query surface; the results below just read the route. -->
-					<SearchResultsHeader
-						v-if="mailbox === 'search'"
-						v-model:show-search="showSearchModal"
-					/>
+					<SearchResultsHeader v-if="mailbox === 'search'" />
 
 					<!-- Mobile header: title row (folders · mailbox + count · search) over
 					     a toolbar row (filter selector on the left, filter/refresh pills on the
@@ -1665,11 +1660,6 @@ const title = computed(() => {
 
 	return filterTitle.value
 })
-
-// The search modal lives in HeaderActions but is opened from two places — its own button, and the
-// search view's header — so its state sits here, between them. Everything else about the query surface
-// belongs to SearchResultsHeader.
-const showSearchModal = ref(false)
 
 const threadCount = computed(() => {
 	const count = mailboxObj.value?.total_threads
