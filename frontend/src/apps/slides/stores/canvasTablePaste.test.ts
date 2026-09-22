@@ -132,6 +132,19 @@ describe('pasting a spreadsheet range onto the canvas', () => {
 		expect(marks.getAttribute('colwidth')).toBe('200')
 	})
 
+	it('keeps the text of a hostile cell and nothing else', async () => {
+		const table = await paste(
+			inSheetsWrapper(
+				`<tr><td rowspan="3"><img src=x onerror="alert(1)">a<script>alert(1)</script></td>` +
+					`<td>b</td></tr>`,
+			),
+		)
+
+		expect(readCells(table.content)).toEqual([[['a'], ['b']]])
+		expect(readSpans(table.content)).toEqual(['1x1', '1x1'])
+		expect(table.content).not.toMatch(/onerror|<img|<script/)
+	})
+
 	it('trims the empty rows a whole-column copy brings along', async () => {
 		const emptyTail = `<tr><td rowspan="500"></td><td></td></tr>` + row('').repeat(499)
 		const table = await paste(inSheetsWrapper(row('a', 'b') + emptyTail))

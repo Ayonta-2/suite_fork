@@ -105,7 +105,7 @@ const readGrid = (table: HTMLTableElement) => {
 		for (const cell of tableRow.cells) {
 			while (grid[row]?.[column] !== undefined) column++
 			const colspan = readSpan(cell, 'colspan', MAX_COLUMNS)
-			const rowspan = readSpan(cell, 'rowspan', MAX_ROWS)
+			const rowspan = readSpan(cell, 'rowspan', table.rows.length - row)
 			for (let r = row; r < row + rowspan; r++) {
 				grid[r] ??= []
 				for (let c = column; c < column + colspan; c++) grid[r][c] = null
