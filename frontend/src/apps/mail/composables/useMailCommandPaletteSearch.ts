@@ -145,8 +145,15 @@ export function useMailCommandPaletteSearch(
   // Whether the results on screen answer the search as it now stands. Asked of the request rather
   // than of `loading`, because a request that is aborted or reset — which every keystroke does to
   // the one before it — stops loading without ever answering anything.
+  // The account is part of the question: the same words asked of a different account are a
+  // different search, and an answer kept for one must not be handed back for the other.
+  const account = ref("");
   const requestKey = computed(() =>
-    JSON.stringify([requestFilter.value, searchesAllAccounts.value]),
+    JSON.stringify([
+      account.value,
+      requestFilter.value,
+      searchesAllAccounts.value,
+    ]),
   );
   const answeredKey = ref<string | null>(null);
   const pending = computed(
@@ -321,8 +328,30 @@ export function useMailCommandPaletteSearch(
     ),
   );
 
+  // `in:` names a folder, and only this composable can turn the name into the id the filter
+  // wants — the parser leaves it alone. So folders come out of the query line first, here, and
+  // the parser is handed what is left; a name no folder answers to stays as the words typed.
+  function findMailbox(name: string) {
+    const wanted = name.replace(/^"|"$/g, "");
+    return (getMailUser().mailboxes.data ?? []).find(
+      (mailbox: { id: string; _name: string }) =>
+        mailbox.id === wanted ||
+        mailbox._name.toLowerCase() === wanted.toLowerCase(),
+    ) as { id: string; _name: string } | undefined;
+  }
+
   function absorbQueryFilters() {
-    const { text = "", ...operators } = parseMailSearchQuery(query.value.trim());
+    let inMailbox: string | undefined;
+    const rest = query.value
+      .trim()
+      .replace(/(^|\s)in:("[^"]*"|\S+)/gi, (token, lead, name) => {
+        const mailbox = findMailbox(name);
+        if (!mailbox) return token;
+        inMailbox = mailbox.id;
+        return lead;
+      });
+    const { text = "", ...operators } = parseMailSearchQuery(rest.trim());
+    if (inMailbox) operators.inMailbox = inMailbox;
     if (!Object.keys(operators).length) return;
     setFilters({ ...filterValues.value, ...operators });
     query.value = text;
@@ -412,12 +441,7 @@ export function useMailCommandPaletteSearch(
     const token = match[0].trim();
     const separator = token.indexOf(":");
     if (token.slice(0, separator).toLowerCase() === "in") {
-      const mailboxName = token.slice(separator + 1).replace(/^"|"$/g, "");
-      const mailbox = (getMailUser().mailboxes.data ?? []).find(
-        (candidate: { id: string; _name: string }) =>
-          candidate.id === mailboxName ||
-          candidate._name.toLowerCase() === mailboxName.toLowerCase(),
-      );
+      const mailbox = findMailbox(token.slice(separator + 1));
       if (!mailbox) return false;
       applyFilter("inMailbox", mailbox.id, mailbox._name);
       query.value = value.slice(0, match.index).trim();
@@ -450,12 +474,13 @@ export function useMailCommandPaletteSearch(
       .trim();
   }
 
-  function search(value: string, account: string) {
+  function search(value: string, forAccount: string) {
+    account.value = forAccount;
     if (consumeFilterToken(value)) return;
     const text = value.trim();
-    if (account && contactOperator.value?.partial) {
+    if (forAccount && contactOperator.value?.partial) {
       contactResource.submit({
-        account,
+        account: forAccount,
         text: contactOperator.value.partial,
         limit: 5,
       });
@@ -465,7 +490,7 @@ export function useMailCommandPaletteSearch(
       settle();
       return;
     }
-    if (account && (text || appliedFilters.value.length)) {
+    if (forAccount && (text || appliedFilters.value.length)) {
       // The same question, already answered: the rows on screen are that answer. Asking again
       // would blank them for as long as it took the very same rows to come back — which is what
       // going into the filter panel and straight back out used to do.
@@ -480,7 +505,7 @@ export function useMailCommandPaletteSearch(
       inflightKey = requestKey.value;
       searchResource.reset();
       searchResource.submit({
-        account,
+        account: forAccount,
         filter: requestFilter.value,
         limit: RESULT_LIMIT,
         all_accounts: searchesAllAccounts.value,

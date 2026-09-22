@@ -96,6 +96,28 @@ describe('opening the filter panel', () => {
 		})
 	})
 
+	// The parser does not know `in:` — a folder's name has to become its id, which only the
+	// composable can do — so it must be taken off the line before the parser sees it.
+	it('restores a folder from its name, as an edited folder chip leaves it', () => {
+		const search = openSearch()
+		search.query.value = 'budget in:Inbox'
+
+		search.absorbQueryFilters()
+
+		expect(search.query.value).toBe('budget')
+		expect(search.filterValues.value).toEqual({ inMailbox: 'mailbox-1' })
+	})
+
+	it('leaves a folder name nothing answers to as the words typed', () => {
+		const search = openSearch()
+		search.query.value = 'in:Nowhere budget'
+
+		search.absorbQueryFilters()
+
+		expect(search.query.value).toBe('in:Nowhere budget')
+		expect(search.filterValues.value).toEqual({})
+	})
+
 	it('leaves a plain query alone', () => {
 		const search = openSearch()
 		search.query.value = 'quarterly budget'
@@ -448,6 +470,20 @@ describe('whether the results are the answer', () => {
 		search.search('invoice', 'work')
 
 		expect(searches.length).toBe(asked + 1)
+	})
+
+	it('asks again when the same words are asked of a different account', () => {
+		const search = openSearch()
+		search.query.value = 'invoice'
+		search.search('invoice', 'work')
+		answer.value([{ thread_id: 't1', account: 'work', from_email: 'a@b.com' }], 1)
+		const asked = searches.length
+
+		search.search('invoice', 'personal')
+
+		expect(searches.length).toBe(asked + 1)
+		expect(searches.at(-1)).toMatchObject({ account: 'personal' })
+		expect(search.pending.value).toBe(true)
 	})
 
 	it('asks again for a different question once the results have been cleared', () => {
