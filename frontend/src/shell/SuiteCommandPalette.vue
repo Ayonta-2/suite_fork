@@ -1312,6 +1312,16 @@ onScopeDispose(() => {
 	margin-top: 0;
 }
 
+/* Higher than the dialog's own `position="top"` puts it (20vh): a palette is reached for from the
+   keyboard and read from the top down, and a fifth of the screen above it was dead space. The
+   palette forwards no `paddingTop` to its Dialog, so the wrapper is restyled here — on desktop
+   only; the phone's page mode zeroes this padding itself below. */
+@media (min-width: 768px) {
+	[data-position='top']:has(> .dialog-content > [data-slot='command-palette']) {
+		padding-top: 16vh;
+	}
+}
+
 @media (max-width: 767px) {
 	/* Hidden, not removed. The dialog fires `after-leave` — which the palette answers by
 	   clearing the query — when the overlay's exit animation ends, and an overlay that is not
