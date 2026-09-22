@@ -15,19 +15,17 @@ type CellStyle = {
 	align: string | null
 	color: string | null
 	fill: string | null
-	// the cell's font size over the table's, 1 when either is unknown
 	size: number
 }
 
 type PastedCell = { lines: string[]; colspan: number; rowspan: number; style?: CellStyle }
 
-// null under a merged cell: the slot is covered and holds no cell of its own
+// null: the slot sits under a merged cell
 type Slot = PastedCell | null
 
 const cleanText = (text: string) => text.replace(/\u200b/g, '').replace(/\s/g, ' ').trim()
 
-// a wrapper or a <style> around the table is fine, text outside it is not:
-// taking the table alone would drop that text
+// text outside the table would be lost, so only a bare table passes
 const getWholeTable = (html: string) => {
 	const body = getDocFromHTML(html).body
 	body.querySelectorAll('style, script').forEach((node) => node.remove())
@@ -38,7 +36,6 @@ const getWholeTable = (html: string) => {
 		: null
 }
 
-// <br> breaks the line, a block element sits on lines of its own
 const collectLines = (node: Node, lines: string[]) => {
 	const endLine = () => lines[lines.length - 1].trim() && lines.push('')
 	for (const child of node.childNodes) {
@@ -52,7 +49,6 @@ const collectLines = (node: Node, lines: string[]) => {
 	return lines
 }
 
-// blank lines around the text go, blank lines inside it stay
 const readLines = (cell: Element) => {
 	const lines = collectLines(cell, ['']).map(cleanText)
 	while (lines.length && !lines[0]) lines.shift()
@@ -60,13 +56,11 @@ const readLines = (cell: Element) => {
 	return lines
 }
 
-// transparent, rgba(0, 0, 0, 0) and what a url() leaves behind are no colour
 const readColor = (value: string) => {
 	const color = tinycolor(value)
 	return color.isValid() && color.getAlpha() > 0 ? color.toHex8String() : null
 }
 
-// pt and px only, any other unit counts as the table's own size
 const readFontSize = (value: string) => {
 	const size = parseFloat(value)
 	if (!(size > 0)) return null
@@ -95,8 +89,6 @@ const readSpan = (cell: Element, name: string, max: number) => {
 	return span > 0 ? Math.min(span, max) : 1
 }
 
-// a span reserves every slot it covers, so the cells after it in its row and in the
-// rows below land in their own columns
 const readGrid = (table: HTMLTableElement) => {
 	const baseSize = readFontSize(table.style.fontSize)
 	const grid: (Slot | undefined)[][] = []
@@ -118,8 +110,7 @@ const readGrid = (table: HTMLTableElement) => {
 	return grid
 }
 
-// a whole-column copy brings every empty row of the sheet along. A filled merged cell
-// keeps its whole span, an empty one reaching past the edge is cut to it
+// a whole-column copy brings every empty row of the sheet along
 const trimToFilled = (grid: (Slot | undefined)[][]) => {
 	let rows = 0
 	let columns = 0
@@ -144,7 +135,6 @@ const trimToFilled = (grid: (Slot | undefined)[][]) => {
 	)
 }
 
-// only the ratios matter, and a <col span> counts for each column it covers
 const readColumnRatios = (table: HTMLTableElement, columns: number) => {
 	const widths = Array.from(table.querySelectorAll('col')).flatMap((col) => {
 		const width = parseFloat(col.getAttribute('width') || col.style.width)

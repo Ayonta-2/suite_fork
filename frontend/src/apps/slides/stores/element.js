@@ -173,12 +173,9 @@ const getEmptyTableCells = (rows, cols) =>
 	)
 
 const getInitialTableContent = (cells, columnWidths, cellStyles) => {
-	// a cell keeps the colour it came with; without one it reads against its own fill,
-	// or the slide when it has none
 	const getTextColor = ({ color, fill }) =>
 		color || (fill ? guessTextColorFromBackground(fill) : cellStyles.color)
 
-	// the size control's range
 	const getFontSize = ({ size = 1 }) =>
 		Math.min(800, Math.max(5, Math.round(cellStyles.fontSize * size)))
 
@@ -216,7 +213,6 @@ const getInitialTableContent = (cells, columnWidths, cellStyles) => {
 		content: (lines.length ? lines : ['']).map((line) => getParagraph(line, style)),
 	})
 
-	// a null slot sits under a merged cell and gets no cell of its own
 	const getRow = (rowCells) => ({
 		type: 'tableRow',
 		content: rowCells.flatMap((cell, col) => (cell ? [getCell(col, cell)] : [])),
@@ -500,7 +496,6 @@ const addTableElement = async (cells, columnRatios) => {
 		id: generateUniqueId(),
 		zIndex: currentSlide.value.elements.length + 1,
 		left: position.left,
-		// a table taller than the slide starts at its top edge, not above it
 		top: Math.max(0, position.top),
 		width,
 		opacity: 100,

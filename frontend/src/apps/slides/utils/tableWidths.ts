@@ -131,8 +131,6 @@ const setColgroup = (table: HTMLTableElement, widths: number[]) => {
 	)
 }
 
-// the slide rule sets the total, the source's column ratios share it out, and a column
-// keeps at least the width the editor lets it shrink to
 export const shareTableWidth = (total: number, ratios: number[], cellMinWidth = 25) => {
 	const sum = ratios.reduce((a, b) => a + b, 0)
 	return ratios.map((ratio) => Math.max(cellMinWidth, Math.round((total * ratio) / sum)))
