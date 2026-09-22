@@ -12,6 +12,7 @@ const { handlePaste } = await import('./copyPaste')
 const { slides, slideIndex, slideBounds } = await import('./slide')
 const { useCommandHistory } = await import('@/apps/slides/composables/useCommandHistory')
 const { actionOrder, actions, setCommandHistory } = await import('./historyMeta')
+const { getTableSize, getTableWidth } = await import('@/apps/slides/utils/tableWidths')
 
 // the wrapper Sheets puts around every copied range
 const inSheetsWrapper = (rows: string) =>
@@ -21,11 +22,11 @@ const inSheetsWrapper = (rows: string) =>
 
 const row = (...cells: string[]) => `<tr>${cells.map((cell) => `<td>${cell}</td>`).join('')}</tr>`
 
-// A1:C3 as Sheets copies it: B3 merged into A3, a two-line C3
+// A1:C3 as Sheets copies it: A2:A3 and B3:C3 merged, a two-line C2
 const sheetsRange = inSheetsWrapper(
 	row('Name', 'qty', 'notes') +
-		row('Apple', '12', 'red') +
-		`<tr><td rowspan="1" colspan="2">wide</td><td>line one <br/>line two</td></tr>`,
+		`<tr><td rowspan="2" colspan="1">tall</td><td>12</td><td>line one <br/>line two</td></tr>` +
+		`<tr><td rowspan="1" colspan="2">wide</td></tr>`,
 )
 
 const elements = () => slides.value[0].elements
@@ -51,6 +52,11 @@ const readCells = (content: string) =>
 			),
 	)
 
+const readSpans = (content: string) =>
+	Array.from(new DOMParser().parseFromString(content, 'text/html').querySelectorAll('td')).map(
+		(cell) => `${cell.getAttribute('colspan')}x${cell.getAttribute('rowspan')}`,
+	)
+
 beforeEach(() => {
 	setCommandHistory(useCommandHistory(slides, { actionOrder, actions }))
 	slides.value = [{ clientId: 'c1', background: '#ffffff', elements: [] }] as any
@@ -66,26 +72,20 @@ describe('pasting a spreadsheet range onto the canvas', () => {
 
 		expect(readCells(table.content)).toEqual([
 			[['Name'], ['qty'], ['notes']],
-			[['Apple'], ['12'], ['red']],
-			[['wide'], [''], ['line one', 'line two']],
+			[['tall'], ['12'], ['line one', 'line two']],
+			[['wide']],
 		])
-	})
-
-	it('keeps a row below a tall merged cell in its own columns', async () => {
-		const table = await paste(
-			inSheetsWrapper(`<tr><td rowspan="2">tall</td><td>b</td><td>c</td></tr>` + row('e', 'f')),
-		)
-
-		expect(readCells(table.content)).toEqual([
-			[['tall'], ['b'], ['c']],
-			[[''], ['e'], ['f']],
-		])
+		expect(readSpans(table.content)).toEqual(['1x1', '1x1', '1x1', '1x2', '1x1', '1x1', '2x1'])
+		expect(getTableSize(table.content)).toEqual({ rows: 3, columns: 3 })
+		expect(getTableWidth(table.content)).toBe(table.width)
 	})
 
 	it('trims the empty rows a whole-column copy brings along', async () => {
-		const table = await paste(inSheetsWrapper(row('a', 'b') + row('', '').repeat(500)))
+		const emptyTail = `<tr><td rowspan="500"></td><td></td></tr>` + row('').repeat(499)
+		const table = await paste(inSheetsWrapper(row('a', 'b') + emptyTail))
 
 		expect(readCells(table.content)).toEqual([[['a'], ['b']]])
+		expect(readSpans(table.content)).toEqual(['1x1', '1x1'])
 	})
 
 	it.each([

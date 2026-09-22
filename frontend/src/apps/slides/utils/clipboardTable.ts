@@ -5,9 +5,12 @@ const MAX_COLUMNS = 20
 
 const BLOCK_TAGS = new Set(['P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'])
 
-type PastedCell = { lines: string[] }
+type PastedCell = { lines: string[]; colspan: number; rowspan: number }
 
-const cleanText = (text: string) => text.replace(/​/g, '').replace(/\s+/g, ' ').trim()
+// null under a merged cell: the slot is covered and holds no cell of its own
+type Slot = PastedCell | null
+
+const cleanText = (text: string) => text.replace(/\u200b/g, '').replace(/\s+/g, ' ').trim()
 
 // a wrapper or a <style> around the table is fine, text outside it is not:
 // taking the table alone would drop that text
@@ -51,37 +54,47 @@ const readSpan = (cell: Element, name: string, max: number) => {
 // a span reserves every slot it covers, so the cells after it in its row and in the
 // rows below land in their own columns
 const readGrid = (table: HTMLTableElement) => {
-	const grid: PastedCell[][] = []
+	const grid: (Slot | undefined)[][] = []
 	Array.from(table.rows).forEach((tableRow, row) => {
 		let column = 0
 		for (const cell of tableRow.cells) {
-			while (grid[row]?.[column]) column++
+			while (grid[row]?.[column] !== undefined) column++
 			const colspan = readSpan(cell, 'colspan', MAX_COLUMNS)
 			const rowspan = readSpan(cell, 'rowspan', MAX_ROWS)
 			for (let r = row; r < row + rowspan; r++) {
 				grid[r] ??= []
-				for (let c = column; c < column + colspan; c++) grid[r][c] = { lines: [] }
+				for (let c = column; c < column + colspan; c++) grid[r][c] = null
 			}
-			grid[row][column] = { lines: readLines(cell) }
+			grid[row][column] = { lines: readLines(cell), colspan, rowspan }
 			column += colspan
 		}
 	})
 	return grid
 }
 
-// a whole-column copy brings every empty row of the sheet along
-const trimToFilled = (grid: PastedCell[][]) => {
+// a whole-column copy brings every empty row of the sheet along. A filled merged cell
+// keeps its whole span, an empty one reaching past the edge is cut to it
+const trimToFilled = (grid: (Slot | undefined)[][]) => {
 	let rows = 0
 	let columns = 0
 	grid.forEach((row, r) =>
 		row?.forEach((cell, c) => {
 			if (!cell?.lines.length) return
-			rows = Math.max(rows, r + 1)
-			columns = Math.max(columns, c + 1)
+			rows = Math.max(rows, r + cell.rowspan)
+			columns = Math.max(columns, c + cell.colspan)
 		}),
 	)
 	return Array.from({ length: rows }, (_, r) =>
-		Array.from({ length: columns }, (_, c) => grid[r]?.[c] ?? { lines: [] }),
+		Array.from({ length: columns }, (_, c): Slot => {
+			const cell = grid[r]?.[c]
+			if (cell === undefined) return { lines: [], colspan: 1, rowspan: 1 }
+			if (cell === null) return null
+			return {
+				...cell,
+				colspan: Math.min(cell.colspan, columns - c),
+				rowspan: Math.min(cell.rowspan, rows - r),
+			}
+		}),
 	)
 }
 

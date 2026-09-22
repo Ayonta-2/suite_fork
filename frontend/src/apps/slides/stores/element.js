@@ -180,15 +180,16 @@ const getInitialTableContent = (rows, cols, columnWidth, cellStyles, cells) => {
 		],
 	})
 
-	const getCell = (type, cell) => ({
+	const getCell = (type, { lines = [], colspan = 1, rowspan = 1 } = {}) => ({
 		type,
-		attrs: { colspan: 1, rowspan: 1, colwidth: [columnWidth] },
-		content: (cell?.lines.length ? cell.lines : ['']).map(getParagraph),
+		attrs: { colspan, rowspan, colwidth: Array(colspan).fill(columnWidth) },
+		content: (lines.length ? lines : ['']).map(getParagraph),
 	})
 
-	const getRow = (cellType, rowCells) => ({
+	// a null slot sits under a merged cell and gets no cell of its own
+	const getRow = (cellType, rowCells = Array.from({ length: cols })) => ({
 		type: 'tableRow',
-		content: Array.from({ length: cols }, (_, col) => getCell(cellType, rowCells?.[col])),
+		content: rowCells.filter((cell) => cell !== null).map((cell) => getCell(cellType, cell)),
 	})
 
 	const tableRows = cells
