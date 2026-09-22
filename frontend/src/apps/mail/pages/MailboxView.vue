@@ -502,6 +502,7 @@ import {
 	useScreenSize,
 	useSwipeNav,
 	useUndo,
+	useMobileSearch,
 } from '@/apps/mail/utils/composables'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { useStoredFilter } from '@/apps/mail/utils/listFilter'
@@ -1059,7 +1060,7 @@ const shortAccountLabel = (name?: string | null) =>
 // The mobile Search tab lands on this route with no query yet. There's nothing to fetch —
 // an empty filter would run an unbounded search — so the list area shows a hint instead
 // (all_accounts is scope, not a search condition, so it alone doesn't count as a query).
-const hasSearchQuery = computed(() => Object.keys(route.query).some((k) => k !== 'all_accounts'))
+const { hasSearchQuery } = useMobileSearch()
 
 // Null while a search is pending — the count is only known once the fetch resolves (set in the
 // searchResults transform below, reset in resetThreads). Guards the title against a stale or zero count.

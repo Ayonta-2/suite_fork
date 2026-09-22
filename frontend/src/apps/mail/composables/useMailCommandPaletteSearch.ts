@@ -1,5 +1,6 @@
 import { computed, ref, watch, type Ref } from "vue";
 import { createResource } from "frappe-ui";
+import { useStorage } from "@vueuse/core";
 
 import { FOLDER_ICON_COLOR_MAP } from "@/apps/mail/constants";
 import { userStore } from "@/apps/mail/stores/user";
@@ -30,7 +31,7 @@ export interface MailFilterOption {
 
 // The few filters worth reaching for without leaving the query line. The rest of them — the ones
 // that want a field of their own — live in the filter panel behind the palette's filters button.
-export const mailFilterOptions: MailFilterOption[] = [
+const mailFilterOptions: MailFilterOption[] = [
   { key: "inMailbox", label: "Folder", operator: "in" },
   { key: "from", label: "From", operator: "from" },
   { key: "to", label: "To", operator: "to" },
@@ -66,6 +67,7 @@ const FILTER_OPERATORS: Record<string, string> = {
   hasAttachment: "has",
   isRead: "is",
 };
+const operatorFor = (key: string) => FILTER_OPERATORS[key] ?? key;
 
 export function useMailCommandPaletteSearch(
   query: Ref<string>,
@@ -81,17 +83,14 @@ export function useMailCommandPaletteSearch(
   const hasMultipleAccounts = computed(
     () => (getMailUser().userResource.data?.accounts?.length ?? 0) > 1,
   );
-  const allAccounts = ref(
-    localStorage.getItem(ALL_ACCOUNTS_STORAGE_KEY) === "true",
-  );
+  const allAccounts = useStorage(ALL_ACCOUNTS_STORAGE_KEY, false);
   // A preference remembered from when there were several accounts must not quietly widen a search
   // for someone who now has one — it is the toggle's own state that is kept, not its effect.
   const searchesAllAccounts = computed(
     () => allAccounts.value && hasMultipleAccounts.value,
   );
+  // A folder belongs to one account, so it cannot survive the widening.
   watch(allAccounts, (value) => {
-    localStorage.setItem(ALL_ACCOUNTS_STORAGE_KEY, String(value));
-    // A folder belongs to one account, so it cannot survive the widening.
     if (value) removeFilter("inMailbox");
   });
 
@@ -121,10 +120,16 @@ export function useMailCommandPaletteSearch(
     debounce: 180,
   });
 
-  const filter = computed(() => ({
-    ...Object.fromEntries(
+  // The filters held as badges, keyed: what the filter panel edits, and what the parsed query
+  // line is laid over to make the search. `absorbQueryFilters` moves typed operators across
+  // before the panel opens, so it never loses a `from:` half-typed on the line.
+  const filterValues = computed(() =>
+    Object.fromEntries(
       appliedFilters.value.map(({ key, value }) => [key, value]),
     ),
+  );
+  const filter = computed(() => ({
+    ...filterValues.value,
     ...parseMailSearchQuery(query.value.trim()),
   }));
   const requestFilter = computed(() => ({
@@ -163,14 +168,17 @@ export function useMailCommandPaletteSearch(
   // How many mails matched in all, which `search_mails` returns beside the page it hands back.
   // What the palette shows is capped at RESULT_LIMIT, so this is how it knows whether there is
   // anything past the rows on screen.
-  const total = computed(() =>
+  const answer = computed<
+    [Omit<MailSearchResult, "resultType">[], number] | null
+  >(() =>
     active.value && Array.isArray(searchResource.data?.[0])
-      ? Number(searchResource.data[1] ?? 0)
-      : 0,
+      ? searchResource.data
+      : null,
   );
+  const total = computed(() => Number(answer.value?.[1] ?? 0));
   const results = computed<MailSearchResult[]>(() => {
-    if (!active.value || !Array.isArray(searchResource.data?.[0])) return [];
-    return searchResource.data[0].map(
+    if (!answer.value) return [];
+    return answer.value[0].map(
       (mail: Omit<MailSearchResult, "resultType">) => ({
         ...mail,
         resultType: "mail" as const,
@@ -286,47 +294,26 @@ export function useMailCommandPaletteSearch(
   });
 
   function getFilterLabel(filter: MailSearchFilterBadge) {
-    return `${FILTER_OPERATORS[filter.key] ?? filter.key}:${filter.displayValue}`;
+    return `${operatorFor(filter.key)}:${filter.displayValue}`;
   }
 
   // One rule for what a badge says, so a filter reads the same however it arrived: typed as an
   // operator, chosen from a suggestion, set in the filter panel, or flipped where it stands.
-  function badgeFor(
-    key: string,
-    value: string,
-    displayValue?: string,
-  ): MailSearchFilterBadge {
+  function badgeFor(key: string, value: string): MailSearchFilterBadge {
     const answers = INVERTIBLE_FILTERS[key];
     if (answers)
       return { key, value, displayValue: answers[value === "true" ? "true" : "false"] };
-    if (displayValue) return { key, value, displayValue };
     if (key === "inMailbox")
-      return {
-        key,
-        value,
-        displayValue:
-          (getMailUser().mailboxes.data ?? []).find(
-            (mailbox: { id: string }) => mailbox.id === value,
-          )?._name ?? value,
-      };
+      return { key, value, displayValue: findMailbox(value)?._name ?? value };
     return { key, value, displayValue: value };
   }
 
-  function applyFilter(key: string, value: string, displayValue?: string) {
+  function applyFilter(key: string, value: string) {
     appliedFilters.value = [
       ...appliedFilters.value.filter((filter) => filter.key !== key),
-      badgeFor(key, value, displayValue),
+      badgeFor(key, value),
     ];
   }
-
-  // What the filter panel edits: the filters that are held as badges, without the ones still being
-  // typed as operators in the query. `absorbQueryFilters` moves those across first, so opening the
-  // panel never loses a `from:` half-typed on the query line.
-  const filterValues = computed(() =>
-    Object.fromEntries(
-      appliedFilters.value.map(({ key, value }) => [key, value]),
-    ),
-  );
 
   // `in:` names a folder, and only this composable can turn the name into the id the filter
   // wants — the parser leaves it alone. So folders come out of the query line first, here, and
@@ -380,7 +367,7 @@ export function useMailCommandPaletteSearch(
     const filter = appliedFilters.value.find((entry) => entry.key === key);
     if (!filter) return null;
     removeFilter(key);
-    const operator = FILTER_OPERATORS[key] ?? key;
+    const operator = operatorFor(key);
     const value = /\s/.test(filter.displayValue)
       ? `"${filter.displayValue}"`
       : filter.displayValue;
@@ -443,7 +430,7 @@ export function useMailCommandPaletteSearch(
     if (token.slice(0, separator).toLowerCase() === "in") {
       const mailbox = findMailbox(token.slice(separator + 1));
       if (!mailbox) return false;
-      applyFilter("inMailbox", mailbox.id, mailbox._name);
+      applyFilter("inMailbox", mailbox.id);
       query.value = value.slice(0, match.index).trim();
       return true;
     }
@@ -468,7 +455,7 @@ export function useMailCommandPaletteSearch(
   function selectFilterSuggestion(suggestion: MailFilterSuggestion) {
     const operator = choiceOperator.value;
     if (!operator) return;
-    applyFilter(suggestion.filterKey, suggestion.filterValue, suggestion.label);
+    applyFilter(suggestion.filterKey, suggestion.filterValue);
     query.value = query.value
       .replace(new RegExp(`(?:^|\\s)${operator.key}:[^\\s]*$`, "i"), "")
       .trim();

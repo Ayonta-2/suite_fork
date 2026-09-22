@@ -16,7 +16,7 @@
 			:placeholder="
 				mailAppliedFilters.length
 					? `Search · ${removeMailFilterShortcut} removes last filter`
-					: activeApp === 'mail'
+					: mailSearchActive
 						? 'Search'
 					: palettePlaceholder
 			"
@@ -36,7 +36,7 @@
 				</button>
 				<span v-else class="lucide-search size-4 shrink-0 text-ink-gray-6" />
 			</template>
-			<template v-if="activeApp === 'mail'" #suffix>
+			<template v-if="mailSearchActive" #suffix>
 				<Button
 					:variant="showMailFilters ? 'subtle' : 'ghost'"
 					icon="lucide-sliders-horizontal"
@@ -50,7 +50,7 @@
 		</CommandPaletteInput>
 
 		<div
-			v-if="activeApp === 'mail' && !showMailFilters"
+			v-if="mailSearchActive && !showMailFilters"
 			class="mail-search-filters relative flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2"
 			:class="{ 'pr-12': mailAppliedFilters.length }"
 		>
@@ -59,36 +59,20 @@
 				:key="filter.key"
 				class="inline-flex h-7 shrink-0 items-center gap-1 rounded-4 bg-surface-gray-2 pl-2 pr-1 text-xs"
 			>
-				<!-- A filter with two answers is inverted by clicking what it says now: the ✕ beside
-				     it is for dropping the filter, not for changing its mind.
-
-				     The same element either way, differing only in what it does. A <button> here
-				     brought its own box and its own centred text, which laid the label out
-				     differently from the plain badge beside it and clipped its first letter. -->
-				<Tooltip v-if="canInvertMailFilter(filter.key)" text="Click to invert">
+				<!-- Clicking what a badge says either flips it, for a filter with two answers, or hands
+				     it back to the query line to be edited; the ✕ beside it is for dropping it. A
+				     <span> rather than a <button>: a button brought its own box and centred text,
+				     which laid the label out differently from the plain badge beside it and clipped
+				     its first letter. -->
+				<Tooltip :text="`Click to ${mailFilterVerb(filter.key).toLowerCase()}`">
 					<span
 						class="max-w-40 cursor-pointer truncate hover:text-ink-gray-8"
 						role="button"
 						tabindex="0"
-						:aria-label="`Invert ${getMailFilterLabel(filter)}`"
+						:aria-label="`${mailFilterVerb(filter.key)} ${getMailFilterLabel(filter)}`"
 						@mousedown.prevent
-						@click.stop="invertMailFilter(filter.key)"
-						@keydown.enter.prevent="invertMailFilter(filter.key)"
-						@keydown.space.prevent="invertMailFilter(filter.key)"
-					>{{ getMailFilterLabel(filter) }}</span>
-				</Tooltip>
-				<!-- A filter with a value of its own goes back to the query line to be edited there,
-				     rather than opening a form over the results it was narrowing. -->
-				<Tooltip v-else text="Click to edit">
-					<span
-						class="max-w-40 cursor-pointer truncate hover:text-ink-gray-8"
-						role="button"
-						tabindex="0"
-						:aria-label="`Edit ${getMailFilterLabel(filter)}`"
-						@mousedown.prevent
-						@click.stop="editMailFilter(filter.key)"
-						@keydown.enter.prevent="editMailFilter(filter.key)"
-						@keydown.space.prevent="editMailFilter(filter.key)"
+						@click.stop="activateMailFilter(filter.key)"
+						@keydown.enter.space.prevent="activateMailFilter(filter.key)"
 					>{{ getMailFilterLabel(filter) }}</span>
 				</Tooltip>
 				<button
@@ -128,9 +112,10 @@
 		</div>
 
 		<MailFilterPanel
-			v-if="activeApp === 'mail' && showMailFilters"
+			v-if="mailSearchActive && showMailFilters"
 			v-model:filters="mailPanelFilters"
 			v-model:all-accounts="mailAllAccounts"
+			:has-multiple-accounts="hasMultipleMailAccounts"
 		/>
 
 		<CommandPaletteList v-else>
@@ -449,10 +434,15 @@ import {
 	useMailCommandPaletteSearch,
 	type MailFilterOption,
 } from '@/apps/mail/composables/useMailCommandPaletteSearch'
+import { userStore } from '@/apps/mail/stores/user'
+import {
+	mailSearchRoute,
+	useMobileSearch,
+	useScreenSize,
+} from '@/apps/mail/utils/composables'
 import MailFilterPanel from '@/apps/mail/components/CommandPalette/MailFilterPanel.vue'
 import MailSearchResult from '@/apps/mail/components/CommandPalette/MailSearchResult.vue'
 import MailSearchSuggestions from '@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue'
-import { useScreenSize } from '@/apps/mail/utils/composables'
 import type {
 	MailContactSuggestion,
 	MailFilterSuggestion,
@@ -554,10 +544,14 @@ const root = useRootStore()
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
+const { hasSearchQuery: mailHasSearchQuery } = useMobileSearch()
 const removeMailFilterShortcut = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
 	? '⌘⌫'
 	: 'Ctrl+Backspace'
 const paletteInput = ref<{ $el: HTMLElement } | null>(null)
+// The field itself: CommandPaletteInput exposes nothing, so it is found under the component.
+const paletteInputEl = () =>
+	paletteInput.value?.$el.querySelector<HTMLInputElement>('input')
 const query = ref('')
 // On a phone the palette is mail's search and nothing else: it is raised by the search button on
 // the mail route and by nothing anywhere else, so the app switcher and the commands are weight
@@ -568,7 +562,7 @@ const query = ref('')
 // fading, and a page-mode class tied to the route fell off mid-fade, leaving the ordinary
 // centred dialog to finish the animation.
 const mailSearchOnly = computed(
-	() => isMobile.value && activeApp.value === 'mail'
+	() => isMobile.value && mailSearchActive.value
 )
 
 // App switching is a `>` on the query line rather than a flag remembered beside it: the mode is
@@ -592,7 +586,7 @@ const paletteRecents = computed<DriveResult[]>(() => {
 	return recents.slice(0, 5)
 })
 const isMailSearchRoute = computed(
-	() => activeApp.value === 'mail' && route.params.mailbox === 'search'
+	() => mailSearchActive.value && route.params.mailbox === 'search'
 )
 const mailSearchActive = computed(() => activeApp.value === 'mail')
 const {
@@ -601,6 +595,7 @@ const {
 	availableFilterOptions: availableMailFilterOptions,
 	filter: mailFilter,
 	filterValues: mailFilterValues,
+	hasMultipleAccounts: hasMultipleMailAccounts,
 	pending: mailSearchPending,
 	searchesAllAccounts: mailSearchesAllAccounts,
 	operatorContext: mailOperatorContext,
@@ -623,6 +618,14 @@ const {
 	reset: resetMailSearch,
 } = useMailCommandPaletteSearch(query, mailSearchActive)
 const showMailFilters = ref(false)
+// Whether Enter, with no row to open, still has a search to run: something asked, and the results
+// — not the filter panel — on screen to run it from.
+const mailSearchAsked = computed(
+	() =>
+		mailSearchActive.value &&
+		!showMailFilters.value &&
+		Boolean(normalizedQuery.value || mailAppliedFilters.value.length)
+)
 // The panel edits the filters the palette holds; anything still typed as an operator on the query
 // line moves across as it opens, so the two never disagree about what is being searched.
 const mailPanelFilters = computed({
@@ -643,10 +646,17 @@ async function selectInPaletteInput(selection: {
 	end: number
 }) {
 	await nextTick()
-	const input = paletteInput.value?.$el.querySelector<HTMLInputElement>('input')
+	const input = paletteInputEl()
 	if (!input) return
 	input.focus()
 	input.setSelectionRange(selection.start, selection.end)
+}
+
+const mailFilterVerb = (key: string) =>
+	canInvertMailFilter(key) ? 'Invert' : 'Edit'
+function activateMailFilter(key: string) {
+	if (canInvertMailFilter(key)) invertMailFilter(key)
+	else void editMailFilter(key)
 }
 
 // The value of the token that just came back is selected, not merely pointed at: the filter is
@@ -656,17 +666,9 @@ async function editMailFilter(key: string) {
 	if (selection) await selectInPaletteInput(selection)
 }
 
-function openMailFilters() {
-	showMailFilters.value = true
-	absorbMailQueryFilters()
-}
-
 function toggleMailFilters() {
-	if (showMailFilters.value) {
-		showMailFilters.value = false
-		return
-	}
-	openMailFilters()
+	showMailFilters.value = !showMailFilters.value
+	if (showMailFilters.value) absorbMailQueryFilters()
 }
 
 // One object for the life of the palette: the list tracks its active item by value identity, and a
@@ -674,11 +676,10 @@ function toggleMailFilters() {
 const mailSearchPageItem: MailSearchPageItem = {
 	resultType: 'mail-search-page',
 }
-const mailSearchPageLabel = computed(() =>
-	query.value.trim()
-		? `See all results for "${query.value.trim()}"`
-		: 'See all results for these filters'
-)
+const mailSearchPageLabel = computed(() => {
+	const text = query.value.trim()
+	return text ? `See all results for "${text}"` : 'See all results for these filters'
+})
 let openSelectionInNewTab = false
 
 useKeyboardShortcut({
@@ -696,55 +697,24 @@ useKeyboardShortcut({
 // and reading that as an answer is what made the list claim "No results" mid-word.
 const settledQuery = ref('')
 const settleSearch = () => (settledQuery.value = query.value)
+// Every app's search is asked the same way: on demand, debounced, and settling the query it
+// answered however it lands.
+const appSearch = (method: 'GET' | 'POST', url: string) =>
+	createResource({
+		auto: false,
+		method,
+		url,
+		debounce: 180,
+		onSuccess: settleSearch,
+		onError: settleSearch,
+	})
 
-const driveSearch = createResource({
-	auto: false,
-	method: 'POST',
-	url: 'suite.drive.api.files.search',
-	debounce: 180,
-	onSuccess: settleSearch,
-	onError: settleSearch,
-})
-const sheetSearch = createResource({
-	auto: false,
-	method: 'POST',
-	url: 'suite.sheets.api.list_sheets',
-	debounce: 180,
-	onSuccess: settleSearch,
-	onError: settleSearch,
-})
-const slideSearch = createResource({
-	auto: false,
-	method: 'GET',
-	url: 'suite.drive.api.list.files',
-	debounce: 180,
-	onSuccess: settleSearch,
-	onError: settleSearch,
-})
-const writerSearch = createResource({
-	auto: false,
-	method: 'GET',
-	url: 'suite.writer.api.general.search',
-	debounce: 180,
-	onSuccess: settleSearch,
-	onError: settleSearch,
-})
-const meetSearch = createResource({
-	auto: false,
-	method: 'POST',
-	url: 'frappe.client.get_list',
-	debounce: 180,
-	onSuccess: settleSearch,
-	onError: settleSearch,
-})
-const calendarSearch = createResource({
-	auto: false,
-	method: 'POST',
-	url: 'suite.calendar.doctype.calendar_event.calendar_event.fetch_calendar_events',
-	debounce: 180,
-	onSuccess: settleSearch,
-	onError: settleSearch,
-})
+const driveSearch = appSearch('POST', 'suite.drive.api.files.search')
+const sheetSearch = appSearch('POST', 'suite.sheets.api.list_sheets')
+const slideSearch = appSearch('GET', 'suite.drive.api.list.files')
+const writerSearch = appSearch('GET', 'suite.writer.api.general.search')
+const meetSearch = appSearch('POST', 'frappe.client.get_list')
+const calendarSearch = appSearch('POST', 'suite.calendar.doctype.calendar_event.calendar_event.fetch_calendar_events')
 const normalizedQuery = computed(() => query.value.trim().toLowerCase())
 const appQuery = computed(() =>
 	normalizedQuery.value.replace(/^>\s*/, '').trim()
@@ -835,7 +805,7 @@ const apps = computed(() =>
 	getAppSwitcherItems(String(route.meta.appId ?? ''), true)
 )
 const filteredApps = computed(() => {
-	if (activeApp.value === 'mail' && mailAppliedFilters.value.length) return []
+	if (mailSearchActive.value && mailAppliedFilters.value.length) return []
 	if (!appQuery.value) return apps.value
 	return apps.value.filter((app) =>
 		`${app.title} ${app.name}`.toLowerCase().includes(appQuery.value)
@@ -857,7 +827,7 @@ const filteredCommands = computed(() => {
 	if (
 		navigationMode.value ||
 		mailSearchOnly.value ||
-		(activeApp.value === 'mail' && mailAppliedFilters.value.length)
+		(mailSearchActive.value && mailAppliedFilters.value.length)
 	)
 		return []
 	const commands = root.paletteGroups.flatMap((group) => group.commands)
@@ -883,11 +853,7 @@ function commandRank(command: PaletteCommand) {
 
 function enterHint(item: unknown) {
 	if (!item || typeof item !== 'object')
-		return activeApp.value === 'mail' &&
-			!showMailFilters.value &&
-			(normalizedQuery.value || mailAppliedFilters.value.length)
-			? 'to see all results'
-			: 'to open'
+		return mailSearchAsked.value ? 'to see all results' : 'to open'
 	if ('id' in item) {
 		item = filteredCommands.value.find((command) => command.id === item.id) ?? item
 	}
@@ -931,21 +897,13 @@ function formatCalendarStart(event: CalendarResult) {
 	)
 }
 
-function mailSearchLocation(): RouteLocationRaw {
-	return {
-		name: 'mail-mailbox',
-		params: {
-			accountId: String(
-				route.params.accountId || localStorage.getItem('mail-account-id') || ''
-			),
-			mailbox: 'search',
-		},
-		query: {
-			...mailFilter.value,
-			...(mailSearchesAllAccounts.value ? { all_accounts: '1' } : {}),
-		},
-	}
-}
+// The search as it stands, as a route query: the search page's, and each result's.
+const mailSearchQuery = computed(() => ({
+	...mailFilter.value,
+	...(mailSearchesAllAccounts.value ? { all_accounts: '1' } : {}),
+}))
+const mailSearchLocation = (): RouteLocationRaw =>
+	mailSearchRoute(userStore().accountId, mailSearchQuery.value)
 
 async function applyMailQuickFilter(option: MailFilterOption) {
 	if (option.value) {
@@ -977,8 +935,7 @@ watch(
 		)
 			return
 		await nextTick()
-		const input =
-			paletteInput.value?.$el.querySelector<HTMLInputElement>('input')
+		const input = paletteInputEl()
 		if (!input) return
 		const activeItem = paletteInput.value?.$el
 			.closest('[data-slot="command-palette"]')
@@ -994,6 +951,10 @@ watch(
 watch(
 	[query, mailAppliedFilters, mailAllAccounts, showMailFilters],
 	([value]) => {
+		// Nothing to search for while the filter panel is up: its results are not on screen, every
+		// keystroke in a field would ask for a set nobody is reading — and nothing is in flight to
+		// cancel, since opening the panel already did.
+		if (mailSearchActive.value && showMailFilters.value) return
 		const text = value.trim()
 		cancelSearches()
 		// Nothing on the server answers "which app": the list is already here.
@@ -1002,14 +963,8 @@ watch(
 			return
 		}
 
-		if (activeApp.value === 'mail') {
-			// Nothing to search for while the panel is up: its results are not on screen, and every
-			// keystroke in a field would ask for a set nobody is reading.
-			if (showMailFilters.value) return
-			const account = String(
-				route.params.accountId || localStorage.getItem('mail-account-id') || ''
-			)
-			searchMail(value, account)
+		if (mailSearchActive.value) {
+			searchMail(value, userStore().accountId)
 			return
 		}
 
@@ -1062,8 +1017,7 @@ watch(
 				expand_recurrences: false,
 			})
 		}
-	},
-	{ deep: true }
+	}
 )
 
 watch(
@@ -1103,7 +1057,7 @@ watch(
 // Asked but not yet answered — the debounce it is waiting out included, which is exactly when an
 // empty list means "not yet" rather than "nothing".
 const isSearching = computed(() =>
-	activeApp.value === 'mail'
+	mailSearchActive.value
 		? mailSearchPending.value
 		: settledQuery.value !== query.value
 )
@@ -1116,7 +1070,7 @@ const emptyMessage = computed(() => {
 	if (navigationMode.value) return `No app matches "${appQuery.value}"`
 	if (mailOperatorContext.value) return mailOperatorContext.value.prompt
 	if (
-		activeApp.value !== 'mail' &&
+		!mailSearchActive.value &&
 		text &&
 		text.length < minimumQueryLength &&
 		contextSearchLabel.value
@@ -1129,7 +1083,7 @@ const emptyMessage = computed(() => {
 
 function resetSearches() {
 	// Nothing was asked, so nothing is outstanding: the query is as answered as it is going to be.
-	settledQuery.value = query.value
+	settleSearch()
 	cancelSearches()
 	for (const resource of [
 		driveSearch,
@@ -1193,8 +1147,7 @@ function handlePaletteEnter(event: KeyboardEvent) {
 	// Nothing highlighted, so there is no row for Enter to open — but in mail it still means
 	// "search for this", and the results page is where that answer lives however few rows came
 	// back here. Left alone while the filter panel is up: Enter belongs to the field you are in.
-	if (activeItem || showMailFilters.value || activeApp.value !== 'mail') return
-	if (!normalizedQuery.value && !mailAppliedFilters.value.length) return
+	if (activeItem || !mailSearchAsked.value) return
 	event.preventDefault()
 	event.stopPropagation()
 	void openMailSearchPage()
@@ -1215,11 +1168,10 @@ async function goToMailSearch() {
 // search altogether — the route that hosted the editor goes with it, back to the folder it was
 // opened from, or to the inbox when there is no folder behind it.
 function leaveMobileSearch() {
-	const hasSearch = Object.keys(route.query).some((key) => key !== 'all_accounts')
 	// Closed first either way, so the fade starts from here rather than from whichever watcher
 	// notices the route has gone.
 	root.paletteOpen = false
-	if (hasSearch) return
+	if (mailHasSearchQuery.value) return
 	if (window.history.state?.back) history.back()
 	else router.replace('/mail')
 }
@@ -1293,10 +1245,7 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 					mailbox: 'search',
 					threadID: item.thread_id,
 				},
-				query: {
-					...mailFilter.value,
-					...(mailSearchesAllAccounts.value ? { all_accounts: '1' } : {}),
-				},
+				query: mailSearchQuery.value,
 			}
 		} else if (item.resultType === 'calendar-event') {
 			const start = calendarEventStart(item)
@@ -1415,7 +1364,7 @@ onScopeDispose(() => {
 	}
 
 	.dialog-content:has(> .mail-mobile-search-page)[data-state='closed'] {
-		animation: mail-search-page-out 150ms ease-in;
+		animation: mail-search-page-in 150ms ease-in reverse;
 	}
 
 	@keyframes mail-search-page-in {
@@ -1424,15 +1373,6 @@ onScopeDispose(() => {
 		}
 		to {
 			opacity: 1;
-		}
-	}
-
-	@keyframes mail-search-page-out {
-		from {
-			opacity: 1;
-		}
-		to {
-			opacity: 0;
 		}
 	}
 

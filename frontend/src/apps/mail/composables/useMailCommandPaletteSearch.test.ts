@@ -85,7 +85,7 @@ describe('opening the filter panel', () => {
 
 	it('keeps filters already held alongside the ones it takes over', () => {
 		const search = openSearch()
-		search.applyFilter('inMailbox', 'mailbox-1', 'Inbox')
+		search.applyFilter('inMailbox', 'mailbox-1')
 		search.query.value = 'subject:invoice'
 
 		search.absorbQueryFilters()
@@ -334,7 +334,7 @@ describe('editing a filter', () => {
 describe('inverting a filter', () => {
 	it('flips the two-answer filters and says so', () => {
 		const search = openSearch()
-		search.applyFilter('hasAttachment', 'true', 'With attachments')
+		search.applyFilter('hasAttachment', 'true')
 
 		search.invertFilter('hasAttachment')
 
@@ -350,7 +350,7 @@ describe('inverting a filter', () => {
 
 	it('reads unread as read and back', () => {
 		const search = openSearch()
-		search.applyFilter('isRead', 'false', 'Unread')
+		search.applyFilter('isRead', 'false')
 
 		search.invertFilter('isRead')
 
@@ -359,7 +359,7 @@ describe('inverting a filter', () => {
 
 	it('inverts in place, so the badge does not move down the row', () => {
 		const search = openSearch()
-		search.applyFilter('isRead', 'false', 'Unread')
+		search.applyFilter('isRead', 'false')
 		search.applyFilter('from', 'alice@example.com')
 
 		search.invertFilter('isRead')
@@ -466,7 +466,7 @@ describe('whether the results are the answer', () => {
 		answer.value()
 		const asked = searches.length
 
-		search.applyFilter('inMailbox', 'mailbox-1', 'Inbox')
+		search.applyFilter('inMailbox', 'mailbox-1')
 		search.search('invoice', 'work')
 
 		expect(searches.length).toBe(asked + 1)
@@ -568,7 +568,7 @@ describe('searching every account', () => {
 
 	it('drops the folder filter, which belongs to a single account', async () => {
 		const search = openSearch()
-		search.applyFilter('inMailbox', 'mailbox-1', 'Inbox')
+		search.applyFilter('inMailbox', 'mailbox-1')
 
 		search.allAccounts.value = true
 		await nextTick()

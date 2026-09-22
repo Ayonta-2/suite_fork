@@ -73,7 +73,7 @@ import { Search, X } from 'lucide-vue-next'
 import { Button, FormControl } from 'frappe-ui'
 
 import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
-import { useScreenSize } from '@/apps/mail/utils/composables'
+import { mailSearchRoute, useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import { useRootStore } from '@/stores/root'
 
@@ -137,7 +137,7 @@ const searchFilterChips = computed(() => {
 // search view for the Inbox.
 const searchWith = (query: Record<string, string>) => {
 	if (!Object.keys(query).length) return exitSearch()
-	router.push({ name: 'mail-mailbox', params: { accountId, mailbox: 'search' }, query })
+	router.push(mailSearchRoute(accountId, query))
 }
 const removeSearchFilter = (key: string) => {
 	const query = { ...route.query } as Record<string, string>

@@ -47,14 +47,14 @@
 					v-model="filter.hasAttachment"
 					type="select"
 					:label="__('Attachments')"
-					:options="getAttachmentOptions()"
+					:options="attachmentOptions"
 					class="w-full min-w-0"
 				/>
 				<FormControl
 					v-model="filter.isRead"
 					type="select"
 					:label="__('Read Status')"
-					:options="getReadStatusOptions()"
+					:options="readStatusOptions"
 					class="w-full min-w-0"
 				/>
 			</div>
@@ -90,23 +90,19 @@ const filters = defineModel<Record<string, string>>('filters', {
 	required: true,
 })
 const allAccounts = defineModel<boolean>('allAccounts', { required: true })
+// Told, not re-derived: the search composable already knows, and hands it to whoever mounts this.
+defineProps<{ hasMultipleAccounts: boolean }>()
 
-const { mailboxes, userResource } = userStore()
+const { mailboxes } = userStore()
 
-const hasMultipleAccounts = computed(
-	() => (userResource.data?.accounts?.length ?? 0) > 1,
-)
+const attachmentOptions = getAttachmentOptions()
+const readStatusOptions = getReadStatusOptions()
 
 // A field per filter, because a form wants somewhere to put an empty string and the filters the
 // palette holds only name the ones that are set. The fields are seeded once, on open — writing the
 // trimmed filters back into them would take the space out from under a word being typed.
-const emptyFilter = () =>
-	Object.fromEntries(FILTER_KEYS.map((key) => [key, ''])) as Record<
-		string,
-		string
-	>
 const filter = reactive<Record<string, string>>({
-	...emptyFilter(),
+	...Object.fromEntries(FILTER_KEYS.map((key) => [key, ''])),
 	...filters.value,
 })
 
