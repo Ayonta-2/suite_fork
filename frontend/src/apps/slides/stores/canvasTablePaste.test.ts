@@ -118,13 +118,14 @@ describe('pasting a spreadsheet range onto the canvas', () => {
 			inSheetsWrapper(
 				`<tr><td rowspan="2" style="font-weight:bold">tall</td>` +
 					`<td style="font-style:italic;text-decoration:underline line-through">marks</td></tr>` +
-					`<tr><td>b</td></tr>`,
+					`<tr><td>two  spaces</td></tr>`,
 				`<colgroup><col width="100"/><col width="200"/></colgroup>`,
 			),
 		)
 		const [tall, marks] = readTds(table.content)
 
 		expect(readSpans(table.content)).toEqual(['1x2', '1x1', '1x1'])
+		expect(readCells(table.content)[1]).toEqual([['two  spaces']])
 		expect(tall.querySelector('strong')).not.toBeNull()
 		expect(['em', 'u', 's'].map((tag) => marks.querySelector(tag))).not.toContain(null)
 		// 300 total shared 1:2
