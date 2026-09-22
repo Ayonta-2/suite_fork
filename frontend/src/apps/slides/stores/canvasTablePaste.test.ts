@@ -23,18 +23,23 @@ const inSheetsWrapper = (rows: string, colgroup = '') =>
 
 const row = (...cells: string[]) => `<tr>${cells.map((cell) => `<td>${cell}</td>`).join('')}</tr>`
 
-// A1:C3 as Sheets copies it: A2:A3 and B3:C3 merged, a two-line C2, a bold header row,
-// a filled A2, a bigger right-aligned B2, a coloured C2, an underlined struck italic A3
-const sheetsRange = inSheetsWrapper(
-	`<tr><td style="font-weight:bold">Name</td><td style="font-weight:bold">qty</td>` +
-		`<td style="font-weight:bold">notes</td></tr>` +
-		`<tr><td rowspan="2" colspan="1" style="background-color:#fff2cc">tall</td>` +
-		`<td style="font-size:14pt;text-align:right">12</td>` +
-		`<td style="color:#990000">line one <br/>line two</td></tr>` +
-		`<tr><td rowspan="1" colspan="2" style="font-style:italic;` +
-		`text-decoration:underline line-through">wide</td></tr>`,
-	`<colgroup><col width="100"/><col width="200"/><col width="100"/></colgroup>`,
-)
+// A1:C2 exactly as Sheets put it on the clipboard: a filled A1, a bigger right-aligned
+// B1, a coloured C1, A2:B2 merged, a two-line C2
+const sheetsRange =
+	`<meta charset='utf-8'><google-sheets-html-origin>` +
+	`<style type="text/css"><!--td {border: 1px solid #cccccc;}br {mso-data-placement:same-cell;}--></style>` +
+	`<table xmlns="http://www.w3.org/1999/xhtml" cellspacing="0" cellpadding="0" dir="ltr" border="1" ` +
+	`style="table-layout:fixed;font-size:10pt;font-family:Arial;width:0px;border-collapse:collapse;border:none" ` +
+	`data-sheets-root="1" data-sheets-baot="1">` +
+	`<colgroup><col width="100"/><col width="100"/><col width="100"/></colgroup>` +
+	`<tbody><tr style="height:21px;">` +
+	`<td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;background-color:#fff2cc;">Apple</td>` +
+	`<td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;font-size:14pt;text-align:right;">12</td>` +
+	`<td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;color:#990000;">red</td>` +
+	`</tr><tr style="height:21px;">` +
+	`<td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;" rowspan="1" colspan="2">wide</td>` +
+	`<td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;">line one <br/>line two</td>` +
+	`</tr></tbody></table>`
 
 const elements = () => slides.value[0].elements
 
@@ -85,32 +90,46 @@ describe('pasting a spreadsheet range onto the canvas', () => {
 		const table = await paste(sheetsRange)
 
 		expect(readCells(table.content)).toEqual([
-			[['Name'], ['qty'], ['notes']],
-			[['tall'], ['12'], ['line one', 'line two']],
-			[['wide']],
+			[['Apple'], ['12'], ['red']],
+			[['wide'], ['line one', 'line two']],
 		])
-		expect(readSpans(table.content)).toEqual(['1x1', '1x1', '1x1', '1x2', '1x1', '1x1', '2x1'])
-		expect(getTableSize(table.content)).toEqual({ rows: 3, columns: 3 })
+		expect(readSpans(table.content)).toEqual(['1x1', '1x1', '1x1', '2x1', '1x1'])
+		expect(getTableSize(table.content)).toEqual({ rows: 2, columns: 3 })
 		expect(getTableWidth(table.content)).toBe(table.width)
 	})
 
-	it('keeps the cell formatting and the column ratios', async () => {
+	it('keeps the cell formatting', async () => {
 		slides.value[0].background = '#000000'
 		const table = await paste(sheetsRange)
-		const [name, , , tall, qty, notes, wide] = readTds(table.content)
+		const [apple, qty, red, wide] = readTds(table.content)
 
-		expect(name.querySelector('strong')).not.toBeNull()
-		expect(textColorOf(name)).toBe('#ffffff')
-		expect(hexOf(tall.style.backgroundColor)).toBe('#fff2cc')
-		expect(textColorOf(tall)).toBe('#000000')
+		expect(hexOf(apple.style.backgroundColor)).toBe('#fff2cc')
+		expect(textColorOf(apple)).toBe('#000000')
 		expect(qty.querySelector('span')!.style.fontSize).toBe('25px')
 		expect(qty.querySelector('p')!.style.textAlign).toBe('right')
-		expect(textColorOf(notes)).toBe('#990000')
-		expect(['em', 'u', 's'].map((tag) => wide.querySelector(tag))).not.toContain(null)
+		expect(textColorOf(red)).toBe('#990000')
+		expect(textColorOf(wide)).toBe('#ffffff')
+		// a merged cell holds the widths of both its columns
+		expect(wide.getAttribute('colwidth')).toBe('150,150')
+	})
 
-		// 450 total shared 1:2:1, and a merged cell holds the widths of both its columns
-		expect(name.getAttribute('colwidth')).toBe('113')
-		expect(wide.getAttribute('colwidth')).toBe('225,113')
+	it('keeps the marks, a cell merged downwards and the column ratios', async () => {
+		const table = await paste(
+			inSheetsWrapper(
+				`<tr><td rowspan="2" style="font-weight:bold">tall</td>` +
+					`<td style="font-style:italic;text-decoration:underline line-through">marks</td></tr>` +
+					`<tr><td>b</td></tr>`,
+				`<colgroup><col width="100"/><col width="200"/></colgroup>`,
+			),
+		)
+		const [tall, marks] = readTds(table.content)
+
+		expect(readSpans(table.content)).toEqual(['1x2', '1x1', '1x1'])
+		expect(tall.querySelector('strong')).not.toBeNull()
+		expect(['em', 'u', 's'].map((tag) => marks.querySelector(tag))).not.toContain(null)
+		// 300 total shared 1:2
+		expect(tall.getAttribute('colwidth')).toBe('100')
+		expect(marks.getAttribute('colwidth')).toBe('200')
 	})
 
 	it('trims the empty rows a whole-column copy brings along', async () => {
