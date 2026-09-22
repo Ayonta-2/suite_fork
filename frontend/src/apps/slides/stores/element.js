@@ -166,28 +166,34 @@ const getElementContent = (element) => {
 	return generateHTML(contentJSON, extensions)
 }
 
-const getInitialTableContent = (rows, cols, columnWidth, cellStyles) => {
-	// marks need text to sit on, so an empty cell has nothing to style
-	const placeholder = {
-		type: 'text',
-		text: ZWSP,
-		marks: [{ type: 'textStyle', attrs: cellStyles }],
-	}
-
-	const getCell = (type) => ({
-		type,
-		attrs: { colspan: 1, rowspan: 1, colwidth: [columnWidth] },
+const getInitialTableContent = (rows, cols, columnWidth, cellStyles, cells) => {
+	const getParagraph = (line) => ({
+		type: 'paragraph',
+		attrs: { textAlign: 'left', lineHeight: 1.5 },
 		content: [
-			{ type: 'paragraph', attrs: { textAlign: 'left', lineHeight: 1.5 }, content: [placeholder] },
+			{
+				type: 'text',
+				// marks need text to sit on, so an empty line has nothing to style
+				text: line || ZWSP,
+				marks: [{ type: 'textStyle', attrs: cellStyles }],
+			},
 		],
 	})
 
-	const getRow = (cellType) => ({
-		type: 'tableRow',
-		content: Array.from({ length: cols }, () => getCell(cellType)),
+	const getCell = (type, cell) => ({
+		type,
+		attrs: { colspan: 1, rowspan: 1, colwidth: [columnWidth] },
+		content: (cell?.lines.length ? cell.lines : ['']).map(getParagraph),
 	})
 
-	const tableRows = [getRow('tableHeader')]
+	const getRow = (cellType, rowCells) => ({
+		type: 'tableRow',
+		content: Array.from({ length: cols }, (_, col) => getCell(cellType, rowCells?.[col])),
+	})
+
+	const tableRows = cells
+		? cells.map((rowCells) => getRow('tableCell', rowCells))
+		: [getRow('tableHeader')]
 	while (tableRows.length < rows) tableRows.push(getRow('tableCell'))
 
 	const contentJSON = {
@@ -440,7 +446,7 @@ const addTextElement = async (text, position, contentHTML = null) => {
 	)
 }
 
-const addTableElement = async (rows = 3, cols = 3) => {
+const addTableElement = async (rows = 3, cols = 3, cells) => {
 	// a table states its own width, so one wider than the slide is placed hanging
 	// off both edges instead of being fitted to it
 	const slideWidth = slideBounds.width / slideBounds.scale
@@ -462,12 +468,13 @@ const addTableElement = async (rows = 3, cols = 3) => {
 		id: generateUniqueId(),
 		zIndex: currentSlide.value.elements.length + 1,
 		left: position.left,
-		top: position.top,
+		// a table taller than the slide starts at its top edge, not above it
+		top: Math.max(0, position.top),
 		width,
 		opacity: 100,
 		type: 'table',
 		color: cellStyles.color,
-		content: getInitialTableContent(rows, cols, columnWidth, cellStyles),
+		content: getInitialTableContent(rows, cols, columnWidth, cellStyles, cells),
 	}
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
