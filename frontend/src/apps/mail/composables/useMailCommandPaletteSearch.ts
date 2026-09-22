@@ -34,8 +34,8 @@ export const mailFilterOptions: MailFilterOption[] = [
   { key: "inMailbox", label: "Folder", operator: "in" },
   { key: "from", label: "From", operator: "from" },
   { key: "to", label: "To", operator: "to" },
-  { key: "hasAttachment", label: "With attachments", value: "true" },
   { key: "isRead", label: "Unread", value: "false" },
+  { key: "hasAttachment", label: "With attachments", value: "true" },
 ];
 
 const ALL_ACCOUNTS_STORAGE_KEY = "mail-search-all-accounts";
@@ -95,12 +95,23 @@ export function useMailCommandPaletteSearch(
     if (value) removeFilter("inMailbox");
   });
 
+  // The last answer, kept apart from the resource that fetched it: the resource is reset whenever
+  // the query goes empty — which the palette does on its way closed — but the search it answered
+  // is very often the next one asked, when the palette is reopened over the same results.
+  // Keyed on the request as it was submitted, not as it stands when the reply lands: only the
+  // latest submit is ever left to reply, since each keystroke aborts the one before.
+  let inflightKey = "";
+  let lastAnswer: { key: string; data: unknown } | null = null;
+
   const searchResource = createResource({
     auto: false,
     method: "POST",
     url: "suite.mail.api.mail.search_mails",
     debounce: 180,
-    onSuccess: () => settle(),
+    onSuccess: (data: unknown) => {
+      lastAnswer = { key: inflightKey, data };
+      settle();
+    },
     onError: () => settle(),
   });
   const contactResource = createResource({
@@ -459,6 +470,14 @@ export function useMailCommandPaletteSearch(
       // would blank them for as long as it took the very same rows to come back — which is what
       // going into the filter panel and straight back out used to do.
       if (!pending.value && searchResource.data) return;
+      // Asked before and answered, since — handed the same answer back, without a request or
+      // the blank that waiting for one would show.
+      if (lastAnswer?.key === requestKey.value) {
+        searchResource.setData(lastAnswer.data);
+        settle();
+        return;
+      }
+      inflightKey = requestKey.value;
       searchResource.reset();
       searchResource.submit({
         account,

@@ -13,15 +13,17 @@ const answer = vi.hoisted(() => ({
 	value: (_rows?: unknown[], _matched?: number) => {},
 }))
 
-vi.mock('frappe-ui', () => ({
-	createResource: ({
+vi.mock('frappe-ui', async () => {
+	// Reactive like the real one, or a computed over `data` never learns the reply arrived.
+	const { reactive } = await import('vue')
+	const createResource = ({
 		url,
 		onSuccess,
 	}: {
 		url: string
-		onSuccess?: () => void
+		onSuccess?: (data: unknown) => void
 	}) => {
-		const resource = {
+		const resource = reactive({
 			data: null as unknown,
 			submit: Object.assign(
 				(payload: Record<string, unknown>) => {
@@ -29,7 +31,7 @@ vi.mock('frappe-ui', () => ({
 					searches.push(payload)
 					answer.value = (rows = [], matched = 0) => {
 						resource.data = [rows, matched]
-						onSuccess?.()
+						onSuccess?.(resource.data)
 					}
 				},
 				{ cancel: vi.fn() },
@@ -38,10 +40,14 @@ vi.mock('frappe-ui', () => ({
 			reset: vi.fn(() => {
 				resource.data = null
 			}),
-		}
+			setData: (data: unknown) => {
+				resource.data = data
+			},
+		})
 		return resource
-	},
-}))
+	}
+	return { createResource }
+})
 
 vi.mock('@/apps/mail/stores/user', () => ({
 	userStore: () => ({
@@ -410,6 +416,27 @@ describe('whether the results are the answer', () => {
 		expect(searches.length).toBe(asked)
 	})
 
+	// The palette clears its query as it closes, which resets the resource; reopened over the
+	// same results, it asks the same question — and should get the same answer, not a request.
+	it('hands back the answer it already has when the same search is asked again after a reset', () => {
+		const search = openSearch()
+		search.query.value = 'invoice'
+		search.search('invoice', 'work')
+		answer.value([{ thread_id: 't1', account: 'work', from_email: 'a@b.com' }], 3)
+		const asked = searches.length
+
+		search.query.value = ''
+		search.search('', 'work')
+		expect(search.results.value).toHaveLength(0)
+
+		search.query.value = 'invoice'
+		search.search('invoice', 'work')
+
+		expect(searches.length).toBe(asked)
+		expect(search.results.value).toHaveLength(1)
+		expect(search.pending.value).toBe(false)
+	})
+
 	it('asks again once a filter changes the question', () => {
 		const search = openSearch()
 		search.query.value = 'invoice'
@@ -423,7 +450,7 @@ describe('whether the results are the answer', () => {
 		expect(searches.length).toBe(asked + 1)
 	})
 
-	it('asks again when the results have been cleared', () => {
+	it('asks again for a different question once the results have been cleared', () => {
 		const search = openSearch()
 		search.query.value = 'invoice'
 		search.search('invoice', 'work')
@@ -431,7 +458,8 @@ describe('whether the results are the answer', () => {
 		const asked = searches.length
 
 		search.reset()
-		search.search('invoice', 'work')
+		search.query.value = 'receipt'
+		search.search('receipt', 'work')
 
 		expect(searches.length).toBe(asked + 1)
 	})
