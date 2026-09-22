@@ -167,7 +167,12 @@ const getElementContent = (element) => {
 	return generateHTML(contentJSON, extensions)
 }
 
-const getInitialTableContent = (rows, cols, columnWidths, cellStyles, cells) => {
+const getEmptyTableCells = (rows, cols) =>
+	Array.from({ length: rows }, (_, row) =>
+		Array.from({ length: cols }, () => ({ lines: [], colspan: 1, rowspan: 1, header: row === 0 })),
+	)
+
+const getInitialTableContent = (cells, columnWidths, cellStyles) => {
 	// a cell keeps the colour it came with; without one it reads against its own fill,
 	// or the slide when it has none
 	const getTextColor = ({ color, fill }) =>
@@ -200,8 +205,8 @@ const getInitialTableContent = (rows, cols, columnWidths, cellStyles, cells) => 
 		],
 	})
 
-	const getCell = (type, col, { lines = [], colspan = 1, rowspan = 1, style = {} } = {}) => ({
-		type,
+	const getCell = (col, { lines, colspan, rowspan, style = {}, header }) => ({
+		type: header ? 'tableHeader' : 'tableCell',
 		attrs: {
 			colspan,
 			rowspan,
@@ -212,19 +217,14 @@ const getInitialTableContent = (rows, cols, columnWidths, cellStyles, cells) => 
 	})
 
 	// a null slot sits under a merged cell and gets no cell of its own
-	const getRow = (cellType, rowCells = Array.from({ length: cols })) => ({
+	const getRow = (rowCells) => ({
 		type: 'tableRow',
-		content: rowCells.flatMap((cell, col) => (cell === null ? [] : [getCell(cellType, col, cell)])),
+		content: rowCells.flatMap((cell, col) => (cell ? [getCell(col, cell)] : [])),
 	})
-
-	const tableRows = cells
-		? cells.map((rowCells) => getRow('tableCell', rowCells))
-		: [getRow('tableHeader')]
-	while (tableRows.length < rows) tableRows.push(getRow('tableCell'))
 
 	const contentJSON = {
 		type: 'doc',
-		content: [{ type: 'table', content: tableRows }],
+		content: [{ type: 'table', content: cells.map(getRow) }],
 	}
 
 	return generateHTML(contentJSON, extensions)
@@ -472,13 +472,16 @@ const addTextElement = async (text, position, contentHTML = null) => {
 	)
 }
 
-const addTableElement = async (rows = 3, cols = 3, pastedTable) => {
+const addTableElement = async (cells, columnRatios) => {
+	const rows = cells.length
+	const cols = cells[0].length
+
 	// a table states its own width, so one wider than the slide is placed hanging
 	// off both edges instead of being fitted to it
 	const slideWidth = slideBounds.width / slideBounds.scale
 	const columnWidths = shareTableWidth(
 		cols * Math.min(150, Math.floor(slideWidth / cols)),
-		pastedTable?.columnRatios || Array(cols).fill(1),
+		columnRatios || Array(cols).fill(1),
 	)
 	const width = columnWidths.reduce((total, columnWidth) => total + columnWidth, 0)
 
@@ -503,7 +506,7 @@ const addTableElement = async (rows = 3, cols = 3, pastedTable) => {
 		opacity: 100,
 		type: 'table',
 		color: cellStyles.color,
-		content: getInitialTableContent(rows, cols, columnWidths, cellStyles, pastedTable?.cells),
+		content: getInitialTableContent(cells, columnWidths, cellStyles),
 	}
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
@@ -1540,6 +1543,7 @@ export {
 	flipElements,
 	findSlideElement,
 	getInitialShapeTextContent,
+	getEmptyTableCells,
 	getInitialTableContent,
 	cropSelectionToFitContent,
 	getElementCenter,

@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
-const { getInitialTableContent } = await import('@/apps/slides/stores/element')
+const { getEmptyTableCells, getInitialTableContent } = await import('@/apps/slides/stores/element')
 const { useTextEditor } = await import('@/apps/slides/composables/useTextEditor')
 const { setCellFill } = await import('./tableCells')
 
@@ -12,7 +12,7 @@ const { activeEditor, initTextEditor } = useTextEditor()
 const openTable = (rows: number, columns: number, editable = false) =>
 	initTextEditor(
 		't1',
-		getInitialTableContent(rows, columns, Array(columns).fill(150), { fontFamily: 'Inter' }),
+		getInitialTableContent(getEmptyTableCells(rows, columns), Array(columns).fill(150), { fontFamily: 'Inter' }),
 		editable,
 	)
 

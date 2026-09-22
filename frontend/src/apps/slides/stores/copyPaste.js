@@ -109,10 +109,9 @@ const handlePastedText = async (clipboardText, clipboardHTML = '') => {
 	addTextElement(clipboardText, undefined, listHTML)
 }
 
-const handlePastedTable = async (pastedTable) => {
+const handlePastedTable = async ({ cells, columnRatios }) => {
 	await resetFocus()
-	const { cells } = pastedTable
-	addTableElement(cells.length, cells[0].length, pastedTable)
+	addTableElement(cells, columnRatios)
 }
 
 const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) => {
