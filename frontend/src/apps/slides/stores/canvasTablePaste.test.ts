@@ -42,6 +42,7 @@ const sheetsRange =
 	`</tr></tbody></table>`
 
 const elements = () => slides.value[0].elements
+let history: ReturnType<typeof useCommandHistory>
 
 const paste = async (html: string) => {
 	handlePaste({
@@ -77,7 +78,8 @@ const hexOf = (color: string) => tinycolor(color).toHexString()
 const textColorOf = (cell: HTMLTableCellElement) => hexOf(cell.querySelector('span')!.style.color)
 
 beforeEach(() => {
-	setCommandHistory(useCommandHistory(slides, { actionOrder, actions }))
+	history = useCommandHistory(slides, { actionOrder, actions })
+	setCommandHistory(history)
 	slides.value = [{ clientId: 'c1', background: '#ffffff', elements: [] }] as any
 	slideIndex.value = 0
 	// a pasted text box opens for editing, and a paste then goes into it
@@ -96,6 +98,9 @@ describe('pasting a spreadsheet range onto the canvas', () => {
 		expect(readSpans(table.content)).toEqual(['1x1', '1x1', '1x1', '2x1', '1x1'])
 		expect(getTableSize(table.content)).toEqual({ rows: 2, columns: 3 })
 		expect(getTableWidth(table.content)).toBe(table.width)
+
+		await history.undo()
+		expect(elements()).toHaveLength(0)
 	})
 
 	it('keeps the cell formatting', async () => {
