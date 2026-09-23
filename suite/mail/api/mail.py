@@ -70,6 +70,7 @@ from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, t
 from suite.mail.utils.user import get_account_emails, get_undo_send_period, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.validation import JSONList
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
 SCREENING_FETCH_LIMIT = 500
@@ -657,13 +658,10 @@ def fetch_attachment(account: str, blob_id: str) -> bytes:
 
 
 @frappe.whitelist()
-def fetch_attachments_as_zip(account: str, attachments: list[dict] | str) -> bytes:
+def fetch_attachments_as_zip(account: str, attachments: JSONList[dict]) -> bytes:
     """Returns the provided attachments bundled into a ZIP archive."""
 
-    if isinstance(attachments, str):
-        attachments = frappe.parse_json(attachments)
-
-    attachments = [a for a in (attachments or []) if a.get("blob_id")]
+    attachments = [a for a in attachments if a.get("blob_id")]
     if not attachments:
         frappe.throw(_("No attachments to download."))
 
