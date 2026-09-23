@@ -67,6 +67,7 @@ import { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils'
 import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import { parseMailto } from '@/apps/mail/utils/mailto'
+import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 import {
 	declaresFixedPalette,
 	isArtDirected,
@@ -152,13 +153,11 @@ const handleMessage = (event: MessageEvent) => {
 onMounted(() => window.addEventListener('message', handleMessage))
 onUnmounted(() => window.removeEventListener('message', handleMessage))
 
-// Collapse each top-level quoted reply (gmail_quote / frappe_mail_quote) behind a "···" toggle. Done on
-// the DOM, not regex: a quote with nested divs is wrapped as one unit, instead of the old regex stopping
-// at the first </div> and collapsing the wrong region.
+// Collapse each quoted reply trail behind a toggle. findQuoteRoots knows every client's markup (Gmail,
+// Outlook, Apple Mail, …) and hands back one outermost element per trail — hiding it hides any quotes
+// nested inside.
 const collapseQuotes = (doc: Document) => {
-	doc.querySelectorAll('.gmail_quote, .frappe_mail_quote').forEach((quote) => {
-		// Only the outermost quote gets a toggle — hiding it hides any quotes nested inside.
-		if (quote.parentElement?.closest('.gmail_quote, .frappe_mail_quote')) return
+	findQuoteRoots(doc).forEach((quote) => {
 		quote.classList.add('quote-hidden')
 		// A labelled control, not a bare '···' chip — unlabelled, it was easy to miss
 		// that a reply hides a whole conversation underneath it.
