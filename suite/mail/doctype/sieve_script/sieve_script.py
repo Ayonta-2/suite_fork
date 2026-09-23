@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import json
 import re
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -29,6 +28,7 @@ from suite.mail.jmap import (
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.user import get_account_emails
 from suite.utils import enqueue_job, execute_with_logging, parse_filters
+from suite.utils.validation import JSONList
 
 _ACCOUNTS_PER_REBUILD_BATCH = 100
 
@@ -296,11 +296,8 @@ def parse_sieve_script_name(name: str) -> tuple[str, str]:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes multiple sieve scripts given their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:

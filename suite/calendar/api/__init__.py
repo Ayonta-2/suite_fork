@@ -24,10 +24,12 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
 from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_calendar_events_by_ids,
 )
+from suite.calendar.doctype.calendar_event.fields import KNOWN_TRIGGERS, EventFields
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
 from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_participant_identities
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.validation import parse
 
 # `fetch_calendars` pages ten at a time for the desk list view; the app wants all of them.
 MAX_CALENDARS = 1000
@@ -631,35 +633,45 @@ def rsvp_calendar_event(account: str, id: str, response: str, recurrence_id: str
 
 @frappe.whitelist()
 @dynamic_rate_limit()
-def edit_calendar_event(account: str, id: str, **kwargs) -> None:
+def edit_calendar_event(account: str, id: str, send_scheduling_messages: bool = False, **kwargs) -> None:
+    """Sets the given `EventFields` on an event and keeps every other field as stored.
+
+    The JMAP update replaces the whole event, so what the caller leaves out is read back first.
+    Frappe does not check `**kwargs`, hence the explicit parse.
+    """
+
+    patch = parse(EventFields, kwargs).model_dump(exclude_unset=True)
+
     events = get_calendar_events_by_ids(account, [id])
     if not events:
         frappe.throw(_("Calendar Event {0} not found.").format(frappe.bold(id)), frappe.DoesNotExistError)
 
     event = events[0]
+    stored = {
+        **event,
+        "calendar_ids": [calendar["calendar_id"] for calendar in event["calendars"]],
+        "recurrence_rule": json.loads(event["recurrence_rule"]),
+        # An alert with a trigger this app cannot express would fail the update; the service has
+        # always dropped such alerts on write, so they are left out here instead.
+        "alerts": [alert for alert in event["alerts"] if alert["type"] in KNOWN_TRIGGERS],
+    }
 
     def resolve(key):
-        return kwargs[key] if key in kwargs else event[key]
-
-    calendar_ids = (
-        kwargs["calendar_ids"]
-        if "calendar_ids" in kwargs
-        else [calendar["calendar_id"] for calendar in event["calendars"]]
-    )
+        return patch[key] if key in patch else stored[key]
 
     update_calendar_event(
         account,
         id,
         event["uid"],
         event["organizer"],
-        calendar_ids,
+        resolve("calendar_ids"),
         resolve("status"),
         resolve("draft"),
         resolve("title"),
         resolve("start"),
         resolve("duration"),
         resolve("time_zone"),
-        json.loads(resolve("recurrence_rule")),
+        resolve("recurrence_rule"),
         resolve("show_without_time"),
         resolve("privacy"),
         resolve("free_busy_status"),
@@ -669,30 +681,8 @@ def edit_calendar_event(account: str, id: str, **kwargs) -> None:
         _with_name(resolve("participants")),
         resolve("alerts"),
         resolve("use_default_alerts"),
-        kwargs.get("send_scheduling_messages", False),
+        send_scheduling_messages,
     )
-
-
-SERIES_FIELDS = (
-    "organizer",
-    "calendar_ids",
-    "status",
-    "draft",
-    "title",
-    "start",
-    "duration",
-    "time_zone",
-    "recurrence_rule",
-    "show_without_time",
-    "privacy",
-    "free_busy_status",
-    "description",
-    "locations",
-    "links",
-    "participants",
-    "alerts",
-    "use_default_alerts",
-)
 
 
 @frappe.whitelist()
@@ -730,7 +720,7 @@ def split_calendar_event_series(
     if not rule:
         frappe.throw(_("This event does not repeat, so there is nothing following it."))
 
-    fields = {key: value for key, value in kwargs.items() if key in SERIES_FIELDS}
+    fields = parse(EventFields, kwargs).model_dump(exclude_unset=True)
     # A series edited from one of its occurrences keeps the calendars the series is in; the form
     # never names them, and without this the new half would land in the default calendar.
     if not fields.get("calendar_ids"):
@@ -749,12 +739,7 @@ def split_calendar_event_series(
         # Through edit_calendar_event, never update_calendar_event: the latter writes every
         # property it is given and NULLs every one it is not, so a caller that sent a title and
         # no start would erase the start, the duration, the rule and the organizer with it.
-        edit_calendar_event(
-            account,
-            master_id,
-            send_scheduling_messages=send_scheduling_messages,
-            **_as_edit_kwargs(fields),
-        )
+        edit_calendar_event(account, master_id, send_scheduling_messages=send_scheduling_messages, **fields)
         return master_id
 
     tail_overrides = _end_series_before(
@@ -853,10 +838,7 @@ def _end_series_before(
         head_rule["until"] = _moment_before(recurrence_id)
 
     edit_calendar_event(
-        account,
-        master_id,
-        recurrence_rule=json.dumps(head_rule),
-        send_scheduling_messages=send_scheduling_messages,
+        account, master_id, send_scheduling_messages=send_scheduling_messages, recurrence_rule=head_rule
     )
 
     service = get_calendar_event_service(account)
@@ -879,20 +861,6 @@ def spoken_rule(value: dict | None) -> str:
     """
 
     return json.dumps({k: v for k, v in (value or {}).items() if k != "@type" and v}, sort_keys=True)
-
-
-def _as_edit_kwargs(fields: dict) -> dict:
-    """`fields` in the shape edit_calendar_event resolves against the stored event.
-
-    It reads the stored `recurrence_rule` as the JSON string the formatter emits, so an
-    override has to arrive the same way; everything else passes through untouched.
-    """
-
-    kwargs = dict(fields)
-    if isinstance(kwargs.get("recurrence_rule"), dict):
-        kwargs["recurrence_rule"] = json.dumps(kwargs["recurrence_rule"])
-
-    return kwargs
 
 
 def _occurrences_before(rule: dict, start: str, recurrence_id: str) -> int | None:

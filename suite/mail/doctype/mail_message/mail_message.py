@@ -47,6 +47,7 @@ from suite.mail.utils.user import get_account_emails, get_sync_state, update_syn
 from suite.utils import clean_text, convert_html_to_text, enqueue_job, parse_filters, user_context
 from suite.utils.dt import get_utc_now
 from suite.utils.lock import acquire_lock, release_lock
+from suite.utils.validation import JSONList
 
 PREVIEW_MAX_LENGTH = 256
 
@@ -666,11 +667,8 @@ class MailMessage(Document):
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Delete multiple Mail Messages based on their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:
