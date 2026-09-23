@@ -423,13 +423,12 @@ class MailQueue(OwnerFromUser, Document):
             for rcpt_type in ["To", "Cc", "Bcc"]:
                 if _rcpt := message.get(rcpt_type):
                     for rcpt in _rcpt.split(","):
-                        recipients.append(
-                            {
-                                "type": rcpt_type,
-                                "display_name": parseaddr(rcpt)[0],
-                                "email": parseaddr(rcpt)[1],
-                            }
-                        )
+                        display_name, email = parseaddr(rcpt)
+                        # A trailing or doubled comma leaves a piece with no address in it.
+                        if email:
+                            recipients.append(
+                                {"type": rcpt_type, "display_name": display_name, "email": email}
+                            )
 
             self.recipients = json.dumps(recipients)
 

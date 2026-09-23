@@ -36,10 +36,18 @@ class TestAddresses(UnitTestCase):
             ],
         )
 
-    def test_a_row_left_blank_is_ignored(self):
-        rows = [{"type": "To", "email": "a@example.com"}, {"type": "Cc", "email": "", "display_name": ""}]
-
-        self.assertEqual([r.email for r in parse(Recipients, rows)], ["a@example.com"])
+    def test_an_incomplete_row_refuses_the_whole_list(self):
+        # Skipping it would send the mail to the others without someone the sender meant to reach.
+        valid = {"type": "To", "email": "a@example.com"}
+        for row in (
+            {"email": "b@example.com"},
+            {"type": "", "email": "b@example.com"},
+            {"type": "Cc", "display_name": "Bea"},
+            {"type": "Cc", "email": "", "display_name": "Bea"},
+            {"type": "Cc", "email": None},
+        ):
+            with self.subTest(row=row), self.assertRaises(frappe.ValidationError):
+                parse(Recipients, [valid, row])
 
     def test_malformed_recipients_are_refused(self):
         for row in (
@@ -49,6 +57,18 @@ class TestAddresses(UnitTestCase):
         ):
             with self.subTest(row=row), self.assertRaises(frappe.ValidationError):
                 parse(Recipients, [row])
+
+    def test_a_raw_message_header_with_a_stray_comma(self):
+        # Recipients read off a raw message's headers are split on commas; an empty piece is not
+        # an addressee.
+        doc = frappe.new_doc("Mail Queue")
+        doc.raw_message = "To: Ann <ann@example.com>,\nCc: , bob@example.com\nSubject: Hi\n\nHello"
+        doc.validate_raw_message()
+
+        self.assertEqual(
+            [(r.type, r.display_name, r.email) for r in doc._recipients],
+            [("To", "Ann", "ann@example.com"), ("Cc", "", "bob@example.com")],
+        )
 
 
 class TestAttachments(UnitTestCase):

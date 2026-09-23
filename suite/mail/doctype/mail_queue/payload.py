@@ -10,7 +10,7 @@ from typing import Annotated, Literal, Self
 
 from frappe import _
 from frappe.utils import random_string, validate_email_address
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 
 from suite.mail.jmap.models import EmailAddress, EmailAttachment, EmailRecipient
@@ -49,7 +49,7 @@ def _valid_email(value: str) -> str:
     return value
 
 
-Email = Annotated[str, AfterValidator(_valid_email)]
+Email = Annotated[str, Field(min_length=1), AfterValidator(_valid_email)]
 
 
 class Address(BaseModel):
@@ -124,13 +124,6 @@ class Attachment(BaseModel):
         )
 
 
-def _without_blank_rows(rows):
-    # The compose UI can send a recipient row it never filled in.
-    if isinstance(rows, list):
-        return [r for r in rows if not isinstance(r, dict) or (r.get("type") and r.get("email"))]
-    return rows
-
-
 def _each_blob_once(attachments: list[Attachment]) -> list[Attachment]:
     seen = set()
     unique = []
@@ -154,7 +147,9 @@ def _custom_headers_only(headers: dict[str, str]) -> dict[str, str]:
     return headers
 
 
-Recipients = Annotated[list[Recipient], BeforeValidator(_without_blank_rows)]
+# A row without a type or an address is refused, never skipped: skipping would send the mail
+# without someone the sender meant to reach.
+Recipients = list[Recipient]
 Attachments = Annotated[list[Attachment], AfterValidator(_each_blob_once)]
 Headers = Annotated[dict[str, str], AfterValidator(_custom_headers_only)]
 
