@@ -41,6 +41,7 @@ from suite.mail.utils import (
 )
 from suite.mail.utils.dt import normalize_utc_z, to_user_timezone
 from suite.mail.utils.email_parser import EmailParser
+from suite.mail.utils.quoted_content import strip_quote_trail
 from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
 from suite.utils import clean_text, convert_html_to_text, enqueue_job, parse_filters, user_context
@@ -1135,10 +1136,9 @@ def preview_from_html(html_body: str) -> str:
     """Returns preview text for an HTML body, excluding the quoted reply trail."""
 
     soup = BeautifulSoup(html_body, "html.parser")
-    # Strip the same quote containers the client collapses (see EmailContent.vue) so the
-    # preview surfaces the new content instead of "On ... wrote:" and everything below it.
-    for q in soup.find_all(class_=["gmail_quote", "frappe_mail_quote"]):
-        q.decompose()
+    # Strip the same quote trails the client collapses (see EmailContent.vue) so the preview
+    # surfaces the new content instead of "On ... wrote:" and everything below it.
+    strip_quote_trail(soup)
 
     # A message that is nothing but a quote would otherwise get a blank preview.
     return convert_html_to_text(str(soup)) or convert_html_to_text(html_body)

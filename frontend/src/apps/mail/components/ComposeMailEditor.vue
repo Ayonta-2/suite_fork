@@ -11,7 +11,7 @@
 	<TextEditor
 		ref="textEditor"
 		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
-		:extensions="[imageExtension, CustomParagraphExtension, ...mentionExtensions]"
+		:extensions="[imageExtension, CustomParagraphExtension, QuotedContentExtension, ...mentionExtensions]"
 		:content="editorContent"
 		:upload-function="uploadInlineImage"
 		class="flex flex-col"
@@ -276,6 +276,7 @@ import {
 	CustomParagraphExtension,
 	uploadFunction,
 } from '@/apps/mail/utils/text-editor'
+import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
 
 import type { Attachment, ComposeMailData, File as FileDoc, Identity } from '@/apps/mail/types'
