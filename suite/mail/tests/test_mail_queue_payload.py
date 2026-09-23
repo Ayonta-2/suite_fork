@@ -65,10 +65,9 @@ class TestAddresses(UnitTestCase):
         doc.raw_message = "To: Ann <ann@example.com>,\nCc: , bob@example.com\nSubject: Hi\n\nHello"
         doc.validate_raw_message()
 
-        self.assertEqual(
-            [(r.type, r.display_name, r.email) for r in doc._recipients],
-            [("To", "Ann", "ann@example.com"), ("Cc", "", "bob@example.com")],
-        )
+        self.assertEqual(doc.to, [{"name": "Ann", "email": "ann@example.com"}])
+        self.assertEqual(doc.cc, [{"name": "", "email": "bob@example.com"}])
+        self.assertEqual(doc.bcc, [])
 
 
 class TestAttachments(UnitTestCase):
