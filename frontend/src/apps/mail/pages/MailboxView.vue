@@ -16,9 +16,7 @@
 				]"
 			/>
 		</div>
-		<HeaderActions
-			v-model:show-search="showSearchModal"
-		/>
+		<HeaderActions />
 	</header>
 
 	<!-- Unscreened-thread nudge on the inbox, mirroring the trash/junk info bar: shown while Hey-style
@@ -70,10 +68,7 @@
 				<template #list>
 					<!-- The search view's own header: the query (click to edit) + removable filter pills, above
 					     the results toolbar. It owns the query surface; the results below just read the route. -->
-					<SearchResultsHeader
-						v-if="mailbox === 'search'"
-						v-model:show-search="showSearchModal"
-					/>
+					<SearchResultsHeader v-if="mailbox === 'search'" />
 
 					<!-- Mobile header: title row (folders · mailbox + count · search) over
 					     a toolbar row (filter selector on the left, filter/refresh pills on the
@@ -507,6 +502,7 @@ import {
 	useScreenSize,
 	useSwipeNav,
 	useUndo,
+	useMobileSearch,
 } from '@/apps/mail/utils/composables'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { useStoredFilter } from '@/apps/mail/utils/listFilter'
@@ -1064,7 +1060,7 @@ const shortAccountLabel = (name?: string | null) =>
 // The mobile Search tab lands on this route with no query yet. There's nothing to fetch —
 // an empty filter would run an unbounded search — so the list area shows a hint instead
 // (all_accounts is scope, not a search condition, so it alone doesn't count as a query).
-const hasSearchQuery = computed(() => Object.keys(route.query).some((k) => k !== 'all_accounts'))
+const { hasSearchQuery } = useMobileSearch()
 
 // Null while a search is pending — the count is only known once the fetch resolves (set in the
 // searchResults transform below, reset in resetThreads). Guards the title against a stale or zero count.
@@ -1665,11 +1661,6 @@ const title = computed(() => {
 
 	return filterTitle.value
 })
-
-// The search modal lives in HeaderActions but is opened from two places — its own button, and the
-// search view's header — so its state sits here, between them. Everything else about the query surface
-// belongs to SearchResultsHeader.
-const showSearchModal = ref(false)
 
 const threadCount = computed(() => {
 	const count = mailboxObj.value?.total_threads
