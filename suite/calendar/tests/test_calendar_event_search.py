@@ -1,7 +1,15 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-from suite.calendar.api import search_calendar_events_with_shared
+import frappe
+from frappe.tests import UnitTestCase
+
+from suite.calendar.api import (
+    EVENT_SEARCH_LIMIT,
+    MAX_EVENT_SEARCH_LIMIT,
+    _search_limit,
+    search_calendar_events_with_shared,
+)
 from suite.calendar.doctype.calendar_event.calendar_event import add_calendar_event
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
@@ -111,3 +119,41 @@ class TestCalendarEventSearch(StalwartIntegrationTestCase):
         found = self._search(calendar=calendar)
 
         self.assertIn(event_id, [event["id"] for event in found])
+
+
+class TestCalendarSearchBoundary(UnitTestCase):
+    """What the whitelisted search accepts. Nothing here reaches Stalwart: a search is refused,
+    or sized, before any account is asked."""
+
+    def test_a_count_is_answered_within_the_ceiling(self):
+        # The service walks the server batch by batch until it has the number it was handed, so
+        # the ceiling is what stops one request reading a whole event store.
+        self.assertEqual(_search_limit(10), 10)
+        self.assertEqual(_search_limit(10_000), MAX_EVENT_SEARCH_LIMIT)
+        self.assertEqual(_search_limit("10000"), MAX_EVENT_SEARCH_LIMIT)
+
+    def test_a_count_that_is_no_count_falls_back_to_the_default(self):
+        for asked in (None, 0, "", "not a number"):
+            with self.subTest(limit=asked):
+                self.assertEqual(_search_limit(asked), EVENT_SEARCH_LIMIT)
+
+    def test_a_negative_count_is_not_a_negative_slice(self):
+        # `events[:-5]` would drop the last five matches rather than answer with five.
+        self.assertEqual(_search_limit(-5), 1)
+
+    def test_filters_of_the_wrong_shape_are_refused_before_the_account_is_asked(self):
+        # An account that does not exist: reaching the server at all would fail differently.
+        for filters in ('["text"]', {"attendee": ["a@example.com"]}, {"calendar": 7}):
+            with (
+                self.subTest(filters=filters),
+                self.assertRaises(frappe.ValidationError),
+            ):
+                search_calendar_events_with_shared("no-such-account", "standup", filters=filters)
+
+    def test_a_search_scope_the_server_does_not_index_is_refused(self):
+        # Silently searching `text` when `participants` was asked would widen the search while
+        # reading as though it had narrowed it.
+        with self.assertRaisesRegex(frappe.ValidationError, "scope: Input should be"):
+            search_calendar_events_with_shared(
+                "no-such-account", "standup", filters={"scope": "participants"}
+            )

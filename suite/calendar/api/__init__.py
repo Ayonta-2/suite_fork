@@ -1,11 +1,13 @@
 import json
 from datetime import datetime, timedelta
+from typing import Annotated, Literal
 
 import frappe
 from dateutil.rrule import rrulestr
 from frappe import _
 from frappe.utils import cint
 from icalendar.prop import vRecur
+from pydantic import BaseModel
 
 from suite.calendar.api.rsvp import record_rsvp
 from suite.calendar.doctype.calendar.calendar import (
@@ -24,12 +26,12 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
 from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_calendar_events_by_ids,
 )
-from suite.calendar.doctype.calendar_event.fields import KNOWN_TRIGGERS, EventFields
+from suite.calendar.doctype.calendar_event.fields import KNOWN_TRIGGERS, EventFields, Lower
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
 from suite.mail.jmap import get_calendar_event_service, get_calendar_service, get_participant_identities
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
-from suite.utils.validation import parse
+from suite.utils.validation import parse, without_blanks
 
 # `fetch_calendars` pages ten at a time for the desk list view; the app wants all of them.
 MAX_CALENDARS = 1000
@@ -230,6 +232,13 @@ MAX_EVENTS_IN_WINDOW = 5000
 # What a search answers with when the caller names no count of its own.
 EVENT_SEARCH_LIMIT = 20
 
+# And the most it will answer with however large a count is asked for. The service walks the
+# server batch by batch until it has the number it was given, so an unbounded count is an
+# unbounded walk of the account's whole event store — from a whitelisted endpoint, for a
+# palette that shows ten. Bounded here for the same reason `MAX_EVENTS_IN_WINDOW` bounds the
+# grid's paging.
+MAX_EVENT_SEARCH_LIMIT = 200
+
 
 def _events_in_window(
     account: str, from_date: str, to_date: str, time_zone: str, calendar_ids: list[str] | None = None
@@ -324,22 +333,24 @@ def search_calendar_events_with_shared(
     account rather than the viewer's — a holidays calendar shared read-only, say. A search
     that asked the viewer's account alone would answer "no results" for an event the reader
     can see on the grid in front of them.
+
+    `limit` is what the caller would like and `MAX_EVENT_SEARCH_LIMIT` what it may have.
     """
 
-    limit = cint(limit) or EVENT_SEARCH_LIMIT
-    filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+    limit = _search_limit(limit)
+    filters = parse(EventSearchFilters, without_blanks(frappe.parse_json(filters) or {}), _("Filters"))
 
     # With nothing asked there is nothing to answer. Guarded here rather than per account,
     # because the `inCalendar` scoping a shared account is read with is a condition too — and
     # on its own it would hand back every event in every calendar shared with the reader.
-    if not (_search_conditions(text, filters) or filters.get("calendar")):
+    if not (_search_conditions(text, filters) or filters.calendar):
         return []
 
     # A named calendar answers for itself: it says which account to ask and which calendar in
     # it, so the fan-out has nothing left to widen. Named as `account|id`, the way every other
     # calendar-shaped argument in this app is.
-    if calendar := filters.get("calendar"):
-        calendar_account, _, calendar_id = str(calendar).partition("|")
+    if filters.calendar:
+        calendar_account, _sep, calendar_id = filters.calendar.partition("|")
         events = _search_calendar_events(
             calendar_account, text, limit, time_zone, [calendar_id], filters
         )
@@ -359,14 +370,6 @@ def search_calendar_events_with_shared(
     return events[:limit]
 
 
-# What a word typed on the query line is matched against, `text` by default. `text` is the
-# server's own union of everything an event is written in — its title, its description, where
-# it is, and the addresses of whoever called it and whoever is coming — so a name finds the
-# meeting somebody called as well as the one named after them. `title` narrows to the title
-# alone, for a caller that wants only that.
-EVENT_SEARCH_SCOPES = ("text", "title")
-DEFAULT_EVENT_SEARCH_SCOPE = "text"
-
 # The filters that are a JMAP condition each, under the name the server knows them by. Left out
 # deliberately: `participants`, `status`, `privacy`, `isDraft` and `showWithoutTime` are not
 # indexed by Stalwart, and an unindexed condition is *ignored* rather than refused — a filter
@@ -377,30 +380,54 @@ EVENT_SEARCH_CONDITIONS = {
 }
 
 
-def _search_conditions(text: str | None, filters: dict) -> list[dict]:
+def _search_limit(limit: int | str | None) -> int:
+    """How many results a search will actually answer with, whatever it was asked for."""
+
+    return max(1, min(cint(limit) or EVENT_SEARCH_LIMIT, MAX_EVENT_SEARCH_LIMIT))
+
+
+class EventSearchFilters(BaseModel):
+    """What a search may narrow on, as the palette's panel sends it.
+
+    Parsed rather than read off the request as it arrives. This is a whitelisted endpoint, so
+    `filters` is whatever JSON a caller cared to send: a list, a number, or an `attendee` that
+    is itself a list. Read straight, those reach `.strip()` and `partition()` as a server error
+    saying nothing; parsed, each says which field is wrong and why.
+
+    `scope` is what a word typed on the query line is matched against. `text` is the server's
+    own union of everything an event is written in — its title, its description, where it is,
+    and the addresses of whoever called it and whoever is coming — so a name finds the meeting
+    somebody called as well as the one named after them. `title` narrows to the title alone.
+    """
+
+    scope: Annotated[Literal["text", "title"], Lower] = "text"
+    # `account|id`, the way every other calendar-shaped argument in this app is named.
+    calendar: str = ""
+    attendee: str = ""
+    organizer: str = ""
+    after: str = ""
+    before: str = ""
+
+
+def _search_conditions(text: str | None, filters: EventSearchFilters) -> list[dict]:
     """The filters as JMAP conditions, dropping the ones left blank."""
 
-    scope = (
-        filters.get("scope")
-        if filters.get("scope") in EVENT_SEARCH_SCOPES
-        else DEFAULT_EVENT_SEARCH_SCOPE
-    )
-    conditions = [{scope: text}] if text else []
+    conditions = [{filters.scope: text}] if text else []
 
     conditions.extend(
         {condition: value}
         for key, condition in EVENT_SEARCH_CONDITIONS.items()
-        if (value := (filters.get(key) or "").strip())
+        if (value := getattr(filters, key).strip())
     )
 
     # Sent as instants, not dates: which instants a reader's "3 July" begins and ends at is a
     # question about their time zone, and the client is the one holding that. It widens each
     # to the whole day there before asking (see the calendar's `utcDayStart`/`utcDayEnd`), the
     # way the grid's own range query does.
-    if after := filters.get("after"):
-        conditions.append({"after": normalize_utc_z(after)})
-    if before := filters.get("before"):
-        conditions.append({"before": normalize_utc_z(before)})
+    if filters.after:
+        conditions.append({"after": normalize_utc_z(filters.after)})
+    if filters.before:
+        conditions.append({"before": normalize_utc_z(filters.before)})
 
     return conditions
 
@@ -411,7 +438,7 @@ def _search_calendar_events(
     limit: int,
     time_zone: str | None,
     calendar_ids: list[str] | None = None,
-    filters: dict | None = None,
+    filters: EventSearchFilters | None = None,
 ) -> list[dict]:
     """The account's matching events, on `calendar_ids` alone when given.
 
@@ -419,7 +446,7 @@ def _search_calendar_events(
     none — it asks the whole calendar, not a page of it. So a series answers as its master.
     """
 
-    filters = filters or {}
+    filters = filters or EventSearchFilters()
     conditions = _search_conditions(text, filters)
     if calendar_ids:
         conditions.append(
@@ -432,12 +459,23 @@ def _search_calendar_events(
     # looking for. Without a window the server matches a series on any occurrence in it and
     # still hands back the master, so a search of one July came back full of birthdays dated
     # the January they were first entered. Expansion needs a start and an end, which is
-    # precisely what a range is, so it is on exactly when the reader has given one.
-    expand = bool(filters.get("after") and filters.get("before"))
+    # precisely what a range is, so it is on exactly when the reader has given one. A half-open
+    # range would put us back to mis-dated masters, which is why the panel keeps both ends of
+    # its range filled: JMAP will not expand without both, so there is no half-open case to
+    # answer better than this.
+    expand = bool(filters.after and filters.before)
 
     events, _total = fetch_calendar_events(
         account, query, position=0, limit=limit, time_zone=time_zone, expand_recurrences=expand
     )
+
+    # An expanded occurrence's id is synthetic — derived from its position in the expansion —
+    # and the server renumbers it the moment that occurrence gains an override. The grid pays
+    # for this enrichment for the same reason (`_calendar_events`): without the master's id
+    # beside it, a link to a hit is a link to an id that stops resolving as soon as anyone
+    # edits or answers that occurrence. Unexpanded results are masters already, and pay nothing.
+    if expand:
+        enrich_events_with_master_data(account, events)
 
     return events
 
