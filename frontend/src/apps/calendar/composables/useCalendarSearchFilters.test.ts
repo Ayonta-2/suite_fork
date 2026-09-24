@@ -81,14 +81,16 @@ describe('useCalendarSearchFilters', () => {
 		expect(filter.before).toBe('2026-07-31')
 	})
 
-	it('drops the whole range when either end is cleared', () => {
-		const { filter, removeFilter, isNarrowed } = useCalendarSearchFilters()
+	it('leaves one end standing when the other is removed', () => {
+		const { filter, removeFilter } = useCalendarSearchFilters()
 
 		filter.after = '2026-07-01'
-		removeFilter('before')
+		filter.before = '2026-07-31'
+		removeFilter('after')
 
+		// "Everything up to the 31st" is a question of its own; the day is not taken with it.
 		expect(filter.after).toBe('')
-		expect(isNarrowed.value).toBe(false)
+		expect(filter.before).toBe('2026-07-31')
 	})
 
 	it('names a calendar badge by the calendar, not its id', () => {

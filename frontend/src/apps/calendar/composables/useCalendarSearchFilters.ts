@@ -44,22 +44,21 @@ export function useCalendarSearchFilters() {
 	// hand back a weekly standup dated the year it was first entered. So filling one end fills
 	// the other with the same day — in the field, where the reader can see it and move it. The
 	// same day rather than a year off: a single-day range is plainly a placeholder to widen,
-	// where a date a year away read as something the reader had chosen. Clearing either end
-	// clears the range rather than leaving half of it behind.
+	// where a date a year away read as something the reader had chosen. Clearing one end
+	// leaves the other: a reader who drops "from" and keeps "to" has asked for everything up
+	// to that day, and taking the day away with it answered a question they had not asked.
 	watch(
 		() => filter.after,
-		(after, was) => {
+		(after) => {
 			if (after && !filter.before) filter.before = after
-			else if (!after && was) filter.before = ''
 		},
 		{ flush: 'sync' },
 	)
 
 	watch(
 		() => filter.before,
-		(before, was) => {
+		(before) => {
 			if (before && !filter.after) filter.after = before
-			else if (!before && was) filter.after = ''
 		},
 		{ flush: 'sync' },
 	)
