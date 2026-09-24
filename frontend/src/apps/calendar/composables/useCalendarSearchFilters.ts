@@ -1,4 +1,4 @@
-import { computed, reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
 import { utcDayEnd, utcDayStart } from '@/apps/calendar/utils/datetime'
 
@@ -37,6 +37,32 @@ const emptyFilter = (): CalendarSearchFilter => ({
  */
 export function useCalendarSearchFilters() {
 	const filter = reactive<CalendarSearchFilter>(emptyFilter())
+
+	// The two dates are the ends of one range rather than two filters of their own, because
+	// only a closed range lets a series answer as the occurrence the reader is looking for:
+	// the server will not expand a recurrence without both ends, and a half-filled one would
+	// hand back a weekly standup dated the year it was first entered. So filling one end fills
+	// the other with the same day — in the field, where the reader can see it and move it. The
+	// same day rather than a year off: a single-day range is plainly a placeholder to widen,
+	// where a date a year away read as something the reader had chosen. Clearing either end
+	// clears the range rather than leaving half of it behind.
+	watch(
+		() => filter.after,
+		(after, was) => {
+			if (after && !filter.before) filter.before = after
+			else if (!after && was) filter.before = ''
+		},
+		{ flush: 'sync' },
+	)
+
+	watch(
+		() => filter.before,
+		(before, was) => {
+			if (before && !filter.after) filter.after = before
+			else if (!before && was) filter.after = ''
+		},
+		{ flush: 'sync' },
+	)
 
 	const reset = () => Object.assign(filter, emptyFilter())
 

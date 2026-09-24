@@ -62,7 +62,7 @@
 			<p class="text-p-xs text-ink-gray-5">
 				{{
 					__(
-						'A date range finds the occurrence in it, rather than the series it belongs to.',
+						'A date range finds the occurrence in it, rather than the series it belongs to — so picking one end fills the other.',
 					)
 				}}
 			</p>

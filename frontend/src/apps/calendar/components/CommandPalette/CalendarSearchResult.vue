@@ -2,7 +2,7 @@
 	<span class="flex min-w-0 flex-1 items-center gap-2.5">
 		<!-- The date as a glyph, the way mail's invite strip carries one, so the dates down a
 		     list of results scan as a column rather than as the first words of each line. -->
-		<DateChip :month="chipMonth" :day="chipDay" :color="calendarColor" small />
+		<DateChip :month="chipMonth" :day="chipDay" :color="chipColor" small />
 		<span class="flex min-w-0 flex-1 flex-col gap-0.5">
 			<span class="flex min-w-0 items-center gap-3">
 				<span class="flex min-w-0 flex-1 items-center gap-1.5">
@@ -35,7 +35,16 @@ import { eventColor } from '@/apps/calendar/utils/color'
 import DateChip from '@/apps/calendar/components/DateChip.vue'
 import type { CalendarSearchResult } from './types'
 
-const props = defineProps<{ result: CalendarSearchResult }>()
+const props = defineProps<{
+	result: CalendarSearchResult
+	/**
+	 * The colour the grid draws this event's calendar in, resolved by the shell from the
+	 * calendar list. A calendar that was never given a colour has none to send along with its
+	 * events, and the app assigns it one of the palette by position — which only something
+	 * holding the whole list can work out.
+	 */
+	calendarColor?: string
+}>()
 
 const allDay = computed(() => isAllDayEvent(props.result))
 
@@ -70,10 +79,12 @@ const subtitle = computed(() =>
 	[when.value, props.result.organizer].filter(Boolean).join(' · '),
 )
 
-// Sentence case, since it stands alone at the end of a row rather than inside a sentence.
 /** Which calendar it is on, resolved the one way every surface resolves it. */
-const calendarColor = computed(() => eventColor(props.result.calendars?.[0]?.color))
+const chipColor = computed(() =>
+	eventColor(props.calendarColor || props.result.calendars?.[0]?.color),
+)
 
+// Sentence case, since it stands alone at the end of a row rather than inside a sentence.
 const relative = computed(() => {
 	const label = start.value.fromNow()
 	return label.charAt(0).toUpperCase() + label.slice(1)

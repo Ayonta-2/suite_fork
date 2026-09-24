@@ -337,7 +337,10 @@
 				>
 					<!-- No prefix of its own: the row leads with the date chip, which is the
 					     thing a reader scans a list of events by. -->
-					<CalendarSearchResult :result="event" />
+					<CalendarSearchResult
+						:result="event"
+						:calendar-color="calendarResultColor(event)"
+					/>
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
@@ -392,8 +395,14 @@
 			</CommandPaletteGroup>
 		</CommandPaletteList>
 
+		<!-- Anything that counts as having been asked gets an answer, even "nothing matched".
+		     A calendar filter is a question with no words in it, and left out of this the
+		     palette met one with a blank panel that never said whether it had run. -->
 		<CommandPaletteEmpty
-			v-if="!showFilters && (normalizedQuery || mailAppliedFilters.length)"
+			v-if="
+				!showFilters &&
+				(normalizedQuery || mailAppliedFilters.length || calendarFilterAsked)
+			"
 		>
 			{{ emptyMessage }}
 		</CommandPaletteEmpty>
@@ -699,6 +708,19 @@ const calendarBadges = computed(() =>
 		(value) => calendarFilterOptions.value.find((o) => o.value === value)?.label || value
 	)
 )
+/**
+ * The colour the grid draws this event's calendar in, resolved from the same list the grid and
+ * the sidebar resolve it from. Not read off the event: what rides along there is the calendar's
+ * *saved* colour, and a calendar that has never been given one has none — where the rest of the
+ * app then assigns it one of the palette by position. Left to the row itself, a second calendar
+ * with no saved colour would be blue everywhere and green here.
+ */
+const calendarResultColor = (event: CalendarSearchResultItem) =>
+	calendarFilterOptions.value.find((o) => o.value === event.calendars?.[0]?.calendar)?.color
+// A calendar filter narrows on its own, so it is a search whether or not anything was typed.
+const calendarFilterAsked = computed(
+	() => calendarSearchActive.value && calendarIsNarrowed.value
+)
 // Whether Enter, with no row to open, still has a search to run: something asked, and the results
 // — not the filter panel — on screen to run it from.
 const mailSearchAsked = computed(
@@ -777,7 +799,15 @@ useKeyboardShortcut({
 // request stops loading: aborting the previous request on each keystroke stops its loading too,
 // and reading that as an answer is what made the list claim "No results" mid-word.
 const settledQuery = ref('')
-const settleSearch = () => (settledQuery.value = query.value)
+// What was asked of the calendar beyond the words, since a filter is a question on its own: with
+// nothing typed, the query alone never changes, and a search set running by a filter would have
+// looked answered from the moment it was asked.
+const calendarAsked = computed(() => JSON.stringify(calendarFilterParams.value))
+const settledCalendarFilters = ref(calendarAsked.value)
+const settleSearch = () => {
+	settledQuery.value = query.value
+	settledCalendarFilters.value = calendarAsked.value
+}
 // Every app's search is asked the same way: on demand, debounced, and settling the query it
 // answered however it lands.
 const appSearch = (method: 'GET' | 'POST', url: string) =>
@@ -1158,11 +1188,11 @@ watch(
 
 // Asked but not yet answered — the debounce it is waiting out included, which is exactly when an
 // empty list means "not yet" rather than "nothing".
-const isSearching = computed(() =>
-	mailSearchActive.value
-		? mailSearchPending.value
-		: settledQuery.value !== query.value
-)
+const isSearching = computed(() => {
+	if (mailSearchActive.value) return mailSearchPending.value
+	if (settledQuery.value !== query.value) return true
+	return calendarSearchActive.value && settledCalendarFilters.value !== calendarAsked.value
+})
 
 // Said in one place and in the order the reader needs it: what mode you are in, what the operator
 // you are halfway through wants, whether there is even enough to search on, whether the answer is
@@ -1180,6 +1210,8 @@ const emptyMessage = computed(() => {
 		return `Type more to search ${contextSearchLabel.value}`
 	if (isSearching.value) return 'Searching…'
 	if (mailAppliedFilters.value.length) return 'No mail matches these filters'
+	// A filter-only search has no words to quote back, so it names the filters instead.
+	if (calendarFilterAsked.value && !text) return 'No events match these filters'
 	return `No results for "${text}"`
 })
 

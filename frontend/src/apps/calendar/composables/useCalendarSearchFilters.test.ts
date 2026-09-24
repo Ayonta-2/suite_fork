@@ -53,6 +53,44 @@ describe('useCalendarSearchFilters', () => {
 		expect(params.value.before).toContain('T')
 	})
 
+	// Only a closed range lets the server answer with the occurrence rather than the series, so
+	// the panel never holds half of one.
+	it('closes the range on the same day when only its start is picked', () => {
+		const { filter } = useCalendarSearchFilters()
+
+		filter.after = '2026-07-01'
+
+		expect(filter.before).toBe('2026-07-01')
+	})
+
+	it('closes the range on the same day when only its end is picked', () => {
+		const { filter } = useCalendarSearchFilters()
+
+		filter.before = '2026-07-31'
+
+		expect(filter.after).toBe('2026-07-31')
+	})
+
+	it('leaves a range the reader closed themselves alone', () => {
+		const { filter } = useCalendarSearchFilters()
+
+		filter.after = '2026-07-01'
+		filter.before = '2026-07-31'
+		filter.after = '2026-07-06'
+
+		expect(filter.before).toBe('2026-07-31')
+	})
+
+	it('drops the whole range when either end is cleared', () => {
+		const { filter, removeFilter, isNarrowed } = useCalendarSearchFilters()
+
+		filter.after = '2026-07-01'
+		removeFilter('before')
+
+		expect(filter.after).toBe('')
+		expect(isNarrowed.value).toBe(false)
+	})
+
 	it('names a calendar badge by the calendar, not its id', () => {
 		const { filter, badges } = useCalendarSearchFilters()
 
