@@ -49,29 +49,38 @@ describe('QuotedContentExtension', () => {
 		expect(roundTrip('<div class="note">hello</div>')).toBe('<div>hello</div>')
 	})
 
-	// The composer's StarterKit pads the end of the body with a block the writer can type into.
-	// A click in the space below the writing puts the caret at the end of the body.
+	// The composer's StarterKit pads the end of the body with a block the writer can type into,
+	// on the first transaction — the focus the composer takes on opening. A click in the space
+	// below the writing then puts the caret at the end of the body.
 	describe('beside the trailing block', () => {
-		const typedInto = () => {
+		const opened = (content: string) => {
 			const editor = new Editor({
 				extensions: [Document, Text, CustomParagraphExtension, QuotedContentExtension, TrailingNode],
-				content: '<div>Thanks,</div>',
+				content,
 			})
-			editor.commands.focus('end')
-			editor.commands.insertContent(' all')
+			editor.commands.focus()
 			return editor
 		}
 
-		it('adds nothing to the body', () => {
-			const editor = typedInto()
-			expect(editor.getHTML()).toBe('<div>Thanks, all</div>')
+		it('adds nothing to a body that ends in the writing', () => {
+			const editor = opened('<div>Thanks,</div>')
+			expect(editor.getHTML()).toBe('<div>Thanks,</div>')
 			editor.destroy()
 		})
 
 		it('shows the caret at the end of the body', () => {
-			const editor = typedInto()
+			const editor = opened('<div>Thanks,</div>')
 			editor.commands.focus('end')
 			expect(editor.state.selection.visible).toBe(true)
+			editor.destroy()
+		})
+
+		it('leaves a line after a closing quote to write on', () => {
+			const fwd = `<div class="frappe_mail_fwd"><br><br><div class="frappe_mail_embed">${NEWSLETTER}</div></div>`
+			const editor = opened(`<div>FYI</div>${fwd}`)
+			editor.commands.focus('end')
+			editor.commands.insertContent('Thanks')
+			expect(editor.getHTML()).toBe(`<div>FYI</div>${fwd}<div>Thanks</div>`)
 			editor.destroy()
 		})
 	})
