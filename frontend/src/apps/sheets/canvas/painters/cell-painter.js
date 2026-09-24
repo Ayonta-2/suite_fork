@@ -215,6 +215,10 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     return false
   }
 
+  // Grid lines are already on the canvas when a cell paints, so a fill that
+  // covered the cell's own top/left edge would rub them out — and only those
+  // two, since the bottom/right lines belong to the neighbours. Both fills
+  // start 1px in, which lands the fill flush against the lines on every side.
   function _drawCellBackground(x, y, w, h, merge, fmt, condFmt) {
     if (merge) {
       ctx.fillStyle = COLORS.white
@@ -223,7 +227,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     const bg = condFmt?.backgroundColor || fmt.backgroundColor
     if (bg) {
       ctx.fillStyle = bg
-      ctx.fillRect(x, y, w, h)
+      ctx.fillRect(x + 1, y + 1, w - 1, h - 1)
     }
   }
 
