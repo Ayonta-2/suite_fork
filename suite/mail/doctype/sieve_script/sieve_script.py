@@ -512,7 +512,12 @@ def enqueue_automation_sieve_rebuilds(accounts: list[str], job_id_prefix: str) -
     """Rebuild the automation script of each account in the background, once the current transaction
     commits: a chain of long-queue jobs per batch of accounts, the batches side by side. Content only
     (activate=False): activating would override an account whose active script is the vacation
-    auto-responder or one the user wrote themselves."""
+    auto-responder or one the user wrote themselves.
+
+    Only a batch's first job carries `job_id_prefix` and is deduplicated — a link carrying it would
+    find the job before it still running, and be dropped. So a second call once a chain is under way
+    starts another: twice the work, though every job still reads the rules afresh.
+    """
 
     for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):
         _enqueue_automation_sieve_rebuild(batch, job_id=f"{job_id_prefix}::{i}")

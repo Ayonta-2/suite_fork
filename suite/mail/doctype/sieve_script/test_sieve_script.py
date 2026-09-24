@@ -108,6 +108,7 @@ def run_rebuild_jobs(accounts: list[str], build, refuse=lambda job: False, queue
     from suite.mail.doctype.sieve_script import sieve_script
 
     queue, jobs, most_queued, now = [], [], 0, 1_000_000.0
+    running_job_id = None
 
     def sleep(seconds):
         nonlocal now
@@ -118,6 +119,10 @@ def run_rebuild_jobs(accounts: list[str], build, refuse=lambda job: False, queue
         nonlocal most_queued
         if refuse(kwargs):
             raise frappe.QueueOverloaded("Too many queued background jobs")
+        # Frappe skips a deduplicated job while one with its id is queued or running.
+        job_id = kwargs.get("job_id")
+        if kwargs.get("deduplicate") and job_id in {running_job_id, *(job.get("job_id") for job in queue)}:
+            return
         queue.append(kwargs)
         most_queued = max(most_queued, len(queue))
 
@@ -136,6 +141,7 @@ def run_rebuild_jobs(accounts: list[str], build, refuse=lambda job: False, queue
         sieve_script.enqueue_automation_sieve_rebuilds(accounts, job_id_prefix="test")
         while queue:
             job = queue.pop(0)
+            running_job_id = job.get("job_id")
             jobs.append({**job, "rebuilt": [], "slept": 0})
             now += queue_wait
             sieve_script._rebuild_automation_sieves(
