@@ -12,14 +12,18 @@ import DOMPurify from 'dompurify'
  */
 export const QuotedContentExtension = Node.create({
 	name: 'quotedContent',
-	// Above CustomParagraphExtension, whose bare `div` rule would otherwise claim the wrapper.
-	priority: 1100,
 	group: 'block',
 	atom: true,
 	addAttributes: () => ({ html: { default: '', rendered: false } }),
 	parseHTML: () => [
 		{
 			tag: 'div.frappe_mail_quote, div.frappe_mail_fwd',
+			// Above CustomParagraphExtension's bare `div` rule (50), which would otherwise claim the
+			// wrapper. Raised on the rule, not the extension: an extension above the paragraph comes
+			// first in the schema and so becomes the default block, which StarterKit's TrailingNode
+			// then appends to every body — an empty, uneditable block that took the caret on a click
+			// below the writing, and left a blank line at the end of every mail.
+			priority: 60,
 			getAttrs: (element) => ({ html: (element as HTMLElement).outerHTML }),
 		},
 	],
