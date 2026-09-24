@@ -11,7 +11,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, create_batch, today
-from rq.timeouts import JobTimeoutException
 
 from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_settings
 from suite.mail.doctype.screened_email_address.screened_email_address import (
@@ -33,11 +32,9 @@ from suite.utils import enqueue_job, execute_with_logging, parse_filters, user_c
 from suite.utils.validation import JSONList
 
 _ACCOUNTS_PER_REBUILD_BATCH = 100
-_REBUILD_JOB_TIMEOUT = 3600
-# Seconds after which a rebuild job starts no new account and hands the rest to a new job: well clear
-# of its timeout even when the mail server is slow to answer.
-_REBUILD_JOB_BUDGET = 900
-# Seconds each retry job waits before rebuilding the accounts that failed: long enough to ride out a
+# A rebuild job serves one account — a handful of JMAP calls — so this leaves room for a slow server.
+_REBUILD_JOB_TIMEOUT = 900
+# Seconds each retry chain waits before rebuilding the accounts that failed: long enough to ride out a
 # mail server restart.
 _REBUILD_RETRY_DELAYS = (30, 120, 300)
 
@@ -512,18 +509,23 @@ def rebuild_all_automation_sieves() -> None:
 
 
 def enqueue_automation_sieve_rebuilds(accounts: list[str], job_id_prefix: str) -> None:
-    """Rebuild the automation script of each account in long-queue background batches, once the
-    current transaction commits. Content only (activate=False): activating would override an account
-    whose active script is the vacation auto-responder or one the user wrote themselves."""
+    """Rebuild the automation script of each account in the background, once the current transaction
+    commits: a chain of long-queue jobs per batch of accounts, the batches side by side. Content only
+    (activate=False): activating would override an account whose active script is the vacation
+    auto-responder or one the user wrote themselves."""
 
     for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):
         _enqueue_automation_sieve_rebuild(batch, job_id=f"{job_id_prefix}::{i}")
 
 
 def _enqueue_automation_sieve_rebuild(
-    accounts: list[str], job_id: str | None = None, attempt: int = 0, delay: int = 0
+    accounts: list[str],
+    job_id: str | None = None,
+    failures: dict[str, str] | None = None,
+    attempt: int = 0,
+    delay: int = 0,
 ) -> None:
-    """Queue one rebuild job for the accounts, once the current transaction commits."""
+    """Queue the job that rebuilds the first of the accounts, once the current transaction commits."""
 
     enqueue_job(
         _rebuild_automation_sieves,
@@ -533,69 +535,68 @@ def _enqueue_automation_sieve_rebuild(
         timeout=_REBUILD_JOB_TIMEOUT,
         enqueue_after_commit=True,
         accounts=accounts,
+        failures=failures or {},
         attempt=attempt,
         delay=delay,
     )
 
 
-def _rebuild_automation_sieves(accounts: list[str], attempt: int = 0, delay: int = 0) -> None:
-    """Rebuild each account's automation script, isolating per-account failures.
+def _rebuild_automation_sieves(
+    accounts: list[str], failures: dict[str, str] | None = None, attempt: int = 0, delay: int = 0
+) -> None:
+    """Rebuild the first account's automation script, then queue a job for the rest.
 
-    The job starts no new account once its time budget is spent, and hands the rest to a new job, so a
-    slow mail server cannot run it into its timeout. A rebuild that fails — the mail server briefly
-    unreachable, say — is retried by a later job after a wait (`delay`): nothing else rebuilds the
-    account until its user next changes a rule, and until then it keeps its old script. An account
-    that still fails after the last retry is logged.
+    One account per job, so each account's rules are read in a transaction of its own: a job serving
+    several would read the later ones from the snapshot its first read took, and could replace a
+    script a user had since rebuilt with newer rules. One account also keeps a job far from its
+    timeout, and the chain, rather than the queue, holds the accounts still to come.
+
+    `failures` carries the accounts whose rebuild failed down the chain, with their traceback. Once
+    the chain is through, a new chain retries them after a wait (`delay`) — the mail server was
+    perhaps briefly unreachable, and nothing else rebuilds an account until its user next changes a
+    rule. Those that still fail after the last retry are logged.
     """
 
     if delay:
         time.sleep(delay)
-    deadline = time.monotonic() + _REBUILD_JOB_BUDGET
 
-    failures = {}
-    for i, account in enumerate(accounts):
-        if time.monotonic() > deadline:
-            _enqueue_automation_sieve_rebuild(accounts[i:], attempt=attempt)
-            break
+    failures = dict(failures or {})
+    if accounts and (traceback := _rebuild_automation_sieve(accounts[0])):
+        failures[accounts[0]] = traceback
 
-        if traceback := _rebuild_automation_sieve(account):
-            failures[account] = traceback
-
-    if failures and attempt < len(_REBUILD_RETRY_DELAYS):
+    if rest := accounts[1:]:
+        _enqueue_automation_sieve_rebuild(rest, failures=failures, attempt=attempt)
+    elif failures and attempt < len(_REBUILD_RETRY_DELAYS):
         _enqueue_automation_sieve_rebuild(
             list(failures), attempt=attempt + 1, delay=_REBUILD_RETRY_DELAYS[attempt]
         )
-        return
-
-    for account, traceback in failures.items():
-        log_mail_error(
-            "Rebuild Automation Sieves Error",
-            f"Failed to rebuild the automation sieve script for JMAP account {account}\n\n{traceback}",
-        )
+    else:
+        for account, traceback in failures.items():
+            log_mail_error(
+                "Rebuild Automation Sieves Error",
+                f"Failed to rebuild the automation sieve script for JMAP account {account}\n\n{traceback}",
+            )
 
 
 def _rebuild_automation_sieve(account: str) -> str | None:
     """Rebuild one account's automation script, returning the traceback if it failed.
 
     It is rebuilt as a user of it who can connect, the account's owner where it has one (see
-    `get_enabled_account_user`); an account without one is skipped. A rebuild writes nothing to the
-    database — the script lives on the mail server — so the job's own transaction serves every account.
+    `get_enabled_account_user`); an account without one is skipped. Every failure is returned — the
+    job's timeout included — so that the job still hands the rest of the chain on.
     """
 
-    # The job runs async after the fan-out committed, so an account can vanish in between.
-    if not account or not frappe.db.exists("JMAP Account", account):
-        return None
-
-    user = get_enabled_account_user(account)
-    if not user:
-        return None
-
     try:
+        # The job runs async after the fan-out committed, so an account can vanish in between.
+        if not account or not frappe.db.exists("JMAP Account", account):
+            return None
+
+        user = get_enabled_account_user(account)
+        if not user:
+            return None
+
         with user_context(user):
             build_automation_sieve(account, raise_exception=True)
-    except JobTimeoutException:
-        # Out of time: let the job fail rather than carry on past its timeout.
-        raise
     except Exception:
         return frappe.get_traceback()
 

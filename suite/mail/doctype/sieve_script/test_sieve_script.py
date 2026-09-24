@@ -96,39 +96,43 @@ def route_through_gate(gate: str, sender: str, spamtest: int) -> str | None:
     return next((mailbox for test, _tags, mailbox in parse_gate(gate) if evaluate(test)), None)
 
 
-def run_rebuild_jobs(accounts: list[str], build, seconds_each: float = 0):
+def run_rebuild_jobs(accounts: list[str], build):
     """Rebuild the accounts through their background jobs, run one after another as a worker would,
-    with `build` standing in for `build_automation_sieve` and a clock that moves `seconds_each` per
-    build (and through every wait). Returns each job's arguments and duration, and the failure log."""
+    with `build` standing in for `build_automation_sieve`. Returns each job's arguments with the
+    accounts it rebuilt, the most jobs ever waiting in the queue at once, and the failure log."""
 
     import frappe
 
     from suite.mail.doctype.sieve_script import sieve_script
 
-    now, queue, jobs = [0.0], [], []
+    queue, jobs, most_queued = [], [], 0
 
-    def timed_build(account, **kwargs):
-        now[0] += seconds_each
+    def enqueue_job(method, **kwargs):
+        nonlocal most_queued
+        queue.append(kwargs)
+        most_queued = max(most_queued, len(queue))
+
+    def recorded_build(account, **kwargs):
+        jobs[-1]["rebuilt"].append(account)
         build(account, **kwargs)
-
-    def sleep(seconds):
-        now[0] += seconds
 
     with (
         patch.object(frappe.local.db, "exists", return_value=True),
         patch.object(sieve_script, "get_enabled_account_user", return_value="Administrator"),
-        patch.object(sieve_script, "build_automation_sieve", side_effect=timed_build),
-        patch.object(sieve_script, "enqueue_job", side_effect=lambda method, **kwargs: queue.append(kwargs)),
-        patch.object(sieve_script, "time", SimpleNamespace(monotonic=lambda: now[0], sleep=sleep)),
+        patch.object(sieve_script, "build_automation_sieve", side_effect=recorded_build),
+        patch.object(sieve_script, "enqueue_job", side_effect=enqueue_job),
+        patch.object(sieve_script, "time", SimpleNamespace(sleep=lambda seconds: None)),
         patch.object(sieve_script, "log_mail_error") as log_mail_error,
     ):
         sieve_script.enqueue_automation_sieve_rebuilds(accounts, job_id_prefix="test")
         while queue:
-            job, started = queue.pop(0), now[0]
-            sieve_script._rebuild_automation_sieves(job["accounts"], job["attempt"], job["delay"])
-            jobs.append({**job, "seconds": now[0] - started})
+            job = queue.pop(0)
+            jobs.append({**job, "rebuilt": []})
+            sieve_script._rebuild_automation_sieves(
+                job["accounts"], job["failures"], job["attempt"], job["delay"]
+            )
 
-    return jobs, log_mail_error
+    return jobs, most_queued, log_mail_error
 
 
 class IntegrationTestSieveScript(IntegrationTestCase):
@@ -201,35 +205,53 @@ class IntegrationTestSieveScript(IntegrationTestCase):
             if raise_exception and (account == "down" or (account == "flaky" and attempts[account] == 1)):
                 raise ConnectionError("Mail server unreachable")
 
-        jobs, log_mail_error = run_rebuild_jobs(["ok", "flaky", "down"], build)
+        jobs, _most_queued, log_mail_error = run_rebuild_jobs(["ok", "flaky", "down"], build)
 
         self.assertEqual(attempts["ok"], 1)
         self.assertEqual(attempts["flaky"], 2)
         self.assertGreater(attempts["down"], 2)
-        # Every retry is a job of its own that waits first, so a wait never eats into a job's time.
-        self.assertEqual(len(jobs), attempts["down"])
-        self.assertTrue(all(job["delay"] > 0 for job in jobs[1:]))
+        # Each retry waits first, once, and the first pass never does.
+        waits = [job for job in jobs if job["delay"] > 0]
+        self.assertEqual(len(waits), attempts["down"] - 1)
+        self.assertTrue(all(job["attempt"] for job in waits))
         self.assertEqual(log_mail_error.call_count, 1)
         self.assertIn("JMAP account down", str(log_mail_error.call_args))
 
-    def test_rebuild_hands_over_to_a_new_job_before_timing_out(self):
-        """A job run into its timeout is killed, leaving the accounts it had not reached on their old
-        script, unretried and unlogged — so a slow mail server makes it hand the rest to a new job."""
+    def test_rebuild_reads_each_account_in_a_job_of_its_own(self):
+        """Every job opens its own database transaction. A job serving several accounts would read the
+        later ones' rules from the snapshot its first read took — before a user changed them — and
+        replace the user's newer script with a stale one."""
 
-        from suite.mail.doctype.sieve_script.sieve_script import _REBUILD_JOB_BUDGET, _REBUILD_JOB_TIMEOUT
+        from suite.mail.doctype.sieve_script.sieve_script import _ACCOUNTS_PER_REBUILD_BATCH
 
-        accounts = [f"account-{i}" for i in range(10)]
-        built = Counter()
-        jobs, log_mail_error = run_rebuild_jobs(
-            accounts,
-            lambda account, **kwargs: built.update([account]),
-            seconds_each=_REBUILD_JOB_BUDGET * 0.6,
+        accounts = [f"account-{i}" for i in range(150)]
+        rebuilt = Counter()
+        jobs, most_queued, log_mail_error = run_rebuild_jobs(
+            accounts, lambda account, **kwargs: rebuilt.update([account])
         )
 
-        self.assertEqual(built, Counter(accounts))
-        self.assertGreater(len(jobs), 1)
-        self.assertLess(max(job["seconds"] for job in jobs), _REBUILD_JOB_TIMEOUT)
+        self.assertEqual(rebuilt, Counter(accounts))
+        self.assertEqual({len(job["rebuilt"]) for job in jobs}, {1})
+        # The accounts still to come wait in each batch's chain, not in the queue, which refuses new
+        # jobs past a limit.
+        self.assertLessEqual(most_queued, -(-len(accounts) // _ACCOUNTS_PER_REBUILD_BATCH))
         log_mail_error.assert_not_called()
+
+    def test_a_rebuild_that_times_out_still_passes_the_chain_on(self):
+        """A job's timeout surfaces inside it as an exception. The job must still queue the accounts
+        after it, or they would never be rebuilt, retried or logged."""
+
+        from rq.timeouts import JobTimeoutException
+
+        def build(account, raise_exception=False, **kwargs):
+            if raise_exception and account == "slow":
+                raise JobTimeoutException("Task exceeded maximum timeout value")
+
+        jobs, _most_queued, log_mail_error = run_rebuild_jobs(["slow", "next"], build)
+
+        self.assertIn("next", [account for job in jobs for account in job["rebuilt"]])
+        self.assertEqual(log_mail_error.call_count, 1)
+        self.assertIn("JMAP account slow", str(log_mail_error.call_args))
 
     def test_mailbox_paths_survive_quotes_and_backslashes(self):
         """One malformed string fails the whole script upload, leaving the account on its old script."""
