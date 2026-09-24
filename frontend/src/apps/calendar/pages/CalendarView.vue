@@ -15,6 +15,7 @@ import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { eventPeople, eventPlace, eventRowDescription } from '@/apps/calendar/utils/eventMeta'
+import { eventRowId, serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { weekSpanLabel } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import { useRootStore } from '@/stores/root'
@@ -244,6 +245,13 @@ const transformEvent = (event) => {
 
 	return {
 		...event,
+		// frappe-ui identifies a pill by `id` alone — its `:key`, and the active mark it
+		// draws from `CalendarActiveEvent` — so it is given the one that is unique across
+		// every account on the grid. The server's own id stays under `event_id`, which is
+		// what `serverEventId` reads and every call that writes an event back names it by.
+		// See utils/eventIdentity.
+		id: eventRowId(event),
+		event_id: event.id,
 		// The calendar pills render `title` verbatim (frappe-ui hardcodes an italic
 		// '[No title]' fallback), so untitled events get their placeholder here.
 		// actualTitle keeps the raw value; every path that writes back to the
@@ -458,7 +466,7 @@ const handleOpenEvent = async (e) => {
 	// from the detail card's ?event=: the card is derived from that one,
 	// so sharing it would open the sidebar under every double-clicked pill.
 	const opened = e.calendarEvent
-	const editing = opened?.master_id || opened?.id
+	const editing = opened && serverEventId(opened)
 	if (editing && route.query.edit !== editing)
 		router.replace({
 			query: {
@@ -491,7 +499,7 @@ const handleEventClick = ({ calendarEvent }) =>
 			// built from it stops resolving as soon as it is acted on, and the card loses the
 			// event it is showing. The master's id does not move, and the recurrence id beside
 			// it names the occurrence.
-			event: calendarEvent.master_id || calendarEvent.id,
+			event: serverEventId(calendarEvent),
 			recurrence: calendarEvent.recurrence_id || undefined,
 			// Ids are only unique within an account, and shared calendars bring in another's.
 			account: calendarEvent.account,
@@ -666,7 +674,7 @@ const toggleEventDetail = (calendarEvent, anchor: Element | null = null, viaRail
 	closeEventDetail()
 	railOpen.value = {
 		// The master's id, as the URL carries it — see handleEventClick.
-		id: calendarEvent.master_id || calendarEvent.id,
+		id: serverEventId(calendarEvent),
 		recurrence: calendarEvent.recurrence_id || undefined,
 		account: calendarEvent.account,
 	}
@@ -703,7 +711,39 @@ const rowOf = (e: Event) => (e.currentTarget instanceof Element ? e.currentTarge
 const activePill = () =>
 	gridRef.value?.querySelector('.event.active, .calendar-row.active') ?? null
 
+/**
+ * How long the card waits for its pill.
+ *
+ * The grid draws a view's pills a beat after the route moves — opening a search result in
+ * Week found two pills of the nine the week holds — so a single look finds nothing and the
+ * event is dropped as soon as it is opened. `ANCHOR_FRAMES` is the ordinary wait; the
+ * ceiling is what a result in another month needs, where the window it belongs to is still
+ * being fetched and no pill can exist for it until that lands.
+ */
+const ANCHOR_FRAMES = 20
+const ANCHOR_FRAME_CEILING = 180
+
+/** Every frame up to the budget, so the search ends as soon as the pill lands. */
+const settledPill = async () => {
+	for (let frame = 0; frame < ANCHOR_FRAME_CEILING; frame += 1) {
+		const pill = activePill()
+		if (pill) return pill
+		// Past the ordinary budget the wait goes on only while the window the grid draws
+		// from is still arriving: there is no pill to find for events not yet fetched, and
+		// nothing else worth waiting on once they are.
+		if (frame >= ANCHOR_FRAMES && !events.loading) break
+		await new Promise(requestAnimationFrame)
+		if (!openEvent.value) return null
+	}
+	return activePill()
+}
+
+// Which run of the watcher is current: the wait above is asynchronous, so a run that
+// started before a newer one must not write the anchor the newer one is finding.
+let anchorRun = 0
+
 watch([openEvent, visibleRange], async ([open]) => {
+	const run = (anchorRun += 1)
 	// The phone has no card: its open event is the sheet's, which hangs on
 	// nothing, and a search for a pill there would find none and close it.
 	if (!open || isMobile.value) {
@@ -716,7 +756,12 @@ watch([openEvent, visibleRange], async ([open]) => {
 	// blink the card.
 	await nextTick()
 	if (!openEvent.value) return
-	cardAnchor.value = clickedAnchor.value?.isConnected ? clickedAnchor.value : activePill()
+	const settled = clickedAnchor.value?.isConnected
+		? clickedAnchor.value
+		: await settledPill()
+	// A newer run of this watcher has taken over, or the event went while we waited.
+	if (run !== anchorRun || !openEvent.value) return
+	cardAnchor.value = settled
 	if (!cardAnchor.value) closeEventDetail()
 })
 
@@ -795,7 +840,7 @@ const findLinkedEvent = (
 const matchLinkedEvent = (data, id, recurrence) => {
 
 	const rec = (recurrence as string) ?? ''
-	const exact = data.find((e) => e.id === id && (e.recurrence_id ?? '') === rec)
+	const exact = data.find((e) => e.event_id === id && (e.recurrence_id ?? '') === rec)
 	if (exact) return exact
 
 	const instances = data.filter((e) => e.master_id === id)
@@ -1051,8 +1096,7 @@ const editEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		...eventToBeUpdated,
-		// master_id is only set on recurring events; fall back to the event's own id
-		id: eventToBeUpdated.master_id || eventToBeUpdated.id,
+		id: serverEventId(eventToBeUpdated),
 		send_scheduling_messages: sendEmail,
 	}),
 	...onEventSaved,
