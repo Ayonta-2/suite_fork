@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Text from '@tiptap/extension-text'
+import { TrailingNode } from '@tiptap/extensions'
 
 // text-editor.ts also builds the image extension on frappe-ui's, which doesn't resolve under
 // vitest; only its paragraph node (whose bare `div` rule this node has to beat) is wanted here.
@@ -46,5 +47,32 @@ describe('QuotedContentExtension', () => {
 
 	it('leaves the writer’s own markup to the schema', () => {
 		expect(roundTrip('<div class="note">hello</div>')).toBe('<div>hello</div>')
+	})
+
+	// The composer's StarterKit pads the end of the body with a block the writer can type into.
+	// A click in the space below the writing puts the caret at the end of the body.
+	describe('beside the trailing block', () => {
+		const typedInto = () => {
+			const editor = new Editor({
+				extensions: [Document, Text, CustomParagraphExtension, QuotedContentExtension, TrailingNode],
+				content: '<div>Thanks,</div>',
+			})
+			editor.commands.focus('end')
+			editor.commands.insertContent(' all')
+			return editor
+		}
+
+		it('adds nothing to the body', () => {
+			const editor = typedInto()
+			expect(editor.getHTML()).toBe('<div>Thanks, all</div>')
+			editor.destroy()
+		})
+
+		it('shows the caret at the end of the body', () => {
+			const editor = typedInto()
+			editor.commands.focus('end')
+			expect(editor.state.selection.visible).toBe(true)
+			editor.destroy()
+		})
 	})
 })
