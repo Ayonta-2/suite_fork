@@ -4,6 +4,20 @@ export interface MailSearchFilterBadge {
 	displayValue: string
 }
 
+/**
+ * A search the reader ran before, kept in the browser for the phone's empty search page. The
+ * words as typed and the badges as applied, so restoring one puts back exactly what ran; the
+ * label is what it read as, built when it was remembered so the row need not rebuild it.
+ */
+export interface MailRecentSearch {
+	resultType: 'mail-recent-search'
+	text: string
+	filters: Record<string, string>
+	label: string
+	/** When it was last run, and the row's key. */
+	at: number
+}
+
 export interface MailContactSuggestion {
 	resultType: 'mail-contact'
 	value: string

@@ -14,7 +14,7 @@
 		<CommandPaletteInput
 			ref="paletteInput"
 			:placeholder="
-				mailAppliedFilters.length
+				mailAppliedFilters.length && !mailSearchOnly
 					? `Search · ${removeMailFilterShortcut} removes last filter`
 					: hasFilterPanel
 						? 'Search'
@@ -52,7 +52,7 @@
 		<div
 			v-if="mailSearchActive && !showFilters"
 			class="mail-search-filters relative flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2"
-			:class="{ 'pr-12': mailAppliedFilters.length }"
+			:class="{ 'pr-12': mailAppliedFilters.length && !mailSearchOnly }"
 		>
 			<span
 				v-for="filter in mailAppliedFilters"
@@ -98,14 +98,19 @@
 					{{ option.label }}
 				</span>
 			</Button>
+			<!-- A word on the phone, where there is no tooltip to say what the × does, and in
+			     the row after the last chip rather than pinned to its corner: chips wrap on a
+			     phone, and a corner is on one of their lines or none. -->
 			<Button
 				v-if="mailAppliedFilters.length"
 				variant="ghost"
-				icon="lucide-x"
+				:icon="mailSearchOnly ? undefined : 'lucide-x'"
+				:label="mailSearchOnly ? __('Clear') : undefined"
 				size="sm"
-				class="mail-search-clear absolute right-4 top-2 !size-7 !p-0"
+				class="mail-search-clear"
+				:class="mailSearchOnly ? '-ml-0.5' : 'absolute right-4 top-2 !size-7 !p-0'"
 				aria-label="Clear all filters"
-				tooltip="Clear filters"
+				:tooltip="mailSearchOnly ? undefined : 'Clear filters'"
 				@mousedown.prevent
 				@click="mailAppliedFilters = []"
 			/>
@@ -176,6 +181,57 @@
 		/>
 
 		<CommandPaletteList v-else>
+			<!-- What the reader searched for last, on the phone's page while nothing is asked:
+			     the page is a list and, until a word arrives, this is its whole content. Inside
+			     the list rather than above it, so a row is a listbox item the keyboard and the
+			     select event both reach. The group's own top margin goes, since the header row
+			     here stands where the group's label would. -->
+			<template
+				v-if="
+					mailSearchOnly &&
+					!normalizedQuery &&
+					!mailAppliedFilters.length &&
+					recentMailSearches.length
+				"
+			>
+				<div class="mb-2.5 mt-3 flex items-center justify-between px-5 text-base text-ink-gray-5">
+					<span>Recent</span>
+					<button
+						type="button"
+						class="text-sm text-ink-gray-5 hover:text-ink-gray-8"
+						@mousedown.prevent
+						@click="clearRecentMailSearches"
+					>
+						Clear
+					</button>
+				</div>
+				<CommandPaletteGroup class="!mt-0">
+					<CommandPaletteItem
+						v-for="recent in recentMailSearches"
+						:key="mailSearchKey(recent)"
+						:value="recent"
+					>
+						<template #prefix>
+							<span
+								class="mr-3 flex size-5 shrink-0 items-center justify-center text-ink-gray-7"
+							>
+								<span class="lucide-history size-5" aria-hidden="true" />
+							</span>
+						</template>
+						<span class="truncate">{{ recent.label }}</span>
+						<template #suffix>
+							<button
+								class="rounded-4 p-1 text-ink-gray-5 hover:text-ink-gray-8"
+								aria-label="Remove from recent searches"
+								@mousedown.prevent
+								@click.stop="forgetMailSearch(recent)"
+							>
+								<span class="lucide-x size-3.5" aria-hidden="true" />
+							</button>
+						</template>
+					</CommandPaletteItem>
+				</CommandPaletteGroup>
+			</template>
 			<CommandPaletteGroup
 				v-if="!navigationMode && !normalizedQuery && paletteRecents.length"
 				label="Recent"
@@ -348,7 +404,7 @@
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
-			<MailSearchSuggestions :suggestions="mailSuggestions" />
+			<MailSearchSuggestions :suggestions="mailSuggestions" :roomy="mailSearchOnly" />
 
 			<CommandPaletteGroup v-if="mailResults.length" :label="resultsLabel('Messages')">
 				<CommandPaletteItem
@@ -507,6 +563,7 @@ import CalendarSearchResult from '@/apps/calendar/components/CommandPalette/Cale
 import type {
 	MailContactSuggestion,
 	MailFilterSuggestion,
+	MailRecentSearch,
 	MailSearchResult as MailResult,
 } from '@/apps/mail/components/CommandPalette/types'
 import { getRecents } from '@/apps/drive/resources/files'
@@ -581,6 +638,7 @@ type PaletteItem =
 	| MailResult
 	| MailContactSuggestion
 	| MailFilterSuggestion
+	| MailRecentSearch
 	| PaletteCommand
 	| SuiteAppSwitcherItem
 
@@ -676,6 +734,12 @@ const {
 	search: searchMail,
 	cancel: cancelMailSearch,
 	reset: resetMailSearch,
+	recentSearches: recentMailSearches,
+	rememberSearch: rememberMailSearch,
+	restoreSearch: restoreMailSearch,
+	forgetSearch: forgetMailSearch,
+	clearRecentSearches: clearRecentMailSearches,
+	searchKey: mailSearchKey,
 } = useMailCommandPaletteSearch(query, mailSearchActive)
 const showFilters = ref(false)
 const calendarSearchActive = computed(() => activeApp.value === 'calendar')
@@ -1295,6 +1359,7 @@ function handlePaletteEnter(event: KeyboardEvent) {
 // replace that entry rather than stacking on it: pushing left an empty "Search your mail" page
 // between the results and the folder they were searched from, which is what Back landed on.
 async function goToMailSearch() {
+	rememberMailSearch()
 	const location = mailSearchLocation()
 	if (isMobile.value && isMailSearchRoute.value) await router.replace(location)
 	else await router.push(location)
@@ -1332,6 +1397,11 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 	if ('resultType' in item && item.resultType === 'mail-filter-suggestion') {
 		event.preventDefault()
 		selectMailFilterSuggestion(item)
+		return
+	}
+	if ('resultType' in item && item.resultType === 'mail-recent-search') {
+		event.preventDefault()
+		restoreMailSearch(item)
 		return
 	}
 	if ('resultType' in item && item.resultType === 'mail-search-page') {
@@ -1376,6 +1446,7 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 		} else if (item.resultType === 'writer') {
 			location = { name: 'writer-document', params: { id: item.name } }
 		} else if (item.resultType === 'mail') {
+			rememberMailSearch()
 			location = {
 				name: 'mail-mail',
 				params: {
@@ -1534,27 +1605,65 @@ onScopeDispose(() => {
 		}
 	}
 
+	/* A flat 56px — the height every mobile header in the product stands at (see mail's
+	   MobileTitleHeader and the calendar's search page) — rather than a row that is whatever
+	   its padding adds up to. It used to be 16px of padding either side of 14px type, which
+	   came to 48 and left this the one row on a phone 8px shorter than its neighbours. The
+	   search page's own header is the same 56px, so dismissing the editor onto it still swaps
+	   the row rather than resizing it.
+
+	   Horizontally, the calendar's search header: a 12px gutter, the icon, then 20px to the
+	   text — its row's gap-2 plus the 12px the forms plugin gives a bare input. The library's
+	   field here has px-0, so that 12px is set on it below, and the results page's header
+	   keeps the same three measures so the swap holds sideways as well as down. */
 	.mail-mobile-search-page [data-slot='command-palette-input'] {
-		gap: 12px;
-		padding-inline: 16px;
+		gap: 8px;
+		padding-inline: 12px;
+		height: 56px;
 	}
 
-	/* The same row height as the search page's own header, so dismissing the editor onto that
-	   page swaps the row rather than resizing it. That row is py-2 around a bare input — which
-	   the forms plugin gives py-2 of its own — so its text sits 16px from either edge; this
-	   field's py-3 has to become the same 16px. Horizontally they already agree: 16px gutter, the
-	   icon, then 12px to the text, which there is the plugin's px-3 and here the row's gap. */
+	/* The field fills the row it sits in rather than being the sum of its own padding: with the
+	   row's height set above, the padding would stand the text off-centre, and a field only as
+	   tall as its text would leave the top and bottom of a 56px row dead to a thumb. Stretched,
+	   the whole row is the tap target and the input centres its text itself. */
 	.mail-mobile-search-page [data-slot='command-palette-input'] input {
-		padding-block: 16px;
+		padding-block: 0;
+		padding-inline: 12px;
+		align-self: stretch;
 	}
 
 	/* The chips, by name rather than by position: `:not(:last-child)` was meant to spare the
 	   clear-all ×, but that is the last child only while filters are applied — otherwise the
 	   last chip was the one left small, and reordering moved which chip that was. */
+	/* `!important`, because the chip's own `!h-7` is one too: a leading `!` on a utility
+	   emits it, and a plain 32px here lost to that 28px — so the text below was already 14px
+	   inside a chip that never grew to hold it, which is the cramped chip this rule existed
+	   to prevent. */
 	.mail-mobile-search-page .mail-search-filters > span,
 	.mail-mobile-search-page .mail-search-filters > button:not(.mail-search-clear) {
-		height: 32px;
+		height: 32px !important;
 		font-size: 14px;
+	}
+
+	/* A phone's list, not a desktop dialog's. Rows sit on the px-5 axis mail's mobile title
+	   header names for list content, and stand 10px tall each side — the agenda's own row
+	   height when narrow. The palette's mx-2.5 px-2 py-2 is the density of a dialog under a
+	   query line and read as cramped here; 12px, the calendar search page's number, was
+	   chosen for two-line rows behind a chip, and between one-line rows it read as gaps.
+	   The chip row and the group labels sit on the same axis, so the page has one left edge
+	   rather than three. */
+	.mail-mobile-search-page [data-slot='command-palette-item'] {
+		margin-inline: 0;
+		padding: 10px 20px;
+	}
+
+	.mail-mobile-search-page [data-slot='command-palette-group-label'] {
+		padding-inline: 20px;
+	}
+
+	.mail-mobile-search-page .mail-search-filters {
+		gap: 8px;
+		padding: 12px 20px;
 	}
 
 	.mail-mobile-search-page [data-slot='command-palette-footer'] {
@@ -1566,6 +1675,13 @@ onScopeDispose(() => {
 	   be read as a selection, and nothing there can move it. */
 	.mail-mobile-search-page [data-slot='command-palette-item'][data-state='active'] {
 		background-color: transparent;
+	}
+
+	/* The press, though: a finger on a row gets the ground a pointer's hover gives it, for
+	   as long as it is down. Keyed on `:active` — the press itself — rather than the
+	   listbox's own highlight above, which on a phone is a selection with nothing to move it. */
+	.mail-mobile-search-page [data-slot='command-palette-item']:active {
+		background-color: var(--surface-gray-2);
 	}
 }
 </style>

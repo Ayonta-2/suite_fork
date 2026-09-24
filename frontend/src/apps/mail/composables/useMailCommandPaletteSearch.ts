@@ -15,6 +15,7 @@ import {
 import type {
   MailContactSuggestion,
   MailFilterSuggestion,
+  MailRecentSearch,
   MailSearchFilterBadge,
   MailSearchResult,
 } from "@/apps/mail/components/CommandPalette/types";
@@ -40,6 +41,13 @@ const mailFilterOptions: MailFilterOption[] = [
 ];
 
 const ALL_ACCOUNTS_STORAGE_KEY = "mail-search-all-accounts";
+
+// The searches the reader ran last, for the phone's search page to offer before anything is
+// typed. Five, since the page is a list and this is its whole content until a word arrives;
+// in the browser, like the all-accounts preference — a convenience of the device someone
+// searches from, and not worth a round trip on every opening.
+const RECENT_SEARCHES_STORAGE_KEY = "mail-recent-searches";
+const RECENT_SEARCHES = 5;
 
 // As many mails as the palette shows at once, with the way past them being the row at the bottom
 // of the results rather than a longer list to scroll.
@@ -137,6 +145,51 @@ export function useMailCommandPaletteSearch(
     ...(filter.value.after ? { after: utcDayStart(filter.value.after) } : {}),
     ...(filter.value.before ? { before: utcDayEnd(filter.value.before) } : {}),
   }));
+  // --- Recent searches ---
+
+  const recentSearches = useStorage<MailRecentSearch[]>(RECENT_SEARCHES_STORAGE_KEY, []);
+
+  // A remembered search is known by what it asked — the words and the badges — which is what
+  // makes a repeat a repeat and what a row stands for. Not by `at`: two searches committed in
+  // the same millisecond share one, and forgetting the second forgot both.
+  const searchKey = (entry: Pick<MailRecentSearch, "text" | "filters">) =>
+    `${entry.text}\u0000${JSON.stringify(entry.filters)}`;
+
+  /**
+   * Keeps the search as it stands — the words as typed and the badges as applied — as the most
+   * recent, dropping an earlier copy of the same one. Called when a search is committed to,
+   * not on every keystroke: opening a result, or going to the results page. Recording as the
+   * query changed would have kept every prefix on the way to the word that was meant.
+   */
+  const rememberSearch = () => {
+    const text = query.value.trim();
+    const filters = filterValues.value;
+    if (!text && !Object.keys(filters).length) return;
+    const label = [text, ...appliedFilters.value.map(getFilterLabel)]
+      .filter(Boolean)
+      .join(" · ");
+    const key = searchKey({ text, filters });
+    recentSearches.value = [
+      { resultType: "mail-recent-search", text, filters, label, at: Date.now() },
+      ...recentSearches.value.filter((entry) => searchKey(entry) !== key),
+    ].slice(0, RECENT_SEARCHES);
+  };
+
+  /** Puts a remembered search back exactly as it ran: the words on the line, the badges applied. */
+  const restoreSearch = (entry: MailRecentSearch) => {
+    setFilters(entry.filters);
+    query.value = entry.text;
+  };
+
+  const forgetSearch = (entry: MailRecentSearch) => {
+    const key = searchKey(entry);
+    recentSearches.value = recentSearches.value.filter((kept) => searchKey(kept) !== key);
+  };
+
+  const clearRecentSearches = () => {
+    recentSearches.value = [];
+  };
+
   const operatorContext = computed(() =>
     active.value ? getMailSearchOperatorContext(query.value) : null,
   );
@@ -544,5 +597,11 @@ export function useMailCommandPaletteSearch(
     search,
     cancel,
     reset,
+    recentSearches,
+    rememberSearch,
+    restoreSearch,
+    forgetSearch,
+    clearRecentSearches,
+    searchKey,
   };
 }

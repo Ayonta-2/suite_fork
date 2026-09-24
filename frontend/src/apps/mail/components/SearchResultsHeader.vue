@@ -6,7 +6,12 @@
 			isMobile ? '' : 'flex flex-col gap-2.5 border-b border-l-transparent px-3.5 py-3 sm:border-l sm:px-5'
 		"
 	>
-		<div v-if="isMobile" class="flex items-center border-b px-4 py-2">
+		<!-- A flat h-14, the height every mobile header in the product stands at (see
+		     MobileTitleHeader), rather than py-2 around the input: the editor's row above is
+		     the same 56px, so dismissing it onto this swaps the row rather than resizing it.
+		     Sideways too: a 12px gutter, the icon, then gap-2 plus the forms plugin's 12px on
+		     the bare input — the calendar search header's measures, and the editor's. -->
+		<div v-if="isMobile" class="flex h-14 items-center gap-2 border-b px-3">
 			<Search class="text-ink-gray-5 h-4 w-4 shrink-0" />
 			<input
 				readonly
