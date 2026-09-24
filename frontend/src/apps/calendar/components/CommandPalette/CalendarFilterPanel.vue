@@ -11,10 +11,14 @@
 			<!-- The dot the event form puts beside a calendar, for the same reason: the colour
 			     is how the reader knows that calendar on the grid. "All calendars" stands for
 			     no one calendar, so it gets no dot. -->
+			<!-- frappe-ui's Select rather than a native one: it is a popover this can open on
+			     demand, where a `<select>` only opens from a real click on itself. `showPicker`
+			     reaches a native one in Chrome 121 and nowhere else, and a reader who clicked a
+			     badge to change a calendar has already asked for the list. -->
 			<div data-field="calendar">
-				<FormControl
+				<Select
 					v-model="filter.calendar"
-					type="select"
+					v-model:open="calendarOpen"
 					:label="__('Look In')"
 					:options="calendarSelectOptions"
 				>
@@ -25,7 +29,7 @@
 							:style="{ background: eventColor(item.color) }"
 						/>
 					</template>
-				</FormControl>
+				</Select>
 			</div>
 			<div data-field="organizer">
 				<ContactCombobox
@@ -41,20 +45,24 @@
 					:label="__('Attendee')"
 				/>
 			</div>
+			<!-- Pickers of the library's own, as the calendar above is: each is a popover a
+			     badge can open, where a native date input opens only from a click on itself. -->
 			<div class="flex space-x-4">
 				<div data-field="after" class="w-full">
-					<FormControl
+					<DatePicker
 						v-model="filter.after"
-						type="date"
+						v-model:open="afterOpen"
 						:label="__('From Date')"
+						:placeholder="__('Any date')"
 						class="w-full"
 					/>
 				</div>
 				<div data-field="before" class="w-full">
-					<FormControl
+					<DatePicker
 						v-model="filter.before"
-						type="date"
+						v-model:open="beforeOpen"
 						:label="__('To Date')"
+						:placeholder="__('Any date')"
 						class="w-full"
 					/>
 				</div>
@@ -72,7 +80,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { FormControl } from 'frappe-ui'
+import type { Ref } from 'vue'
+import { DatePicker, Select } from 'frappe-ui'
 
 import { eventColor } from '@/apps/calendar/utils/color'
 
@@ -99,15 +108,32 @@ const props = defineProps<{
 
 const panel = ref<HTMLElement | null>(null)
 
+/**
+ * The three fields that are a popover rather than a plain input, so a badge can open the one
+ * it stands for. The other two are comboboxes, where typing is the opening and the focus is
+ * the whole of it.
+ */
+const popovers: Record<string, Ref<boolean>> = {
+	calendar: ref(false),
+	after: ref(false),
+	before: ref(false),
+}
+const calendarOpen = popovers.calendar
+const afterOpen = popovers.after
+const beforeOpen = popovers.before
+
 watch(
 	() => props.focusField,
 	async (field) => {
 		if (!field) return
 		await nextTick()
+		const popover = popovers[field]
+		if (popover) {
+			popover.value = true
+			return
+		}
 		panel.value
-			?.querySelector<HTMLElement>(
-				`[data-field="${field}"] input, [data-field="${field}"] select`,
-			)
+			?.querySelector<HTMLElement>(`[data-field="${field}"] input`)
 			?.focus()
 	},
 	{ immediate: true },

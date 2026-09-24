@@ -115,25 +115,29 @@
 			v-if="calendarSearchActive && !showFilters && calendarBadges.length"
 			class="relative flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2 pr-12"
 		>
+			<!-- The whole badge is the way back to the field that set it: the panel opens with
+			     that field already open. The pill itself takes the press, so the hover ground
+			     is the shape the reader is pointing at rather than the words inside it — the ✕
+			     stops the press from reaching here and removes instead.
+
+			     A <span> rather than a <button>, for the reason mail's badge gives: a button
+			     brings its own box and centres what is in it, which laid the label out unlike
+			     the plain text beside it and clipped its first letter. -->
 			<span
 				v-for="badge in calendarBadges"
 				:key="badge.key"
-				class="inline-flex h-7 shrink-0 items-center gap-1 rounded-4 bg-surface-gray-2 pl-2 pr-1 text-xs"
+				class="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-4 bg-surface-gray-2 pl-2 pr-1 text-xs hover:bg-surface-gray-3"
+				role="button"
+				tabindex="0"
+				:aria-label="`Edit ${badge.label}`"
+				@mousedown.prevent
+				@click="editCalendarFilter(badge.key)"
+				@keydown.enter.space.prevent="editCalendarFilter(badge.key)"
 			>
-				<!-- What the badge says is the way back to the field that set it: the panel
-				     opens with the cursor already in it. A <span> rather than a <button>, for
-				     the reason mail's badge gives — a button brings its own box and centres
-				     what is in it, which lays the label out unlike the plain text beside it. -->
-				<Tooltip :text="`Click to edit ${badge.label.toLowerCase()}`">
-					<span
-						class="max-w-48 cursor-pointer truncate text-ink-gray-7 hover:text-ink-gray-8"
-						role="button"
-						tabindex="0"
-						:aria-label="`Edit ${badge.label}`"
-						@mousedown.prevent
-						@click.stop="editCalendarFilter(badge.key)"
-						@keydown.enter.space.prevent="editCalendarFilter(badge.key)"
-					>{{ badge.label }}: {{ badge.value }}</span>
+				<Tooltip :text="`Click to edit ${badge.label}`">
+					<span class="max-w-48 truncate text-ink-gray-7">
+						{{ badge.label }}: {{ badge.value }}
+					</span>
 				</Tooltip>
 				<button
 					class="rounded-4 p-1 text-ink-gray-5 hover:text-ink-gray-8"
