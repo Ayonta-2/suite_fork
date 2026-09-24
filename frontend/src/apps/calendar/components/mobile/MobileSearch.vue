@@ -15,7 +15,7 @@
 				autocomplete="off"
 				:placeholder="__('Search')"
 				:aria-label="__('Search events')"
-				class="min-w-0 flex-1 border-none bg-transparent py-2 text-base text-ink-gray-8 placeholder-ink-gray-4 focus:ring-0"
+				class="min-w-0 flex-1 self-stretch border-none bg-transparent text-base text-ink-gray-8 placeholder-ink-gray-4 focus:ring-0"
 				@focus="showFilters = false"
 			/>
 			<Button
@@ -32,7 +32,7 @@
 		     it; the ✕ removes. The same badge the palette draws, since it is the same filter. -->
 		<div
 			v-if="badges.length && !showFilters"
-			class="relative flex shrink-0 flex-wrap items-center gap-1.5 px-5 py-2 pr-12"
+			class="relative flex shrink-0 flex-wrap items-center gap-1.5 px-5 py-2"
 		>
 			<span
 				v-for="badge in badges"
@@ -55,9 +55,9 @@
 			</span>
 			<Button
 				variant="ghost"
-				icon="lucide-x"
 				size="sm"
-				class="absolute right-5 top-2 !size-7 !p-0"
+				:label="__('Clear')"
+				class="-ml-0.5"
 				:aria-label="__('Clear all filters')"
 				@click="emit('clearFilters')"
 			/>
@@ -74,15 +74,19 @@
 		/>
 
 		<div v-else class="min-h-0 flex-1 overflow-y-auto">
-			<p v-if="!asked" class="px-5 pt-10 text-center text-p-sm text-ink-gray-5">
-				{{ __('Search events by name, organizer, or attendees.') }}
-			</p>
-			<p v-else-if="searching && !rows.length" class="px-5 pt-10 text-center text-p-sm text-ink-gray-5">
-				{{ __('Searching…') }}
-			</p>
-			<p v-else-if="!rows.length" class="px-5 pt-10 text-center text-p-sm text-ink-gray-5">
-				{{ __('No events found') }}
-			</p>
+			<!-- The palette's own empty state, to the class and the words — frappe-ui's
+			     CommandPaletteEmpty draws it, but only inside a palette, which this page is
+			     not. The region is mounted whether or not it holds a message, for the reason
+			     the library gives: a status region that appears with its first message is
+			     announced by some readers and not by others. -->
+			<div role="status">
+				<div
+					v-if="emptyMessage"
+					class="px-4.5 py-8 text-center text-base text-ink-gray-6"
+				>
+					{{ emptyMessage }}
+				</div>
+			</div>
 			<!-- The same row the palette lists a result as, with the row of the open sheet held on
 			     its ground so the reader can see which one they are reading about. -->
 			<button
@@ -170,4 +174,14 @@ const calendarColorOf = (row: any) =>
 
 /** Whether a row is the event the sheet is showing — see `sameEvent` for why not by row id. */
 const isOpen = (row: any) => sameEvent(props.openEvent, row)
+
+// What the list says when it has no rows, in the palette's own words: what is being searched
+// for is quoted back, so "nothing" is plainly about that and not about the calendar.
+const emptyMessage = computed(() => {
+	if (props.rows.length) return ''
+	if (!props.asked) return __('Search events by name, organizer, or attendees.')
+	if (props.searching) return __('Searching…')
+	const words = props.query.trim()
+	return words ? __('No results for "{0}"', [words]) : __('No results')
+})
 </script>

@@ -447,18 +447,29 @@ const searchText = computed(() => String(route.query.q ?? '').trim())
 const searchFilters = useCalendarSearchFilters()
 
 // Events, not rows: a recurring event answers as its next few occurrences, and the server
-// counts this before expanding them — the palette's own bound, for the same reason.
-const SEARCH_RESULT_LIMIT = 10
+// counts this before expanding them. Fifty where the palette shows ten: the palette is a
+// dialog under a query line, a page is a list to scroll. Expansion is a query per recurring
+// event, batched sixteen to a request, so fifty events is at most four requests behind a
+// keystroke — bounded, and the server's own cap stands above it at two hundred.
+const SEARCH_RESULT_LIMIT = 50
 
 const eventSearch = createResource({
 	url: 'suite.calendar.api.search_calendar_events_with_shared',
 	debounce: 180,
 	// The same transform the grid's rows go through, so a result resolves on the same fields.
 	transform: (data) => (Array.isArray(data) ? data.map(transformEvent) : []),
-	onError: (error) => raiseToast(error.message, 'error'),
+	onSuccess: () => (searchSettled.value = true),
+	onError: (error) => {
+		searchSettled.value = true
+		raiseToast(error.message, 'error')
+	},
 })
 
 const searchAsked = computed(() => !!searchText.value || searchFilters.isNarrowed.value)
+// Whether what is asked has been answered. Not the resource's `loading`: that is false for the
+// 180ms a keystroke waits before its request goes out, and a page with nothing on it yet read
+// that as "no results" before it read "searching". Asked is unsettled from the keystroke on.
+const searchSettled = ref(true)
 
 watch(
 	// One string, for the reason the route watchers give: a rebuilt array is new every run.
@@ -468,8 +479,10 @@ watch(
 		eventSearch.submit.cancel?.()
 		if (!searchAsked.value) {
 			eventSearch.reset()
+			searchSettled.value = true
 			return
 		}
+		searchSettled.value = false
 		eventSearch.submit({
 			account: store.accountId,
 			text: searchText.value,
@@ -1326,7 +1339,7 @@ const NOTIFY_MODAL_OPTIONS = {
 			v-else-if="isSearchRoute"
 			:query="searchText"
 			:rows="searchRows"
-			:searching="eventSearch.loading"
+			:searching="!searchSettled"
 			:asked="searchAsked"
 			:filter="searchFilters.filter"
 			:badges="searchFilters.badges(searchCalendarLabel)"

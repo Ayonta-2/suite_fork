@@ -3,7 +3,7 @@
 		<!-- The date as a glyph, the way mail's invite strip carries one, so the dates down a
 		     list of results scan as a column rather than as the first words of each line. -->
 		<DateChip :month="chipMonth" :day="chipDay" :color="chipColor" :small="!roomy" />
-		<span class="flex min-w-0 flex-1 flex-col" :class="roomy ? 'gap-1' : 'gap-0.5'">
+		<span class="flex min-w-0 flex-1 flex-col gap-1">
 			<span class="flex min-w-0 items-center gap-3">
 				<span class="flex min-w-0 flex-1 items-center gap-1.5">
 					<span class="truncate text-base-semibold text-ink-gray-8">
@@ -45,9 +45,9 @@ const props = defineProps<{
 	 */
 	calendarColor?: string
 	/**
-	 * A phone's list, not the palette's: the full-size chip, and a step more air between the
-	 * chip and the words and between the two lines. The palette packs ten results under a
-	 * query line and wants them tight; a page that is nothing but the list does not.
+	 * A phone's list, not the palette's: the full-size chip, and a step more air between it and
+	 * the words. The palette packs ten results under a query line and wants them tight; a page
+	 * that is nothing but the list does not. The two lines sit the same distance apart on both.
 	 */
 	roomy?: boolean
 }>()
