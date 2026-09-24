@@ -169,11 +169,8 @@ class IntegrationTestSieveScript(IntegrationTestCase):
             if raise_exception and (account == "down" or (account == "flaky" and attempts[account] == 1)):
                 raise ConnectionError("Mail server unreachable")
 
-        db = frappe.local.db
         with (
-            patch.object(db, "exists", return_value=True),
-            patch.object(db, "commit"),
-            patch.object(db, "rollback"),
+            patch.object(frappe.local.db, "exists", return_value=True),
             patch.object(sieve_script, "get_enabled_account_user", return_value="Administrator"),
             patch.object(sieve_script, "build_automation_sieve", side_effect=build),
             patch.object(sieve_script.time, "sleep"),

@@ -549,10 +549,9 @@ def _rebuild_automation_sieves(accounts: list[str]) -> None:
 def _rebuild_each_automation_sieve(accounts: list[str]) -> dict[str, str]:
     """Rebuild each account's automation script once, returning the failed ones with their traceback.
 
-    Each account is committed on its own, so the next one reads its rules afresh: a batch-long
-    transaction would read them from a snapshot, and could overwrite a script a user rebuilt with newer
-    rules meanwhile. Each is rebuilt as a user of it who can connect, the account's owner where it has
-    one (see `get_enabled_account_user`); accounts without one are skipped.
+    Each is rebuilt as a user of it who can connect, the account's owner where it has one (see
+    `get_enabled_account_user`); accounts without one are skipped. A rebuild writes nothing to the
+    database — the script lives on the mail server — so the job's own transaction serves them all.
     """
 
     failures = {}
@@ -568,12 +567,10 @@ def _rebuild_each_automation_sieve(accounts: list[str]) -> dict[str, str]:
         try:
             with user_context(user):
                 build_automation_sieve(account, raise_exception=True)
-            frappe.db.commit()
         except JobTimeoutException:
             # Out of time: let the job fail rather than carry on past its timeout.
             raise
         except Exception:
-            frappe.db.rollback()
             failures[account] = frappe.get_traceback()
 
     return failures
