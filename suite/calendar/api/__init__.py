@@ -359,9 +359,13 @@ def search_calendar_events_with_shared(
     return events[:limit]
 
 
-# What a word typed on the query line is matched against. `text` is the server's own union of
-# an event's text — title, description, location — and `title` is the title alone.
-EVENT_SEARCH_SCOPES = ("title", "text")
+# What a word typed on the query line is matched against, `text` by default. `text` is the
+# server's own union of everything an event is written in — its title, its description, where
+# it is, and the addresses of whoever called it and whoever is coming — so a name finds the
+# meeting somebody called as well as the one named after them. `title` narrows to the title
+# alone, for a caller that wants only that.
+EVENT_SEARCH_SCOPES = ("text", "title")
+DEFAULT_EVENT_SEARCH_SCOPE = "text"
 
 # The filters that are a JMAP condition each, under the name the server knows them by. Left out
 # deliberately: `participants`, `status`, `privacy`, `isDraft` and `showWithoutTime` are not
@@ -376,7 +380,11 @@ EVENT_SEARCH_CONDITIONS = {
 def _search_conditions(text: str | None, filters: dict) -> list[dict]:
     """The filters as JMAP conditions, dropping the ones left blank."""
 
-    scope = filters.get("scope") if filters.get("scope") in EVENT_SEARCH_SCOPES else "title"
+    scope = (
+        filters.get("scope")
+        if filters.get("scope") in EVENT_SEARCH_SCOPES
+        else DEFAULT_EVENT_SEARCH_SCOPE
+    )
     conditions = [{scope: text}] if text else []
 
     conditions.extend(

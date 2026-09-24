@@ -563,6 +563,9 @@ const minimumQueryLength = 3
 // server matches whole words rather than prefixes, and one letter over a few hundred events is
 // a list — not the flood a document search would return, which is what the longer floor is for.
 const calendarMinimumQueryLength = 1
+// As many events as the palette shows at once, the way mail bounds its own hits: past ten, a
+// reader is scrolling a list rather than reading an answer, and the search wants narrowing.
+const CALENDAR_RESULT_LIMIT = 10
 const DriveSearchResultIcon = defineAsyncComponent(
 	() => import('@/apps/drive/components/DriveSearchResultIcon.vue')
 )
@@ -831,7 +834,7 @@ const calendarResults = computed<CalendarSearchResultItem[]>(() => {
 	if (activeApp.value !== 'calendar' || !Array.isArray(calendarSearch.data))
 		return []
 	return calendarSearch.data
-		.slice(0, 20)
+		.slice(0, CALENDAR_RESULT_LIMIT)
 		.map((event: Omit<CalendarSearchResultItem, 'resultType'>) => ({
 			...event,
 			resultType: 'calendar-event' as const,
@@ -1082,7 +1085,7 @@ watch(
 			calendarSearch.submit({
 				account: String(route.params.accountId || ''),
 				text,
-				limit: 20,
+				limit: CALENDAR_RESULT_LIMIT,
 				time_zone: dayjs.tz.guess(),
 				filters: calendarFilterParams.value,
 			})
