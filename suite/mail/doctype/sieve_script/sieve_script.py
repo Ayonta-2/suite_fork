@@ -523,7 +523,7 @@ def _enqueue_automation_sieve_rebuild(
     job_id: str | None = None,
     failures: dict[str, str] | None = None,
     attempt: int = 0,
-    delay: int = 0,
+    not_before: float = 0,
     after_commit: bool = True,
 ) -> None:
     """Queue the job that rebuilds the first of the accounts, by default once the current transaction
@@ -539,7 +539,7 @@ def _enqueue_automation_sieve_rebuild(
         accounts=accounts,
         failures=failures or {},
         attempt=attempt,
-        delay=delay,
+        not_before=not_before,
     )
 
 
@@ -554,7 +554,11 @@ def _pass_on_automation_sieve_rebuild(
 
     try:
         _enqueue_automation_sieve_rebuild(
-            accounts, failures=failures, attempt=attempt, delay=delay, after_commit=False
+            accounts,
+            failures=failures,
+            attempt=attempt,
+            not_before=time.time() + delay if delay else 0,
+            after_commit=False,
         )
     except Exception:
         # The chain ends here. Accounts it failed keep their own traceback; the rest get this one.
@@ -572,7 +576,7 @@ def _log_automation_sieve_rebuild_failures(failures: dict[str, str]) -> None:
 
 
 def _rebuild_automation_sieves(
-    accounts: list[str], failures: dict[str, str] | None = None, attempt: int = 0, delay: int = 0
+    accounts: list[str], failures: dict[str, str] | None = None, attempt: int = 0, not_before: float = 0
 ) -> None:
     """Rebuild the first account's automation script, then queue a job for the rest.
 
@@ -582,14 +586,16 @@ def _rebuild_automation_sieves(
     timeout, and the chain, rather than the queue, holds the accounts still to come.
 
     `failures` carries the accounts whose rebuild has failed down the chain, with their latest
-    traceback. Once the chain is through, a new chain retries them after a wait (`delay`) — the mail
+    traceback. Once the chain is through, a new chain retries them after a wait — the mail
     server was perhaps briefly unreachable, and nothing else rebuilds an account until its user next
     changes a rule — dropping each that rebuilds. Those that still fail after the last retry are
     logged, as is everything the chain holds if its next job cannot be queued.
     """
 
-    if delay:
-        time.sleep(delay)
+    # A retry waits until `not_before`, counting the time it already spent in the queue: a worker
+    # asleep here serves no other job.
+    if (wait := not_before - time.time()) > 0:
+        time.sleep(wait)
 
     failures = dict(failures or {})
     if accounts:

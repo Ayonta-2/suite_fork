@@ -96,17 +96,23 @@ def route_through_gate(gate: str, sender: str, spamtest: int) -> str | None:
     return next((mailbox for test, _tags, mailbox in parse_gate(gate) if evaluate(test)), None)
 
 
-def run_rebuild_jobs(accounts: list[str], build, refuse=lambda job: False):
+def run_rebuild_jobs(accounts: list[str], build, refuse=lambda job: False, queue_wait: float = 0):
     """Rebuild the accounts through their background jobs, run one after another as a worker would,
-    with `build` standing in for `build_automation_sieve` and a queue that refuses the jobs `refuse`
-    picks, as a full one does. Returns each job's arguments with the accounts it rebuilt, the most
-    jobs ever waiting in the queue at once, and the failure log."""
+    with `build` standing in for `build_automation_sieve`, a queue that refuses the jobs `refuse`
+    picks, as a full one does, and a clock that moves `queue_wait` seconds while each job waits in the
+    queue. Returns each job's arguments with the accounts it rebuilt and the seconds it slept, the
+    most jobs ever waiting in the queue at once, and the failure log."""
 
     import frappe
 
     from suite.mail.doctype.sieve_script import sieve_script
 
-    queue, jobs, most_queued = [], [], 0
+    queue, jobs, most_queued, now = [], [], 0, 1_000_000.0
+
+    def sleep(seconds):
+        nonlocal now
+        jobs[-1]["slept"] += seconds
+        now += seconds
 
     def enqueue_job(method, **kwargs):
         nonlocal most_queued
@@ -124,15 +130,16 @@ def run_rebuild_jobs(accounts: list[str], build, refuse=lambda job: False):
         patch.object(sieve_script, "get_enabled_account_user", return_value="Administrator"),
         patch.object(sieve_script, "build_automation_sieve", side_effect=recorded_build),
         patch.object(sieve_script, "enqueue_job", side_effect=enqueue_job),
-        patch.object(sieve_script, "time", SimpleNamespace(sleep=lambda seconds: None)),
+        patch.object(sieve_script, "time", SimpleNamespace(time=lambda: now, sleep=sleep)),
         patch.object(sieve_script, "log_mail_error") as log_mail_error,
     ):
         sieve_script.enqueue_automation_sieve_rebuilds(accounts, job_id_prefix="test")
         while queue:
             job = queue.pop(0)
-            jobs.append({**job, "rebuilt": []})
+            jobs.append({**job, "rebuilt": [], "slept": 0})
+            now += queue_wait
             sieve_script._rebuild_automation_sieves(
-                job["accounts"], job["failures"], job["attempt"], job["delay"]
+                job["accounts"], job["failures"], job["attempt"], job["not_before"]
             )
 
     return jobs, most_queued, log_mail_error
@@ -214,11 +221,28 @@ class IntegrationTestSieveScript(IntegrationTestCase):
         self.assertEqual(attempts["flaky"], 2)
         self.assertGreater(attempts["down"], 2)
         # Each retry waits first, once, and the first pass never does.
-        waits = [job for job in jobs if job["delay"] > 0]
+        waits = [job for job in jobs if job["slept"] > 0]
         self.assertEqual(len(waits), attempts["down"] - 1)
         self.assertTrue(all(job["attempt"] for job in waits))
         self.assertEqual(log_mail_error.call_count, 1)
         self.assertIn("JMAP account down", str(log_mail_error.call_args))
+
+    def test_a_retry_counts_its_time_in_the_queue_as_waiting(self):
+        """A job asleep holds a worker that could serve other queues, so a retry that has already
+        waited in the queue as long as it should does not sleep again."""
+
+        attempts = Counter()
+
+        def build(account, raise_exception=False, **kwargs):
+            attempts[account] += 1
+            if raise_exception and account == "down":
+                raise ConnectionError("Mail server unreachable")
+
+        jobs, _most_queued, log_mail_error = run_rebuild_jobs(["down"], build, queue_wait=3600)
+
+        self.assertGreater(attempts["down"], 2)
+        self.assertEqual(sum(job["slept"] for job in jobs), 0)
+        self.assertEqual(log_mail_error.call_count, 1)
 
     def test_rebuild_reads_each_account_in_a_job_of_its_own(self):
         """Every job opens its own database transaction. A job serving several accounts would read the
