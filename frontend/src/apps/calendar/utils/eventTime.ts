@@ -100,11 +100,15 @@ export const eventLastDay = (
 const yearFormat = (day: Dayjs, now: Dayjs) => (day.year() === now.year() ? '' : ' YYYY')
 
 /**
- * A single day: `Today`, `Sun, 17 Aug`, `Sat, 9 Jan 2027`, or `Sun` compacted. `compact` is
- * for callers that
- * already print the month and day beside the label (the invite strip's date chip does), leaving
- * only the weekday to say — but a year no chip carries still spells itself out. Spans never
- * compact: `dayRangeLabel` pairs each weekday with its date, which is the whole point of it.
+ * A single day: `Today`, `Sun, 17 Aug`, `Sat, 9 Jan 2027`, or `Sun` compacted. `compact` is for
+ * callers that already print the month and day beside the label (the invite strip's date chip
+ * does, and so does a search result's), leaving only the weekday to say — but a year no chip
+ * carries still spells itself out. Spans never compact: `dayRangeLabel` pairs each weekday with
+ * its date, which is the whole point of it.
+ *
+ * Abbreviated rather than spelled out, in both places that compact. `Mon` beside a chip reading
+ * `AUG 17` is the weekday in the register the chip set, where `Monday` was the one long word on
+ * a line whose whole job is to be short.
  */
 const dayLabel = (day: Dayjs, now: Dayjs, compact = false) => {
 	if (day.isSame(now, 'day')) return __('Today')
@@ -185,7 +189,8 @@ export const formatEventWhen = (
 	}
 
 	// An overnight stays one day's entry, with the second day named after the closing time.
-	// Never compacted: the inline `Tue` sets the register, and `Monday · … Tue` mixes two.
+	// Never compacted: the closing `Tue` already names a weekday, and a line opening on another
+	// bare one — `Mon · 11:00 pm – 1:00 am Tue` — reads as a span between the two.
 	if (isOvernight(start, end)) {
 		const times = `${start.format('h:mm a')} – ${end.format('h:mm a ddd')}`
 		if (!length) return `${dayLabel(start, now)} · ${times}`

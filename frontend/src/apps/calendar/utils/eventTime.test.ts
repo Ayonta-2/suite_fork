@@ -142,6 +142,9 @@ describe('formatEventWhen', () => {
 		const compact = (start: string, duration?: string, options = {}) =>
 			when(start, duration, { compact: true, ...options })
 
+		// Abbreviated, not spelled out — and deliberately in both places that compact, mail's
+		// invite strip as well as a search result. The chip beside the label has already said
+		// `AUG 17`; `Monday` was the one long word on a line whose whole job is to be short.
 		it('leaves only the weekday when a date chip carries the rest', () => {
 			expect(compact('2026-08-17T00:00:00', 'P1D', { allDay: true })).toBe('Mon · All day')
 			expect(compact('2026-08-17T15:00:00', 'PT1H')).toBe('Mon · 3:00 – 4:00 pm · 1 hr')
