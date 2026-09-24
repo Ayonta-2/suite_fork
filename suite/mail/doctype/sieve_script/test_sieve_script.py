@@ -96,10 +96,11 @@ def route_through_gate(gate: str, sender: str, spamtest: int) -> str | None:
     return next((mailbox for test, _tags, mailbox in parse_gate(gate) if evaluate(test)), None)
 
 
-def run_rebuild_jobs(accounts: list[str], build):
+def run_rebuild_jobs(accounts: list[str], build, refuse=lambda job: False):
     """Rebuild the accounts through their background jobs, run one after another as a worker would,
-    with `build` standing in for `build_automation_sieve`. Returns each job's arguments with the
-    accounts it rebuilt, the most jobs ever waiting in the queue at once, and the failure log."""
+    with `build` standing in for `build_automation_sieve` and a queue that refuses the jobs `refuse`
+    picks, as a full one does. Returns each job's arguments with the accounts it rebuilt, the most
+    jobs ever waiting in the queue at once, and the failure log."""
 
     import frappe
 
@@ -109,6 +110,8 @@ def run_rebuild_jobs(accounts: list[str], build):
 
     def enqueue_job(method, **kwargs):
         nonlocal most_queued
+        if refuse(kwargs):
+            raise frappe.QueueOverloaded("Too many queued background jobs")
         queue.append(kwargs)
         most_queued = max(most_queued, len(queue))
 
@@ -252,6 +255,34 @@ class IntegrationTestSieveScript(IntegrationTestCase):
         self.assertIn("next", [account for job in jobs for account in job["rebuilt"]])
         self.assertEqual(log_mail_error.call_count, 1)
         self.assertIn("JMAP account slow", str(log_mail_error.call_args))
+
+    def test_a_chain_that_cannot_queue_its_next_job_logs_what_it_held(self):
+        """A full queue, or Redis failing, refuses a chain's next job and ends the chain. The accounts
+        it would have rebuilt and the failures it carried must be logged, not dropped with it."""
+
+        def build(account, raise_exception=False, **kwargs):
+            if raise_exception and account == "down":
+                raise ConnectionError("Mail server unreachable")
+
+        def logged(log_mail_error) -> dict[str, str]:
+            messages = [call.args[1] for call in log_mail_error.call_args_list]
+            return {message.split("JMAP account ")[1].split("\n")[0]: message for message in messages}
+
+        refusals = {
+            "the rest of the batch": lambda job: job["accounts"][0] == "c",
+            "a retry": lambda job: job["attempt"] == 1,
+        }
+        expected = {"the rest of the batch": {"down", "c", "d"}, "a retry": {"down"}}
+        for case, refuse in refusals.items():
+            with self.subTest(refused=case):
+                _jobs, _most_queued, log_mail_error = run_rebuild_jobs(["down", "b", "c", "d"], build, refuse)
+
+                logs = logged(log_mail_error)
+                self.assertEqual(set(logs), expected[case])
+                # A failed rebuild is logged with its own traceback, not the queue's.
+                self.assertIn("Mail server unreachable", logs["down"])
+                if "c" in logs:
+                    self.assertIn("QueueOverloaded", logs["c"])
 
     def test_mailbox_paths_survive_quotes_and_backslashes(self):
         """One malformed string fails the whole script upload, leaving the account on its old script."""

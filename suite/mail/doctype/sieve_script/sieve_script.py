@@ -524,8 +524,10 @@ def _enqueue_automation_sieve_rebuild(
     failures: dict[str, str] | None = None,
     attempt: int = 0,
     delay: int = 0,
+    after_commit: bool = True,
 ) -> None:
-    """Queue the job that rebuilds the first of the accounts, once the current transaction commits."""
+    """Queue the job that rebuilds the first of the accounts, by default once the current transaction
+    commits."""
 
     enqueue_job(
         _rebuild_automation_sieves,
@@ -533,12 +535,40 @@ def _enqueue_automation_sieve_rebuild(
         deduplicate=bool(job_id),
         queue="long",
         timeout=_REBUILD_JOB_TIMEOUT,
-        enqueue_after_commit=True,
+        enqueue_after_commit=after_commit,
         accounts=accounts,
         failures=failures or {},
         attempt=attempt,
         delay=delay,
     )
+
+
+def _pass_on_automation_sieve_rebuild(
+    accounts: list[str], failures: dict[str, str], attempt: int, delay: int = 0
+) -> None:
+    """Queue the next job of a chain, logging what the chain still holds if it cannot be queued.
+
+    Queued straight away rather than once this job commits — it has nothing to commit — so a queue too
+    full to take the job, or Redis failing, surfaces here instead of silently ending the chain.
+    """
+
+    try:
+        _enqueue_automation_sieve_rebuild(
+            accounts, failures=failures, attempt=attempt, delay=delay, after_commit=False
+        )
+    except Exception:
+        # The chain ends here. Accounts it failed keep their own traceback; the rest get this one.
+        _log_automation_sieve_rebuild_failures(
+            {**dict.fromkeys(accounts, frappe.get_traceback()), **failures}
+        )
+
+
+def _log_automation_sieve_rebuild_failures(failures: dict[str, str]) -> None:
+    for account, traceback in failures.items():
+        log_mail_error(
+            "Rebuild Automation Sieves Error",
+            f"Failed to rebuild the automation sieve script for JMAP account {account}\n\n{traceback}",
+        )
 
 
 def _rebuild_automation_sieves(
@@ -551,31 +581,32 @@ def _rebuild_automation_sieves(
     script a user had since rebuilt with newer rules. One account also keeps a job far from its
     timeout, and the chain, rather than the queue, holds the accounts still to come.
 
-    `failures` carries the accounts whose rebuild failed down the chain, with their traceback. Once
-    the chain is through, a new chain retries them after a wait (`delay`) — the mail server was
-    perhaps briefly unreachable, and nothing else rebuilds an account until its user next changes a
-    rule. Those that still fail after the last retry are logged.
+    `failures` carries the accounts whose rebuild has failed down the chain, with their latest
+    traceback. Once the chain is through, a new chain retries them after a wait (`delay`) — the mail
+    server was perhaps briefly unreachable, and nothing else rebuilds an account until its user next
+    changes a rule — dropping each that rebuilds. Those that still fail after the last retry are
+    logged, as is everything the chain holds if its next job cannot be queued.
     """
 
     if delay:
         time.sleep(delay)
 
     failures = dict(failures or {})
-    if accounts and (traceback := _rebuild_automation_sieve(accounts[0])):
-        failures[accounts[0]] = traceback
+    if accounts:
+        if traceback := _rebuild_automation_sieve(accounts[0]):
+            failures[accounts[0]] = traceback
+        else:
+            # A retry chain carries the failures it retries; this one is resolved.
+            failures.pop(accounts[0], None)
 
     if rest := accounts[1:]:
-        _enqueue_automation_sieve_rebuild(rest, failures=failures, attempt=attempt)
+        _pass_on_automation_sieve_rebuild(rest, failures, attempt)
     elif failures and attempt < len(_REBUILD_RETRY_DELAYS):
-        _enqueue_automation_sieve_rebuild(
-            list(failures), attempt=attempt + 1, delay=_REBUILD_RETRY_DELAYS[attempt]
+        _pass_on_automation_sieve_rebuild(
+            list(failures), failures, attempt + 1, _REBUILD_RETRY_DELAYS[attempt]
         )
     else:
-        for account, traceback in failures.items():
-            log_mail_error(
-                "Rebuild Automation Sieves Error",
-                f"Failed to rebuild the automation sieve script for JMAP account {account}\n\n{traceback}",
-            )
+        _log_automation_sieve_rebuild_failures(failures)
 
 
 def _rebuild_automation_sieve(account: str) -> str | None:
