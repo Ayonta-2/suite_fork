@@ -623,6 +623,8 @@ def _rebuild_automation_sieve(account: str) -> str | None:
     job's timeout included — so that the job still hands the rest of the chain on.
     """
 
+    from suite.mail.jmap.services.core import CoreService
+
     try:
         # The job runs async after the fan-out committed, so an account can vanish in between.
         if not account or not frappe.db.exists("JMAP Account", account):
@@ -631,6 +633,10 @@ def _rebuild_automation_sieve(account: str) -> str | None:
         user = get_enabled_account_user(account)
         if not user:
             return None
+
+        # A worker that doesn't fork per job keeps its mailbox cache from job to job, for up to an
+        # hour: read the folders as they are, or rules follow a folder's old path.
+        CoreService.invalidate_cache(account)
 
         with user_context(user):
             build_automation_sieve(account, raise_exception=True)

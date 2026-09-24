@@ -280,6 +280,22 @@ class IntegrationTestSieveScript(IntegrationTestCase):
         self.assertEqual(log_mail_error.call_count, 1)
         self.assertIn("JMAP account slow", str(log_mail_error.call_args))
 
+    def test_a_rebuild_does_not_use_mailboxes_cached_by_an_earlier_job(self):
+        """A worker that doesn't fork per job keeps its mailbox cache from job to job, for up to an
+        hour. A rebuild must read the folders as they are, or it files rules into renamed ones."""
+
+        from suite.mail.jmap.services.core import CoreService
+
+        CoreService._cache["account"] = {"mailboxes": [{"id": "m1", "_name": "Old name"}]}
+        self.addCleanup(CoreService._cache.pop, "account", None)
+
+        cached_at_build = []
+        run_rebuild_jobs(
+            ["account"], lambda account, **kwargs: cached_at_build.append(CoreService._cache.get(account))
+        )
+
+        self.assertEqual(cached_at_build, [None])
+
     def test_a_chain_that_cannot_queue_its_next_job_logs_what_it_held(self):
         """A full queue, or Redis failing, refuses a chain's next job and ends the chain. The accounts
         it would have rebuilt and the failures it carried must be logged, not dropped with it."""
