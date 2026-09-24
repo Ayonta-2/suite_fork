@@ -858,15 +858,33 @@ const mailSearchPageLabel = computed(() => {
 })
 let openSelectionInNewTab = false
 
-useKeyboardShortcut({
-	combo: 'Mod+K',
-	description: 'Search Suite',
-	group: 'Suite',
-	allowInInput: true,
-	handler: () => {
-		root.paletteOpen = true
+// What the palette opens on, when a shortcut opens it with a line already begun. Read once by
+// the open watcher, after it has cleared the line, so a shortcut's `>` survives the clearing.
+let openingQuery = ''
+
+useKeyboardShortcut([
+	{
+		combo: 'Mod+K',
+		description: 'Search Suite',
+		group: 'Suite',
+		allowInInput: true,
+		handler: () => {
+			root.paletteOpen = true
+		},
 	},
-})
+	{
+		// The key the palette's own footer names for switching apps, made to work from the
+		// page as well: `>` typed anywhere opens the palette with the `>` already on the line.
+		combo: 'Shift+Period',
+		description: 'Switch apps',
+		group: 'Suite',
+		enabled: () => !mailSearchOnly.value,
+		handler: () => {
+			openingQuery = '>'
+			root.paletteOpen = true
+		},
+	},
+])
 
 // The query the results on screen answer. Recorded when an answer arrives rather than when a
 // request stops loading: aborting the previous request on each keystroke stops its loading too,
@@ -1257,6 +1275,20 @@ watch(
 					)
 				) as Record<string, string>
 			)
+		}
+		if (openingQuery) {
+			query.value = openingQuery
+			openingQuery = ''
+			// The caret after it, not the text selected: the dialog's focus scope selects an
+			// input's text as it focuses it, and a selected `>` is one the next key replaces.
+			// The scope leaves an input that is already focused alone, so focusing it here
+			// first keeps the selection off whichever of the two runs first.
+			nextTick(() => {
+				const input = paletteInputEl()
+				if (!input) return
+				input.focus()
+				input.setSelectionRange(input.value.length, input.value.length)
+			})
 		}
 	}
 )
