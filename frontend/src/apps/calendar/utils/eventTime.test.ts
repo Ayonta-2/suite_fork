@@ -143,8 +143,8 @@ describe('formatEventWhen', () => {
 			when(start, duration, { compact: true, ...options })
 
 		it('leaves only the weekday when a date chip carries the rest', () => {
-			expect(compact('2026-08-17T00:00:00', 'P1D', { allDay: true })).toBe('Monday · All day')
-			expect(compact('2026-08-17T15:00:00', 'PT1H')).toBe('Monday · 3:00 – 4:00 pm · 1 hr')
+			expect(compact('2026-08-17T00:00:00', 'P1D', { allDay: true })).toBe('Mon · All day')
+			expect(compact('2026-08-17T15:00:00', 'PT1H')).toBe('Mon · 3:00 – 4:00 pm · 1 hr')
 			expect(compact('2026-08-13T15:00:00', 'PT1H')).toBe('Today · 3:00 – 4:00 pm · 1 hr')
 		})
 

@@ -1,22 +1,27 @@
 <template>
-	<span class="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
-		<span class="flex min-w-0 items-center gap-3">
-			<span class="flex min-w-0 flex-1 items-center gap-1.5">
-				<span class="truncate text-base-semibold text-ink-gray-8">
-					{{ result.title || __('Untitled event') }}
+	<span class="flex min-w-0 flex-1 items-center gap-3">
+		<!-- The date as a glyph, the way mail's invite strip carries one, so the dates down a
+		     list of results scan as a column rather than as the first words of each line. -->
+		<DateChip :month="chipMonth" :day="chipDay" :color="calendarColor" small />
+		<span class="flex min-w-0 flex-1 flex-col gap-0.5">
+			<span class="flex min-w-0 items-center gap-3">
+				<span class="flex min-w-0 flex-1 items-center gap-1.5">
+					<span class="truncate text-base-semibold text-ink-gray-8">
+						{{ result.title || __('Untitled event') }}
+					</span>
+					<span
+						v-if="repeats"
+						class="lucide-repeat size-3.5 shrink-0 text-ink-gray-5"
+						:aria-label="__('Repeats')"
+					/>
 				</span>
-				<span
-					v-if="repeats"
-					class="lucide-repeat size-3.5 shrink-0 text-ink-gray-5"
-					:aria-label="__('Repeats')"
-				/>
+				<!-- How far off it is, which is what a reader scanning a search asks of a date
+				     the chip has already told them. -->
+				<span class="shrink-0 text-xs text-ink-gray-5">{{ relative }}</span>
 			</span>
-			<span class="shrink-0 text-xs text-ink-gray-5">{{ when }}</span>
-		</span>
-		<!-- Dropped rather than left blank: a holiday or a birthday on a shared calendar has
-		     nobody to name, so its row is the title and when it is. -->
-		<span v-if="organizer" class="min-w-0 truncate text-sm text-ink-gray-6">
-			{{ organizer }}
+			<span v-if="subtitle" class="min-w-0 truncate text-sm text-ink-gray-6">
+				{{ subtitle }}
+			</span>
 		</span>
 	</span>
 </template>
@@ -26,6 +31,8 @@ import { computed } from 'vue'
 
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { formatEventWhen, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { eventColor } from '@/apps/calendar/utils/color'
+import DateChip from '@/apps/calendar/components/DateChip.vue'
 import type { CalendarSearchResult } from './types'
 
 const props = defineProps<{ result: CalendarSearchResult }>()
@@ -43,23 +50,39 @@ const start = computed(() =>
 )
 
 /**
- * The sentence the agenda and the day view write, shortened to its two ends: "Thu, 23 Jul ·
- * 8:00 – 9:00 pm". A result read one way here and another way on the grid it opens would be
- * two descriptions of one event.
- *
- * Never compacted: compact leaves the weekday alone for callers that print the date
- * themselves, and a row that says only "Thursday" cannot be placed.
+ * The chip's month band carries the year where it is not this one — a search runs across
+ * years where a mail thread does not, and "7 Jul" alone in a list holding three of them says
+ * the wrong thing. The label below then has no year left to spell out (`yearInChip`).
  */
+const thisYear = computed(() => start.value.year() === dayjs().year())
+const chipMonth = computed(() =>
+	thisYear.value ? start.value.format('MMM') : start.value.format("MMM 'YY"),
+)
+const chipDay = computed(() => start.value.format('D'))
+
+/** Only the weekday and the clock: the chip beside it has already said which day. */
 const when = computed(() =>
 	formatEventWhen(start.value, props.result.duration, {
 		allDay: allDay.value,
+		compact: true,
+		yearInChip: true,
 		// The clock times already say how long it runs, and the line is spent.
 		length: false,
 	}),
 )
 
-/** Whose event it is — the address the detail card names them by, not a name guessed from it. */
-const organizer = computed(() => props.result.organizer || '')
+const subtitle = computed(() =>
+	[when.value, props.result.organizer].filter(Boolean).join(' · '),
+)
+
+// Sentence case, since it stands alone at the end of a row rather than inside a sentence.
+/** Which calendar it is on, resolved the one way every surface resolves it. */
+const calendarColor = computed(() => eventColor(props.result.calendars?.[0]?.color))
+
+const relative = computed(() => {
+	const label = start.value.fromNow()
+	return label.charAt(0).toUpperCase() + label.slice(1)
+})
 
 /** How often it comes round is an icon, not words: the line beside it is already full. */
 const repeats = computed(() => {

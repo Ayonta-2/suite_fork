@@ -315,29 +315,22 @@
 
 			<!-- Unlabelled, the way mail's results are: the palette is already scoped to the app
 			     in view, so a heading naming that app says nothing the reader did not just do. -->
-			<CommandPaletteGroup v-if="calendarResults.length">
+			<CommandPaletteGroup v-if="calendarResults.length" :label="resultsLabel('Events')">
 				<CommandPaletteItem
 					v-for="event in calendarResults"
 					:key="event.name"
 					:value="event"
 					class="[&_[data-slot=command-palette-item-label]]:flex-1"
 				>
-					<!-- Which calendar it is on, in the colour that calendar is drawn in
-					     everywhere else — the grid's pills carry it as an edge and so do the
-					     rail's rows, and a row of results is the same kind of list. -->
-					<template #prefix>
-						<span
-							class="mr-2.5 w-[2.5px] shrink-0 self-stretch rounded-full"
-							:style="{ backgroundColor: calendarResultColor(event) }"
-						/>
-					</template>
+					<!-- No prefix of its own: the row leads with the date chip, which is the
+					     thing a reader scans a list of events by. -->
 					<CalendarSearchResult :result="event" />
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
 			<MailSearchSuggestions :suggestions="mailSuggestions" />
 
-			<CommandPaletteGroup v-if="mailResults.length">
+			<CommandPaletteGroup v-if="mailResults.length" :label="resultsLabel('Messages')">
 				<CommandPaletteItem
 					v-for="mail in mailResults"
 					:key="`${mail.account}-${mail.thread_id}`"
@@ -566,6 +559,10 @@ type PaletteItem =
 	| SuiteAppSwitcherItem
 
 const minimumQueryLength = 3
+// The calendar answers from the first character. Its titles are short and usually a name, the
+// server matches whole words rather than prefixes, and one letter over a few hundred events is
+// a list — not the flood a document search would return, which is what the longer floor is for.
+const calendarMinimumQueryLength = 1
 const DriveSearchResultIcon = defineAsyncComponent(
 	() => import('@/apps/drive/components/DriveSearchResultIcon.vue')
 )
@@ -666,20 +663,6 @@ let calendarUser: ReturnType<typeof calendarUserStore> | undefined
 const calendarFilterOptions = computed(() =>
 	calendarSearchActive.value ? ((calendarUser ??= calendarUserStore()).calendarOptions ?? []) : []
 )
-/**
- * The colour the reader knows that calendar by. Resolved through the store's own list, which
- * fills in a colour for a calendar that carries none — the server sends null for those, and a
- * bar with no colour is a bar that isn't there.
- */
-const calendarResultColor = (event: CalendarSearchResultItem) => {
-	const calendar = event.calendars?.[0]
-	if (!calendar) return ''
-	return (
-		calendarFilterOptions.value.find((option) => option.value === calendar.calendar)?.color ||
-		calendar.color ||
-		''
-	)
-}
 const calendarBadges = computed(() =>
 	calendarFilterBadges(
 		(value) => calendarFilterOptions.value.find((o) => o.value === value)?.label || value
@@ -854,6 +837,24 @@ const calendarResults = computed<CalendarSearchResultItem[]>(() => {
 			resultType: 'calendar-event' as const,
 		}))
 })
+const minimumQuery = computed(() =>
+	calendarSearchActive.value ? calendarMinimumQueryLength : minimumQueryLength
+)
+
+/**
+ * Whether anything else is on screen for the results to be told apart from — the commands
+ * matching the same words, or the contacts and filters mail offers above its hits.
+ */
+const hasOtherSections = computed(
+	() => filteredCommands.value.length > 0 || mailSuggestions.value.length > 0
+)
+
+/**
+ * A heading over the results, but only where there is a second section under the same query.
+ * On its own it would name the app the reader is already in and is already searching.
+ */
+const resultsLabel = (label: string) => (hasOtherSections.value ? label : undefined)
+
 const contextSearchLabel = computed(
 	() =>
 		({
@@ -1036,7 +1037,7 @@ watch(
 		// "everything on the holidays calendar in July" is a question. Every other app needs
 		// something typed before there is anything to ask.
 		if (
-			text.length < minimumQueryLength &&
+			text.length < minimumQuery.value &&
 			!(calendarSearchActive.value && calendarIsNarrowed.value)
 		) {
 			resetSearches()
@@ -1142,7 +1143,7 @@ const emptyMessage = computed(() => {
 	if (
 		!mailSearchActive.value &&
 		text &&
-		text.length < minimumQueryLength &&
+		text.length < minimumQuery.value &&
 		contextSearchLabel.value
 	)
 		return `Type more to search ${contextSearchLabel.value}`
