@@ -26,3 +26,20 @@ export const eventRowId = (event: { name: string }) => event.name
  */
 export const serverEventId = (event: { event_id?: string; master_id?: string }) =>
 	event.master_id || event.event_id
+
+/**
+ * Whether two rows name one event: the same account, the same event as a link names it, the
+ * same occurrence. Not by row id — a search hands a one-off back as its master (`lw`) where the
+ * grid's window holds it expanded (`eaaaalw`, master `lw`), so the two rows carry different ids
+ * for one event, and the sheet may be showing either copy. Accounts first, since the ids are
+ * only unique within one.
+ */
+export const sameEvent = (
+	a?: { account?: string; event_id?: string; master_id?: string; recurrence_id?: string | null } | null,
+	b?: { account?: string; event_id?: string; master_id?: string; recurrence_id?: string | null } | null,
+) =>
+	!!a &&
+	!!b &&
+	a.account === b.account &&
+	serverEventId(a) === serverEventId(b) &&
+	(a.recurrence_id ?? '') === (b.recurrence_id ?? '')
