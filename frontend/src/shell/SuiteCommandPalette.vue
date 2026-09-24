@@ -314,7 +314,7 @@
 					<template #prefix>
 						<DriveSearchResultIcon :entity="entity" />
 					</template>
-					{{ entity.file_name }}
+					<HighlightedText :text="entity.file_name" :term="searchWords" />
 					<template #suffix>
 						<DriveSearchResultModified :modified="entity.modified" />
 					</template>
@@ -330,7 +330,7 @@
 					<template #prefix>
 						<DriveSearchResultIcon :entity="sheet" />
 					</template>
-					{{ sheet.title || 'Untitled Sheet' }}
+					<HighlightedText :text="sheet.title || 'Untitled Sheet'" :term="searchWords" />
 					<template #suffix>
 						<DriveSearchResultModified :modified="sheet.modified" />
 					</template>
@@ -346,7 +346,7 @@
 					<template #prefix>
 						<DriveSearchResultIcon :entity="presentation" />
 					</template>
-					{{ presentation.file_name }}
+					<HighlightedText :text="presentation.file_name" :term="searchWords" />
 					<template #suffix>
 						<DriveSearchResultModified :modified="presentation.modified" />
 					</template>
@@ -362,7 +362,7 @@
 					<template #prefix>
 						<DriveSearchResultIcon :entity="document" />
 					</template>
-					{{ document.title || 'Untitled Document' }}
+					<HighlightedText :text="document.title || 'Untitled Document'" :term="searchWords" />
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
@@ -379,7 +379,7 @@
 							<span class="lucide-video size-4" aria-hidden="true" />
 						</span>
 					</template>
-					{{ meeting.title || meeting.name }}
+					<HighlightedText :text="meeting.title || meeting.name" :term="searchWords" />
 					<template #suffix>
 						<DriveSearchResultModified :modified="meeting.modified" />
 					</template>
@@ -400,6 +400,7 @@
 					<CalendarSearchResult
 						:result="event"
 						:calendar-color="calendarResultColor(event)"
+						:term="searchWords"
 					/>
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
@@ -413,7 +414,7 @@
 					:value="mail"
 					class="group [&_[data-slot=command-palette-item-label]]:flex-1"
 				>
-					<MailSearchResult :result="mail" />
+					<MailSearchResult :result="mail" :term="mailSearchWords" />
 				</CommandPaletteItem>
 				<!-- Last, not first: the palette activates its first item, and Enter on a search
 				     belongs to the mail you were looking for. This is the way out to the results
@@ -560,6 +561,8 @@ import CalendarFilterPanel from '@/apps/calendar/components/CommandPalette/Calen
 import MailSearchResult from '@/apps/mail/components/CommandPalette/MailSearchResult.vue'
 import MailSearchSuggestions from '@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue'
 import CalendarSearchResult from '@/apps/calendar/components/CommandPalette/CalendarSearchResult.vue'
+import HighlightedText from '@/components/HighlightedText.vue'
+import { parseMailSearchQuery } from '@/apps/mail/components/CommandPalette/searchQuery'
 import type {
 	MailContactSuggestion,
 	MailFilterSuggestion,
@@ -903,6 +906,10 @@ const calendarSearch = appSearch(
 	'suite.calendar.api.search_calendar_events_with_shared'
 )
 const normalizedQuery = computed(() => query.value.trim().toLowerCase())
+// What a row is marked by: the words asked, which for mail are the query line less its
+// operators — `is:unread` narrows the search and is not a word any subject holds.
+const searchWords = computed(() => query.value.trim())
+const mailSearchWords = computed(() => parseMailSearchQuery(query.value.trim()).text ?? '')
 const appQuery = computed(() =>
 	normalizedQuery.value.replace(/^>\s*/, '').trim()
 )

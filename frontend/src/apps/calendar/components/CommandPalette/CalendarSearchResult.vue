@@ -7,7 +7,7 @@
 			<span class="flex min-w-0 items-center gap-3">
 				<span class="flex min-w-0 flex-1 items-center gap-1.5">
 					<span class="truncate text-base-semibold text-ink-gray-8">
-						{{ result.title || __('Untitled event') }}
+						<HighlightedText :text="result.title || __('Untitled event')" :term="term" />
 					</span>
 					<span
 						v-if="repeats"
@@ -20,7 +20,7 @@
 				<span class="shrink-0 text-xs text-ink-gray-5">{{ relative }}</span>
 			</span>
 			<span v-if="subtitle" class="min-w-0 truncate text-sm text-ink-gray-6">
-				{{ subtitle }}
+				<HighlightedText :text="subtitle" :term="term" />
 			</span>
 		</span>
 	</span>
@@ -33,6 +33,7 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import { formatEventWhen, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { eventColor } from '@/apps/calendar/utils/color'
 import DateChip from '@/apps/calendar/components/DateChip.vue'
+import HighlightedText from '@/components/HighlightedText.vue'
 import type { CalendarSearchResult } from './types'
 
 const props = defineProps<{
@@ -50,6 +51,8 @@ const props = defineProps<{
 	 * that is nothing but the list does not. The two lines sit the same distance apart on both.
 	 */
 	roomy?: boolean
+	/** The words it was found by, to mark where they fall. */
+	term?: string
 }>()
 
 const allDay = computed(() => isAllDayEvent(props.result))

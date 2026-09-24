@@ -97,7 +97,12 @@
 				:class="isOpen(row) ? 'bg-surface-gray-2' : 'active:bg-surface-gray-2'"
 				@click="emit('select', row)"
 			>
-				<CalendarSearchResult :result="row" :calendar-color="calendarColorOf(row)" roomy />
+				<CalendarSearchResult
+					:result="row"
+					:calendar-color="calendarColorOf(row)"
+					:term="query"
+					roomy
+				/>
 			</button>
 		</div>
 	</div>
