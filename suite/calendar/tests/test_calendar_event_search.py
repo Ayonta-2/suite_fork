@@ -1,0 +1,113 @@
+# Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
+# For license information, please see license.txt
+
+from suite.calendar.api import search_calendar_events_with_shared
+from suite.calendar.doctype.calendar_event.calendar_event import add_calendar_event
+from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
+
+
+class TestCalendarEventSearch(StalwartIntegrationTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.member = cls.create_member()
+        cls.account = cls.personal_account(cls.member)
+
+    def _search(
+        self, text: str | None = None, limit: int | None = None, **filters
+    ) -> list[dict]:
+        with self.set_user(self.member.email):
+            kwargs = {"limit": limit} if limit is not None else {}
+            if filters:
+                kwargs["filters"] = filters
+            return search_calendar_events_with_shared(self.account, text, time_zone="UTC", **kwargs)
+
+    def _wait_for_search(self, text: str, count: int, limit: int | None = None) -> list[dict]:
+        # Stalwart indexes asynchronously, so a search run the moment an event is written
+        # can answer before the event is in the index it searches.
+        return self.wait_until(
+            lambda: ((found := self._search(text, limit)) and len(found) >= count and found) or None,
+            timeout=60,
+            message=f"Search for '{text}' did not find {count} event(s).",
+        )
+
+    def _add(self, title: str, start: str) -> str:
+        with self.set_user(self.member.email):
+            return add_calendar_event(
+                self.account, title=title, start=start, duration="PT1H", time_zone="UTC"
+            )
+
+    def test_finds_an_event_by_a_word_in_its_title(self):
+        word = unique_name("kickoff")
+        event_id = self._add(f"Project {word} with the team", "2026-05-04T10:00:00")
+
+        found = self._wait_for_search(word, 1)
+
+        self.assertEqual([event["id"] for event in found], [event_id])
+        self.assertEqual(found[0]["account"], self.account)
+
+    def test_answers_in_start_order_whoever_the_events_belong_to(self):
+        word = unique_name("review")
+        # Written out of order, so an answer in start order is the search's doing and not
+        # the order they happened to be created in.
+        self._add(f"Second {word}", "2026-06-11T09:00:00")
+        self._add(f"Third {word}", "2026-06-12T09:00:00")
+        self._add(f"First {word}", "2026-06-10T09:00:00")
+
+        found = self._wait_for_search(word, 3)
+
+        self.assertEqual(
+            [event["title"].split()[0] for event in found], ["First", "Second", "Third"]
+        )
+
+    def test_a_limit_keeps_the_earliest_of_the_matches(self):
+        word = unique_name("sprint")
+        self._add(f"Late {word}", "2026-07-20T09:00:00")
+        self._add(f"Early {word}", "2026-07-06T09:00:00")
+        self._add(f"Middle {word}", "2026-07-13T09:00:00")
+
+        self._wait_for_search(word, 3)
+        found = self._search(word, limit=2)
+
+        self.assertEqual([event["title"].split()[0] for event in found], ["Early", "Middle"])
+
+    def test_a_search_with_nothing_asked_answers_with_nothing(self):
+        # Not "everything": the palette asks on every keystroke, and a blank line is a reader
+        # who has not asked yet rather than one asking for their whole calendar.
+        self.assertEqual(self._search(), [])
+        self.assertEqual(self._search(""), [])
+
+    def test_a_word_in_the_notes_is_found_only_when_the_notes_are_searched(self):
+        word = unique_name("parking")
+        with self.set_user(self.member.email):
+            add_calendar_event(
+                self.account,
+                title=f"Offsite {unique_name('trip')}",
+                start="2026-08-04T10:00:00",
+                duration="PT1H",
+                time_zone="UTC",
+                description=f"Bring the {word} pass",
+            )
+
+        found = self.wait_until(
+            lambda: self._search(word, scope="text") or None,
+            timeout=60,
+            message=f"'{word}' was never indexed.",
+        )
+
+        self.assertEqual(len(found), 1)
+        self.assertEqual(self._search(word, scope="title"), [])
+
+    def test_a_filter_narrows_a_search_that_has_no_words_in_it(self):
+        word = unique_name("summit")
+        event_id = self._add(f"Annual {word}", "2026-09-15T09:00:00")
+        self._wait_for_search(word, 1)
+
+        with self.set_user(self.member.email):
+            calendar = search_calendar_events_with_shared(
+                self.account, word, time_zone="UTC"
+            )[0]["calendars"][0]["calendar"]
+
+        found = self._search(calendar=calendar)
+
+        self.assertIn(event_id, [event["id"] for event in found])

@@ -227,6 +227,9 @@ EVENT_PAGE_SIZE = 999
 # it stops, and says so in the error log rather than silently.
 MAX_EVENTS_IN_WINDOW = 5000
 
+# What a search answers with when the caller names no count of its own.
+EVENT_SEARCH_LIMIT = 20
+
 
 def _events_in_window(
     account: str, from_date: str, to_date: str, time_zone: str, calendar_ids: list[str] | None = None
@@ -305,6 +308,130 @@ def get_calendar_events_with_shared(account: str, from_date: str, to_date: str, 
         account,
         lambda each, calendar_ids: _calendar_events(each, from_date, to_date, time_zone, calendar_ids),
     )
+
+
+@frappe.whitelist()
+def search_calendar_events_with_shared(
+    account: str,
+    text: str | None = None,
+    limit: int = EVENT_SEARCH_LIMIT,
+    time_zone: str | None = None,
+    filters: dict | None = None,
+) -> list[dict]:
+    """Events matching `text` and `filters`, from the account and the calendars shared with it.
+
+    The grid reads through `_with_shared`, so it draws calendars that live in their owner's
+    account rather than the viewer's — a holidays calendar shared read-only, say. A search
+    that asked the viewer's account alone would answer "no results" for an event the reader
+    can see on the grid in front of them.
+    """
+
+    limit = cint(limit) or EVENT_SEARCH_LIMIT
+    filters = frappe.parse_json(filters) if isinstance(filters, str) else (filters or {})
+
+    # With nothing asked there is nothing to answer. Guarded here rather than per account,
+    # because the `inCalendar` scoping a shared account is read with is a condition too — and
+    # on its own it would hand back every event in every calendar shared with the reader.
+    if not (_search_conditions(text, filters) or filters.get("calendar")):
+        return []
+
+    # A named calendar answers for itself: it says which account to ask and which calendar in
+    # it, so the fan-out has nothing left to widen. Named as `account|id`, the way every other
+    # calendar-shaped argument in this app is.
+    if calendar := filters.get("calendar"):
+        calendar_account, _, calendar_id = str(calendar).partition("|")
+        events = _search_calendar_events(
+            calendar_account, text, limit, time_zone, [calendar_id], filters
+        )
+    else:
+        events = _with_shared(
+            account,
+            lambda each, calendar_ids: _search_calendar_events(
+                each, text, limit, time_zone, calendar_ids, filters
+            ),
+        )
+
+    # Each account answers in its own start order, so the concatenation is in none: the merged
+    # list has to be put back in order before it is cut down to the asked-for count, or which
+    # results survive depends on which account happened to be read first.
+    events.sort(key=lambda event: event.get("start") or "")
+
+    return events[:limit]
+
+
+# What a word typed on the query line is matched against. `text` is the server's own union of
+# an event's text — title, description, location — and `title` is the title alone.
+EVENT_SEARCH_SCOPES = ("title", "text")
+
+# The filters that are a JMAP condition each, under the name the server knows them by. Left out
+# deliberately: `participants`, `status`, `privacy`, `isDraft` and `showWithoutTime` are not
+# indexed by Stalwart, and an unindexed condition is *ignored* rather than refused — a filter
+# built on one would quietly widen the search instead of narrowing it.
+EVENT_SEARCH_CONDITIONS = {
+    "attendee": "attendee",
+    "organizer": "owner",
+}
+
+
+def _search_conditions(text: str | None, filters: dict) -> list[dict]:
+    """The filters as JMAP conditions, dropping the ones left blank."""
+
+    scope = filters.get("scope") if filters.get("scope") in EVENT_SEARCH_SCOPES else "title"
+    conditions = [{scope: text}] if text else []
+
+    conditions.extend(
+        {condition: value}
+        for key, condition in EVENT_SEARCH_CONDITIONS.items()
+        if (value := (filters.get(key) or "").strip())
+    )
+
+    # Sent as instants, not dates: which instants a reader's "3 July" begins and ends at is a
+    # question about their time zone, and the client is the one holding that. It widens each
+    # to the whole day there before asking (see the calendar's `utcDayStart`/`utcDayEnd`), the
+    # way the grid's own range query does.
+    if after := filters.get("after"):
+        conditions.append({"after": normalize_utc_z(after)})
+    if before := filters.get("before"):
+        conditions.append({"before": normalize_utc_z(before)})
+
+    return conditions
+
+
+def _search_calendar_events(
+    account: str,
+    text: str | None,
+    limit: int,
+    time_zone: str | None,
+    calendar_ids: list[str] | None = None,
+    filters: dict | None = None,
+) -> list[dict]:
+    """The account's matching events, on `calendar_ids` alone when given.
+
+    Recurrences stay unexpanded: expansion needs a window to expand into and a search has
+    none — it asks the whole calendar, not a page of it. So a series answers as its master.
+    """
+
+    filters = filters or {}
+    conditions = _search_conditions(text, filters)
+    if calendar_ids:
+        conditions.append(
+            {"operator": "OR", "conditions": [{"inCalendar": id} for id in calendar_ids]}
+        )
+
+    query = conditions[0] if len(conditions) == 1 else {"operator": "AND", "conditions": conditions}
+
+    # A date range is the one thing that lets a series answer as the occurrence the reader is
+    # looking for. Without a window the server matches a series on any occurrence in it and
+    # still hands back the master, so a search of one July came back full of birthdays dated
+    # the January they were first entered. Expansion needs a start and an end, which is
+    # precisely what a range is, so it is on exactly when the reader has given one.
+    expand = bool(filters.get("after") and filters.get("before"))
+
+    events, _total = fetch_calendar_events(
+        account, query, position=0, limit=limit, time_zone=time_zone, expand_recurrences=expand
+    )
+
+    return events
 
 
 @frappe.whitelist()
