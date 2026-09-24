@@ -584,3 +584,137 @@ describe('searching every account', () => {
 		expect(openSearch().allAccounts.value).toBe(true)
 	})
 })
+
+describe('recent searches', () => {
+	// Committed to, not typed: `rememberSearch` is what the palette calls when a result is
+	// opened or the results page reached, so a test says so explicitly rather than typing.
+	it('keeps the words as typed and the badges as applied, and says what it read as', () => {
+		const search = openSearch()
+		search.query.value = 'budget'
+		search.setFilters({ inMailbox: 'mailbox-1' })
+
+		search.rememberSearch()
+
+		expect(search.recentSearches.value).toHaveLength(1)
+		const [kept] = search.recentSearches.value
+		expect(kept.text).toBe('budget')
+		expect(kept.filters).toEqual({ inMailbox: 'mailbox-1' })
+		expect(kept.label).toContain('budget')
+		expect(kept.label).toContain('in:Inbox')
+		expect(kept.resultType).toBe('mail-recent-search')
+	})
+
+	it('remembers nothing when nothing was asked', () => {
+		const search = openSearch()
+		search.query.value = '   '
+
+		search.rememberSearch()
+
+		expect(search.recentSearches.value).toEqual([])
+	})
+
+	it('moves a repeated search to the front rather than listing it twice', () => {
+		const search = openSearch()
+		search.query.value = 'budget'
+		search.rememberSearch()
+		search.query.value = 'invoice'
+		search.rememberSearch()
+		search.query.value = 'budget'
+		search.rememberSearch()
+
+		expect(search.recentSearches.value.map((entry) => entry.text)).toEqual(['budget', 'invoice'])
+	})
+
+	it('keeps only the last five', () => {
+		const search = openSearch()
+		for (const word of ['one', 'two', 'three', 'four', 'five', 'six']) {
+			search.query.value = word
+			search.rememberSearch()
+		}
+
+		expect(search.recentSearches.value.map((entry) => entry.text)).toEqual([
+			'six',
+			'five',
+			'four',
+			'three',
+			'two',
+		])
+	})
+
+	it('puts a remembered search back exactly as it ran', () => {
+		const search = openSearch()
+		search.query.value = 'budget'
+		search.setFilters({ inMailbox: 'mailbox-1' })
+		search.rememberSearch()
+		search.query.value = ''
+		search.setFilters({})
+
+		search.restoreSearch(search.recentSearches.value[0])
+
+		expect(search.query.value).toBe('budget')
+		expect(search.filterValues.value).toEqual({ inMailbox: 'mailbox-1' })
+	})
+
+	it('puts a folder back only for the account it belongs to', () => {
+		const search = openSearch()
+		search.query.value = 'budget'
+		search.search('budget', 'work')
+		search.setFilters({ inMailbox: 'mailbox-1', isRead: 'false' })
+		search.rememberSearch()
+		search.query.value = ''
+		search.setFilters({})
+
+		// Another account: its folders are other folders, and this id names none of them.
+		search.search('', 'personal')
+		search.restoreSearch(search.recentSearches.value[0])
+		expect(search.query.value).toBe('budget')
+		expect(search.filterValues.value).toEqual({ isRead: 'false' })
+
+		// Back on the account it ran against, the folder comes back with it.
+		search.search('', 'work')
+		search.restoreSearch(search.recentSearches.value[0])
+		expect(search.filterValues.value).toEqual({ inMailbox: 'mailbox-1', isRead: 'false' })
+	})
+
+	it('is kept under the user, not the browser', async () => {
+		document.cookie = 'user_id=alice@example.com'
+		const alice = openSearch()
+		alice.query.value = 'budget'
+		alice.rememberSearch()
+		await nextTick()
+
+		document.cookie = 'user_id=bob@example.com'
+		const bob = openSearch()
+		expect(bob.recentSearches.value).toEqual([])
+		expect(localStorage.getItem('mail-recent-searches:alice@example.com')).toContain('budget')
+		document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+	})
+
+	it('forgets one and clears all', () => {
+		const search = openSearch()
+		search.query.value = 'budget'
+		search.rememberSearch()
+		search.query.value = 'invoice'
+		search.rememberSearch()
+
+		search.forgetSearch(search.recentSearches.value[1])
+		expect(search.recentSearches.value.map((entry) => entry.text)).toEqual(['invoice'])
+
+		search.clearRecentSearches()
+		expect(search.recentSearches.value).toEqual([])
+	})
+
+	// The whole point: they are there the next time the page opens, which is a new composable.
+	// After a tick, since `useStorage` writes the browser on the next flush rather than as the
+	// ref is set — the way it would have long since done by the time a page is reopened.
+	it('outlives the search that made it', async () => {
+		const first = openSearch()
+		first.query.value = 'budget'
+		first.rememberSearch()
+		await nextTick()
+
+		const later = openSearch()
+
+		expect(later.recentSearches.value.map((entry) => entry.text)).toEqual(['budget'])
+	})
+})

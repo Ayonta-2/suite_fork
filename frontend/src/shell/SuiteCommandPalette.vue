@@ -14,14 +14,14 @@
 		<CommandPaletteInput
 			ref="paletteInput"
 			:placeholder="
-				mailAppliedFilters.length
+				mailAppliedFilters.length && !mailSearchOnly
 					? `Search · ${removeMailFilterShortcut} removes last filter`
-					: mailSearchActive
+					: hasFilterPanel
 						? 'Search'
 					: palettePlaceholder
 			"
-			@mousedown="showMailFilters = false"
-			@input="showMailFilters = false"
+			@mousedown="showFilters = false"
+			@input="showFilters = false"
 			@keydown.backspace="handleMailFilterBackspace"
 		>
 			<template #prefix>
@@ -36,23 +36,23 @@
 				</button>
 				<span v-else class="lucide-search size-4 shrink-0 text-ink-gray-6" />
 			</template>
-			<template v-if="mailSearchActive" #suffix>
+			<template v-if="hasFilterPanel" #suffix>
 				<Button
-					:variant="showMailFilters ? 'subtle' : 'ghost'"
+					:variant="showFilters ? 'subtle' : 'ghost'"
 					icon="lucide-sliders-horizontal"
 					size="sm"
 					aria-label="Filters"
-					:aria-expanded="showMailFilters"
+					:aria-expanded="showFilters"
 					@mousedown.prevent
-					@click="toggleMailFilters"
+					@click="toggleFilters"
 				/>
 			</template>
 		</CommandPaletteInput>
 
 		<div
-			v-if="mailSearchActive && !showMailFilters"
+			v-if="mailSearchActive && !showFilters"
 			class="mail-search-filters relative flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2"
-			:class="{ 'pr-12': mailAppliedFilters.length }"
+			:class="{ 'pr-12': mailAppliedFilters.length && !mailSearchOnly }"
 		>
 			<span
 				v-for="filter in mailAppliedFilters"
@@ -98,27 +98,99 @@
 					{{ option.label }}
 				</span>
 			</Button>
+			<!-- A word on the phone, where there is no tooltip to say what the × does, and in
+			     the row after the last chip rather than pinned to its corner: chips wrap on a
+			     phone, and a corner is on one of their lines or none. -->
 			<Button
 				v-if="mailAppliedFilters.length"
 				variant="ghost"
-				icon="lucide-x"
+				:icon="mailSearchOnly ? undefined : 'lucide-x'"
+				:label="mailSearchOnly ? __('Clear') : undefined"
 				size="sm"
-				class="mail-search-clear absolute right-4 top-2 !size-7 !p-0"
+				class="mail-search-clear"
+				:class="mailSearchOnly ? '-ml-0.5' : 'absolute right-4 top-2 !size-7 !p-0'"
 				aria-label="Clear all filters"
-				tooltip="Clear filters"
+				:tooltip="mailSearchOnly ? undefined : 'Clear filters'"
 				@mousedown.prevent
 				@click="mailAppliedFilters = []"
 			/>
 		</div>
 
+		<CalendarFilterBadges
+			v-if="calendarSearchActive && !showFilters"
+			:badges="calendarBadges"
+			@edit="editCalendarFilter"
+			@remove="removeCalendarFilter"
+			@clear="resetCalendarFilters"
+		/>
+
+		<CalendarFilterPanel
+			v-if="calendarSearchActive && showFilters"
+			:filter="calendarFilter"
+			:focus-field="calendarFilterToEdit"
+			:account="String(route.params.accountId || '')"
+			:calendar-options="calendarFilterOptions"
+		/>
+
 		<MailFilterPanel
-			v-if="mailSearchActive && showMailFilters"
+			v-else-if="mailSearchActive && showFilters"
 			v-model:filters="mailPanelFilters"
 			v-model:all-accounts="mailAllAccounts"
 			:has-multiple-accounts="hasMultipleMailAccounts"
 		/>
 
 		<CommandPaletteList v-else>
+			<!-- What the reader searched for last, on the phone's page while nothing is asked:
+			     the page is a list and, until a word arrives, this is its whole content. Inside
+			     the list rather than above it, so a row is a listbox item the keyboard and the
+			     select event both reach. The group's own top margin goes, since the header row
+			     here stands where the group's label would. -->
+			<template
+				v-if="
+					mailSearchOnly &&
+					!normalizedQuery &&
+					!mailAppliedFilters.length &&
+					recentMailSearches.length
+				"
+			>
+				<div class="mb-2.5 mt-3 flex items-center justify-between px-5 text-base text-ink-gray-5">
+					<span>Recent</span>
+					<button
+						type="button"
+						class="text-sm text-ink-gray-5 hover:text-ink-gray-8"
+						@mousedown.prevent
+						@click="clearRecentMailSearches"
+					>
+						Clear
+					</button>
+				</div>
+				<CommandPaletteGroup class="!mt-0">
+					<CommandPaletteItem
+						v-for="recent in recentMailSearches"
+						:key="mailSearchKey(recent)"
+						:value="recent"
+					>
+						<template #prefix>
+							<span
+								class="mr-3 flex size-5 shrink-0 items-center justify-center text-ink-gray-7"
+							>
+								<span class="lucide-history size-5" aria-hidden="true" />
+							</span>
+						</template>
+						<span class="truncate">{{ recent.label }}</span>
+						<template #suffix>
+							<button
+								class="rounded-4 p-1 text-ink-gray-5 hover:text-ink-gray-8"
+								aria-label="Remove from recent searches"
+								@mousedown.prevent
+								@click.stop="forgetMailSearch(recent)"
+							>
+								<span class="lucide-x size-3.5" aria-hidden="true" />
+							</button>
+						</template>
+					</CommandPaletteItem>
+				</CommandPaletteGroup>
+			</template>
 			<CommandPaletteGroup
 				v-if="!navigationMode && !normalizedQuery && paletteRecents.length"
 				label="Recent"
@@ -201,7 +273,7 @@
 					<template #prefix>
 						<DriveSearchResultIcon :entity="entity" />
 					</template>
-					{{ entity.file_name }}
+					<HighlightedText :text="entity.file_name" :term="searchWords" />
 					<template #suffix>
 						<DriveSearchResultModified :modified="entity.modified" />
 					</template>
@@ -217,7 +289,7 @@
 					<template #prefix>
 						<DriveSearchResultIcon :entity="sheet" />
 					</template>
-					{{ sheet.title || 'Untitled Sheet' }}
+					<HighlightedText :text="sheet.title || 'Untitled Sheet'" :term="searchWords" />
 					<template #suffix>
 						<DriveSearchResultModified :modified="sheet.modified" />
 					</template>
@@ -233,7 +305,7 @@
 					<template #prefix>
 						<DriveSearchResultIcon :entity="presentation" />
 					</template>
-					{{ presentation.file_name }}
+					<HighlightedText :text="presentation.file_name" :term="searchWords" />
 					<template #suffix>
 						<DriveSearchResultModified :modified="presentation.modified" />
 					</template>
@@ -249,7 +321,7 @@
 					<template #prefix>
 						<DriveSearchResultIcon :entity="document" />
 					</template>
-					{{ document.title || 'Untitled Document' }}
+					<HighlightedText :text="document.title || 'Untitled Document'" :term="searchWords" />
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
@@ -266,45 +338,42 @@
 							<span class="lucide-video size-4" aria-hidden="true" />
 						</span>
 					</template>
-					{{ meeting.title || meeting.name }}
+					<HighlightedText :text="meeting.title || meeting.name" :term="searchWords" />
 					<template #suffix>
 						<DriveSearchResultModified :modified="meeting.modified" />
 					</template>
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
-			<CommandPaletteGroup v-if="calendarResults.length" label="Calendar">
+			<!-- Unlabelled, the way mail's results are: the palette is already scoped to the app
+			     in view, so a heading naming that app says nothing the reader did not just do. -->
+			<CommandPaletteGroup v-if="calendarResults.length" :label="resultsLabel('Events')">
 				<CommandPaletteItem
 					v-for="event in calendarResults"
 					:key="event.name"
 					:value="event"
+					class="[&_[data-slot=command-palette-item-label]]:flex-1"
 				>
-					<template #prefix>
-						<span
-							class="mr-3 flex size-4 shrink-0 items-center justify-center text-ink-gray-7"
-						>
-							<span class="lucide-calendar-days size-4" aria-hidden="true" />
-						</span>
-					</template>
-					{{ event.title || 'Untitled event' }}
-					<template #suffix>
-						<span class="text-p-xs text-ink-gray-5">{{
-							formatCalendarStart(event)
-						}}</span>
-					</template>
+					<!-- No prefix of its own: the row leads with the date chip, which is the
+					     thing a reader scans a list of events by. -->
+					<CalendarSearchResult
+						:result="event"
+						:calendar-options="calendarFilterOptions"
+						:term="searchWords"
+					/>
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
-			<MailSearchSuggestions :suggestions="mailSuggestions" />
+			<MailSearchSuggestions :suggestions="mailSuggestions" :roomy="mailSearchOnly" />
 
-			<CommandPaletteGroup v-if="mailResults.length">
+			<CommandPaletteGroup v-if="mailResults.length" :label="resultsLabel('Messages')">
 				<CommandPaletteItem
 					v-for="mail in mailResults"
 					:key="`${mail.account}-${mail.thread_id}`"
 					:value="mail"
 					class="group [&_[data-slot=command-palette-item-label]]:flex-1"
 				>
-					<MailSearchResult :result="mail" />
+					<MailSearchResult :result="mail" :term="mailSearchWords" />
 				</CommandPaletteItem>
 				<!-- Last, not first: the palette activates its first item, and Enter on a search
 				     belongs to the mail you were looking for. This is the way out to the results
@@ -346,8 +415,14 @@
 			</CommandPaletteGroup>
 		</CommandPaletteList>
 
+		<!-- Anything that counts as having been asked gets an answer, even "nothing matched".
+		     A calendar filter is a question with no words in it, and left out of this the
+		     palette met one with a blank panel that never said whether it had run. -->
 		<CommandPaletteEmpty
-			v-if="!showMailFilters && (normalizedQuery || mailAppliedFilters.length)"
+			v-if="
+				!showFilters &&
+				(normalizedQuery || mailAppliedFilters.length || calendarFilterAsked)
+			"
 		>
 			{{ emptyMessage }}
 		</CommandPaletteEmpty>
@@ -441,16 +516,25 @@ import {
 	useScreenSize,
 } from '@/apps/mail/utils/composables'
 import MailFilterPanel from '@/apps/mail/components/CommandPalette/MailFilterPanel.vue'
+import CalendarFilterPanel from '@/apps/calendar/components/CommandPalette/CalendarFilterPanel.vue'
+import CalendarFilterBadges from '@/apps/calendar/components/CommandPalette/CalendarFilterBadges.vue'
 import MailSearchResult from '@/apps/mail/components/CommandPalette/MailSearchResult.vue'
 import MailSearchSuggestions from '@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue'
+import CalendarSearchResult from '@/apps/calendar/components/CommandPalette/CalendarSearchResult.vue'
+import HighlightedText from '@/components/HighlightedText.vue'
+import { parseMailSearchQuery } from '@/apps/mail/components/CommandPalette/searchQuery'
 import type {
 	MailContactSuggestion,
 	MailFilterSuggestion,
+	MailRecentSearch,
 	MailSearchResult as MailResult,
 } from '@/apps/mail/components/CommandPalette/types'
 import { getRecents } from '@/apps/drive/resources/files'
 import dayjs from '@/apps/calendar/utils/dayjs'
-import { isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
+import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
+import type { CalendarSearchResult as CalendarSearchResultItem } from '@/apps/calendar/components/CommandPalette/types'
+import { eventStartLocal } from '@/apps/calendar/utils/eventTime'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
 interface DriveResult {
@@ -502,19 +586,6 @@ interface MeetResult {
 	modified?: string
 }
 
-interface CalendarResult {
-	resultType: 'calendar-event'
-	name: string
-	id: string
-	account: string
-	title?: string
-	start: string
-	time_zone?: string
-	show_without_time?: 0 | 1
-	recurrence_id?: string
-	master_id?: string
-}
-
 interface MailSearchPageItem {
 	resultType: 'mail-search-page'
 }
@@ -526,14 +597,24 @@ type PaletteItem =
 	| SlideResult
 	| WriterResult
 	| MeetResult
-	| CalendarResult
+	| CalendarSearchResultItem
 	| MailResult
 	| MailContactSuggestion
 	| MailFilterSuggestion
+	| MailRecentSearch
 	| PaletteCommand
 	| SuiteAppSwitcherItem
 
 const minimumQueryLength = 3
+// The calendar answers from the first character. Its titles are short and usually a name, the
+// server matches whole words rather than prefixes, and one letter over a few hundred events is
+// a list — not the flood a document search would return, which is what the longer floor is for.
+const calendarMinimumQueryLength = 1
+// As many events as the palette shows at once, the way mail bounds its own hits: past ten, a
+// reader is scrolling a list rather than reading an answer, and the search wants narrowing.
+// Events, not rows — a recurring one comes back as its next few occurrences, and the server
+// counts the cap before it expands them, so the rows are not sliced again here.
+const CALENDAR_RESULT_LIMIT = 10
 const DriveSearchResultIcon = defineAsyncComponent(
 	() => import('@/apps/drive/components/DriveSearchResultIcon.vue')
 )
@@ -616,14 +697,60 @@ const {
 	search: searchMail,
 	cancel: cancelMailSearch,
 	reset: resetMailSearch,
+	recentSearches: recentMailSearches,
+	rememberSearch: rememberMailSearch,
+	restoreSearch: restoreMailSearch,
+	forgetSearch: forgetMailSearch,
+	clearRecentSearches: clearRecentMailSearches,
+	searchKey: mailSearchKey,
 } = useMailCommandPaletteSearch(query, mailSearchActive)
-const showMailFilters = ref(false)
+const showFilters = ref(false)
+const calendarSearchActive = computed(() => activeApp.value === 'calendar')
+const hasFilterPanel = computed(() => mailSearchActive.value || calendarSearchActive.value)
+const {
+	filter: calendarFilter,
+	badges: calendarFilterBadges,
+	params: calendarFilterParams,
+	isNarrowed: calendarIsNarrowed,
+	removeFilter: removeCalendarFilter,
+	reset: resetCalendarFilters,
+} = useCalendarSearchFilters()
+// Reached for only once the calendar is the app in view, which is the only time its panel is
+// on screen — the store is the calendar app's, and the shell outlives every app in it.
+let calendarUser: ReturnType<typeof calendarUserStore> | undefined
+const calendarFilterOptions = computed(() =>
+	calendarSearchActive.value ? ((calendarUser ??= calendarUserStore()).calendarOptions ?? []) : []
+)
+/**
+ * The field a badge sent the reader to, held only while the panel opens on it: cleared as the
+ * panel goes, so raising it again from the sliders button starts where it always did.
+ */
+const calendarFilterToEdit = ref('')
+
+const editCalendarFilter = (key: string) => {
+	calendarFilterToEdit.value = key
+	showFilters.value = true
+}
+
+watch(showFilters, (open) => {
+	if (!open) calendarFilterToEdit.value = ''
+})
+
+const calendarBadges = computed(() =>
+	calendarFilterBadges(
+		(value) => calendarFilterOptions.value.find((o) => o.value === value)?.label || value
+	)
+)
+// A calendar filter narrows on its own, so it is a search whether or not anything was typed.
+const calendarFilterAsked = computed(
+	() => calendarSearchActive.value && calendarIsNarrowed.value
+)
 // Whether Enter, with no row to open, still has a search to run: something asked, and the results
 // — not the filter panel — on screen to run it from.
 const mailSearchAsked = computed(
 	() =>
 		mailSearchActive.value &&
-		!showMailFilters.value &&
+		!showFilters.value &&
 		Boolean(normalizedQuery.value || mailAppliedFilters.value.length)
 )
 // The panel edits the filters the palette holds; anything still typed as an operator on the query
@@ -666,9 +793,9 @@ async function editMailFilter(key: string) {
 	if (selection) await selectInPaletteInput(selection)
 }
 
-function toggleMailFilters() {
-	showMailFilters.value = !showMailFilters.value
-	if (showMailFilters.value) absorbMailQueryFilters()
+function toggleFilters() {
+	showFilters.value = !showFilters.value
+	if (showFilters.value) absorbMailQueryFilters()
 }
 
 // One object for the life of the palette: the list tracks its active item by value identity, and a
@@ -682,21 +809,47 @@ const mailSearchPageLabel = computed(() => {
 })
 let openSelectionInNewTab = false
 
-useKeyboardShortcut({
-	combo: 'Mod+K',
-	description: 'Search Suite',
-	group: 'Suite',
-	allowInInput: true,
-	handler: () => {
-		root.paletteOpen = true
+// What the palette opens on, when a shortcut opens it with a line already begun. Read once by
+// the open watcher, after it has cleared the line, so a shortcut's `>` survives the clearing.
+let openingQuery = ''
+
+useKeyboardShortcut([
+	{
+		combo: 'Mod+K',
+		description: 'Search Suite',
+		group: 'Suite',
+		allowInInput: true,
+		handler: () => {
+			root.paletteOpen = true
+		},
 	},
-})
+	{
+		// The key the palette's own footer names for switching apps, made to work from the
+		// page as well: `>` typed anywhere opens the palette with the `>` already on the line.
+		combo: 'Shift+Period',
+		description: 'Switch apps',
+		group: 'Suite',
+		enabled: () => !mailSearchOnly.value,
+		handler: () => {
+			openingQuery = '>'
+			root.paletteOpen = true
+		},
+	},
+])
 
 // The query the results on screen answer. Recorded when an answer arrives rather than when a
 // request stops loading: aborting the previous request on each keystroke stops its loading too,
 // and reading that as an answer is what made the list claim "No results" mid-word.
 const settledQuery = ref('')
-const settleSearch = () => (settledQuery.value = query.value)
+// What was asked of the calendar beyond the words, since a filter is a question on its own: with
+// nothing typed, the query alone never changes, and a search set running by a filter would have
+// looked answered from the moment it was asked.
+const calendarAsked = computed(() => JSON.stringify(calendarFilterParams.value))
+const settledCalendarFilters = ref(calendarAsked.value)
+const settleSearch = () => {
+	settledQuery.value = query.value
+	settledCalendarFilters.value = calendarAsked.value
+}
 // Every app's search is asked the same way: on demand, debounced, and settling the query it
 // answered however it lands.
 const appSearch = (method: 'GET' | 'POST', url: string) =>
@@ -714,8 +867,18 @@ const sheetSearch = appSearch('POST', 'suite.sheets.api.list_sheets')
 const slideSearch = appSearch('GET', 'suite.drive.api.list.files')
 const writerSearch = appSearch('GET', 'suite.writer.api.general.search')
 const meetSearch = appSearch('POST', 'frappe.client.get_list')
-const calendarSearch = appSearch('POST', 'suite.calendar.doctype.calendar_event.calendar_event.fetch_calendar_events')
+// Shared-aware, like the grid's own fetch: a calendar shared with the reader lives in its
+// owner's account, so a search of the route's account alone cannot see what the grid is
+// drawing from it.
+const calendarSearch = appSearch(
+	'POST',
+	'suite.calendar.api.search_calendar_events_with_shared'
+)
 const normalizedQuery = computed(() => query.value.trim().toLowerCase())
+// What a row is marked by: the words asked, which for mail are the query line less its
+// operators — `is:unread` narrows the search and is not a word any subject holds.
+const searchWords = computed(() => query.value.trim())
+const mailSearchWords = computed(() => parseMailSearchQuery(query.value.trim()).text ?? '')
 const appQuery = computed(() =>
 	normalizedQuery.value.replace(/^>\s*/, '').trim()
 )
@@ -771,19 +934,32 @@ const meetResults = computed<MeetResult[]>(() => {
 			resultType: 'meeting' as const,
 		}))
 })
-const calendarResults = computed<CalendarResult[]>(() => {
-	if (
-		activeApp.value !== 'calendar' ||
-		!Array.isArray(calendarSearch.data?.[0])
-	)
+const calendarResults = computed<CalendarSearchResultItem[]>(() => {
+	if (activeApp.value !== 'calendar' || !Array.isArray(calendarSearch.data))
 		return []
-	return calendarSearch.data[0]
-		.slice(0, 20)
-		.map((event: Omit<CalendarResult, 'resultType'>) => ({
+	return calendarSearch.data.map((event: Omit<CalendarSearchResultItem, 'resultType'>) => ({
 			...event,
 			resultType: 'calendar-event' as const,
 		}))
 })
+const minimumQuery = computed(() =>
+	calendarSearchActive.value ? calendarMinimumQueryLength : minimumQueryLength
+)
+
+/**
+ * Whether anything else is on screen for the results to be told apart from — the commands
+ * matching the same words, or the contacts and filters mail offers above its hits.
+ */
+const hasOtherSections = computed(
+	() => filteredCommands.value.length > 0 || mailSuggestions.value.length > 0
+)
+
+/**
+ * A heading over the results, but only where there is a second section under the same query.
+ * On its own it would name the app the reader is already in and is already searching.
+ */
+const resultsLabel = (label: string) => (hasOtherSections.value ? label : undefined)
+
 const contextSearchLabel = computed(
 	() =>
 		({
@@ -885,18 +1061,6 @@ function enterHint(item: unknown) {
 	return 'to open file'
 }
 
-function calendarEventStart(event: CalendarResult) {
-	if (event.time_zone && !isAllDayEvent(event))
-		return dayjs.tz(event.start, event.time_zone).tz(dayjs.tz.guess())
-	return dayjs(event.start)
-}
-
-function formatCalendarStart(event: CalendarResult) {
-	return calendarEventStart(event).format(
-		isAllDayEvent(event) ? 'MMM D' : 'MMM D, h:mm A'
-	)
-}
-
 // The search as it stands, as a route query: the search page's, and each result's.
 const mailSearchQuery = computed(() => ({
 	...mailFilter.value,
@@ -949,12 +1113,12 @@ watch(
 )
 
 watch(
-	[query, mailAppliedFilters, mailAllAccounts, showMailFilters],
+	[query, mailAppliedFilters, mailAllAccounts, showFilters, calendarFilterParams],
 	([value]) => {
 		// Nothing to search for while the filter panel is up: its results are not on screen, every
 		// keystroke in a field would ask for a set nobody is reading — and nothing is in flight to
 		// cancel, since opening the panel already did.
-		if (mailSearchActive.value && showMailFilters.value) return
+		if (hasFilterPanel.value && showFilters.value) return
 		const text = value.trim()
 		cancelSearches()
 		// Nothing on the server answers "which app": the list is already here.
@@ -968,7 +1132,13 @@ watch(
 			return
 		}
 
-		if (text.length < minimumQueryLength) {
+		// A filter narrows on its own, so the calendar can answer a search with no words in it —
+		// "everything on the holidays calendar in July" is a question. Every other app needs
+		// something typed before there is anything to ask.
+		if (
+			text.length < minimumQuery.value &&
+			!(calendarSearchActive.value && calendarIsNarrowed.value)
+		) {
 			resetSearches()
 			return
 		}
@@ -1007,14 +1177,13 @@ watch(
 				order_by: 'modified desc',
 				limit_page_length: 20,
 			})
-		} else if (activeApp.value === 'calendar') {
+		} else if (calendarSearchActive.value) {
 			calendarSearch.submit({
 				account: String(route.params.accountId || ''),
-				filter: { title: text },
-				position: 0,
-				limit: 20,
+				text,
+				limit: CALENDAR_RESULT_LIMIT,
 				time_zone: dayjs.tz.guess(),
-				expand_recurrences: false,
+				filters: calendarFilterParams.value,
 			})
 		}
 	}
@@ -1028,9 +1197,10 @@ watch(
 		// Emptied as it opens rather than as it closes: clearing on the way out is a change the
 		// closing animation is still on screen to show, so the palette was seen throwing away the
 		// search before it went.
-		showMailFilters.value = false
+		showFilters.value = false
 		query.value = ''
 		mailAppliedFilters.value = []
+		resetCalendarFilters()
 		resetSearches()
 
 		if (['drive', 'slides', 'sheets', 'writer'].includes(activeApp.value))
@@ -1051,16 +1221,30 @@ watch(
 				) as Record<string, string>
 			)
 		}
+		if (openingQuery) {
+			query.value = openingQuery
+			openingQuery = ''
+			// The caret after it, not the text selected: the dialog's focus scope selects an
+			// input's text as it focuses it, and a selected `>` is one the next key replaces.
+			// The scope leaves an input that is already focused alone, so focusing it here
+			// first keeps the selection off whichever of the two runs first.
+			nextTick(() => {
+				const input = paletteInputEl()
+				if (!input) return
+				input.focus()
+				input.setSelectionRange(input.value.length, input.value.length)
+			})
+		}
 	}
 )
 
 // Asked but not yet answered — the debounce it is waiting out included, which is exactly when an
 // empty list means "not yet" rather than "nothing".
-const isSearching = computed(() =>
-	mailSearchActive.value
-		? mailSearchPending.value
-		: settledQuery.value !== query.value
-)
+const isSearching = computed(() => {
+	if (mailSearchActive.value) return mailSearchPending.value
+	if (settledQuery.value !== query.value) return true
+	return calendarSearchActive.value && settledCalendarFilters.value !== calendarAsked.value
+})
 
 // Said in one place and in the order the reader needs it: what mode you are in, what the operator
 // you are halfway through wants, whether there is even enough to search on, whether the answer is
@@ -1072,12 +1256,14 @@ const emptyMessage = computed(() => {
 	if (
 		!mailSearchActive.value &&
 		text &&
-		text.length < minimumQueryLength &&
+		text.length < minimumQuery.value &&
 		contextSearchLabel.value
 	)
 		return `Type more to search ${contextSearchLabel.value}`
 	if (isSearching.value) return 'Searching…'
 	if (mailAppliedFilters.value.length) return 'No mail matches these filters'
+	// A filter-only search has no words to quote back, so it names the filters instead.
+	if (calendarFilterAsked.value && !text) return 'No events match these filters'
 	return `No results for "${text}"`
 })
 
@@ -1157,6 +1343,7 @@ function handlePaletteEnter(event: KeyboardEvent) {
 // replace that entry rather than stacking on it: pushing left an empty "Search your mail" page
 // between the results and the folder they were searched from, which is what Back landed on.
 async function goToMailSearch() {
+	rememberMailSearch()
 	const location = mailSearchLocation()
 	if (isMobile.value && isMailSearchRoute.value) await router.replace(location)
 	else await router.push(location)
@@ -1194,6 +1381,11 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 	if ('resultType' in item && item.resultType === 'mail-filter-suggestion') {
 		event.preventDefault()
 		selectMailFilterSuggestion(item)
+		return
+	}
+	if ('resultType' in item && item.resultType === 'mail-recent-search') {
+		event.preventDefault()
+		restoreMailSearch(item)
 		return
 	}
 	if ('resultType' in item && item.resultType === 'mail-search-page') {
@@ -1238,6 +1430,7 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 		} else if (item.resultType === 'writer') {
 			location = { name: 'writer-document', params: { id: item.name } }
 		} else if (item.resultType === 'mail') {
+			rememberMailSearch()
 			location = {
 				name: 'mail-mail',
 				params: {
@@ -1248,18 +1441,27 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 				query: mailSearchQuery.value,
 			}
 		} else if (item.resultType === 'calendar-event') {
-			const start = calendarEventStart(item)
+			const start = eventStartLocal(item)
+			// The view the reader is in is the view the result opens in — Agenda included.
+			// Left out, it fell through to the fallback, and searching from Agenda landed
+			// on a month grid nobody asked for.
 			const calendarRoute = [
 				'calendar-month',
 				'calendar-week',
 				'calendar-day',
+				'calendar-agenda',
 			].includes(String(route.name))
 				? String(route.name)
 				: 'calendar-month'
 			location = {
 				name: calendarRoute,
 				params: {
-					accountId: item.account || route.params.accountId,
+					// The reader's own account, not the event's: a hit on a shared calendar
+					// belongs to whoever owns it, and routing there would switch the calendar
+					// to an account nobody thinks of as theirs. The grid shows the shared
+					// event inside the reader's view, and so does the link to it — which is
+					// what `account` is for, ids being unique only within an account.
+					accountId: route.params.accountId || item.account,
 					year: start.year(),
 					month: start.month() + 1,
 					day: start.date(),
@@ -1267,6 +1469,7 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 				query: {
 					event: item.master_id || item.id,
 					recurrence: item.recurrence_id || undefined,
+					account: item.account || undefined,
 				},
 			}
 		} else {
@@ -1386,27 +1589,65 @@ onScopeDispose(() => {
 		}
 	}
 
+	/* A flat 56px — the height every mobile header in the product stands at (see mail's
+	   MobileTitleHeader and the calendar's search page) — rather than a row that is whatever
+	   its padding adds up to. It used to be 16px of padding either side of 14px type, which
+	   came to 48 and left this the one row on a phone 8px shorter than its neighbours. The
+	   search page's own header is the same 56px, so dismissing the editor onto it still swaps
+	   the row rather than resizing it.
+
+	   Horizontally, the calendar's search header: a 12px gutter, the icon, then 20px to the
+	   text — its row's gap-2 plus the 12px the forms plugin gives a bare input. The library's
+	   field here has px-0, so that 12px is set on it below, and the results page's header
+	   keeps the same three measures so the swap holds sideways as well as down. */
 	.mail-mobile-search-page [data-slot='command-palette-input'] {
-		gap: 12px;
-		padding-inline: 16px;
+		gap: 8px;
+		padding-inline: 12px;
+		height: 56px;
 	}
 
-	/* The same row height as the search page's own header, so dismissing the editor onto that
-	   page swaps the row rather than resizing it. That row is py-2 around a bare input — which
-	   the forms plugin gives py-2 of its own — so its text sits 16px from either edge; this
-	   field's py-3 has to become the same 16px. Horizontally they already agree: 16px gutter, the
-	   icon, then 12px to the text, which there is the plugin's px-3 and here the row's gap. */
+	/* The field fills the row it sits in rather than being the sum of its own padding: with the
+	   row's height set above, the padding would stand the text off-centre, and a field only as
+	   tall as its text would leave the top and bottom of a 56px row dead to a thumb. Stretched,
+	   the whole row is the tap target and the input centres its text itself. */
 	.mail-mobile-search-page [data-slot='command-palette-input'] input {
-		padding-block: 16px;
+		padding-block: 0;
+		padding-inline: 12px;
+		align-self: stretch;
 	}
 
 	/* The chips, by name rather than by position: `:not(:last-child)` was meant to spare the
 	   clear-all ×, but that is the last child only while filters are applied — otherwise the
 	   last chip was the one left small, and reordering moved which chip that was. */
+	/* `!important`, because the chip's own `!h-7` is one too: a leading `!` on a utility
+	   emits it, and a plain 32px here lost to that 28px — so the text below was already 14px
+	   inside a chip that never grew to hold it, which is the cramped chip this rule existed
+	   to prevent. */
 	.mail-mobile-search-page .mail-search-filters > span,
 	.mail-mobile-search-page .mail-search-filters > button:not(.mail-search-clear) {
-		height: 32px;
+		height: 32px !important;
 		font-size: 14px;
+	}
+
+	/* A phone's list, not a desktop dialog's. Rows sit on the px-5 axis mail's mobile title
+	   header names for list content, and stand 10px tall each side — the agenda's own row
+	   height when narrow. The palette's mx-2.5 px-2 py-2 is the density of a dialog under a
+	   query line and read as cramped here; 12px, the calendar search page's number, was
+	   chosen for two-line rows behind a chip, and between one-line rows it read as gaps.
+	   The chip row and the group labels sit on the same axis, so the page has one left edge
+	   rather than three. */
+	.mail-mobile-search-page [data-slot='command-palette-item'] {
+		margin-inline: 0;
+		padding: 10px 20px;
+	}
+
+	.mail-mobile-search-page [data-slot='command-palette-group-label'] {
+		padding-inline: 20px;
+	}
+
+	.mail-mobile-search-page .mail-search-filters {
+		gap: 8px;
+		padding: 12px 20px;
 	}
 
 	.mail-mobile-search-page [data-slot='command-palette-footer'] {
@@ -1418,6 +1659,13 @@ onScopeDispose(() => {
 	   be read as a selection, and nothing there can move it. */
 	.mail-mobile-search-page [data-slot='command-palette-item'][data-state='active'] {
 		background-color: transparent;
+	}
+
+	/* The press, though: a finger on a row gets the ground a pointer's hover gives it, for
+	   as long as it is down. Keyed on `:active` — the press itself — rather than the
+	   listbox's own highlight above, which on a phone is a selection with nothing to move it. */
+	.mail-mobile-search-page [data-slot='command-palette-item']:active {
+		background-color: var(--surface-gray-2);
 	}
 }
 </style>
