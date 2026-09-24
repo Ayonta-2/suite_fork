@@ -1,8 +1,12 @@
 <template>
 	<!-- Month over day in a bordered box: the date as a glyph, readable at a glance down a list.
-	     The month band takes the sender avatar's fallback pair (surface-gray-2 / ink-gray-5), so
-	     the two filled shapes flanking a message read as one family. Caveat: that lands at 3.6:1
-	     in dark mode, and this text is 11px. -->
+	     Uncoloured, the band takes the sender avatar's fallback ground, so the two filled shapes
+	     flanking a message read as one family.
+
+	     The month is ink-gray-7 rather than the avatar's own ink-gray-5: that pair came to 3.4:1
+	     in dark mode on text this small, where gray-7 on the same ground is 6.6:1. On a tinted
+	     band it holds ~6:1 in both themes, the day above 9:1, because the tint is mixed into
+	     `surface-base` and so is dark where the page is. -->
 	<div
 		class="border-outline-gray-2 bg-surface-base shrink-0 overflow-hidden rounded-4 border text-center"
 		:class="small ? 'w-9' : 'w-10'"
@@ -69,7 +73,7 @@ const props = defineProps<{
  */
 const band = computed(() =>
 	props.color
-		? { backgroundColor: `color-mix(in srgb, ${props.color} 14%, var(--surface-base))` }
+		? { backgroundColor: `color-mix(in srgb, ${props.color} 20%, var(--surface-base))` }
 		: undefined,
 )
 </script>

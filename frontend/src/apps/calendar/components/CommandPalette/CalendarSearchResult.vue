@@ -1,5 +1,5 @@
 <template>
-	<span class="flex min-w-0 flex-1 items-center gap-3">
+	<span class="flex min-w-0 flex-1 items-center gap-2.5">
 		<!-- The date as a glyph, the way mail's invite strip carries one, so the dates down a
 		     list of results scan as a column rather than as the first words of each line. -->
 		<DateChip :month="chipMonth" :day="chipDay" :color="calendarColor" small />
@@ -49,23 +49,18 @@ const start = computed(() =>
 		: dayjs(props.result.start),
 )
 
-/**
- * The chip's month band carries the year where it is not this one — a search runs across
- * years where a mail thread does not, and "7 Jul" alone in a list holding three of them says
- * the wrong thing. The label below then has no year left to spell out (`yearInChip`).
- */
-const thisYear = computed(() => start.value.year() === dayjs().year())
-const chipMonth = computed(() =>
-	thisYear.value ? start.value.format('MMM') : start.value.format("MMM 'YY"),
-)
+const chipMonth = computed(() => start.value.format('MMM'))
 const chipDay = computed(() => start.value.format('D'))
 
-/** Only the weekday and the clock: the chip beside it has already said which day. */
+/**
+ * The weekday and the clock: the chip beside it has already said which day. A year the chip
+ * does not carry still spells itself out here — a search runs across years where a mail thread
+ * does not, and `FEB 11` in a list holding two of them says the wrong thing on its own.
+ */
 const when = computed(() =>
 	formatEventWhen(start.value, props.result.duration, {
 		allDay: allDay.value,
 		compact: true,
-		yearInChip: true,
 		// The clock times already say how long it runs, and the line is spent.
 		length: false,
 	}),

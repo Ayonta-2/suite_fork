@@ -103,14 +103,12 @@ const yearFormat = (day: Dayjs, now: Dayjs) => (day.year() === now.year() ? '' :
  * A single day: `Today`, `Sun, 17 Aug`, `Sat, 9 Jan 2027`, or `Sun` compacted. `compact` is
  * for callers that
  * already print the month and day beside the label (the invite strip's date chip does), leaving
- * only the weekday to say — but a year no chip carries still spells itself out. `yearInChip`
- * says the chip carries that too, which is what lets a list running across years stay compact.
- * Spans never compact: `dayRangeLabel` pairs each weekday with its date, which is the point.
+ * only the weekday to say — but a year no chip carries still spells itself out. Spans never
+ * compact: `dayRangeLabel` pairs each weekday with its date, which is the whole point of it.
  */
-const dayLabel = (day: Dayjs, now: Dayjs, compact = false, yearInChip = false) => {
+const dayLabel = (day: Dayjs, now: Dayjs, compact = false) => {
 	if (day.isSame(now, 'day')) return __('Today')
-	if (day.year() !== now.year() && !(compact && yearInChip))
-		return day.format(`ddd, D MMM${yearFormat(day, now)}`)
+	if (day.year() !== now.year()) return day.format(`ddd, D MMM${yearFormat(day, now)}`)
 	return day.format(compact ? 'ddd' : 'ddd, D MMM')
 }
 
@@ -160,8 +158,6 @@ export const formatEventWhen = (
 	options: {
 		allDay?: boolean
 		compact?: boolean
-		/** The chip beside the label carries the year, so the label need not. */
-		yearInChip?: boolean
 		now?: Dayjs
 		length?: boolean
 	} = {},
@@ -169,14 +165,13 @@ export const formatEventWhen = (
 	const {
 		allDay = false,
 		compact = false,
-		yearInChip = false,
 		now = dayjs(),
 		length = true,
 	} = options
 
 	if (allDay) {
 		const last = eventLastDay(start, duration, true)
-		const when = last ? dayRangeLabel(start, last, now) : dayLabel(start, now, compact, yearInChip)
+		const when = last ? dayRangeLabel(start, last, now) : dayLabel(start, now, compact)
 		return `${when} · ${allDayLabel(allDayCount(start, duration))}`
 	}
 
@@ -201,6 +196,6 @@ export const formatEventWhen = (
 	// *could* subtract two clock times isn't a rule they can see, so a length that came and went
 	// between events would read as missing data rather than as inference.
 	const times = timeRangeLabel(start, end)
-	if (end.isSame(start) || !length) return `${dayLabel(start, now, compact, yearInChip)} · ${times}`
-	return `${dayLabel(start, now, compact, yearInChip)} · ${times} · ${lengthLabel(start, end)}`
+	if (end.isSame(start) || !length) return `${dayLabel(start, now, compact)} · ${times}`
+	return `${dayLabel(start, now, compact)} · ${times} · ${lengthLabel(start, end)}`
 }
