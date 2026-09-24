@@ -9,6 +9,7 @@ from frappe.tests import UnitTestCase
 from suite.calendar.api import (
     EVENT_SEARCH_LIMIT,
     MAX_EVENT_SEARCH_LIMIT,
+    _first_events,
     _search_limit,
     search_calendar_events_with_shared,
 )
@@ -122,44 +123,6 @@ class TestCalendarEventSearch(StalwartIntegrationTestCase):
 
         self.assertIn(event_id, [event["id"] for event in found])
 
-
-class TestCalendarSearchBoundary(UnitTestCase):
-    """What the whitelisted search accepts. Nothing here reaches Stalwart: a search is refused,
-    or sized, before any account is asked."""
-
-    def test_a_count_is_answered_within_the_ceiling(self):
-        # The service walks the server batch by batch until it has the number it was handed, so
-        # the ceiling is what stops one request reading a whole event store.
-        self.assertEqual(_search_limit(10), 10)
-        self.assertEqual(_search_limit(10_000), MAX_EVENT_SEARCH_LIMIT)
-        self.assertEqual(_search_limit("10000"), MAX_EVENT_SEARCH_LIMIT)
-
-    def test_a_count_that_is_no_count_falls_back_to_the_default(self):
-        for asked in (None, 0, "", "not a number"):
-            with self.subTest(limit=asked):
-                self.assertEqual(_search_limit(asked), EVENT_SEARCH_LIMIT)
-
-    def test_a_negative_count_is_not_a_negative_slice(self):
-        # `events[:-5]` would drop the last five matches rather than answer with five.
-        self.assertEqual(_search_limit(-5), 1)
-
-    def test_filters_of_the_wrong_shape_are_refused_before_the_account_is_asked(self):
-        # An account that does not exist: reaching the server at all would fail differently.
-        for filters in ('["text"]', {"attendee": ["a@example.com"]}, {"calendar": 7}):
-            with (
-                self.subTest(filters=filters),
-                self.assertRaises(frappe.ValidationError),
-            ):
-                search_calendar_events_with_shared("no-such-account", "standup", filters=filters)
-
-    def test_a_search_scope_the_server_does_not_index_is_refused(self):
-        # Silently searching `text` when `participants` was asked would widen the search while
-        # reading as though it had narrowed it.
-        with self.assertRaisesRegex(frappe.ValidationError, "scope: Input should be"):
-            search_calendar_events_with_shared(
-                "no-such-account", "standup", filters={"scope": "participants"}
-            )
-
     def test_a_recurring_event_answers_as_its_next_few_occurrences(self):
         # A weekly series starting next week: with no range asked, a search does not hand back
         # the master dated the week it was entered, but the next three times it runs — each a
@@ -199,3 +162,92 @@ class TestCalendarSearchBoundary(UnitTestCase):
 
         self.assertEqual([row["id"] for row in found], [event_id])
         self.assertIsNone(found[0].get("master_id"))
+
+
+class TestCalendarSearchBoundary(UnitTestCase):
+    """What the whitelisted search accepts. Nothing here reaches Stalwart: a search is refused,
+    or sized, before any account is asked."""
+
+    def test_a_count_is_answered_within_the_ceiling(self):
+        # The service walks the server batch by batch until it has the number it was handed, so
+        # the ceiling is what stops one request reading a whole event store.
+        self.assertEqual(_search_limit(10), 10)
+        self.assertEqual(_search_limit(10_000), MAX_EVENT_SEARCH_LIMIT)
+        self.assertEqual(_search_limit("10000"), MAX_EVENT_SEARCH_LIMIT)
+
+    def test_a_count_that_is_no_count_falls_back_to_the_default(self):
+        for asked in (None, 0, "", "not a number"):
+            with self.subTest(limit=asked):
+                self.assertEqual(_search_limit(asked), EVENT_SEARCH_LIMIT)
+
+    def test_a_negative_count_is_not_a_negative_slice(self):
+        # `events[:-5]` would drop the last five matches rather than answer with five.
+        self.assertEqual(_search_limit(-5), 1)
+
+    def test_filters_of_the_wrong_shape_are_refused_before_the_account_is_asked(self):
+        # An account that does not exist: reaching the server at all would fail differently.
+        for filters in ('["text"]', {"attendee": ["a@example.com"]}, {"calendar": 7}):
+            with (
+                self.subTest(filters=filters),
+                self.assertRaises(frappe.ValidationError),
+            ):
+                search_calendar_events_with_shared("no-such-account", "standup", filters=filters)
+
+    def test_a_search_scope_the_server_does_not_index_is_refused(self):
+        # Silently searching `text` when `participants` was asked would widen the search while
+        # reading as though it had narrowed it.
+        with self.assertRaisesRegex(frappe.ValidationError, "scope: Input should be"):
+            search_calendar_events_with_shared(
+                "no-such-account", "standup", filters={"scope": "participants"}
+            )
+
+
+def _row(id: str, start: str, master: str | None = None, account: str = "acc") -> dict:
+    return {"account": account, "id": id, "start": start, "master_id": master}
+
+
+class TestSearchResultCut(UnitTestCase):
+    """How a search cuts its answer down to the asked-for count, once a recurring event has
+    been replaced by the several rows it is about to run as."""
+
+    def test_the_count_is_of_events_not_of_the_rows_they_expand_to(self):
+        rows = [
+            _row("x1", "2026-09-25T09:00:00", master="s1"),
+            _row("x2", "2026-10-02T09:00:00", master="s1"),
+            _row("x3", "2026-10-09T09:00:00", master="s1"),
+            _row("o1", "2026-10-10T09:00:00"),
+        ]
+
+        # A series is one answer to the search, not three, so both events fit in a count of two.
+        self.assertEqual([row["id"] for row in _first_events(rows, 2)], ["x1", "x2", "x3", "o1"])
+
+    def test_an_event_past_the_count_is_dropped_with_all_of_its_rows(self):
+        rows = [
+            _row("o1", "2026-09-25T09:00:00"),
+            _row("x1", "2026-10-02T09:00:00", master="s1"),
+            _row("x2", "2026-10-09T09:00:00", master="s1"),
+        ]
+
+        self.assertEqual([row["id"] for row in _first_events(rows, 1)], ["o1"])
+
+    def test_an_event_is_kept_or_dropped_by_the_row_that_falls_soonest(self):
+        # Rows arrive in start order, so the series running next week takes its place ahead of
+        # the one-off in December — whatever date the series' own master carries.
+        rows = [
+            _row("x1", "2026-10-02T09:00:00", master="s1"),
+            _row("later", "2026-12-01T09:00:00"),
+            _row("x2", "2026-12-04T09:00:00", master="s1"),
+        ]
+
+        self.assertEqual([row["id"] for row in _first_events(rows, 1)], ["x1", "x2"])
+
+    def test_two_accounts_naming_an_event_alike_are_two_events(self):
+        # Ids are unique within an account and no further, and a shared calendar puts another
+        # account's events in the same answer.
+        rows = [
+            _row("eaaaalw", "2026-10-02T09:00:00", account="mine"),
+            _row("eaaaalw", "2026-10-03T09:00:00", account="theirs"),
+        ]
+
+        self.assertEqual(len(_first_events(rows, 2)), 2)
+        self.assertEqual([row["account"] for row in _first_events(rows, 1)], ["mine"])

@@ -363,16 +363,15 @@ def search_calendar_events_with_shared(
             ),
         )
 
-    # Each account answers in its own start order, so the concatenation is in none: the merged
-    # list has to be put back in order before it is cut down to the asked-for count, or which
-    # results survive depends on which account happened to be read first.
-    events.sort(key=lambda event: event.get("start") or "")
-    events = events[:limit]
-
     # Without a range the server answered with masters, and a master's date is the least useful
     # date a series has: the standup shows once, dated the week it was first entered. Each is
-    # replaced by its next few occurrences — after the cut, so the limit still counts events.
-    # Ten events is the promise; three rows each is how a recurring one keeps it.
+    # replaced by its next few occurrences.
+    #
+    # Before the cut, not after. That date is no better to rank on than it is to show: cutting
+    # on it keeps the series that *began* earliest, so a standup running tomorrow loses its
+    # place to one that has not met since 2019. Expanding first costs no extra round trips —
+    # `_with_upcoming_occurrences` asks once per account either way — and it is the only way
+    # the cut can read the date each row will actually carry.
     if not (filters.after and filters.before):
         by_account: dict[str, list[dict]] = defaultdict(list)
         for event in events:
@@ -382,9 +381,36 @@ def search_calendar_events_with_shared(
             for account_events in by_account.values()
             for row in _with_upcoming_occurrences(account_events, time_zone)
         ]
-        events.sort(key=lambda event: event.get("start") or "")
 
-    return events
+    # Each account answers in its own start order, so the concatenation is in none: the merged
+    # list has to be put back in order before it is cut down to the asked-for count, or which
+    # results survive depends on which account happened to be read first.
+    events.sort(key=lambda event: event.get("start") or "")
+
+    return _first_events(events, limit)
+
+
+def _first_events(rows: list[dict], limit: int) -> list[dict]:
+    """The rows belonging to the first `limit` events in `rows`, which is more rows than that
+    wherever a recurring event contributed several.
+
+    `limit` counts events rather than rows because a recurring event is one answer to the
+    search however many times it is about to run — ten events is the promise, and three rows
+    each is how a recurring one keeps it. Rows arrive in start order, so the events are taken
+    in the order their soonest row falls, and the later rows of one already taken come along
+    with it rather than counting again."""
+
+    taken: set[tuple[str, str]] = set()
+    kept = []
+    for row in rows:
+        event = (row.get("account") or "", row.get("master_id") or row.get("id") or "")
+        if event not in taken:
+            if len(taken) == limit:
+                continue
+            taken.add(event)
+        kept.append(row)
+
+    return kept
 
 
 # How many of a recurring event's coming occurrences a search shows in the master's place, and
