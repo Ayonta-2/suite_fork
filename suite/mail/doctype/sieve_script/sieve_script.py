@@ -418,7 +418,7 @@ def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 SCREENER_MAILBOX_NAME = "Screener"
 AUTOMATION_SCRIPT_NAME = "frappe_mail_automation"
 AUTOMATION_SCRIPT_REQUIRE = (
-    'require ["fileinto", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric"];'
+    'require ["fileinto", "mailbox", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric"];'
 )
 
 
@@ -887,15 +887,21 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     - Accepted senders — and the account's own identity emails, which are always trusted — are
       delivered straight to the Inbox, so accepted mail always reaches the inbox regardless of its
       spam score.
-    - Otherwise, mail the server has not classified as spam is filed into Screening.
+    - Otherwise, mail the server has not classified as spam is filed into Screening. The Screener is
+      created on delivery if it has gone missing (`:create`), because Stalwart files mail for a
+      mailbox that does not exist into the Inbox.
     - Otherwise (an unrecognised sender whose mail is classified as spam) nothing is done, so the
       server's default filtering assigns the mailbox (e.g. Junk once the spam score exceeds the
       configured threshold).
 
     Spam classification is read with the `spamtest` extension (RFC 5235), not the `X-Spam-Status`
     header: Stalwart injects the verdict into the Sieve runtime before the user's script runs, but only
-    stamps the header afterwards, so the header is not visible here. `spamtest` returns a 0-10 value
-    (Ham -> 1, Spam -> 10), so `:value "ge" "2"` treats anything above ham as spam.
+    stamps the header afterwards, so the header is not visible here. `spamtest` returns 0 when the
+    message was not scored, 1-4 for ham (1 at a score of zero or below, rising towards the spam
+    threshold) and 5-10 for spam, so `:value "ge" "5"` is exactly Stalwart's spam verdict. Do not lower
+    it: ham with a small positive score lands on 2-4, and a lower cut-off lets that mail skip the
+    Screener and reach the Inbox. (Stalwart before v0.16.19 only ever returned 1 or 10, which the same
+    test handles.)
     """
 
     screening_mailbox_path = get_screening_mailbox_path(account)
@@ -920,9 +926,9 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     else:
         accepted_test = None
 
-    # Mail the server has not classified as spam (spamtest value below 2, i.e. ham or unchecked) is
+    # Mail the server has not classified as spam (spamtest value below 5, i.e. ham or unscored) is
     # screened; spam falls through to the server's default filtering.
-    not_spam_test = 'not spamtest :value "ge" :comparator "i;ascii-numeric" "2"'
+    not_spam_test = 'not spamtest :value "ge" :comparator "i;ascii-numeric" "5"'
 
     lines = ["# Screening"]
     if accepted_test:
@@ -942,7 +948,7 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
         lines.append(f"if {not_spam_test} {{")
 
     lines += [
-        f'  fileinto "{screening_mailbox_path}";',
+        f'  fileinto :create "{screening_mailbox_path}";',
         "  stop;",
         "}",
         "\n",
