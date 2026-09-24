@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import re
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from uuid import uuid7
@@ -10,6 +11,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, create_batch, today
+from rq.timeouts import JobTimeoutException
 
 from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_settings
 from suite.mail.doctype.screened_email_address.screened_email_address import (
@@ -31,6 +33,9 @@ from suite.utils import enqueue_job, execute_with_logging, parse_filters, user_c
 from suite.utils.validation import JSONList
 
 _ACCOUNTS_PER_REBUILD_BATCH = 100
+# Seconds to wait before each retry of the rebuilds that failed: long enough to ride out a mail server
+# restart, short enough to stay well within the job's timeout.
+_REBUILD_RETRY_DELAYS = (30, 120, 300)
 
 
 class SieveScript(Document):
@@ -431,7 +436,7 @@ def maybe_build_automation_sieve(account: str, activate: bool = False) -> None:
     build_automation_sieve(account, activate=activate)
 
 
-def build_automation_sieve(account: str, activate: bool = False) -> None:
+def build_automation_sieve(account: str, activate: bool = False, raise_exception: bool = False) -> None:
     """Build the automation sieve script for the given account and optionally activate it.
 
     Activation is skipped while the vacation sieve script is active, so rebuilding the automation
@@ -442,6 +447,9 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
     that user, so the rebuild cannot work (e.g. the personal account of a deactivated employee) and
     would only produce an error log. The script is rebuilt on the next change once the user is
     enabled again.
+
+    A failed build is logged rather than raised, unless `raise_exception` asks for it — for a caller
+    that handles the failure itself, e.g. to retry.
     """
 
     user = get_user_for_jmap_account(account, raise_exception=False)
@@ -461,6 +469,10 @@ def build_automation_sieve(account: str, activate: bool = False) -> None:
             doc.active = True
 
         doc.save()
+
+    if raise_exception:
+        _build_automation_sieve(account, activate=activate)
+        return
 
     execute_with_logging(
         lambda: _build_automation_sieve(account, activate=activate),
@@ -515,12 +527,35 @@ def enqueue_automation_sieve_rebuilds(accounts: list[str], job_id_prefix: str) -
 def _rebuild_automation_sieves(accounts: list[str]) -> None:
     """Rebuild each account's automation script, isolating per-account failures.
 
+    A rebuild that fails — the mail server briefly unreachable, say — is retried after a wait: nothing
+    else rebuilds the account until its user next changes a rule, and until then it keeps its old
+    script. An account that still fails after the last retry is logged.
+    """
+
+    failures = _rebuild_each_automation_sieve(accounts)
+    for delay in _REBUILD_RETRY_DELAYS:
+        if not failures:
+            return
+        time.sleep(delay)
+        failures = _rebuild_each_automation_sieve(list(failures))
+
+    for account, traceback in failures.items():
+        log_mail_error(
+            "Rebuild Automation Sieves Error",
+            f"Failed to rebuild the automation sieve script for JMAP account {account}\n\n{traceback}",
+        )
+
+
+def _rebuild_each_automation_sieve(accounts: list[str]) -> dict[str, str]:
+    """Rebuild each account's automation script once, returning the failed ones with their traceback.
+
     Each account is committed on its own, so the next one reads its rules afresh: a batch-long
     transaction would read them from a snapshot, and could overwrite a script a user rebuilt with newer
     rules meanwhile. Each is rebuilt as a user of it who can connect, the account's owner where it has
     one (see `get_enabled_account_user`); accounts without one are skipped.
     """
 
+    failures = {}
     for account in accounts:
         # The job runs async after the fan-out committed, so an account can vanish in between.
         if not account or not frappe.db.exists("JMAP Account", account):
@@ -532,14 +567,16 @@ def _rebuild_automation_sieves(accounts: list[str]) -> None:
 
         try:
             with user_context(user):
-                build_automation_sieve(account)
+                build_automation_sieve(account, raise_exception=True)
             frappe.db.commit()
+        except JobTimeoutException:
+            # Out of time: let the job fail rather than carry on past its timeout.
+            raise
         except Exception:
             frappe.db.rollback()
-            log_mail_error(
-                "Rebuild Automation Sieves Error",
-                f"Failed to rebuild the automation sieve script for JMAP account {account}",
-            )
+            failures[account] = frappe.get_traceback()
+
+    return failures
 
 
 @contextmanager

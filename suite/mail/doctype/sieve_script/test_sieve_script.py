@@ -3,6 +3,7 @@
 
 import operator
 import re
+from collections import Counter
 from unittest.mock import patch
 
 # import frappe
@@ -151,6 +152,40 @@ class IntegrationTestSieveScript(IntegrationTestCase):
         self.assertLessEqual(
             {"fileinto", "mailbox", "spamtest", "relational", "comparator-i;ascii-numeric"}, required
         )
+
+    def test_rebuild_retries_accounts_that_fail(self):
+        """A rebuild that fails — the mail server briefly unreachable — is retried, since nothing else
+        rebuilds the account until its user next changes a rule. Only one that keeps failing is logged."""
+
+        import frappe
+
+        from suite.mail.doctype.sieve_script import sieve_script
+
+        attempts = Counter()
+
+        def build(account, raise_exception=False, **kwargs):
+            # A failed build is only logged unless the caller asks for the exception.
+            attempts[account] += 1
+            if raise_exception and (account == "down" or (account == "flaky" and attempts[account] == 1)):
+                raise ConnectionError("Mail server unreachable")
+
+        db = frappe.local.db
+        with (
+            patch.object(db, "exists", return_value=True),
+            patch.object(db, "commit"),
+            patch.object(db, "rollback"),
+            patch.object(sieve_script, "get_enabled_account_user", return_value="Administrator"),
+            patch.object(sieve_script, "build_automation_sieve", side_effect=build),
+            patch.object(sieve_script.time, "sleep"),
+            patch.object(sieve_script, "log_mail_error") as log_mail_error,
+        ):
+            sieve_script._rebuild_automation_sieves(["ok", "flaky", "down"])
+
+        self.assertEqual(attempts["ok"], 1)
+        self.assertEqual(attempts["flaky"], 2)
+        self.assertGreater(attempts["down"], 2)
+        self.assertEqual(log_mail_error.call_count, 1)
+        self.assertIn("JMAP account down", str(log_mail_error.call_args))
 
     def test_mailbox_paths_survive_quotes_and_backslashes(self):
         """One malformed string fails the whole script upload, leaving the account on its old script."""
