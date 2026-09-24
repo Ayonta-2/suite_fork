@@ -4,6 +4,7 @@
 import operator
 import re
 from collections import Counter
+from types import SimpleNamespace
 from unittest.mock import patch
 
 # import frappe
@@ -95,6 +96,41 @@ def route_through_gate(gate: str, sender: str, spamtest: int) -> str | None:
     return next((mailbox for test, _tags, mailbox in parse_gate(gate) if evaluate(test)), None)
 
 
+def run_rebuild_jobs(accounts: list[str], build, seconds_each: float = 0):
+    """Rebuild the accounts through their background jobs, run one after another as a worker would,
+    with `build` standing in for `build_automation_sieve` and a clock that moves `seconds_each` per
+    build (and through every wait). Returns each job's arguments and duration, and the failure log."""
+
+    import frappe
+
+    from suite.mail.doctype.sieve_script import sieve_script
+
+    now, queue, jobs = [0.0], [], []
+
+    def timed_build(account, **kwargs):
+        now[0] += seconds_each
+        build(account, **kwargs)
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    with (
+        patch.object(frappe.local.db, "exists", return_value=True),
+        patch.object(sieve_script, "get_enabled_account_user", return_value="Administrator"),
+        patch.object(sieve_script, "build_automation_sieve", side_effect=timed_build),
+        patch.object(sieve_script, "enqueue_job", side_effect=lambda method, **kwargs: queue.append(kwargs)),
+        patch.object(sieve_script, "time", SimpleNamespace(monotonic=lambda: now[0], sleep=sleep)),
+        patch.object(sieve_script, "log_mail_error") as log_mail_error,
+    ):
+        sieve_script.enqueue_automation_sieve_rebuilds(accounts, job_id_prefix="test")
+        while queue:
+            job, started = queue.pop(0), now[0]
+            sieve_script._rebuild_automation_sieves(job["accounts"], job["attempt"], job["delay"])
+            jobs.append({**job, "seconds": now[0] - started})
+
+    return jobs, log_mail_error
+
+
 class IntegrationTestSieveScript(IntegrationTestCase):
     """
     Integration tests for SieveScript.
@@ -157,10 +193,6 @@ class IntegrationTestSieveScript(IntegrationTestCase):
         """A rebuild that fails — the mail server briefly unreachable — is retried, since nothing else
         rebuilds the account until its user next changes a rule. Only one that keeps failing is logged."""
 
-        import frappe
-
-        from suite.mail.doctype.sieve_script import sieve_script
-
         attempts = Counter()
 
         def build(account, raise_exception=False, **kwargs):
@@ -169,20 +201,35 @@ class IntegrationTestSieveScript(IntegrationTestCase):
             if raise_exception and (account == "down" or (account == "flaky" and attempts[account] == 1)):
                 raise ConnectionError("Mail server unreachable")
 
-        with (
-            patch.object(frappe.local.db, "exists", return_value=True),
-            patch.object(sieve_script, "get_enabled_account_user", return_value="Administrator"),
-            patch.object(sieve_script, "build_automation_sieve", side_effect=build),
-            patch.object(sieve_script.time, "sleep"),
-            patch.object(sieve_script, "log_mail_error") as log_mail_error,
-        ):
-            sieve_script._rebuild_automation_sieves(["ok", "flaky", "down"])
+        jobs, log_mail_error = run_rebuild_jobs(["ok", "flaky", "down"], build)
 
         self.assertEqual(attempts["ok"], 1)
         self.assertEqual(attempts["flaky"], 2)
         self.assertGreater(attempts["down"], 2)
+        # Every retry is a job of its own that waits first, so a wait never eats into a job's time.
+        self.assertEqual(len(jobs), attempts["down"])
+        self.assertTrue(all(job["delay"] > 0 for job in jobs[1:]))
         self.assertEqual(log_mail_error.call_count, 1)
         self.assertIn("JMAP account down", str(log_mail_error.call_args))
+
+    def test_rebuild_hands_over_to_a_new_job_before_timing_out(self):
+        """A job run into its timeout is killed, leaving the accounts it had not reached on their old
+        script, unretried and unlogged — so a slow mail server makes it hand the rest to a new job."""
+
+        from suite.mail.doctype.sieve_script.sieve_script import _REBUILD_JOB_BUDGET, _REBUILD_JOB_TIMEOUT
+
+        accounts = [f"account-{i}" for i in range(10)]
+        built = Counter()
+        jobs, log_mail_error = run_rebuild_jobs(
+            accounts,
+            lambda account, **kwargs: built.update([account]),
+            seconds_each=_REBUILD_JOB_BUDGET * 0.6,
+        )
+
+        self.assertEqual(built, Counter(accounts))
+        self.assertGreater(len(jobs), 1)
+        self.assertLess(max(job["seconds"] for job in jobs), _REBUILD_JOB_TIMEOUT)
+        log_mail_error.assert_not_called()
 
     def test_mailbox_paths_survive_quotes_and_backslashes(self):
         """One malformed string fails the whole script upload, leaving the account on its old script."""

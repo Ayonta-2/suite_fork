@@ -33,8 +33,12 @@ from suite.utils import enqueue_job, execute_with_logging, parse_filters, user_c
 from suite.utils.validation import JSONList
 
 _ACCOUNTS_PER_REBUILD_BATCH = 100
-# Seconds to wait before each retry of the rebuilds that failed: long enough to ride out a mail server
-# restart, short enough to stay well within the job's timeout.
+_REBUILD_JOB_TIMEOUT = 3600
+# Seconds after which a rebuild job starts no new account and hands the rest to a new job: well clear
+# of its timeout even when the mail server is slow to answer.
+_REBUILD_JOB_BUDGET = 900
+# Seconds each retry job waits before rebuilding the accounts that failed: long enough to ride out a
+# mail server restart.
 _REBUILD_RETRY_DELAYS = (30, 120, 300)
 
 
@@ -513,31 +517,55 @@ def enqueue_automation_sieve_rebuilds(accounts: list[str], job_id_prefix: str) -
     whose active script is the vacation auto-responder or one the user wrote themselves."""
 
     for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):
-        enqueue_job(
-            _rebuild_automation_sieves,
-            job_id=f"{job_id_prefix}::{i}",
-            deduplicate=True,
-            queue="long",
-            timeout=3600,
-            enqueue_after_commit=True,
-            accounts=batch,
-        )
+        _enqueue_automation_sieve_rebuild(batch, job_id=f"{job_id_prefix}::{i}")
 
 
-def _rebuild_automation_sieves(accounts: list[str]) -> None:
+def _enqueue_automation_sieve_rebuild(
+    accounts: list[str], job_id: str | None = None, attempt: int = 0, delay: int = 0
+) -> None:
+    """Queue one rebuild job for the accounts, once the current transaction commits."""
+
+    enqueue_job(
+        _rebuild_automation_sieves,
+        job_id=job_id,
+        deduplicate=bool(job_id),
+        queue="long",
+        timeout=_REBUILD_JOB_TIMEOUT,
+        enqueue_after_commit=True,
+        accounts=accounts,
+        attempt=attempt,
+        delay=delay,
+    )
+
+
+def _rebuild_automation_sieves(accounts: list[str], attempt: int = 0, delay: int = 0) -> None:
     """Rebuild each account's automation script, isolating per-account failures.
 
-    A rebuild that fails — the mail server briefly unreachable, say — is retried after a wait: nothing
-    else rebuilds the account until its user next changes a rule, and until then it keeps its old
-    script. An account that still fails after the last retry is logged.
+    The job starts no new account once its time budget is spent, and hands the rest to a new job, so a
+    slow mail server cannot run it into its timeout. A rebuild that fails — the mail server briefly
+    unreachable, say — is retried by a later job after a wait (`delay`): nothing else rebuilds the
+    account until its user next changes a rule, and until then it keeps its old script. An account
+    that still fails after the last retry is logged.
     """
 
-    failures = _rebuild_each_automation_sieve(accounts)
-    for delay in _REBUILD_RETRY_DELAYS:
-        if not failures:
-            return
+    if delay:
         time.sleep(delay)
-        failures = _rebuild_each_automation_sieve(list(failures))
+    deadline = time.monotonic() + _REBUILD_JOB_BUDGET
+
+    failures = {}
+    for i, account in enumerate(accounts):
+        if time.monotonic() > deadline:
+            _enqueue_automation_sieve_rebuild(accounts[i:], attempt=attempt)
+            break
+
+        if traceback := _rebuild_automation_sieve(account):
+            failures[account] = traceback
+
+    if failures and attempt < len(_REBUILD_RETRY_DELAYS):
+        _enqueue_automation_sieve_rebuild(
+            list(failures), attempt=attempt + 1, delay=_REBUILD_RETRY_DELAYS[attempt]
+        )
+        return
 
     for account, traceback in failures.items():
         log_mail_error(
@@ -546,34 +574,32 @@ def _rebuild_automation_sieves(accounts: list[str]) -> None:
         )
 
 
-def _rebuild_each_automation_sieve(accounts: list[str]) -> dict[str, str]:
-    """Rebuild each account's automation script once, returning the failed ones with their traceback.
+def _rebuild_automation_sieve(account: str) -> str | None:
+    """Rebuild one account's automation script, returning the traceback if it failed.
 
-    Each is rebuilt as a user of it who can connect, the account's owner where it has one (see
-    `get_enabled_account_user`); accounts without one are skipped. A rebuild writes nothing to the
-    database — the script lives on the mail server — so the job's own transaction serves them all.
+    It is rebuilt as a user of it who can connect, the account's owner where it has one (see
+    `get_enabled_account_user`); an account without one is skipped. A rebuild writes nothing to the
+    database — the script lives on the mail server — so the job's own transaction serves every account.
     """
 
-    failures = {}
-    for account in accounts:
-        # The job runs async after the fan-out committed, so an account can vanish in between.
-        if not account or not frappe.db.exists("JMAP Account", account):
-            continue
+    # The job runs async after the fan-out committed, so an account can vanish in between.
+    if not account or not frappe.db.exists("JMAP Account", account):
+        return None
 
-        user = get_enabled_account_user(account)
-        if not user:
-            continue
+    user = get_enabled_account_user(account)
+    if not user:
+        return None
 
-        try:
-            with user_context(user):
-                build_automation_sieve(account, raise_exception=True)
-        except JobTimeoutException:
-            # Out of time: let the job fail rather than carry on past its timeout.
-            raise
-        except Exception:
-            failures[account] = frappe.get_traceback()
+    try:
+        with user_context(user):
+            build_automation_sieve(account, raise_exception=True)
+    except JobTimeoutException:
+        # Out of time: let the job fail rather than carry on past its timeout.
+        raise
+    except Exception:
+        return frappe.get_traceback()
 
-    return failures
+    return None
 
 
 @contextmanager
