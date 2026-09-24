@@ -120,9 +120,21 @@
 				:key="badge.key"
 				class="inline-flex h-7 shrink-0 items-center gap-1 rounded-4 bg-surface-gray-2 pl-2 pr-1 text-xs"
 			>
-				<span class="max-w-48 truncate text-ink-gray-7">
-					{{ badge.label }}: {{ badge.value }}
-				</span>
+				<!-- What the badge says is the way back to the field that set it: the panel
+				     opens with the cursor already in it. A <span> rather than a <button>, for
+				     the reason mail's badge gives — a button brings its own box and centres
+				     what is in it, which lays the label out unlike the plain text beside it. -->
+				<Tooltip :text="`Click to edit ${badge.label.toLowerCase()}`">
+					<span
+						class="max-w-48 cursor-pointer truncate text-ink-gray-7 hover:text-ink-gray-8"
+						role="button"
+						tabindex="0"
+						:aria-label="`Edit ${badge.label}`"
+						@mousedown.prevent
+						@click.stop="editCalendarFilter(badge.key)"
+						@keydown.enter.space.prevent="editCalendarFilter(badge.key)"
+					>{{ badge.label }}: {{ badge.value }}</span>
+				</Tooltip>
 				<button
 					class="rounded-4 p-1 text-ink-gray-5 hover:text-ink-gray-8"
 					aria-label="Remove filter"
@@ -147,6 +159,7 @@
 		<CalendarFilterPanel
 			v-if="calendarSearchActive && showFilters"
 			:filter="calendarFilter"
+			:focus-field="calendarFilterToEdit"
 			:account="String(route.params.accountId || '')"
 			:calendar-options="calendarFilterOptions"
 		/>
@@ -666,6 +679,21 @@ let calendarUser: ReturnType<typeof calendarUserStore> | undefined
 const calendarFilterOptions = computed(() =>
 	calendarSearchActive.value ? ((calendarUser ??= calendarUserStore()).calendarOptions ?? []) : []
 )
+/**
+ * The field a badge sent the reader to, held only while the panel opens on it: cleared as the
+ * panel goes, so raising it again from the sliders button starts where it always did.
+ */
+const calendarFilterToEdit = ref('')
+
+const editCalendarFilter = (key: string) => {
+	calendarFilterToEdit.value = key
+	showFilters.value = true
+}
+
+watch(showFilters, (open) => {
+	if (!open) calendarFilterToEdit.value = ''
+})
+
 const calendarBadges = computed(() =>
 	calendarFilterBadges(
 		(value) => calendarFilterOptions.value.find((o) => o.value === value)?.label || value
