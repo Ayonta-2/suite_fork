@@ -245,6 +245,54 @@ class CalendarEventService(CalendarsService):
 
         return {"ids": ids[:limit], "total": total}
 
+    def upcoming_occurrences(
+        self,
+        uids: list[str],
+        after: str,
+        before: str,
+        per_series: int,
+        time_zone: str | None = None,
+    ) -> dict[str, list[str]]:
+        """The ids of the next `per_series` occurrences of each series between `after` and
+        `before`, keyed by the series' uid.
+
+        One query per series, carried together in as few requests as the server allows, rather
+        than one query for all of them: the server orders a single answer by start, so a weekly
+        series would spend the whole limit before a yearly one had appeared once. The window is
+        not optional — expansion is refused without one — which is why the caller names both
+        ends. A series with nothing in the window is absent from the answer.
+        """
+
+        occurrences: dict[str, list[str]] = {}
+        for batch in self.create_batches(uids, self.max_calls_in_request):
+            calls = [
+                [
+                    f"{self._type}/query",
+                    {
+                        "accountId": self.account,
+                        "filter": {
+                            "operator": "AND",
+                            "conditions": [{"uid": uid}, {"after": after}, {"before": before}],
+                        },
+                        "sort": [{"property": "start", "isAscending": True}],
+                        "limit": per_series,
+                        "expandRecurrences": True,
+                        "timeZone": time_zone,
+                        "calculateTotal": False,
+                    },
+                    str(index),
+                ]
+                for index, uid in enumerate(batch)
+            ]
+            response = self._call(self.capabilities, calls)
+            for name, body, call_id in response.get("methodResponses") or []:
+                # A refused call answers as "error" under the same id; it is simply not expanded.
+                if name != f"{self._type}/query":
+                    continue
+                occurrences[batch[int(call_id)]] = body.get("ids") or []
+
+        return occurrences
+
     def changes(self, since_state: str) -> dict:
         """Public method to get calendar event changes since a given state."""
 

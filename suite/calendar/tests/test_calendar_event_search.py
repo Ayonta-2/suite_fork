@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+from datetime import timedelta
+
 import frappe
 from frappe.tests import UnitTestCase
 
@@ -157,3 +159,43 @@ class TestCalendarSearchBoundary(UnitTestCase):
             search_calendar_events_with_shared(
                 "no-such-account", "standup", filters={"scope": "participants"}
             )
+
+    def test_a_recurring_event_answers_as_its_next_few_occurrences(self):
+        # A weekly series starting next week: with no range asked, a search does not hand back
+        # the master dated the week it was entered, but the next three times it runs — each a
+        # row of its own, each pointing back at the series it belongs to.
+        word = unique_name("standup")
+        start = (frappe.utils.now_datetime() + timedelta(days=7)).replace(microsecond=0)
+        with self.set_user(self.member.email):
+            series_id = add_calendar_event(
+                self.account,
+                title=f"Weekly {word}",
+                start=start.strftime("%Y-%m-%dT%H:%M:%S"),
+                duration="PT30M",
+                time_zone="UTC",
+                recurrence_rule={"frequency": "weekly"},
+            )
+
+        found = self.wait_until(
+            lambda: ((rows := self._search(word)) and len(rows) >= 3 and rows) or None,
+            timeout=60,
+            message=f"Series '{word}' did not expand.",
+        )
+
+        self.assertEqual(len(found), 3)
+        self.assertEqual({row["master_id"] for row in found}, {series_id})
+        self.assertEqual(len({row["start"] for row in found}), 3, "three distinct occurrences")
+        self.assertTrue(all(row["recurrence_rule"] not in ("", "{}") for row in found))
+        # In order, and none of them behind us: these are the times it will run, not has.
+        starts = [row["start"] for row in found]
+        self.assertEqual(starts, sorted(starts))
+        self.assertGreaterEqual(starts[0], frappe.utils.now_datetime().strftime("%Y-%m-%dT%H:%M:%S"))
+
+    def test_a_one_off_event_is_still_one_row(self):
+        word = unique_name("offsite")
+        event_id = self._add(f"Team {word}", "2026-11-05T10:00:00")
+
+        found = self._wait_for_search(word, 1)
+
+        self.assertEqual([row["id"] for row in found], [event_id])
+        self.assertIsNone(found[0].get("master_id"))

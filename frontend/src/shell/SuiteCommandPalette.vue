@@ -591,6 +591,8 @@ const minimumQueryLength = 3
 const calendarMinimumQueryLength = 1
 // As many events as the palette shows at once, the way mail bounds its own hits: past ten, a
 // reader is scrolling a list rather than reading an answer, and the search wants narrowing.
+// Events, not rows — a recurring one comes back as its next few occurrences, and the server
+// counts the cap before it expands them, so the rows are not sliced again here.
 const CALENDAR_RESULT_LIMIT = 10
 const DriveSearchResultIcon = defineAsyncComponent(
 	() => import('@/apps/drive/components/DriveSearchResultIcon.vue')
@@ -895,9 +897,7 @@ const meetResults = computed<MeetResult[]>(() => {
 const calendarResults = computed<CalendarSearchResultItem[]>(() => {
 	if (activeApp.value !== 'calendar' || !Array.isArray(calendarSearch.data))
 		return []
-	return calendarSearch.data
-		.slice(0, CALENDAR_RESULT_LIMIT)
-		.map((event: Omit<CalendarSearchResultItem, 'resultType'>) => ({
+	return calendarSearch.data.map((event: Omit<CalendarSearchResultItem, 'resultType'>) => ({
 			...event,
 			resultType: 'calendar-event' as const,
 		}))

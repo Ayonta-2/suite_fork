@@ -1,5 +1,6 @@
 import json
-from datetime import datetime, timedelta
+from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 import frappe
@@ -366,8 +367,82 @@ def search_calendar_events_with_shared(
     # list has to be put back in order before it is cut down to the asked-for count, or which
     # results survive depends on which account happened to be read first.
     events.sort(key=lambda event: event.get("start") or "")
+    events = events[:limit]
 
-    return events[:limit]
+    # Without a range the server answered with masters, and a master's date is the least useful
+    # date a series has: the standup shows once, dated the week it was first entered. Each is
+    # replaced by its next few occurrences — after the cut, so the limit still counts events.
+    # Ten events is the promise; three rows each is how a recurring one keeps it.
+    if not (filters.after and filters.before):
+        by_account: dict[str, list[dict]] = defaultdict(list)
+        for event in events:
+            by_account[event["account"]].append(event)
+        events = [
+            row
+            for account_events in by_account.values()
+            for row in _with_upcoming_occurrences(account_events, time_zone)
+        ]
+        events.sort(key=lambda event: event.get("start") or "")
+
+    return events
+
+
+# How many of a recurring event's coming occurrences a search shows in the master's place, and
+# how far ahead it looks for them — three years, so a yearly one has three to show.
+RECURRENCE_INSTANCES = 3
+RECURRENCE_HORIZON_YEARS = 3
+
+
+def _recurs(event: dict) -> bool:
+    """Whether a formatted event carries a recurrence rule. The formatter serialises the rule as
+    JSON and writes `{}` for none, so the string being non-empty proves nothing."""
+
+    try:
+        return bool(json.loads(event.get("recurrence_rule") or "{}"))
+    except (TypeError, ValueError):
+        return False
+
+
+def _with_upcoming_occurrences(events: list[dict], time_zone: str | None) -> list[dict]:
+    """`events`, all from one account, with each recurring master replaced by its next few
+    occurrences. A series with none ahead — one that has ended — stays as its master: a row dated
+    when it last ran is still the answer to the search that found it.
+
+    Each occurrence is handed the master's id and rule, which the expansion does not carry. The
+    id is what a link to it is written with (see the calendar's `handleEventClick`), and the rule
+    is what tells the row to draw the repeat mark."""
+
+    recurring = [event for event in events if _recurs(event)]
+    if not recurring:
+        return events
+
+    account = events[0]["account"]
+    now = datetime.now(UTC)
+    by_uid = get_calendar_event_service(account).upcoming_occurrences(
+        [event["uid"] for event in recurring],
+        after=normalize_utc_z(now),
+        before=normalize_utc_z(now + timedelta(days=365 * RECURRENCE_HORIZON_YEARS)),
+        per_series=RECURRENCE_INSTANCES,
+        time_zone=time_zone,
+    )
+
+    ids = [id for event in recurring for id in by_uid.get(event["uid"], [])]
+    occurrences: dict[str, list[dict]] = defaultdict(list)
+    for occurrence in get_calendar_events_by_ids(account, ids):
+        occurrences[occurrence["uid"]].append(occurrence)
+
+    rows: list[dict] = []
+    for event in events:
+        coming = occurrences.get(event["uid"]) if _recurs(event) else None
+        if not coming:
+            rows.append(event)
+            continue
+        for occurrence in coming:
+            occurrence["master_id"] = event["id"]
+            occurrence["recurrence_rule"] = event["recurrence_rule"]
+            rows.append(occurrence)
+
+    return rows
 
 
 # The filters that are a JMAP condition each, under the name the server knows them by. Left out
