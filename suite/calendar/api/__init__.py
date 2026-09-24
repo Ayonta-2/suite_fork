@@ -365,22 +365,10 @@ def search_calendar_events_with_shared(
 
     # Without a range the server answered with masters, and a master's date is the least useful
     # date a series has: the standup shows once, dated the week it was first entered. Each is
-    # replaced by its next few occurrences.
-    #
-    # Before the cut, not after. That date is no better to rank on than it is to show: cutting
-    # on it keeps the series that *began* earliest, so a standup running tomorrow loses its
-    # place to one that has not met since 2019. Expanding first costs no extra round trips —
-    # `_with_upcoming_occurrences` asks once per account either way — and it is the only way
-    # the cut can read the date each row will actually carry.
+    # replaced by its next few occurrences — before the cut, since that date is no better to
+    # rank on than it is to show, and cutting on it keeps the series that *began* earliest.
     if not (filters.after and filters.before):
-        by_account: dict[str, list[dict]] = defaultdict(list)
-        for event in events:
-            by_account[event["account"]].append(event)
-        events = [
-            row
-            for account_events in by_account.values()
-            for row in _with_upcoming_occurrences(account_events, time_zone)
-        ]
+        events = _expanded_upcoming(events, limit, time_zone)
 
     # Each account answers in its own start order, so the concatenation is in none: the merged
     # list has to be put back in order before it is cut down to the asked-for count, or which
@@ -388,6 +376,48 @@ def search_calendar_events_with_shared(
     events.sort(key=lambda event: event.get("start") or "")
 
     return _first_events(events, limit)
+
+
+def _rank_start(event: dict, now: str) -> str:
+    """The date a candidate is ranked by while it is still a master, before anything is expanded.
+
+    A series' own start is the week it was first entered, which says nothing about when it next
+    runs; a series still going next runs today-ish, whenever it began. So a recurring candidate
+    ranks from today at the earliest.
+
+    An estimate, and only ever used as one: a yearly series ranks as though it ran today, and a
+    series that ended years ago ranks as though it still runs. It decides which candidates are
+    worth the cost of expanding, never the order of the answer — that is settled afterwards, on
+    the rows expansion actually returned.
+    """
+
+    start = event.get("start") or ""
+    return max(start, now) if _recurs(event) else start
+
+
+def _expanded_upcoming(events: list[dict], limit: int, time_zone: str | None) -> list[dict]:
+    """`events`, with each recurring master among the ranking candidates replaced by its next
+    few occurrences.
+
+    Only the first `limit` candidates are expanded, because expansion is a query per series
+    (see `upcoming_occurrences`) rather than one for the batch. The fan-out asks every account
+    holding a calendar shared into this one, so expanding everything they returned would put a
+    query per series per account behind a single palette keystroke — and the answer is only
+    `limit` events long, so the rest could not have appeared in it anyway.
+    """
+
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    candidates = sorted(events, key=lambda event: _rank_start(event, now))[:limit]
+
+    by_account: dict[str, list[dict]] = defaultdict(list)
+    for event in candidates:
+        by_account[event["account"]].append(event)
+
+    return [
+        row
+        for account_events in by_account.values()
+        for row in _with_upcoming_occurrences(account_events, time_zone)
+    ]
 
 
 def _first_events(rows: list[dict], limit: int) -> list[dict]:

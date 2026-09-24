@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+import json
 from datetime import timedelta
 
 import frappe
@@ -10,6 +11,7 @@ from suite.calendar.api import (
     EVENT_SEARCH_LIMIT,
     MAX_EVENT_SEARCH_LIMIT,
     _first_events,
+    _rank_start,
     _search_limit,
     search_calendar_events_with_shared,
 )
@@ -204,6 +206,50 @@ class TestCalendarSearchBoundary(UnitTestCase):
 
 def _row(id: str, start: str, master: str | None = None, account: str = "acc") -> dict:
     return {"account": account, "id": id, "start": start, "master_id": master}
+
+
+def _master(id: str, start: str, recurs: bool = False) -> dict:
+    return {
+        "account": "acc",
+        "id": id,
+        "start": start,
+        "recurrence_rule": json.dumps({"frequency": "weekly"} if recurs else {}),
+    }
+
+
+class TestSearchCandidateRanking(UnitTestCase):
+    """Which matches are worth expanding, decided while they are still masters. Expansion is a
+    query per series, so a search pays for this ordering being roughly right."""
+
+    NOW = "2026-09-24T12:00:00"
+
+    def test_a_series_ranks_from_today_however_long_ago_it_began(self):
+        # Its own date is the week it was first entered; a standup that has run since 2019 is
+        # still on next week, which is the date its row will carry.
+        self.assertEqual(
+            _rank_start(_master("s", "2019-01-06T09:00:00", recurs=True), self.NOW), self.NOW
+        )
+
+    def test_a_series_that_has_not_begun_ranks_from_when_it_will(self):
+        starts = "2027-03-01T09:00:00"
+        self.assertEqual(
+            _rank_start(_master("s", starts, recurs=True), self.NOW), starts
+        )
+
+    def test_a_one_off_ranks_from_its_own_date_wherever_that_falls(self):
+        for start in ("2020-05-01T09:00:00", "2026-10-01T09:00:00"):
+            with self.subTest(start=start):
+                self.assertEqual(_rank_start(_master("o", start), self.NOW), start)
+
+    def test_a_long_running_series_outranks_one_that_has_yet_to_start(self):
+        # The bug this ordering exists for: ranked on their own dates, the 2019 series would
+        # have been expanded and the one starting next month dropped, or the other way about.
+        running = _master("running", "2019-01-06T09:00:00", recurs=True)
+        later = _master("later", "2027-03-01T09:00:00", recurs=True)
+
+        ordered = sorted([later, running], key=lambda event: _rank_start(event, self.NOW))
+
+        self.assertEqual([event["id"] for event in ordered], ["running", "later"])
 
 
 class TestSearchResultCut(UnitTestCase):
