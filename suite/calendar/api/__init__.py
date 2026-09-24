@@ -376,7 +376,7 @@ def search_calendar_events_with_shared(
     # just been to, and a match ten years off is the one they meant least often, whichever
     # side of today it falls.
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
-    events.sort(key=lambda event: _distance(_utc_start(event), now))
+    events.sort(key=lambda event: _distance(event, now))
 
     return _first_events(events, limit)
 
@@ -401,20 +401,22 @@ def _utc_start(event: dict) -> str:
     return local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def _distance(start: str, now: str) -> timedelta:
-    """How far `start` falls from `now`, on either side, both in UTC."""
+def _distance(event: dict, now: str) -> timedelta:
+    """How far the event's start falls from `now`, on either side, measured in UTC."""
 
+    start = _utc_start(event)
     if not start:
         return timedelta.max
     return abs(datetime.fromisoformat(start[:19]) - datetime.fromisoformat(now[:19]))
 
 
-def _rank_start(event: dict, now: str) -> str:
-    """The date a candidate is ranked by while it is still a master, before anything is expanded.
+def _rank_distance(event: dict, now: str) -> timedelta:
+    """How far a candidate ranks from today while it is still a master, before anything is
+    expanded.
 
     A series' own start is the week it was first entered, which says nothing about when it next
     runs; a series still going next runs today-ish, whenever it began. So a recurring candidate
-    ranks from today at the earliest.
+    that has begun ranks as today.
 
     An estimate, and only ever used as one: a yearly series ranks as though it ran today, and a
     series that ended years ago ranks as though it still runs. It decides which candidates are
@@ -422,8 +424,9 @@ def _rank_start(event: dict, now: str) -> str:
     the rows expansion actually returned.
     """
 
-    start = _utc_start(event)
-    return max(start, now) if _recurs(event) else start
+    if _recurs(event) and _utc_start(event) <= now:
+        return timedelta(0)
+    return _distance(event, now)
 
 
 def _expanded_upcoming(events: list[dict], limit: int, time_zone: str | None) -> list[dict]:
@@ -438,7 +441,7 @@ def _expanded_upcoming(events: list[dict], limit: int, time_zone: str | None) ->
     """
 
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
-    candidates = sorted(events, key=lambda event: _distance(_rank_start(event, now), now))[:limit]
+    candidates = sorted(events, key=lambda event: _rank_distance(event, now))[:limit]
 
     by_account: dict[str, list[dict]] = defaultdict(list)
     for event in candidates:
@@ -480,14 +483,19 @@ RECURRENCE_INSTANCES = 3
 RECURRENCE_HORIZON_YEARS = 3
 
 
-def _recurs(event: dict) -> bool:
-    """Whether a formatted event carries a recurrence rule. The formatter serialises the rule as
-    JSON and writes `{}` for none, so the string being non-empty proves nothing."""
+def _rule(event: dict) -> dict:
+    """The event's recurrence rule. The formatter serialises it as JSON and writes `{}` for
+    none, so the string being non-empty proves nothing; anything unreadable is no rule."""
 
     try:
-        return bool(json.loads(event.get("recurrence_rule") or "{}"))
+        rule = json.loads(event.get("recurrence_rule") or "{}")
     except (TypeError, ValueError):
-        return False
+        return {}
+    return rule if isinstance(rule, dict) else {}
+
+
+def _recurs(event: dict) -> bool:
+    return bool(_rule(event))
 
 
 def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list[dict]:
@@ -530,7 +538,7 @@ def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list
         occurrences[occurrence["uid"]].append(occurrence)
     today = now.strftime("%Y-%m-%dT%H:%M:%S")
     for found in occurrences.values():
-        found.sort(key=lambda occurrence: _distance(_utc_start(occurrence), today))
+        found.sort(key=lambda occurrence: _distance(occurrence, today))
         del found[RECURRENCE_INSTANCES:]
 
     rows: list[dict] = []
@@ -549,14 +557,6 @@ def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list
 
 # How long one step of a rule's frequency is, at the longest a step of it can be.
 _FREQUENCY_DAYS = {"daily": 1, "weekly": 7, "monthly": 31, "yearly": 366}
-
-
-def _rule(event: dict) -> dict:
-    try:
-        rule = json.loads(event.get("recurrence_rule") or "{}")
-    except (TypeError, ValueError):
-        return {}
-    return rule if isinstance(rule, dict) else {}
 
 
 def _period(event: dict) -> timedelta:
@@ -656,11 +656,8 @@ def _search_calendar_events(
     calendar_ids: list[str] | None = None,
     filters: EventSearchFilters | None = None,
 ) -> list[dict]:
-    """The account's matching events, on `calendar_ids` alone when given.
-
-    Recurrences stay unexpanded: expansion needs a window to expand into and a search has
-    none — it asks the whole calendar, not a page of it. So a series answers as its master.
-    """
+    """The account's matching events, on `calendar_ids` alone when given. A series answers
+    as its master unless a date range was asked (see below)."""
 
     filters = filters or EventSearchFilters()
     conditions = _search_conditions(text, filters)
@@ -681,9 +678,8 @@ def _search_calendar_events(
     # it is asked for both halves — what is still to come, soonest first, and what has passed,
     # most recent first — each cut at `limit` on its own, which is the most of either the
     # answer could hold (see `query_around`).
-    query = conditions[0] if len(conditions) == 1 else {"operator": "AND", "conditions": conditions}
     ids = get_calendar_event_service(account).query_around(
-        query,
+        conditions,
         normalize_utc_z(datetime.now(UTC)),
         limit,
         time_zone=time_zone,

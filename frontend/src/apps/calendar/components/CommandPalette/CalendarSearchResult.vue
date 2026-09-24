@@ -29,8 +29,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import dayjs from '@/apps/calendar/utils/dayjs'
-import { formatEventWhen, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { eventStartLocal, formatEventWhen, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { eventColor } from '@/apps/calendar/utils/color'
 import DateChip from '@/apps/calendar/components/DateChip.vue'
 import HighlightedText from '@/components/HighlightedText.vue'
@@ -39,12 +38,12 @@ import type { CalendarSearchResult } from './types'
 const props = defineProps<{
 	result: CalendarSearchResult
 	/**
-	 * The colour the grid draws this event's calendar in, resolved by the shell from the
-	 * calendar list. A calendar that was never given a colour has none to send along with its
-	 * events, and the app assigns it one of the palette by position — which only something
-	 * holding the whole list can work out.
+	 * The reader's calendars as `userStore` lists them, to draw this event's in the colour the
+	 * grid draws it. Not read off the event: what rides along there is the calendar's *saved*
+	 * colour, and a calendar never given one is assigned one of the palette by position —
+	 * which only the whole list can work out.
 	 */
-	calendarColor?: string
+	calendarOptions?: { value: string; color?: string }[]
 	/**
 	 * A phone's list, not the palette's: the full-size chip, and a step more air between it and
 	 * the words. The palette packs ten results under a query line and wants them tight; a page
@@ -56,16 +55,7 @@ const props = defineProps<{
 }>()
 
 const allDay = computed(() => isAllDayEvent(props.result))
-
-/**
- * A timed event is stored in the zone it was made in; the reader wants it in theirs.
- * An all-day event keeps its calendar date, which no zone may shift.
- */
-const start = computed(() =>
-	props.result.time_zone && !allDay.value
-		? dayjs.tz(props.result.start, props.result.time_zone).tz(dayjs.tz.guess())
-		: dayjs(props.result.start),
-)
+const start = computed(() => eventStartLocal(props.result))
 
 const chipMonth = computed(() => start.value.format('MMM'))
 const chipDay = computed(() => start.value.format('D'))
@@ -89,9 +79,11 @@ const subtitle = computed(() =>
 )
 
 /** Which calendar it is on, resolved the one way every surface resolves it. */
-const chipColor = computed(() =>
-	eventColor(props.calendarColor || props.result.calendars?.[0]?.color),
-)
+const chipColor = computed(() => {
+	const calendar = props.result.calendars?.[0]
+	const listed = props.calendarOptions?.find((option) => option.value === calendar?.calendar)
+	return eventColor(listed?.color || calendar?.color)
+})
 
 // Sentence case, since it stands alone at the end of a row rather than inside a sentence.
 const relative = computed(() => {

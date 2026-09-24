@@ -43,6 +43,16 @@ export const isAllDayEvent = (event: EventTiming): boolean => {
 	)
 }
 
+/**
+ * When the event starts, where the reader is. A timed event is stored in the zone it was made
+ * in and the reader wants it in theirs; an all-day event keeps its calendar date, which no zone
+ * may shift.
+ */
+export const eventStartLocal = (event: EventTiming & { time_zone?: string | null }): Dayjs =>
+	event.time_zone && !isAllDayEvent(event)
+		? dayjs.tz(event.start, event.time_zone).tz(dayjs.tz.guess())
+		: dayjs(event.start)
+
 /** The moment an event stops, from its start and ISO-8601 duration. */
 const eventEnd = (start: Dayjs, duration?: string | null): Dayjs =>
 	start.add(dayjs.duration(duration || 'PT0S'))

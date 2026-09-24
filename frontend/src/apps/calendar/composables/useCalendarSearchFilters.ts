@@ -18,13 +18,17 @@ export interface CalendarFilterBadge {
 	value: string
 }
 
-const emptyFilter = (): CalendarSearchFilter => ({
-	calendar: '',
-	attendee: '',
-	organizer: '',
-	after: '',
-	before: '',
-})
+// Every field, in the order the badges read, with the word a badge names it by.
+const FIELDS: { key: keyof CalendarSearchFilter; label: string }[] = [
+	{ key: 'calendar', label: 'Calendar' },
+	{ key: 'attendee', label: 'Attendee' },
+	{ key: 'organizer', label: 'Organiser' },
+	{ key: 'after', label: 'From' },
+	{ key: 'before', label: 'To' },
+]
+
+const emptyFilter = () =>
+	Object.fromEntries(FIELDS.map(({ key }) => [key, ''])) as CalendarSearchFilter
 
 /**
  * The advanced filters behind the palette's sliders button, and the badges that say which of
@@ -69,19 +73,16 @@ export function useCalendarSearchFilters() {
 		filter[key] = ''
 	}
 
+	/** What is set, blank space aside: a filter is a word, not the room around one. */
+	const setFields = () => FIELDS.filter(({ key }) => filter[key].trim())
+
 	/** Labels the reader can read back, given the calendar names the panel knows. */
-	const badges = (calendarLabel: (value: string) => string) =>
-		([
-			filter.calendar && {
-				key: 'calendar',
-				label: 'Calendar',
-				value: calendarLabel(filter.calendar),
-			},
-			filter.attendee && { key: 'attendee', label: 'Attendee', value: filter.attendee },
-			filter.organizer && { key: 'organizer', label: 'Organiser', value: filter.organizer },
-			filter.after && { key: 'after', label: 'From', value: filter.after },
-			filter.before && { key: 'before', label: 'To', value: filter.before },
-		] as (CalendarFilterBadge | false | '')[]).filter(Boolean) as CalendarFilterBadge[]
+	const badges = (calendarLabel: (value: string) => string): CalendarFilterBadge[] =>
+		setFields().map(({ key, label }) => ({
+			key,
+			label,
+			value: key === 'calendar' ? calendarLabel(filter.calendar) : filter[key].trim(),
+		}))
 
 	/**
 	 * The filters as the API takes them. A date is widened to the whole of that day in the
@@ -97,15 +98,7 @@ export function useCalendarSearchFilters() {
 	}))
 
 	/** Whether anything is narrowed — a filter-only search is a search, an empty one is not. */
-	const isNarrowed = computed(() =>
-		Boolean(
-			filter.calendar ||
-				filter.attendee.trim() ||
-				filter.organizer.trim() ||
-				filter.after ||
-				filter.before,
-		),
-	)
+	const isNarrowed = computed(() => setFields().length > 0)
 
 	return { filter, badges, params, isNarrowed, removeFilter, reset }
 }

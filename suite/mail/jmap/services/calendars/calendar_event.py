@@ -245,16 +245,42 @@ class CalendarEventService(CalendarsService):
 
         return {"ids": ids[:limit], "total": total}
 
+    def _query_call(
+        self,
+        conditions: list[dict],
+        ascending: bool,
+        limit: int,
+        call_id: str,
+        time_zone: str | None,
+        expand_recurrences: bool,
+    ) -> list:
+        """One `CalendarEvent/query` method call for a batched request: the conditions ANDed,
+        ordered by start, without a total — a search reads the ids and nothing else."""
+
+        return [
+            f"{self._type}/query",
+            {
+                "accountId": self.account,
+                "filter": {"operator": "AND", "conditions": conditions},
+                "sort": [{"property": "start", "isAscending": ascending}],
+                "limit": limit,
+                "expandRecurrences": expand_recurrences,
+                "timeZone": time_zone,
+                "calculateTotal": False,
+            },
+            call_id,
+        ]
+
     def query_around(
         self,
-        filter: dict | None,
+        conditions: list[dict],
         now: str,
         limit: int,
         time_zone: str | None = None,
         expand_recurrences: bool = False,
     ) -> list[str]:
-        """The ids of up to `limit` matches on either side of `now`: what is still to come,
-        soonest first, then what has passed, most recent first.
+        """The ids of up to `limit` matches of `conditions` on either side of `now`: what is
+        still to come, soonest first, then what has passed, most recent first.
 
         Two queries in one request rather than one query in date order: the server cuts at
         `limit` on its own, and cut at one end of a calendar the answer holds the matches
@@ -265,20 +291,8 @@ class CalendarEventService(CalendarsService):
 
         halves = (({"after": now}, True), ({"before": now}, False))
         calls = [
-            [
-                f"{self._type}/query",
-                {
-                    "accountId": self.account,
-                    "filter": {"operator": "AND", "conditions": [*([filter] if filter else []), edge]},
-                    "sort": [{"property": "start", "isAscending": ascending}],
-                    "limit": limit,
-                    "expandRecurrences": expand_recurrences,
-                    "timeZone": time_zone,
-                    "calculateTotal": False,
-                },
-                str(index),
-            ]
-            for index, (edge, ascending) in enumerate(halves)
+            self._query_call([*conditions, edge], ascending, limit, str(i), time_zone, expand_recurrences)
+            for i, (edge, ascending) in enumerate(halves)
         ]
         response = self._call(self.capabilities, calls)
 
@@ -308,27 +322,18 @@ class CalendarEventService(CalendarsService):
         on how often it runs. A series with nothing in its window is absent from the answer.
         """
 
-        uids = list(after_by_uid)
         occurrences: dict[str, list[str]] = {}
-        for batch in self.create_batches(uids, self.max_calls_in_request):
+        for batch in self.create_batches(list(after_by_uid), self.max_calls_in_request):
             calls = [
-                [
-                    f"{self._type}/query",
-                    {
-                        "accountId": self.account,
-                        "filter": {
-                            "operator": "AND",
-                            "conditions": [{"uid": uid}, {"after": after_by_uid[uid]}, {"before": before}],
-                        },
-                        "sort": [{"property": "start", "isAscending": True}],
-                        "limit": per_series,
-                        "expandRecurrences": True,
-                        "timeZone": time_zone,
-                        "calculateTotal": False,
-                    },
-                    str(index),
-                ]
-                for index, uid in enumerate(batch)
+                self._query_call(
+                    [{"uid": uid}, {"after": after_by_uid[uid]}, {"before": before}],
+                    True,
+                    per_series,
+                    str(i),
+                    time_zone,
+                    expand_recurrences=True,
+                )
+                for i, uid in enumerate(batch)
             ]
             response = self._call(self.capabilities, calls)
             for name, body, call_id in response.get("methodResponses") or []:

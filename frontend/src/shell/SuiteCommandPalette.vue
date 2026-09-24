@@ -116,54 +116,13 @@
 			/>
 		</div>
 
-		<div
-			v-if="calendarSearchActive && !showFilters && calendarBadges.length"
-			class="relative flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2 pr-12"
-		>
-			<!-- The whole badge is the way back to the field that set it: the panel opens with
-			     that field already open. The pill itself takes the press, so the hover ground
-			     is the shape the reader is pointing at rather than the words inside it — the ✕
-			     stops the press from reaching here and removes instead.
-
-			     A <span> rather than a <button>, for the reason mail's badge gives: a button
-			     brings its own box and centres what is in it, which laid the label out unlike
-			     the plain text beside it and clipped its first letter. -->
-			<span
-				v-for="badge in calendarBadges"
-				:key="badge.key"
-				class="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-4 bg-surface-gray-2 pl-2 pr-1 text-xs hover:bg-surface-gray-3"
-				role="button"
-				tabindex="0"
-				:aria-label="`Edit ${badge.label}`"
-				@mousedown.prevent
-				@click="editCalendarFilter(badge.key)"
-				@keydown.enter.space.prevent="editCalendarFilter(badge.key)"
-			>
-				<Tooltip :text="`Click to edit ${badge.label}`">
-					<span class="max-w-48 truncate text-ink-gray-7">
-						{{ badge.label }}: {{ badge.value }}
-					</span>
-				</Tooltip>
-				<button
-					class="rounded-4 p-1 text-ink-gray-5 hover:text-ink-gray-8"
-					aria-label="Remove filter"
-					@mousedown.prevent
-					@click.stop="removeCalendarFilter(badge.key)"
-				>
-					<span class="lucide-x size-3" aria-hidden="true" />
-				</button>
-			</span>
-			<Button
-				variant="ghost"
-				icon="lucide-x"
-				size="sm"
-				class="absolute right-4 top-2 !size-7 !p-0"
-				aria-label="Clear all filters"
-				tooltip="Clear filters"
-				@mousedown.prevent
-				@click="resetCalendarFilters"
-			/>
-		</div>
+		<CalendarFilterBadges
+			v-if="calendarSearchActive && !showFilters"
+			:badges="calendarBadges"
+			@edit="editCalendarFilter"
+			@remove="removeCalendarFilter"
+			@clear="resetCalendarFilters"
+		/>
 
 		<CalendarFilterPanel
 			v-if="calendarSearchActive && showFilters"
@@ -399,7 +358,7 @@
 					     thing a reader scans a list of events by. -->
 					<CalendarSearchResult
 						:result="event"
-						:calendar-color="calendarResultColor(event)"
+						:calendar-options="calendarFilterOptions"
 						:term="searchWords"
 					/>
 				</CommandPaletteItem>
@@ -558,6 +517,7 @@ import {
 } from '@/apps/mail/utils/composables'
 import MailFilterPanel from '@/apps/mail/components/CommandPalette/MailFilterPanel.vue'
 import CalendarFilterPanel from '@/apps/calendar/components/CommandPalette/CalendarFilterPanel.vue'
+import CalendarFilterBadges from '@/apps/calendar/components/CommandPalette/CalendarFilterBadges.vue'
 import MailSearchResult from '@/apps/mail/components/CommandPalette/MailSearchResult.vue'
 import MailSearchSuggestions from '@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue'
 import CalendarSearchResult from '@/apps/calendar/components/CommandPalette/CalendarSearchResult.vue'
@@ -574,7 +534,7 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
 import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
 import type { CalendarSearchResult as CalendarSearchResultItem } from '@/apps/calendar/components/CommandPalette/types'
-import { isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { eventStartLocal } from '@/apps/calendar/utils/eventTime'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
 interface DriveResult {
@@ -781,15 +741,6 @@ const calendarBadges = computed(() =>
 		(value) => calendarFilterOptions.value.find((o) => o.value === value)?.label || value
 	)
 )
-/**
- * The colour the grid draws this event's calendar in, resolved from the same list the grid and
- * the sidebar resolve it from. Not read off the event: what rides along there is the calendar's
- * *saved* colour, and a calendar that has never been given one has none — where the rest of the
- * app then assigns it one of the palette by position. Left to the row itself, a second calendar
- * with no saved colour would be blue everywhere and green here.
- */
-const calendarResultColor = (event: CalendarSearchResultItem) =>
-	calendarFilterOptions.value.find((o) => o.value === event.calendars?.[0]?.calendar)?.color
 // A calendar filter narrows on its own, so it is a search whether or not anything was typed.
 const calendarFilterAsked = computed(
 	() => calendarSearchActive.value && calendarIsNarrowed.value
@@ -1108,12 +1059,6 @@ function enterHint(item: unknown) {
 		if (item.content_doctype === 'Writer Document') return 'to open document'
 	}
 	return 'to open file'
-}
-
-function calendarEventStart(event: CalendarSearchResultItem) {
-	if (event.time_zone && !isAllDayEvent(event))
-		return dayjs.tz(event.start, event.time_zone).tz(dayjs.tz.guess())
-	return dayjs(event.start)
 }
 
 // The search as it stands, as a route query: the search page's, and each result's.
@@ -1496,7 +1441,7 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 				query: mailSearchQuery.value,
 			}
 		} else if (item.resultType === 'calendar-event') {
-			const start = calendarEventStart(item)
+			const start = eventStartLocal(item)
 			// The view the reader is in is the view the result opens in — Agenda included.
 			// Left out, it fell through to the fallback, and searching from Agenda landed
 			// on a month grid nobody asked for.

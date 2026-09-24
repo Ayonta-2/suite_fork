@@ -28,40 +28,15 @@
 			/>
 		</div>
 
-		<!-- What is narrowed, as badges. The whole badge is the way back to the field that set
-		     it; the ✕ removes. The same badge the palette draws, since it is the same filter. -->
-		<div
-			v-if="badges.length && !showFilters"
-			class="relative flex shrink-0 flex-wrap items-center gap-1.5 px-5 py-2"
-		>
-			<span
-				v-for="badge in badges"
-				:key="badge.key"
-				class="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-4 bg-surface-gray-2 pl-2 pr-1 text-xs hover:bg-surface-gray-3"
-				role="button"
-				tabindex="0"
-				:aria-label="`Edit ${badge.label}`"
-				@click="editFilter(badge.key)"
-				@keydown.enter.space.prevent="editFilter(badge.key)"
-			>
-				<span class="max-w-48 truncate text-ink-gray-7">{{ badge.label }}: {{ badge.value }}</span>
-				<button
-					class="rounded-4 p-1 text-ink-gray-5 hover:text-ink-gray-8"
-					:aria-label="__('Remove filter')"
-					@click.stop="emit('removeFilter', badge.key)"
-				>
-					<span class="lucide-x size-3" aria-hidden="true" />
-				</button>
-			</span>
-			<Button
-				variant="ghost"
-				size="sm"
-				:label="__('Clear')"
-				class="-ml-0.5"
-				:aria-label="__('Clear all filters')"
-				@click="emit('clearFilters')"
-			/>
-		</div>
+		<!-- What is narrowed, as the palette draws it, since it is the same filter. -->
+		<CalendarFilterBadges
+			v-if="!showFilters"
+			:badges="badges"
+			clear-as-word
+			@edit="editFilter"
+			@remove="(key) => emit('removeFilter', key)"
+			@clear="emit('clearFilters')"
+		/>
 
 		<!-- The panel takes the list's place while it is open: a form and the results it has
 		     not run yet are two answers to the same question. -->
@@ -97,12 +72,7 @@
 				:class="isOpen(row) ? 'bg-surface-gray-2' : 'active:bg-surface-gray-2'"
 				@click="emit('select', row)"
 			>
-				<CalendarSearchResult
-					:result="row"
-					:calendar-color="calendarColorOf(row)"
-					:term="query"
-					roomy
-				/>
+				<CalendarSearchResult :result="row" :calendar-options="calendarOptions" :term="query" roomy />
 			</button>
 		</div>
 	</div>
@@ -112,7 +82,8 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from 'frappe-ui'
 
-import { sameEvent } from '@/apps/calendar/utils/eventIdentity'
+import { sameEvent, type EventIdentity } from '@/apps/calendar/utils/eventIdentity'
+import CalendarFilterBadges from '@/apps/calendar/components/CommandPalette/CalendarFilterBadges.vue'
 import CalendarFilterPanel from '@/apps/calendar/components/CommandPalette/CalendarFilterPanel.vue'
 import CalendarSearchResult from '@/apps/calendar/components/CommandPalette/CalendarSearchResult.vue'
 import type {
@@ -131,7 +102,7 @@ const props = defineProps<{
 	badges: CalendarFilterBadge[]
 	account: string
 	calendarOptions: { label: string; value: string; description?: string; color?: string }[]
-	openEvent?: { account?: string; event_id?: string; master_id?: string; recurrence_id?: string | null } | null
+	openEvent?: EventIdentity | null
 }>()
 
 const emit = defineEmits<{
@@ -169,13 +140,6 @@ watch(text, async () => {
 	await nextTick()
 	field.value?.focus()
 })
-
-/**
- * The colour the grid draws a calendar in, from the same list the grid reads it from: an
- * event carries only its calendar's saved colour, and one never given a colour has none.
- */
-const calendarColorOf = (row: any) =>
-	props.calendarOptions.find((option) => option.value === row.calendars?.[0]?.calendar)?.color
 
 /** Whether a row is the event the sheet is showing — see `sameEvent` for why not by row id. */
 const isOpen = (row: any) => sameEvent(props.openEvent, row)

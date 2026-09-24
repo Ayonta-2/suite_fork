@@ -14,7 +14,7 @@ from suite.calendar.api import (
     _first_events,
     _per_period,
     _period,
-    _rank_start,
+    _rank_distance,
     _search_limit,
     _utc_start,
     search_calendar_events_with_shared,
@@ -260,16 +260,22 @@ class TestSearchCandidateRanking(UnitTestCase):
     def test_a_series_ranks_from_today_however_long_ago_it_began(self):
         # Its own date is the week it was first entered; a standup that has run since 2019 is
         # still on next week, which is the date its row will carry.
-        self.assertEqual(_rank_start(_master("s", "2019-01-06T09:00:00", recurs=True), self.NOW), self.NOW)
+        self.assertEqual(
+            _rank_distance(_master("s", "2019-01-06T09:00:00", recurs=True), self.NOW), timedelta(0)
+        )
 
     def test_a_series_that_has_not_begun_ranks_from_when_it_will(self):
         starts = "2027-03-01T09:00:00"
-        self.assertEqual(_rank_start(_master("s", starts, recurs=True), self.NOW), starts)
+        self.assertEqual(
+            _rank_distance(_master("s", starts, recurs=True), self.NOW), timedelta(days=157, hours=21)
+        )
 
     def test_a_one_off_ranks_from_its_own_date_wherever_that_falls(self):
         for start in ("2020-05-01T09:00:00", "2026-10-01T09:00:00"):
             with self.subTest(start=start):
-                self.assertEqual(_rank_start(_master("o", start), self.NOW), start)
+                self.assertEqual(
+                    _rank_distance(_master("o", start), self.NOW), _distance(_master("o", start), self.NOW)
+                )
 
     def test_a_long_running_series_outranks_an_event_that_has_passed(self):
         # The bug this ordering exists for: ranked on its own date, the 2019 series would fall
@@ -280,7 +286,7 @@ class TestSearchCandidateRanking(UnitTestCase):
 
         ordered = sorted(
             [passed, running],
-            key=lambda event: _distance(_rank_start(event, self.NOW), self.NOW),
+            key=lambda event: _rank_distance(event, self.NOW),
         )
 
         self.assertEqual([event["id"] for event in ordered], ["running", "passed"])
@@ -304,12 +310,14 @@ class TestSearchCandidateRanking(UnitTestCase):
 
     def test_distance_from_today_reads_the_same_on_either_side_of_it(self):
         self.assertEqual(
-            _distance("2026-09-20T12:00:00", self.NOW), _distance("2026-09-28T12:00:00", self.NOW)
+            _distance({"start": "2026-09-20T12:00:00"}, self.NOW),
+            _distance({"start": "2026-09-28T12:00:00"}, self.NOW),
         )
         self.assertLess(
-            _distance("2026-09-28T12:00:00", self.NOW), _distance("2026-09-19T12:00:00", self.NOW)
+            _distance({"start": "2026-09-28T12:00:00"}, self.NOW),
+            _distance({"start": "2026-09-19T12:00:00"}, self.NOW),
         )
-        self.assertEqual(_distance("", self.NOW), timedelta.max)
+        self.assertEqual(_distance({"start": ""}, self.NOW), timedelta.max)
 
 
 class TestSeriesPeriod(UnitTestCase):

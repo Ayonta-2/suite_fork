@@ -34,10 +34,14 @@ export const serverEventId = (event: { event_id?: string; master_id?: string }) 
  * for one event, and the sheet may be showing either copy. Accounts first, since the ids are
  * only unique within one.
  */
-export const sameEvent = (
-	a?: { account?: string; event_id?: string; master_id?: string; recurrence_id?: string | null } | null,
-	b?: { account?: string; event_id?: string; master_id?: string; recurrence_id?: string | null } | null,
-) =>
+export interface EventIdentity {
+	account?: string
+	event_id?: string
+	master_id?: string
+	recurrence_id?: string | null
+}
+
+export const sameEvent = (a?: EventIdentity | null, b?: EventIdentity | null) =>
 	!!a &&
 	!!b &&
 	a.account === b.account &&
