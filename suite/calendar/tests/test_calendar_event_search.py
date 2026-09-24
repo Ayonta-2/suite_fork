@@ -14,9 +14,9 @@ from suite.calendar.api import (
     _first_events,
     _per_period,
     _period,
-    _utc_start,
     _rank_start,
     _search_limit,
+    _utc_start,
     search_calendar_events_with_shared,
 )
 from suite.calendar.doctype.calendar_event.calendar_event import add_calendar_event
@@ -30,9 +30,7 @@ class TestCalendarEventSearch(StalwartIntegrationTestCase):
         cls.member = cls.create_member()
         cls.account = cls.personal_account(cls.member)
 
-    def _search(
-        self, text: str | None = None, limit: int | None = None, **filters
-    ) -> list[dict]:
+    def _search(self, text: str | None = None, limit: int | None = None, **filters) -> list[dict]:
         with self.set_user(self.member.email):
             kwargs = {"limit": limit} if limit is not None else {}
             if filters:
@@ -124,9 +122,9 @@ class TestCalendarEventSearch(StalwartIntegrationTestCase):
         self._wait_for_search(word, 1)
 
         with self.set_user(self.member.email):
-            calendar = search_calendar_events_with_shared(
-                self.account, word, time_zone="UTC"
-            )[0]["calendars"][0]["calendar"]
+            calendar = search_calendar_events_with_shared(self.account, word, time_zone="UTC")[0][
+                "calendars"
+            ][0]["calendar"]
 
         found = self._search(calendar=calendar)
 
@@ -262,15 +260,11 @@ class TestSearchCandidateRanking(UnitTestCase):
     def test_a_series_ranks_from_today_however_long_ago_it_began(self):
         # Its own date is the week it was first entered; a standup that has run since 2019 is
         # still on next week, which is the date its row will carry.
-        self.assertEqual(
-            _rank_start(_master("s", "2019-01-06T09:00:00", recurs=True), self.NOW), self.NOW
-        )
+        self.assertEqual(_rank_start(_master("s", "2019-01-06T09:00:00", recurs=True), self.NOW), self.NOW)
 
     def test_a_series_that_has_not_begun_ranks_from_when_it_will(self):
         starts = "2027-03-01T09:00:00"
-        self.assertEqual(
-            _rank_start(_master("s", starts, recurs=True), self.NOW), starts
-        )
+        self.assertEqual(_rank_start(_master("s", starts, recurs=True), self.NOW), starts)
 
     def test_a_one_off_ranks_from_its_own_date_wherever_that_falls(self):
         for start in ("2020-05-01T09:00:00", "2026-10-01T09:00:00"):

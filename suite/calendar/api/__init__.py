@@ -1,8 +1,8 @@
 import json
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import frappe
 from dateutil.rrule import rrulestr
@@ -353,9 +353,7 @@ def search_calendar_events_with_shared(
     # calendar-shaped argument in this app is.
     if filters.calendar:
         calendar_account, _sep, calendar_id = filters.calendar.partition("|")
-        events = _search_calendar_events(
-            calendar_account, text, limit, time_zone, [calendar_id], filters
-        )
+        events = _search_calendar_events(calendar_account, text, limit, time_zone, [calendar_id], filters)
     else:
         events = _with_shared(
             account,
@@ -667,9 +665,7 @@ def _search_calendar_events(
     filters = filters or EventSearchFilters()
     conditions = _search_conditions(text, filters)
     if calendar_ids:
-        conditions.append(
-            {"operator": "OR", "conditions": [{"inCalendar": id} for id in calendar_ids]}
-        )
+        conditions.append({"operator": "OR", "conditions": [{"inCalendar": id} for id in calendar_ids]})
 
     # A date range is the one thing that lets a series answer as the occurrence the reader is
     # looking for. Without a window the server matches a series on any occurrence in it and

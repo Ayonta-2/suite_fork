@@ -599,9 +599,7 @@ const railOpen = ref<{ id: string; recurrence?: string; account: string } | null
 const railEvent = computed(() => {
 	if (!railOpen.value) return null
 	const { id, recurrence, account } = railOpen.value
-	const linked =
-		findLinkedEvent(todayEvents.data, id, recurrence, account) ??
-		findLinkedEvent(events.data, id, recurrence, account)
+	const linked = findLinkedEvent([todayEvents.data, events.data], id, recurrence, account)
 	return linked && withCalendarColor(linked)
 })
 
@@ -995,7 +993,7 @@ watch(
 			return
 		}
 		if (showEditEvent.value) return
-		const match = findLinkedEvent(data, id, recurrence)
+		const match = findLinkedEvent([data], id, recurrence)
 		if (match) handleOpenEvent({ calendarEvent: match })
 	},
 	{ immediate: true },
