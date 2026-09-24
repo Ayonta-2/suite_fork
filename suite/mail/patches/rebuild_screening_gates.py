@@ -1,10 +1,6 @@
 import frappe
-from frappe.utils import create_batch
 
-from suite.mail.doctype.sieve_script.sieve_script import _rebuild_automation_sieves
-from suite.utils import enqueue_job
-
-_ACCOUNTS_PER_BATCH = 100
+from suite.mail.doctype.sieve_script.sieve_script import enqueue_automation_sieve_rebuilds
 
 
 def execute() -> None:
@@ -19,21 +15,18 @@ def execute() -> None:
     Each account keeps its stored script until something rebuilds it, and nothing does on a schedule —
     ``build_automation_sieve`` only runs when a user touches a folder, a rule, or screening. Only
     accounts with screening enabled carry the gate, so only those are rebuilt. Rebuilding is
-    idempotent and refreshes content only (activate=False), leaving an active vacation auto-responder
-    or hand-written script in place.
+    idempotent and refreshes content only, leaving an active vacation auto-responder or hand-written
+    script in place.
 
-    Deferred to background jobs: regeneration needs a live JMAP session per account, which is not
+    Deferred to a background job: regeneration needs a live JMAP session per account, which is not
     reliably reachable during ``bench migrate``.
     """
 
+    frappe.enqueue(rebuild_screening_gates, queue="long", enqueue_after_commit=True)
+
+
+def rebuild_screening_gates() -> None:
+    """Fan the accounts with screening enabled out into long-queue rebuild batches."""
+
     accounts = frappe.get_all("JMAP Account", filters={"enable_screening": 1}, pluck="name")
-    for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_BATCH)):
-        enqueue_job(
-            _rebuild_automation_sieves,
-            job_id=f"rebuild-screening-gates::{i}",
-            deduplicate=True,
-            queue="long",
-            timeout=3600,
-            enqueue_after_commit=True,
-            accounts=batch,
-        )
+    enqueue_automation_sieve_rebuilds(accounts, job_id_prefix="rebuild-screening-gates")

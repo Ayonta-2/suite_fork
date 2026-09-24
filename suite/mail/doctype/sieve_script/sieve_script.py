@@ -15,7 +15,7 @@ from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_set
 from suite.mail.doctype.screened_email_address.screened_email_address import (
     get_effective_screened_email_addresses,
 )
-from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+from suite.mail.doctype.user_account.user_account import get_enabled_account_user, get_user_for_jmap_account
 from suite.mail.jmap import (
     format_jmap_error,
     get_jmap_set_error_message,
@@ -27,7 +27,7 @@ from suite.mail.jmap import (
 )
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.user import get_account_emails
-from suite.utils import enqueue_job, execute_with_logging, parse_filters
+from suite.utils import enqueue_job, execute_with_logging, parse_filters, user_context
 from suite.utils.validation import JSONList
 
 _ACCOUNTS_PER_REBUILD_BATCH = 100
@@ -485,16 +485,7 @@ def rebuild_all_automation_sieves() -> None:
     frappe.only_for("System Manager")
 
     accounts = frappe.db.get_all("JMAP Account", pluck="name")
-    for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):
-        enqueue_job(
-            _rebuild_automation_sieves,
-            job_id=f"rebuild-automation-sieves::{i}",
-            deduplicate=True,
-            queue="long",
-            timeout=3600,
-            enqueue_after_commit=True,
-            accounts=batch,
-        )
+    enqueue_automation_sieve_rebuilds(accounts, job_id_prefix="rebuild-automation-sieves")
 
     frappe.msgprint(
         _("Rebuilding the automation sieve scripts for {0} account(s) in the background.").format(
@@ -504,17 +495,47 @@ def rebuild_all_automation_sieves() -> None:
     )
 
 
+def enqueue_automation_sieve_rebuilds(accounts: list[str], job_id_prefix: str) -> None:
+    """Rebuild the automation script of each account in long-queue background batches, once the
+    current transaction commits. Content only (activate=False): activating would override an account
+    whose active script is the vacation auto-responder or one the user wrote themselves."""
+
+    for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):
+        enqueue_job(
+            _rebuild_automation_sieves,
+            job_id=f"{job_id_prefix}::{i}",
+            deduplicate=True,
+            queue="long",
+            timeout=3600,
+            enqueue_after_commit=True,
+            accounts=batch,
+        )
+
+
 def _rebuild_automation_sieves(accounts: list[str]) -> None:
-    """Rebuild each account's automation script, isolating per-account failures."""
+    """Rebuild each account's automation script, isolating per-account failures.
+
+    Each account is committed on its own, so the next one reads its rules afresh: a batch-long
+    transaction would read them from a snapshot, and could overwrite a script a user rebuilt with newer
+    rules meanwhile. Each is rebuilt as a user of it who can connect, the account's owner where it has
+    one (see `get_enabled_account_user`); accounts without one are skipped.
+    """
 
     for account in accounts:
         # The job runs async after the fan-out committed, so an account can vanish in between.
         if not account or not frappe.db.exists("JMAP Account", account):
             continue
 
+        user = get_enabled_account_user(account)
+        if not user:
+            continue
+
         try:
-            build_automation_sieve(account)
+            with user_context(user):
+                build_automation_sieve(account)
+            frappe.db.commit()
         except Exception:
+            frappe.db.rollback()
             log_mail_error(
                 "Rebuild Automation Sieves Error",
                 f"Failed to rebuild the automation sieve script for JMAP account {account}",
@@ -714,7 +735,7 @@ def rule_object_to_sieve(automation: dict, mailbox_path: str) -> str:
     if automation.get("add_star"):
         script_parts.append('  addflag "\\\\Flagged";')
 
-    script_parts.append(f'  fileinto "{mailbox_path}";')
+    script_parts.append(f'  fileinto "{_escape_sieve_string(mailbox_path)}";')
     script_parts.append("  stop;")
     script_parts.append("}")
 
@@ -775,7 +796,7 @@ def _apply_screening_blocks(account: str, content: str) -> str:
             spam_emails,
             # Flag as junk ($junk keyword) as well as filing into Junk, so the mail is marked junk — not
             # just located there — matching what marking a mail as junk does.
-            ['  addflag "$junk";', f'  fileinto "{junk_mailbox_path}";', "  stop;"],
+            ['  addflag "$junk";', f'  fileinto "{_escape_sieve_string(junk_mailbox_path)}";', "  stop;"],
         )
         if spam_block:
             content = content.rstrip() + "\n\n" + spam_block.rstrip() + "\n"
@@ -808,7 +829,9 @@ def _escape_sieve_string(value: str) -> str:
     """Escape a value for embedding in a Sieve quoted string (RFC 5228): backslash then double-quote.
 
     Line breaks are dropped as well, so a value carrying a newline cannot terminate the statement it
-    is embedded in.
+    is embedded in. Stalwart's Sieve parser (sieve-rs) still misreads an escaped backslash that ends
+    the string or is followed by n, r, t, a quote or another backslash, so a value like that is not
+    carried through intact.
     """
 
     value = value.replace("\r", "").replace("\n", "")
@@ -885,19 +908,20 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     It routes mail that no earlier block (Reject, Spam, or a mailbox automation rule) already claimed:
 
     - Accepted senders — and the account's own identity emails, which are always trusted — are
-      delivered straight to the Inbox, so accepted mail always reaches the inbox regardless of its
-      spam score.
+      filed into the Inbox, skipping the Screener. Stalwart before v0.16.22 still moves mail it
+      classifies as spam out of the Inbox into Junk, so on those versions accepted mail reaches the
+      Inbox only as ham.
     - Otherwise, mail the server has not classified as spam is filed into Screening. The Screener is
-      created on delivery if it has gone missing (`:create`), because Stalwart files mail for a
-      mailbox that does not exist into the Inbox.
-    - Otherwise (an unrecognised sender whose mail is classified as spam) nothing is done, so the
-      server's default filtering assigns the mailbox (e.g. Junk once the spam score exceeds the
-      configured threshold).
+      created on delivery if it has gone missing (`:create`, which Stalwart creates unsubscribed),
+      because Stalwart files mail for a mailbox that does not exist into the Inbox.
+    - Otherwise (spam from an unrecognised sender) nothing is done, so the server's default filtering
+      assigns the mailbox: Junk, unless Stalwart overrides the verdict because the sender is one of the
+      user's contacts or replied to the user's own mail, and delivers it to the Inbox as ham.
 
     Spam classification is read with the `spamtest` extension (RFC 5235), not the `X-Spam-Status`
     header: Stalwart injects the verdict into the Sieve runtime before the user's script runs, but only
     stamps the header afterwards, so the header is not visible here. `spamtest` returns 0 when the
-    message was not scored, 1-4 for ham (1 at a score of zero or below, rising towards the spam
+    message was not scored, 1-4 for ham (1 at a score of about zero or below, rising towards the spam
     threshold) and 5-10 for spam, so `:value "ge" "5"` is exactly Stalwart's spam verdict. Do not lower
     it: ham with a small positive score lands on 2-4, and a lower cut-off lets that mail skip the
     Screener and reach the Inbox. (Stalwart before v0.16.19 only ever returned 1 or 10, which the same
@@ -938,7 +962,7 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
         inbox_mailbox_path = get_inbox_mailbox_path(account)
         lines += [
             f"if {accepted_test} {{",
-            f'  fileinto "{inbox_mailbox_path}";',
+            f'  fileinto "{_escape_sieve_string(inbox_mailbox_path)}";',
             "  stop;",
             "}",
             f"elsif {not_spam_test} {{",
@@ -948,7 +972,7 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
         lines.append(f"if {not_spam_test} {{")
 
     lines += [
-        f'  fileinto :create "{screening_mailbox_path}";',
+        f'  fileinto :create "{_escape_sieve_string(screening_mailbox_path)}";',
         "  stop;",
         "}",
         "\n",

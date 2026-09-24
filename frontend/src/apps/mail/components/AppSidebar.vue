@@ -375,7 +375,12 @@ const dashboardItems = [
 const mailboxItems = computed(
 	() =>
 		mailboxes.data
-			?.filter((mailbox: MailboxData) => mailbox.subscribed)
+			// The Screener is listed even unsubscribed: it can't be hidden from Folder settings, and
+			// Stalwart recreates it unsubscribed when the screening Sieve script brings it back.
+			?.filter(
+				(mailbox: MailboxData) =>
+					mailbox.subscribed || mailbox.id === store.mailboxIds.screener,
+			)
 			?.map((mailbox: MailboxData) => {
 				// The Screening folder opens the dedicated Screener page, not the thread list.
 				const isScreener = mailbox.id === store.mailboxIds.screener
