@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import frappe
 from frappe.tests import UnitTestCase
@@ -10,6 +10,7 @@ from frappe.tests import UnitTestCase
 from suite.calendar.api import (
     EVENT_SEARCH_LIMIT,
     MAX_EVENT_SEARCH_LIMIT,
+    _distance,
     _first_events,
     _rank_start,
     _search_limit,
@@ -50,6 +51,10 @@ class TestCalendarEventSearch(StalwartIntegrationTestCase):
                 self.account, title=title, start=start, duration="PT1H", time_zone="UTC"
             )
 
+    @staticmethod
+    def _days_from_now(days: int) -> str:
+        return (datetime.now(UTC) + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+
     def test_finds_an_event_by_a_word_in_its_title(self):
         word = unique_name("kickoff")
         event_id = self._add(f"Project {word} with the team", "2026-05-04T10:00:00")
@@ -59,30 +64,29 @@ class TestCalendarEventSearch(StalwartIntegrationTestCase):
         self.assertEqual([event["id"] for event in found], [event_id])
         self.assertEqual(found[0]["account"], self.account)
 
-    def test_answers_in_start_order_whoever_the_events_belong_to(self):
+    def test_answers_nearest_today_first_whichever_side_of_it_they_fall(self):
         word = unique_name("review")
-        # Written out of order, so an answer in start order is the search's doing and not
-        # the order they happened to be created in.
-        self._add(f"Second {word}", "2026-06-11T09:00:00")
-        self._add(f"Third {word}", "2026-06-12T09:00:00")
-        self._add(f"First {word}", "2026-06-10T09:00:00")
+        # Written out of order, so an answer in order is the search's doing and not the order
+        # they happened to be created in — and on both sides of today, so date order in either
+        # direction would get it wrong.
+        self._add(f"Far {word}", self._days_from_now(60))
+        self._add(f"Near {word}", self._days_from_now(-3))
+        self._add(f"Mid {word}", self._days_from_now(30))
 
         found = self._wait_for_search(word, 3)
 
-        self.assertEqual(
-            [event["title"].split()[0] for event in found], ["First", "Second", "Third"]
-        )
+        self.assertEqual([event["title"].split()[0] for event in found], ["Near", "Mid", "Far"])
 
-    def test_a_limit_keeps_the_earliest_of_the_matches(self):
+    def test_a_limit_keeps_the_nearest_of_the_matches(self):
         word = unique_name("sprint")
-        self._add(f"Late {word}", "2026-07-20T09:00:00")
-        self._add(f"Early {word}", "2026-07-06T09:00:00")
-        self._add(f"Middle {word}", "2026-07-13T09:00:00")
+        self._add(f"Far {word}", self._days_from_now(40))
+        self._add(f"Near {word}", self._days_from_now(2))
+        self._add(f"Mid {word}", self._days_from_now(-9))
 
         self._wait_for_search(word, 3)
         found = self._search(word, limit=2)
 
-        self.assertEqual([event["title"].split()[0] for event in found], ["Early", "Middle"])
+        self.assertEqual([event["title"].split()[0] for event in found], ["Near", "Mid"])
 
     def test_a_search_with_nothing_asked_answers_with_nothing(self):
         # Not "everything": the palette asks on every keystroke, and a blank line is a reader
@@ -188,10 +192,12 @@ class TestCalendarSearchBoundary(UnitTestCase):
 
     def test_filters_of_the_wrong_shape_are_refused_before_the_account_is_asked(self):
         # An account that does not exist: reaching the server at all would fail differently.
+        # A string is refused by the whitelist's own type check, ahead of the parse — which is
+        # the same boundary, a step earlier.
         for filters in ('["text"]', {"attendee": ["a@example.com"]}, {"calendar": 7}):
             with (
                 self.subTest(filters=filters),
-                self.assertRaises(frappe.ValidationError),
+                self.assertRaises((frappe.ValidationError, frappe.exceptions.FrappeTypeError)),
             ):
                 search_calendar_events_with_shared("no-such-account", "standup", filters=filters)
 
@@ -241,15 +247,28 @@ class TestSearchCandidateRanking(UnitTestCase):
             with self.subTest(start=start):
                 self.assertEqual(_rank_start(_master("o", start), self.NOW), start)
 
-    def test_a_long_running_series_outranks_one_that_has_yet_to_start(self):
-        # The bug this ordering exists for: ranked on their own dates, the 2019 series would
-        # have been expanded and the one starting next month dropped, or the other way about.
+    def test_a_long_running_series_outranks_an_event_that_has_passed(self):
+        # The bug this ordering exists for: ranked on its own date, the 2019 series would fall
+        # behind a one-off from last year and be the one dropped, though it runs again next week
+        # and the one-off never will.
         running = _master("running", "2019-01-06T09:00:00", recurs=True)
-        later = _master("later", "2027-03-01T09:00:00", recurs=True)
+        passed = _master("passed", "2025-05-01T09:00:00")
 
-        ordered = sorted([later, running], key=lambda event: _rank_start(event, self.NOW))
+        ordered = sorted(
+            [passed, running],
+            key=lambda event: _distance(_rank_start(event, self.NOW), self.NOW),
+        )
 
-        self.assertEqual([event["id"] for event in ordered], ["running", "later"])
+        self.assertEqual([event["id"] for event in ordered], ["running", "passed"])
+
+    def test_distance_from_today_reads_the_same_on_either_side_of_it(self):
+        self.assertEqual(
+            _distance("2026-09-20T12:00:00", self.NOW), _distance("2026-09-28T12:00:00", self.NOW)
+        )
+        self.assertLess(
+            _distance("2026-09-28T12:00:00", self.NOW), _distance("2026-09-19T12:00:00", self.NOW)
+        )
+        self.assertEqual(_distance("", self.NOW), timedelta.max)
 
 
 class TestSearchResultCut(UnitTestCase):
@@ -276,8 +295,8 @@ class TestSearchResultCut(UnitTestCase):
 
         self.assertEqual([row["id"] for row in _first_events(rows, 1)], ["o1"])
 
-    def test_an_event_is_kept_or_dropped_by_the_row_that_falls_soonest(self):
-        # Rows arrive in start order, so the series running next week takes its place ahead of
+    def test_an_event_is_kept_or_dropped_by_the_row_that_falls_nearest(self):
+        # Rows arrive nearest first, so the series running next week takes its place ahead of
         # the one-off in December — whatever date the series' own master carries.
         rows = [
             _row("x1", "2026-10-02T09:00:00", master="s1"),

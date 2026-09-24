@@ -370,12 +370,28 @@ def search_calendar_events_with_shared(
     if not (filters.after and filters.before):
         events = _expanded_upcoming(events, limit, time_zone)
 
-    # Each account answers in its own start order, so the concatenation is in none: the merged
-    # list has to be put back in order before it is cut down to the asked-for count, or which
-    # results survive depends on which account happened to be read first.
-    events.sort(key=lambda event: event.get("start") or "")
+    # Each account answers in its own order, so the concatenation is in none: the merged list
+    # has to be put back in order before it is cut down to the asked-for count, or which
+    # results survive depends on which account happened to be read first. Nearest today first:
+    # a reader searching a calendar is looking for something they are about to go to or have
+    # just been to, and a match ten years off is the one they meant least often, whichever
+    # side of today it falls.
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    events.sort(key=lambda event: _distance(event.get("start") or "", now))
 
     return _first_events(events, limit)
+
+
+def _distance(start: str, now: str) -> timedelta:
+    """How far `start` falls from `now`, on either side.
+
+    A start is the wall-clock time in the event's zone and `now` is UTC, so this is out by a
+    zone's offset — hours, where the ordering it serves separates days and years.
+    """
+
+    if not start:
+        return timedelta.max
+    return abs(datetime.fromisoformat(start[:19]) - datetime.fromisoformat(now[:19]))
 
 
 def _rank_start(event: dict, now: str) -> str:
@@ -399,7 +415,7 @@ def _expanded_upcoming(events: list[dict], limit: int, time_zone: str | None) ->
     """`events`, with each recurring master among the ranking candidates replaced by its next
     few occurrences.
 
-    Only the first `limit` candidates are expanded, because expansion is a query per series
+    Only the `limit` nearest-ranked candidates are expanded, because expansion is a query per series
     (see `upcoming_occurrences`) rather than one for the batch. The fan-out asks every account
     holding a calendar shared into this one, so expanding everything they returned would put a
     query per series per account behind a single palette keystroke — and the answer is only
@@ -407,7 +423,7 @@ def _expanded_upcoming(events: list[dict], limit: int, time_zone: str | None) ->
     """
 
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
-    candidates = sorted(events, key=lambda event: _rank_start(event, now))[:limit]
+    candidates = sorted(events, key=lambda event: _distance(_rank_start(event, now), now))[:limit]
 
     by_account: dict[str, list[dict]] = defaultdict(list)
     for event in candidates:
@@ -426,9 +442,9 @@ def _first_events(rows: list[dict], limit: int) -> list[dict]:
 
     `limit` counts events rather than rows because a recurring event is one answer to the
     search however many times it is about to run — ten events is the promise, and three rows
-    each is how a recurring one keeps it. Rows arrive in start order, so the events are taken
-    in the order their soonest row falls, and the later rows of one already taken come along
-    with it rather than counting again."""
+    each is how a recurring one keeps it. Rows arrive nearest today first, so the events are
+    taken in the order their nearest row falls, and the further rows of one already taken come
+    along with it rather than counting again."""
 
     taken: set[tuple[str, str]] = set()
     kept = []
@@ -584,8 +600,6 @@ def _search_calendar_events(
             {"operator": "OR", "conditions": [{"inCalendar": id} for id in calendar_ids]}
         )
 
-    query = conditions[0] if len(conditions) == 1 else {"operator": "AND", "conditions": conditions}
-
     # A date range is the one thing that lets a series answer as the occurrence the reader is
     # looking for. Without a window the server matches a series on any occurrence in it and
     # still hands back the master, so a search of one July came back full of birthdays dated
@@ -596,9 +610,19 @@ def _search_calendar_events(
     # answer better than this.
     expand = bool(filters.after and filters.before)
 
-    events, _total = fetch_calendar_events(
-        account, query, position=0, limit=limit, time_zone=time_zone, expand_recurrences=expand
+    # The answer is ordered by distance from today, and the server can only order by date. So
+    # it is asked for both halves — what is still to come, soonest first, and what has passed,
+    # most recent first — each cut at `limit` on its own, which is the most of either the
+    # answer could hold (see `query_around`).
+    query = conditions[0] if len(conditions) == 1 else {"operator": "AND", "conditions": conditions}
+    ids = get_calendar_event_service(account).query_around(
+        query,
+        normalize_utc_z(datetime.now(UTC)),
+        limit,
+        time_zone=time_zone,
+        expand_recurrences=expand,
     )
+    events = get_calendar_events_by_ids(account, ids)
 
     # An expanded occurrence's id is synthetic — derived from its position in the expansion —
     # and the server renumbers it the moment that occurrence gains an override. The grid pays

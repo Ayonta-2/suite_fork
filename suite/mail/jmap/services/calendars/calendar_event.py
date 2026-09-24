@@ -245,6 +245,51 @@ class CalendarEventService(CalendarsService):
 
         return {"ids": ids[:limit], "total": total}
 
+    def query_around(
+        self,
+        filter: dict | None,
+        now: str,
+        limit: int,
+        time_zone: str | None = None,
+        expand_recurrences: bool = False,
+    ) -> list[str]:
+        """The ids of up to `limit` matches on either side of `now`: what is still to come,
+        soonest first, then what has passed, most recent first.
+
+        Two queries in one request rather than one query in date order: the server cuts at
+        `limit` on its own, and cut at one end of a calendar the answer holds the matches
+        furthest from today. An event under way, or a series still running, answers on both
+        sides and is listed once, on the side it came first. One request rather than two, since
+        a search pays a round trip per account and this would have doubled it.
+        """
+
+        halves = (({"after": now}, True), ({"before": now}, False))
+        calls = [
+            [
+                f"{self._type}/query",
+                {
+                    "accountId": self.account,
+                    "filter": {"operator": "AND", "conditions": [*([filter] if filter else []), edge]},
+                    "sort": [{"property": "start", "isAscending": ascending}],
+                    "limit": limit,
+                    "expandRecurrences": expand_recurrences,
+                    "timeZone": time_zone,
+                    "calculateTotal": False,
+                },
+                str(index),
+            ]
+            for index, (edge, ascending) in enumerate(halves)
+        ]
+        response = self._call(self.capabilities, calls)
+
+        answers = sorted(response.get("methodResponses") or [], key=lambda answer: answer[2])
+        ids: list[str] = []
+        for name, body, _call_id in answers:
+            if name != f"{self._type}/query":
+                raise ValueError(f"CalendarEvent/query failed: {body}")
+            ids.extend(id for id in body.get("ids") or [] if id not in ids)
+        return ids
+
     def upcoming_occurrences(
         self,
         uids: list[str],
