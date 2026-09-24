@@ -144,13 +144,19 @@ const lengthLabel = (start: Dayjs, end: Dayjs) => {
  * `Mon, 17 – Wed, 19 Aug · 3 days`, `Today · 3:00 – 4:00 pm`.
  *
  * `now` is injectable for tests; `compact` is passed through to {@link dayLabel}.
+ *
+ * `length` off drops the closing length from a timed event — `· 1 hr` — for a line that has
+ * no room to spend on what its own clock times already say. The rule below about a length
+ * that comes and goes holds within a surface, not across them: a caller that turns it off
+ * turns it off for every event it lists. The all-day branch keeps its label either way, since
+ * with no clock times on the line `All day` is the only thing saying there are none.
  */
 export const formatEventWhen = (
 	start: Dayjs,
 	duration?: string | null,
-	options: { allDay?: boolean; compact?: boolean; now?: Dayjs } = {},
+	options: { allDay?: boolean; compact?: boolean; now?: Dayjs; length?: boolean } = {},
 ): string => {
-	const { allDay = false, compact = false, now = dayjs() } = options
+	const { allDay = false, compact = false, now = dayjs(), length = true } = options
 
 	if (allDay) {
 		const last = eventLastDay(start, duration, true)
@@ -171,6 +177,7 @@ export const formatEventWhen = (
 	// Never compacted: the inline `Tue` sets the register, and `Monday · … Tue` mixes two.
 	if (isOvernight(start, end)) {
 		const times = `${start.format('h:mm a')} – ${end.format('h:mm a ddd')}`
+		if (!length) return `${dayLabel(start, now)} · ${times}`
 		return `${dayLabel(start, now)} · ${times} · ${lengthLabel(start, end)}`
 	}
 
@@ -178,6 +185,6 @@ export const formatEventWhen = (
 	// *could* subtract two clock times isn't a rule they can see, so a length that came and went
 	// between events would read as missing data rather than as inference.
 	const times = timeRangeLabel(start, end)
-	if (end.isSame(start)) return `${dayLabel(start, now, compact)} · ${times}`
+	if (end.isSame(start) || !length) return `${dayLabel(start, now, compact)} · ${times}`
 	return `${dayLabel(start, now, compact)} · ${times} · ${lengthLabel(start, end)}`
 }

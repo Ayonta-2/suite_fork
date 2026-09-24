@@ -16,12 +16,12 @@
 			:placeholder="
 				mailAppliedFilters.length
 					? `Search · ${removeMailFilterShortcut} removes last filter`
-					: mailSearchActive
+					: hasFilterPanel
 						? 'Search'
 					: palettePlaceholder
 			"
-			@mousedown="showMailFilters = false"
-			@input="showMailFilters = false"
+			@mousedown="showFilters = false"
+			@input="showFilters = false"
 			@keydown.backspace="handleMailFilterBackspace"
 		>
 			<template #prefix>
@@ -36,21 +36,21 @@
 				</button>
 				<span v-else class="lucide-search size-4 shrink-0 text-ink-gray-6" />
 			</template>
-			<template v-if="mailSearchActive" #suffix>
+			<template v-if="hasFilterPanel" #suffix>
 				<Button
-					:variant="showMailFilters ? 'subtle' : 'ghost'"
+					:variant="showFilters ? 'subtle' : 'ghost'"
 					icon="lucide-sliders-horizontal"
 					size="sm"
 					aria-label="Filters"
-					:aria-expanded="showMailFilters"
+					:aria-expanded="showFilters"
 					@mousedown.prevent
-					@click="toggleMailFilters"
+					@click="toggleFilters"
 				/>
 			</template>
 		</CommandPaletteInput>
 
 		<div
-			v-if="mailSearchActive && !showMailFilters"
+			v-if="mailSearchActive && !showFilters"
 			class="mail-search-filters relative flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2"
 			:class="{ 'pr-12': mailAppliedFilters.length }"
 		>
@@ -111,8 +111,48 @@
 			/>
 		</div>
 
+		<div
+			v-if="calendarSearchActive && !showFilters && calendarBadges.length"
+			class="relative flex shrink-0 flex-wrap items-center gap-1.5 px-4 py-2 pr-12"
+		>
+			<span
+				v-for="badge in calendarBadges"
+				:key="badge.key"
+				class="inline-flex h-7 shrink-0 items-center gap-1 rounded-4 bg-surface-gray-2 pl-2 pr-1 text-xs"
+			>
+				<span class="max-w-48 truncate text-ink-gray-7">
+					{{ badge.label }}: {{ badge.value }}
+				</span>
+				<button
+					class="rounded-4 p-1 text-ink-gray-5 hover:text-ink-gray-8"
+					aria-label="Remove filter"
+					@mousedown.prevent
+					@click.stop="removeCalendarFilter(badge.key)"
+				>
+					<span class="lucide-x size-3" aria-hidden="true" />
+				</button>
+			</span>
+			<Button
+				variant="ghost"
+				icon="lucide-x"
+				size="sm"
+				class="absolute right-4 top-2 !size-7 !p-0"
+				aria-label="Clear all filters"
+				tooltip="Clear filters"
+				@mousedown.prevent
+				@click="resetCalendarFilters"
+			/>
+		</div>
+
+		<CalendarFilterPanel
+			v-if="calendarSearchActive && showFilters"
+			:filter="calendarFilter"
+			:account="String(route.params.accountId || '')"
+			:calendar-options="calendarFilterOptions"
+		/>
+
 		<MailFilterPanel
-			v-if="mailSearchActive && showMailFilters"
+			v-else-if="mailSearchActive && showFilters"
 			v-model:filters="mailPanelFilters"
 			v-model:all-accounts="mailAllAccounts"
 			:has-multiple-accounts="hasMultipleMailAccounts"
@@ -273,25 +313,25 @@
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
-			<CommandPaletteGroup v-if="calendarResults.length" label="Calendar">
+			<!-- Unlabelled, the way mail's results are: the palette is already scoped to the app
+			     in view, so a heading naming that app says nothing the reader did not just do. -->
+			<CommandPaletteGroup v-if="calendarResults.length">
 				<CommandPaletteItem
 					v-for="event in calendarResults"
 					:key="event.name"
 					:value="event"
+					class="[&_[data-slot=command-palette-item-label]]:flex-1"
 				>
+					<!-- Which calendar it is on, in the colour that calendar is drawn in
+					     everywhere else — the grid's pills carry it as an edge and so do the
+					     rail's rows, and a row of results is the same kind of list. -->
 					<template #prefix>
 						<span
-							class="mr-3 flex size-4 shrink-0 items-center justify-center text-ink-gray-7"
-						>
-							<span class="lucide-calendar-days size-4" aria-hidden="true" />
-						</span>
+							class="mr-2.5 w-[2.5px] shrink-0 self-stretch rounded-full"
+							:style="{ backgroundColor: calendarResultColor(event) }"
+						/>
 					</template>
-					{{ event.title || 'Untitled event' }}
-					<template #suffix>
-						<span class="text-p-xs text-ink-gray-5">{{
-							formatCalendarStart(event)
-						}}</span>
-					</template>
+					<CalendarSearchResult :result="event" />
 				</CommandPaletteItem>
 			</CommandPaletteGroup>
 
@@ -347,7 +387,7 @@
 		</CommandPaletteList>
 
 		<CommandPaletteEmpty
-			v-if="!showMailFilters && (normalizedQuery || mailAppliedFilters.length)"
+			v-if="!showFilters && (normalizedQuery || mailAppliedFilters.length)"
 		>
 			{{ emptyMessage }}
 		</CommandPaletteEmpty>
@@ -441,8 +481,10 @@ import {
 	useScreenSize,
 } from '@/apps/mail/utils/composables'
 import MailFilterPanel from '@/apps/mail/components/CommandPalette/MailFilterPanel.vue'
+import CalendarFilterPanel from '@/apps/calendar/components/CommandPalette/CalendarFilterPanel.vue'
 import MailSearchResult from '@/apps/mail/components/CommandPalette/MailSearchResult.vue'
 import MailSearchSuggestions from '@/apps/mail/components/CommandPalette/MailSearchSuggestions.vue'
+import CalendarSearchResult from '@/apps/calendar/components/CommandPalette/CalendarSearchResult.vue'
 import type {
 	MailContactSuggestion,
 	MailFilterSuggestion,
@@ -450,6 +492,9 @@ import type {
 } from '@/apps/mail/components/CommandPalette/types'
 import { getRecents } from '@/apps/drive/resources/files'
 import dayjs from '@/apps/calendar/utils/dayjs'
+import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
+import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
+import type { CalendarSearchResult as CalendarSearchResultItem } from '@/apps/calendar/components/CommandPalette/types'
 import { isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
@@ -502,19 +547,6 @@ interface MeetResult {
 	modified?: string
 }
 
-interface CalendarResult {
-	resultType: 'calendar-event'
-	name: string
-	id: string
-	account: string
-	title?: string
-	start: string
-	time_zone?: string
-	show_without_time?: 0 | 1
-	recurrence_id?: string
-	master_id?: string
-}
-
 interface MailSearchPageItem {
 	resultType: 'mail-search-page'
 }
@@ -526,7 +558,7 @@ type PaletteItem =
 	| SlideResult
 	| WriterResult
 	| MeetResult
-	| CalendarResult
+	| CalendarSearchResultItem
 	| MailResult
 	| MailContactSuggestion
 	| MailFilterSuggestion
@@ -617,13 +649,48 @@ const {
 	cancel: cancelMailSearch,
 	reset: resetMailSearch,
 } = useMailCommandPaletteSearch(query, mailSearchActive)
-const showMailFilters = ref(false)
+const showFilters = ref(false)
+const calendarSearchActive = computed(() => activeApp.value === 'calendar')
+const hasFilterPanel = computed(() => mailSearchActive.value || calendarSearchActive.value)
+const {
+	filter: calendarFilter,
+	badges: calendarFilterBadges,
+	params: calendarFilterParams,
+	isNarrowed: calendarIsNarrowed,
+	removeFilter: removeCalendarFilter,
+	reset: resetCalendarFilters,
+} = useCalendarSearchFilters()
+// Reached for only once the calendar is the app in view, which is the only time its panel is
+// on screen — the store is the calendar app's, and the shell outlives every app in it.
+let calendarUser: ReturnType<typeof calendarUserStore> | undefined
+const calendarFilterOptions = computed(() =>
+	calendarSearchActive.value ? ((calendarUser ??= calendarUserStore()).calendarOptions ?? []) : []
+)
+/**
+ * The colour the reader knows that calendar by. Resolved through the store's own list, which
+ * fills in a colour for a calendar that carries none — the server sends null for those, and a
+ * bar with no colour is a bar that isn't there.
+ */
+const calendarResultColor = (event: CalendarSearchResultItem) => {
+	const calendar = event.calendars?.[0]
+	if (!calendar) return ''
+	return (
+		calendarFilterOptions.value.find((option) => option.value === calendar.calendar)?.color ||
+		calendar.color ||
+		''
+	)
+}
+const calendarBadges = computed(() =>
+	calendarFilterBadges(
+		(value) => calendarFilterOptions.value.find((o) => o.value === value)?.label || value
+	)
+)
 // Whether Enter, with no row to open, still has a search to run: something asked, and the results
 // — not the filter panel — on screen to run it from.
 const mailSearchAsked = computed(
 	() =>
 		mailSearchActive.value &&
-		!showMailFilters.value &&
+		!showFilters.value &&
 		Boolean(normalizedQuery.value || mailAppliedFilters.value.length)
 )
 // The panel edits the filters the palette holds; anything still typed as an operator on the query
@@ -666,9 +733,9 @@ async function editMailFilter(key: string) {
 	if (selection) await selectInPaletteInput(selection)
 }
 
-function toggleMailFilters() {
-	showMailFilters.value = !showMailFilters.value
-	if (showMailFilters.value) absorbMailQueryFilters()
+function toggleFilters() {
+	showFilters.value = !showFilters.value
+	if (showFilters.value) absorbMailQueryFilters()
 }
 
 // One object for the life of the palette: the list tracks its active item by value identity, and a
@@ -714,7 +781,13 @@ const sheetSearch = appSearch('POST', 'suite.sheets.api.list_sheets')
 const slideSearch = appSearch('GET', 'suite.drive.api.list.files')
 const writerSearch = appSearch('GET', 'suite.writer.api.general.search')
 const meetSearch = appSearch('POST', 'frappe.client.get_list')
-const calendarSearch = appSearch('POST', 'suite.calendar.doctype.calendar_event.calendar_event.fetch_calendar_events')
+// Shared-aware, like the grid's own fetch: a calendar shared with the reader lives in its
+// owner's account, so a search of the route's account alone cannot see what the grid is
+// drawing from it.
+const calendarSearch = appSearch(
+	'POST',
+	'suite.calendar.api.search_calendar_events_with_shared'
+)
 const normalizedQuery = computed(() => query.value.trim().toLowerCase())
 const appQuery = computed(() =>
 	normalizedQuery.value.replace(/^>\s*/, '').trim()
@@ -771,15 +844,12 @@ const meetResults = computed<MeetResult[]>(() => {
 			resultType: 'meeting' as const,
 		}))
 })
-const calendarResults = computed<CalendarResult[]>(() => {
-	if (
-		activeApp.value !== 'calendar' ||
-		!Array.isArray(calendarSearch.data?.[0])
-	)
+const calendarResults = computed<CalendarSearchResultItem[]>(() => {
+	if (activeApp.value !== 'calendar' || !Array.isArray(calendarSearch.data))
 		return []
-	return calendarSearch.data[0]
+	return calendarSearch.data
 		.slice(0, 20)
-		.map((event: Omit<CalendarResult, 'resultType'>) => ({
+		.map((event: Omit<CalendarSearchResultItem, 'resultType'>) => ({
 			...event,
 			resultType: 'calendar-event' as const,
 		}))
@@ -885,16 +955,10 @@ function enterHint(item: unknown) {
 	return 'to open file'
 }
 
-function calendarEventStart(event: CalendarResult) {
+function calendarEventStart(event: CalendarSearchResultItem) {
 	if (event.time_zone && !isAllDayEvent(event))
 		return dayjs.tz(event.start, event.time_zone).tz(dayjs.tz.guess())
 	return dayjs(event.start)
-}
-
-function formatCalendarStart(event: CalendarResult) {
-	return calendarEventStart(event).format(
-		isAllDayEvent(event) ? 'MMM D' : 'MMM D, h:mm A'
-	)
 }
 
 // The search as it stands, as a route query: the search page's, and each result's.
@@ -949,12 +1013,12 @@ watch(
 )
 
 watch(
-	[query, mailAppliedFilters, mailAllAccounts, showMailFilters],
+	[query, mailAppliedFilters, mailAllAccounts, showFilters, calendarFilterParams],
 	([value]) => {
 		// Nothing to search for while the filter panel is up: its results are not on screen, every
 		// keystroke in a field would ask for a set nobody is reading — and nothing is in flight to
 		// cancel, since opening the panel already did.
-		if (mailSearchActive.value && showMailFilters.value) return
+		if (hasFilterPanel.value && showFilters.value) return
 		const text = value.trim()
 		cancelSearches()
 		// Nothing on the server answers "which app": the list is already here.
@@ -968,7 +1032,13 @@ watch(
 			return
 		}
 
-		if (text.length < minimumQueryLength) {
+		// A filter narrows on its own, so the calendar can answer a search with no words in it —
+		// "everything on the holidays calendar in July" is a question. Every other app needs
+		// something typed before there is anything to ask.
+		if (
+			text.length < minimumQueryLength &&
+			!(calendarSearchActive.value && calendarIsNarrowed.value)
+		) {
 			resetSearches()
 			return
 		}
@@ -1007,14 +1077,13 @@ watch(
 				order_by: 'modified desc',
 				limit_page_length: 20,
 			})
-		} else if (activeApp.value === 'calendar') {
+		} else if (calendarSearchActive.value) {
 			calendarSearch.submit({
 				account: String(route.params.accountId || ''),
-				filter: { title: text },
-				position: 0,
+				text,
 				limit: 20,
 				time_zone: dayjs.tz.guess(),
-				expand_recurrences: false,
+				filters: calendarFilterParams.value,
 			})
 		}
 	}
@@ -1028,9 +1097,10 @@ watch(
 		// Emptied as it opens rather than as it closes: clearing on the way out is a change the
 		// closing animation is still on screen to show, so the palette was seen throwing away the
 		// search before it went.
-		showMailFilters.value = false
+		showFilters.value = false
 		query.value = ''
 		mailAppliedFilters.value = []
+		resetCalendarFilters()
 		resetSearches()
 
 		if (['drive', 'slides', 'sheets', 'writer'].includes(activeApp.value))
@@ -1249,17 +1319,26 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 			}
 		} else if (item.resultType === 'calendar-event') {
 			const start = calendarEventStart(item)
+			// The view the reader is in is the view the result opens in — Agenda included.
+			// Left out, it fell through to the fallback, and searching from Agenda landed
+			// on a month grid nobody asked for.
 			const calendarRoute = [
 				'calendar-month',
 				'calendar-week',
 				'calendar-day',
+				'calendar-agenda',
 			].includes(String(route.name))
 				? String(route.name)
 				: 'calendar-month'
 			location = {
 				name: calendarRoute,
 				params: {
-					accountId: item.account || route.params.accountId,
+					// The reader's own account, not the event's: a hit on a shared calendar
+					// belongs to whoever owns it, and routing there would switch the calendar
+					// to an account nobody thinks of as theirs. The grid shows the shared
+					// event inside the reader's view, and so does the link to it — which is
+					// what `account` is for, ids being unique only within an account.
+					accountId: route.params.accountId || item.account,
 					year: start.year(),
 					month: start.month() + 1,
 					day: start.date(),
@@ -1267,6 +1346,7 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 				query: {
 					event: item.master_id || item.id,
 					recurrence: item.recurrence_id || undefined,
+					account: item.account || undefined,
 				},
 			}
 		} else {

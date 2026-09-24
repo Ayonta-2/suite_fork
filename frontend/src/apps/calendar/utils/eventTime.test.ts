@@ -156,4 +156,32 @@ describe('formatEventWhen', () => {
 			expect(compact('2027-01-09T15:00:00', 'PT1H')).toBe('Sat, 9 Jan 2027 · 3:00 – 4:00 pm · 1 hr')
 		})
 	})
+
+	describe('length', () => {
+		const noLength = (start: string, duration?: string, options = {}) =>
+			when(start, duration, { length: false, ...options })
+
+		it('leaves a timed event on its clock times', () => {
+			expect(noLength('2026-08-17T15:00:00', 'PT1H')).toBe('Mon, 17 Aug · 3:00 – 4:00 pm')
+			expect(when('2026-08-17T15:00:00', 'PT1H')).toBe('Mon, 17 Aug · 3:00 – 4:00 pm · 1 hr')
+		})
+
+		it('drops it from an overnight too, which the day names anyway', () => {
+			expect(noLength('2026-08-17T23:00:00', 'PT2H')).toBe(
+				'Mon, 17 Aug · 11:00 pm – 1:00 am Tue',
+			)
+		})
+
+		it('keeps what says an event has no clock times at all', () => {
+			// Nothing else on the line would say so once the times are gone.
+			expect(allDay('2026-08-17T00:00:00', 'P1D', { length: false })).toBe('Mon, 17 Aug · All day')
+			expect(allDay('2026-08-17T00:00:00', 'P3D', { length: false })).toBe(
+				'Mon, 17 – Wed, 19 Aug · 3 days',
+			)
+		})
+
+		it('changes nothing for an event with one instant and no span', () => {
+			expect(noLength('2026-08-17T15:00:00', 'PT0S')).toBe(when('2026-08-17T15:00:00', 'PT0S'))
+		})
+	})
 })
