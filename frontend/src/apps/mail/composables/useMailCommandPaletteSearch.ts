@@ -3,6 +3,7 @@ import { createResource } from "frappe-ui";
 import { useStorage } from "@vueuse/core";
 
 import { FOLDER_ICON_COLOR_MAP } from "@/apps/mail/constants";
+import { getSessionUser } from "@/utils/session";
 import { userStore } from "@/apps/mail/stores/user";
 import { getIcon } from "@/apps/mail/utils";
 import { utcDayEnd, utcDayStart } from "@/apps/mail/utils/datetime";
@@ -45,8 +46,12 @@ const ALL_ACCOUNTS_STORAGE_KEY = "mail-search-all-accounts";
 // The searches the reader ran last, for the phone's search page to offer before anything is
 // typed. Five, since the page is a list and this is its whole content until a word arrives;
 // in the browser, like the all-accounts preference — a convenience of the device someone
-// searches from, and not worth a round trip on every opening.
+// searches from, and not worth a round trip on every opening. Under the user's name, since a
+// browser is shared more often than a search is: what one person looked for is not the next
+// person's to see on their empty page.
 const RECENT_SEARCHES_STORAGE_KEY = "mail-recent-searches";
+const recentSearchesKey = () =>
+  `${RECENT_SEARCHES_STORAGE_KEY}:${getSessionUser() ?? "guest"}`;
 const RECENT_SEARCHES = 5;
 
 // As many mails as the palette shows at once, with the way past them being the row at the bottom
@@ -147,7 +152,7 @@ export function useMailCommandPaletteSearch(
   }));
   // --- Recent searches ---
 
-  const recentSearches = useStorage<MailRecentSearch[]>(RECENT_SEARCHES_STORAGE_KEY, []);
+  const recentSearches = useStorage<MailRecentSearch[]>(recentSearchesKey(), []);
 
   // A remembered search is known by what it asked — the words and the badges — which is what
   // makes a repeat a repeat and what a row stands for. Not by `at`: two searches committed in
@@ -170,14 +175,29 @@ export function useMailCommandPaletteSearch(
       .join(" · ");
     const key = searchKey({ text, filters });
     recentSearches.value = [
-      { resultType: "mail-recent-search", text, filters, label, at: Date.now() },
+      {
+        resultType: "mail-recent-search",
+        text,
+        filters,
+        label,
+        account: account.value,
+        at: Date.now(),
+      },
       ...recentSearches.value.filter((entry) => searchKey(entry) !== key),
     ].slice(0, RECENT_SEARCHES);
   };
 
-  /** Puts a remembered search back exactly as it ran: the words on the line, the badges applied. */
+  /**
+   * Puts a remembered search back as it ran: the words on the line, the badges applied. All but
+   * a folder from another account, or one under a search of every account: a folder's id names
+   * one account's folder and nothing in any other, and the server drops it from a search across
+   * accounts — so the badge would have stood for a narrowing the search did not make.
+   */
   const restoreSearch = (entry: MailRecentSearch) => {
-    setFilters(entry.filters);
+    const { inMailbox, ...filters } = entry.filters;
+    const folderApplies =
+      inMailbox && entry.account === account.value && !searchesAllAccounts.value;
+    setFilters(folderApplies ? { ...filters, inMailbox } : filters);
     query.value = entry.text;
   };
 

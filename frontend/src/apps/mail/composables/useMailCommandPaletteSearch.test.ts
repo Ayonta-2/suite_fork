@@ -655,6 +655,41 @@ describe('recent searches', () => {
 		expect(search.filterValues.value).toEqual({ inMailbox: 'mailbox-1' })
 	})
 
+	it('puts a folder back only for the account it belongs to', () => {
+		const search = openSearch()
+		search.query.value = 'budget'
+		search.search('budget', 'work')
+		search.setFilters({ inMailbox: 'mailbox-1', isRead: 'false' })
+		search.rememberSearch()
+		search.query.value = ''
+		search.setFilters({})
+
+		// Another account: its folders are other folders, and this id names none of them.
+		search.search('', 'personal')
+		search.restoreSearch(search.recentSearches.value[0])
+		expect(search.query.value).toBe('budget')
+		expect(search.filterValues.value).toEqual({ isRead: 'false' })
+
+		// Back on the account it ran against, the folder comes back with it.
+		search.search('', 'work')
+		search.restoreSearch(search.recentSearches.value[0])
+		expect(search.filterValues.value).toEqual({ inMailbox: 'mailbox-1', isRead: 'false' })
+	})
+
+	it('is kept under the user, not the browser', async () => {
+		document.cookie = 'user_id=alice@example.com'
+		const alice = openSearch()
+		alice.query.value = 'budget'
+		alice.rememberSearch()
+		await nextTick()
+
+		document.cookie = 'user_id=bob@example.com'
+		const bob = openSearch()
+		expect(bob.recentSearches.value).toEqual([])
+		expect(localStorage.getItem('mail-recent-searches:alice@example.com')).toContain('budget')
+		document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+	})
+
 	it('forgets one and clears all', () => {
 		const search = openSearch()
 		search.query.value = 'budget'

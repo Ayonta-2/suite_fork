@@ -1,6 +1,7 @@
 import json
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Annotated, Literal
 
 import frappe
@@ -377,17 +378,33 @@ def search_calendar_events_with_shared(
     # just been to, and a match ten years off is the one they meant least often, whichever
     # side of today it falls.
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
-    events.sort(key=lambda event: _distance(event.get("start") or "", now))
+    events.sort(key=lambda event: _distance(_utc_start(event), now))
 
     return _first_events(events, limit)
 
 
-def _distance(start: str, now: str) -> timedelta:
-    """How far `start` falls from `now`, on either side.
+def _utc_start(event: dict) -> str:
+    """The event's start as UTC, for measuring against a UTC `now`.
 
-    A start is the wall-clock time in the event's zone and `now` is UTC, so this is out by a
-    zone's offset — hours, where the ordering it serves separates days and years.
+    A start is stored as the wall-clock time in the event's own zone; measured as it stands, an
+    event in Auckland and one in Los Angeles at the same instant would rank a day apart. An
+    all-day event has no zone and no instant — its date is the same everywhere — and a zone
+    the platform does not know is read as it stands.
     """
+
+    start = event.get("start") or ""
+    if not start or len(start) < 16:
+        return start
+    try:
+        zone = ZoneInfo(event.get("time_zone") or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        return start
+    local = datetime.fromisoformat(start[:19]).replace(tzinfo=zone)
+    return local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _distance(start: str, now: str) -> timedelta:
+    """How far `start` falls from `now`, on either side, both in UTC."""
 
     if not start:
         return timedelta.max
@@ -407,7 +424,7 @@ def _rank_start(event: dict, now: str) -> str:
     the rows expansion actually returned.
     """
 
-    start = event.get("start") or ""
+    start = _utc_start(event)
     return max(start, now) if _recurs(event) else start
 
 
@@ -483,11 +500,12 @@ def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list
     has ended — stays as its master: a row dated when it last ran is still the answer to the
     search that found it.
 
-    One query per series, from one period before today: that is where the previous occurrence
-    falls, and asking for one more than the count from there — the previous, today's, and the
-    next few — leaves the nearest few to be chosen here. Asking each side of today separately
-    would have doubled the queries, and this is already the search's one cost that grows with
-    the answer; and every occurrence asked for is fetched whole before the choice is made.
+    One query per series, from one period before today: that is where the previous occurrences
+    fall, and asking for as many as a period holds over the count from there — the previous
+    period's, then today's and the next few — leaves the nearest few to be chosen here. Asking
+    each side of today separately would have doubled the queries, and this is already the
+    search's one cost that grows with the answer; and every occurrence asked for is fetched
+    whole before the choice is made, so the ask stays as small as the choice allows.
 
     Each occurrence is handed the master's id and rule, which the expansion does not carry. The
     id is what a link to it is written with (see the calendar's `handleEventClick`), and the rule
@@ -502,7 +520,9 @@ def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list
     by_uid = get_calendar_event_service(account).occurrences_from(
         {event["uid"]: normalize_utc_z(now - _period(event)) for event in recurring},
         before=normalize_utc_z(now + timedelta(days=365 * RECURRENCE_HORIZON_YEARS)),
-        per_series=RECURRENCE_INSTANCES + 1,
+        # A period back reaches every occurrence of the last period and, over the extra day,
+        # possibly one more; the count on top of those is what is left for today and after.
+        per_series=max(_per_period(event) for event in recurring) + 1 + RECURRENCE_INSTANCES,
         time_zone=time_zone,
     )
 
@@ -512,7 +532,7 @@ def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list
         occurrences[occurrence["uid"]].append(occurrence)
     today = now.strftime("%Y-%m-%dT%H:%M:%S")
     for found in occurrences.values():
-        found.sort(key=lambda occurrence: _distance(occurrence.get("start") or "", today))
+        found.sort(key=lambda occurrence: _distance(_utc_start(occurrence), today))
         del found[RECURRENCE_INSTANCES:]
 
     rows: list[dict] = []
@@ -533,18 +553,39 @@ def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list
 _FREQUENCY_DAYS = {"daily": 1, "weekly": 7, "monthly": 31, "yearly": 366}
 
 
-def _period(event: dict) -> timedelta:
-    """How far back a series' previous occurrence can be: one step of its rule, and a day over,
-    since "a week ago" measured from now falls after last week's occurrence whenever that ran
-    earlier in its day than now is in this one. A rule the frequency cannot be read from is
-    taken as weekly."""
-
+def _rule(event: dict) -> dict:
     try:
         rule = json.loads(event.get("recurrence_rule") or "{}")
     except (TypeError, ValueError):
-        rule = {}
+        return {}
+    return rule if isinstance(rule, dict) else {}
+
+
+def _period(event: dict) -> timedelta:
+    """How far back a series' previous occurrences can be: one step of its rule, and a day
+    over, since "a week ago" measured from now falls after last week's occurrence whenever that
+    ran earlier in its day than now is in this one. A rule the frequency cannot be read from is
+    taken as weekly."""
+
+    rule = _rule(event)
     days = _FREQUENCY_DAYS.get(str(rule.get("frequency", "")).lower(), 7)
     return timedelta(days=days * max(cint(rule.get("interval")) or 1, 1) + 1)
+
+
+def _per_period(event: dict) -> int:
+    """How many times a series can run in one step of its rule: once, unless the rule names
+    several days of the week, days of the month or months of the year, in which case each. A
+    weekly standup on Monday, Wednesday and Friday runs three times a week, and a window a week
+    back holds all three before it reaches today."""
+
+    rule = _rule(event)
+    return max(
+        1,
+        *(
+            len(rule[key]) if isinstance(rule.get(key), list) else 1
+            for key in ("byDay", "byMonthDay", "byMonth", "byYearDay", "byWeekNo")
+        ),
+    )
 
 
 # The filters that are a JMAP condition each, under the name the server knows them by. Left out

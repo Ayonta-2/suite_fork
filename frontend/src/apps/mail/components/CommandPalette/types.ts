@@ -14,7 +14,9 @@ export interface MailRecentSearch {
 	text: string
 	filters: Record<string, string>
 	label: string
-	/** When it was last run, and the row's key. */
+	/** The account it was run against, which is the one its folder filter belongs to. */
+	account?: string
+	/** When it was last run. */
 	at: number
 }
 

@@ -12,7 +12,9 @@ from suite.calendar.api import (
     MAX_EVENT_SEARCH_LIMIT,
     _distance,
     _first_events,
+    _per_period,
     _period,
+    _utc_start,
     _rank_start,
     _search_limit,
     search_calendar_events_with_shared,
@@ -289,6 +291,23 @@ class TestSearchCandidateRanking(UnitTestCase):
 
         self.assertEqual([event["id"] for event in ordered], ["running", "passed"])
 
+    def test_a_start_is_measured_as_the_instant_it_names_wherever_it_was_written(self):
+        # Half past nine in Auckland and half past two the day before in Los Angeles are the same
+        # moment, so they rank the same distance from any now.
+        auckland = {"start": "2026-09-25T09:30:00", "time_zone": "Pacific/Auckland"}
+        los_angeles = {"start": "2026-09-24T14:30:00", "time_zone": "America/Los_Angeles"}
+        self.assertEqual(_utc_start(auckland), _utc_start(los_angeles))
+        self.assertEqual(_utc_start(auckland), "2026-09-24T21:30:00")
+
+    def test_a_start_without_a_zone_is_read_as_it_stands(self):
+        self.assertEqual(_utc_start({"start": "2026-09-25", "time_zone": None}), "2026-09-25")
+        self.assertEqual(_utc_start({"start": "2026-09-25T09:30:00"}), "2026-09-25T09:30:00")
+        self.assertEqual(
+            _utc_start({"start": "2026-09-25T09:30:00", "time_zone": "Mars/Olympus"}),
+            "2026-09-25T09:30:00",
+        )
+        self.assertEqual(_utc_start({"start": ""}), "")
+
     def test_distance_from_today_reads_the_same_on_either_side_of_it(self):
         self.assertEqual(
             _distance("2026-09-20T12:00:00", self.NOW), _distance("2026-09-28T12:00:00", self.NOW)
@@ -312,6 +331,18 @@ class TestSeriesPeriod(UnitTestCase):
         ):
             with self.subTest(rule=rule):
                 self.assertEqual(_period({"recurrence_rule": json.dumps(rule)}), timedelta(days=days))
+
+    def test_a_rule_naming_several_days_runs_that_many_times_a_period(self):
+        for rule, times in (
+            ({"frequency": "weekly"}, 1),
+            ({"frequency": "weekly", "byDay": [{"day": "mo"}, {"day": "we"}, {"day": "fr"}]}, 3),
+            ({"frequency": "monthly", "byMonthDay": [1, 15]}, 2),
+            ({"frequency": "yearly", "byMonth": [1, 4, 7, 10]}, 4),
+            ("not json", 1),
+        ):
+            with self.subTest(rule=rule):
+                rule = rule if isinstance(rule, str) else json.dumps(rule)
+                self.assertEqual(_per_period({"recurrence_rule": rule}), times)
 
     def test_a_rule_without_a_readable_frequency_is_taken_as_weekly(self):
         for rule in ("", "{}", "not json", json.dumps({"frequency": "hourly"})):

@@ -465,7 +465,10 @@ const eventSearch = createResource({
 	},
 })
 
-const searchAsked = computed(() => !!searchText.value || searchFilters.isNarrowed.value)
+// The words as the search reads them; the field keeps them as typed, trailing space and all —
+// a space written to the URL trimmed came straight back into the field without it.
+const searchWords = computed(() => searchText.value.trim())
+const searchAsked = computed(() => !!searchWords.value || searchFilters.isNarrowed.value)
 // Whether what is asked has been answered. Not the resource's `loading`: that is false for the
 // 180ms a keystroke waits before its request goes out, and a page with nothing on it yet read
 // that as "no results" before it read "searching". Asked is unsettled from the keystroke on.
@@ -473,7 +476,7 @@ const searchSettled = ref(true)
 
 watch(
 	// One string, for the reason the route watchers give: a rebuilt array is new every run.
-	() => JSON.stringify([isSearchRoute.value, searchText.value, searchFilters.params.value, store.accountId]),
+	() => JSON.stringify([isSearchRoute.value, searchWords.value, searchFilters.params.value, store.accountId]),
 	() => {
 		if (!isSearchRoute.value) return
 		eventSearch.submit.cancel?.()
@@ -485,7 +488,7 @@ watch(
 		searchSettled.value = false
 		eventSearch.submit({
 			account: store.accountId,
-			text: searchText.value,
+			text: searchWords.value,
 			limit: SEARCH_RESULT_LIMIT,
 			time_zone: dayjs.tz.guess(),
 			filters: searchFilters.params.value,
@@ -499,7 +502,7 @@ const searchRows = computed(() =>
 )
 
 const setSearchText = (q: string) =>
-	router.replace({ query: { ...route.query, q: q.trim() || undefined } })
+	router.replace({ query: { ...route.query, q: q || undefined } })
 
 const searchCalendarLabel = (value: string) =>
 	store.calendarOptions.find((option) => option.value === value)?.label || value
@@ -901,20 +904,30 @@ const emailParticipants = (emails: string[]) => {
 // Ids are only unique within an account, and shared calendars bring another account's events
 // in, so a link looks among its own account's events first: the one it names, else the account
 // the calendar is switched to, which is where mail's links come from. Only then anywhere.
+// The account asked for is looked for in every list before any list is read without it: ids
+// are unique per account and no further, so a grid holding another account's event under the
+// same id would otherwise answer for a search hit that sits, unlooked-at, in the list after it.
 const findLinkedEvent = (
-	data,
+	sources: any[][],
 	id,
 	recurrence,
 	account = (route.query.account || route.params.accountId) as string,
 ) => {
-	if (!data || !id) return null
-	return (
-		matchLinkedEvent(
+	if (!id) return null
+	const lists = sources.filter((data) => Array.isArray(data) && data.length)
+	for (const data of lists) {
+		const own = matchLinkedEvent(
 			data.filter((e) => e.account === account),
 			id,
 			recurrence,
-		) ?? matchLinkedEvent(data, id, recurrence)
-	)
+		)
+		if (own) return own
+	}
+	for (const data of lists) {
+		const any = matchLinkedEvent(data, id, recurrence)
+		if (any) return any
+	}
+	return null
 }
 
 const matchLinkedEvent = (data, id, recurrence) => {
@@ -948,13 +961,9 @@ watch(
 		// event in a calendar the reader has unticked still opens it. The colour
 		// goes on here, since this list has not been through `visibleEvents`.
 		// Today's list as well as the grid's: a row of the rail opens its event
-		// wherever the grid has been paged to, and today may be outside its window.
-		const linked =
-			findLinkedEvent(data, id, recurrence) ??
-			findLinkedEvent(today, id, recurrence) ??
-			// A result can be years outside the window the grid fetched, so it is in neither
-			// list above — the search's own rows are where it lives.
-			findLinkedEvent(search, id, recurrence)
+		// wherever the grid has been paged to, and today may be outside its window. And the
+		// search's own rows: a result can be years outside the window the grid fetched.
+		const linked = findLinkedEvent([data, today, search], id, recurrence)
 		selectedCalendarEvent.value = linked && withCalendarColor(linked)
 	},
 	{ immediate: true },
