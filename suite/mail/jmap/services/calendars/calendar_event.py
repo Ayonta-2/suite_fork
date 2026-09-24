@@ -290,24 +290,25 @@ class CalendarEventService(CalendarsService):
             ids.extend(id for id in body.get("ids") or [] if id not in ids)
         return ids
 
-    def upcoming_occurrences(
+    def occurrences_from(
         self,
-        uids: list[str],
-        after: str,
+        after_by_uid: dict[str, str],
         before: str,
         per_series: int,
         time_zone: str | None = None,
     ) -> dict[str, list[str]]:
-        """The ids of the next `per_series` occurrences of each series between `after` and
-        `before`, keyed by the series' uid.
+        """The ids of the first `per_series` occurrences of each series from its own `after` up
+        to `before`, keyed by the series' uid.
 
         One query per series, carried together in as few requests as the server allows, rather
         than one query for all of them: the server orders a single answer by start, so a weekly
         series would spend the whole limit before a yearly one had appeared once. The window is
-        not optional — expansion is refused without one — which is why the caller names both
-        ends. A series with nothing in the window is absent from the answer.
+        not optional — expansion is refused without one — which is why both ends are named; the
+        near end is the caller's per series, since where a series' window should begin depends
+        on how often it runs. A series with nothing in its window is absent from the answer.
         """
 
+        uids = list(after_by_uid)
         occurrences: dict[str, list[str]] = {}
         for batch in self.create_batches(uids, self.max_calls_in_request):
             calls = [
@@ -317,7 +318,7 @@ class CalendarEventService(CalendarsService):
                         "accountId": self.account,
                         "filter": {
                             "operator": "AND",
-                            "conditions": [{"uid": uid}, {"after": after}, {"before": before}],
+                            "conditions": [{"uid": uid}, {"after": after_by_uid[uid]}, {"before": before}],
                         },
                         "sort": [{"property": "start", "isAscending": True}],
                         "limit": per_series,

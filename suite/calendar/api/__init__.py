@@ -416,7 +416,7 @@ def _expanded_upcoming(events: list[dict], limit: int, time_zone: str | None) ->
     few occurrences.
 
     Only the `limit` nearest-ranked candidates are expanded, because expansion is a query per series
-    (see `upcoming_occurrences`) rather than one for the batch. The fan-out asks every account
+    (see `occurrences_from`) rather than one for the batch. The fan-out asks every account
     holding a calendar shared into this one, so expanding everything they returned would put a
     query per series per account behind a single palette keystroke — and the answer is only
     `limit` events long, so the rest could not have appeared in it anyway.
@@ -432,7 +432,7 @@ def _expanded_upcoming(events: list[dict], limit: int, time_zone: str | None) ->
     return [
         row
         for account_events in by_account.values()
-        for row in _with_upcoming_occurrences(account_events, time_zone)
+        for row in _with_nearest_occurrences(account_events, time_zone)
     ]
 
 
@@ -475,10 +475,19 @@ def _recurs(event: dict) -> bool:
         return False
 
 
-def _with_upcoming_occurrences(events: list[dict], time_zone: str | None) -> list[dict]:
-    """`events`, all from one account, with each recurring master replaced by its next few
-    occurrences. A series with none ahead — one that has ended — stays as its master: a row dated
-    when it last ran is still the answer to the search that found it.
+def _with_nearest_occurrences(events: list[dict], time_zone: str | None) -> list[dict]:
+    """`events`, all from one account, with each recurring master replaced by the few
+    occurrences nearest today, on either side of it: a standup answers as last week's, today's
+    and next week's, since the answer is read nearest first and the next three would have put
+    the one that just ran out of it. A series with nothing from its last period on — one that
+    has ended — stays as its master: a row dated when it last ran is still the answer to the
+    search that found it.
+
+    One query per series, from one period before today: that is where the previous occurrence
+    falls, and asking for one more than the count from there — the previous, today's, and the
+    next few — leaves the nearest few to be chosen here. Asking each side of today separately
+    would have doubled the queries, and this is already the search's one cost that grows with
+    the answer; and every occurrence asked for is fetched whole before the choice is made.
 
     Each occurrence is handed the master's id and rule, which the expansion does not carry. The
     id is what a link to it is written with (see the calendar's `handleEventClick`), and the rule
@@ -490,11 +499,10 @@ def _with_upcoming_occurrences(events: list[dict], time_zone: str | None) -> lis
 
     account = events[0]["account"]
     now = datetime.now(UTC)
-    by_uid = get_calendar_event_service(account).upcoming_occurrences(
-        [event["uid"] for event in recurring],
-        after=normalize_utc_z(now),
+    by_uid = get_calendar_event_service(account).occurrences_from(
+        {event["uid"]: normalize_utc_z(now - _period(event)) for event in recurring},
         before=normalize_utc_z(now + timedelta(days=365 * RECURRENCE_HORIZON_YEARS)),
-        per_series=RECURRENCE_INSTANCES,
+        per_series=RECURRENCE_INSTANCES + 1,
         time_zone=time_zone,
     )
 
@@ -502,19 +510,41 @@ def _with_upcoming_occurrences(events: list[dict], time_zone: str | None) -> lis
     occurrences: dict[str, list[dict]] = defaultdict(list)
     for occurrence in get_calendar_events_by_ids(account, ids):
         occurrences[occurrence["uid"]].append(occurrence)
+    today = now.strftime("%Y-%m-%dT%H:%M:%S")
+    for found in occurrences.values():
+        found.sort(key=lambda occurrence: _distance(occurrence.get("start") or "", today))
+        del found[RECURRENCE_INSTANCES:]
 
     rows: list[dict] = []
     for event in events:
-        coming = occurrences.get(event["uid"]) if _recurs(event) else None
-        if not coming:
+        nearest = occurrences.get(event["uid"]) if _recurs(event) else None
+        if not nearest:
             rows.append(event)
             continue
-        for occurrence in coming:
+        for occurrence in nearest:
             occurrence["master_id"] = event["id"]
             occurrence["recurrence_rule"] = event["recurrence_rule"]
             rows.append(occurrence)
 
     return rows
+
+
+# How long one step of a rule's frequency is, at the longest a step of it can be.
+_FREQUENCY_DAYS = {"daily": 1, "weekly": 7, "monthly": 31, "yearly": 366}
+
+
+def _period(event: dict) -> timedelta:
+    """How far back a series' previous occurrence can be: one step of its rule, and a day over,
+    since "a week ago" measured from now falls after last week's occurrence whenever that ran
+    earlier in its day than now is in this one. A rule the frequency cannot be read from is
+    taken as weekly."""
+
+    try:
+        rule = json.loads(event.get("recurrence_rule") or "{}")
+    except (TypeError, ValueError):
+        rule = {}
+    days = _FREQUENCY_DAYS.get(str(rule.get("frequency", "")).lower(), 7)
+    return timedelta(days=days * max(cint(rule.get("interval")) or 1, 1) + 1)
 
 
 # The filters that are a JMAP condition each, under the name the server knows them by. Left out

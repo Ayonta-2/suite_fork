@@ -12,6 +12,7 @@ from suite.calendar.api import (
     MAX_EVENT_SEARCH_LIMIT,
     _distance,
     _first_events,
+    _period,
     _rank_start,
     _search_limit,
     search_calendar_events_with_shared,
@@ -160,6 +161,33 @@ class TestCalendarEventSearch(StalwartIntegrationTestCase):
         self.assertEqual(starts, sorted(starts))
         self.assertGreaterEqual(starts[0], frappe.utils.now_datetime().strftime("%Y-%m-%dT%H:%M:%S"))
 
+    def test_a_running_series_answers_as_the_occurrences_around_today(self):
+        # Begun three weeks ago, weekly: the three nearest today are last week's, today's — its
+        # start has passed by the time the search runs — and next week's, not the next three.
+        word = unique_name("standup")
+        with self.set_user(self.member.email):
+            add_calendar_event(
+                self.account,
+                title=f"Weekly {word}",
+                start=self._days_from_now(-21),
+                duration="PT30M",
+                time_zone="UTC",
+                recurrence_rule={"frequency": "weekly"},
+            )
+
+        found = self.wait_until(
+            lambda: ((rows := self._search(word)) and len(rows) >= 3 and rows) or None,
+            timeout=60,
+            message=f"Series '{word}' did not expand.",
+        )
+
+        today = datetime.now(UTC).replace(tzinfo=None)
+        days = sorted(
+            round((datetime.fromisoformat(row["start"][:19]) - today).total_seconds() / 86400)
+            for row in found
+        )
+        self.assertEqual(days, [-7, 0, 7])
+
     def test_a_one_off_event_is_still_one_row(self):
         word = unique_name("offsite")
         event_id = self._add(f"Team {word}", "2026-11-05T10:00:00")
@@ -269,6 +297,26 @@ class TestSearchCandidateRanking(UnitTestCase):
             _distance("2026-09-28T12:00:00", self.NOW), _distance("2026-09-19T12:00:00", self.NOW)
         )
         self.assertEqual(_distance("", self.NOW), timedelta.max)
+
+
+class TestSeriesPeriod(UnitTestCase):
+    """How far back a series is asked from, so that its previous occurrence is in the window."""
+
+    def test_one_step_of_the_rule_and_a_day_over(self):
+        for rule, days in (
+            ({"frequency": "daily"}, 2),
+            ({"frequency": "weekly", "byDay": [{"day": "th"}]}, 8),
+            ({"frequency": "weekly", "interval": 2}, 15),
+            ({"frequency": "monthly"}, 32),
+            ({"frequency": "yearly"}, 367),
+        ):
+            with self.subTest(rule=rule):
+                self.assertEqual(_period({"recurrence_rule": json.dumps(rule)}), timedelta(days=days))
+
+    def test_a_rule_without_a_readable_frequency_is_taken_as_weekly(self):
+        for rule in ("", "{}", "not json", json.dumps({"frequency": "hourly"})):
+            with self.subTest(rule=rule):
+                self.assertEqual(_period({"recurrence_rule": rule}), timedelta(days=8))
 
 
 class TestSearchResultCut(UnitTestCase):
