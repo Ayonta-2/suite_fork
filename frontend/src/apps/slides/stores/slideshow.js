@@ -70,7 +70,8 @@ const startSlideShow = ({ loop = false, fromBeginning = false } = {}) => {
 	router.replace({
 		name: 'slides-slideshow',
 		params: router.currentRoute.value.params,
-		query: { slide: fromBeginning ? 1 : slideIndex.value + 1 },
+		// a loop plays the whole presentation every time round
+		query: { slide: fromBeginning || loop ? 1 : slideIndex.value + 1 },
 	})
 }
 

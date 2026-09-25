@@ -41,6 +41,13 @@ describe('presenting from the navbar', () => {
 		vi.useRealTimers()
 	})
 
+	it('starts on loop from the first slide', () => {
+		slideIndex.value = 2
+		startSlideShow({ loop: true })
+
+		expect(lastSlideQuery()).toBe(1)
+	})
+
 	it('starts over after the last slide', async () => {
 		startSlideShow({ loop: true })
 		applyReverseTransition.value = true
