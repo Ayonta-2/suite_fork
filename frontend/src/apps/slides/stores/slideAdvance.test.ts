@@ -185,6 +185,22 @@ describe('a slide that advances on its own', () => {
 		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
 	})
 
+	it('leaves a later slide alone when a refusal comes late', async () => {
+		let refuse
+		const video = addVideo({ paused: true, currentTime: 0 })
+		vi.mocked(video.play).mockImplementationOnce(
+			() => new Promise((_, reject) => (refuse = reject)),
+		)
+		scheduleAdvance()
+
+		vi.advanceTimersByTime(2000)
+		slideIndex.value = 1
+		refuse(new DOMException('', 'AbortError'))
+		await vi.advanceTimersByTimeAsync(0)
+		await nextTick()
+		expect(replace).not.toHaveBeenCalled()
+	})
+
 	it('counts its delay once the slide has come in', async () => {
 		slides.value[0] = { ...slides.value[0], transition: 'Fade', transitionDuration: '3' }
 		scheduleAdvance()

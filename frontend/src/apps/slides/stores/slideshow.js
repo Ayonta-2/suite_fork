@@ -217,7 +217,10 @@ const advance = () => {
 	// a video the timer starts is watched like the rest, then the wait starts over
 	startWait()
 	// one the browser refuses to play is skipped rather than waited on
-	video.play().catch(() => changeSlideInSlideshow(slideIndex.value + 1))
+	const index = slideIndex.value
+	video.play().catch(() => {
+		if (slideIndex.value == index) changeSlideInSlideshow(index + 1)
+	})
 }
 
 // the delay starts once the slide has come in: a Magic Move is the previous
