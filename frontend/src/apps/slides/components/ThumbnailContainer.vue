@@ -51,7 +51,7 @@ const slideNumber = computed(() =>
 
 const isFocused = computed(() => focusedSlide.value == slides.value.indexOf(props.slide))
 
-const ringBase = 'ring-2 ring-offset-1 ring-offset-[color:var(--surface-elevation-1)]'
+const ringBase = 'ring-2 ring-offset-[0.5px] ring-offset-[color:var(--surface-elevation-1)]'
 const focusedRing = `${ringBase} ring-[color:var(--outline-gray-8)]`
 const activeRing = `${ringBase} ring-[color:var(--outline-gray-5)]`
 
