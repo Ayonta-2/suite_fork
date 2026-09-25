@@ -99,6 +99,10 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		)
 	}
 
+	// only keyboard focus: a clicked button keeps focus while the canvas is in use
+	const isControlFocused = () =>
+		!!document.querySelector(':is(button, a[href], [role="button"]):focus-visible')
+
 	const performHistory = (e, operation) => {
 		// an undo mid-composition destroys the IME node
 		if (e.isComposing || activeEditor.value?.view.composing) return
@@ -242,14 +246,15 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			combo: 'Enter',
 			description: 'Edit text of selected element',
 			group: 'Edit',
-			enabled: canStartTextEditing,
+			enabled: () => canStartTextEditing() && !isControlFocused(),
 			handler: () => startTextEditing(),
 		},
 		{
 			combo: 'Enter',
 			description: 'Add slide below',
 			group: 'Insert',
-			enabled: () => inEditMode() && !canStartTextEditing(),
+			enabled: () =>
+				inEditMode() && !canStartTextEditing() && !hasOpenOverlay() && !isControlFocused(),
 			handler: (e) => addEmptySlide(e),
 		},
 		{
