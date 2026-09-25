@@ -231,7 +231,7 @@ const entranceSeconds = () => {
 	return parseFloat(transitionDuration) || 0
 }
 
-const scheduleAdvance = () => startWait(entranceSeconds())
+const scheduleAdvance = (entering = true) => startWait(entering ? entranceSeconds() : 0)
 
 const startWait = (extraSeconds = 0) => {
 	cancelAdvance()

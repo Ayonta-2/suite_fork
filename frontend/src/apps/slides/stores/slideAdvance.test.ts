@@ -198,6 +198,15 @@ describe('a slide that advances on its own', () => {
 		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
 	})
 
+	it('waits only its delay on the slide the show opens on', async () => {
+		slides.value[0] = { ...slides.value[0], transition: 'Fade', transitionDuration: '3' }
+		scheduleAdvance(false)
+
+		vi.advanceTimersByTime(2000)
+		await nextTick()
+		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+	})
+
 	it('counts a Magic Move from the slide before', async () => {
 		slides.value = [
 			{ elements: [], transition: 'Magic Move', transitionDuration: '3' },
