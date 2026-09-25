@@ -32,7 +32,7 @@ class Presentation(Document):
             if row.advance_after in (None, ""):
                 continue
             if (
-                not re.fullmatch(r"\d+(\.\d+)?", cstr(row.advance_after))
+                not re.fullmatch(r"[0-9]+(\.[0-9]+)?", cstr(row.advance_after))
                 or not 1 <= flt(row.advance_after) <= 3600
             ):
                 frappe.throw(

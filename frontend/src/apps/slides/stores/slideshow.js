@@ -267,9 +267,9 @@ const startWait = () => {
 	document.addEventListener('error', restartWait, true)
 }
 
-// a video that fails is done playing as much as one that ends
+// a video that fails is done playing as much as one that ends; a looping one never held the slide
 const restartWait = (event) => {
-	if (event.target instanceof HTMLVideoElement) startWait()
+	if (event.target instanceof HTMLVideoElement && !event.target.loop) startWait()
 }
 
 const cancelAdvance = () => {
