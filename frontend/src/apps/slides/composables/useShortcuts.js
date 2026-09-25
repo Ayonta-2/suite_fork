@@ -333,7 +333,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Apply crop',
 			group: 'Edit',
 			allowInInput: true,
-			enabled: () => inCropMode.value && !hasOpenOverlay(),
+			enabled: () => inCropMode.value && !hasOpenOverlay() && !isControlFocused(),
 			handler: () => commitCrop(),
 		},
 		{
