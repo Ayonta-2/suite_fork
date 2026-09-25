@@ -198,6 +198,22 @@ describe('a slide that advances on its own', () => {
 		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
 	})
 
+	it('lets a short video finish the entrance before counting', async () => {
+		slides.value[0] = { ...slides.value[0], transition: 'Fade', transitionDuration: '4' }
+		const video = addVideo({ paused: false })
+		scheduleAdvance()
+
+		vi.advanceTimersByTime(500)
+		endVideo(video)
+		vi.advanceTimersByTime(5499)
+		await nextTick()
+		expect(replace).not.toHaveBeenCalled()
+
+		vi.advanceTimersByTime(1)
+		await nextTick()
+		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+	})
+
 	it('waits only its delay on the slide the show opens on', async () => {
 		slides.value[0] = { ...slides.value[0], transition: 'Fade', transitionDuration: '3' }
 		scheduleAdvance(false)

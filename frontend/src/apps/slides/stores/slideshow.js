@@ -231,13 +231,20 @@ const entranceSeconds = () => {
 	return parseFloat(transitionDuration) || 0
 }
 
-const scheduleAdvance = (entering = true) => startWait(entering ? entranceSeconds() : 0)
+// a video that ends early still waits out the entrance
+let entranceEnds = 0
 
-const startWait = (extraSeconds = 0) => {
+const scheduleAdvance = (entering = true) => {
+	entranceEnds = Date.now() + (entering ? entranceSeconds() : 0) * 1000
+	startWait()
+}
+
+const startWait = () => {
 	cancelAdvance()
 	const seconds = parseFloat(currentSlide.value?.advanceAfter)
 	if (!(seconds > 0)) return
-	advanceTimer = setTimeout(advance, (seconds + extraSeconds) * 1000)
+	const entering = Math.max(0, entranceEnds - Date.now())
+	advanceTimer = setTimeout(advance, seconds * 1000 + entering)
 	document.addEventListener('ended', restartWait, true)
 	document.addEventListener('error', restartWait, true)
 }
@@ -268,7 +275,7 @@ const changeSlideInSlideshow = (index) => {
 				video.currentTime = 0
 				if (video.autoplay) video.play().catch(() => {})
 			}
-			return startWait()
+			return scheduleAdvance(false)
 		}
 	}
 
