@@ -1,27 +1,21 @@
 <template>
 	<Section label="Transition">
-		<Button v-if="!hasTransition" class="w-full" label="Add transition" @click="addTransition">
-			<template #prefix>
-				<lucide-plus class="size-3.5 stroke-[1.5]" />
-			</template>
-		</Button>
+		<PropertyRow label="Effect">
+			<Select
+				:modelValue="currentSlide.transition || 'None'"
+				variant="ghost"
+				:options="transitionOptions"
+				class="-me-1"
+				@update:modelValue="setSlideTransition"
+			>
+				<template #trigger="{ selectedOption }">
+					<span :class="valueClasses">{{ selectedOption?.label }}</span>
+					<span :class="chevronClasses" />
+				</template>
+			</Select>
+		</PropertyRow>
 
-		<template v-else>
-			<PropertyRow label="Type">
-				<Select
-					:modelValue="currentSlide.transition"
-					variant="ghost"
-					:options="transitionOptions"
-					class="-me-1"
-					@update:modelValue="setSlideTransition"
-				>
-					<template #trigger="{ selectedOption }">
-						<span :class="valueClasses">{{ selectedOption?.label }}</span>
-						<span :class="chevronClasses" />
-					</template>
-				</Select>
-			</PropertyRow>
-
+		<template v-if="hasTransition">
 			<NumberControl
 				:modelValue="parseFloat(currentSlide.transitionDuration) || 0"
 				label="Duration"
@@ -35,7 +29,7 @@
 				@change-end="duration.commit"
 			/>
 
-			<PropertyRow v-if="currentSlide.transition == 'Magic Move'" label="Fade unmatched">
+			<PropertyRow v-if="currentSlide.transition == 'Magic Move'" label="Fade unmatched elements">
 				<Checkbox
 					size="sm"
 					class="cursor-pointer"
@@ -43,21 +37,13 @@
 					@update:modelValue="setFadeUnmatched"
 				/>
 			</PropertyRow>
-
-			<div class="flex w-full items-center gap-2">
-				<Button tooltip="Remove transition" @click="removeTransition">
-					<template #icon>
-						<lucide-trash-2 class="size-3.5 stroke-[1.5]" />
-					</template>
-				</Button>
-
-				<Button class="flex-1" label="Apply to all slides" @click="applyTransitionToAllSlides">
-					<template #prefix>
-						<lucide-check-check class="size-3.5 stroke-[1.5]" />
-					</template>
-				</Button>
-			</div>
 		</template>
+
+		<Button class="w-full" label="Apply to all slides" @click="applyTransitionToAllSlides">
+			<template #prefix>
+				<lucide-check-check class="size-3.5 stroke-[1.5]" />
+			</template>
+		</Button>
 	</Section>
 </template>
 
@@ -80,18 +66,15 @@ import { useSlideProperty } from '@/apps/slides/composables/editProperty'
 const duration = useSlideProperty('transitionDuration')
 
 const transitionOptions = [
-	{ label: 'Magic Move', value: 'Magic Move' },
+	{ label: 'None', value: 'None' },
 	{ label: 'Fade', value: 'Fade' },
-	{ label: 'Slide In', value: 'Slide In' },
+	{ label: 'Slide in', value: 'Slide In' },
+	{ label: 'Magic Move', value: 'Magic Move' },
 ]
 
 const hasTransition = computed(
 	() => currentSlide.value.transition && currentSlide.value.transition != 'None',
 )
-
-const addTransition = () => setSlideTransition('Fade')
-
-const removeTransition = () => setSlideTransition('None')
 
 const setSlideTransition = (option) => {
 	const slide = currentSlide.value
@@ -145,7 +128,11 @@ const applyTransitionToAllSlides = () => {
 		}),
 	)
 
-	toast.success('Applied transition to all slides')
+	toast.success(
+		hasTransition.value
+			? 'Transition applied to all slides'
+			: 'Transitions removed from all slides',
+	)
 }
 
 const valueClasses = 'block text-right font-text text-base text-ink-gray-7'
