@@ -326,7 +326,8 @@ const initFullscreenMode = async () => {
 
 const loadPresentation = async () => {
 	if (slides.value.length) return
-	initPresentationDoc(props.presentationId)
+	// the slide asked for was picked before there were any to pick from
+	if (await initPresentationDoc(props.presentationId)) setSlideIndex(props.activeSlideId)
 }
 
 const updateWindowSize = () => {
