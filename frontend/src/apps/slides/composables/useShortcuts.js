@@ -490,9 +490,8 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			combo: 'Space',
 			description: 'Next step',
 			group: 'Slideshow',
-			handler: () => {
-				if (inSlideShow()) performNextStep()
-			},
+			enabled: inSlideShow,
+			handler: () => performNextStep(),
 		},
 		{
 			combo: 'ArrowRight',
