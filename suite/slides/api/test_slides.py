@@ -96,7 +96,7 @@ class TestSaveSlides(IntegrationTestCase):
         self.assertIsNone(frappe.db.get_value("Slide", name, "advance_after"))
 
     def test_advance_after_out_of_range_is_refused(self):
-        for value in ("soon", 0, 3601):
+        for value in ("soon", 0, 3601, "1,000"):
             with self.assertRaises(frappe.ValidationError):
                 self.save([{**slide("a"), "advance_after": value}])
 
