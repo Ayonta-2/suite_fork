@@ -166,6 +166,11 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const hasOpenOverlay = () =>
 		!!document.querySelector('[data-dismissable-layer][data-state="open"]')
 
+	// a letter typed into an open list picks an option
+	const skipInOverlay = (handler) => () => {
+		if (!hasOpenOverlay()) handler()
+	}
+
 	// menus and radio groups like TabButtons move between options with the arrows
 	const isArrowNavActive = () =>
 		hasOpenOverlay() || !!document.activeElement?.closest('[role="radiogroup"]')
@@ -270,35 +275,35 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Add text box',
 			group: 'Insert',
 			enabled: inEditMode,
-			handler: () => addTextElement(),
+			handler: skipInOverlay(() => addTextElement()),
 		},
 		{
 			combo: 'R',
 			description: 'Add rectangle',
 			group: 'Insert',
 			enabled: inEditMode,
-			handler: () => addShape('rectangle'),
+			handler: skipInOverlay(() => addShape('rectangle')),
 		},
 		{
 			combo: 'O',
 			description: 'Add oval',
 			group: 'Insert',
 			enabled: inEditMode,
-			handler: () => addShape('oval'),
+			handler: skipInOverlay(() => addShape('oval')),
 		},
 		{
 			combo: 'L',
 			description: 'Add line',
 			group: 'Insert',
 			enabled: inEditMode,
-			handler: () => addShape('line'),
+			handler: skipInOverlay(() => addShape('line')),
 		},
 		{
 			combo: 'C',
 			description: 'Add connector',
 			group: 'Insert',
 			enabled: inEditMode,
-			handler: () => addShape('connector'),
+			handler: skipInOverlay(() => addShape('connector')),
 		},
 		{
 			combo: 'Mod+A',
