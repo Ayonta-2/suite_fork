@@ -64,14 +64,14 @@ const releaseWakeLock = () => {
 	wakeLock = null
 }
 
-const startSlideShow = ({ loop = false, fromBeginning = false } = {}) => {
+const startSlideShow = ({ loop = false, fromStart = false } = {}) => {
 	onLoop.value = loop
 	requestFullscreen()
 	router.replace({
 		name: 'slides-slideshow',
 		params: router.currentRoute.value.params,
 		// a loop plays the whole presentation every time round
-		query: { slide: fromBeginning || loop ? 1 : slideIndex.value + 1 },
+		query: { slide: fromStart || loop ? 1 : slideIndex.value + 1 },
 	})
 }
 

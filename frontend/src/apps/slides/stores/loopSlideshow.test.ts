@@ -101,7 +101,7 @@ describe('presenting from the navbar', () => {
 		startSlideShow()
 		expect(lastSlideQuery()).toBe(3)
 
-		startSlideShow({ fromBeginning: true })
+		startSlideShow({ fromStart: true })
 		expect(lastSlideQuery()).toBe(1)
 	})
 
