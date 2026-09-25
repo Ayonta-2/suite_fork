@@ -185,7 +185,8 @@ const performNextStep = () => {
 
 	for (const videoEl of videoEls) {
 		if (videoEl && videoEl.currentTime == 0 && videoEl.paused) {
-			return videoEl.play()
+			videoEl.play()
+			return
 		}
 	}
 	changeSlideInSlideshow(slideIndex.value + 1)
@@ -202,14 +203,20 @@ const unfinishedVideo = () =>
 			(!video.paused || video.currentTime > 0) && !video.ended && !video.loop && !video.error,
 	)
 
+// a looping video never ends, so starting one would only hold the slide longer
+const unstartedVideo = () =>
+	[...document.querySelectorAll('video')].find(
+		(video) => video.currentTime == 0 && video.paused && !video.loop,
+	)
+
 const advance = () => {
 	if (unfinishedVideo()) return
-	const starting = performNextStep()
-	if (!starting) return
-	// a step that starts a video is watched like the rest, then the wait starts over
+	const video = unstartedVideo()
+	if (!video) return changeSlideInSlideshow(slideIndex.value + 1)
+	// a video the timer starts is watched like the rest, then the wait starts over
 	startWait()
 	// one the browser refuses to play is skipped rather than waited on
-	starting.catch(() => changeSlideInSlideshow(slideIndex.value + 1))
+	video.play().catch(() => changeSlideInSlideshow(slideIndex.value + 1))
 }
 
 // the delay starts once the slide has come in: a Magic Move is the previous

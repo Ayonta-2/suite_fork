@@ -115,6 +115,16 @@ describe('a slide that advances on its own', () => {
 		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
 	})
 
+	it('moves past a looping video that has not started', async () => {
+		const video = addVideo({ paused: true, loop: true, currentTime: 0 })
+		scheduleAdvance()
+
+		vi.advanceTimersByTime(2000)
+		await nextTick()
+		expect(video.play).not.toHaveBeenCalled()
+		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+	})
+
 	it('starts a waiting video first and watches it to the end', async () => {
 		const video = addVideo({ paused: true, currentTime: 0 })
 		scheduleAdvance()
