@@ -120,13 +120,15 @@ const applyTransitionToAllSlides = () => {
 		)
 	})
 
-	commandHistory.execute(
-		batchCommand({
-			slideId: sourceSlide.clientId,
-			elementIds: [],
-			commands,
-		}),
-	)
+	if (commands.length) {
+		commandHistory.execute(
+			batchCommand({
+				slideId: sourceSlide.clientId,
+				elementIds: [],
+				commands,
+			}),
+		)
+	}
 
 	toast.success(
 		hasTransition.value

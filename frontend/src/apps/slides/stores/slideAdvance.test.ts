@@ -70,15 +70,35 @@ describe('a slide that advances on its own', () => {
 		expect(replace).not.toHaveBeenCalled()
 	})
 
-	it('holds while a video plays to its end', async () => {
+	it('counts its delay after a video ends', async () => {
 		const video = addVideo({ paused: false })
 		scheduleAdvance()
 
-		vi.advanceTimersByTime(2000)
+		vi.advanceTimersByTime(500)
+		endVideo(video)
+		vi.advanceTimersByTime(1999)
+		await nextTick()
+		expect(replace).not.toHaveBeenCalled()
+
+		vi.advanceTimersByTime(1)
+		await nextTick()
+		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+	})
+
+	it('watches a video longer than its delay to the end first', async () => {
+		const video = addVideo({ paused: false })
+		scheduleAdvance()
+
+		vi.advanceTimersByTime(5000)
 		await nextTick()
 		expect(replace).not.toHaveBeenCalled()
 
 		endVideo(video)
+		vi.advanceTimersByTime(1999)
+		await nextTick()
+		expect(replace).not.toHaveBeenCalled()
+
+		vi.advanceTimersByTime(1)
 		await nextTick()
 		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
 	})
@@ -92,7 +112,7 @@ describe('a slide that advances on its own', () => {
 		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
 	})
 
-	it('starts a waiting video first and moves on when it ends', async () => {
+	it('starts a waiting video first and watches it to the end', async () => {
 		const video = addVideo({ paused: true, currentTime: 0 })
 		scheduleAdvance()
 
@@ -101,16 +121,23 @@ describe('a slide that advances on its own', () => {
 		expect(video.play).toHaveBeenCalled()
 		expect(replace).not.toHaveBeenCalled()
 
-		vi.advanceTimersByTime(2000)
+		vi.advanceTimersByTime(3000)
 		endVideo(video)
+		vi.advanceTimersByTime(1999)
+		await nextTick()
+		expect(replace).not.toHaveBeenCalled()
+
+		vi.advanceTimersByTime(1)
 		await nextTick()
 		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
 	})
 
 	it('stays put once cancelled', async () => {
+		const video = addVideo({ paused: false })
 		scheduleAdvance()
 		cancelAdvance()
 
+		endVideo(video)
 		vi.advanceTimersByTime(60_000)
 		await nextTick()
 		expect(replace).not.toHaveBeenCalled()

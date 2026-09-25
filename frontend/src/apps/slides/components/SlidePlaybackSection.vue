@@ -18,7 +18,7 @@
 		<NumberControl
 			v-if="advancesAutomatically"
 			:modelValue="parseFloat(currentSlide.advanceAfter)"
-			label="Delay"
+			:label="waitsForVideo ? 'Delay after video' : 'Delay'"
 			suffix="s"
 			:min="1"
 			:max="3600"
@@ -62,6 +62,10 @@ const delay = useSlideProperty('advanceAfter')
 
 const advancesAutomatically = computed(() => parseFloat(currentSlide.value.advanceAfter) > 0)
 
+const waitsForVideo = computed(() =>
+	currentSlide.value.elements.some((element) => element.type === 'video' && !element.loop),
+)
+
 const setAdvance = (option) => {
 	const automatically = option == 'after delay'
 	if (automatically === advancesAutomatically.value) return
@@ -78,7 +82,7 @@ const setAdvance = (option) => {
 const applyToAllSlides = () => {
 	const sourceSlide = currentSlide.value
 	const commands = slides.value
-		.filter((slide) => slide !== sourceSlide)
+		.filter((slide) => slide !== sourceSlide && slide.advanceAfter != sourceSlide.advanceAfter)
 		.map((slide) =>
 			editSlideCommand({
 				slideId: slide.clientId,
@@ -88,17 +92,20 @@ const applyToAllSlides = () => {
 			}),
 		)
 
-	commandHistory.execute(
-		batchCommand({
-			slideId: sourceSlide.clientId,
-			elementIds: [],
-			commands,
-		}),
-	)
+	if (commands.length) {
+		commandHistory.execute(
+			batchCommand({
+				slideId: sourceSlide.clientId,
+				elementIds: [],
+				commands,
+			}),
+		)
+	}
 
+	const seconds = parseFloat(sourceSlide.advanceAfter)
 	toast.success(
 		advancesAutomatically.value
-			? `All slides advance after ${parseFloat(sourceSlide.advanceAfter)} seconds`
+			? `All slides advance after ${seconds} ${seconds == 1 ? 'second' : 'seconds'}`
 			: 'All slides advance on click',
 	)
 }

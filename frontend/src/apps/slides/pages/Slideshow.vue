@@ -345,7 +345,6 @@ onActivated(() => {
 	setTimeout(() => {
 		prefetchNextSlide()
 	}, 500)
-	scheduleAdvance()
 })
 
 onDeactivated(() => {
@@ -377,8 +376,9 @@ watch(
 )
 
 // any change of slide, by hand, by the timer, or by the load, restarts the wait
-watch(currentSlide, () => {
-	if (inSlideShowMode.value) scheduleAdvance()
+watch([currentSlide, inSlideShowMode], ([, presenting]) => {
+	if (presenting) scheduleAdvance()
+	else cancelAdvance()
 })
 
 provide('inReadonlyMode', inReadonlyMode)

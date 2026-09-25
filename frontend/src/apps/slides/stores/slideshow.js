@@ -184,7 +184,8 @@ const performNextStep = () => {
 	changeSlideInSlideshow(slideIndex.value + 1)
 }
 
-// a slide with a delay moves on by itself; a video that plays to its end holds it
+// a slide with a delay stays that long after it is done playing: a video that
+// ends is watched first, a looping one is background
 let advanceTimer = null
 
 const playingVideo = () =>
@@ -193,23 +194,23 @@ const playingVideo = () =>
 	)
 
 const advance = () => {
-	const video = playingVideo()
-	if (video) {
-		video.addEventListener('ended', advance, { once: true })
-		return
-	}
-	// a video the step only started holds the slide too, so the wait starts over
+	if (playingVideo()) return
+	// a step that starts a video is watched like the rest, then the wait starts over
 	if (performNextStep()) scheduleAdvance()
 }
 
 const scheduleAdvance = () => {
-	clearTimeout(advanceTimer)
+	cancelAdvance()
 	const seconds = parseFloat(currentSlide.value?.advanceAfter)
 	if (!(seconds > 0)) return
 	advanceTimer = setTimeout(advance, seconds * 1000)
+	document.addEventListener('ended', scheduleAdvance, true)
 }
 
-const cancelAdvance = () => clearTimeout(advanceTimer)
+const cancelAdvance = () => {
+	clearTimeout(advanceTimer)
+	document.removeEventListener('ended', scheduleAdvance, true)
+}
 
 const changeSlideInSlideshow = (index) => {
 	if (index < 0) return
