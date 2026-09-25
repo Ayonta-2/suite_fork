@@ -9,7 +9,7 @@
 				@update:modelValue="setAdvance"
 			>
 				<template #trigger="{ selectedOption }">
-					<span :class="valueClasses">{{ selectedOption?.label }}</span>
+					<span :class="selectValueClasses">{{ selectedOption?.label }}</span>
 					<span :class="chevronClasses" />
 				</template>
 			</Select>
@@ -44,7 +44,7 @@ import { Button, Select, toast } from 'frappe-ui'
 import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
-import { chevronClasses } from '@/apps/slides/utils/constants'
+import { chevronClasses, selectValueClasses } from '@/apps/slides/utils/constants'
 
 import { slides, currentSlide } from '@/apps/slides/stores/slide'
 import { editSlideCommand, batchCommand } from '@/apps/slides/stores/commands'
@@ -109,6 +109,4 @@ const applyToAllSlides = () => {
 			: 'All slides advance on click',
 	)
 }
-
-const valueClasses = 'block text-right font-text text-base text-ink-gray-7'
 </script>
