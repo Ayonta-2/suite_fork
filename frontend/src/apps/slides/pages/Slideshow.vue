@@ -85,6 +85,8 @@ import {
 	changeSlideInSlideshow,
 	performNextStep,
 	performPreviousStep,
+	scheduleAdvance,
+	cancelAdvance,
 } from '@/apps/slides/stores/slideshow'
 
 import {
@@ -343,12 +345,14 @@ onActivated(() => {
 	setTimeout(() => {
 		prefetchNextSlide()
 	}, 500)
+	scheduleAdvance()
 })
 
 onDeactivated(() => {
 	document.removeEventListener('fullscreenchange', handleFullScreenChange)
 	document.removeEventListener('visibilitychange', handleVisibilityChange)
 	window.removeEventListener('resize', updateWindowSize)
+	cancelAdvance()
 	stopCursorTracking()
 	releaseWakeLock()
 	releaseVideoWarmers()
@@ -371,6 +375,11 @@ watch(
 	},
 	{ immediate: true },
 )
+
+// any change of slide, by hand, by the timer, or by the load, restarts the wait
+watch(currentSlide, () => {
+	if (inSlideShowMode.value) scheduleAdvance()
+})
 
 provide('inReadonlyMode', inReadonlyMode)
 provide('inSlideShowMode', inSlideShowMode)

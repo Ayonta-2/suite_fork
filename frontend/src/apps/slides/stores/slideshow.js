@@ -1,6 +1,12 @@
 import { ref, computed, nextTick } from 'vue'
 import { applyReverseTransition } from '@/apps/slides/stores/presentation'
-import { focusedSlide, slideIndex, slides, setSlideIndex } from '@/apps/slides/stores/slide'
+import {
+	currentSlide,
+	focusedSlide,
+	slideIndex,
+	slides,
+	setSlideIndex,
+} from '@/apps/slides/stores/slide'
 
 import { router } from '@/apps/slides/router'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
@@ -172,11 +178,38 @@ const performNextStep = () => {
 	for (const videoEl of videoEls) {
 		if (videoEl && videoEl.currentTime == 0 && videoEl.paused) {
 			videoEl.play()
-			return
+			return true
 		}
 	}
 	changeSlideInSlideshow(slideIndex.value + 1)
 }
+
+// a slide with a delay moves on by itself; a video that plays to its end holds it
+let advanceTimer = null
+
+const playingVideo = () =>
+	[...document.querySelectorAll('video')].find(
+		(video) => !video.paused && !video.ended && !video.loop,
+	)
+
+const advance = () => {
+	const video = playingVideo()
+	if (video) {
+		video.addEventListener('ended', advance, { once: true })
+		return
+	}
+	// a video the step only started holds the slide too, so the wait starts over
+	if (performNextStep()) scheduleAdvance()
+}
+
+const scheduleAdvance = () => {
+	clearTimeout(advanceTimer)
+	const seconds = parseFloat(currentSlide.value?.advanceAfter)
+	if (!(seconds > 0)) return
+	advanceTimer = setTimeout(advance, seconds * 1000)
+}
+
+const cancelAdvance = () => clearTimeout(advanceTimer)
 
 const changeSlideInSlideshow = (index) => {
 	if (index < 0) return
@@ -212,4 +245,6 @@ export {
 	changeSlideInSlideshow,
 	performNextStep,
 	performPreviousStep,
+	scheduleAdvance,
+	cancelAdvance,
 }
