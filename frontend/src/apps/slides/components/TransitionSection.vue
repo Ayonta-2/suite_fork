@@ -61,7 +61,7 @@ import { slides, slideIndex, currentSlide } from '@/apps/slides/stores/slide'
 import { getCommandsToSetTransition } from '@/apps/slides/stores/transition'
 import { editSlideCommand, batchCommand } from '@/apps/slides/stores/commands'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
-import { useSlideProperty } from '@/apps/slides/composables/editProperty'
+import { pushSlideCommands, useSlideProperty } from '@/apps/slides/composables/editProperty'
 
 const duration = useSlideProperty('transitionDuration')
 
@@ -120,15 +120,7 @@ const applyTransitionToAllSlides = () => {
 		)
 	})
 
-	if (commands.length) {
-		commandHistory.execute(
-			batchCommand({
-				slideId: sourceSlide.clientId,
-				elementIds: [],
-				commands,
-			}),
-		)
-	}
+	pushSlideCommands(commands)
 
 	toast.success(
 		hasTransition.value

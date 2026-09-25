@@ -47,9 +47,8 @@ import Section from '@/apps/slides/components/controls/Section.vue'
 import { chevronClasses, selectValueClasses } from '@/apps/slides/utils/constants'
 
 import { slides, currentSlide } from '@/apps/slides/stores/slide'
-import { editSlideCommand, batchCommand } from '@/apps/slides/stores/commands'
-import { commandHistory } from '@/apps/slides/stores/historyMeta'
-import { useSlideProperty } from '@/apps/slides/composables/editProperty'
+import { editSlideCommand } from '@/apps/slides/stores/commands'
+import { pushSlideCommands, useSlideProperty } from '@/apps/slides/composables/editProperty'
 
 const DEFAULT_DELAY = 5
 
@@ -69,14 +68,9 @@ const waitsForVideo = computed(() =>
 const setAdvance = (option) => {
 	const automatically = option == 'after delay'
 	if (automatically === advancesAutomatically.value) return
-	commandHistory.execute(
-		editSlideCommand({
-			slideId: currentSlide.value.clientId,
-			property: 'advanceAfter',
-			oldValue: currentSlide.value.advanceAfter,
-			newValue: automatically ? DEFAULT_DELAY : null,
-		}),
-	)
+	delay.begin()
+	delay.set(automatically ? DEFAULT_DELAY : null)
+	delay.commit()
 }
 
 const applyToAllSlides = () => {
@@ -92,21 +86,10 @@ const applyToAllSlides = () => {
 			}),
 		)
 
-	if (commands.length) {
-		commandHistory.execute(
-			batchCommand({
-				slideId: sourceSlide.clientId,
-				elementIds: [],
-				commands,
-			}),
-		)
-	}
+	pushSlideCommands(commands)
 
 	const seconds = parseFloat(sourceSlide.advanceAfter)
-	toast.success(
-		advancesAutomatically.value
-			? `All slides advance after ${seconds} ${seconds == 1 ? 'second' : 'seconds'}`
-			: 'All slides advance on click',
-	)
+	const timing = advancesAutomatically.value ? `after ${seconds}s` : 'on click'
+	toast.success(`All slides advance ${timing}`)
 }
 </script>
