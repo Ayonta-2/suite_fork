@@ -53,6 +53,7 @@ describe('presenting from the navbar', () => {
 
 	it('starts over on its own as well', async () => {
 		startSlideShow({ loop: true })
+		replace.mockClear()
 		slideIndex.value = 2
 		scheduleAdvance()
 
@@ -60,6 +61,31 @@ describe('presenting from the navbar', () => {
 		await nextTick()
 
 		expect(lastSlideQuery()).toBe(1)
+	})
+
+	it('replays a single slide on its own', async () => {
+		slides.value = [{ elements: [], advanceAfter: '1' }] as any
+		const video = document.createElement('video')
+		const play = vi.fn(() => Promise.resolve())
+		Object.defineProperties(video, {
+			autoplay: { value: true },
+			paused: { value: true },
+			ended: { value: true, writable: true },
+			currentTime: { value: 10, writable: true },
+			play: { value: play },
+		})
+		document.body.appendChild(video)
+		startSlideShow({ loop: true })
+		scheduleAdvance()
+
+		for (const pass of [1, 2]) {
+			vi.advanceTimersByTime(1000)
+			await nextTick()
+			expect(play).toHaveBeenCalledTimes(pass)
+			expect(video.currentTime).toBe(0)
+			video.currentTime = 10
+		}
+		video.remove()
 	})
 
 	it('opens on the current slide, or on the first when asked', () => {

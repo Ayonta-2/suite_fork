@@ -255,6 +255,14 @@ const changeSlideInSlideshow = (index) => {
 	if (onLoop.value && index >= slides.value.length) {
 		index = 0
 		applyReverseTransition.value = false
+		// a single slide stays put, so nothing replays it on its own
+		if (slides.value.length == 1) {
+			for (const video of document.querySelectorAll('video')) {
+				video.currentTime = 0
+				if (video.autoplay) video.play().catch(() => {})
+			}
+			return startWait()
+		}
 	}
 
 	nextTick(() => {
