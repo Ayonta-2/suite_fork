@@ -122,7 +122,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const nudgeStep = (e) => (e?.shiftKey ? 10 : 1)
 
 	const handleArrowUp = (e) => {
-		if (hasOpenOverlay()) return
+		if (isArrowNavActive()) return
 		if (inSlideShow()) return performPreviousStep()
 		if (inReadonly()) return changeSlide(slideIndex.value - 1)
 		if (!inEditMode()) return
@@ -131,7 +131,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	}
 
 	const handleArrowDown = (e) => {
-		if (hasOpenOverlay()) return
+		if (isArrowNavActive()) return
 		if (inSlideShow()) return performNextStep()
 		if (inReadonly()) return changeSlide(slideIndex.value + 1)
 		if (!inEditMode()) return
@@ -140,13 +140,13 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	}
 
 	const handleArrowLeft = (e) => {
-		if (hasOpenOverlay()) return
+		if (isArrowNavActive()) return
 		if (inSlideShow()) return performPreviousStep()
 		if (inEditMode() && hasElements()) nudge('ArrowLeft', nudgeStep(e))
 	}
 
 	const handleArrowRight = (e) => {
-		if (hasOpenOverlay()) return
+		if (isArrowNavActive()) return
 		if (inSlideShow()) return performNextStep()
 		if (inEditMode() && hasElements()) nudge('ArrowRight', nudgeStep(e))
 	}
@@ -165,6 +165,10 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	// and matching a shortcut always prevents — so don't match while one is open
 	const hasOpenOverlay = () =>
 		!!document.querySelector('[data-dismissable-layer][data-state="open"]')
+
+	// menus and radio groups like TabButtons move between options with the arrows
+	const isArrowNavActive = () =>
+		hasOpenOverlay() || !!document.activeElement?.closest('[role="radiogroup"]')
 
 	const hasTextCapableSelection = () => {
 		if (activeElements.value.length !== 1) return false
