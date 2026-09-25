@@ -13,16 +13,19 @@ const { scheduleAdvance, cancelAdvance } = await import('./slideshow')
 
 const slideQueryOfLastReplace = () => replace.mock.lastCall?.[0]
 
-const addVideo = ({ paused, loop = false, currentTime = 1 }) => {
+const addVideo = ({ paused, loop = false, currentTime = 1, playable = true }) => {
 	const video = document.createElement('video')
 	Object.defineProperties(video, {
 		paused: { value: paused, writable: true },
 		ended: { value: false, writable: true },
+		error: { value: null, writable: true },
 		loop: { value: loop },
 		currentTime: { value: currentTime, writable: true },
 		play: {
 			value: vi.fn(function () {
+				if (!playable) return Promise.reject(new DOMException('', 'NotAllowedError'))
 				this.paused = false
+				return Promise.resolve()
 			}),
 		},
 	})
@@ -128,6 +131,46 @@ describe('a slide that advances on its own', () => {
 		expect(replace).not.toHaveBeenCalled()
 
 		vi.advanceTimersByTime(1)
+		await nextTick()
+		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+	})
+
+	it('waits for a video paused partway', async () => {
+		const video = addVideo({ paused: true, currentTime: 3 })
+		scheduleAdvance()
+
+		vi.advanceTimersByTime(60_000)
+		await nextTick()
+		expect(replace).not.toHaveBeenCalled()
+
+		video.paused = false
+		endVideo(video)
+		vi.advanceTimersByTime(2000)
+		await nextTick()
+		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+	})
+
+	it('counts its delay from a video that fails as from one that ends', async () => {
+		const video = addVideo({ paused: false })
+		scheduleAdvance()
+
+		vi.advanceTimersByTime(5000)
+		video.error = { code: 2 }
+		video.dispatchEvent(new Event('error'))
+		vi.advanceTimersByTime(1999)
+		await nextTick()
+		expect(replace).not.toHaveBeenCalled()
+
+		vi.advanceTimersByTime(1)
+		await nextTick()
+		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+	})
+
+	it('moves past a video the browser will not start', async () => {
+		addVideo({ paused: true, currentTime: 0, playable: false })
+		scheduleAdvance()
+
+		await vi.advanceTimersByTimeAsync(2000)
 		await nextTick()
 		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
 	})

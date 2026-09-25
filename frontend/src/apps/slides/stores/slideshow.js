@@ -185,8 +185,7 @@ const performNextStep = () => {
 
 	for (const videoEl of videoEls) {
 		if (videoEl && videoEl.currentTime == 0 && videoEl.paused) {
-			videoEl.play()
-			return true
+			return videoEl.play()
 		}
 	}
 	changeSlideInSlideshow(slideIndex.value + 1)
@@ -196,15 +195,21 @@ const performNextStep = () => {
 // ends is watched first, a looping one is background
 let advanceTimer = null
 
-const playingVideo = () =>
+// paused partway counts too: whoever paused it is still watching
+const unfinishedVideo = () =>
 	[...document.querySelectorAll('video')].find(
-		(video) => !video.paused && !video.ended && !video.loop,
+		(video) =>
+			(!video.paused || video.currentTime > 0) && !video.ended && !video.loop && !video.error,
 	)
 
 const advance = () => {
-	if (playingVideo()) return
+	if (unfinishedVideo()) return
+	const starting = performNextStep()
+	if (!starting) return
 	// a step that starts a video is watched like the rest, then the wait starts over
-	if (performNextStep()) scheduleAdvance()
+	scheduleAdvance()
+	// one the browser refuses to play is skipped rather than waited on
+	starting.catch(() => changeSlideInSlideshow(slideIndex.value + 1))
 }
 
 const scheduleAdvance = () => {
@@ -212,12 +217,19 @@ const scheduleAdvance = () => {
 	const seconds = parseFloat(currentSlide.value?.advanceAfter)
 	if (!(seconds > 0)) return
 	advanceTimer = setTimeout(advance, seconds * 1000)
-	document.addEventListener('ended', scheduleAdvance, true)
+	document.addEventListener('ended', restartWait, true)
+	document.addEventListener('error', restartWait, true)
+}
+
+// a video that fails is done playing as much as one that ends
+const restartWait = (event) => {
+	if (event.target instanceof HTMLVideoElement) scheduleAdvance()
 }
 
 const cancelAdvance = () => {
 	clearTimeout(advanceTimer)
-	document.removeEventListener('ended', scheduleAdvance, true)
+	document.removeEventListener('ended', restartWait, true)
+	document.removeEventListener('error', restartWait, true)
 }
 
 const changeSlideInSlideshow = (index) => {
