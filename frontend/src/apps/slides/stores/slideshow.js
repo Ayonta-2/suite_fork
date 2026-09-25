@@ -212,7 +212,11 @@ const isMagicMoveApplied = computed(() => {
 const entranceSeconds = () => {
 	if (isMagicMoveApplied.value) {
 		const previous = prevSlide.value
-		return previous?.transition == 'Magic Move' ? parseFloat(previous.transitionDuration) || 0 : 0
+		if (previous?.transition != 'Magic Move') return 0
+		// unmatched elements fade in for 1s after the move and a 0.1s pause
+		return (
+			(parseFloat(previous.transitionDuration) || 0) + (previous.fadeUnmatchedElements ? 1.1 : 0)
+		)
 	}
 	const { transition, transitionDuration } = currentSlide.value || {}
 	if (!transition || transition == 'Magic Move') return 0
