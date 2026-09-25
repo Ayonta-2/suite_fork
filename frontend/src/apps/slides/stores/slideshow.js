@@ -223,12 +223,26 @@ const advance = () => {
 	})
 }
 
+const prevSlide = computed(() => {
+	if (slideIndex.value == 0) return null
+	return slides.value[slideIndex.value - 1]
+})
+
+const isMagicMoveApplied = computed(() => {
+	if (applyReverseTransition.value) return false
+
+	return (
+		currentSlide.value?.transition == 'Magic Move' ||
+		prevSlide.value?.transition == 'Magic Move'
+	)
+})
+
 // the delay starts once the slide has come in: a Magic Move is the previous
 // slide's, the other transitions are the slide's own
 const entranceSeconds = () => {
-	const previous = slides.value[slideIndex.value - 1]
-	if (!applyReverseTransition.value && previous?.transition == 'Magic Move') {
-		return parseFloat(previous.transitionDuration) || 0
+	if (isMagicMoveApplied.value) {
+		const previous = prevSlide.value
+		return previous?.transition == 'Magic Move' ? parseFloat(previous.transitionDuration) || 0 : 0
 	}
 	const { transition, transitionDuration } = currentSlide.value || {}
 	if (!transition || transition == 'Magic Move') return 0
@@ -238,8 +252,8 @@ const entranceSeconds = () => {
 // a video that ends early still waits out the entrance
 let entranceEnds = 0
 
-const scheduleAdvance = (entering = true) => {
-	entranceEnds = Date.now() + (entering ? entranceSeconds() : 0) * 1000
+const scheduleAdvance = (hasEntrance = true) => {
+	entranceEnds = Date.now() + (hasEntrance ? entranceSeconds() : 0) * 1000
 	startWait()
 }
 
@@ -247,8 +261,8 @@ const startWait = () => {
 	cancelAdvance()
 	const seconds = parseFloat(currentSlide.value?.advanceAfter)
 	if (!(seconds > 0)) return
-	const entering = Math.max(0, entranceEnds - Date.now())
-	advanceTimer = setTimeout(advance, seconds * 1000 + entering)
+	const entranceLeft = Math.max(0, entranceEnds - Date.now())
+	advanceTimer = setTimeout(advance, seconds * 1000 + entranceLeft)
 	document.addEventListener('ended', restartWait, true)
 	document.addEventListener('error', restartWait, true)
 }
@@ -314,4 +328,6 @@ export {
 	performPreviousStep,
 	scheduleAdvance,
 	cancelAdvance,
+	prevSlide,
+	isMagicMoveApplied,
 }

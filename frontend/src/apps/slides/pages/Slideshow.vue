@@ -88,6 +88,8 @@ import {
 	performPreviousStep,
 	scheduleAdvance,
 	cancelAdvance,
+	prevSlide,
+	isMagicMoveApplied,
 } from '@/apps/slides/stores/slideshow'
 
 import {
@@ -127,20 +129,6 @@ const clipPath = computed(() => {
 const getElementKey = (element) => getTransitionKey(element)
 
 const cursorHidden = ref(true)
-
-const prevSlide = computed(() => {
-	if (slideIndex.value == 0) return null
-	return slides.value[slideIndex.value - 1]
-})
-
-const isMagicMoveApplied = computed(() => {
-	if (applyReverseTransition.value) return false
-
-	return (
-		currentSlide.value?.transition == 'Magic Move' ||
-		prevSlide.value?.transition == 'Magic Move'
-	)
-})
 
 const slideStyles = computed(() => {
 	// scale slide to fit screen width while maintaining 16:9 aspect ratio
