@@ -35,7 +35,7 @@
 		<div class="flex items-center justify-end gap-2">
 			<slot name="right-actions"></slot>
 			<Button
-				v-if="!primaryButton.hide"
+				v-if="primaryButton && !primaryButton.hide"
 				variant="solid"
 				:iconLeft="primaryButton.icon"
 				:label="primaryButton.label"
