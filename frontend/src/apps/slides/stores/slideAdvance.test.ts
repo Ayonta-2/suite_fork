@@ -175,6 +175,37 @@ describe('a slide that advances on its own', () => {
 		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
 	})
 
+	it('counts its delay once the slide has come in', async () => {
+		slides.value[0] = { ...slides.value[0], transition: 'Fade', transitionDuration: '3' }
+		scheduleAdvance()
+
+		vi.advanceTimersByTime(4999)
+		await nextTick()
+		expect(replace).not.toHaveBeenCalled()
+
+		vi.advanceTimersByTime(1)
+		await nextTick()
+		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+	})
+
+	it('counts a Magic Move from the slide before', async () => {
+		slides.value = [
+			{ elements: [], transition: 'Magic Move', transitionDuration: '3' },
+			{ elements: [], advanceAfter: '2' },
+			{ elements: [] },
+		] as any
+		slideIndex.value = 1
+		scheduleAdvance()
+
+		vi.advanceTimersByTime(4999)
+		await nextTick()
+		expect(replace).not.toHaveBeenCalled()
+
+		vi.advanceTimersByTime(1)
+		await nextTick()
+		expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 3 } })
+	})
+
 	it('stays put once cancelled', async () => {
 		const video = addVideo({ paused: false })
 		scheduleAdvance()

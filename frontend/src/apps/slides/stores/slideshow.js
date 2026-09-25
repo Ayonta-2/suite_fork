@@ -207,23 +207,37 @@ const advance = () => {
 	const starting = performNextStep()
 	if (!starting) return
 	// a step that starts a video is watched like the rest, then the wait starts over
-	scheduleAdvance()
+	startWait()
 	// one the browser refuses to play is skipped rather than waited on
 	starting.catch(() => changeSlideInSlideshow(slideIndex.value + 1))
 }
 
-const scheduleAdvance = () => {
+// the delay starts once the slide has come in: a Magic Move is the previous
+// slide's, the other transitions are the slide's own
+const entranceSeconds = () => {
+	const previous = slides.value[slideIndex.value - 1]
+	if (!applyReverseTransition.value && previous?.transition == 'Magic Move') {
+		return parseFloat(previous.transitionDuration) || 0
+	}
+	const { transition, transitionDuration } = currentSlide.value || {}
+	if (!transition || transition == 'Magic Move') return 0
+	return parseFloat(transitionDuration) || 0
+}
+
+const scheduleAdvance = () => startWait(entranceSeconds())
+
+const startWait = (extraSeconds = 0) => {
 	cancelAdvance()
 	const seconds = parseFloat(currentSlide.value?.advanceAfter)
 	if (!(seconds > 0)) return
-	advanceTimer = setTimeout(advance, seconds * 1000)
+	advanceTimer = setTimeout(advance, (seconds + extraSeconds) * 1000)
 	document.addEventListener('ended', restartWait, true)
 	document.addEventListener('error', restartWait, true)
 }
 
 // a video that fails is done playing as much as one that ends
 const restartWait = (event) => {
-	if (event.target instanceof HTMLVideoElement) scheduleAdvance()
+	if (event.target instanceof HTMLVideoElement) startWait()
 }
 
 const cancelAdvance = () => {
