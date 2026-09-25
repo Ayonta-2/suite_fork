@@ -166,9 +166,9 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const hasOpenOverlay = () =>
 		!!document.querySelector('[data-dismissable-layer][data-state="open"]')
 
-	// a letter typed into an open list picks an option
-	const skipInOverlay = (handler) => () => {
-		if (!hasOpenOverlay()) handler()
+	// keys meant for an open list never reach the canvas behind it
+	const skipInOverlay = (handler) => (e) => {
+		if (!hasOpenOverlay()) handler(e)
 	}
 
 	// menus and radio groups like TabButtons move between options with the arrows
@@ -351,14 +351,14 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			description: 'Delete element / slide',
 			group: 'Edit',
 			enabled: inEditMode,
-			handler: deleteElementOrSlide,
+			handler: skipInOverlay(deleteElementOrSlide),
 		},
 		{
 			combo: 'Backspace',
 			description: 'Delete element / slide',
 			group: 'Edit',
 			enabled: inEditMode,
-			handler: deleteElementOrSlide,
+			handler: skipInOverlay(deleteElementOrSlide),
 		},
 		{
 			combo: 'Mod+Shift+L',
