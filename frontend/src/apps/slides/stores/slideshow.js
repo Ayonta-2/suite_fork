@@ -36,7 +36,7 @@ const requestFullscreen = () => {
 }
 
 const exitFullscreen = () => {
-	if (document.fullscreenElement) document.exitFullscreen()
+	if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
 }
 
 let wakeLock = null
