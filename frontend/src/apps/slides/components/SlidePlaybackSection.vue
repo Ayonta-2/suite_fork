@@ -76,7 +76,7 @@ const setAdvance = (option) => {
 const applyToAllSlides = () => {
 	const sourceSlide = currentSlide.value
 	const commands = slides.value
-		.filter((slide) => slide !== sourceSlide && slide.advanceAfter != sourceSlide.advanceAfter)
+		.filter((slide) => slide.advanceAfter != sourceSlide.advanceAfter)
 		.map((slide) =>
 			editSlideCommand({
 				slideId: slide.clientId,

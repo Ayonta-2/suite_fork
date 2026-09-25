@@ -193,36 +193,6 @@ const performNextStep = () => {
 	changeSlideInSlideshow(slideIndex.value + 1)
 }
 
-// a slide with a delay stays that long after it is done playing: a video that
-// ends is watched first, a looping one is background
-let advanceTimer = null
-
-// paused partway counts too: whoever paused it is still watching
-const unfinishedVideo = () =>
-	[...document.querySelectorAll('video')].find(
-		(video) =>
-			(!video.paused || video.currentTime > 0) && !video.ended && !video.loop && !video.error,
-	)
-
-// a looping video never ends, so starting one would only hold the slide longer
-const unstartedVideo = () =>
-	[...document.querySelectorAll('video')].find(
-		(video) => video.currentTime == 0 && video.paused && !video.loop,
-	)
-
-const advance = () => {
-	if (unfinishedVideo()) return
-	const video = unstartedVideo()
-	if (!video) return changeSlideInSlideshow(slideIndex.value + 1)
-	// a video the timer starts is watched like the rest, then the wait starts over
-	startWait()
-	// one the browser refuses to play is skipped rather than waited on
-	const index = slideIndex.value
-	video.play().catch(() => {
-		if (slideIndex.value == index) changeSlideInSlideshow(index + 1)
-	})
-}
-
 const prevSlide = computed(() => {
 	if (slideIndex.value == 0) return null
 	return slides.value[slideIndex.value - 1]
@@ -248,6 +218,10 @@ const entranceSeconds = () => {
 	if (!transition || transition == 'Magic Move') return 0
 	return parseFloat(transitionDuration) || 0
 }
+
+// a slide with a delay stays that long after it is done playing: a video that
+// ends is watched first, a looping one is background
+let advanceTimer = null
 
 // a video that ends early still waits out the entrance
 let entranceEnds = 0
@@ -278,6 +252,41 @@ const cancelAdvance = () => {
 	document.removeEventListener('error', restartWait, true)
 }
 
+// paused partway counts too: whoever paused it is still watching
+const unfinishedVideo = () =>
+	[...document.querySelectorAll('video')].find(
+		(video) =>
+			(!video.paused || video.currentTime > 0) && !video.ended && !video.loop && !video.error,
+	)
+
+// a looping video never ends, so starting one would only hold the slide longer
+const unstartedVideo = () =>
+	[...document.querySelectorAll('video')].find(
+		(video) => video.currentTime == 0 && video.paused && !video.loop,
+	)
+
+const advance = () => {
+	if (unfinishedVideo()) return
+	const video = unstartedVideo()
+	if (!video) return changeSlideInSlideshow(slideIndex.value + 1)
+	// a video the timer starts is watched like the rest, then the wait starts over
+	startWait()
+	// one the browser refuses to play is skipped rather than waited on
+	const index = slideIndex.value
+	video.play().catch(() => {
+		if (slideIndex.value == index) changeSlideInSlideshow(index + 1)
+	})
+}
+
+// a single slide stays put, so nothing replays it on its own
+const replaySlide = () => {
+	for (const video of document.querySelectorAll('video')) {
+		video.currentTime = 0
+		if (video.autoplay) video.play().catch(() => {})
+	}
+	scheduleAdvance(false)
+}
+
 const changeSlideInSlideshow = (index) => {
 	if (index < 0) return
 	if (index >= slides.value.length + 1) return endSlideShow()
@@ -287,14 +296,7 @@ const changeSlideInSlideshow = (index) => {
 	if (onLoop.value && index >= slides.value.length) {
 		index = 0
 		applyReverseTransition.value = false
-		// a single slide stays put, so nothing replays it on its own
-		if (slides.value.length == 1) {
-			for (const video of document.querySelectorAll('video')) {
-				video.currentTime = 0
-				if (video.autoplay) video.play().catch(() => {})
-			}
-			return scheduleAdvance(false)
-		}
+		if (slides.value.length == 1) return replaySlide()
 	}
 
 	nextTick(() => {
