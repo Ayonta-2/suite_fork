@@ -382,9 +382,9 @@ watch(
 )
 
 // any change of slide, by hand, by the timer, or by the load, restarts the wait
-// the slide the show opens on comes in without a transition
-watch([currentSlide, inSlideShowMode], ([, presenting], [, wasPresenting]) => {
-	if (presenting) scheduleAdvance(wasPresenting)
+// the slide the show opens on, or loads into, waits only its delay
+watch([currentSlide, inSlideShowMode], ([, presenting], [previous, wasPresenting]) => {
+	if (presenting) scheduleAdvance(wasPresenting && Boolean(previous))
 	else cancelAdvance()
 })
 
