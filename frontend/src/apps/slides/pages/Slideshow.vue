@@ -80,6 +80,7 @@ import {
 	requestWakeLock,
 	releaseWakeLock,
 	releaseVideoWarmers,
+	resetSlideShowState,
 	endSlideShow,
 	prefetchNextSlide,
 	changeSlideInSlideshow,
@@ -307,10 +308,14 @@ const slideContainerStyles = computed(() => {
 	}
 })
 
+let active = false
+
 const initFullscreenMode = async () => {
 	// fullscreen is requested on the click that starts the slideshow, so the
 	// change event fires before this component is around to hear it
-	if (!document.fullscreenElement && !(await requestFullscreen())) {
+	const inFullscreen = Boolean(document.fullscreenElement) || (await requestFullscreen())
+	if (!active) return exitFullscreen()
+	if (!inFullscreen) {
 		toast.error('Could not enter fullscreen mode')
 		endSlideShow()
 		return
@@ -332,6 +337,7 @@ const updateWindowSize = () => {
 usePageMeta(() => appPageMeta(pageTitle(), 'Slides'))
 
 onActivated(() => {
+	active = true
 	document.title = pageTitle()
 	resetFocus()
 	loadPresentation()
@@ -348,6 +354,7 @@ onActivated(() => {
 })
 
 onDeactivated(() => {
+	active = false
 	document.removeEventListener('fullscreenchange', handleFullScreenChange)
 	document.removeEventListener('visibilitychange', handleVisibilityChange)
 	window.removeEventListener('resize', updateWindowSize)
@@ -357,10 +364,8 @@ onDeactivated(() => {
 	releaseVideoWarmers()
 
 	// leaving by any route other than endSlideShow would strand the editor in fullscreen
-	if (inSlideShowMode.value) {
-		inSlideShowMode.value = false
-		exitFullscreen()
-	}
+	resetSlideShowState()
+	exitFullscreen()
 })
 
 watch(

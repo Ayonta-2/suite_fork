@@ -34,13 +34,30 @@
 
 		<div class="flex items-center justify-end gap-2">
 			<slot name="right-actions"></slot>
-			<Button
-				v-if="!primaryButton.hide"
-				variant="solid"
-				:iconLeft="primaryButton.icon"
-				:label="primaryButton.label"
-				@click="primaryButton.onClick"
-			/>
+			<div v-if="!primaryButton.hide" class="flex rounded-4 has-[:focus-visible]:focus-ring">
+				<Button
+					variant="solid"
+					:class="{ 'rounded-r-none focus-visible:outline-none': primaryButton.options }"
+					:iconLeft="primaryButton.icon"
+					:label="primaryButton.label"
+					@click="primaryButton.onClick"
+				/>
+				<Dropdown
+					v-if="primaryButton.options"
+					:options="primaryButton.options"
+					aria-label="Presentation options"
+					:button="{
+						variant: 'solid',
+						icon: 'lucide-chevron-down',
+						class: [
+							'rounded-l-none border-l-[0.5px] focus-visible:outline-none',
+							'[border-left-color:color-mix(in_oklch,currentColor_20%,transparent)]',
+							'data-[state=open]:bg-surface-gray-10',
+						],
+					}"
+					align="end"
+				/>
+			</div>
 		</div>
 	</div>
 </template>

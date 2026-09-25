@@ -13,6 +13,8 @@ import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 
 const inSlideShowMode = ref(false)
 
+const onLoop = ref(false)
+
 // the click's user activation expires before the slideshow route finishes
 // loading, so fullscreen has to be requested here and not on the other side
 let pendingFullscreen = null
@@ -62,20 +64,26 @@ const releaseWakeLock = () => {
 	wakeLock = null
 }
 
-const startSlideShow = () => {
+const startSlideShow = ({ loop = false, fromBeginning = false } = {}) => {
+	onLoop.value = loop
 	requestFullscreen()
 	router.replace({
 		name: 'slides-slideshow',
 		params: router.currentRoute.value.params,
-		query: { slide: slideIndex.value + 1 },
+		query: { slide: fromBeginning ? 1 : slideIndex.value + 1 },
 	})
+}
+
+const resetSlideShowState = () => {
+	inSlideShowMode.value = false
+	onLoop.value = false
 }
 
 const endSlideShow = () => {
 	exitFullscreen()
 	releaseWakeLock()
 	releaseVideoWarmers()
-	inSlideShowMode.value = false
+	resetSlideShowState()
 	focusedSlide.value = null
 	const slide =
 		slideIndex.value == slides.value.length ? slides.value.length : slideIndex.value + 1
@@ -218,6 +226,11 @@ const changeSlideInSlideshow = (index) => {
 
 	applyReverseTransition.value = index < slideIndex.value
 
+	if (onLoop.value && index >= slides.value.length) {
+		index = 0
+		applyReverseTransition.value = false
+	}
+
 	nextTick(() => {
 		router.replace({
 			name: 'slides-slideshow',
@@ -241,6 +254,7 @@ export {
 	releaseWakeLock,
 	releaseVideoWarmers,
 	startSlideShow,
+	resetSlideShowState,
 	endSlideShow,
 	prefetchNextSlide,
 	changeSlideInSlideshow,

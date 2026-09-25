@@ -36,7 +36,6 @@
 
 <script setup>
 import { ref, computed, inject } from 'vue'
-import { Play } from 'lucide-vue-next'
 
 import { Badge, Button } from 'frappe-ui'
 
@@ -68,8 +67,20 @@ const canPin = computed(() => {
 
 const primaryButtonProps = computed(() => ({
 	label: 'Present',
-	icon: Play,
+	icon: 'lucide-play',
 	onClick: () => emit('startSlideShow'),
+	options: [
+		{
+			label: 'From the start',
+			icon: 'lucide-skip-back',
+			onClick: () => emit('startSlideShow', { fromBeginning: true }),
+		},
+		{
+			label: 'On loop',
+			icon: 'lucide-repeat-2',
+			onClick: () => emit('startSlideShow', { loop: true }),
+		},
+	],
 	hide: route.name === 'slides-editor-new',
 }))
 
