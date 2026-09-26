@@ -45,7 +45,7 @@ const alignElementsToEachOther = (direction) => {
 		(element) => !getBoundTargetIds(element.connector).length,
 	)
 	const moved = {}
-	const commands = aligned.map((element) => {
+	const moves = aligned.map((element) => {
 		const position = getElementPosition(element.id)
 		const current = isHorizontal ? position.left : position.top
 		const size = isHorizontal ? position.right - position.left : position.bottom - position.top
@@ -65,7 +65,9 @@ const alignElementsToEachOther = (direction) => {
 			newValue,
 		})
 	})
+	const commands = moves.filter((c) => c.oldValue !== c.newValue)
 	commands.push(...getFollowerCommands(moved))
+	if (!commands.length) return
 
 	commandHistory.execute(
 		batchCommand({
