@@ -306,6 +306,13 @@ const getCommandsForRefIdSeries = (fromSlideIndex, element, refId, isForward) =>
 
 const getCommandsToSetTransition = (slide, index, settings) => {
 	const { transition, transitionDuration, fadeUnmatchedElements } = settings
+	if (
+		slide.transition == transition &&
+		slide.transitionDuration == transitionDuration &&
+		slide.fadeUnmatchedElements == fadeUnmatchedElements
+	)
+		return []
+
 	const commands = [
 		editSlideCommand({
 			slideId: slide.clientId,
