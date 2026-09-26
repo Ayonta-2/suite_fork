@@ -95,6 +95,37 @@ describe("ParticipantConnection", () => {
 		});
 	});
 
+	it("updates participant media state when a participant reconnects", async () => {
+		const { handlers, manager, participantManager } = createManager();
+		participantManager.addParticipant({
+			participantId: "remote-1",
+			userData: { name: "Remote", audio_enabled: false, video_enabled: false },
+		});
+
+		await manager.connect("token");
+		handlers.get("participant_updated")?.({
+			participantId: "remote-1",
+			userData: {
+				name: "Remote",
+				userId: "remote-1",
+				audio_enabled: true,
+				video_enabled: false,
+			},
+		});
+		expect(participantManager.getParticipant("remote-1")?.audio_enabled).toBe(false);
+
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "audio",
+		});
+
+		expect(participantManager.getParticipant("remote-1")).toMatchObject({
+			audio_enabled: true,
+			video_enabled: false,
+		});
+	});
+
 	it("preserves remote progress while the subscription remains present", async () => {
 		const { handlers, manager, mediaManager } = createManager();
 		await manager.connect("token");
@@ -557,6 +588,7 @@ describe("ParticipantConnection", () => {
 			"meeting-1",
 			{ name: "Me", userId: "me" },
 			{ audio_enabled: true, video_enabled: true },
+			sfuClient.joinRoom.mock.calls[0][3],
 		);
 		expect(transportManager.closeReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(recoveryManager.reset).toHaveBeenCalledTimes(1);
@@ -609,6 +641,7 @@ describe("ParticipantConnection", () => {
 			"meeting-1",
 			expect.anything(),
 			{ audio_enabled: true, video_enabled: false },
+			sfuClient.joinRoom.mock.calls[0][3],
 		);
 	});
 

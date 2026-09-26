@@ -35,7 +35,7 @@
 		<div class="flex items-center justify-end gap-2">
 			<slot name="right-actions"></slot>
 			<Button
-				v-if="!primaryButton.hide"
+				v-if="primaryButton && !primaryButton.hide"
 				variant="solid"
 				:iconLeft="primaryButton.icon"
 				:label="primaryButton.label"
@@ -53,6 +53,7 @@ import slidesLogo from '@/apps/slides/assets/slides-logo.svg'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
+import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import { useSessionStore } from '@/boot/session'
 
 const props = defineProps({
@@ -74,6 +75,7 @@ const sessionStore = useSessionStore()
 const appsMenuOption = useAppSwitcher('slides')
 
 const themeMenuOption = useThemeMenuOption()
+const settingsMenuOption = useSettingsMenuOption()
 
 const getLogoutMenuOption = () => ({
 	label: 'Log out',
@@ -83,7 +85,7 @@ const getLogoutMenuOption = () => ({
 
 const getHomeMenuOptions = () => [
 	{ group: '', options: [appsMenuOption.value] },
-	{ group: '', options: [themeMenuOption, getLogoutMenuOption()] },
+	{ group: '', options: [settingsMenuOption, themeMenuOption, getLogoutMenuOption()] },
 ]
 
 const presentationActions = [
@@ -124,6 +126,7 @@ const getContextMenuOptions = () => {
 	groups.push({
 		group: '',
 		options: [
+			...(sessionStore.isLoggedIn ? [settingsMenuOption] : []),
 			{
 				label: 'Shortcuts',
 				icon: 'lucide-command',

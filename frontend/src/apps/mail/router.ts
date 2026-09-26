@@ -12,11 +12,9 @@ import { userStore } from '@/apps/mail/stores/user'
  * start with `mail-`; auth itself is the suite router's `beforeEach`
  * (redirects guests unless `meta.allowGuest`).
  *
- * Re-exports the suite router instance as `router` so mail pages/stores can
+ * Re-exports the suite router instance as default so mail pages/stores can
  * import it from `@/apps/mail/router`.
  */
-export const router = suiteRouter
-
 type Params = Record<string, string | string[]>
 
 const handleSetupWizardEscape = () => {
@@ -73,9 +71,16 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
 	await userResource.promise
 	const user = userResource.data
 
-	// Admin / dashboard access control.
+	// The Admin Dashboard is Suite Cloud's face on the site: it is for admins, and only on a
+	// site connected to one. Mail itself needs neither, just a mailbox.
+	const canAdminister = !!user?.is_suite_admin && !!user?.is_suite_cloud_configured
+
+	// No mailbox: the dashboard is all Mail has for them, if they may have it.
 	if (!user?.is_jmap_configured) {
-		if (!user?.is_suite_admin) window.location.replace('/desk')
+		if (!canAdminister) {
+			window.location.replace('/desk')
+			return false
+		}
 		if (to.meta.isDashboard) return
 		return { name: 'mail-overview' }
 	}
@@ -93,6 +98,8 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
 	// the app never mounts and the user gets a blank page instead of the unavailable banner.
 	await mailboxes.promise?.catch(() => {})
 	const defaultRoute = buildDefaultRoute(accountId, mailboxes)
+
+	if (to.meta.isDashboard && !canAdminister) return defaultRoute
 
 	// Validate mailbox param for mailbox routes.
 	if (to.name === 'mail-mailbox' || to.name === 'mail-mail') {
@@ -121,4 +128,4 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
 	if (to.meta.isLogin) return defaultRoute
 }
 
-export default router
+export default suiteRouter
