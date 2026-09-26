@@ -33,11 +33,6 @@
 							:scale="thumbnailScale"
 							:height="thumbnailHeight"
 						/>
-						<div
-							v-if="isSlideActive(orderedSlides[virtualRow.index])"
-							class="pointer-events-none absolute -left-4 top-0 z-10 w-1 rounded-r-6 bg-surface-gray-8 dark:bg-surface-gray-5"
-							:style="{ height: `${thumbnailHeight}px` }"
-						/>
 					</div>
 				</div>
 			</component>
