@@ -56,7 +56,7 @@ const alignElementsToEachOther = (direction) => {
 		else target = start + (extent - size) / 2
 
 		const newValue = Math.round(element[property] + (target - current))
-		moved[element.id] = { [property]: newValue }
+		if (newValue !== element[property]) moved[element.id] = { [property]: newValue }
 		return editElementCommand({
 			slideId: currentSlide.value.clientId,
 			elementIds: [element.id],
