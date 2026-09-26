@@ -59,7 +59,7 @@ import { chevronClasses, selectValueClasses } from '@/apps/slides/utils/constant
 
 import { slides, slideIndex, currentSlide } from '@/apps/slides/stores/slide'
 import { getCommandsToSetTransition } from '@/apps/slides/stores/transition'
-import { editSlideCommand, batchCommand } from '@/apps/slides/stores/commands'
+import { editSlideCommand } from '@/apps/slides/stores/commands'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { pushSlideCommands, useSlideProperty } from '@/apps/slides/composables/editProperty'
 
@@ -77,18 +77,11 @@ const hasTransition = computed(
 )
 
 const setSlideTransition = (option) => {
-	const slide = currentSlide.value
-	const commands = getCommandsToSetTransition(slide, slideIndex.value, {
-		transition: option,
-		transitionDuration: option == 'None' ? 0 : 1,
-		fadeUnmatchedElements: option == 'Magic Move',
-	})
-
-	commandHistory.execute(
-		batchCommand({
-			slideId: slide.clientId,
-			elementIds: [],
-			commands,
+	pushSlideCommands(
+		getCommandsToSetTransition(currentSlide.value, slideIndex.value, {
+			transition: option,
+			transitionDuration: option == 'None' ? 0 : 1,
+			fadeUnmatchedElements: option == 'Magic Move',
 		}),
 	)
 }
