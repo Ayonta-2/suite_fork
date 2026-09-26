@@ -192,6 +192,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const handleTypeToEdit = (e) => {
 		if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
 		if (e.key === '?') return
+		if (e.key === ' ' && isControlFocused()) return
 		if (isPlainInput(e) || e.target?.isContentEditable) return
 		if (!canStartTextEditing()) return
 		e.preventDefault()
