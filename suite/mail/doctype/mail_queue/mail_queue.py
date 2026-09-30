@@ -26,6 +26,8 @@ from frappe.utils import (
     time_diff_in_seconds,
 )
 from jmap import CreationRef, MethodError
+from jmap.capabilities.mail import check_attachment_size
+from jmap.core.errors import CapabilityFieldError
 
 from suite.mail.doctype.mail_queue.payload import (
     Address,
@@ -39,9 +41,11 @@ from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs
 from suite.mail.jmap import (
     build_email_draft,
     build_submission_envelope,
+    format_method_error,
     get_account_client,
     get_identities,
     get_identity_id_by_email,
+    get_mail_capability,
     get_mailbox_id_by_role,
     get_max_delayed_send,
     get_set_error_message,
@@ -545,9 +549,25 @@ class MailQueue(OwnerFromUser, Document):
         user = self.user if is_administrator(frappe.session.user) else frappe.session.user
 
         attachments = parse(Attachments, json_loads(self.attachments, default=[]), "attachments")
+        octets = 0
         for attachment in attachments:
-            if attachment.is_private_file:
-                MailQueue._get_file(file_url=attachment.file_url, user=user, check_permission=True)
+            if attachment.blob_id:
+                octets += attachment.size or 0
+            else:
+                file = MailQueue._get_file(
+                    file_url=attachment.file_url, user=user, check_permission=attachment.is_private_file
+                )
+                octets += file.file_size or 0
+
+        if attachments:
+            # The server's own ceiling on what one email may carry, refused here rather than after
+            # every attachment has been uploaded and the draft sent.
+            try:
+                check_attachment_size(
+                    octets, get_mail_capability(get_account_client(self.account), self.account)
+                )
+            except CapabilityFieldError as e:
+                frappe.throw(format_method_error(e))
 
         self.attachments = to_json(attachments)
 

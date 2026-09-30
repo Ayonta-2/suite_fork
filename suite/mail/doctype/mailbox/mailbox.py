@@ -8,6 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
 from jmap import MethodError
+from jmap.capabilities.mail import check_mailbox_depth
 from jmap.core.errors import CapabilityFieldError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
@@ -16,6 +17,8 @@ from suite.mail.jmap import (
     format_method_error,
     format_set_error,
     get_account_client,
+    get_cached_mailboxes,
+    get_mail_capability,
     invalidate_jmap_mailboxes_cache,
 )
 from suite.utils import parse_filters
@@ -169,6 +172,8 @@ def add_mailbox(
     client = get_account_client(account)
     title = _("Mailbox Creation Error")
     try:
+        if parent:
+            check_mailbox_depth(_ancestor_count(account, parent), get_mail_capability(client, account))
         with client.batch() as b:
             h = b.mail.mailbox.set(create={creation_id: mailbox})
         response = h.result
@@ -180,6 +185,21 @@ def add_mailbox(
         return id
 
     frappe.throw(_(format_set_error(response.not_created.get(creation_id))), title=title)
+
+
+def _ancestor_count(account: str, parent_id: str) -> int:
+    """How many mailboxes stand above one filed under `parent_id`: the parent and its own line.
+
+    Read from the cached tree, which is what a /set names its parent from; a parent the cache
+    does not know counts as one, and the server judges the rest.
+    """
+
+    by_id = {m["id"]: m for m in get_cached_mailboxes(account)}
+    count, current = 0, parent_id
+    while current and count <= len(by_id):
+        count += 1
+        current = (by_id.get(current) or {}).get("parentId")
+    return count
 
 
 @frappe.whitelist()
@@ -226,6 +246,8 @@ def update_mailbox(
 
     client = get_account_client(account)
     try:
+        if parent:
+            check_mailbox_depth(_ancestor_count(account, parent), get_mail_capability(client, account))
         with client.batch() as b:
             h = b.mail.mailbox.set(update={id: mailbox})
         response = h.result

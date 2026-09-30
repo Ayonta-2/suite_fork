@@ -17,7 +17,7 @@ from frappe.utils.caching import request_cache
 from jmap import Id, MethodError, RequestError, SetError, TransportError
 from jmap.auth import BasicAuth
 from jmap.blobs import UploadResult
-from jmap.capabilities.mail import SubmissionCapability
+from jmap.capabilities.mail import MailCapability, SubmissionCapability
 from jmap.client import JMAPClient
 from jmap.core.errors import CapabilityFieldError
 from jmap.core.retry import RetryPolicy
@@ -287,6 +287,7 @@ def format_jmap_error(error: dict | None) -> str:
 DEFAULT_TIMEOUT: tuple[float, float] = (30.0, 60.0)
 EXCHANGE_TIMEOUT: tuple[float, float] = (60.0, 180.0)
 
+MAIL_URN = "urn:ietf:params:jmap:mail"
 SUBMISSION_URN = "urn:ietf:params:jmap:submission"
 
 # Same shape the old CoreService class cache had: shared across requests in one process,
@@ -986,6 +987,12 @@ def build_submission_envelope(
             for rcpt in sorted(set(rcpt_emails))
         ],
     }
+
+
+def get_mail_capability(client: SuiteJMAPClient, account: str) -> MailCapability:
+    """What the account says about its mail: the limits jmaplib's ``check_*`` helpers take."""
+
+    return MailCapability.of(client.session.capability_value(MAIL_URN, Id(account)))
 
 
 def get_max_delayed_send(client: SuiteJMAPClient, account: str) -> int:
