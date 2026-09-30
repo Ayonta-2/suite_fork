@@ -353,6 +353,9 @@ class SuiteJMAPClient(JMAPClient):
     upkeep (re-cache + JMAP Account resync) when the server reports a new session state."""
 
     user: str | None = None
+    #: This client and every account view made from it, which share one session: a refresh on
+    #: any of them is a refresh for all. get_jmap_client and account_view keep the list.
+    peers: list[SuiteJMAPClient] | tuple[SuiteJMAPClient, ...] = ()
 
     def execute(self, batch, *, extra_using: frozenset[str] = frozenset()) -> None:
         with translated_errors():
@@ -371,6 +374,16 @@ class SuiteJMAPClient(JMAPClient):
     def _refresh_and_sync(self) -> None:
         with translated_errors():
             self.refresh_session()
+
+        # Move the peers on too, or each would notice the same change on its next call and
+        # fetch the session and resync the accounts again in its turn.
+        for peer in self.peers:
+            if peer is not self:
+                peer.session = self.session
+                peer.capabilities = peer.registry.resolve(
+                    self.session, peer.default_account, experimental=True
+                )
+                peer.session_stale = False
 
         if not self.user:
             return
@@ -464,6 +477,7 @@ def get_jmap_client(
         raise
 
     client.user = user
+    client.peers = [client]
     return client
 
 
@@ -494,6 +508,10 @@ def account_view(client: SuiteJMAPClient, account: str) -> SuiteJMAPClient:
         experimental=True,
     )
     view.user = client.user
+    if not isinstance(client.peers, list):
+        client.peers = [client]
+    client.peers.append(view)
+    view.peers = client.peers
     return view
 
 
