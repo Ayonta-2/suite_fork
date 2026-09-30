@@ -12,6 +12,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, create_batch, today
 from jmap import MethodError
+from jmap.core.errors import CapabilityFieldError
 
 from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_settings
 from suite.mail.doctype.screened_email_address.screened_email_address import (
@@ -167,7 +168,7 @@ class SieveScript(Document):
                     create={creation_id: {"name": name, "blobId": blob.blob_id}}, **extra
                 )
             response = h.result
-        except MethodError as e:
+        except (MethodError, CapabilityFieldError) as e:
             frappe.throw(format_method_error(e), title=title)
 
         if script_id := response.created_id(creation_id):
@@ -235,7 +236,7 @@ class SieveScript(Document):
             with client.batch() as b:
                 h = b.sieve.sieve_script.validate(blob_id=blob.blob_id)
             response = h.result
-        except MethodError as e:
+        except (MethodError, CapabilityFieldError) as e:
             frappe.throw(format_method_error(e), title=title)
 
         # A syntactically invalid script is not a method error: the call succeeds and
@@ -283,7 +284,7 @@ class SieveScript(Document):
             with client.batch() as b:
                 h = b.sieve.sieve_script.set(update={id: {"name": name, "blobId": blob.blob_id}}, **extra)
             response = h.result
-        except MethodError as e:
+        except (MethodError, CapabilityFieldError) as e:
             frappe.throw(format_method_error(e), title=title)
 
         if id not in response.updated:
@@ -298,7 +299,7 @@ class SieveScript(Document):
 
         try:
             result = chunked_set(client, lambda b, chunk: b.sieve.sieve_script.set(destroy=chunk), ids)
-        except MethodError as e:
+        except (MethodError, CapabilityFieldError) as e:
             frappe.throw(format_method_error(e), title=title)
 
         if not_destroyed := result.not_destroyed:

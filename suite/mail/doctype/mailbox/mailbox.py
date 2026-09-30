@@ -8,6 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
 from jmap import MethodError
+from jmap.core.errors import CapabilityFieldError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
@@ -171,7 +172,7 @@ def add_mailbox(
         with client.batch() as b:
             h = b.mail.mailbox.set(create={creation_id: mailbox})
         response = h.result
-    except MethodError as e:
+    except (MethodError, CapabilityFieldError) as e:
         frappe.throw(_(format_method_error(e)), title=title)
 
     if id := response.created_id(creation_id):
@@ -228,7 +229,7 @@ def update_mailbox(
         with client.batch() as b:
             h = b.mail.mailbox.set(update={id: mailbox})
         response = h.result
-    except MethodError as e:
+    except (MethodError, CapabilityFieldError) as e:
         frappe.throw(_(format_method_error(e)), title=title)
 
     if id not in response.updated:

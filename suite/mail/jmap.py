@@ -17,7 +17,9 @@ from frappe.utils.caching import request_cache
 from jmap import Id, MethodError, RequestError, SetError, TransportError
 from jmap.auth import BasicAuth
 from jmap.blobs import UploadResult
+from jmap.capabilities.mail import SubmissionCapability
 from jmap.client import JMAPClient
+from jmap.core.errors import CapabilityFieldError
 from jmap.core.retry import RetryPolicy
 from jmap.core.session import Session
 from jmap.defaults import default_registry
@@ -333,9 +335,6 @@ def translated_errors() -> Iterator[None]:
         yield
     except TransportError as e:
         raise MailServerUnavailableError() from e
-    except httpx.HTTPError as e:
-        # The blob endpoints call httpx directly, so connect/timeout errors surface raw.
-        raise MailServerUnavailableError() from e
     except RequestError as e:
         if e.status in UNAVAILABLE_STATUS_CODES:
             raise MailServerUnavailableError() from e
@@ -365,10 +364,6 @@ class SuiteJMAPClient(JMAPClient):
     def _refresh_and_sync(self) -> None:
         with translated_errors():
             self.refresh_session()
-
-        # refresh_session() re-resolves without experimental=True, silently dropping the
-        # calendars namespace — redo the resolution with the opt-in.
-        self.capabilities = self.registry.resolve(self.session, self.default_account, experimental=True)
 
         if not self.user:
             return
@@ -445,6 +440,7 @@ def get_jmap_client(
                 default_account=account,
                 owns_http=True,
                 session_url=session_url,
+                experimental=True,
             )
         else:
             with translated_errors():
@@ -488,6 +484,7 @@ def account_view(client: SuiteJMAPClient, account: str) -> SuiteJMAPClient:
         default_account=Id(account),
         owns_http=False,
         session_url=client.session_url,
+        experimental=True,
     )
     view.user = client.user
     return view
@@ -538,8 +535,15 @@ def format_set_error(error: SetError | dict | None) -> str:
     return error.get("description") or error.get("type") or _("An unknown error occurred.")
 
 
-def format_method_error(error: MethodError) -> str:
-    """Readable message for a method-level JMAP error."""
+def format_method_error(error: MethodError | CapabilityFieldError) -> str:
+    """Readable message for a method-level JMAP error, or for a request jmaplib refused before
+    sending because it breaks a limit the server advertises (a name too long for
+    maxSizeMailboxName, say) — what the server would have answered with a per-object error."""
+
+    if isinstance(error, CapabilityFieldError):
+        return _("{0}: the server allows {1}, {2} was requested.").format(
+            error.field, error.advertised, error.requested
+        )
 
     return error.arguments.get("description") or error.type or _("An unknown error occurred.")
 
@@ -985,8 +989,8 @@ def build_submission_envelope(
 
 
 def get_max_delayed_send(client: SuiteJMAPClient, account: str) -> int:
-    """Maximum delay in seconds allowed for a FUTURERELEASE (RFC 4865) submission,
-    defaulting to 30 days."""
+    """Maximum delay in seconds allowed for a FUTURERELEASE (RFC 4865) submission: 30 days
+    when the server does not say, and 0 when it says it cannot hold a message at all."""
 
-    caps = client.session.capability_value(SUBMISSION_URN, Id(account))
-    return int(caps.get("maxDelayedSend") or 2_592_000)
+    capability = SubmissionCapability.of(client.session.capability_value(SUBMISSION_URN, Id(account)))
+    return 2_592_000 if capability.max_delayed_send is None else capability.max_delayed_send
