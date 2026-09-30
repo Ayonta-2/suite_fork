@@ -142,12 +142,15 @@ def get_events(client: SuiteJMAPClient, ids: list[str] | None = None) -> list[di
     """Returns raw calendar event objects, chunking large id lists (concatenated like the old
     client — a concurrent calendar change must not abort the read)."""
 
-    if ids:
-        events = chunked_get(client, lambda b, chunk: b.calendars.calendar_event.get(ids=chunk), ids)
-    else:
+    if ids is None:
         with client.batch() as b:
             h = b.calendars.calendar_event.get()
         events = h.result.items
+    elif not ids:
+        # A query that matched nothing asks for nothing: `ids: []` is not "every event".
+        events = []
+    else:
+        events = chunked_get(client, lambda b, chunk: b.calendars.calendar_event.get(ids=chunk), ids)
 
     return [e.to_wire() for e in events]
 
