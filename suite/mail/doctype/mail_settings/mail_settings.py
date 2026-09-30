@@ -144,11 +144,12 @@ class MailSettings(Document):
 
         try:
             pair = PushKeyPair(private_key, auth)
-        except ValueError as e:
+            public_key = _unbase64(p256dh)
+        except ValueError as e:  # binascii.Error included
             frappe.throw(_("Invalid JMAP Push Subscription keys: {0}").format(e))
 
         # Either half may have been stored with base64 padding; compare the key bytes.
-        if _unbase64(pair.keys.p256dh) != _unbase64(p256dh):
+        if _unbase64(pair.keys.p256dh) != public_key:
             frappe.throw(
                 _("The JMAP Push Subscription Private Key does not correspond to the P256DH public key.")
             )

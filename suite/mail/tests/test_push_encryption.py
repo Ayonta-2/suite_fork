@@ -78,6 +78,13 @@ class TestPushEncryption(IntegrationTestCase):
         with self.assertRaises(frappe.ValidationError):
             other.validate_jmap_push_subscription_keys()
 
+    def test_a_public_key_that_is_not_base64_is_refused(self) -> None:
+        other = frappe.copy_doc(self.settings)
+        other.jmap_push_p256dh = "abcde"
+
+        with self.assertRaises(frappe.ValidationError):
+            other.validate_jmap_push_subscription_keys()
+
     def test_the_subscription_is_given_the_public_half(self) -> None:
         keys = get_push_subscription_keys()
 
