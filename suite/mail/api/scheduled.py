@@ -54,6 +54,7 @@ from suite.mail.jmap import (
     get_mailbox_id_by_role,
     get_max_delayed_send,
     get_set_error_message,
+    omit_none,
 )
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
@@ -464,7 +465,7 @@ def _query_page(
 
     with client.batch() as b:
         h = b.submission.email_submission.query(
-            filter=filter, position=position, limit=limit, sort=sort, calculate_total=True
+            position=position, limit=limit, calculate_total=True, **omit_none(filter=filter, sort=sort)
         )
 
     return h.result.to_wire()
@@ -731,10 +732,11 @@ def _move_email_to_drafts(client: SuiteJMAPClient, account: str, email_id: str |
         account, "drafts", create_if_not_exists=True, raise_exception=True
     )
 
-    # Replace (not patch) mailboxIds so the message leaves Sent; restore $draft.
+    # Replace (not patch) mailboxIds so the message leaves Sent; restore $draft on its own, so the
+    # flags the message carries ($seen, $flagged, ...) stay.
     with client.batch() as b:
         h = b.mail.email.set(
-            update={email_id: {"mailboxIds": {drafts_mailbox_id: True}, "keywords": {"$draft": True}}}
+            update={email_id: {"mailboxIds": {drafts_mailbox_id: True}, "keywords/$draft": True}}
         )
     if email_id not in h.result.updated:
         # The submission is already canceled; retrying this action skips the cancel
