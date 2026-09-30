@@ -446,16 +446,14 @@ def fetch_calendar_events(
 ) -> list:
     """Returns a list of calendar events for the given account based on the provided filters."""
 
-    calendar_events = []
     client = get_account_client(account)
-    data = jmap_events.query_events(client, filter, position, limit, sort, time_zone, expand_recurrences)
+    try:
+        data = jmap_events.query_events(client, filter, position, limit, sort, time_zone, expand_recurrences)
+        calendar_events = get_calendar_events(account, data.get("ids", []))
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Events Fetch Error"))
 
-    ids = data.get("ids", [])
-    total = data.get("total", 0)
-
-    calendar_events.extend(get_calendar_events(account, ids))
-
-    return calendar_events[:limit], total
+    return calendar_events[:limit], data.get("total", 0)
 
 
 @frappe.whitelist()
@@ -675,20 +673,23 @@ def delete_calendar_events(account: str, ids: list[str], send_scheduling_message
     # Suppress the JMAP server's own scheduling ONLY for the events we cancel ourselves. Anything
     # the acting account does not organize keeps server scheduling on, so a non-organizer's delete
     # still notifies the organizer instead of being silently dropped.
-    if custom_ids:
-        _raise_if_not_destroyed(
-            jmap_events.delete_events(client, list(custom_ids), send_scheduling_messages=False)
-        )
-        if remaining := [id for id in ids if id not in custom_ids]:
+    try:
+        if custom_ids:
             _raise_if_not_destroyed(
-                jmap_events.delete_events(
-                    client, remaining, send_scheduling_messages=send_scheduling_messages
-                )
+                jmap_events.delete_events(client, list(custom_ids), send_scheduling_messages=False)
             )
-    else:
-        _raise_if_not_destroyed(
-            jmap_events.delete_events(client, ids, send_scheduling_messages=send_scheduling_messages)
-        )
+            if remaining := [id for id in ids if id not in custom_ids]:
+                _raise_if_not_destroyed(
+                    jmap_events.delete_events(
+                        client, remaining, send_scheduling_messages=send_scheduling_messages
+                    )
+                )
+        else:
+            _raise_if_not_destroyed(
+                jmap_events.delete_events(client, ids, send_scheduling_messages=send_scheduling_messages)
+            )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Event Deletion Error"))
 
     for snapshot in snapshots:
         _enqueue_event_notification(account, "cancel", event_snapshot=snapshot)

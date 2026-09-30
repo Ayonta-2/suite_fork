@@ -6,9 +6,16 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
+from jmap import MethodError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import SuiteJMAPClient, chunked_set, format_set_error, get_account_client
+from suite.mail.jmap import (
+    SuiteJMAPClient,
+    chunked_set,
+    format_method_error,
+    format_set_error,
+    get_account_client,
+)
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils import parse_filters
 from suite.utils.validation import JSONList
@@ -175,17 +182,20 @@ def delete_event_notifications(account: str, ids: list[str]) -> None:
     """Deletes event notifications for the specified account and ID(s)."""
 
     client = get_account_client(account)
-    result = chunked_set(
-        client, lambda b, chunk: b.calendars.calendar_event_notification.set(destroy=chunk), ids
-    )
+    title = _("Event Notification Deletion Error")
+    try:
+        result = chunked_set(
+            client, lambda b, chunk: b.calendars.calendar_event_notification.set(destroy=chunk), ids
+        )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
 
     if result.not_destroyed:
         error_messages = []
         for id, error in result.not_destroyed.items():
             error_messages.append(f"{id}: {format_set_error(error)}")
         frappe.throw(
-            _("Event Notification Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-            title=_("Event Notification Deletion Error"),
+            _("Event Notification Deletion Error(s):<br>{0}").format("<br>".join(error_messages)), title=title
         )
 
 

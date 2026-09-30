@@ -191,7 +191,13 @@ def delete_participant_identities(account: str, ids: list[str]) -> None:
     """Deletes participant identities for the specified account and ID(s)."""
 
     client = get_account_client(account)
-    result = chunked_set(client, lambda b, chunk: b.calendars.participant_identity.set(destroy=chunk), ids)
+    title = _("Participant Identity Deletion Error")
+    try:
+        result = chunked_set(
+            client, lambda b, chunk: b.calendars.participant_identity.set(destroy=chunk), ids
+        )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
 
     if result.not_destroyed:
         error_messages = []
@@ -199,7 +205,7 @@ def delete_participant_identities(account: str, ids: list[str]) -> None:
             error_messages.append(f"{id}: {format_set_error(error)}")
         frappe.throw(
             _("Participant Identity Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-            title=_("Participant Identity Deletion Error"),
+            title=title,
         )
 
 

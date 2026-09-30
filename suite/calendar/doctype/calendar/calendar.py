@@ -262,20 +262,21 @@ def delete_calendars(account: str, ids: list[str], remove_events: bool = True) -
     """Deletes calendars for the specified account and ID(s)."""
 
     client = get_account_client(account)
-    result = chunked_set(
-        client,
-        lambda b, chunk: b.calendars.calendar.set(destroy=chunk, onDestroyRemoveEvents=remove_events),
-        ids,
-    )
+    title = _("Calendar Deletion Error")
+    try:
+        result = chunked_set(
+            client,
+            lambda b, chunk: b.calendars.calendar.set(destroy=chunk, onDestroyRemoveEvents=remove_events),
+            ids,
+        )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
 
     if result.not_destroyed:
         error_messages = []
         for id, error in result.not_destroyed.items():
             error_messages.append(f"{id}: {format_set_error(error)}")
-        frappe.throw(
-            _("Calendar Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-            title=_("Calendar Deletion Error"),
-        )
+        frappe.throw(_("Calendar Deletion Error(s):<br>{0}").format("<br>".join(error_messages)), title=title)
 
 
 # What a calendar reminds about when an event carries no alerts of its own
