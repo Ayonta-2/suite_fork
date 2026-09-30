@@ -287,6 +287,12 @@ def format_jmap_error(error: dict | None) -> str:
 DEFAULT_TIMEOUT: tuple[float, float] = (30.0, 60.0)
 EXCHANGE_TIMEOUT: tuple[float, float] = (60.0, 180.0)
 
+# One retry. jmaplib re-sends a batch only when the request provably never reached the server
+# (a connection failure, a 429 or a 503) or a literal ifInState guards it, so a blip heals without
+# a duplicate write; a Retry-After past a few seconds is not waited out, since that would park the
+# web worker holding the request.
+RETRY_POLICY = RetryPolicy(max_attempts=2, max_retry_after=5.0)
+
 MAIL_URN = "urn:ietf:params:jmap:mail"
 SUBMISSION_URN = "urn:ietf:params:jmap:submission"
 
@@ -437,7 +443,7 @@ def get_jmap_client(
                 registry.resolve(session, account, experimental=True),
                 http,
                 registry=registry,
-                retry_policy=RetryPolicy(max_attempts=1),
+                retry_policy=RETRY_POLICY,
                 default_account=account,
                 owns_http=True,
                 session_url=session_url,
@@ -450,7 +456,7 @@ def get_jmap_client(
                     auth=auth,
                     http=http,
                     experimental=True,
-                    retry_policy=RetryPolicy(max_attempts=1),
+                    retry_policy=RETRY_POLICY,
                 )
             store_cached_session(user, client.session)
     except Exception:
