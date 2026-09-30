@@ -238,9 +238,18 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
 
     @classmethod
     def create_domain(cls, name: str | None = None) -> str:
-        """Creates a domain on Stalwart and returns its name."""
+        """Creates a domain on Stalwart and returns its name.
+
+        Suite Cloud adds a site's domain only once a TXT record at its apex proves control, which
+        a made-up test domain never can. Against a real Suite Cloud, name a domain the operator
+        has added and verified for this site as ``mail_test_domain`` in the site config: every
+        class then uses it, with per-run unique account names, and leaves it in place.
+        """
 
         from suite.mail.api.admin import add_domain
+
+        if not name and (verified := frappe.conf.get("mail_test_domain")):
+            return verified
 
         name = name or f"{unique_name('dom')}.example.test"
         with cls.set_user("Administrator"):
