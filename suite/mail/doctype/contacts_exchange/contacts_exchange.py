@@ -1001,7 +1001,7 @@ def parse_contact_blobs(client: SuiteJMAPClient, blob_ids: list[str]) -> dict:
         batch = remaining[:batch_size]
         # The handle resolves to a typed ParsedCards; `parsed` maps a blob id to ONE Card.
         with client.batch() as b:
-            handle = b.add("ContactCard/parse", {"blobIds": batch})
+            handle = b.contacts.contact_card.parse(blob_ids=batch)
 
         try:
             body = handle.result

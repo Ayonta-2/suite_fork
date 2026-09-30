@@ -333,7 +333,7 @@ def parse_event_blobs(client: SuiteJMAPClient, blob_ids: list[str]) -> dict:
     result = {"parsed": {}, "notFound": {}, "notParsable": {}}
     for batch in chunk_list(blob_ids, client.capabilities.limits.max_objects_in_get):
         with client.batch() as b:
-            h = b.add("CalendarEvent/parse", {"blobIds": batch})
+            h = b.calendars.calendar_event.parse(blob_ids=batch)
         response = h.result
 
         result["parsed"].update(

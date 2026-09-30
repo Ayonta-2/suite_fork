@@ -708,17 +708,14 @@ class MailQueue(OwnerFromUser, Document):
 
             with client.batch() as b:
                 if self.raw_message:
-                    draft_h = b.add(
-                        "Email/import",
-                        {
-                            "emails": {
-                                draft_ref: {
-                                    "blobId": raw_blob_id,
-                                    "mailboxIds": {draft_mailbox_id: True},
-                                    "keywords": {"$draft": True, "$seen": True},
-                                }
+                    draft_h = b.mail.email.import_(
+                        emails={
+                            draft_ref: {
+                                "blobId": raw_blob_id,
+                                "mailboxIds": {draft_mailbox_id: True},
+                                "keywords": {"$draft": True, "$seen": True},
                             }
-                        },
+                        }
                     )
                     if self.id:
                         b.mail.email.set(destroy=[self.id])
@@ -799,13 +796,8 @@ class MailQueue(OwnerFromUser, Document):
             except MethodError as e:
                 response_payload["draft"] = {"error": {"type": e.type, **e.arguments}}
             else:
-                if isinstance(draft_result, dict):
-                    # Email/import is a custom method; its result stays a raw wire dict.
-                    created_map = draft_result.get("created") or {}
-                    not_created = draft_result.get("notCreated") or {}
-                else:
-                    created_map = {k: v.to_wire() for k, v in draft_result.created.items()}
-                    not_created = draft_result.not_created
+                created_map = {k: v.to_wire() for k, v in draft_result.created.items()}
+                not_created = draft_result.not_created
 
                 response_payload["draft"] = {"created": created_map, "notCreated": not_created}
                 draft_created = created_map.get(draft_ref)

@@ -1017,14 +1017,13 @@ class MailExchange(OwnerFromUser, Document):
                 }
                 targets[f"e{i}"] = {mid: True for mid in meta.mailbox_ids}
 
-            # Email/import has no typed builder; the handle resolves to the raw wire dict.
             with client.batch() as b:
-                handle = b.add("Email/import", {"emails": emails})
+                handle = b.mail.email.import_(emails=emails)
             result = handle.result
 
-            for creation_id, info in (result.get("created") or {}).items():
-                imported[info["id"]] = targets.get(creation_id, {})
-            for creation_id, error in (result.get("notCreated") or {}).items():
+            for creation_id, email in result.created.items():
+                imported[str(email.id)] = targets.get(creation_id, {})
+            for creation_id, error in result.not_created.items():
                 logger.warning("import-email-not-created", creation_id=creation_id, reason=str(error))
 
             logger.debug("import-batch-processed", batch=len(batch), imported=len(imported), total=total)
