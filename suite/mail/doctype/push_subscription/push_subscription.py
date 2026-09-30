@@ -14,7 +14,8 @@ from frappe.utils import cint, today
 from frappe.utils.file_lock import LockTimeoutError
 from frappe.utils.synchronization import filelock
 from jmap import MethodError
-from jmap.push import PushKeyPair, PushPayloadError
+from jmap.models.push import CalendarAlert, PushVerification, StateChange
+from jmap.push import PushKeyPair, PushPayloadError, read_push
 
 from suite.mail.jmap import (
     SetResult,
@@ -680,10 +681,23 @@ def _decode_encrypted_push_body(raw_body: bytes) -> bytes:
         return raw_body
 
 
-def decrypt_jmap_push_payload(raw_body: bytes) -> dict:
-    """Decrypts a push notification body (RFC 8291 aes128gcm) with the site's keys from Mail
-    Settings and returns the pushed object."""
+def read_jmap_push(body: bytes, encrypted: bool) -> StateChange | PushVerification | CalendarAlert:
+    """The object one POST to the push endpoint carries - a StateChange, the PushVerification of
+    a new subscription or a CalendarAlert - decrypted with the site's keys from Mail Settings when
+    the server encrypted it (RFC 8291 aes128gcm)."""
 
+    keys = None
+    if encrypted:
+        keys = _site_push_key_pair()
+        body = _decode_encrypted_push_body(body)
+
+    try:
+        return read_push(body, keys)
+    except PushPayloadError as e:
+        frappe.throw(_("Invalid push notification: {0}").format(e))
+
+
+def _site_push_key_pair() -> PushKeyPair:
     settings = frappe.get_cached_doc("Mail Settings")
     private_key = (
         settings.get_password("jmap_push_private_key") if settings.get("jmap_push_private_key") else ""
@@ -694,19 +708,9 @@ def decrypt_jmap_push_payload(raw_body: bytes) -> dict:
         frappe.throw(_("JMAP Push Subscription decryption keys are not configured in Mail Settings."))
 
     try:
-        pair = PushKeyPair(private_key, auth)
+        return PushKeyPair(private_key, auth)
     except ValueError as e:
         frappe.throw(_("Invalid JMAP Push Subscription keys: {0}").format(e))
-
-    try:
-        plaintext = pair.decrypt(_decode_encrypted_push_body(raw_body))
-    except PushPayloadError as e:
-        frappe.throw(_("Failed to decrypt push payload: {0}").format(e))
-
-    try:
-        return json.loads(plaintext)
-    except json.JSONDecodeError:
-        frappe.throw(_("Decrypted push payload is not valid JSON."))
 
 
 def freeze_jmap_push_notifications(user: str) -> None:

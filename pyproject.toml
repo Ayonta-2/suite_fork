@@ -27,7 +27,7 @@ dependencies = [
     "tantivy~=0.26.0",
     "icalendar~=6.1.0",
     "pydenticon~=0.3.1",
-    "jmaplib[push]~=2.0.0",
+    "jmaplib[push]~=2.1.0",
     # sheets — AI Assist (Claude)
     "anthropic>=0.40",
 ]

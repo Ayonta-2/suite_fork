@@ -19,13 +19,22 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from frappe.tests import IntegrationTestCase
+from jmap.models.push import CalendarAlert, StateChange
 
 from suite.mail.doctype.push_subscription.push_subscription import (
-    decrypt_jmap_push_payload,
     get_push_subscription_keys,
+    read_jmap_push,
 )
 
 CHANGE = {"@type": "StateChange", "changed": {"a1": {"Email": "s9"}}}
+ALERT = {
+    "@type": "CalendarAlert",
+    "accountId": "a1",
+    "calendarEventId": "e7",
+    "uid": "5e0a9d3c-standup",
+    "recurrenceId": "2026-10-05T09:00:00",
+    "alertId": "a1",
+}
 
 
 def unbase64(text: str) -> bytes:
@@ -96,13 +105,33 @@ class TestPushEncryption(IntegrationTestCase):
         keys = get_push_subscription_keys()
         body = encrypt(json.dumps(CHANGE).encode(), keys["p256dh"], keys["auth"])
 
-        self.assertEqual(decrypt_jmap_push_payload(body), CHANGE)
+        pushed = read_jmap_push(body, encrypted=True)
+
+        self.assertIsInstance(pushed, StateChange)
+        self.assertEqual(pushed.to_wire(), CHANGE)
+
+    def test_a_calendar_alert_reads_back_with_its_occurrence(self) -> None:
+        keys = get_push_subscription_keys()
+        body = encrypt(json.dumps(ALERT).encode(), keys["p256dh"], keys["auth"])
+
+        pushed = read_jmap_push(body, encrypted=True)
+
+        self.assertIsInstance(pushed, CalendarAlert)
+        self.assertEqual((pushed.account_id, pushed.calendar_event_id), ("a1", "e7"))
+        # What the alert job is handed: the wire form, occurrence included, as the server sent it.
+        self.assertEqual(pushed.to_wire(), ALERT)
 
     def test_a_body_sent_as_base64_text_reads_back_too(self) -> None:
         keys = get_push_subscription_keys()
         body = encrypt(json.dumps(CHANGE).encode(), keys["p256dh"], keys["auth"])
 
-        self.assertEqual(decrypt_jmap_push_payload(base64.urlsafe_b64encode(body)), CHANGE)
+        self.assertEqual(read_jmap_push(base64.urlsafe_b64encode(body), encrypted=True).to_wire(), CHANGE)
+
+    def test_an_unencrypted_push_is_the_json_itself(self) -> None:
+        pushed = read_jmap_push(json.dumps(CHANGE).encode(), encrypted=False)
+
+        self.assertIsInstance(pushed, StateChange)
+        self.assertEqual(pushed.changed, {"a1": {"Email": "s9"}})
 
     def test_a_push_for_other_keys_is_refused(self) -> None:
         stranger = ec.generate_private_key(ec.SECP256R1())
@@ -112,7 +141,12 @@ class TestPushEncryption(IntegrationTestCase):
         body = encrypt(json.dumps(CHANGE).encode(), p256dh, get_push_subscription_keys()["auth"])
 
         with self.assertRaises(frappe.ValidationError):
-            decrypt_jmap_push_payload(body)
+            read_jmap_push(body, encrypted=True)
+
+    def test_anything_but_a_push_object_is_refused(self) -> None:
+        for body in (b"[]", b"{not json", b'{"@type": "Response"}'):
+            with self.subTest(body=body), self.assertRaises(frappe.ValidationError):
+                read_jmap_push(body, encrypted=False)
 
     def test_without_keys_nothing_can_be_decrypted(self) -> None:
         settings = frappe.get_doc("Mail Settings")
@@ -128,4 +162,4 @@ class TestPushEncryption(IntegrationTestCase):
 
         self.assertIsNone(get_push_subscription_keys())
         with self.assertRaises(frappe.ValidationError):
-            decrypt_jmap_push_payload(b"anything")
+            read_jmap_push(b"anything", encrypted=True)
