@@ -11,7 +11,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, create_batch, today
-from jmap import MethodError
+from jmap import CreationRef, MethodError
 from jmap.core.errors import CapabilityFieldError
 
 from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_settings
@@ -20,6 +20,7 @@ from suite.mail.doctype.screened_email_address.screened_email_address import (
 )
 from suite.mail.doctype.user_account.user_account import get_enabled_account_user, get_user_for_jmap_account
 from suite.mail.jmap import (
+    SuiteJMAPClient,
     chunked_set,
     download_blobs,
     format_jmap_error,
@@ -38,6 +39,9 @@ from suite.mail.utils import log_mail_error
 from suite.mail.utils.user import get_account_emails
 from suite.utils import enqueue_job, execute_with_logging, parse_filters, user_context
 from suite.utils.validation import JSONList
+
+# The creation id of a script's blob when it travels inside the request (see _script_blob_id).
+SCRIPT_BLOB = "script"
 
 _ACCOUNTS_PER_REBUILD_BATCH = 100
 # A rebuild job serves one account — a handful of JMAP calls — so this leaves room for a slow server.
@@ -159,14 +163,12 @@ class SieveScript(Document):
         title = _("Sieve Script Creation Error")
         creation_id = str(uuid7())
         client = get_account_client(account)
-        blob = client.upload(content.encode("utf-8"), content_type="application/sieve")
 
         extra = {"onSuccessActivateScript": f"#{creation_id}"} if active else {}
         try:
             with client.batch() as b:
-                h = b.sieve.sieve_script.set(
-                    create={creation_id: {"name": name, "blobId": blob.blob_id}}, **extra
-                )
+                blob_id = _script_blob_id(client, b, content)
+                h = b.sieve.sieve_script.set(create={creation_id: {"name": name, "blobId": blob_id}}, **extra)
             response = h.result
         except (MethodError, CapabilityFieldError) as e:
             frappe.throw(format_method_error(e), title=title)
@@ -230,11 +232,10 @@ class SieveScript(Document):
 
         title = _("Sieve Script Validation Error")
         client = get_account_client(account)
-        blob = client.upload(content.encode("utf-8"), content_type="application/sieve")
 
         try:
             with client.batch() as b:
-                h = b.sieve.sieve_script.validate(blob_id=blob.blob_id)
+                h = b.sieve.sieve_script.validate(blob_id=_script_blob_id(client, b, content, argument=True))
             response = h.result
         except (MethodError, CapabilityFieldError) as e:
             frappe.throw(format_method_error(e), title=title)
@@ -272,7 +273,6 @@ class SieveScript(Document):
         deactivate = script["isActive"] and not active
 
         title = _("Sieve Script Update Error")
-        blob = client.upload(content.encode("utf-8"), content_type="application/sieve")
 
         extra = {}
         if active:
@@ -282,7 +282,8 @@ class SieveScript(Document):
 
         try:
             with client.batch() as b:
-                h = b.sieve.sieve_script.set(update={id: {"name": name, "blobId": blob.blob_id}}, **extra)
+                blob_id = _script_blob_id(client, b, content)
+                h = b.sieve.sieve_script.set(update={id: {"name": name, "blobId": blob_id}}, **extra)
             response = h.result
         except (MethodError, CapabilityFieldError) as e:
             frappe.throw(format_method_error(e), title=title)
@@ -499,6 +500,25 @@ def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 
 
 # Frappe Mail Automation Sieve Script
+
+
+def _script_blob_id(client: SuiteJMAPClient, b, content: str, argument: bool = False):
+    """The blob id a SieveScript call names for `content`, queued into the batch `b` where it can be.
+
+    A server offering RFC 9404 creates the blob from a Blob/upload in the same request - one round
+    trip fewer for every save - and the id is then a creation reference: `#script` inside a /set
+    object, or, for a method argument such as validate's `blobId`, a result reference to the
+    upload's answer (RFC 8620 §3.7). Anywhere else the script goes to the upload endpoint first.
+    """
+
+    if "blob" not in client.capabilities.attrs:
+        return client.upload(content.encode("utf-8"), content_type="application/sieve").blob_id
+
+    upload = b.blob.blob.upload(
+        create={SCRIPT_BLOB: {"data": [{"data:asText": content}], "type": "application/sieve"}}
+    )
+    return upload.ref_created(SCRIPT_BLOB) if argument else CreationRef(SCRIPT_BLOB)
+
 
 SCREENER_MAILBOX_NAME = "Screener"
 AUTOMATION_SCRIPT_NAME = "frappe_mail_automation"
