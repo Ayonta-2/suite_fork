@@ -1,6 +1,6 @@
 <template>
   <div
-    class="relative h-[65%] flex items-center justify-center rounded-t-[calc(theme(borderRadius.lg)-1px)] overflow-hidden"
+    class="relative h-[65%] flex items-center justify-center rounded-t-6 overflow-hidden"
   >
     <img
       v-show="!imgLoaded"
@@ -14,7 +14,7 @@
       decoding="async"
       :class="[
         hasThumbnail
-          ? 'absolute inset-0 h-full min-w-full object-cover rounded-t-[calc(theme(borderRadius.lg)-1px)]'
+          ? 'absolute inset-0 h-full min-w-full object-cover rounded-t-6'
           : 'absolute top-1/2 left-1/2 h-10 w-auto -translate-x-1/2 -translate-y-1/2',
         imgLoaded ? 'opacity-100' : 'opacity-0',
       ]"
@@ -39,7 +39,7 @@
           v-if="showTypeIcon"
           loading="lazy"
           class="h-4 w-auto"
-          :src="getIconUrl(file.file_type)"
+          :src="getEntityIconUrl(file)"
           :draggable="false"
         />
         <p class="truncate">
@@ -53,7 +53,7 @@
   </div>
 </template>
 <script setup>
-import { getIconUrl, getThumbnailUrl, displayFileName } from '@/apps/drive/utils/files'
+import { getEntityIconUrl, getThumbnailUrl, displayFileName } from '@/apps/drive/utils/files'
 import { Tooltip } from 'frappe-ui'
 import { ref, computed } from 'vue'
 import InlineRenameInput from './InlineRenameInput.vue'

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
 import type {
 	ActivePoll,
@@ -10,6 +11,10 @@ import type {
 	ProducerCloseReason,
 	ProducerCloseSource,
 	ReactionMessage,
+	RecorderStageParticipant,
+	RecorderStageProducer,
+	RecorderStageProjectionPayload,
+	RecorderStageSnapshot,
 	ScreenShareStartedEvent,
 	ScreenShareStoppedEvent,
 	ServerToClientEvents,
@@ -25,6 +30,14 @@ type ServerSocket = Socket<
 >;
 type ServerEventName = keyof ServerToClientEvents;
 
+interface RecorderProjectionState {
+	participants: Map<string, RecorderStageParticipant>;
+	producers: Map<string, RecorderStageProducer>;
+	activeSpeakerIds: string[];
+	cursor: number;
+	lastObservedAt?: string;
+}
+
 const fullRoom = (roomId: string) => `${roomId}:full`;
 const previewRoom = (roomId: string) => `${roomId}:preview`;
 const recorderRoom = (roomId: string) => `${roomId}:recorders`;
@@ -35,7 +48,17 @@ export class RoomRegistry {
 	private hostOnlyChat: Record<string, boolean> = {};
 	private recentChatMessages: Record<string, ChatMessage[]> = {};
 	private pinnedChatMessage: Record<string, PinnedChatMessage> = {};
-	private participantConnections = new Map<string, Map<string, Set<string>>>();
+	private participantConnections = new Map<
+		string,
+		Map<
+			string,
+			{
+				socket: Socket;
+				connectionId: string;
+				ownershipId: string;
+			}
+		>
+	>();
 	private activePolls: Record<string, Map<string, ActivePoll>> = {};
 	private fullAccessSockets: Map<string, Set<string>> = new Map();
 	private previewSockets: Map<string, Set<string>> = new Map();
@@ -48,6 +71,8 @@ export class RoomRegistry {
 	>();
 	private nextSenderIdByRoom: Map<string, number> = new Map();
 	private participantToSender: Map<string, Map<string, number>> = new Map();
+	private revokedParticipants = new Map<string, Set<string>>();
+	private recorderProjection = new Map<string, RecorderProjectionState>();
 
 	constructor(io: Server<ClientToServerEvents, ServerToClientEvents>) {
 		this.io = io;
@@ -118,20 +143,41 @@ export class RoomRegistry {
 	}
 
 	leaveRecorder(socket: Socket, roomId: string, peerId: string): boolean {
+		const ownsPeer = this.leaveRecorderRoom(socket, roomId, peerId);
+		this.deactivateRecorder(socket);
+		return ownsPeer;
+	}
+
+	leaveRecorderRoom(socket: Socket, roomId: string, peerId: string): boolean {
 		this.recorderSockets.get(roomId)?.delete(socket.id);
-		socket.leave(recorderRoom(roomId));
 		const ownsPeer =
 			this.recorderPeerSockets.get(roomId)?.get(peerId) === socket.id;
-		if (ownsPeer) {
-			this.recorderPeerIds.get(roomId)?.delete(peerId);
-			this.recorderPeerSockets.get(roomId)?.delete(peerId);
+		try {
+			socket.leave(recorderRoom(roomId));
+		} finally {
+			if (ownsPeer) {
+				this.recorderPeerIds.get(roomId)?.delete(peerId);
+				this.recorderPeerSockets.get(roomId)?.delete(peerId);
+			}
 		}
-		this.deactivateRecorder(socket);
 		return ownsPeer;
 	}
 
 	isRecorderPeer(roomId: string, peerId: string): boolean {
 		return this.recorderPeerIds.get(roomId)?.has(peerId) ?? false;
+	}
+
+	isJoinedActiveRecorder(socket: Socket, roomId: string): boolean {
+		const recordingId = socket.recordingClaims?.recording_id;
+		const peerId = socket.participantId ?? socket.userId;
+		return Boolean(
+			recordingId &&
+				socket.scope === 'recording' &&
+				socket.roomId === roomId &&
+				this.recorderSockets.get(roomId)?.has(socket.id) &&
+				this.recorderPeerSockets.get(roomId)?.get(peerId) === socket.id &&
+				this.activeRecordings.get(recordingId)?.socket.id === socket.id,
+		);
 	}
 
 	assignSenderId(roomId: string, participantId: string): number {
@@ -150,44 +196,117 @@ export class RoomRegistry {
 		this.participantToSender.get(roomId)?.delete(participantId);
 	}
 
-	claimParticipant(
+	/**
+	 * Claims the participant's active connection. A matching connectionId reconnects;
+	 * a different connection requires the incumbent generation as conflictId.
+	 */
+	acquireParticipant(
 		socket: Socket,
 		roomId: string,
 		participantId: string,
-	): boolean {
+		connectionId: string,
+		conflictId?: string,
+	):
+		| {
+				status: 'acquired' | 'idempotent' | 'reconnect' | 'takeover';
+				ownershipId: string;
+				replacedSocket?: Socket;
+		  }
+		| { status: 'conflict'; conflictId: string } {
 		let participants = this.participantConnections.get(roomId);
 		if (!participants) {
 			participants = new Map();
 			this.participantConnections.set(roomId, participants);
 		}
-		let connections = participants.get(participantId);
-		const isFirstConnection = !connections || connections.size === 0;
-		if (!connections) {
-			connections = new Set();
-			participants.set(participantId, connections);
+		const incumbent = participants.get(participantId);
+		if (!incumbent) {
+			const ownershipId = randomUUID();
+			participants.set(participantId, { socket, connectionId, ownershipId });
+			socket.participantConnectionId = connectionId;
+			socket.participantOwnershipId = ownershipId;
+			return { status: 'acquired', ownershipId };
 		}
-		connections.add(socket.id);
-		return isFirstConnection;
+
+		if (
+			incumbent.socket.id === socket.id &&
+			incumbent.connectionId === connectionId
+		) {
+			socket.participantConnectionId = connectionId;
+			socket.participantOwnershipId = incumbent.ownershipId;
+			return { status: 'idempotent', ownershipId: incumbent.ownershipId };
+		}
+
+		const reconnect = incumbent.connectionId === connectionId;
+		if (!reconnect && conflictId !== incumbent.ownershipId) {
+			return { status: 'conflict', conflictId: incumbent.ownershipId };
+		}
+
+		const ownershipId = randomUUID();
+		participants.set(participantId, { socket, connectionId, ownershipId });
+		socket.participantConnectionId = connectionId;
+		socket.participantOwnershipId = ownershipId;
+		return {
+			status: reconnect ? 'reconnect' : 'takeover',
+			ownershipId,
+			replacedSocket: incumbent.socket,
+		};
 	}
 
+	/** Releases ownership only when the socket still holds the current generation. */
 	releaseParticipant(
 		socket: Socket,
 		roomId: string,
 		participantId: string,
+		ownershipId = socket.participantOwnershipId,
 	): boolean {
 		const participants = this.participantConnections.get(roomId);
-		const connections = participants?.get(participantId);
-		if (!connections?.delete(socket.id)) return false;
-		if (connections?.size === 0) {
-			participants?.delete(participantId);
-			if (participants?.size === 0) this.participantConnections.delete(roomId);
-			return true;
-		}
-		return false;
+		const owner = participants?.get(participantId);
+		if (
+			!owner ||
+			owner.socket.id !== socket.id ||
+			!ownershipId ||
+			owner.ownershipId !== ownershipId
+		)
+			return false;
+		participants?.delete(participantId);
+		if (participants?.size === 0) this.participantConnections.delete(roomId);
+		return true;
+	}
+
+	/** Returns the single active participant socket, if ownership is currently held. */
+	getParticipantSocketIds(roomId: string, participantId: string): string[] {
+		const owner = this.participantConnections.get(roomId)?.get(participantId);
+		return owner ? [owner.socket.id] : [];
+	}
+
+	/** Checks both socket identity and ownership generation to reject stale sockets. */
+	isParticipantOwner(
+		socket: Socket,
+		roomId: string,
+		participantId: string,
+	): boolean {
+		const owner = this.participantConnections.get(roomId)?.get(participantId);
+		return (
+			owner?.socket.id === socket.id &&
+			owner.ownershipId === socket.participantOwnershipId
+		);
 	}
 
 	hasHumanParticipants(roomId: string): boolean {
 		return (this.participantConnections.get(roomId)?.size ?? 0) > 0;
+	}
+
+	revokeParticipant(roomId: string, participantId: string): void {
+		let revoked = this.revokedParticipants.get(roomId);
+		if (!revoked) {
+			revoked = new Set();
+			this.revokedParticipants.set(roomId, revoked);
+		}
+		revoked.add(participantId);
+	}
+
+	isParticipantRevoked(roomId: string, participantId: string): boolean {
+		return this.revokedParticipants.get(roomId)?.has(participantId) ?? false;
 	}
 
 	getRecorderSockets(roomId: string): Socket[] {
@@ -207,6 +326,25 @@ export class RoomRegistry {
 
 	getRaisedHands(roomId: string): Record<string, string> {
 		return this.raisedHands[roomId] ?? {};
+	}
+
+	getRecorderStageSnapshot(roomId: string): RecorderStageSnapshot {
+		const state = this.getRecorderProjectionState(roomId);
+		const observedAt = this.observeProjectionAt(state);
+		return {
+			protocol_version: 1,
+			room_id: roomId,
+			cursor: state.cursor,
+			observed_at: observedAt,
+			participants: [...state.participants.values()].map((participant) => ({
+				...participant,
+			})),
+			producers: [...state.producers.values()].map((producer) => ({
+				...producer,
+			})),
+			raised_hands: { ...this.getRaisedHands(roomId) },
+			active_speaker_ids: [...state.activeSpeakerIds],
+		};
 	}
 
 	hasRaisedHand(roomId: string, peerId: string): boolean {
@@ -289,6 +427,8 @@ export class RoomRegistry {
 		this.recorderPeerSockets.delete(roomId);
 		this.nextSenderIdByRoom.delete(roomId);
 		this.participantToSender.delete(roomId);
+		this.revokedParticipants.delete(roomId);
+		this.recorderProjection.delete(roomId);
 	}
 
 	emitToScope<Event extends ServerEventName>(
@@ -316,6 +456,22 @@ export class RoomRegistry {
 		this.emitToScope(roomId, 'full', event, ...args);
 	}
 
+	emitToFullAccessSockets<Event extends ServerEventName>(
+		roomId: string,
+		socketIds: ReadonlySet<string>,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
+	): void {
+		const fullSocketIds = this.io.sockets.adapter.rooms.get(fullRoom(roomId));
+		if (!fullSocketIds) return;
+		for (const socketId of socketIds) {
+			if (!fullSocketIds.has(socketId)) continue;
+			const socket: ServerSocket | undefined =
+				this.io.sockets.sockets.get(socketId);
+			socket?.emit(event, ...args);
+		}
+	}
+
 	emitToPreviewParticipants<Event extends ServerEventName>(
 		roomId: string,
 		event: Event,
@@ -329,14 +485,57 @@ export class RoomRegistry {
 		event: Event,
 		...args: Parameters<ServerToClientEvents[Event]>
 	): void {
-		const ids = this.io.sockets.adapter.rooms.get(recorderRoom(roomId));
-		if (!ids) return;
-		for (const id of ids) {
+		for (const id of this.recorderSockets.get(roomId) ?? []) {
 			const socket: ServerSocket | undefined = this.io.sockets.sockets.get(id);
-			if (socket) {
+			if (socket && this.isJoinedActiveRecorder(socket, roomId)) {
 				socket.emit(event, ...args);
 			}
 		}
+	}
+
+	private getRecorderProjectionState(roomId: string): RecorderProjectionState {
+		let state = this.recorderProjection.get(roomId);
+		if (!state) {
+			state = {
+				participants: new Map(),
+				producers: new Map(),
+				activeSpeakerIds: [],
+				cursor: 0,
+			};
+			this.recorderProjection.set(roomId, state);
+		}
+		return state;
+	}
+
+	private observeProjectionAt(
+		state: RecorderProjectionState,
+		candidate?: string,
+	): string {
+		const parsed = candidate ? new Date(candidate) : new Date();
+		const observedAt = Number.isNaN(parsed.getTime())
+			? new Date().toISOString()
+			: parsed.toISOString();
+		state.lastObservedAt =
+			state.lastObservedAt && state.lastObservedAt > observedAt
+				? state.lastObservedAt
+				: observedAt;
+		return state.lastObservedAt;
+	}
+
+	private emitProjection(
+		roomId: string,
+		state: RecorderProjectionState,
+		observedAt: string,
+		payload: RecorderStageProjectionPayload,
+	): void {
+		state.cursor += 1;
+		this.emitToRecorders(roomId, 'recording:projection', {
+			protocol_version: 1,
+			room_id: roomId,
+			cursor: state.cursor,
+			observed_at: observedAt,
+			payload,
+		});
 	}
 
 	emitProducerCreated(
@@ -352,6 +551,22 @@ export class RoomRegistry {
 		const payload = { roomId, ...data };
 		this.emitToFullAccessParticipants(roomId, 'producer_created', payload);
 		this.emitToRecorders(roomId, 'producer_created', payload);
+		const state = this.getRecorderProjectionState(roomId);
+		if (!state.participants.has(data.participantId)) return;
+		const observedAt = this.observeProjectionAt(state);
+		const producer: RecorderStageProducer = {
+			producer_id: data.producerId,
+			participant_id: data.participantId,
+			kind: data.kind,
+			paused: data.paused,
+			is_screen: data.isScreen,
+			observed_at: observedAt,
+		};
+		state.producers.set(data.producerId, producer);
+		this.emitProjection(roomId, state, observedAt, {
+			type: 'producer_created',
+			producer,
+		});
 	}
 
 	emitProducerClosed(
@@ -359,6 +574,7 @@ export class RoomRegistry {
 		data: {
 			participantId: string;
 			producerId: string;
+			kind: 'audio' | 'video';
 			isScreen: boolean;
 			reason?: ProducerCloseReason;
 			source?: ProducerCloseSource;
@@ -373,7 +589,44 @@ export class RoomRegistry {
 			roomId,
 			participantId: data.participantId,
 			producerId: data.producerId,
+			kind: data.kind,
 			isScreen: data.isScreen,
+		});
+		const state = this.getRecorderProjectionState(roomId);
+		const retained = state.producers.get(data.producerId);
+		if (
+			!retained ||
+			retained.participant_id !== data.participantId ||
+			retained.is_screen !== data.isScreen
+		)
+			return;
+		const observedAt = this.observeProjectionAt(state);
+		state.producers.delete(data.producerId);
+		this.emitProjection(roomId, state, observedAt, {
+			type: 'producer_closed',
+			producer_id: data.producerId,
+			participant_id: data.participantId,
+			is_screen: data.isScreen,
+		});
+	}
+
+	emitProducerPaused(
+		roomId: string,
+		data: { participantId: string; producerId: string; paused: boolean },
+	): void {
+		const state = this.getRecorderProjectionState(roomId);
+		const retained = state.producers.get(data.producerId);
+		if (!retained || retained.participant_id !== data.participantId) return;
+		const observedAt = this.observeProjectionAt(state);
+		state.producers.set(data.producerId, {
+			...retained,
+			paused: data.paused,
+			observed_at: observedAt,
+		});
+		this.emitProjection(roomId, state, observedAt, {
+			type: 'producer_updated',
+			producer_id: data.producerId,
+			paused: data.paused,
 		});
 	}
 
@@ -381,6 +634,16 @@ export class RoomRegistry {
 		const payload = { participantIds };
 		this.emitToFullAccessParticipants(roomId, 'active_speaker', payload);
 		this.emitToRecorders(roomId, 'active_speaker', payload);
+		const state = this.getRecorderProjectionState(roomId);
+		const observedAt = this.observeProjectionAt(state);
+		const retainedIds = participantIds.filter((id) =>
+			state.participants.has(id),
+		);
+		state.activeSpeakerIds = retainedIds;
+		this.emitProjection(roomId, state, observedAt, {
+			type: 'active_speaker',
+			participant_ids: retainedIds,
+		});
 	}
 
 	emitScreenShare(
@@ -398,28 +661,54 @@ export class RoomRegistry {
 		event: 'screen_share_started' | 'screen_share_stopped',
 		data: ScreenShareStartedEvent | ScreenShareStoppedEvent,
 	): void {
-		this.emitToFullAccessParticipants(roomId, event, data);
-		const producerId =
-			'shareData' in data && typeof data.shareData.producerId === 'string'
-				? data.shareData.producerId
-				: undefined;
-		this.emitToRecorders(roomId, event, {
-			participantId: data.participantId,
-			...(event === 'screen_share_started' && producerId
-				? { shareData: { producerId } }
-				: {}),
-			timestamp: data.timestamp,
-		});
+		if (event === 'screen_share_started' && 'shareData' in data) {
+			this.emitToFullAccessParticipants(roomId, event, data);
+			const producerId =
+				typeof data.shareData.producerId === 'string'
+					? data.shareData.producerId
+					: undefined;
+			this.emitToRecorders(roomId, event, {
+				participantId: data.participantId,
+				shareData: producerId ? { producerId } : {},
+				timestamp: data.timestamp,
+			});
+			return;
+		}
+		if (event === 'screen_share_stopped' && 'producerId' in data) {
+			this.emitToFullAccessParticipants(roomId, event, data);
+			this.emitToRecorders(roomId, event, {
+				participantId: data.participantId,
+				producerId: data.producerId,
+				timestamp: data.timestamp,
+			});
+		}
 	}
 
 	emitReaction(roomId: string, data: ReactionMessage): void {
 		this.emitToFullAccessParticipants(roomId, 'reaction:message', data);
 		this.emitToRecorders(roomId, 'reaction:message', data);
+		const state = this.getRecorderProjectionState(roomId);
+		const observedAt = this.observeProjectionAt(state, data.timestamp);
+		this.emitProjection(roomId, state, observedAt, {
+			type: 'reaction',
+			from_user: data.fromUser,
+			reaction: data.reaction,
+		});
 	}
 
 	emitRaisedHand(roomId: string, data: HandRaisedEvent): void {
 		this.emitToFullAccessParticipants(roomId, 'hand_raised', data);
 		this.emitToRecorders(roomId, 'hand_raised', data);
+		const state = this.getRecorderProjectionState(roomId);
+		if (!state.participants.has(data.participantId)) return;
+		const observedAt = this.observeProjectionAt(state, data.timestamp);
+		if (data.raised) this.setRaisedHand(roomId, data.participantId, observedAt);
+		else this.clearRaisedHand(roomId, data.participantId);
+		this.emitProjection(roomId, state, observedAt, {
+			type: 'hand_raised',
+			participant_id: data.participantId,
+			raised: data.raised,
+		});
 	}
 
 	emitPublicChat(roomId: string, data: ChatMessage): void {
@@ -431,6 +720,15 @@ export class RoomRegistry {
 			fromUser: data.fromUser,
 			fromName: data.fromName,
 			timestamp: data.timestamp,
+		});
+		const state = this.getRecorderProjectionState(roomId);
+		const observedAt = this.observeProjectionAt(state, data.timestamp);
+		this.emitProjection(roomId, state, observedAt, {
+			type: 'chat_message',
+			message_id: data.messageId,
+			message: data.message,
+			from_user: data.fromUser,
+			from_name: data.fromName,
 		});
 	}
 
@@ -444,6 +742,32 @@ export class RoomRegistry {
 	): void {
 		this.emitToFullAccessParticipants(roomId, 'media_control_update', data);
 		this.emitToRecorders(roomId, 'media_control_update', data);
+		const state = this.getRecorderProjectionState(roomId);
+		if (!state.participants.has(data.participantId)) return;
+		const observedAt = this.observeProjectionAt(state, data.timestamp);
+		const participant = state.participants.get(data.participantId);
+		if (participant) {
+			state.participants.set(data.participantId, {
+				...participant,
+				audio_enabled:
+					data.action === 'mute'
+						? false
+						: data.action === 'unmute'
+							? true
+							: participant.audio_enabled,
+				video_enabled:
+					data.action === 'video_off'
+						? false
+						: data.action === 'video_on'
+							? true
+							: participant.video_enabled,
+			});
+		}
+		this.emitProjection(roomId, state, observedAt, {
+			type: 'media_control',
+			participant_id: data.participantId,
+			action: data.action,
+		});
 	}
 
 	emitParticipantEvent(
@@ -466,18 +790,53 @@ export class RoomRegistry {
 		}
 
 		if (event === 'participant_joined' && userData) {
+			const avatar = userData.avatar || undefined;
 			this.emitToRecorders(roomId, event, {
 				roomId,
 				participantId,
 				userData: {
 					name: userData.name,
-					avatar: userData.avatar,
+					...(avatar ? { avatar } : {}),
 					audio_enabled: userData.audio_enabled,
 					video_enabled: userData.video_enabled,
 				},
 			});
 		} else if (event === 'participant_left') {
 			this.emitToRecorders(roomId, event, { roomId, participantId });
+		}
+
+		const state = this.getRecorderProjectionState(roomId);
+		const observedAt = this.observeProjectionAt(state);
+		if (event === 'participant_joined' && userData) {
+			const participant: RecorderStageParticipant = {
+				participant_id: participantId,
+				name: userData.name,
+				...(userData.avatar ? { avatar: userData.avatar } : {}),
+				audio_enabled: userData.audio_enabled,
+				video_enabled: userData.video_enabled,
+			};
+			state.participants.set(participantId, participant);
+			this.emitProjection(roomId, state, observedAt, {
+				type: 'participant_joined',
+				participant,
+			});
+		} else if (
+			event === 'participant_left' &&
+			state.participants.has(participantId)
+		) {
+			state.participants.delete(participantId);
+			this.clearRaisedHand(roomId, participantId);
+			state.activeSpeakerIds = state.activeSpeakerIds.filter(
+				(id) => id !== participantId,
+			);
+			for (const [producerId, producer] of state.producers) {
+				if (producer.participant_id === participantId)
+					state.producers.delete(producerId);
+			}
+			this.emitProjection(roomId, state, observedAt, {
+				type: 'participant_left',
+				participant_id: participantId,
+			});
 		}
 
 		if (!participantId.startsWith('preview-')) {
@@ -497,5 +856,32 @@ export class RoomRegistry {
 				});
 			}
 		}
+	}
+
+	emitParticipantUpdated(
+		roomId: string,
+		participantId: string,
+		userData: UserData,
+	): void {
+		this.emitToFullAccessParticipants(roomId, 'participant_updated', {
+			roomId,
+			participantId,
+			userData,
+		});
+		const state = this.getRecorderProjectionState(roomId);
+		if (!state.participants.has(participantId)) return;
+		const observedAt = this.observeProjectionAt(state);
+		const participant: RecorderStageParticipant = {
+			participant_id: participantId,
+			name: userData.name,
+			...(userData.avatar ? { avatar: userData.avatar } : {}),
+			audio_enabled: userData.audio_enabled,
+			video_enabled: userData.video_enabled,
+		};
+		state.participants.set(participantId, participant);
+		this.emitProjection(roomId, state, observedAt, {
+			type: 'participant_updated',
+			participant,
+		});
 	}
 }

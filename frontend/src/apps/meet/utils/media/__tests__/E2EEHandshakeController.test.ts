@@ -30,6 +30,8 @@ function createMediaReconfigurationController({
 	mediaState,
 	joinRoom = vi.fn().mockResolvedValue(undefined),
 	refreshToken = vi.fn().mockResolvedValue(undefined),
+	disconnect = vi.fn().mockResolvedValue(undefined),
+	recoverParticipantConnection = vi.fn().mockResolvedValue(true),
 }: {
 	mediaState: {
 		isCameraOn: boolean;
@@ -39,6 +41,8 @@ function createMediaReconfigurationController({
 	};
 	joinRoom?: ReturnType<typeof vi.fn>;
 	refreshToken?: ReturnType<typeof vi.fn>;
+	disconnect?: ReturnType<typeof vi.fn>;
+	recoverParticipantConnection?: ReturnType<typeof vi.fn>;
 }) {
 	const reconfigureForE2EE = vi.fn(
 		async (
@@ -56,9 +60,15 @@ function createMediaReconfigurationController({
 			isConnected: vi.fn(() => true),
 			setE2EERequired: vi.fn(),
 			refreshToken,
+			disconnect,
 			joinRoom,
 		} as never,
-		sfuManager: shallowRef({ reconfigureForE2EE } as never),
+		sfuManager: shallowRef({
+			reconfigureForE2EE,
+			rejoinParticipantConnection: joinRoom,
+			recoverParticipantConnection,
+			hasLocalMediaPublications: vi.fn(() => true),
+		} as never),
 		currentUser: {
 			currentUser: shallowRef({ user_id: "user-1", full_name: "User One" }),
 		} as never,
@@ -70,7 +80,14 @@ function createMediaReconfigurationController({
 		Reflect.get(controller, "reconfigureMediaForE2EE").call(
 			controller,
 		) as Promise<void>;
-	return { controller, reconfigure, reconfigureForE2EE };
+	return {
+		controller,
+		reconfigure,
+		reconfigureForE2EE,
+		disconnect,
+		joinRoom,
+		recoverParticipantConnection,
+	};
 }
 
 function createController() {
@@ -97,17 +114,14 @@ function createController() {
 			createGenesisEpoch: vi.fn(async () => ({
 				epochNumber: 1,
 				state: {} as never,
-				encodedState: new Uint8Array([1]),
 				meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			})),
-			createGenesisEpochWithMembers: vi.fn(),
 			generateKeyPackage: vi.fn(),
 			encodeKeyPackage: vi.fn(),
 			decodeKeyPackage: vi.fn(),
 			encodeCommit: vi.fn(),
 			encodeWelcome: vi.fn(),
 			decodeWelcome: vi.fn(),
-			addMember: vi.fn(),
 			addMultipleMembers: vi.fn(),
 			removeMember: vi.fn(),
 			joinFromWelcome: vi.fn(),
@@ -168,10 +182,8 @@ describe("E2EEHandshakeController", () => {
 			createGenesisEpoch: vi.fn(async () => ({
 				epochNumber: 1,
 				state: { id: "epoch-1-state" } as never,
-				encodedState: new Uint8Array([1]),
 				meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			})),
-			createGenesisEpochWithMembers: vi.fn(),
 			generateKeyPackage: vi.fn(),
 			encodeKeyPackage: vi.fn(),
 			decodeKeyPackage: vi.fn((encoded: Uint8Array) => ({
@@ -180,14 +192,12 @@ describe("E2EEHandshakeController", () => {
 			encodeCommit: vi.fn(() => new Uint8Array([4, 5, 6])),
 			encodeWelcome: vi.fn(() => new Uint8Array([7, 8, 9])),
 			decodeWelcome: vi.fn(),
-			addMember: vi.fn(),
 			addMultipleMembers: vi.fn(async (state: unknown) => ({
 				commit: { id: "commit" } as never,
 				welcome: { id: "welcome" } as never,
 				epoch: {
 					epochNumber: 2,
 					state: state as never,
-					encodedState: new Uint8Array([8]),
 					meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 				},
 			})),
@@ -393,14 +403,12 @@ describe("E2EEHandshakeController", () => {
 			})),
 			epochProtocolProvider: {
 				createGenesisEpoch: vi.fn(),
-				createGenesisEpochWithMembers: vi.fn(),
 				generateKeyPackage: vi.fn(),
 				encodeKeyPackage: vi.fn(),
 				decodeKeyPackage: vi.fn(),
 				encodeCommit: vi.fn(),
 				encodeWelcome: vi.fn(),
 				decodeWelcome: vi.fn(),
-				addMember: vi.fn(),
 				addMultipleMembers: vi.fn(),
 				removeMember: vi.fn(),
 				joinFromWelcome: vi.fn(),
@@ -431,14 +439,12 @@ describe("E2EEHandshakeController", () => {
 			sendE2EEEpochEnvelope: vi.fn(),
 		} as never;
 		const sfuManager = shallowRef({
+			rejoinParticipantConnection: vi.fn(async () => true),
 			reconfigureForE2EE: vi.fn(async () => ({
 				videoPublished: true,
 				audioPublished: true,
 			})),
-			mediaHandler: {
-				videoProducer: {} as never,
-				audioProducer: {} as never,
-			},
+			hasLocalMediaPublications: vi.fn(() => true),
 		} as never);
 		const controller = new E2EEHandshakeController({
 			meetingId: "meeting-1",
@@ -457,14 +463,12 @@ describe("E2EEHandshakeController", () => {
 			getDeviceIdentity: vi.fn(),
 			epochProtocolProvider: {
 				createGenesisEpoch: vi.fn(),
-				createGenesisEpochWithMembers: vi.fn(),
 				generateKeyPackage: vi.fn(),
 				encodeKeyPackage: vi.fn(),
 				decodeKeyPackage: vi.fn(),
 				encodeCommit: vi.fn(),
 				encodeWelcome: vi.fn(),
 				decodeWelcome: vi.fn(),
-				addMember: vi.fn(),
 				addMultipleMembers: vi.fn(),
 				removeMember: vi.fn(),
 				joinFromWelcome: vi.fn(),
@@ -486,7 +490,8 @@ describe("E2EEHandshakeController", () => {
 
 		expect(sfuClient.setE2EERequired).toHaveBeenCalledWith(true);
 		expect(sfuClient.refreshToken).toHaveBeenCalled();
-		expect(sfuClient.joinRoom).toHaveBeenCalled();
+		expect(sfuClient.joinRoom).not.toHaveBeenCalled();
+		expect(sfuManager.value.rejoinParticipantConnection).toHaveBeenCalled();
 		expect(sfuManager.value.reconfigureForE2EE).toHaveBeenCalled();
 	});
 
@@ -515,10 +520,6 @@ describe("E2EEHandshakeController", () => {
 		reconfigureForE2EE.mockImplementation(() => {
 			reconfigurationEntered.resolve();
 			return releaseReconfiguration.promise;
-		});
-		Reflect.set(Reflect.get(controller, "sfuManager").value, "mediaHandler", {
-			videoProducer: {},
-			audioProducer: null,
 		});
 		E2EEMeeting.instance.setMeetingContext(
 			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
@@ -553,10 +554,6 @@ describe("E2EEHandshakeController", () => {
 				},
 			});
 		reconfigureForE2EE.mockRejectedValue(abortError);
-		Reflect.set(Reflect.get(controller, "sfuManager").value, "mediaHandler", {
-			videoProducer: {},
-			audioProducer: null,
-		});
 		E2EEMeeting.instance.setMeetingContext(
 			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			1,
@@ -587,10 +584,6 @@ describe("E2EEHandshakeController", () => {
 				},
 			});
 		reconfigureForE2EE.mockRejectedValue(failure);
-		Reflect.set(Reflect.get(controller, "sfuManager").value, "mediaHandler", {
-			videoProducer: {},
-			audioProducer: null,
-		});
 		E2EEMeeting.instance.setMeetingContext(
 			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			1,
@@ -602,6 +595,66 @@ describe("E2EEHandshakeController", () => {
 			"Failed to reconfigure participant for E2EE:",
 			failure,
 		);
+	});
+
+	it("recovers securely instead of reconfiguring with stale authorization", async () => {
+		const failure = new Error("token synchronization failed");
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		const refreshToken = vi.fn().mockRejectedValue(failure);
+		const {
+			controller,
+			disconnect,
+			joinRoom,
+			reconfigureForE2EE,
+			recoverParticipantConnection,
+		} = createMediaReconfigurationController({
+			mediaState: {
+				isCameraOn: true,
+				isMicOn: true,
+				localStream: stream([track("audio"), track("video")]),
+				processedStream: null,
+			},
+			refreshToken,
+		});
+		E2EEMeeting.instance.setMeetingContext(
+			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+			1,
+		);
+
+		await controller.handleMeetingE2EEEnabled({ meeting_id: "meeting-1" });
+
+		expect(disconnect).toHaveBeenCalledOnce();
+		expect(recoverParticipantConnection).toHaveBeenCalledWith(
+			"e2ee_auth_sync_failed",
+		);
+		expect(joinRoom).not.toHaveBeenCalled();
+		expect(reconfigureForE2EE).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["returns false", vi.fn().mockResolvedValue(false), "token synchronization failed"],
+		["rejects", vi.fn().mockRejectedValue(new Error("recovery failed")), "recovery failed"],
+	])("propagates failure when secure recovery %s", async (_case, recover, message) => {
+		const refreshToken = vi
+			.fn()
+			.mockRejectedValue(new Error("token synchronization failed"));
+		const { reconfigure, disconnect, joinRoom, reconfigureForE2EE } =
+			createMediaReconfigurationController({
+				mediaState: {
+					isCameraOn: true,
+					isMicOn: true,
+					localStream: stream([track("audio"), track("video")]),
+					processedStream: null,
+				},
+				refreshToken,
+				recoverParticipantConnection: recover,
+			});
+
+		await expect(reconfigure()).rejects.toThrow(message);
+
+		expect(disconnect).toHaveBeenCalledOnce();
+		expect(joinRoom).not.toHaveBeenCalled();
+		expect(reconfigureForE2EE).not.toHaveBeenCalled();
 	});
 
 	it("hard reconnect (legacy) wipes runtime state before sending a resync-request", async () => {
@@ -628,14 +681,12 @@ describe("E2EEHandshakeController", () => {
 			})),
 			epochProtocolProvider: {
 				createGenesisEpoch: vi.fn(),
-				createGenesisEpochWithMembers: vi.fn(),
 				generateKeyPackage: vi.fn(),
 				encodeKeyPackage: vi.fn(),
 				decodeKeyPackage: vi.fn(),
 				encodeCommit: vi.fn(),
 				encodeWelcome: vi.fn(),
 				decodeWelcome: vi.fn(),
-				addMember: vi.fn(),
 				addMultipleMembers: vi.fn(),
 				removeMember: vi.fn(),
 				joinFromWelcome: vi.fn(),

@@ -50,6 +50,7 @@ type ReconciliationEvent = MeetingReconciliationEvent<ReconciledParticipant>;
 interface SFUProducerClosedEvent {
 	participantId?: string;
 	producerId?: string;
+	kind?: "audio" | "video";
 	isScreen?: boolean;
 }
 
@@ -90,17 +91,26 @@ function normalizeProducerClosedEvent(
 			typeof value.participantId === "string" ? value.participantId : undefined,
 		producerId:
 			typeof value.producerId === "string" ? value.producerId : undefined,
+		kind:
+			value.kind === "audio" || value.kind === "video" ? value.kind : undefined,
 		isScreen: value.isScreen === true,
 	};
 }
 
 function normalizeScreenShareEvent(value: unknown): ScreenShareEvent | null {
 	if (!isUnknownRecord(value)) return null;
+	const shareData = isUnknownRecord(value.shareData) ? value.shareData : null;
 	return {
 		participantId:
 			typeof value.participantId === "string" ? value.participantId : undefined,
 		consumerId:
 			typeof value.consumerId === "string" ? value.consumerId : undefined,
+		producerId:
+			typeof value.producerId === "string"
+				? value.producerId
+				: typeof shareData?.producerId === "string"
+					? shareData.producerId
+					: undefined,
 		stream:
 			typeof MediaStream !== "undefined" && value.stream instanceof MediaStream
 				? value.stream
@@ -124,7 +134,8 @@ export interface SFUEventHandlers {
 	onActiveSpeakerChanged?: (participantIds: string[]) => void;
 	onNetworkQualityUpdated?: (participantId: string, quality: string) => void;
 	onHostMutedYou?: () => void;
-	onHostKickedYou?: (data: { hostId?: string }) => void;
+	onHostKickedYou?: (data: { hostId?: string; banned?: boolean }) => void;
+	onParticipantConnectionReplaced?: (data: { reason: "takeover" }) => void | Promise<void>;
 	onRecoveryStateChange?: (
 		state:
 			| "reconnecting"
@@ -136,6 +147,7 @@ export interface SFUEventHandlers {
 		detail?: string,
 	) => void;
 	onRecoveryExhausted?: (trigger?: ParticipantRecoveryTrigger) => void;
+	onRoomRejoined?: () => void;
 	onLifecycleStateChange?: (state: ParticipantConnectionState) => void;
 	onInitialPublicationError?: (error: unknown) => void;
 }
@@ -153,6 +165,7 @@ export type ParticipantConnectionState =
 export interface ParticipantConnectionStartOptions {
 	authToken?: string | null;
 	prefetchedDetails?: ConnectionDetails | null;
+	conflictId?: string;
 	prepareJoin: (signal: AbortSignal) => Promise<{
 		userData: JoinUserData;
 		mediaState: JoinRoomMediaState;
@@ -164,8 +177,9 @@ export interface ParticipantConnectionStartOptions {
 interface ScreenShareEvent {
 	participantId?: string;
 	consumerId?: string;
+	producerId?: string;
 	stream?: MediaStream;
-	consumer?: { id: string };
+	consumer?: { id: string; producerId?: string };
 }
 
 interface ParticipantConnectionOptions {
@@ -193,6 +207,10 @@ export class ParticipantConnection {
 	isConnected = false;
 	initialSyncInProgress = false;
 	private bufferedReconciliationEvents: ReconciliationEvent[] = [];
+	private bufferedMediaStateUpdates = new Map<
+		string,
+		{ audioEnabled?: boolean; videoEnabled?: boolean }
+	>();
 	private reconciliation: MeetingReconciliationState<ReconciledParticipant> =
 		createMeetingReconciliationState();
 	private producerClaims = new Set<string>();
@@ -210,10 +228,12 @@ export class ParticipantConnection {
 	private e2eeReadyForLifecycle = false;
 	private lastAuthToken: string | null = null;
 	private activeEscalation: Promise<boolean> | null = null;
+	private readonly connectionId = crypto.randomUUID();
 	private localProducerBytes = new Map<string, number>();
 	private _state: ParticipantConnectionState = "stopped";
 	private static readonly INITIAL_RETRY_DELAY_MS = 1000;
 	private static readonly MAX_RETRY_DELAY_MS = 30000;
+	private static readonly MAX_SNAPSHOT_RETRY_ATTEMPTS = 3;
 
 	constructor(options: ParticipantConnectionOptions) {
 		this.sfuClient = options.sfuClient;
@@ -266,30 +286,30 @@ export class ParticipantConnection {
 
 			try {
 				await this.connect(options.authToken, options.prefetchedDetails);
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				const { userData, mediaState } = await this.awaitAbortable(
 					options.prepareJoin(signal),
 					signal,
 				);
-				await this.joinRoom(userData, mediaState);
-				this.throwIfAborted(signal);
+				await this.joinRoom(userData, mediaState, options.conflictId);
+				signal.throwIfAborted();
 				if (this.sfuClient.isE2EERequired?.()) {
 					await this.awaitAbortable(options.waitForE2EEReady(signal), signal);
 					this.e2eeReadyForLifecycle = true;
 				}
 				await this.initializeDevice();
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				if (!(await this.createReceiveTransport())) {
 					throw new Error("Failed to create receive transport");
 				}
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				this.setState("syncing");
 
 				const [publication, snapshot] = await Promise.allSettled([
 					this.awaitAbortable(options.publishLocalMedia(signal), signal),
 					this.setupExistingParticipants(signal, true),
 				]);
-				this.throwIfAborted(signal);
+				signal.throwIfAborted();
 				if (publication.status === "rejected") {
 					console.warn("Initial media publication failed:", publication.reason);
 					this.eventHandlers.onInitialPublicationError?.(publication.reason);
@@ -336,11 +356,6 @@ export class ParticipantConnection {
 		if (this._state === state) return;
 		this._state = state;
 		this.eventHandlers.onLifecycleStateChange?.(state);
-	}
-
-	private throwIfAborted(signal: AbortSignal): void {
-		if (signal.aborted)
-			throw signal.reason ?? new DOMException("Aborted", "AbortError");
 	}
 
 	private awaitAbortable<T>(
@@ -398,7 +413,7 @@ export class ParticipantConnection {
 
 	private async waitUntilVisible(signal: AbortSignal): Promise<void> {
 		if (typeof document === "undefined" || !document.hidden) return;
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		await new Promise<void>((resolve, reject) => {
 			const visibilityChange = () => {
 				if (!document.hidden) finish(resolve);
@@ -418,14 +433,15 @@ export class ParticipantConnection {
 		if (this.snapshotRetry) return;
 		this.snapshotRetry = (async () => {
 			let delay = ParticipantConnection.INITIAL_RETRY_DELAY_MS;
+			let attempts = 0;
 			while (!signal.aborted && this.isSignalingConnected()) {
 				try {
 					await this.waitUntilOnline(signal);
 					await this.delay(delay, signal);
 					await this.serializeLifecycle(async () => {
-						this.throwIfAborted(signal);
+						signal.throwIfAborted();
 						await this.setupExistingParticipants(signal, true);
-						this.throwIfAborted(signal);
+						signal.throwIfAborted();
 						this.setState("ready");
 					});
 					return;
@@ -433,6 +449,19 @@ export class ParticipantConnection {
 					if (signal.aborted || !this.isSignalingConnected()) return;
 					this.initialSyncInProgress = true;
 					console.warn("Participant snapshot retry failed:", error);
+					attempts += 1;
+					if (
+						attempts >= ParticipantConnection.MAX_SNAPSHOT_RETRY_ATTEMPTS
+					) {
+						void this.escalateRecovery({
+							scope: "subscription",
+							direction: "recv",
+							reason: "snapshot_retry_limit",
+						}).catch((recoveryError) =>
+							console.warn("Snapshot recovery escalation failed:", recoveryError),
+						);
+						return;
+					}
 					delay = Math.min(delay * 2, ParticipantConnection.MAX_RETRY_DELAY_MS);
 				}
 			}
@@ -492,10 +521,14 @@ export class ParticipantConnection {
 	async joinRoom(
 		userData: JoinUserData,
 		mediaState: JoinRoomMediaState,
+		conflictId?: string,
 	): Promise<boolean> {
 		const generation = this.lifecycleGeneration;
 		try {
-			await this.sfuClient.joinRoom(this.meetingId ?? "", userData, mediaState);
+			await this.sfuClient.joinRoom(this.meetingId ?? "", userData, mediaState, {
+				connectionId: this.connectionId,
+				...(conflictId ? { conflictId } : {}),
+			});
 			if (generation !== this.lifecycleGeneration) {
 				await this.sfuClient.disconnect();
 				return false;
@@ -572,6 +605,7 @@ export class ParticipantConnection {
 			if (generation !== this.lifecycleGeneration) {
 				throw new DOMException("Participant sync cancelled", "AbortError");
 			}
+			const bufferedEvents = this.bufferedReconciliationEvents.splice(0);
 			this.reconciliation = reconcileMeetingSnapshot(
 				this.reconciliation,
 				{
@@ -586,13 +620,16 @@ export class ParticipantConnection {
 								: undefined,
 					})),
 				},
-				this.bufferedReconciliationEvents.splice(0),
+				bufferedEvents,
 			);
 			this.participantManager.syncParticipants([
 				...this.reconciliation.participants.values(),
 			]);
-
 			this.initialSyncInProgress = false;
+			this.flushBufferedMediaStateUpdates();
+			for (const event of bufferedEvents)
+				if (event.type === "producer-closed")
+					this.clearParticipantMediaStateForClosedProducer(event.value);
 			await this.flushBufferedProducers(signal);
 		} catch (error) {
 			if (!signal.aborted) {
@@ -629,6 +666,7 @@ export class ParticipantConnection {
 				}
 			}
 			this.initialSyncInProgress = false;
+			this.flushBufferedMediaStateUpdates();
 
 			if (existingProducers.length) {
 				console.log(
@@ -644,14 +682,14 @@ export class ParticipantConnection {
 		} catch (error) {
 			this.initialSyncInProgress = false;
 			console.warn("Failed to request existing producers:", error);
-			return null;
+			throw error;
 		}
 	}
 
 	async flushBufferedProducers(
 		signal: AbortSignal = this.lifecycleAbortController.signal,
 	): Promise<void> {
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		if (!this.reconciliation.producers.size) {
 			console.log("No buffered producer events to flush");
 			return;
@@ -661,12 +699,20 @@ export class ParticipantConnection {
 			`Flushing ${this.reconciliation.producers.size} buffered producer events`,
 		);
 		for (const event of this.reconciliation.producers.values()) {
-			this.throwIfAborted(signal);
+			signal.throwIfAborted();
 			try {
 				await this.subscribeToReconciledProducer(event, signal);
 			} catch (error) {
 				if (signal.aborted) throw error;
 				console.warn("Failed to process buffered producer:", error);
+			}
+		}
+	}
+
+	private flushBufferedMediaStateUpdates(): void {
+		for (const [participantId, updates] of this.bufferedMediaStateUpdates) {
+			if (this.participantManager.updateMediaState(participantId, updates)) {
+				this.bufferedMediaStateUpdates.delete(participantId);
 			}
 		}
 	}
@@ -686,9 +732,7 @@ export class ParticipantConnection {
 	private async performReceiveReset(generation: number): Promise<void> {
 		const pendingSubscriptions = this.mediaManager.cancelPendingSubscriptions();
 		this.transportManager.closeReceiveTransport();
-		this.mediaManager.consumerManager.clear();
-		this.mediaManager.processedConsumers.clear();
-		this.mediaManager.isScreenShareActive = false;
+		this.clearReceiveConsumers();
 		await pendingSubscriptions;
 		if (generation !== this.lifecycleGeneration) return;
 		if (
@@ -710,11 +754,6 @@ export class ParticipantConnection {
 		await this.createReceiveTransport();
 		await this.requestExistingProducers();
 		await this.flushBufferedProducers();
-	}
-
-	async resyncAfterRecovery(reason: string): Promise<void> {
-		const result = await this.recoveryManager.recoverTransportIce(reason);
-		if (result === "skipped") await this.resetReceiveSide();
 	}
 
 	serializeTransportRecovery(
@@ -810,36 +849,36 @@ export class ParticipantConnection {
 		this.localProducerBytes.clear();
 		const pendingSubscriptions = this.mediaManager.cancelPendingSubscriptions();
 		this.transportManager.closeReceiveTransport();
-		this.mediaManager.consumerManager.clear();
-		this.mediaManager.processedConsumers.clear();
-		this.mediaManager.isScreenShareActive = false;
+		this.clearReceiveConsumers();
 		await pendingSubscriptions;
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		await this.sfuClient.disconnect();
 		this.isConnected = false;
 		await this.waitUntilOnline(signal);
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		const generation = this.lifecycleGeneration;
 		await this.sfuClient.connect(this.meetingId, this.lastAuthToken, null);
 		if (signal.aborted || generation !== this.lifecycleGeneration) {
 			await this.sfuClient.disconnect();
-			this.throwIfAborted(signal);
+			signal.throwIfAborted();
 			throw new DOMException("Participant connection rebuild replaced", "AbortError");
 		}
 		this.isConnected = true;
 		this.transportManager.initialize(this.sfuClient);
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		await this.sfuClient.joinRoom(
 			this.meetingId,
 			this.lastJoinUserData,
 			this.getCurrentRejoinMediaState(),
+			{ connectionId: this.connectionId },
 		);
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
+		this.eventHandlers.onRoomRejoined?.();
 		if (!(await this.waitForE2EEContextIfRequired(signal))) {
 			throw new Error("E2EE context is not ready after fresh reconnect");
 		}
 		await this.transportManager.initializeDevice();
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		if (!(await this.createReceiveTransport())) {
 			throw new Error("Failed to recreate receive transport");
 		}
@@ -847,7 +886,7 @@ export class ParticipantConnection {
 		if (publication.audioError || publication.videoError) {
 			throw publication.audioError ?? publication.videoError;
 		}
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		await this.setupExistingParticipants(signal, true);
 		this.recoveryManager.setupTransportEventHandlers();
 	}
@@ -855,7 +894,7 @@ export class ParticipantConnection {
 	private async verifyFreshParticipantConnection(signal: AbortSignal): Promise<void> {
 		await this.waitUntilVisible(signal);
 		await this.reconcileExpectedMedia();
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		for (const producer of this.reconciliation.producers.values()) {
 			if (
 				(producer.kind === "audio" || producer.kind === "video") &&
@@ -1074,7 +1113,7 @@ export class ParticipantConnection {
 		event: SFUProducerEvent,
 		signal: AbortSignal = this.lifecycleAbortController.signal,
 	): Promise<void> {
-		this.throwIfAborted(signal);
+		signal.throwIfAborted();
 		if (
 			this.reconciliation.producers.get(event.producerId) !== event ||
 			this.producerClaims.has(event.producerId) ||
@@ -1086,7 +1125,7 @@ export class ParticipantConnection {
 		this.producerClaims.add(event.producerId);
 		try {
 			if (!(await this.waitForE2EEContextIfRequired(signal))) return;
-			this.throwIfAborted(signal);
+			signal.throwIfAborted();
 			if (this.reconciliation.producers.get(event.producerId) !== event) return;
 			await this.awaitAbortable(
 				this.mediaManager.subscribeToRemoteProducer({
@@ -1096,7 +1135,7 @@ export class ParticipantConnection {
 				}),
 				signal,
 			);
-			this.throwIfAborted(signal);
+			signal.throwIfAborted();
 			if (this.reconciliation.producers.get(event.producerId) !== event) {
 				this.removeProducerConsumers(event);
 			}
@@ -1117,14 +1156,7 @@ export class ParticipantConnection {
 				event.participantId,
 			);
 		for (const consumer of consumers) {
-			const producerMatches =
-				consumer.consumer.producerId === event.producerId ||
-				consumer.appData?.producerId === event.producerId;
-			const isScreen =
-				consumer.isScreen ||
-				consumer.appData?.type === "screen" ||
-				consumer.consumer.appData?.type === "screen";
-			if (producerMatches || (event.isScreen && isScreen)) {
+			if (consumer.producerId === event.producerId) {
 				this.mediaManager.consumerManager.removeConsumer(consumer.id);
 				this.mediaManager.processedConsumers.delete(consumer.id);
 			}
@@ -1134,6 +1166,17 @@ export class ParticipantConnection {
 			.catch((error) =>
 				console.warn("Failed to attach surviving endpoint media:", error),
 			);
+	}
+
+	clearReceiveConsumers(): void {
+		for (const screen of [
+			...this.mediaManager.consumerManager.getScreenShareConsumers(),
+		]) {
+			this.mediaManager.consumerManager.removeConsumer(screen.id);
+		}
+		this.mediaManager.consumerManager.clear();
+		this.mediaManager.processedConsumers.clear();
+		this.mediaManager.isScreenShareActive = false;
 	}
 
 	private applyReconciliationEvent(event: ReconciliationEvent): void {
@@ -1151,8 +1194,32 @@ export class ParticipantConnection {
 			event.type === "producer-closed" &&
 			!previous.closedProducerIds.has(event.value.producerId)
 		) {
+			this.clearParticipantMediaStateForClosedProducer({
+				...event.value,
+				kind: previous.producers.get(event.value.producerId)?.kind,
+			});
 			this.removeProducerConsumers(event.value);
 		}
+	}
+
+	private clearParticipantMediaStateForClosedProducer(
+		producer: SFUProducerEvent,
+	): void {
+		if (producer.isScreen || !producer.kind) return;
+		const hasRemainingProducer = Array.from(
+			this.reconciliation.producers.values(),
+		).some(
+			(entry) =>
+				entry.participantId === producer.participantId &&
+				entry.kind === producer.kind &&
+				!entry.isScreen,
+		);
+		if (hasRemainingProducer) return;
+		this.participantManager.updateMediaState(producer.participantId, {
+			...(producer.kind === "audio"
+				? { audioEnabled: false }
+				: { videoEnabled: false }),
+		});
 	}
 
 	private getCurrentRejoinMediaState(): JoinRoomMediaState {
@@ -1255,11 +1322,14 @@ export class ParticipantConnection {
 			},
 			onConsumerRemoved: (consumerId: string, consumer: ConsumerEntry) => {
 				if (consumer?.isScreen || consumer?.appData?.type === "screen") {
-					this.mediaManager.isScreenShareActive = false;
+					this.mediaManager.isScreenShareActive =
+						this.mediaManager.consumerManager.getScreenShareConsumers().length > 0;
 					if (this.eventHandlers.onScreenShareStopped) {
 						this.eventHandlers.onScreenShareStopped({
 							participantId: consumer.participantId,
 							consumerId,
+							producerId: consumer.producerId,
+							consumer,
 						});
 					}
 				}
@@ -1293,6 +1363,17 @@ export class ParticipantConnection {
 	}
 
 	private setupSFUEventHandlers(): void {
+		this.sfuClient.on("participant_connection_replaced", (value: unknown) => {
+			if (!isUnknownRecord(value) || value.reason !== "takeover") return;
+			void Promise.resolve(
+				this.eventHandlers.onParticipantConnectionReplaced?.({ reason: "takeover" }),
+			)
+				.catch((error) =>
+					console.warn("Participant Connection replacement cleanup failed:", error),
+				)
+				.finally(() => void this.disconnect());
+		});
+
 		this.sfuClient.on("reconnect_attempt", () => {
 			this.recoveryManager.reset();
 			this.reportRecoveryState("reconnecting", "signaling reconnect attempt");
@@ -1334,8 +1415,47 @@ export class ParticipantConnection {
 				this.reconciliation = applyMeetingReconciliationEvent(previous, event);
 				if (!previous.participants.has(data.participantId)) {
 					this.participantManager.addParticipant(data);
+					this.flushBufferedMediaStateUpdates();
 				}
 			}
+		});
+
+		this.sfuClient.on("participant_updated", (value: unknown) => {
+			const data = normalizeParticipantData(value);
+			if (!data?.participantId) return;
+			if (this.initialSyncInProgress) {
+				const updates = this.bufferedMediaStateUpdates.get(data.participantId) ?? {};
+				if (data.userData?.audio_enabled !== undefined || data.audio_enabled !== undefined) {
+					updates.audioEnabled = data.userData?.audio_enabled ?? data.audio_enabled;
+				}
+				if (data.userData?.video_enabled !== undefined || data.video_enabled !== undefined) {
+					updates.videoEnabled = data.userData?.video_enabled ?? data.video_enabled;
+				}
+				if (Object.keys(updates).length) {
+					this.bufferedMediaStateUpdates.set(data.participantId, updates);
+				}
+				return;
+			}
+
+			const updates: ParticipantUpdate = {};
+			if (data.userData?.name !== undefined || data.user_name !== undefined) {
+				updates.user_name = data.userData?.name ?? data.user_name ?? "";
+			}
+			if (data.userData && "avatar" in data.userData) {
+				updates.avatar = data.userData.avatar ?? null;
+			} else if (data.avatar !== undefined) {
+				updates.avatar = data.avatar;
+			}
+			if (data.userData?.is_guest !== undefined || data.is_guest !== undefined) {
+				updates.is_guest = data.userData?.is_guest ?? data.is_guest;
+			}
+			if (data.userData?.audio_enabled === false || data.audio_enabled === false) {
+				updates.audio_enabled = false;
+			}
+			if (data.userData?.video_enabled === false || data.video_enabled === false) {
+				updates.video_enabled = false;
+			}
+			this.participantManager.updateParticipant(data.participantId, updates);
 		});
 
 		this.sfuClient.on("participant_left", (value: unknown) => {
@@ -1376,6 +1496,15 @@ export class ParticipantConnection {
 				!this.reconciliation.producers.has(d.producerId)
 			)
 				return;
+			if (!d.isScreen && d.kind === "audio") {
+				this.participantManager.updateMediaState(d.participantId, {
+					audioEnabled: true,
+				});
+			} else if (!d.isScreen && d.kind === "video") {
+				this.participantManager.updateMediaState(d.participantId, {
+					videoEnabled: true,
+				});
+			}
 			await this.subscribeToReconciledProducer(event.value).catch((error) => {
 				console.warn("Failed to subscribe to producer_created event:", error);
 			});
@@ -1384,11 +1513,13 @@ export class ParticipantConnection {
 		this.sfuClient.on("producer_closed", (value: unknown) => {
 			const d = normalizeProducerClosedEvent(value);
 			if (!d?.participantId || !d.producerId) return;
+			const producer = this.reconciliation.producers.get(d.producerId);
 			const event: ReconciliationEvent = {
 				type: "producer-closed",
 				value: {
 					participantId: d.participantId,
 					producerId: d.producerId,
+					kind: d.kind,
 					isScreen: d.isScreen === true,
 				},
 			};
@@ -1399,11 +1530,16 @@ export class ParticipantConnection {
 			const previous = this.reconciliation;
 			this.reconciliation = applyMeetingReconciliationEvent(previous, event);
 			if (previous.closedProducerIds.has(d.producerId)) return;
+			this.clearParticipantMediaStateForClosedProducer({
+				...event.value,
+				kind: producer?.kind,
+			});
 			this.removeProducerConsumers(event.value);
 
 			if (d.isScreen) {
 				this.eventHandlers.onScreenShareStopped?.({
 					participantId: d.participantId,
+					producerId: d.producerId,
 				});
 			}
 		});
@@ -1486,7 +1622,16 @@ export class ParticipantConnection {
 			}
 
 			if (Object.keys(updates).length) {
-				this.participantManager.updateMediaState(d.participantId, updates);
+				if (this.initialSyncInProgress) {
+					this.bufferedMediaStateUpdates.set(d.participantId, {
+						...this.bufferedMediaStateUpdates.get(d.participantId),
+						...updates,
+					});
+					return;
+				}
+				if (!this.participantManager.updateMediaState(d.participantId, updates)) {
+					this.bufferedMediaStateUpdates.set(d.participantId, updates);
+				}
 			}
 		});
 
@@ -1532,8 +1677,12 @@ export class ParticipantConnection {
 					}
 					break;
 				case "kick_participant":
+				case "ban_participant":
 					if (isForMe) {
-						this.eventHandlers.onHostKickedYou?.({ hostId: d.hostId });
+						this.eventHandlers.onHostKickedYou?.({
+							hostId: d.hostId,
+							banned: d.action === "ban_participant",
+						});
 					}
 					break;
 				default:
@@ -1552,45 +1701,26 @@ export class ParticipantConnection {
 
 		this.sfuClient.on("screen_share_stopped", (value: unknown) => {
 			const d = normalizeScreenShareEvent(value);
-			if (!d) return;
-			console.log("Screen share stopped - resetting sidebar mode flag");
-			this.mediaManager.isScreenShareActive = false;
-
-			if (this.eventHandlers.onScreenShareStopped) {
-				this.eventHandlers.onScreenShareStopped(d);
+			if (!d?.participantId || !d.producerId) return;
+			const screenConsumers =
+				this.mediaManager.consumerManager.getScreenShareConsumers();
+			const matchingConsumer = screenConsumers.find(
+				(consumer) =>
+					consumer.participantId === d.participantId &&
+					consumer.producerId === d.producerId,
+			);
+			this.eventHandlers.onScreenShareStopped?.({
+				...d,
+				consumerId: matchingConsumer?.id,
+				consumer: matchingConsumer,
+			});
+			if (matchingConsumer) {
+				this.mediaManager.consumerManager.removeConsumer(matchingConsumer.id);
+				this.mediaManager.processedConsumers.delete(matchingConsumer.id);
 			}
-
-			const pid = d.participantId;
-			if (pid) {
-				const screenConsumers = this.mediaManager.consumerManager
-					.getScreenShareConsumers()
-					.filter((c) => c.participantId === pid);
-				for (const sc of screenConsumers) {
-					console.log("Removing screen-share consumer on stop:", {
-						consumerId: sc.id,
-						participantId: pid,
-					});
-					this.mediaManager.consumerManager.removeConsumer(sc.id);
-					this.mediaManager.processedConsumers.delete(sc.id);
-				}
-				const allForPid =
-					this.mediaManager.consumerManager.getConsumersByParticipant(pid);
-				for (const c of allForPid) {
-					const maybeScreen =
-						c.isScreen ||
-						c.appData?.type === "screen" ||
-						(c.consumer as { appData?: { type?: string } })?.appData?.type ===
-							"screen";
-					if (maybeScreen) {
-						console.log("(safety) Removing screen-like consumer on stop:", {
-							consumerId: c.id,
-							participantId: pid,
-						});
-						this.mediaManager.consumerManager.removeConsumer(c.id);
-						this.mediaManager.processedConsumers.delete(c.id);
-					}
-				}
-			}
+			this.mediaManager.isScreenShareActive = screenConsumers.some(
+				(consumer) => consumer.producerId !== d.producerId,
+			);
 		});
 
 		this.sfuClient.on("active_speaker", (value: unknown) => {
@@ -1624,6 +1754,7 @@ export class ParticipantConnection {
 	async disconnect(): Promise<void> {
 		this.setState("stopping");
 		this.initialSyncInProgress = false;
+		this.bufferedMediaStateUpdates.clear();
 		this.lifecycleAbortController.abort(
 			new DOMException("Participant connection stopped", "AbortError"),
 		);
@@ -1670,6 +1801,7 @@ export class ParticipantConnection {
 		this.isConnected = false;
 		this.initialSyncInProgress = false;
 		this.bufferedReconciliationEvents = [];
+		this.bufferedMediaStateUpdates.clear();
 		this.reconciliation = createMeetingReconciliationState();
 		this.producerClaims.clear();
 		this.lastJoinUserData = null;

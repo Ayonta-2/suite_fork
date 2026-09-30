@@ -12,36 +12,43 @@
   own (the toolbar uses its glyph + underline button).
 -->
 <template>
-  <Popover :placement="placement">
-    <template #target="{ togglePopover, isOpen }">
-      <slot name="trigger" :toggle="togglePopover" :open="isOpen" :color="modelValue">
-        <button type="button" class="sn-cp-trigger" :class="{ open: isOpen }" :title="title" @click="togglePopover()">
-          <span class="sn-cp-trigger-sw" :style="{ background: isHex(modelValue) ? modelValue : 'transparent' }" />
-        </button>
+  <Popover bare side="bottom" align="start">
+    <template #trigger="{ setOpen, open }">
+      <slot name="trigger" :toggle="() => setOpen(!open)" :open :color="modelValue">
+        <Tooltip :text="title">
+          <button type="button" class="sn-cp-trigger" :class="{ open }">
+            <span class="sn-cp-trigger-sw" :style="{ background: isHex(modelValue) ? modelValue : 'transparent' }" />
+          </button>
+        </Tooltip>
       </slot>
     </template>
-    <template #body="{ close }">
+    <template #default="{ close }">
       <div class="sn-cp-pop">
         <div class="sn-cp-grid">
-          <button v-for="c in COLORS" :key="c" type="button" class="sn-cp-sw"
-                  :class="{ sel: eqHex(c, modelValue) }" :style="{ background: c }" :title="c"
-                  @click="choose(c, close)">
-            <FeatherIcon v-if="eqHex(c, modelValue)" name="check" class="sn-cp-check" :style="{ color: contrast(c) }" />
-          </button>
+          <Tooltip v-for="c in COLORS" :key="c" :text="c">
+            <button type="button" class="sn-cp-sw" :class="{ sel: eqHex(c, modelValue) }"
+                    :style="{ background: c }" @click="choose(c, close)">
+              <FeatherIcon v-if="eqHex(c, modelValue)" name="check" class="sn-cp-check" :style="{ color: contrast(c) }" />
+            </button>
+          </Tooltip>
         </div>
         <div class="sn-cp-foot">
-          <button v-if="allowDefault" type="button" class="sn-cp-iconbtn" :class="{ sel: !isHex(modelValue) }"
-                  :title="defaultLabel" @click="choose(defaultValue, close)">
-            <FeatherIcon name="slash" class="sn-cp-icon" />
-          </button>
+          <Tooltip v-if="allowDefault" :text="defaultLabel">
+            <button type="button" class="sn-cp-iconbtn" :class="{ sel: !isHex(modelValue) }"
+                    @click="choose(defaultValue, close)">
+              <FeatherIcon name="slash" class="sn-cp-icon" />
+            </button>
+          </Tooltip>
           <span class="sn-cp-hash">#</span>
           <input class="sn-cp-hex" :value="hexBody" maxlength="6" placeholder="rrggbb" spellcheck="false"
                  @input="hexBody = norm($event.target.value)"
                  @keydown.enter.prevent="commitHex(close)" @blur="commitHex(null)" />
-          <label class="sn-cp-iconbtn" :title="`Custom colour`">
-            <FeatherIcon name="plus" class="sn-cp-icon" />
-            <input type="color" :value="nativeValue()" @input="choose($event.target.value, null)" />
-          </label>
+          <Tooltip text="Custom colour">
+            <label class="sn-cp-iconbtn">
+              <FeatherIcon name="plus" class="sn-cp-icon" />
+              <input type="color" :value="nativeValue()" @input="choose($event.target.value, null)" />
+            </label>
+          </Tooltip>
         </div>
       </div>
     </template>
@@ -50,7 +57,8 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { Popover, FeatherIcon } from 'frappe-ui'
+import { Popover, Tooltip } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 // Tailwind palette, one family per row (50→900), flattened in row order so the
 // grid reads as 9 columns × 8 families — same source palette Gameplan uses.
@@ -73,7 +81,6 @@ const props = defineProps({
   defaultValue: { type: String, default: '' },
   defaultLabel: { type: String, default: 'Default' },
   title:        { type: String, default: 'Colour' },
-  placement:    { type: String, default: 'bottom-start' },
   // The native picker needs a literal hex even when modelValue is unset.
   fallback:     { type: String, default: '#000000' },
 })

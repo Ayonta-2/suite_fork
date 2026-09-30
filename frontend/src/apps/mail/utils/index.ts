@@ -13,12 +13,6 @@ import VideoIcon from '@/apps/mail/components/Icons/VideoIcon.vue'
 
 import type { ComposeMailData, MailboxData, Recipient } from '@/apps/mail/types'
 
-// Keyboard hints in action labels — "Archive Thread (E)", "Move to Trash (Delete)" —
-// are noise on touch surfaces. Strips only trailing parentheticals that look like
-// shortcuts, so a folder named "Work (old)" is never clipped.
-const SHORTCUT_HINT =
-	/\s*\((?:(?:Shift|Ctrl|Cmd|Alt|⌘|⇧|⌥)\+)*(?:[A-Z!,.;]|Delete|Backspace|Esc(?:ape)?|Enter|Tab|Space|↑\/K|↓\/J)\)$/
-export const stripShortcutHint = (label: string) => label.replace(SHORTCUT_HINT, '')
 
 export const toTitleCase = (str: string) =>
 	str
@@ -28,6 +22,10 @@ export const toTitleCase = (str: string) =>
 			return word.charAt(0).toUpperCase().concat(word.substr(1))
 		})
 		.join(' ') || ''
+
+// A quota or allotment in gigabytes as the dashboard prints it; unknown reads as a dash.
+export const formatGb = (gb?: number | null) =>
+	gb == null ? '—' : __('{0} GB', [String(Math.round(gb * 100) / 100)])
 
 export const formatBytes = (bytes: number) => {
 	if (!+bytes) return '0 Bytes'
@@ -69,7 +67,7 @@ export const raiseToast = (
 							? {
 									classes: {
 										cancelButton:
-											'!ml-auto mr-1 h-7 shrink-0 rounded bg-transparent !transition-colors',
+											'!ml-auto mr-1 h-7 shrink-0 rounded-4 bg-transparent !transition-colors',
 										actionButton: '!ml-0',
 									},
 								}
@@ -92,7 +90,7 @@ export const raisePromiseToast = (
 	success: string,
 	undoAction?: () => void,
 ) => {
-	toast.removeAll()
+	toast.dismiss()
 
 	const error = __('Action failed. Please try again later.')
 
@@ -117,7 +115,7 @@ export const raiseOptimisticToast = (
 	success: string,
 	undoAction?: () => void,
 ) => {
-	toast.removeAll()
+	toast.dismiss()
 	const id = toast.success(
 		success,
 		undoAction ? { action: { label: __('Undo'), onClick: () => undoAction() } } : undefined,
@@ -210,7 +208,9 @@ export const extractQuotedContent = (htmlBody?: string) => {
 	const doc = parser.parseFromString(htmlBody, 'text/html')
 
 	const topLevelDiv = Array.from(doc.body.children).find(
-		(el) => el.tagName.toLowerCase() === 'div' && el.classList.contains('frappe_mail_quote'),
+		(el) =>
+			el.tagName.toLowerCase() === 'div' &&
+			(el.classList.contains('frappe_mail_quote') || el.classList.contains('frappe_mail_fwd')),
 	)
 
 	let quoted_content = ''
@@ -246,42 +246,13 @@ export const shouldIgnoreKeypress = (
 	)
 }
 
-export const convertHtmlToText = (html: string) => {
-	if (!html) return ''
-
-	const parser = new DOMParser()
-	const doc = parser.parseFromString(html, 'text/html')
-	const body = doc.body || doc.documentElement
-
-	const anchors = body.querySelectorAll('a')
-	const buttons = body.querySelectorAll('button')
-	const inputs = body.querySelectorAll('input')
-
-	anchors.forEach((anchor) => {
-		const text = document.createTextNode(anchor.textContent)
-		anchor.parentNode?.replaceChild(text, anchor)
-	})
-
-	buttons.forEach((button) => button.remove())
-
-	inputs.forEach((input) => {
-		const type = input.getAttribute('type') || 'text'
-		if (['button', 'submit', 'reset'].includes(type)) {
-			input.remove()
-		}
-	})
-
-	const text = body.textContent || body.innerText || ''
-	return text.replace(/\s+/g, ' ').trim()
-}
-
 export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 
 // A domain entry, prefixed with @ (e.g. @example.com). Used by screening to trust/block a whole domain.
 // Mirrors the backend's DOMAIN_NAME_PATTERN: 1-63 char labels of letters/digits/hyphens (no leading or
 // trailing hyphen), joined by dots, at most 253 chars overall — so the Add button never enables a value
 // the API would reject.
-export const isDomain = (s: string) =>
+const isDomain = (s: string) =>
 	/^@(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$/.test(s)
 
 // A screened value: either a full email address or a whole domain (@example.com).
@@ -442,12 +413,13 @@ export const getScriptName = (scriptName: string) => {
 export const isSystemScript = (scriptName: string) =>
 	['vacation', 'frappe_mail_automation'].includes(scriptName)
 
-export { decodeHtmlEntities, escapeHtml, hasHtmlContent } from '@/apps/mail/utils/html'
+export { decodeHtmlEntities, hasHtmlContent, plainTextToHtml } from '@/apps/mail/utils/html'
 
 export const getIcon = (mailbox: MailboxData) => {
 	// The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a
 	// stray Mailbox Settings icon (it must never render as a generic folder).
 	if (mailbox._name === SCREENER_MAILBOX_NAME) return 'eye'
+	if (mailbox.icon === 'spam') return 'mail-warning'
 	if (mailbox.icon) return mailbox.icon
 	if (mailbox.role && mailbox.role in FOLDER_ICON_MAP) return FOLDER_ICON_MAP[mailbox.role]
 	return 'folder'

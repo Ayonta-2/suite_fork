@@ -291,6 +291,23 @@ SUBMISSION_URN = "urn:ietf:params:jmap:submission"
 # keyed per account so the data is reused by every user with access to the account.
 _lookup_cache: TTLCache = TTLCache(maxsize=100_000, ttl=60 * 60)
 
+# Named rather than left to the server: Stalwart's default set leaves out `isVisible`, which
+# read as every calendar being hidden.
+CALENDAR_PROPERTIES = [
+    "id",
+    "name",
+    "description",
+    "color",
+    "timeZone",
+    "sortOrder",
+    "isDefault",
+    "isSubscribed",
+    "isVisible",
+    "includeInAvailability",
+    "myRights",
+    "shareWith",
+]
+
 
 def omit_none(**kwargs) -> dict:
     """Keyword arguments minus the Nones.
@@ -368,13 +385,18 @@ class SuiteJMAPClient(JMAPClient):
 
 @request_cache
 def get_jmap_client(
-    user: str, ignore_permissions: bool = False, timeout: tuple[float, float] = DEFAULT_TIMEOUT
+    user: str,
+    ignore_permissions: bool = False,
+    timeout: tuple[float, float] = DEFAULT_TIMEOUT,
+    allow_disabled: bool = False,
 ) -> SuiteJMAPClient:
     """Returns an authenticated JMAP client for the user, reviving the Redis-cached session
     when possible so no discovery round trip is made.
 
     Cached per request so the many helpers that resolve a client for the same user reuse one
     instance (and skip the repeated password decryption / session parsing).
+    ``allow_disabled`` is for server-side cleanup that must still reach the mail server on
+    behalf of a user who has just been disabled; requests never pass it.
     """
 
     if not ignore_permissions:
@@ -386,7 +408,8 @@ def get_jmap_client(
                 frappe.PermissionError,
             )
 
-    if not frappe.get_cached_value("User", user, "enabled"):
+    enabled = frappe.get_cached_value("User", user, "enabled")
+    if enabled is None or (not enabled and not allow_disabled):
         frappe.throw(_("User {0} does not exist or is disabled.").format(frappe.bold(user)))
 
     settings = frappe.db.exists("User Settings", {"user": user, "username": ["!=", None]})
@@ -596,7 +619,7 @@ def get_cached_calendars(account: str) -> list[dict]:
 
     client = get_account_client(account)
     with client.batch() as b:
-        h = b.calendars.calendar.get()
+        h = b.calendars.calendar.get(properties=CALENDAR_PROPERTIES)
 
     return [c.to_wire() for c in h.result.items]
 
@@ -694,6 +717,40 @@ def chunked_get(
     return items
 
 
+def get_across_accounts(
+    client: SuiteJMAPClient, accounts: list[str], run: Callable[[Any, Id], Any]
+) -> dict[str, list[dict] | None]:
+    """`<type>/get` for each of several accounts, in as few requests as the server allows.
+
+    JMAP takes method calls addressed to different accounts in one request, so this costs
+    one round trip however many accounts there are, not one each (jmaplib cuts the batch at
+    maxCallsInRequest). `run(batch, account_id)` must queue one /get addressed to the account
+    (pass ``accountId=account_id``) and return its handle. Keyed by account; `None` where the
+    server refused the call, as it does for an account whose objects of this type the user
+    has no access to.
+    """
+
+    with client.batch() as b:
+        handles = {account: run(b, Id(account)) for account in accounts}
+
+    return {
+        account: None if h.error else [item.to_wire() for item in h.result.items]
+        for account, h in handles.items()
+    }
+
+
+def get_email_state(client: SuiteJMAPClient) -> str | None:
+    """The server's current Email state for the client's account, read via an empty /get.
+
+    The state is what Email/changes diffs against; a refused call yields None.
+    """
+
+    with client.batch() as b:
+        h = b.mail.email.get(ids=[], properties=["id"])
+
+    return None if h.error else h.result.state
+
+
 def chunk_list(items: list, size: int) -> Iterator[list]:
     for i in range(0, len(items), size):
         yield items[i : i + size]
@@ -757,6 +814,10 @@ def download_blobs(
 
 # -- send pipeline -----------------------------------------------------------
 
+# RFC 3676. MailQueue guarantees the text body is encoded this way, generated or supplied.
+# delsp=no keeps the space at a soft break, which is the word separator the reader rejoins on.
+TEXT_PLAIN_FLOWED = "text/plain; format=flowed; delsp=no"
+
 
 def build_email_draft(
     *,
@@ -814,7 +875,9 @@ def build_email_draft(
     )
 
     if reply_to:
-        draft["header:Reply-To"] = ", ".join(f'"{r.get("name")}" <{r["email"]}>' for r in reply_to)
+        # The parsed property, like From and To: the server writes the header, so an address
+        # without a name, or a name with quotes or commas in it, comes out well formed.
+        draft["replyTo"] = [{"name": r.get("name"), "email": r["email"]} for r in reply_to]
 
     if in_reply_to:
         draft["header:In-Reply-To"] = f"<{in_reply_to}>"
@@ -826,7 +889,12 @@ def build_email_draft(
     text_part = html_part = None
 
     if text_body:
-        text_part = {"partId": "text", "type": "text/plain"}
+        # The parameters ride in `type` because that string is written to the header
+        # verbatim. They are only legal inside `bodyStructure`: reached through the
+        # `textBody` convenience property the server demands `type` be exactly
+        # "text/plain", and setting `header:Content-Type` on a part gets it a second
+        # Content-Type rather than replacing the one the server builds.
+        text_part = {"partId": "text", "type": TEXT_PLAIN_FLOWED}
         draft["bodyValues"]["text"] = {"value": text_body, "charset": "utf-8", "isTruncated": False}
 
     if html_body:
@@ -838,41 +906,36 @@ def build_email_draft(
     regular_attachments = [a for a in attachments if a["disposition"] != "inline"]
     body_parts = [p for p in (text_part, html_part) if p]
 
-    if inline_attachments and body_parts:
-        # Inline images are referenced from the HTML body via `cid:` URLs. Build an
-        # explicit MIME structure that nests them inside a `multipart/related` container
-        # (next to the body) instead of letting them become plain siblings of the body in
-        # `multipart/mixed`. Some providers (e.g. AWS) treat every `multipart/mixed` part
-        # as a regular attachment and reject inline images by extension, whereas clients
-        # like Gmail wrap them in `multipart/related` so they are recognized as inline.
-        body_root = (
-            {"type": "multipart/alternative", "subParts": body_parts}
-            if len(body_parts) > 1
-            else body_parts[0]
-        )
+    if not body_parts:
+        if attachments:
+            draft["attachments"] = [_attachment_body_part(a) for a in attachments]
+        validate_email_create(draft)
+        return draft
 
-        body_structure = {
+    # The structure is always spelled out rather than left to the convenience properties,
+    # because the text part's Content-Type parameters only survive this way.
+    body_root = (
+        {"type": "multipart/alternative", "subParts": body_parts} if len(body_parts) > 1 else body_parts[0]
+    )
+
+    if inline_attachments:
+        # Inline images are referenced from the HTML body via `cid:` URLs. Nesting them in
+        # a `multipart/related` container beside the body, rather than leaving them as
+        # siblings in `multipart/mixed`, is what marks them inline: some providers (e.g.
+        # AWS) treat every `multipart/mixed` part as a regular attachment and reject
+        # inline images by extension.
+        body_root = {
             "type": "multipart/related",
             "subParts": [body_root, *(_attachment_body_part(a) for a in inline_attachments)],
         }
 
-        if regular_attachments:
-            body_structure = {
-                "type": "multipart/mixed",
-                "subParts": [body_structure, *(_attachment_body_part(a) for a in regular_attachments)],
-            }
+    if regular_attachments:
+        body_root = {
+            "type": "multipart/mixed",
+            "subParts": [body_root, *(_attachment_body_part(a) for a in regular_attachments)],
+        }
 
-        draft["bodyStructure"] = body_structure
-    else:
-        # No inline images: let the server assemble the structure from the convenience
-        # properties (`multipart/alternative` for the body, `multipart/mixed` for attachments).
-        if text_part:
-            draft["textBody"] = [text_part]
-        if html_part:
-            draft["htmlBody"] = [html_part]
-        if attachments:
-            draft["attachments"] = [_attachment_body_part(a) for a in attachments]
-
+    draft["bodyStructure"] = body_root
     validate_email_create(draft)
     return draft
 

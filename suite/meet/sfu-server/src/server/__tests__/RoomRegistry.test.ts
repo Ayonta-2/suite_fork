@@ -83,43 +83,215 @@ function addPreviewSocket(
 
 function addRecorderSocket(
 	setup: ReturnType<typeof makeIo>,
+	registry: RoomRegistry,
 	roomId: string,
 	sock: Socket,
 ) {
 	setup.sockets.set(sock.id, sock);
 	setup.joinRoom(sock.id, `${roomId}:recorders`);
+	Object.assign(sock, {
+		scope: 'recording',
+		roomId,
+		userId: `recorder:${sock.id}`,
+		participantId: `recorder:${sock.id}`,
+		recordingClaims: { recording_id: `recording:${sock.id}` },
+	});
+	registry.activateRecorder(sock, `recording:${sock.id}`, `job:${sock.id}`);
+	registry.joinRecorder(sock, roomId, `recorder:${sock.id}`);
 }
 
 describe('RoomRegistry', () => {
-	it('counts a participant as human until all of their sockets leave', () => {
+	it('acquires the first participant connection', () => {
 		const { io } = makeIo();
 		const registry = new RoomRegistry(io);
 		const first = makeSocket('first');
-		const second = makeSocket('second');
 
-		registry.claimParticipant(first, 'r1', 'p1');
-		registry.claimParticipant(second, 'r1', 'p1');
+		const result = registry.acquireParticipant(first, 'r1', 'p1', 'device-1');
+
+		expect(result).toMatchObject({ status: 'acquired' });
+		expect(first.participantConnectionId).toBe('device-1');
+		expect(first.participantOwnershipId).toBe(
+			result.status === 'conflict' ? undefined : result.ownershipId,
+		);
 		expect(registry.hasHumanParticipants('r1')).toBe(true);
+		expect(registry.getParticipantSocketIds('r1', 'p1')).toEqual(['first']);
+	});
 
-		registry.releaseParticipant(first, 'r1', 'p1');
+	it('is idempotent for the same socket and connection ID', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const socket = makeSocket('first');
+		const first = registry.acquireParticipant(socket, 'r1', 'p1', 'device-1');
+		const repeated = registry.acquireParticipant(
+			socket,
+			'r1',
+			'p1',
+			'device-1',
+		);
+
+		expect(repeated).toEqual({
+			status: 'idempotent',
+			ownershipId: first.status === 'conflict' ? '' : first.ownershipId,
+		});
+	});
+
+	it('reconnects a stable connection ID on a new socket', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const oldSocket = makeSocket('old');
+		const replacement = makeSocket('replacement');
+		const old = registry.acquireParticipant(oldSocket, 'r1', 'p1', 'device-1');
+		const result = registry.acquireParticipant(
+			replacement,
+			'r1',
+			'p1',
+			'device-1',
+		);
+
+		expect(result).toMatchObject({
+			status: 'reconnect',
+			replacedSocket: oldSocket,
+		});
+		expect(result.status === 'conflict' ? '' : result.ownershipId).not.toBe(
+			old.status === 'conflict' ? '' : old.ownershipId,
+		);
+		expect(registry.getParticipantSocketIds('r1', 'p1')).toEqual([
+			'replacement',
+		]);
+	});
+
+	it('returns a conflict for another connection without mutating ownership', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const incumbent = makeSocket('incumbent');
+		const challenger = makeSocket('challenger');
+		const first = registry.acquireParticipant(
+			incumbent,
+			'r1',
+			'p1',
+			'device-1',
+		);
+		const result = registry.acquireParticipant(
+			challenger,
+			'r1',
+			'p1',
+			'device-2',
+		);
+
+		expect(result).toEqual({
+			status: 'conflict',
+			conflictId: first.status === 'conflict' ? '' : first.ownershipId,
+		});
+		expect(challenger.participantOwnershipId).toBeUndefined();
+		expect(registry.getParticipantSocketIds('r1', 'p1')).toEqual(['incumbent']);
+	});
+
+	it('takes over with the current conflict ID', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const incumbent = makeSocket('incumbent');
+		const challenger = makeSocket('challenger');
+		registry.acquireParticipant(incumbent, 'r1', 'p1', 'device-1');
+		const conflict = registry.acquireParticipant(
+			challenger,
+			'r1',
+			'p1',
+			'device-2',
+		);
+		const result = registry.acquireParticipant(
+			challenger,
+			'r1',
+			'p1',
+			'device-2',
+			conflict.status === 'conflict' ? conflict.conflictId : '',
+		);
+
+		expect(result).toMatchObject({
+			status: 'takeover',
+			replacedSocket: incumbent,
+		});
+		expect(registry.getParticipantSocketIds('r1', 'p1')).toEqual([
+			'challenger',
+		]);
+	});
+
+	it('rejects a stale conflict ID after another takeover', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const incumbent = makeSocket('incumbent');
+		const firstChallenger = makeSocket('challenger-1');
+		const secondChallenger = makeSocket('challenger-2');
+		const initial = registry.acquireParticipant(
+			incumbent,
+			'r1',
+			'p1',
+			'device-1',
+		);
+		const staleConflictId =
+			initial.status === 'conflict' ? '' : initial.ownershipId;
+		registry.acquireParticipant(
+			firstChallenger,
+			'r1',
+			'p1',
+			'device-2',
+			staleConflictId,
+		);
+		const result = registry.acquireParticipant(
+			secondChallenger,
+			'r1',
+			'p1',
+			'device-3',
+			staleConflictId,
+		);
+
+		expect(result).toMatchObject({ status: 'conflict' });
+		expect(result.status === 'conflict' && result.conflictId).not.toBe(
+			staleConflictId,
+		);
+		expect(registry.getParticipantSocketIds('r1', 'p1')).toEqual([
+			'challenger-1',
+		]);
+	});
+
+	it('does not let an old ownership generation release its replacement', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const oldSocket = makeSocket('old');
+		const replacement = makeSocket('replacement');
+		registry.acquireParticipant(oldSocket, 'r1', 'p1', 'device-1');
+		registry.acquireParticipant(replacement, 'r1', 'p1', 'device-1');
+
+		expect(registry.releaseParticipant(oldSocket, 'r1', 'p1')).toBe(false);
 		expect(registry.hasHumanParticipants('r1')).toBe(true);
+	});
 
-		registry.releaseParticipant(second, 'r1', 'p1');
+	it('releases the current ownership generation', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const socket = makeSocket('current');
+		registry.acquireParticipant(socket, 'r1', 'p1', 'device-1');
+
+		expect(registry.releaseParticipant(socket, 'r1', 'p1')).toBe(true);
 		expect(registry.hasHumanParticipants('r1')).toBe(false);
 	});
 
-	it('reports departure only after the last connection regardless of leave order', () => {
+	it('blocks a room-scoped banned participant until room cleanup', () => {
 		const { io } = makeIo();
 		const registry = new RoomRegistry(io);
-		const first = makeSocket('first');
-		const second = makeSocket('second');
 
-		expect(registry.claimParticipant(first, 'r1', 'p1')).toBe(true);
-		expect(registry.claimParticipant(second, 'r1', 'p1')).toBe(false);
-		expect(registry.releaseParticipant(second, 'r1', 'p1')).toBe(false);
-		expect(registry.hasHumanParticipants('r1')).toBe(true);
-		expect(registry.releaseParticipant(first, 'r1', 'p1')).toBe(true);
-		expect(registry.hasHumanParticipants('r1')).toBe(false);
+		registry.revokeParticipant('r1', 'guest_1');
+		expect(registry.isParticipantRevoked('r1', 'guest_1')).toBe(true);
+		expect(registry.isParticipantRevoked('r2', 'guest_1')).toBe(false);
+
+		registry.cleanupRoom('r1');
+		expect(registry.isParticipantRevoked('r1', 'guest_1')).toBe(false);
+	});
+
+	it('does not revoke a removed participant', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+
+		expect(registry.isParticipantRevoked('r1', 'guest_1')).toBe(false);
 	});
 
 	it('assigns independent E2EE sender IDs to participant connections', () => {
@@ -281,6 +453,34 @@ describe('RoomRegistry', () => {
 			);
 		});
 
+		it('emitToFullAccessSockets reaches only selected full sockets', () => {
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
+			const subscribed = makeSocket('subscribed');
+			const other = makeSocket('other');
+			const preview = makeSocket('preview');
+			addFullSocket(setup, 'r1', subscribed);
+			addFullSocket(setup, 'r1', other);
+			addPreviewSocket(setup, 'r1', preview);
+
+			registry.emitToFullAccessSockets(
+				'r1',
+				new Set(['subscribed', 'preview']),
+				'hello',
+				{ x: 1 },
+			);
+
+			expect(
+				(subscribed as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([{ event: 'hello', data: { x: 1 } }]);
+			expect(
+				(other as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
+			expect(
+				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
+		});
+
 		it('emitToScope is a no-op when the room has no sockets', () => {
 			const { io } = makeIo();
 			const registry = new RoomRegistry(io);
@@ -293,7 +493,7 @@ describe('RoomRegistry', () => {
 			const setup = makeIo();
 			const registry = new RoomRegistry(setup.io);
 			const recorder = makeSocket('recorder-1');
-			addRecorderSocket(setup, 'r1', recorder);
+			addRecorderSocket(setup, registry, 'r1', recorder);
 
 			registry.emitToFullAccessParticipants('r1', 'host_control_update', {
 				private: true,
@@ -308,7 +508,14 @@ describe('RoomRegistry', () => {
 			const setup = makeIo();
 			const registry = new RoomRegistry(setup.io);
 			const recorder = makeSocket('recorder-1');
-			addRecorderSocket(setup, 'r1', recorder);
+			addRecorderSocket(setup, registry, 'r1', recorder);
+			registry.emitParticipantEvent('r1', 'participant_joined', 'p1', {
+				name: 'Alice',
+				userId: 'p1',
+				audio_enabled: true,
+				video_enabled: true,
+			});
+			(recorder as unknown as { _emitCalls: unknown[] })._emitCalls.length = 0;
 
 			registry.emitActiveSpeaker('r1', ['p1']);
 			registry.emitProducerCreated('r1', {
@@ -330,6 +537,11 @@ describe('RoomRegistry', () => {
 				shareData: { producerId: 'screen-1', details: { private: true } },
 				timestamp: 'ts',
 			});
+			registry.emitScreenShare('r1', 'screen_share_stopped', {
+				participantId: 'p1',
+				producerId: 'screen-1',
+				timestamp: 'ts',
+			});
 			registry.emitReaction('r1', {
 				roomId: 'r1',
 				reaction: 'wave',
@@ -344,6 +556,7 @@ describe('RoomRegistry', () => {
 			});
 			registry.emitPublicChat('r1', {
 				roomId: 'r1',
+				messageId: 'message-1',
 				message: 'hello',
 				fromUser: 'p1',
 				fromName: 'Alice',
@@ -356,20 +569,25 @@ describe('RoomRegistry', () => {
 				timestamp: 'ts',
 			});
 
+			const eventNames = (
+				recorder as unknown as { _emitCalls: { event: string }[] }
+			)._emitCalls.map((call) => call.event);
 			expect(
-				(
-					recorder as unknown as { _emitCalls: { event: string }[] }
-				)._emitCalls.map((call) => call.event),
+				eventNames.filter((event) => event !== 'recording:projection'),
 			).toEqual([
 				'active_speaker',
 				'producer_created',
 				'producer_closed',
 				'screen_share_started',
+				'screen_share_stopped',
 				'reaction:message',
 				'hand_raised',
 				'chat:message',
 				'media_control_update',
 			]);
+			expect(
+				eventNames.filter((event) => event === 'recording:projection'),
+			).toHaveLength(7);
 			const calls = (
 				recorder as unknown as {
 					_emitCalls: EmissionFixture[];
@@ -391,6 +609,13 @@ describe('RoomRegistry', () => {
 			).toEqual({
 				participantId: 'p1',
 				shareData: { producerId: 'screen-1' },
+				timestamp: 'ts',
+			});
+			expect(
+				calls.find((call) => call.event === 'screen_share_stopped')?.data,
+			).toEqual({
+				participantId: 'p1',
+				producerId: 'screen-1',
 				timestamp: 'ts',
 			});
 		});
@@ -468,13 +693,18 @@ describe('RoomRegistry', () => {
 			const setup = makeIo();
 			const registry = new RoomRegistry(setup.io);
 			const recorder = makeSocket('recorder-1');
-			addRecorderSocket(setup, 'r1', recorder);
+			addRecorderSocket(setup, registry, 'r1', recorder);
 
 			registry.emitParticipantEvent('r1', 'participant_joined', 'p1', userData);
 			registry.emitParticipantEvent('r1', 'participant_left', 'p1');
 
+			const calls = (
+				recorder as unknown as {
+					_emitCalls: { event: string; data: unknown }[];
+				}
+			)._emitCalls;
 			expect(
-				(recorder as unknown as { _emitCalls: unknown[] })._emitCalls,
+				calls.filter((call) => call.event !== 'recording:projection'),
 			).toEqual([
 				{
 					event: 'participant_joined',
@@ -494,6 +724,9 @@ describe('RoomRegistry', () => {
 					data: { roomId: 'r1', participantId: 'p1' },
 				},
 			]);
+			expect(
+				calls.filter((call) => call.event === 'recording:projection'),
+			).toHaveLength(2);
 		});
 
 		it('participant_joined for a preview-* id only emits to full sockets (preview sockets get nothing)', () => {
@@ -581,6 +814,347 @@ describe('RoomRegistry', () => {
 
 			expect(registry.getRaisedHands('r1')).toEqual({});
 			expect(registry.isHostOnlyChat('r1')).toBe(false);
+		});
+	});
+
+	describe('recorder stage projection', () => {
+		it('removes all participant-owned retained state before the leave snapshot', () => {
+			const { io } = makeIo();
+			const registry = new RoomRegistry(io);
+			registry.emitParticipantEvent('r1', 'participant_joined', 'p1', {
+				name: 'Alice',
+				userId: 'p1',
+				avatar: '',
+				audio_enabled: true,
+				video_enabled: true,
+			});
+			registry.emitProducerCreated('r1', {
+				participantId: 'p1',
+				producerId: 'p1-video',
+				kind: 'video',
+				paused: false,
+				isScreen: false,
+			});
+			registry.emitRaisedHand('r1', {
+				participantId: 'p1',
+				raised: true,
+				timestamp: new Date().toISOString(),
+			});
+			registry.emitActiveSpeaker('r1', ['p1']);
+
+			registry.emitParticipantEvent('r1', 'participant_left', 'p1');
+
+			expect(registry.getRecorderStageSnapshot('r1')).toMatchObject({
+				participants: [],
+				producers: [],
+				raised_hands: {},
+				active_speaker_ids: [],
+			});
+		});
+
+		it('broadcasts participant updates and projects them without a legacy join', () => {
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
+			const viewer = makeSocket('viewer-1');
+			addFullSocket(setup, 'r1', viewer);
+			const recorder = makeSocket('recorder-1');
+			addRecorderSocket(setup, registry, 'r1', recorder);
+			registry.emitParticipantEvent('r1', 'participant_joined', 'p1', {
+				name: 'Alice',
+				userId: 'p1',
+				avatar: '',
+				audio_enabled: true,
+				video_enabled: true,
+			});
+			registry.emitParticipantUpdated('r1', 'p1', {
+				name: 'Alice Updated',
+				userId: 'p1',
+				avatar: '',
+				audio_enabled: false,
+				video_enabled: false,
+			});
+			const viewerCalls = (
+				viewer as unknown as {
+					_emitCalls: Array<{ event: string; data: unknown }>;
+				}
+			)._emitCalls;
+			expect(viewerCalls).toContainEqual({
+				event: 'participant_updated',
+				data: {
+					roomId: 'r1',
+					participantId: 'p1',
+					userData: {
+						name: 'Alice Updated',
+						userId: 'p1',
+						avatar: '',
+						audio_enabled: false,
+						video_enabled: false,
+					},
+				},
+			});
+			const calls = (
+				recorder as unknown as {
+					_emitCalls: Array<{
+						event: string;
+						data: { payload: { type: string } };
+					}>;
+				}
+			)._emitCalls;
+			expect(
+				calls.filter((call) => call.event === 'participant_joined'),
+			).toHaveLength(1);
+			expect(
+				calls.filter((call) => call.event === 'recording:projection').at(-1)
+					?.data.payload.type,
+			).toBe('participant_updated');
+			expect(
+				registry.getRecorderStageSnapshot('r1').participants[0],
+			).not.toHaveProperty('avatar');
+		});
+
+		it('does not emit to a stale socket that merely remains in the recorder room', () => {
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
+			const stale = makeSocket('stale');
+			const active = makeSocket('active');
+			addRecorderSocket(setup, registry, 'r1', stale);
+			addRecorderSocket(setup, registry, 'r1', active);
+			Object.assign(active, {
+				recordingClaims: { recording_id: 'recording:stale' },
+			});
+			registry.activateRecorder(active, 'recording:stale', 'job:stale');
+			(stale as unknown as { _emitCalls: unknown[] })._emitCalls.length = 0;
+			(active as unknown as { _emitCalls: unknown[] })._emitCalls.length = 0;
+			registry.emitParticipantEvent('r1', 'participant_joined', 'p1', {
+				name: 'Alice',
+				userId: 'p1',
+				audio_enabled: true,
+				video_enabled: true,
+			});
+			expect(
+				(stale as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
+			expect(
+				(active as unknown as { _emitCalls: unknown[] })._emitCalls.length,
+			).toBeGreaterThan(0);
+		});
+
+		it('emits safe ordered envelopes and retains only persistent snapshot state', () => {
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
+			const recorder = makeSocket('recorder-1');
+			addRecorderSocket(setup, registry, 'r1', recorder);
+			const observedAt = new Date().toISOString();
+
+			registry.emitParticipantEvent('r1', 'participant_joined', 'p1', {
+				name: 'Alice',
+				userId: 'account-1',
+				avatar: 'alice.png',
+				is_guest: true,
+				audio_enabled: true,
+				video_enabled: true,
+			});
+			registry.emitProducerCreated('r1', {
+				participantId: 'p1',
+				producerId: 'screen-1',
+				kind: 'video',
+				paused: false,
+				isScreen: true,
+			});
+			registry.emitRaisedHand('r1', {
+				participantId: 'p1',
+				raised: true,
+				timestamp: observedAt,
+			});
+			registry.emitActiveSpeaker('r1', ['p1']);
+			registry.emitMediaControlUpdate('r1', {
+				participantId: 'p1',
+				action: 'video_off',
+				timestamp: observedAt,
+			});
+			registry.emitReaction('r1', {
+				roomId: 'r1',
+				fromUser: 'p1',
+				fromName: 'Alice',
+				reaction: 'wave',
+				timestamp: observedAt,
+			});
+			registry.emitPublicChat('r1', {
+				roomId: 'r1',
+				messageId: 'message-1',
+				message: 'hello',
+				fromUser: 'p1',
+				fromName: 'Alice',
+				timestamp: observedAt,
+				clientId: 'private-client-id',
+			});
+
+			const projections = (
+				recorder as unknown as {
+					_emitCalls: Array<{
+						event: string;
+						data: { cursor?: number; observed_at?: string };
+					}>;
+				}
+			)._emitCalls.filter((call) => call.event === 'recording:projection');
+			expect(projections.map((call) => call.data.cursor)).toEqual([
+				1, 2, 3, 4, 5, 6, 7,
+			]);
+			const timestamps = projections.map((call) =>
+				String(call.data.observed_at),
+			);
+			expect(
+				timestamps.every((timestamp) => !Number.isNaN(Date.parse(timestamp))),
+			).toBe(true);
+			expect([...timestamps].sort()).toEqual(timestamps);
+			const projectionJson = JSON.stringify(projections);
+			expect(projectionJson).not.toContain('account-1');
+			expect(projectionJson).not.toContain('is_guest');
+			expect(projectionJson).not.toContain('private-client-id');
+
+			const snapshot = registry.getRecorderStageSnapshot('r1');
+			expect(snapshot).toMatchObject({
+				protocol_version: 1,
+				room_id: 'r1',
+				cursor: 7,
+				participants: [
+					{
+						participant_id: 'p1',
+						name: 'Alice',
+						avatar: 'alice.png',
+						audio_enabled: true,
+						video_enabled: false,
+					},
+				],
+				producers: [
+					{
+						producer_id: 'screen-1',
+						participant_id: 'p1',
+						kind: 'video',
+						paused: false,
+						is_screen: true,
+					},
+				],
+				raised_hands: { p1: expect.any(String) },
+				active_speaker_ids: ['p1'],
+			});
+			expect(snapshot).not.toHaveProperty('reactions');
+			expect(snapshot).not.toHaveProperty('chat_messages');
+			expect(Date.parse(snapshot.observed_at)).not.toBeNaN();
+		});
+
+		it('does not project separate screen-share events', () => {
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
+			const recorder = makeSocket('recorder-1');
+			addRecorderSocket(setup, registry, 'r1', recorder);
+
+			registry.emitScreenShare('r1', 'screen_share_started', {
+				participantId: 'p1',
+				shareData: { producerId: 'screen-1' },
+				timestamp: new Date().toISOString(),
+			});
+
+			expect(
+				(
+					recorder as unknown as { _emitCalls: Array<{ event: string }> }
+				)._emitCalls.filter((call) => call.event === 'recording:projection'),
+			).toEqual([]);
+			expect(registry.getRecorderStageSnapshot('r1').cursor).toBe(0);
+		});
+
+		it('retains and projects producer pause changes', () => {
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
+			const recorder = makeSocket('recorder-1');
+			addRecorderSocket(setup, registry, 'r1', recorder);
+			registry.emitParticipantEvent('r1', 'participant_joined', 'p1', {
+				name: 'Alice',
+				userId: 'p1',
+				audio_enabled: true,
+				video_enabled: true,
+			});
+			registry.emitProducerCreated('r1', {
+				participantId: 'p1',
+				producerId: 'producer-1',
+				kind: 'video',
+				paused: false,
+				isScreen: false,
+			});
+
+			registry.emitProducerPaused('r1', {
+				participantId: 'p1',
+				producerId: 'producer-1',
+				paused: true,
+			});
+
+			expect(registry.getRecorderStageSnapshot('r1').producers[0]?.paused).toBe(
+				true,
+			);
+			const projections = (
+				recorder as unknown as {
+					_emitCalls: Array<{
+						event: string;
+						data: { payload: unknown };
+					}>;
+				}
+			)._emitCalls.filter((call) => call.event === 'recording:projection');
+			expect(projections.at(-1)?.data.payload).toEqual({
+				type: 'producer_updated',
+				producer_id: 'producer-1',
+				paused: true,
+			});
+
+			registry.emitProducerPaused('r1', {
+				participantId: 'p1',
+				producerId: 'producer-1',
+				paused: false,
+			});
+			expect(registry.getRecorderStageSnapshot('r1').producers[0]?.paused).toBe(
+				false,
+			);
+		});
+
+		it('cleans retained projection state', () => {
+			const { io } = makeIo();
+			const registry = new RoomRegistry(io);
+			registry.emitParticipantEvent('r1', 'participant_joined', 'p1', {
+				name: 'Alice',
+				userId: 'account-1',
+				audio_enabled: true,
+				video_enabled: true,
+			});
+
+			registry.cleanupMediaRoom('r1');
+
+			expect(registry.getRecorderStageSnapshot('r1')).toMatchObject({
+				cursor: 0,
+				participants: [],
+				producers: [],
+				raised_hands: {},
+				active_speaker_ids: [],
+			});
+		});
+
+		it('recognizes only the joined active recorder owner', () => {
+			const { io } = makeIo();
+			const registry = new RoomRegistry(io);
+			const recorder = makeSocket('recorder-1');
+			Object.assign(recorder, {
+				scope: 'recording',
+				roomId: 'r1',
+				userId: 'recorder:recording-1',
+				participantId: 'recorder:recording-1',
+				recordingClaims: {
+					recording_id: 'recording-1',
+					recorder_job_id: 'job-1',
+				},
+			});
+
+			registry.activateRecorder(recorder, 'recording-1', 'job-1');
+			expect(registry.isJoinedActiveRecorder(recorder, 'r1')).toBe(false);
+			registry.joinRecorder(recorder, 'r1', 'recorder:recording-1');
+			expect(registry.isJoinedActiveRecorder(recorder, 'r1')).toBe(true);
 		});
 	});
 });

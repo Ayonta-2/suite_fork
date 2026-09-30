@@ -1,7 +1,6 @@
 # Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import json
 from typing import Literal
 from uuid import uuid7
 
@@ -12,9 +11,17 @@ from frappe.utils import cint, today
 from jmap import MethodError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import chunked_set, format_method_error, format_set_error, get_account_client
+from suite.mail.jmap import (
+    CALENDAR_PROPERTIES,
+    chunked_set,
+    format_method_error,
+    format_set_error,
+    get_account_client,
+)
+from suite.mail.utils import log_mail_error
 from suite.utils import parse_filters
 from suite.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.validation import JSONList
 
 
 class Calendar(Document):
@@ -146,11 +153,8 @@ def validate_calendar_name_format(name: str) -> None:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes multiple calendars given their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:
@@ -206,7 +210,7 @@ def get_calendar(account: str, id: str) -> dict:
 
     client = get_account_client(account)
     with client.batch() as b:
-        h = b.calendars.calendar.get(ids=[id])
+        h = b.calendars.calendar.get(ids=[id], properties=CALENDAR_PROPERTIES)
 
     if calendars := h.result.items:
         return format_calendar(account, calendars[0].to_wire())
@@ -274,13 +278,88 @@ def delete_calendars(account: str, ids: list[str], remove_events: bool = True) -
         )
 
 
+# What a calendar reminds about when an event carries no alerts of its own
+# (`useDefaultAlerts`): ten minutes before a timed event, nine in the morning on
+# the day of an all-day one. Per-user, per-calendar state on the JMAP server —
+# every client honouring JSCalendar sees the same defaults.
+DEFAULT_ALERTS_WITH_TIME = {
+    "default-10m": {
+        "@type": "Alert",
+        "action": "display",
+        "trigger": {"@type": "OffsetTrigger", "offset": "-PT10M", "relativeTo": "start"},
+    }
+}
+DEFAULT_ALERTS_WITHOUT_TIME = {
+    "default-9am": {
+        "@type": "Alert",
+        "action": "display",
+        "trigger": {"@type": "OffsetTrigger", "offset": "PT9H", "relativeTo": "start"},
+    }
+}
+
+
+def ensure_default_alerts(account: str) -> None:
+    """Seeds the account's calendars with default alerts, where they have none.
+
+    Idempotent, and deliberately only fills emptiness: a calendar whose defaults were set —
+    by this, by another client, by a future settings page — is left alone. Until there is a
+    place to clear defaults on purpose, empty always means unseeded. A day-long cache mark
+    keeps the extra round-trip off every sidebar load."""
+
+    cache_key = _default_alerts_cache_key(account)
+    if frappe.cache.get_value(cache_key):
+        return
+
+    try:
+        client = get_account_client(account)
+        with client.batch() as b:
+            h = b.calendars.calendar.get(
+                properties=["id", "myRights", "defaultAlertsWithTime", "defaultAlertsWithoutTime"]
+            )
+        calendars = [c.to_wire() for c in h.result.items]
+
+        update = {}
+        for calendar in calendars:
+            if not (calendar.get("myRights") or {}).get("mayWriteAll", True):
+                continue
+            patch = {}
+            if not calendar.get("defaultAlertsWithTime"):
+                patch["defaultAlertsWithTime"] = DEFAULT_ALERTS_WITH_TIME
+            if not calendar.get("defaultAlertsWithoutTime"):
+                patch["defaultAlertsWithoutTime"] = DEFAULT_ALERTS_WITHOUT_TIME
+            if patch:
+                update[calendar["id"]] = patch
+
+        if update:
+            with client.batch() as b:
+                h = b.calendars.calendar.set(update=update)
+            h.result  # a refused write is a failure to log, not a seeding to mark
+    except Exception:
+        # Best-effort: a seeding failure must never break calendar listing. The mark
+        # stays unset, so the next load retries.
+        log_mail_error("Calendar Default Alerts Seeding")
+        return
+
+    frappe.cache.set_value(cache_key, True, expires_in_sec=24 * 60 * 60)
+
+
+def _default_alerts_cache_key(account: str) -> str:
+    return f"calendar|default_alerts_seeded|{account}"
+
+
+def forget_default_alerts_seeded(account: str) -> None:
+    """Has the next listing seed again, for a calendar created since the last one."""
+
+    frappe.cache.delete_value(_default_alerts_cache_key(account))
+
+
 @frappe.whitelist()
 def fetch_calendars(account: str, page: int = 1, limit: int = 10) -> list:
     """Returns a list of calendars for the given account."""
 
     client = get_account_client(account)
     with client.batch() as b:
-        h = b.calendars.calendar.get()
+        h = b.calendars.calendar.get(properties=CALENDAR_PROPERTIES)
 
     calendars = [c.to_wire() for c in h.result.items]
     formatted_calendars = [format_calendar(account, calendar) for calendar in calendars]
@@ -320,7 +399,8 @@ def format_calendar(account: str, calendar: dict) -> dict:
     """Formats calendar data for display."""
 
     share_with = []
-    for pid, r in calendar.get("shareWith", {}).items():
+    # Null, not empty, on a calendar shared with the account: only its owner sees who it is shared with.
+    for pid, r in (calendar.get("shareWith") or {}).items():
         share_with.append(
             {
                 "principal_id": pid,

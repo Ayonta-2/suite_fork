@@ -12,7 +12,7 @@ from suite.mail.api.account import (
     get_user_info,
     set_signature,
 )
-from suite.mail.doctype.identity.identity import add_identity, delete_identities, update_identity
+from suite.mail.doctype.identity.identity import add_identity, bulk_delete, update_identity
 from suite.mail.doctype.participant_identity.participant_identity import (
     add_participant_identity,
     update_participant_identity,
@@ -45,11 +45,23 @@ class TestMailIdentitySettings(StalwartIntegrationTestCase):
             rows = {i["id"]: i for i in get_identities(self.account)}
             self.assertEqual(rows[identity_id]["_name"], "Renamed Persona")
 
-            set_signature(rows[identity_id]["name"], "<p>Kind regards</p>")
+            set_signature(
+                rows[identity_id]["name"],
+                "<div>Kind regards</div><div>Alex</div>"
+                '<div><a href="https://example.com/team">our team page</a></div>',
+            )
             rows = {i["id"]: i for i in get_identities(self.account)}
             self.assertIn("Kind regards", rows[identity_id]["html_signature"] or "")
+            # The text form is the same signature, not a one-line trace of it: JMAP carries
+            # both and a client renders whichever part it shows.
+            self.assertEqual(
+                rows[identity_id]["text_signature"],
+                "Kind regards\nAlex\nour team page <https://example.com/team>",
+            )
 
-            delete_identities(self.account, [identity_id])
+            # The settings UI keys its Delete button on this flag and deletes by document name.
+            self.assertTrue(rows[identity_id]["may_delete"])
+            bulk_delete([rows[identity_id]["name"]])
             self.assertNotIn(identity_id, [i["id"] for i in get_identities(self.account)])
 
     def test_participant_identities(self):
@@ -99,12 +111,15 @@ class TestMailIdentitySettings(StalwartIntegrationTestCase):
                 self.account,
                 enabled=1,
                 subject="Out of office",
-                html_body="<p>Back next week.</p>",
-                text_body="Back next week.",
+                html_body="<div>Back next week.</div><div>Ask ops@example.com if urgent.</div>",
+                text_body="ignored, the HTML body is authoritative",
             )
             vacation = get_vacation_response(self.account)
             self.assertTrue(vacation["enabled"])
             self.assertEqual(vacation["subject"], "Out of office")
+            # Derived from the HTML rather than taken from the caller, and keeping its shape:
+            # an auto-reply is read as plain text by whoever gets it.
+            self.assertEqual(vacation["text_body"], "Back next week.\nAsk ops@example.com if urgent.")
 
             # Turning vacation off reactivates the previously active (automation) script.
             update_vacation_response(self.account, enabled=0)

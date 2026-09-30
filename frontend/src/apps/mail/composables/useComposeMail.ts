@@ -1,15 +1,19 @@
 import { computed, inject, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
-import { createResource } from 'frappe-ui'
+import { createResource, toast } from 'frappe-ui'
 import { Mention } from 'frappe-ui/editor'
 
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { processInlineImages, raiseToast } from '@/apps/mail/utils'
+import { useUndo } from '@/apps/mail/utils/composables'
 import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
+import { moveRecipient as moveRecipientBetweenFields } from '@/apps/mail/utils/recipientFields'
+import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 
-import type { ComposeMailData, Identity, UserResource } from '@/apps/mail/types'
+import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
+import type { RecipientField } from '@/apps/mail/utils/recipientFields'
 import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 
 /** The mounted TextEditor instance, as far as this composable cares about it. */
@@ -21,7 +25,7 @@ interface EditorHost {
 	}
 }
 
-export interface ComposeMailOptions {
+interface ComposeMailOptions {
 	/** A draft being resumed, or the reply/forward this composition starts from. */
 	mailDetails?: ComposeMailData
 	/** Inline in a thread (desktop), rather than a composer of its own. */
@@ -138,6 +142,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
 	const isRecipientsEmpty = computed(() => [mail.to, mail.cc, mail.bcc].every((d) => !d.length))
 
+	/**
+	 * Re-addressing someone: To → Cc, Cc → Bcc, either way round. Held here because the draft owns
+	 * all three lists and a recipient field owns only its own — a field asked to give someone up has
+	 * nowhere to put them.
+	 */
+	const moveRecipient = (recipient: DraftRecipient, from: RecipientField, to: RecipientField) =>
+		moveRecipientBetweenFields(mail, recipient.email, from, to)
+
 	const isBodyEmpty = computed(() => {
 		if (!mail.html_body) return true
 
@@ -163,10 +175,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
 	// ── Signature ───────────────────────────────────────────────────────────────────────────────
 
+	// The wrapper is what lets the text/plain alternative introduce the block with RFC 3676's
+	// "-- " separator; by the time a body reaches the server the signature is ordinary markup.
+	// Gated on the HTML form, which is the one actually inserted.
 	const buildSignature = (email?: string) => {
 		const identity = getIdentity(email!)
-		return identity?.text_signature
-			? `<div><br></div><div><br></div>${identity.html_signature}`
+		return identity?.html_signature
+			? '<div><br></div><div><br></div><div class="frappe_mail_signature">' +
+					identity.html_signature +
+					'</div>'
 			: ''
 	}
 
@@ -185,15 +202,23 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	// empty, and is where a signature belongs.
 	const isSavedDraft = !!mailDetails?.id
 
+	// A fresh composition can open with prefilled content — a forward's header block. It rides
+	// along untouched: the signature is inserted above it, and the pristine-body comparison
+	// below includes it.
+	const prefilledBody = isSavedDraft ? '' : mailDetails?.html_body || ''
+
 	// Swap the signature when the From identity changes — but only while the body is still the
-	// auto-inserted signature (or empty), so a message the user has written isn't overwritten.
-	// Compared by text so the editor's HTML normalization doesn't defeat the match.
+	// auto-inserted signature (or empty/prefilled), so a message the user has written isn't
+	// overwritten. Compared by text so the editor's HTML normalization doesn't defeat the match.
 	watch(
 		() => mail.from_email,
 		(val, oldVal) => {
 			if (isBodyEmpty.value && isSavedDraft) return
-			if (isBodyEmpty.value || bodyText(mail.html_body) === bodyText(buildSignature(oldVal)))
-				mail.html_body = buildSignature(val)
+			if (
+				isBodyEmpty.value ||
+				bodyText(mail.html_body) === bodyText(buildSignature(oldVal) + prefilledBody)
+			)
+				mail.html_body = buildSignature(val) + prefilledBody
 		},
 		{ immediate: true },
 	)
@@ -244,14 +269,21 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		{ debounce: 2000 },
 	)
 
-	// Mirrors UNDO_SEND_WINDOW_SECONDS in api/mail.py; the server holds delivery a few seconds
-	// longer than this so a last-moment Undo still lands in time.
-	const UNDO_SEND_WINDOW_MS = 10000
+	// The Undo toast lives for the period the server actually held delivery for (it echoes it back
+	// with the send result; the hold is that plus a few seconds' grace, so a last-moment Undo still
+	// lands in time). The user's own setting is only a fallback for a result without one: the
+	// setting can change under a mounted composer (Settings, Desk, another tab), and a toast timed
+	// from a stale copy would either vanish early or offer an Undo the server can no longer honour.
+	const undoSendWindowMs = (period?: number | null) =>
+		(period ?? undoSendPeriodOf(user.data)) * 1000
 
 	// A plain Send holds delivery for the undo window ('undo'); Schedule send passes an explicit time
 	// ('scheduled'). Both come back as 'Submitted' with a send_at, so the toast has to know which one
-	// it confirms.
+	// it confirms — and which account it went out as. The scope follows the active account, and the
+	// hold is long enough to switch accounts in, so an undo names the account pinned at send time
+	// rather than whichever the scope has moved on to.
 	const sendMode = ref<'undo' | 'scheduled'>('undo')
+	let sentAs = scopeAccountId.value
 
 	const sendMail = async (sendAt?: string) => {
 		if (deleteMail.loading) return
@@ -268,6 +300,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		if (createMail.loading) await createMail.promise
 		if (updateDraft.loading) await updateDraft.promise
 
+		sentAs = scopeAccountId.value
 		if (mail.id) updateDraft.submit({ submit: true, send_at: sendAt, undo_send: !sendAt })
 		else createMail.submit({ save_as_draft: false, send_at: sendAt, undo_send: !sendAt })
 	}
@@ -311,13 +344,52 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	// is just cancelling that submission — the message lands back in Drafts.
 	const undoSend = createResource({
 		url: 'suite.mail.api.scheduled.cancel_scheduled_mail',
-		makeParams: ({ id }: { id: string }) => ({ account: scopeAccountId.value, id }),
+		makeParams: ({ account, id }: { account: string; id: string }) => ({ account, id }),
 		onSuccess: () => {
 			reloadMails()
 			raiseToast(__('Sending undone. The message is back in your drafts.'))
 		},
 		onError: (error: { message: string }) => raiseToast(error.message, 'error'),
 	})
+
+	const { setUndoAction, retireUndoAction } = useUndo()
+
+	// The sent toast, with Undo on it for as long as the server holds delivery. The same undo goes in
+	// the ⌘Z slot for the same time, so the key that takes back an archive takes back a send too.
+	// The two are one action: whichever fires takes the toast and the slot with it, so the other
+	// cannot cancel twice. When the window closes the slot is only vacated if it is still this
+	// send's — a list action taken since has its own undo in there, and the toasts are its.
+	//
+	// It outlives the view it was sent from: cancelling a hold is a server call, as good from the
+	// Outbox or the Screener as from the inbox, and looking at Sent right after sending is exactly
+	// when a typo gets noticed.
+	const offerUndoSend = (
+		account: string,
+		submissionId: string,
+		windowMs: number,
+		threadId?: string,
+	) => {
+		const undoSendNow = () => {
+			toast.dismiss(sentToast)
+			retireUndoAction(undoSendNow)
+			undoSend.submit({ account, id: submissionId })
+		}
+		setUndoAction(undoSendNow, { outlivesView: true })
+		setTimeout(() => retireUndoAction(undoSendNow), windowMs)
+
+		// Two buttons, and they are not equals: Undo expires with the toast, so it takes the urgent
+		// slot; View is an aside you could reach any time from Sent, offered only when the thread
+		// isn't already the one in front of you.
+		const sentToast = raiseToast(
+			__('Message sent.'),
+			'success',
+			{ label: __('Undo'), onClick: undoSendNow },
+			windowMs,
+			threadId && route.params.threadID !== threadId
+				? { label: __('View'), onClick: () => viewSentMessage(threadId) }
+				: undefined,
+		)
+	}
 
 	const onMailUpdateSuccess = ({
 		id,
@@ -326,6 +398,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		thread_id,
 		submission_id,
 		send_at,
+		undo_send_period,
 	}: {
 		name: string
 		id: string
@@ -336,6 +409,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		submission_id?: string
 		/** Set when the server is holding delivery (undo window or scheduled send). */
 		send_at?: string
+		/** Seconds the server held an undo-send for, before its grace; null for a scheduled send. */
+		undo_send_period?: number | null
 	}) => {
 		if (id) mail.id = id
 		updateOriginalMail()
@@ -357,18 +432,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
 		if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
 		else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
-			// Two buttons, and they are not equals: Undo expires with the toast, so it takes the
-			// urgent slot; View is an aside you could reach any time from Sent, offered only when the
-			// thread isn't already the one in front of you.
-			raiseToast(
-				__('Message sent.'),
-				'success',
-				{ label: __('Undo'), onClick: () => undoSend.submit({ id: submission_id }) },
-				UNDO_SEND_WINDOW_MS,
-				thread_id && route.params.threadID !== thread_id
-					? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
-					: undefined,
-			)
+			offerUndoSend(sentAs, submission_id, undoSendWindowMs(undo_send_period), thread_id)
 		else if (status === 'Submitted' && send_at && sendMode.value === 'scheduled')
 			raiseToast(__('Send scheduled.'), 'success', {
 				label: __('View'),
@@ -538,6 +602,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		updateOriginalMail,
 		isDraftUpdated,
 		isRecipientsEmpty,
+		moveRecipient,
 		isBodyEmpty,
 		isMailEmpty,
 		isLoading,

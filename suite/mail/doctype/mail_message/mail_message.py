@@ -32,6 +32,7 @@ from suite.mail.jmap import (
     download_blobs,
     get_account_client,
     get_cached_mailboxes,
+    get_email_state,
     get_jmap_client,
     get_mailbox_id_by_role,
     omit_none,
@@ -50,10 +51,12 @@ from suite.mail.utils import (
 from suite.mail.utils.dt import normalize_utc_z, to_user_timezone
 from suite.mail.utils.email_parser import EmailParser
 from suite.mail.utils.logger import get_push_logger
+from suite.mail.utils.quoted_content import strip_quote_trail
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
 from suite.utils import clean_text, convert_html_to_text, enqueue_job, parse_filters, user_context
 from suite.utils.dt import get_utc_now
 from suite.utils.lock import acquire_lock, release_lock
+from suite.utils.validation import JSONList
 
 PREVIEW_MAX_LENGTH = 256
 
@@ -658,7 +661,7 @@ class MailMessage(Document):
             recipients=recipients,
             attachments=attachments,
             html_body=self.html_body,
-            text_body=self.text_body,
+            text_body=None if self.html_body else self.text_body,
             message_id=self.message_id,
             id=self.id,
             in_reply_to=self.in_reply_to,
@@ -700,11 +703,8 @@ class MailMessage(Document):
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Delete multiple Mail Messages based on their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:
@@ -1275,10 +1275,9 @@ def preview_from_html(html_body: str) -> str:
     """Returns preview text for an HTML body, excluding the quoted reply trail."""
 
     soup = BeautifulSoup(html_body, "html.parser")
-    # Strip the same quote containers the client collapses (see EmailContent.vue) so the
-    # preview surfaces the new content instead of "On ... wrote:" and everything below it.
-    for quoted in soup.find_all(class_=["gmail_quote", "frappe_mail_quote"]):
-        quoted.decompose()
+    # Strip the same quote trails the client collapses (see EmailContent.vue) so the preview
+    # surfaces the new content instead of "On ... wrote:" and everything below it.
+    strip_quote_trail(soup)
 
     # A message that is nothing but a quote would otherwise get a blank preview.
     return convert_html_to_text(str(soup)) or convert_html_to_text(html_body)
@@ -1346,13 +1345,16 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
                     {"type": titled_key, "display_name": rcpt["name"], "email": rcpt["email"]}
                 )
 
-    for key, field in {"htmlBody": "html_body", "textBody": "text_body"}.items():
-        value = (
-            message.get("bodyValues", {}).get(message[key][0]["partId"], {}).get("value")
-            if message.get(key)
-            else None
-        )
-        formatted_message[field] = value
+    # RFC 8621: htmlBody falls back to the text parts when a message carries no HTML, and
+    # textBody to the HTML parts when it carries no plain text. Taken without checking the
+    # part's type, a plain-text mail lands in html_body and the reader treats prose as markup.
+    for key, field, wanted in (
+        ("htmlBody", "html_body", "text/html"),
+        ("textBody", "text_body", "text/plain"),
+    ):
+        part = next((p for p in message.get(key) or [] if p.get("type") == wanted), None)
+        body_values = message.get("bodyValues") or {}
+        formatted_message[field] = body_values.get(part["partId"], {}).get("value") if part else None
 
     if html_body := formatted_message["html_body"]:
         preview = preview_from_html(html_body)
@@ -1544,6 +1546,25 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
     ctx["email_state"] = email_state
 
     if not current_state:
+        if not email_state:
+            # A manual or scheduled run carries no state, and storing None would leave the
+            # account re-"initializing" on every run with changes never fetched — seed from
+            # the server's actual Email state instead.
+            try:
+                email_state = get_email_state(account_view(get_jmap_client(user), account))
+                ctx["email_state"] = email_state
+            except Exception:
+                logger.error("email-sync-state-init-failed")
+                log_mail_error(
+                    _("Failed to initialize email sync state"),
+                    frappe.get_traceback(with_context=True),
+                )
+                return
+
+        if not email_state:
+            logger.warning("email-sync-state-unavailable")
+            return
+
         logger.info("initializing-email-sync-state")
         return update_sync_state(account, type="email", state=email_state)
 
@@ -1642,6 +1663,11 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
         if destroyed_ids := result.destroyed:
             logger.info("messages-deleted", count=len(destroyed_ids))
             _remove_cached_messages(account, destroyed_ids)
+
+        if updated_ids or destroyed_ids:
+            # Read, moved or deleted on another device: no new mail, but the lists this user has
+            # open elsewhere are stale.
+            frappe.publish_realtime("mail_changed", user=user)
 
         new_state = result.new_state
 

@@ -1,7 +1,23 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import { Button, FormControl } from 'frappe-ui'
 
+import { requestAlertPermission } from '@/utils/calendarAlert'
+import {
+	ALERT_ACTION_OPTIONS,
+	DIRECTION_OPTIONS,
+	RELATIVE_TO_OPTIONS,
+	UNIT_OPTIONS,
+} from '@/apps/calendar/utils/eventOptions'
+
 const { alerts } = defineProps<{ alerts: any[] }>()
+
+// Adding a reminder is the user saying they want to be told: the one moment
+// to ask the browser for system notifications, while the click still counts.
+watch(
+	() => alerts.length,
+	(count, previous) => count > previous && requestAlertPermission(),
+)
 
 const emit = defineEmits(['update:alerts'])
 
@@ -14,35 +30,12 @@ const removeAlert = (i: number) => {
 	const updated = alerts.filter((_, idx) => idx !== i)
 	emit('update:alerts', updated)
 }
-
-const ALERT_ACTION_OPTIONS = [
-	{ label: __('Screen Pop-up'), value: 'Display' },
-	{ label: __('Email Notice'), value: 'Email' },
-	{ label: __('Sound Alert'), value: 'Audio' },
-]
-
-const UNIT_OPTIONS = [
-	{ label: __('Minutes'), value: 'minutes' },
-	{ label: __('Hours'), value: 'hours' },
-	{ label: __('Days'), value: 'days' },
-	{ label: __('Weeks'), value: 'weeks' },
-]
-
-const DIRECTION_OPTIONS = [
-	{ label: __('Before'), value: -1 },
-	{ label: __('After'), value: 1 },
-]
-
-const RELATIVE_TO_OPTIONS = [
-	{ label: __('Start'), value: 'Start' },
-	{ label: __('End'), value: 'End' },
-]
 </script>
 
 <template>
 	<div v-for="(alert, i) in alerts" :key="i" class="flex space-x-2">
 		<FormControl
-			:model-value="alert.action"
+			:model-value="alert.action === 'Audio' ? 'Display' : alert.action"
 			:label="i === 0 ? (alerts.length > 1 ? __('Alerts') : __('Alert')) : ''"
 			type="select"
 			:options="ALERT_ACTION_OPTIONS"
@@ -83,6 +76,8 @@ const RELATIVE_TO_OPTIONS = [
 			<FormControl
 				:model-value="alert.date"
 				type="date"
+				format="MMM D, YYYY"
+				:placeholder="__('Select date')"
 				class="mt-auto w-full"
 				@update:model-value="updateAlert(i, 'date', $event)"
 			/>
@@ -90,10 +85,13 @@ const RELATIVE_TO_OPTIONS = [
 			<FormControl
 				:model-value="alert.time"
 				type="time"
+				:interval="15"
+				format="h:mm A"
+				:placeholder="__('Select time')"
 				class="mt-auto w-full"
 				@update:model-value="updateAlert(i, 'time', $event)"
 			/>
 		</template>
-		<Button icon="x" class="mt-auto" @click="removeAlert(i)" />
+		<Button icon="lucide-x" class="mt-auto" @click="removeAlert(i)" />
 	</div>
 </template>

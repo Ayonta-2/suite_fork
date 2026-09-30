@@ -1,7 +1,7 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Add Email Address'),
 			actions: [
 				{
@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template #default>
 			<div class="space-y-4">
 				<div class="flex items-center justify-between">
 					<FormControl v-model="username" :label="__('Username')" placeholder="team" class="w-full" />
@@ -38,7 +38,7 @@
 					:placeholder="__('Used as the display name for this address')"
 				/>
 				<ErrorMessage
-					:message="addEmail.error && (addEmail.error?.messages?.[0] || addEmail.error?.message || __('Request failed.'))"
+					:message="domainsError || (addEmail.error && (addEmail.error?.messages?.[0] || addEmail.error?.message || __('Request failed.')))"
 				/>
 			</div>
 		</template>
@@ -47,8 +47,10 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Dialog, ErrorMessage, FeatherIcon, FormControl, createResource } from 'frappe-ui'
+import { Dialog, ErrorMessage, FormControl, createResource } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
+import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
@@ -59,7 +61,7 @@ const username = ref('')
 const domain = ref('')
 const description = ref('')
 
-const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains', auto: true })
+const { domains, domainsError } = useEnabledDomains(show)
 
 watch(show, () => {
 	if (show.value) {

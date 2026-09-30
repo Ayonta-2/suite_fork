@@ -5,7 +5,7 @@ import json
 import os
 import shutil
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid7
 from zoneinfo import ZoneInfo
 
@@ -26,6 +26,7 @@ from frappe.utils import (
     random_string,
     time_diff_in_seconds,
 )
+from pydantic import BaseModel, ConfigDict, Field
 
 from suite.calendar import jmap_events
 from suite.mail.doctype.push_subscription.push_subscription import (
@@ -54,6 +55,16 @@ from suite.utils import log_error, reconnect_on_failure
 from suite.utils.file import compress_directory, extract_compressed_file
 from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
+from suite.utils.validation import parse_json
+
+
+class CalendarImportMetadata(BaseModel):
+    """Where imported events go. A misspelt key is refused rather than ignored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    calendar_ids: dict[str, bool] | None = Field(None, alias="calendarIds")
+
 
 # JSCalendar (RFC 8984) -> iCalendar (RFC 5545) value maps.
 STATUS_MAP: dict[str, str] = {
@@ -257,10 +268,8 @@ class CalendarExchange(OwnerFromUser, Document):
         self._resolve_import_file()
 
         if self.import_metadata:
-            try:
-                self.import_metadata = json.dumps(json.loads(self.import_metadata), indent=4)
-            except json.JSONDecodeError:
-                frappe.throw(_("Metadata must be valid JSON."))
+            metadata = parse_json(CalendarImportMetadata, self.import_metadata, _("Metadata"))
+            self.import_metadata = metadata.model_dump_json(by_alias=True, exclude_none=True, indent=4)
 
     def _resolve_import_file(self) -> str:
         """Resolves ``import_file`` to an absolute path, refusing anything outside the site's files
@@ -287,10 +296,8 @@ class CalendarExchange(OwnerFromUser, Document):
         """Validate the export parameters."""
 
         if self.export_filter:
-            try:
-                self.export_filter = json.dumps(json.loads(self.export_filter), indent=4)
-            except json.JSONDecodeError:
-                frappe.throw(_("Export filter must be valid JSON."))
+            export_filter = parse_json(dict[str, Any], self.export_filter, _("Filter"))
+            self.export_filter = json.dumps(export_filter, indent=4)
 
         if not self.export_archive_type:
             frappe.throw(_("Archive Type is required."))
@@ -1009,6 +1016,23 @@ def _build_recurrence_rule(rule: dict, time_zone: str | None = None, all_day: bo
     return recur or None
 
 
+def _participant_name(participants: dict | None, address: str) -> str | None:
+    """Display name of the participant matching the address, else the owner's (for ORGANIZER CN)."""
+
+    address = address.lower().removeprefix("mailto:")
+    owner_name = None
+    for participant in (participants or {}).values():
+        name = participant.get("name")
+        if not name:
+            continue
+        candidate = participant.get("calendarAddress") or participant.get("email") or ""
+        if candidate.lower().removeprefix("mailto:") == address:
+            return name
+        if not owner_name and "owner" in (participant.get("roles") or {}):
+            owner_name = name
+    return owner_name
+
+
 def _add_participants(component, participants: dict) -> None:
     """Adds ATTENDEE properties to a VEVENT from a JSCalendar participants map."""
 
@@ -1038,9 +1062,28 @@ def _add_participants(component, participants: dict) -> None:
             if mapped := PARTSTAT_MAP.get(partstat.lower()):
                 attendee.params["PARTSTAT"] = mapped
 
-        attendee.params["RSVP"] = "TRUE" if participant.get("expectReply") else "FALSE"
+        # A group nobody schedules (a mailing list kept for display) is never asked to reply.
+        expects_reply = participant.get("expectReply") and participant.get("scheduleAgent") != "none"
+        attendee.params["RSVP"] = "TRUE" if expects_reply else "FALSE"
+
+        # RFC 5545 3.2.11: the groups the attendee was invited through.
+        if lists := _member_addresses(participants, participant):
+            attendee.params["MEMBER"] = lists
 
         component.add("attendee", attendee, encode=0)
+
+
+def _member_addresses(participants: dict, participant: dict) -> list[str]:
+    """Returns the calendar addresses of the groups a participant is a member of on this event."""
+
+    addresses = []
+    for group_id in participant.get("memberOf") or {}:
+        group = participants.get(group_id) or {}
+        address = group.get("calendarAddress") or (f"mailto:{group['email']}" if group.get("email") else None)
+        if address:
+            addresses.append(address)
+
+    return addresses
 
 
 def _add_alarms(component, alerts: dict) -> None:
@@ -1088,7 +1131,7 @@ def jscalendar_to_vevent(event: dict, categories: list[str] | None = None):
     Recurrence overrides are NOT applied here; :func:`_build_components` handles those by
     emitting the master event plus per-instance override components."""
 
-    from icalendar import Event, vText, vUri
+    from icalendar import Event, vCalAddress, vUri
 
     component = Event()
 
@@ -1097,7 +1140,19 @@ def jscalendar_to_vevent(event: dict, categories: list[str] | None = None):
 
     if title := event.get("title"):
         component.add("summary", title)
-    if description := event.get("description"):
+
+    meet_link = next(
+        (l.get("href") for l in (event.get("links") or {}).values() if is_conference_link(l.get("href"))),
+        None,
+    )
+
+    # Google appends a "Join with Google Meet: ..." line to DESCRIPTION so text-only clients
+    # (and forwarded plain-text copies) keep a joinable link; same idea for the Meet link.
+    description = event.get("description") or ""
+    if meet_link and meet_link not in description:
+        join_line = f"Join with {CONFERENCE_LABEL}: {meet_link}"
+        description = f"{description}\n\n{join_line}" if description else join_line
+    if description:
         component.add("description", description)
 
     time_zone = event.get("timeZone")
@@ -1110,10 +1165,14 @@ def jscalendar_to_vevent(event: dict, categories: list[str] | None = None):
 
     duration = _parse_duration(event.get("duration"), start)
     if duration is not None:
+        # DTEND over DURATION throughout: some clients (older Outlook/Exchange builds notably)
+        # mishandle DURATION in scheduling messages. All-day DTEND is DATE-valued and exclusive
+        # per RFC 5545.
         if event.get("showWithoutTime"):
-            # All-day events use a DATE-valued DTEND (exclusive) for broad client compatibility.
             if start:
                 component.add("dtend", (start + (duration or timedelta(days=1))).date())
+        elif start:
+            component.add("dtend", start + duration)
         else:
             component.add("duration", duration)
 
@@ -1125,9 +1184,17 @@ def jscalendar_to_vevent(event: dict, categories: list[str] | None = None):
         component.add("transp", FREE_BUSY_MAP[free_busy.lower()])
 
     if organizer := event.get("organizerCalendarAddress"):
-        component.add("organizer", vText(organizer))
+        address = vCalAddress(organizer)
+        # CN lets clients show "Invitation from <name>" instead of the bare address.
+        if name := _participant_name(event.get("participants"), organizer):
+            address.params["CN"] = name
+        component.add("organizer", address, encode=0)
 
     locations = [l.get("name") for l in (event.get("locations") or {}).values() if l.get("name")]
+    # Google-style "Remote; https://...": many clients only surface LOCATION (CONFERENCE and
+    # URL get buried), so the Meet link rides along unless the location text already has it.
+    if meet_link and not any(meet_link in name for name in locations):
+        locations.append(meet_link)
     if locations:
         component.add("location", "; ".join(locations))
 
@@ -1167,8 +1234,9 @@ def jscalendar_to_vevent(event: dict, categories: list[str] | None = None):
         component.add("last-modified", updated)
     component.add("dtstamp", updated or created or datetime.now(UTC))
 
-    if (sequence := event.get("sequence")) is not None:
-        component.add("sequence", cint(sequence))
+    # Always emitted: an explicit SEQUENCE:0 keeps clients that compare sequences across
+    # updates (Outlook notably) from misordering the first invite against later revisions.
+    component.add("sequence", cint(event.get("sequence")))
 
     _add_participants(component, event.get("participants"))
     _add_alarms(component, event.get("alerts"))

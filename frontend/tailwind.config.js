@@ -14,8 +14,9 @@ export default {
     '../node_modules/frappe-ui/src/components/**/*.{vue,js,ts,jsx,tsx}',
     './node_modules/frappe-ui/src/molecules/**/*.{vue,js,ts,jsx,tsx}',
     '../node_modules/frappe-ui/src/molecules/**/*.{vue,js,ts,jsx,tsx}',
-    './node_modules/frappe-ui/frappe/components/**/*.{vue,js,ts,jsx,tsx}',
-    '../node_modules/frappe-ui/frappe/components/**/*.{vue,js,ts,jsx,tsx}',
+    './node_modules/frappe-ui/experimental/**/*.{vue,js,ts,jsx,tsx}',
+    '../node_modules/frappe-ui/experimental/**/*.{vue,js,ts,jsx,tsx}',
+    '../frappe-ui/experimental/**/*.{vue,js,ts,jsx,tsx}',
   ],
   variants: {
     extend: {

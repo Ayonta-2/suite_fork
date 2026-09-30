@@ -30,6 +30,7 @@ function createManager({ e2eeRequired = false } = {}) {
 			clear: vi.fn(),
 			setEventHandlers: vi.fn(),
 			getConsumersByParticipant: vi.fn(() => []),
+			getScreenShareConsumers: vi.fn(() => []),
 			removeConsumer: vi.fn(),
 		},
 		reattachAfterProducerClosed: vi.fn().mockResolvedValue(undefined),
@@ -91,6 +92,37 @@ describe("ParticipantConnection", () => {
 			participantId: "remote-1",
 			producerId: "producer-1",
 			isScreen: false,
+		});
+	});
+
+	it("updates participant media state when a participant reconnects", async () => {
+		const { handlers, manager, participantManager } = createManager();
+		participantManager.addParticipant({
+			participantId: "remote-1",
+			userData: { name: "Remote", audio_enabled: false, video_enabled: false },
+		});
+
+		await manager.connect("token");
+		handlers.get("participant_updated")?.({
+			participantId: "remote-1",
+			userData: {
+				name: "Remote",
+				userId: "remote-1",
+				audio_enabled: true,
+				video_enabled: false,
+			},
+		});
+		expect(participantManager.getParticipant("remote-1")?.audio_enabled).toBe(false);
+
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "audio",
+		});
+
+		expect(participantManager.getParticipant("remote-1")).toMatchObject({
+			audio_enabled: true,
+			video_enabled: false,
 		});
 	});
 
@@ -244,6 +276,114 @@ describe("ParticipantConnection", () => {
 		});
 	});
 
+	it("removes only the screen consumer matching a stopped producer", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		const stopped = vi.fn();
+		manager.eventHandlers.onScreenShareStopped = stopped;
+		const oldScreen = {
+			id: "consumer-old",
+			participantId: "remote-1",
+			producerId: "screen-old",
+			isScreen: true,
+		};
+		const currentScreen = {
+			id: "consumer-current",
+			participantId: "remote-1",
+			producerId: "screen-current",
+			isScreen: true,
+		};
+		mediaManager.consumerManager.getScreenShareConsumers.mockReturnValue([
+			oldScreen,
+			currentScreen,
+		]);
+		await manager.connect("token");
+
+		handlers.get("screen_share_stopped")?.({
+			participantId: "remote-1",
+			producerId: "screen-old",
+		});
+
+		expect(mediaManager.consumerManager.removeConsumer).toHaveBeenCalledOnce();
+		expect(mediaManager.consumerManager.removeConsumer).toHaveBeenCalledWith(
+			"consumer-old",
+		);
+		expect(stopped).toHaveBeenCalledWith(
+			expect.objectContaining({
+				participantId: "remote-1",
+				producerId: "screen-old",
+				consumerId: "consumer-old",
+			}),
+		);
+		expect(mediaManager.isScreenShareActive).toBe(true);
+	});
+
+	it("does not remove a screen consumer for another producer", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		mediaManager.consumerManager.getScreenShareConsumers.mockReturnValue([
+			{
+				id: "consumer-current",
+				participantId: "remote-1",
+				producerId: "screen-current",
+				isScreen: true,
+			},
+		]);
+		await manager.connect("token");
+
+		handlers.get("screen_share_stopped")?.({
+			participantId: "remote-1",
+			producerId: "screen-old",
+		});
+
+		expect(mediaManager.consumerManager.removeConsumer).not.toHaveBeenCalled();
+		expect(mediaManager.isScreenShareActive).toBe(true);
+	});
+
+	it("preserves a replacement screen when the old producer closes late", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		const oldScreen = {
+			id: "consumer-old",
+			participantId: "remote-1",
+			producerId: "screen-old",
+			isScreen: true,
+			consumer: { closed: false, producerId: "screen-old" },
+		};
+		const replacement = {
+			id: "consumer-current",
+			participantId: "remote-1",
+			producerId: "screen-current",
+			isScreen: true,
+			consumer: { closed: false, producerId: "screen-current" },
+		};
+		mediaManager.consumerManager.getConsumersByParticipant.mockReturnValue([
+			oldScreen,
+			replacement,
+		]);
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "screen-old",
+			kind: "video",
+			isScreen: true,
+		});
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "screen-current",
+			kind: "video",
+			isScreen: true,
+		});
+
+		handlers.get("producer_closed")?.({
+			participantId: "remote-1",
+			producerId: "screen-old",
+			isScreen: true,
+		});
+
+		expect(mediaManager.consumerManager.removeConsumer).toHaveBeenCalledOnce();
+		expect(mediaManager.consumerManager.removeConsumer).toHaveBeenCalledWith(
+			"consumer-old",
+		);
+	});
+
 	it("ignores producer events for the current user", async () => {
 		const { handlers, manager, mediaManager } = createManager();
 
@@ -329,6 +469,45 @@ describe("ParticipantConnection", () => {
 		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
 	});
 
+	it("replays live camera state over the initial participant snapshot", async () => {
+		const { handlers, manager, participantManager, sfuClient } = createManager();
+		await manager.connect("token");
+		sfuClient.getRoomParticipants.mockImplementationOnce(async () => {
+			handlers.get("media_control_update")?.({
+				participantId: "remote-1",
+				action: "video_on",
+			});
+			return [
+				{
+					participantId: "remote-1",
+					user_id: "remote-1",
+					userData: { video_enabled: false },
+				},
+			];
+		});
+
+		await manager.setupExistingParticipants();
+
+		expect(participantManager.getParticipant("remote-1")?.video_enabled).toBe(true);
+	});
+
+	it("applies camera state received before a participant joins", async () => {
+		const { handlers, manager, participantManager } = createManager();
+		await manager.connect("token");
+
+		handlers.get("media_control_update")?.({
+			participantId: "remote-1",
+			action: "video_on",
+		});
+		handlers.get("participant_joined")?.({
+			participantId: "remote-1",
+			user_id: "remote-1",
+			userData: { video_enabled: false },
+		});
+
+		expect(participantManager.getParticipant("remote-1")?.video_enabled).toBe(true);
+	});
+
 	it("reattaches a surviving endpoint consumer when one producer closes", async () => {
 		const { handlers, manager, mediaManager } = createManager();
 		await manager.connect("token");
@@ -394,11 +573,13 @@ describe("ParticipantConnection", () => {
 	it("rejoins the room and rebuilds media after signaling reconnect", async () => {
 		const { manager, mediaManager, sfuClient, transportManager, recoveryManager } =
 			createManager();
-		manager.initialize("meeting-1", { user_id: "me" });
+		const onRoomRejoined = vi.fn();
+		manager.initialize("meeting-1", { user_id: "me" }, { onRoomRejoined });
 		await manager.joinRoom(
 			{ name: "Me", userId: "me" },
 			{ audio_enabled: true, video_enabled: true },
 		);
+		expect(onRoomRejoined).not.toHaveBeenCalled();
 
 		await manager.rejoinAfterSignalingReconnect();
 
@@ -409,6 +590,7 @@ describe("ParticipantConnection", () => {
 			"meeting-1",
 			{ name: "Me", userId: "me" },
 			{ audio_enabled: true, video_enabled: true },
+			sfuClient.joinRoom.mock.calls[0][3],
 		);
 		expect(transportManager.closeReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(recoveryManager.reset).toHaveBeenCalledTimes(1);
@@ -416,6 +598,21 @@ describe("ParticipantConnection", () => {
 		expect(transportManager.createReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(mediaManager.rebuildSendSide).toHaveBeenCalledTimes(1);
 		expect(recoveryManager.setupTransportEventHandlers).toHaveBeenCalledTimes(1);
+		expect(onRoomRejoined).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not notify room rejoin when the join request fails", async () => {
+		const { manager, sfuClient } = createManager();
+		const onRoomRejoined = vi.fn();
+		manager.initialize("meeting-1", { user_id: "me" }, { onRoomRejoined });
+		await manager.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+		sfuClient.joinRoom.mockRejectedValue(new Error("join failed"));
+
+		await manager.rejoinAfterSignalingReconnect();
+		expect(onRoomRejoined).not.toHaveBeenCalled();
 	});
 
 	it("resubscribes expected remote media on a fresh Participant Connection", async () => {
@@ -461,6 +658,7 @@ describe("ParticipantConnection", () => {
 			"meeting-1",
 			expect.anything(),
 			{ audio_enabled: true, video_enabled: false },
+			sfuClient.joinRoom.mock.calls[0][3],
 		);
 	});
 
@@ -474,6 +672,31 @@ describe("ParticipantConnection", () => {
 		handlers.get("reconnect")?.({});
 
 		expect(rejoin).toHaveBeenCalledTimes(1);
+	});
+
+	it("cleans up when the meeting moves to another device", async () => {
+		const { handlers, manager, sfuClient } = createManager();
+		const replaced = vi.fn().mockResolvedValue(undefined);
+		manager.eventHandlers.onParticipantConnectionReplaced = replaced;
+		await manager.connect("token");
+
+		handlers.get("participant_connection_replaced")?.({ reason: "takeover" });
+
+		await vi.waitFor(() => expect(sfuClient.disconnect).toHaveBeenCalledOnce());
+		expect(replaced).toHaveBeenCalledWith({ reason: "takeover" });
+		expect(manager.state).toBe("stopped");
+	});
+
+	it("ignores replacement events from its own signaling reconnect", async () => {
+		const { handlers, manager, sfuClient } = createManager();
+		const replaced = vi.fn();
+		manager.eventHandlers.onParticipantConnectionReplaced = replaced;
+		await manager.connect("token");
+
+		handlers.get("participant_connection_replaced")?.({ reason: "reconnect" });
+
+		expect(replaced).not.toHaveBeenCalled();
+		expect(sfuClient.disconnect).not.toHaveBeenCalled();
 	});
 
 	it("escalates signaling reconnect exhaustion through the same coordinator", async () => {
@@ -524,6 +747,45 @@ describe("ParticipantConnection", () => {
 		expect(mediaManager.consumerManager.clear).toHaveBeenCalledTimes(1);
 		expect(transportManager.createReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(sfuClient.getExistingProducers).toHaveBeenCalledTimes(1);
+	});
+
+	it("dispatches screen removal before clearing receive consumers", async () => {
+		const { manager, mediaManager } = createManager();
+		const stopped = vi.fn();
+		const screen = {
+			id: "screen-consumer",
+			participantId: "remote-1",
+			producerId: "screen-producer",
+			isScreen: true,
+			appData: { type: "screen" },
+		};
+		manager.eventHandlers.onScreenShareStopped = stopped;
+		mediaManager.consumerManager.getScreenShareConsumers.mockReturnValue([screen]);
+		mediaManager.consumerManager.removeConsumer.mockImplementation((id: string) => {
+			const events = mediaManager.consumerManager.setEventHandlers.mock.calls.at(-1)?.[0];
+			events?.onConsumerRemoved?.(id, screen);
+		});
+		await manager.connect("token");
+
+		await manager.resetReceiveSide();
+
+		expect(stopped).toHaveBeenCalledWith(
+			expect.objectContaining({
+				participantId: "remote-1",
+				producerId: "screen-producer",
+				consumerId: "screen-consumer",
+			}),
+		);
+		expect(
+			mediaManager.consumerManager.removeConsumer.mock.invocationCallOrder[0],
+		).toBeLessThan(mediaManager.consumerManager.clear.mock.invocationCallOrder[0]);
+	});
+
+	it("fails receive recovery when the producer snapshot fails", async () => {
+		const { manager, sfuClient } = createManager();
+		sfuClient.getExistingProducers.mockRejectedValue(new Error("snapshot failed"));
+
+		await expect(manager.resetReceiveSide()).rejects.toThrow("snapshot failed");
 	});
 
 	it("does not resume receive recovery after disconnect", async () => {

@@ -1,7 +1,7 @@
 <template>
 	<div
 		v-if="showImagesBanner"
-		class="text-ink-gray-6 mb-3 flex flex-col gap-3 rounded border p-2.5 px-4 sm:flex-row sm:items-center"
+		class="text-ink-gray-6 mb-3 flex flex-col gap-3 rounded-4 border p-2.5 px-4 sm:flex-row sm:items-center"
 	>
 		<div class="flex min-w-0 flex-1 items-start gap-3">
 			<!-- Centered on the FIRST line, not on the block: the label wraps to two lines
@@ -33,23 +33,34 @@
 			/>
 		</div>
 	</div>
-	<div v-if="!isIframeReady" class="animate-pulse space-y-2 py-4">
-		<div
-			v-for="i in 5"
-			:key="i"
-			class="bg-surface-gray-3 h-2"
-			:style="{ width: `${Math.floor(Math.random() * 40) + 60}%` }"
+	<!-- `invisible`, never `v-show`, and the skeleton laid over the frame rather than standing in
+	     for it. iframe-resizer sizes the frame by asking the document inside it how tall it is, so
+	     the frame has to have a box the whole time it is being measured. Under `display: none` the
+	     document answers with the child's starting 1px; the parent writes that back as the frame's
+	     height, and the child's own visibility observer then reads a 1px frame as off-screen and
+	     stops reporting size at all. The message is blank from then on however tall its content is,
+	     and nothing recovers it — not a resize, not content changing inside the frame, not even
+	     being handed a real height. Only reloading the frame does, which is why re-selecting the
+	     mail was the one thing that worked. -->
+	<div class="relative w-full">
+		<IframeResizer
+			ref="frame"
+			class="w-full"
+			:class="{ invisible: !isIframeReady }"
+			license="GPLv3"
+			:scrolling="true"
+			:srcdoc
+			@on-ready="isIframeReady = true"
 		/>
+		<div v-if="!isIframeReady" class="absolute inset-0 animate-pulse space-y-2 py-4">
+			<div
+				v-for="i in 5"
+				:key="i"
+				class="bg-surface-gray-3 h-2"
+				:style="{ width: `${Math.floor(Math.random() * 40) + 60}%` }"
+			/>
+		</div>
 	</div>
-	<IframeResizer
-		ref="frame"
-		v-show="isIframeReady"
-		class="w-full"
-		license="GPLv3"
-		:scrolling="true"
-		:srcdoc
-		@on-ready="isIframeReady = true"
-	/>
 </template>
 
 <script setup lang="ts">
@@ -65,8 +76,9 @@ import { Button } from 'frappe-ui'
 
 import { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils'
 import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
-import { useComposeMail, useTheme } from '@/apps/mail/utils/composables'
+import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import { parseMailto } from '@/apps/mail/utils/mailto'
+import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 import {
 	declaresFixedPalette,
 	isArtDirected,
@@ -82,6 +94,7 @@ const {
 const emit = defineEmits<{ trust: [] }>()
 
 const { dataTheme } = useTheme()
+const { isMobile } = useScreenSize()
 const { requestCompose } = useComposeMail()
 const frame = useTemplateRef<{ $el: HTMLIFrameElement }>('frame')
 
@@ -151,23 +164,32 @@ const handleMessage = (event: MessageEvent) => {
 onMounted(() => window.addEventListener('message', handleMessage))
 onUnmounted(() => window.removeEventListener('message', handleMessage))
 
-// Collapse each top-level quoted reply (gmail_quote / frappe_mail_quote) behind a "···" toggle. Done on
-// the DOM, not regex: a quote with nested divs is wrapped as one unit, instead of the old regex stopping
-// at the first </div> and collapsing the wrong region.
+// Collapse each quoted reply trail behind a toggle. findQuoteRoots knows every client's markup (Gmail,
+// Outlook, Apple Mail, …) and hands back one outermost element per trail — hiding it hides any quotes
+// nested inside.
 const collapseQuotes = (doc: Document) => {
-	doc.querySelectorAll('.gmail_quote, .frappe_mail_quote').forEach((quote) => {
-		// Only the outermost quote gets a toggle — hiding it hides any quotes nested inside.
-		if (quote.parentElement?.closest('.gmail_quote, .frappe_mail_quote')) return
+	findQuoteRoots(doc).forEach((quote) => {
 		quote.classList.add('quote-hidden')
+		// A labelled control, not a bare '···' chip — unlabelled, it was easy to miss
+		// that a reply hides a whole conversation underneath it.
 		const button = doc.createElement('button')
-		button.textContent = '···'
+		button.innerHTML =
+			'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 11h16M4 16h10"/></svg>'
+		const label = doc.createElement('span')
+		label.textContent = __('Show trimmed content')
+		// The toggle script runs inside the iframe, where __() doesn't exist — both
+		// translations ride along as data attributes instead.
+		button.dataset.show = __('Show trimmed content')
+		button.dataset.hide = __('Hide trimmed content')
+		button.appendChild(label)
+		// Styled by the .quote-toggle rules in the srcdoc stylesheet — a class, not
+		// inline styles, so the mobile variant can size the touch target up.
+		button.className = 'quote-toggle'
 		button.setAttribute(
-			'style',
-			`background:${colors.value.button};color:${colors.value.text};padding:0.5px 6px;border-radius:8px;cursor:pointer;transition:background .2s;margin:12px 0;`,
+			'onclick',
+			"var hidden = this.nextElementSibling.classList.toggle('quote-hidden');" +
+				'this.lastElementChild.textContent = hidden ? this.dataset.show : this.dataset.hide;',
 		)
-		button.setAttribute('onmouseover', `this.style.background='${colors.value.buttonHover}'`)
-		button.setAttribute('onmouseout', `this.style.background='${colors.value.button}'`)
-		button.setAttribute('onclick', "this.nextElementSibling.classList.toggle('quote-hidden');")
 		quote.parentNode?.insertBefore(button, quote)
 	})
 }
@@ -226,9 +248,13 @@ const srcdoc = computed(() => {
 					max-width: 100% !important;
 				}
 
+				/* Width only — never height. A blanket height:auto overrules authored
+				   squares (an avatar with border-radius:50% renders as an ellipse of the
+				   photo's intrinsic ratio). Images render as authored; the one case that
+				   can't — a fixed width wider than the pane — is rewritten by
+				   normalizeWidths() below, which drops that image's height with it. */
 				img {
 					max-width: 100% !important;
-					height: auto !important;
 				}
 
 				blockquote {
@@ -255,6 +281,41 @@ const srcdoc = computed(() => {
 
 				.quote-hidden {
 					display: none;
+				}
+
+				.quote-toggle {
+					display: inline-flex;
+					align-items: center;
+					gap: 6px;
+					background: ${colors.value.button};
+					color: ${colors.value.text};
+					padding: 4px 9px;
+					/* frappe-ui's standard button radius (rounded-4) */
+					border-radius: 8px;
+					transition: background .2s;
+					margin: 12px 0;
+				}
+
+				.quote-toggle:hover {
+					background: ${colors.value.buttonHover};
+				}
+
+				/* A finger target on mobile — matches the app's 40px mobile buttons,
+				   with the lg radius that size takes. Keyed on the app's own isMobile,
+				   not an iframe media query: the iframe only knows the reading pane's
+				   width, and a desktop pane narrowed by the sidebar is not a phone. */
+				${
+					isMobile.value
+						? `.quote-toggle {
+						padding: 10px 14px;
+						gap: 8px;
+						border-radius: 10px;
+					}
+					.quote-toggle svg {
+						width: 14px;
+						height: 14px;
+					}`
+						: ''
 				}
 
 				.email-pixel {
@@ -290,9 +351,42 @@ const srcdoc = computed(() => {
 					const limit = document.documentElement.clientWidth;
 					if (!limit) return;
 					document.querySelectorAll('[width], [style*="width"]').forEach((el) => {
-						if (parseInt(el.getAttribute('width'), 10) > limit) el.setAttribute('width', '100%');
 						const style = el.style;
-						if (style.width.endsWith('px') && parseFloat(style.width) > limit) style.width = '100%';
+						// The authored box is stashed before the first rewrite, since writing
+						// '100%' destroys it and a resize back to a wide pane must restore it —
+						// the iframe persists across pane-width changes.
+						const img = el.tagName === 'IMG';
+						if (img && el.dataset.authorWidth === undefined) {
+							el.dataset.authorWidth = el.getAttribute('width') ?? '';
+							el.dataset.authorStyleWidth = style.width;
+							el.dataset.authorStyleHeight = style.height;
+						}
+						const attrWidth = img
+							? parseInt(el.dataset.authorWidth, 10)
+							: parseInt(el.getAttribute('width'), 10);
+						const styleWidth = img ? el.dataset.authorStyleWidth : style.width;
+						let clamped = false;
+						if (attrWidth > limit) {
+							el.setAttribute('width', '100%');
+							clamped = true;
+						} else if (img && attrWidth > 0) {
+							el.setAttribute('width', el.dataset.authorWidth);
+						}
+						if (styleWidth.endsWith('px')) {
+							if (parseFloat(styleWidth) > limit) {
+								style.width = '100%';
+								clamped = true;
+							} else if (img) {
+								style.width = styleWidth;
+							}
+						}
+						// An image we narrowed must shed its authored height with the width, or
+						// the photo squashes; one that fits again gets its authored box back —
+						// otherwise the email is the author's.
+						if (img) {
+							if (clamped) style.height = 'auto';
+							else style.height = el.dataset.authorStyleHeight;
+						}
 						if (style.minWidth.endsWith('px') && parseFloat(style.minWidth) > limit) style.minWidth = '0';
 
 						// A percentage width capped by a pixel max-width is how every responsive
@@ -310,8 +404,49 @@ const srcdoc = computed(() => {
 							style.setProperty('max-width', cap > limit ? '100%' : el.dataset.authorMaxWidth, 'important');
 					});
 				};
-				normalizeWidths();
-				window.addEventListener('resize', normalizeWidths);
+
+				// The stylesheet clamp can also shrink an image normalizeWidths never
+				// rewrote — a pixel width in a table cell narrower than the pane, or a
+				// height-only declaration whose intrinsic width overflows. Only layout
+				// knows, and only once the bitmap arrives (naturalWidth is 0 before
+				// load): if the box the image got is narrower than the width its height
+				// was drawn for, shed that height. Percentage widths are left alone —
+				// fluid width against a fixed height is the author's own design.
+				// A height-only image scales its width from that height, so the width
+				// it was drawn for is the height at the bitmap's aspect — not the
+				// bitmap's own width, which a 24px logo cut from a large PNG never
+				// reaches and must not be inflated to.
+				const unsquashImages = () => {
+					document.querySelectorAll('img').forEach((img) => {
+						const authored = img.dataset.authorWidth ?? img.getAttribute('width') ?? '';
+						const authoredStyle = img.dataset.authorStyleWidth ?? img.style.width;
+						if (authoredStyle.includes('%') || authored.includes('%')) return;
+						const drawn =
+							(authoredStyle.endsWith('px') && parseFloat(authoredStyle)) ||
+							parseFloat(authored) ||
+							(img.naturalHeight ? img.clientHeight * (img.naturalWidth / img.naturalHeight) : 0);
+						if (!img.clientWidth) return;
+						if (drawn > img.clientWidth + 1) {
+							// Stash before overwriting, so widening the pane can undo this too.
+							if (img.dataset.authorStyleHeight === undefined)
+								img.dataset.authorStyleHeight = img.style.height;
+							img.style.height = 'auto';
+						} else if (img.style.height === 'auto' && img.dataset.authorStyleHeight !== undefined) {
+							// The box fits again — the authored height comes back with it.
+							img.style.height = img.dataset.authorStyleHeight;
+						}
+					});
+				};
+
+				const normalizeAll = () => {
+					normalizeWidths();
+					unsquashImages();
+				};
+				normalizeAll();
+				window.addEventListener('resize', normalizeAll);
+				document.querySelectorAll('img').forEach((img) =>
+					img.addEventListener('load', unsquashImages),
+				);
 
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {
@@ -360,17 +495,34 @@ const srcdoc = computed(() => {
 					}
 					return false;
 				};
+				// Same rule as useSwipeNav in the parent, and for the same reason: a gesture
+				// that has scrolled 24px vertically is a scroll and stays one, however it
+				// ends. Reading a message is mostly scrolling, so endpoint-only judgement
+				// paged the thread out from under the reader.
 				let swipeOrigin = null;
+				let swipeScrolling = false;
 				document.addEventListener('touchstart', (e) => {
+					swipeScrolling = false;
 					swipeOrigin = e.touches.length === 1 && !inHorizontalScroller(e.target)
 						? { x: e.touches[0].clientX, y: e.touches[0].clientY }
 						: null;
+				}, { passive: true });
+				document.addEventListener('touchmove', (e) => {
+					if (!swipeOrigin || swipeScrolling) return;
+					const touch = e.touches[0];
+					if (!touch) return;
+					const dy = touch.clientY - swipeOrigin.y;
+					if (Math.abs(dy) > 24 && Math.abs(dy) > Math.abs(touch.clientX - swipeOrigin.x))
+						swipeScrolling = true;
 				}, { passive: true });
 				document.addEventListener('touchend', (e) => {
 					if (!swipeOrigin) return;
 					const dx = e.changedTouches[0].clientX - swipeOrigin.x;
 					const dy = e.changedTouches[0].clientY - swipeOrigin.y;
+					const wasScrolling = swipeScrolling;
 					swipeOrigin = null;
+					swipeScrolling = false;
+					if (wasScrolling) return;
 					if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 2) return;
 					window.parent.postMessage({ type: 'swipe', direction: dx < 0 ? 'left' : 'right' }, '*');
 				}, { passive: true });

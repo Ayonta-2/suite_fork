@@ -7,13 +7,23 @@
 		<component :is="Layout" v-else class="mail-app-root">
 			<router-view />
 		</component>
-		<InstallPrompt v-if="isMobile" />
-		<ShortcutsModal v-model="showShortcuts" />
+		<SettingsModal v-if="!mailServerUnavailable && !isMobile" v-model:open="showSettings" />
+		<Teleport v-else-if="!mailServerUnavailable" to="body">
+			<Transition
+				enter-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+				enter-from-class="translate-x-full"
+				leave-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+				leave-to-class="translate-x-full"
+			>
+				<PWASettings v-if="showSettings" @close="showSettings = false" />
+			</Transition>
+		</Teleport>
+		<ShortcutsModal v-model:open="showShortcuts" />
 	</FrappeUIProvider>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, ref, watchEffect } from 'vue'
+import { computed, onMounted, onScopeDispose, onUnmounted, provide, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 
@@ -21,15 +31,17 @@ import { mailServerUnavailable } from '@/boot/config'
 import { type RouteLocationRaw, useRouter } from 'vue-router'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
-import { useScreenSize, useTheme } from '@/apps/mail/utils/composables'
+import { useScreenSize, useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { userStore } from '@/apps/mail/stores/user'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
-import InstallPrompt from '@/apps/mail/components/InstallPrompt.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
+import SettingsModal from '@/apps/mail/components/Modals/SettingsModal.vue'
+import PWASettings from '@/apps/mail/components/PWASettings.vue'
+import { useRootStore } from '@/stores/root'
 
 import type { NotificationPayload } from '@/apps/mail/types'
 
@@ -38,9 +50,8 @@ import type { NotificationPayload } from '@/apps/mail/types'
  *
  * The suite shell already provides the top-level chrome and main.ts provides Pinia/router/frappe-ui/translation, but
  * does NOT provide mail's `$user` / `$dayjs` / `$socket` injects, register
- * mail's push-notification SW, or set up mail's theme. So this layout:
+ * mail's push-notification SW. So this layout:
  *   - provides the mail-local `$user` / `$dayjs` / `$socket` injections,
- *   - applies the user's color scheme to <html data-theme>,
  *   - picks the inner layout (DefaultLayout / bare div for noLayout routes),
  *   - wires push-notification onMessage and registers the (fail-safe) SW,
  *   - wraps children in FrappeUIProvider and renders the nested <router-view>.
@@ -55,14 +66,16 @@ const router = useRouter()
 // list happens to be mounted: they were only reachable from a mailbox view before, so they
 // died in All Inboxes, the Screener and the settings pages. The admin dashboard sits under
 // its own layout and never sees these.
-const showShortcuts = ref(false)
+const { showShortcuts } = useShortcuts()
+const { isMobile } = useScreenSize()
 const gPrefix = useGPrefix()
 
 // `g` is also the prefix each list uses for its own g g / G jump to the ends. Both listeners
 // see the key and keep their own prefix state; this one only ever acts on a following letter,
 // so a `g g` falls through to the list untouched.
-// `g` then a letter. Beyond the account's own folders this reaches the two views that are not
-// folders at all — the merged list and the Screener — so the map holds routes, not mailbox ids.
+// `g` then a letter. Beyond the account's own folders this reaches the three views that are not
+// folders at all — the merged list, the Screener and the Outbox — so the map holds routes, not
+// mailbox ids.
 //
 // `a` is All Inboxes (as in Gmail's All Mail), which pushes Archive to `e` — the letter that
 // already archives a thread, so one letter means archive throughout. The Screener takes `r` for
@@ -72,6 +85,7 @@ const mailboxRoute = (mailbox: string) => ({ name: 'mail-mailbox', params: { acc
 const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
 	a: () => ({ name: 'mail-all-inboxes' }),
 	r: () => ({ name: 'mail-screener', params: { accountId } }),
+	o: () => ({ name: 'mail-outbox', params: { accountId } }),
 	i: () => mailboxRoute(mailboxIds.inbox),
 	f: () => mailboxRoute('starred'),
 	s: () => mailboxRoute(mailboxIds.sent),
@@ -81,8 +95,21 @@ const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
 	t: () => mailboxRoute(mailboxIds.trash),
 }
 
+// ⌘Z takes back the last undoable action, wherever it was taken. The slot is app-wide (useUndo),
+// and so is what can fill it: a send is undoable from the composer window, which is open on every
+// page — so the key lives here rather than in each list, where it was dead on the pages without one.
+const { undo } = useUndo()
+
 const handleGlobalShortcuts = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
+
+	// Above the guard, which drops every modified key: this is the one shortcut here that has one.
+	if ((e.metaKey || e.ctrlKey) && key === 'z' && !shouldIgnoreKeypress(e, true)) {
+		e.preventDefault()
+		gPrefix.disarm()
+		return undo()
+	}
+
 	if (shouldIgnoreKeypress(e)) return
 
 	if (e.key === '?') {
@@ -102,9 +129,28 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
 
 	if (key === 'g') gPrefix.press(e.shiftKey)
 }
-const { dataTheme, cycleTheme } = useTheme()
-const { isMobile } = useScreenSize()
 const route = useRoute()
+const { showSettings, openSettings } = useSettings()
+
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layout', () =>
+	mailServerUnavailable.value
+		? []
+		: [
+				{
+					commands: [
+						{
+							id: 'mail-settings',
+							label: 'Settings',
+							shortcut: 'Mod+Shift+Comma',
+							enterHint: 'open settings',
+							icon: 'lucide-settings',
+							run: () => openSettings(),
+						},
+					],
+				},
+			],
+)
+onScopeDispose(unregisterPaletteGroups)
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
@@ -115,49 +161,6 @@ const Layout = computed(() => {
 	return DefaultLayout
 })
 
-// Alongside the html attribute, sync the theme-color meta — it drives the OS
-// status bar / browser chrome in the installed PWA, which otherwise stays white
-// over the dark app. Values mirror surface-base per theme (dark hex matches
-// EmailContent's THEME_CONFIG).
-const THEME_COLOR: Record<string, string> = { light: '#ffffff', dark: '#171717' }
-
-// All three live on the shared shell, not inside mail: data-theme flips every
-// frappe-ui design token (see colorPalette.js, keyed on [data-theme="dark"]),
-// color-scheme flips the browser-drawn surfaces, and theme-color is a single
-// document-wide meta. Drive/sheets/writer/slides set none of them, so whatever
-// mail leaves behind is what they render with. Snapshot the server-rendered
-// state and restore it on unmount, the same contract as the `mail-app` body
-// class below.
-const root = document.documentElement
-const initialDataTheme = root.getAttribute('data-theme')
-const initialColorScheme = root.style.colorScheme
-let themeColorMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-const initialThemeColor = themeColorMeta?.content ?? null
-
-watchEffect(() => {
-	root.setAttribute('data-theme', dataTheme.value)
-	// color-scheme drives the browser-drawn surfaces the page can't paint — on
-	// Android standalone that's the system navigation bar (white over a dark app
-	// otherwise) and the status-bar seam, plus native controls/scrollbars.
-	root.style.colorScheme = dataTheme.value
-	if (!themeColorMeta) {
-		themeColorMeta = document.createElement('meta')
-		themeColorMeta.name = 'theme-color'
-		document.head.appendChild(themeColorMeta)
-	}
-	themeColorMeta.content = THEME_COLOR[dataTheme.value]
-})
-
-onUnmounted(() => {
-	if (initialDataTheme === null) root.removeAttribute('data-theme')
-	else root.setAttribute('data-theme', initialDataTheme)
-	root.style.colorScheme = initialColorScheme
-	// null means the meta was ours, so take it with us rather than leaving an
-	// empty one on the shell.
-	if (initialThemeColor === null) themeColorMeta?.remove()
-	else if (themeColorMeta) themeColorMeta.content = initialThemeColor
-})
-
 // Mark <body> while mail is mounted so the base styles below (see <style>) can reach frappe-ui
 // Dialogs/Dropdowns, which teleport to <body> — OUTSIDE .mail-app-root. Without this, their
 // un-classed text (modal <h1> titles, base ink color) and heading weights fall back to defaults
@@ -165,20 +168,6 @@ onUnmounted(() => {
 // suite apps are unaffected.
 onMounted(() => document.body.classList.add('mail-app'))
 onUnmounted(() => document.body.classList.remove('mail-app'))
-
-// App-wide Cmd/Ctrl+Shift+L to cycle the color scheme. MailLayout is the
-// mounted mail root, so the listener lives here to fire on any mail page.
-const handleThemeShortcut = (e: KeyboardEvent) => {
-	if (
-		(e.metaKey || e.ctrlKey) &&
-		e.shiftKey &&
-		e.key.toLowerCase() === 'l' &&
-		!shouldIgnoreKeypress(e, true)
-	) {
-		e.preventDefault()
-		cycleTheme()
-	}
-}
 
 /* -------------------------------------------------------------------------- */
 /* Push-notification service worker.                                          */
@@ -240,13 +229,11 @@ onMounted(() => {
 	window.frappePushNotification?.onMessage((payload: NotificationPayload) =>
 		showNotification(payload),
 	)
-	window.addEventListener('keydown', handleThemeShortcut)
 	window.addEventListener('keydown', handleGlobalShortcuts)
 	window.addEventListener('focusout', resetDocumentScroll)
 })
 
 onUnmounted(() => {
-	window.removeEventListener('keydown', handleThemeShortcut)
 	window.removeEventListener('keydown', handleGlobalShortcuts)
 	window.removeEventListener('focusout', resetDocumentScroll)
 })
@@ -260,7 +247,7 @@ onUnmounted(() => {
    variables (NOT @apply, which would break the build for these plugin-registered
    token classes); plain Tailwind utilities below still use @apply. */
 .mail-app-root {
-	@apply text-xl sm:text-lg text-ink-gray-8 bg-surface-base;
+	@apply text-lg sm:text-md text-ink-gray-8 bg-surface-base;
 }
 
 .mail-app-root h1 {
@@ -268,7 +255,7 @@ onUnmounted(() => {
 }
 
 .mail-app-root h2 {
-	@apply text-xl !font-medium sm:text-lg;
+	@apply text-lg !font-medium sm:text-md;
 }
 
 /* frappe-ui Dialogs/Dropdowns teleport to <body>, escaping .mail-app-root, so the base text color
@@ -284,7 +271,7 @@ body.mail-app h1 {
 }
 
 body.mail-app h2 {
-	@apply text-xl !font-medium sm:text-lg;
+	@apply text-lg !font-medium sm:text-md;
 }
 
 /* The page behind the app follows the theme: the translucent tab bar blurs over it

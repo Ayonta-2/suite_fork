@@ -1,7 +1,6 @@
 # Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import json
 from uuid import uuid7
 
 import frappe
@@ -19,6 +18,7 @@ from suite.mail.jmap import (
     invalidate_jmap_mailboxes_cache,
 )
 from suite.utils import parse_filters
+from suite.utils.validation import JSONList
 
 DEFAULT_MAILBOX_GAP = 1000
 MINIMUM_MAILBOX_GAP = 1
@@ -131,11 +131,8 @@ def parse_mailbox_name(name: str) -> tuple[str, str]:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes multiple mailboxes given their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:
@@ -263,8 +260,14 @@ def delete_mailboxes(account: str, ids: list[str], remove_emails: bool = True) -
 
 
 @frappe.whitelist()
-def fetch_mailboxes(account: str, page: int = 1, limit: int = 10) -> list:
-    """Returns a list of mailboxes for the given account."""
+def fetch_mailboxes(account: str, page: int = 1, limit: int | None = 10) -> list:
+    """Returns a list of mailboxes for the given account.
+
+    `limit=None` returns every mailbox, and is what a caller wanting the account's folders as a
+    whole asks for — the client's folder list, a link-field search: a page silently drops whatever
+    sorts last, and says nothing about having done so. The default stays at ten for the callers
+    that do page, this being a whitelisted endpoint.
+    """
 
     client = get_account_client(account)
     with client.batch() as b:
@@ -276,6 +279,9 @@ def fetch_mailboxes(account: str, page: int = 1, limit: int = 10) -> list:
         formatted_mailboxes, key=lambda m: (m["sort_order"], get_sort_order(m["role"]), m["_name"], m["id"])
     )
     frappe.cache.set_value(_get_total_cache_key(account), len(mailboxes), expires_in_sec=600)
+
+    if limit is None:
+        return sorted_mailboxes
 
     start = (page - 1) * limit
     end = start + limit

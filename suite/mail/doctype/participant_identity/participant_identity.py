@@ -1,7 +1,6 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import json
 from uuid import uuid7
 
 import frappe
@@ -13,6 +12,7 @@ from jmap import MethodError
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import chunked_set, format_method_error, format_set_error, get_account_client
 from suite.utils import parse_filters
+from suite.utils.validation import JSONList
 
 
 class ParticipantIdentity(Document):
@@ -104,11 +104,8 @@ def _get_total_cache_key(account: str) -> str:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes participant identities for the given list of names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:

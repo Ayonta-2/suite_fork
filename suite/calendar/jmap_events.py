@@ -15,6 +15,7 @@ from uuid import uuid7
 from jmap.models.responses import SetResponse
 
 from suite.mail.jmap import (
+    CALENDAR_PROPERTIES,
     SetResult,
     SuiteJMAPClient,
     chunk_list,
@@ -151,11 +152,11 @@ def get_events(client: SuiteJMAPClient, ids: list[str] | None = None) -> list[di
     return [e.to_wire() for e in events]
 
 
-def get_calendars(client: SuiteJMAPClient) -> list[dict]:
-    """Returns raw calendar objects for the client's account."""
+def get_calendars(client: SuiteJMAPClient, ids: list[str] | None = None) -> list[dict]:
+    """Returns raw calendar objects for the client's account (all of them, or just `ids`)."""
 
     with client.batch() as b:
-        h = b.calendars.calendar.get()
+        h = b.calendars.calendar.get(properties=CALENDAR_PROPERTIES, **omit_none(ids=ids))
 
     return [c.to_wire() for c in h.result.items]
 
@@ -208,12 +209,15 @@ def query_events(
         current_batch_size = min(batch_size, limit - len(ids))
 
         with client.batch() as b:
-            h = b.calendars.calendar_event.query(
+            h = _queue_query(
+                b,
+                filter=filter,
                 position=position,
                 limit=current_batch_size,
                 sort=sort,
-                calculate_total=total is None,
-                **omit_none(filter=filter, timeZone=time_zone, expandRecurrences=expand_recurrences),
+                calculateTotal=total is None,
+                timeZone=time_zone,
+                expandRecurrences=expand_recurrences,
             )
         response = h.result
 
@@ -228,6 +232,98 @@ def query_events(
         position += len(response.ids)
 
     return {"ids": ids[:limit], "total": total}
+
+
+def query_around(
+    client: SuiteJMAPClient,
+    conditions: list[dict],
+    now: str,
+    limit: int,
+    time_zone: str | None = None,
+    expand_recurrences: bool = False,
+) -> list[str]:
+    """The ids of up to `limit` matches of `conditions` on either side of `now`: what is
+    still to come, soonest first, then what has passed, most recent first.
+
+    Two queries in one request rather than one query in date order: the server cuts at
+    `limit` on its own, and cut at one end of a calendar the answer holds the matches
+    furthest from today. An event under way, or a series still running, answers on both
+    sides and is listed once, on the side it came first. One request rather than two, since
+    a search pays a round trip per account and this would have doubled it.
+    """
+
+    halves = (({"after": now}, True), ({"before": now}, False))
+    with client.batch() as b:
+        handles = [
+            _queue_query(
+                b,
+                filter={"operator": "AND", "conditions": [*conditions, edge]},
+                sort=[{"property": "start", "isAscending": ascending}],
+                limit=limit,
+                expandRecurrences=expand_recurrences,
+                timeZone=time_zone,
+                calculateTotal=False,
+            )
+            for edge, ascending in halves
+        ]
+
+    ids: list[str] = []
+    for h in handles:
+        ids.extend(id for id in h.result.ids if id not in ids)
+    return ids
+
+
+def occurrences_from(
+    client: SuiteJMAPClient,
+    after_by_uid: dict[str, str],
+    before: str,
+    per_series: int,
+    time_zone: str | None = None,
+) -> dict[str, list[str]]:
+    """The ids of the first `per_series` occurrences of each series from its own `after` up
+    to `before`, keyed by the series' uid.
+
+    One query per series, carried together in as few requests as the server allows (jmaplib
+    cuts the batch at maxCallsInRequest), rather than one query for all of them: the server
+    orders a single answer by start, so a weekly series would spend the whole limit before a
+    yearly one had appeared once. The window is not optional — expansion is refused without
+    one — which is why both ends are named; the near end is the caller's per series, since
+    where a series' window should begin depends on how often it runs. A series with nothing in
+    its window is absent from the answer, as is one whose query the server refused.
+    """
+
+    with client.batch() as b:
+        handles = {
+            uid: _queue_query(
+                b,
+                filter={
+                    "operator": "AND",
+                    "conditions": [{"uid": uid}, {"after": after}, {"before": before}],
+                },
+                sort=[{"property": "start", "isAscending": True}],
+                limit=per_series,
+                expandRecurrences=True,
+                timeZone=time_zone,
+                calculateTotal=False,
+            )
+            for uid, after in after_by_uid.items()
+        }
+
+    return {uid: list(h.result.ids) for uid, h in handles.items() if not h.error}
+
+
+def _queue_query(b, **arguments):
+    """Queues a `CalendarEvent/query` with the arguments as the wire names them, minus Nones.
+
+    Sent raw rather than through jmaplib's typed builder: draft-ietf-jmap-calendars has an
+    expanding query carry one bare FilterCondition naming both `after` and `before`, and the
+    builder refuses anything else before sending. The search and the shared-calendar grid
+    expand with AND/OR filters, and the search with a one-sided window — which Stalwart
+    accepts, and which no bounded single condition reproduces (a series' occurrences past any
+    horizon would be cut). The answer still parses as a typed QueryResponse.
+    """
+
+    return b.add("CalendarEvent/query", omit_none(**arguments))
 
 
 def parse_event_blobs(client: SuiteJMAPClient, blob_ids: list[str]) -> dict:
@@ -387,6 +483,98 @@ def set_participation_status(
     return h.result
 
 
+def set_instance_participation_status(
+    client: SuiteJMAPClient,
+    id: str,
+    recurrence_id: str,
+    participant_uid: str,
+    participation_status: str,
+    send_scheduling_messages: bool = False,
+) -> SetResponse:
+    """Patches one participant's participationStatus on a single occurrence of a series.
+
+    The series keeps the answer it had and this date gets an override carrying the new one —
+    the same mechanism a renamed or moved occurrence uses, so other clients read one
+    occurrence answered differently rather than a series that changed its mind.
+    """
+
+    if not id or not recurrence_id or not participant_uid:
+        raise ValueError("'id', 'recurrence_id' and 'participant_uid' are all required.")
+
+    overrides = _recurrence_overrides(client, id)
+    key = f"participants/{participant_uid}/participationStatus"
+    status = participation_status.lower()
+
+    # JMAP refuses a patch whose parent isn't there, so the shape follows what is stored:
+    # a whole map only when the event carries no overrides at all, and otherwise the
+    # smallest write that touches this occurrence and no other.
+    if not overrides:
+        patch = {"recurrenceOverrides": {recurrence_id: {key: status}}}
+    elif recurrence_id in overrides:
+        patch = {f"recurrenceOverrides/{recurrence_id}/{key}": status}
+    else:
+        patch = {f"recurrenceOverrides/{recurrence_id}": {key: status}}
+
+    with client.batch() as b:
+        h = b.calendars.calendar_event.set(
+            update={id: {**patch, "updated": utcnow()}}, sendSchedulingMessages=send_scheduling_messages
+        )
+
+    return h.result
+
+
+def remove_overrides(client: SuiteJMAPClient, id: str, recurrence_ids: list[str]) -> SetResponse:
+    """Drops the named occurrences' overrides, leaving every other one where it is.
+
+    One key removed per occurrence rather than a rewritten map: the map is shared state, and
+    a copy taken before someone else's write would put their occurrence back.
+    """
+
+    if not id or not recurrence_ids:
+        raise ValueError("Both 'id' and 'recurrence_ids' are required.")
+
+    # The nulls are the point of this patch (JMAP removes a key set to null), so they must
+    # reach the wire — nothing here goes through omit_none.
+    payload = {f"recurrenceOverrides/{rid}": None for rid in recurrence_ids}
+    payload["updated"] = utcnow()
+
+    with client.batch() as b:
+        h = b.calendars.calendar_event.set(update={id: payload})
+
+    return h.result
+
+
+def set_overrides(client: SuiteJMAPClient, id: str, overrides: dict) -> SetResponse:
+    """Replaces an event's whole recurrenceOverrides map.
+
+    For rewriting the map as a whole — re-keying every override after the series it belongs
+    to has moved. Anywhere that touches a single occurrence must patch that occurrence's key
+    instead, so a copy of the map taken before someone else's write cannot undo it.
+    """
+
+    if not id:
+        raise ValueError("'id' is required.")
+
+    with client.batch() as b:
+        h = b.calendars.calendar_event.set(
+            update={id: {"recurrenceOverrides": overrides, "updated": utcnow()}}
+        )
+
+    return h.result
+
+
+def _recurrence_overrides(client: SuiteJMAPClient, id: str) -> dict:
+    """The event's stored recurrenceOverrides map (empty when it has none)."""
+
+    with client.batch() as b:
+        h = b.calendars.calendar_event.get(ids=[id], properties=["id", "recurrenceOverrides"])
+    events = h.result.items
+    if not events:
+        raise ValueError(f"Event with id '{id}' not found.")
+
+    return events[0].to_wire().get("recurrenceOverrides") or {}
+
+
 def delete_instance(
     client: SuiteJMAPClient,
     id: str,
@@ -484,8 +672,11 @@ def participants_map(participants: list[dict] | None = None) -> dict[str, dict] 
             uid = participant.get("uid") or str(uuid7())
             expect_reply = participant.get("expect_reply", False)
             calendar_address = f"mailto:{email}" if email else None
+            schedule_agent = (participant.get("schedule_agent") or "").lower() or None
 
-            if expect_reply:
+            # A participant nobody schedules (a mailing list kept for display) gets no
+            # routing, whatever the reply expectation its members inherit.
+            if expect_reply and schedule_agent != "none":
                 send_to = (
                     participant.get("send_to") or {"imip": calendar_address} if calendar_address else None
                 )
@@ -500,12 +691,14 @@ def participants_map(participants: list[dict] | None = None) -> dict[str, dict] 
                 "sendTo": send_to,
                 "scheduleId": schedule_id,
                 "calendarAddress": calendar_address,
-                "kind": participant.get("kind", "").lower() or None,
+                "kind": (participant.get("kind") or "").lower() or None,
                 "description": participant.get("description") or None,
                 "roles": participant.get("roles") or None,
-                "participationStatus": participant.get("participation_status", "").lower() or None,
+                "participationStatus": (participant.get("participation_status") or "").lower() or None,
                 "expectReply": expect_reply,
                 "comment": participant.get("comment") or None,
+                "scheduleAgent": schedule_agent,
+                "memberOf": participant.get("member_of") or None,
             }
 
         return result

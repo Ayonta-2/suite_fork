@@ -26,7 +26,7 @@
 
 		<Dropdown v-if="showFilter" :options="filterOptions">
 			<button
-				class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded px-2 py-1"
+				class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded-4 px-2 py-1"
 			>
 				<span class="truncate">{{ title }}</span>
 				<ChevronDown class="text-ink-gray-5 icon shrink-0" />
@@ -66,7 +66,7 @@ import { Button, Dropdown } from 'frappe-ui'
 import { ChevronDown, RefreshCw } from 'lucide-vue-next'
 
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
 import SplitViewToggle from '@/apps/mail/components/SplitViewToggle.vue'
 

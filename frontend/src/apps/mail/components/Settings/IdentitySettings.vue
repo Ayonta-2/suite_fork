@@ -98,7 +98,7 @@
 							{{ __('Default Signature') }}
 						</label>
 						<TextEditor
-							editor-class="prose-sm min-h-[8rem] border rounded-b-lg border-t-0 p-2 max-w-none border-outline-gray-2"
+							editor-class="prose-sm min-h-[8rem] border rounded-b-6 border-t-0 p-2 max-w-none border-outline-gray-2"
 							:extensions="[CustomParagraphExtension]"
 							:fixed-menu="buttons"
 							:placeholder="__('Write your signature here')"
@@ -106,12 +106,21 @@
 							@change="(val: string) => (identity.doc.html_signature = val)"
 						/>
 					</div>
+
+					<Button
+						v-if="identity.doc.may_delete"
+						:label="__('Delete')"
+						class="min-h-7 w-full"
+						variant="outline"
+						theme="red"
+						@click="showDeleteDialog = true"
+					/>
 				</template>
 			</div>
 
 			<Dialog
-				v-model="showDialog"
-				:options="{
+				v-model:open="showDialog"
+			 v-bind="{
 					title: isAddReplyTo ? __('New Reply To') : __('New Bcc'),
 					actions: [
 						{
@@ -123,7 +132,7 @@
 					],
 				}"
 			>
-				<template #body-content>
+				<template #default>
 					<FormControl
 						v-model="email"
 						:label="__('Email')"
@@ -142,10 +151,20 @@
 			</Dialog>
 		</div>
 	</template>
+	<div v-else-if="!identities.loading" class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
+		<p class="text-base font-medium">{{ __('No identities.') }}</p>
+		<p>
+			{{
+				__(
+					'Identities are the addresses you send mail as. Create one to get started.',
+				)
+			}}
+		</p>
+	</div>
 
 	<Dialog
-		v-model="showAddIdentityDialog"
-		:options="{
+		v-model:open="showAddIdentityDialog"
+	 v-bind="{
 			title: __('New Identity'),
 			actions: [
 				{
@@ -158,7 +177,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template #default>
 			<FormControl
 				v-model="newEmail"
 				:label="__('Email')"
@@ -175,24 +194,35 @@
 			/>
 		</template>
 	</Dialog>
+
+	<Dialog
+		v-model:open="showDeleteDialog"
+		v-bind="{
+			title: __('Delete Identity'),
+			message: __('Are you sure you want to delete this identity?'),
+			actions: [
+				{
+					label: __('Confirm'),
+					variant: 'solid',
+					theme: 'red',
+					loading: deleteIdentity.loading,
+					onClick: () => deleteIdentity.submit(),
+				},
+			],
+		}"
+	/>
 	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
 import { inject, ref, watch } from 'vue'
 import {
-	Button,
-	Dialog,
-	FormControl,
-	TextEditor,
-	createDocumentResource,
-	createResource,
-	useList,
-} from 'frappe-ui'
+	Button, Dialog, FormControl, createDocumentResource, createResource, useList } from 'frappe-ui'
+import { TextEditor } from 'frappe-ui/experimental'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
-import { convertHtmlToText, raiseToast } from '@/apps/mail/utils'
+import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
 import { userStore } from '@/apps/mail/stores/user'
@@ -229,12 +259,11 @@ const getIdentity = () =>
 		},
 	})
 
-const save = () => {
-	identity.value.doc.text_signature = convertHtmlToText(identity.value.doc.html_signature)
-	identity.value.save.submit()
-}
+// text_signature is derived server-side on save (Identity.validate), so the two forms of the
+// signature stay the same signature rather than one being a flattened trace of the other.
+const save = () => identity.value.save.submit()
 
-const identity = ref(getIdentity())
+const identity = ref(identityName.value ? getIdentity() : null)
 const savedSignature = ref('')
 
 const showDialog = ref(false)
@@ -282,7 +311,37 @@ const addIdentity = createResource({
 	onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
 })
 
-watch(identityName, (val) => {
-	if (val) identity.value = getIdentity()
+const showDeleteDialog = ref(false)
+
+const deleteIdentity = createResource({
+	url: 'suite.mail.doctype.identity.identity.bulk_delete',
+	makeParams: () => ({ names: [identityName.value] }),
+	onSuccess: () => {
+		raiseToast(__('Identity deleted.'))
+		showDeleteDialog.value = false
+		identityName.value = ''
+		identities.reload()
+	},
+	onError: (error) => {
+		showDeleteDialog.value = false
+		raiseToast(error.messages?.[0] || error.message, 'error')
+	},
 })
+
+watch(identityName, (val) => {
+	identity.value = val ? getIdentity() : null
+})
+
+// Keep the selection valid as the list loads or changes (e.g. after create/delete
+// or an account switch): fall back to the first identity when the current one is gone.
+watch(
+	() => identities.data,
+	(data) => {
+		if (!data?.length) {
+			identityName.value = ''
+		} else if (!data.some((i: Identity) => i.name === identityName.value)) {
+			identityName.value = data[0].name
+		}
+	},
+)
 </script>

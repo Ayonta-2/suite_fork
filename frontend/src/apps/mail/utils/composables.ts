@@ -3,11 +3,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { createResource, toast } from 'frappe-ui'
 
 import { useScreenSize } from '@/composables/useScreenSize'
+import { useTheme as useSuiteTheme } from '@/composables/useTheme'
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
+import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
+import { useRootStore } from '@/stores/root'
 
-import type { COLOR_SCHEME, ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
+import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
 
 // Re-exported from the suite-wide composable so mail's many callers keep one import, and so the
 // calendar reads the same ref rather than a second copy of the same window width. Imported at the
@@ -26,7 +29,7 @@ export const useReadingPane = () => {
 }
 
 /**
- * Flipping Split View from the list toolbar. Appearance settings writes the same field behind a
+ * Flipping Split View from the list toolbar. Mail layout settings writes the same field behind a
  * Save button; this one is a layout switch, so it applies on click — the local value flips first
  * and the whole split re-lays out from it, then rolls back if the write doesn't land.
  */
@@ -99,16 +102,15 @@ export const useSidebar = () => {
 }
 
 // Horizontal swipe-to-page detection, shared by the mailbox thread pane and the screener
-// preview: left → onSwipe(1) (next), right → onSwipe(-1). Judged on touchend (passive) so
-// vertical scrolling is never delayed; a swipe must be decisively horizontal — at least
-// 64px long and twice its vertical drift. Swipes over an email body never reach the pane:
-// EmailContent detects them inside its iframe and re-broadcasts them as `email-swipe`
-// window events, which this subscribes to as well. The time guard dedupes those (every
-// mounted EmailContent re-dispatches the same message) and paces direct swipes alike.
-const SWIPE_MIN_X = 64
-
+// preview: left → onSwipe(1) (next), right → onSwipe(-1). The rule itself lives in
+// createSwipeGesture; this binds it to the touch events and to the view. Judged on
+// touchend (passive) so vertical scrolling is never delayed. Swipes over an email body
+// never reach the pane: EmailContent detects them inside its iframe and re-broadcasts
+// them as `email-swipe` window events, which this subscribes to as well. The time guard
+// dedupes those (every mounted EmailContent re-dispatches the same message) and paces
+// direct swipes alike.
 export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) => void) => {
-	let origin: { x: number; y: number } | null = null
+	const gesture = createSwipeGesture()
 	let lastSwipeAt = 0
 
 	const swipe = (offset: 1 | -1) => {
@@ -120,19 +122,18 @@ export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) =>
 	}
 
 	const onTouchStart = (e: TouchEvent) => {
-		origin =
-			enabled() && e.touches.length === 1
-				? { x: e.touches[0].clientX, y: e.touches[0].clientY }
-				: null
+		if (!enabled()) return gesture.cancel()
+		gesture.start(e.touches[0].clientX, e.touches[0].clientY, e.touches.length)
+	}
+
+	const onTouchMove = (e: TouchEvent) => {
+		const touch = e.touches[0]
+		if (touch) gesture.move(touch.clientX, touch.clientY)
 	}
 
 	const onTouchEnd = (e: TouchEvent) => {
-		if (!origin) return
-		const dx = e.changedTouches[0].clientX - origin.x
-		const dy = e.changedTouches[0].clientY - origin.y
-		origin = null
-		if (Math.abs(dx) < SWIPE_MIN_X || Math.abs(dx) < Math.abs(dy) * 2) return
-		swipe(dx < 0 ? 1 : -1)
+		const offset = gesture.end(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
+		if (offset) swipe(offset)
 	}
 
 	const onEmailSwipe = (e: Event) => swipe((e as CustomEvent).detail === 'left' ? 1 : -1)
@@ -140,7 +141,7 @@ export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) =>
 	onMounted(() => window.addEventListener('email-swipe', onEmailSwipe))
 	onUnmounted(() => window.removeEventListener('email-swipe', onEmailSwipe))
 
-	return { onTouchStart, onTouchEnd }
+	return { onTouchStart, onTouchMove, onTouchEnd }
 }
 
 // Mobile folder bottom sheet — shared so both the header title (mailbox views)
@@ -152,6 +153,40 @@ export const useFolderSheet = () => {
 	const closeFolderSheet = () => (isFolderSheetOpen.value = false)
 
 	return { isFolderSheetOpen, openFolderSheet, closeFolderSheet }
+}
+
+// The search page's address — the one place that knows it is the mailbox route with the virtual
+// 'search' mailbox — for whoever sends someone there: the palette, the results header, the phone.
+export const mailSearchRoute = (accountId: string, query: Record<string, string> = {}) => ({
+	name: 'mail-mailbox',
+	params: { accountId, mailbox: 'search' },
+	query,
+})
+
+export const useMobileSearch = () => {
+	const route = useRoute()
+	const router = useRouter()
+	const store = userStore()
+	const root = useRootStore()
+
+	const isSearchRoute = computed(
+		() => route.name === 'mail-mailbox' && route.params.mailbox === 'search',
+	)
+
+	// Keep the search route behind the palette so browser Back dismisses search and the
+	// route watcher in the tab bar closes the palette.
+	const openSearch = async () => {
+		if (!isSearchRoute.value) await router.push(mailSearchRoute(store.accountId))
+		root.paletteOpen = true
+	}
+
+	// `all_accounts` is the search's scope, not a condition: a route carrying only that has no
+	// search on it.
+	const hasSearchQuery = computed(() =>
+		Object.keys(route.query).some((key) => key !== 'all_accounts'),
+	)
+
+	return { hasSearchQuery, isSearchRoute, openSearch }
 }
 
 // Mobile selection mode — MailboxView owns the selection; the tab bar and FAB
@@ -193,58 +228,6 @@ export const useTextEditorButtons = (dropAlignment: () => boolean = () => false)
 	])
 
 	return { buttons }
-}
-
-/**
- * How much of the on-screen keyboard is covering the layout viewport, as insets for holding a
- * full-screen pane clear of it.
- *
- * iOS leaves the layout viewport full-height when the keyboard opens and slides the visible part
- * around underneath it, so `position: fixed; inset: 0` runs on behind the keyboard and has to be
- * held off it by hand:
- *
- * - `bottom` is the strip the keyboard covers, so a pane ends where the keyboard starts.
- * - `top` is how far iOS has panned to reveal a focused field, so the pane rides that pan instead of
- *   being dragged off the top of the screen.
- *
- * `interactive-widget=resizes-content` (index.html) is supposed to make both of these unnecessary by
- * shrinking the layout viewport itself. It did not, on the iOS this was built against: dropping the
- * `bottom` inset put the toolbar straight back behind the keyboard. Treat these as load-bearing.
- */
-export const useKeyboardInsets = () => {
-	const top = ref(0)
-	const bottom = ref(0)
-	/** The visible height — what's left of the screen once the keyboard has taken its share. */
-	const height = ref(window.innerHeight)
-
-	const update = () => {
-		const viewport = window.visualViewport
-		if (!viewport) return
-
-		height.value = viewport.height
-		top.value = viewport.offsetTop
-		// Against the layout viewport, not innerHeight: innerHeight tracks the visual viewport on iOS,
-		// which would make this always 0 and the fallback a no-op on the browsers that need it.
-		const covered = document.documentElement.clientHeight - viewport.height - viewport.offsetTop
-		bottom.value = Math.max(0, Math.round(covered))
-	}
-
-	onMounted(() => {
-		update()
-		// `resize` is the keyboard opening and closing; `scroll` is iOS panning what's left of the
-		// viewport. Missing the second is what lets a pane drift off the top of the screen.
-		window.visualViewport?.addEventListener('resize', update)
-		window.visualViewport?.addEventListener('scroll', update)
-		window.addEventListener('resize', update)
-	})
-
-	onUnmounted(() => {
-		window.visualViewport?.removeEventListener('resize', update)
-		window.visualViewport?.removeEventListener('scroll', update)
-		window.removeEventListener('resize', update)
-	})
-
-	return { top, bottom, height }
 }
 
 const keyboardOpen = ref(false)
@@ -307,20 +290,40 @@ export const useKeyboardOpen = () => {
 
 const undoAction = ref<() => void>()
 
+// The action in the slot that is the app's rather than a view's, if that is what is there. A list's
+// undo puts rows back into a list that has to still be on screen, so it dies with its view; a send's
+// undo is a server call, as good from the next page as from this one, and stays.
+let outlivingAction: (() => void) | undefined
+
 export const useUndo = () => {
-	const setUndoAction = (action?: () => void) => {
+	const setUndoAction = (action?: () => void, { outlivesView = false } = {}) => {
 		undoAction.value = action
+		outlivingAction = outlivesView ? action : undefined
 		// Clearing the undo with no replacement toast (e.g. leaving the mailbox) leaves a lingering toast
 		// whose "Undo" button is now dead — dismiss toasts. When a new action is set instead, the toast it
-		// raises right after (via raiseOptimisticToast/raisePromiseToast) does the removeAll, and doing it
+		// raises right after (via raiseOptimisticToast/raisePromiseToast) does the dismiss, and doing it
 		// here too would dismiss the reconcile paths' in-flight loading toast — so only clear on undefined.
-		if (!action) toast.removeAll()
+		if (!action) toast.dismiss()
+	}
+
+	// What a view does on the way out: its own undo goes, toast and all, so nothing can undo into a
+	// list that is no longer there. An undo that outlives views is left alone, toast included.
+	const dropViewUndo = () => {
+		if (undoAction.value && undoAction.value === outlivingAction) return
+		setUndoAction(undefined)
 	}
 
 	const undo = () => {
 		if (!undoAction.value) return
 		undoAction.value()
 		undoAction.value = undefined
+	}
+
+	// Take one action out of the slot, and only if it is still the one there: for an undo that lapses
+	// on its own — a send, once the server's hold is over. Unlike clearing, it leaves the toasts alone:
+	// this action's is long gone by then, and whatever is on screen belongs to a later one.
+	const retireUndoAction = (action: () => void) => {
+		if (undoAction.value === action) undoAction.value = undefined
 	}
 
 	// Wrap the current undo so `step` runs first — lets a side effect (e.g. a junk-list entry) be
@@ -333,7 +336,7 @@ export const useUndo = () => {
 		}
 	}
 
-	return { setUndoAction, undo, prependUndoAction }
+	return { setUndoAction, undo, prependUndoAction, retireUndoAction, dropViewUndo }
 }
 
 // Shared state for the compose window. A single <SendMail> (rendered in DefaultLayout) reacts to
@@ -361,7 +364,7 @@ export const useListReload = () => ({
 
 // Shared state for the "Block sender?" prompt shown after marking/moving mail to Junk. A single
 // <ScreenedEmailAddressModal> (rendered in MailboxView) reacts to this, so any view can open it.
-export interface BlockableSender {
+interface BlockableSender {
 	name?: string
 	email: string
 }
@@ -572,76 +575,11 @@ export const useSettings = () => {
 	return { showSettings, settingsTab, openSettings }
 }
 
-const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-const systemIsDark = ref(mediaQuery.matches)
-mediaQuery.addEventListener('change', () => (systemIsDark.value = mediaQuery.matches))
+const showShortcuts = ref(false)
 
-const COLOR_SCHEME_CYCLE = ['System Default', 'Light Mode', 'Dark Mode'] as const
+export const useShortcuts = () => ({
+	showShortcuts,
+	openShortcuts: () => (showShortcuts.value = true),
+})
 
-// The write behind the theme toggle, in flight and waiting. Module-level, so every
-// useTheme() shares the one queue — the setting is one row, whoever writes it.
-let writingColorScheme = false
-let queuedColorScheme: COLOR_SCHEME | null = null
-
-export const useTheme = () => {
-	const { userResource } = userStore()
-
-	const dataTheme = computed(() => {
-		const colorScheme = userResource.data?.color_scheme || 'System Default'
-		if (colorScheme === 'System Default') return systemIsDark.value ? 'dark' : 'light'
-		return colorScheme === 'Dark Mode' ? 'dark' : 'light'
-	})
-
-	const updateColorScheme = createResource({
-		url: 'frappe.client.set_value',
-		makeParams: (color_scheme: COLOR_SCHEME) => ({
-			doctype: 'User Settings',
-			name: userResource.data?.user_settings,
-			fieldname: { color_scheme },
-		}),
-	})
-
-	// The theme flips before the server answers, so the shortcut can be pressed faster than
-	// the round-trip: two set_value calls in flight against the same User Settings row have
-	// both read the same `modified` timestamp, and the server rejects the second as stale —
-	// a failure toast for a toggle that was working. So one write at a time, and only ever
-	// the newest scheme: the schemes a fast cycle passes through are on their way somewhere
-	// else, and none of them is worth a round-trip of its own.
-	const persistColorScheme = async (scheme: COLOR_SCHEME) => {
-		queuedColorScheme = scheme
-		if (writingColorScheme) return
-
-		writingColorScheme = true
-		try {
-			while (queuedColorScheme) {
-				const next = queuedColorScheme
-				queuedColorScheme = null
-				await updateColorScheme.submit(next)
-			}
-		} catch {
-			// The optimistic value now describes a write that did not land, and unwinding to
-			// the scheme before it would land on one the user may have already cycled past.
-			// Take the server's word for where the cycle actually stands.
-			queuedColorScheme = null
-			userResource.reload()
-			raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
-		} finally {
-			writingColorScheme = false
-		}
-	}
-
-	// Cycle System Default → Light → Dark. Bound to Cmd/Ctrl+Shift+L app-wide (see App.vue).
-	const cycleTheme = () => {
-		const current = userResource.data?.color_scheme
-		const idx = COLOR_SCHEME_CYCLE.indexOf(current as COLOR_SCHEME)
-		const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
-
-		// Optimistic: flip the theme and confirm at once, before the server round-trip resolves.
-		if (userResource.data) userResource.data.color_scheme = next
-		raiseToast(__('Color scheme updated to {0}.', [next]))
-
-		persistColorScheme(next)
-	}
-
-	return { dataTheme, cycleTheme }
-}
+export const useTheme = () => useSuiteTheme()

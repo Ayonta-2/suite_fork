@@ -19,25 +19,25 @@
         </ListHeaderCell>
         <ListHeaderCellSort :direction="directionFor('file_name')" @click="toggleSort('file_name', __('Name'))">
           {{ __('Name') }}
-          <template #suffix="{ direction }">
+          <template #sort-indicator="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
           </template>
         </ListHeaderCellSort>
         <ListHeaderCellSort class="hidden sm:flex" :direction="directionFor('owner')" @click="toggleSort('owner', __('Owner'))">
           {{ __('Owner') }}
-          <template #suffix="{ direction }">
+          <template #sort-indicator="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
           </template>
         </ListHeaderCellSort>
         <ListHeaderCellSort :direction="directionFor('modified')" @click="toggleSort('modified', __('Last Modified'), false)">
           {{ __('Last Modified') }}
-          <template #suffix="{ direction }">
+          <template #sort-indicator="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
           </template>
         </ListHeaderCellSort>
         <ListHeaderCellSort class="hidden sm:flex" :direction="directionFor('file_size')" @click="toggleSort('file_size', __('Size'))">
           {{ __('Size') }}
-          <template #suffix="{ direction }">
+          <template #sort-indicator="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
           </template>
         </ListHeaderCellSort>
@@ -73,16 +73,16 @@
           <ListCell />
           <ListCell>
             <div class="h-[16px] w-[16px] shrink-0 mr-2">
-              <Skeleton class="h-[16px] w-[16px] rounded-sm" />
+              <Skeleton class="h-[16px] w-[16px] rounded-1" />
             </div>
-            <Skeleton class="h-3.5 w-40 rounded" />
+            <Skeleton class="h-3.5 w-40 rounded-4" />
           </ListCell>
           <ListCell class="hidden sm:flex">
             <Skeleton class="size-5 shrink-0 mr-2 rounded-full" />
-            <Skeleton class="h-3 w-16 rounded" />
+            <Skeleton class="h-3 w-16 rounded-4" />
           </ListCell>
-          <ListCell><Skeleton class="h-3 w-20 rounded" /></ListCell>
-          <ListCell class="hidden sm:flex"><Skeleton class="h-3 w-12 rounded" /></ListCell>
+          <ListCell><Skeleton class="h-3 w-20 rounded-4" /></ListCell>
+          <ListCell class="hidden sm:flex"><Skeleton class="h-3 w-12 rounded-4" /></ListCell>
           <ListCell />
         </ListRow>
       </template>
@@ -92,8 +92,8 @@
     :close="() => (rowEvent = false)" :action-items="dropdownActionItems(selectedRow)" :event="rowEvent" />
 </template>
 <script setup>
-import { List, ListHeader, ListHeaderCell, ListHeaderCellSort, ListGroup, ListRow, ListCell } from 'frappe-ui/list'
-import { Checkbox, Skeleton, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
+import { List, ListCell, ListGroup, ListHeader, ListHeaderCell, ListHeaderCellSort, ListRow } from 'frappe-ui/list'
+import { Checkbox, Skeleton, vOnOutsideClick } from 'frappe-ui'
 import { activeEntity, setActiveEntity } from '@/apps/drive/data/selection'
 import { computed, ref, watch } from 'vue'
 import ContextMenu from '@/apps/drive/components/ContextMenu.vue'

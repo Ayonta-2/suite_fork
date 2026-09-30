@@ -68,6 +68,15 @@ describe('eventLastDay', () => {
 	it('uses the real end of a timed span', () => {
 		expect(lastDay('2026-08-31T09:00:00', 'PT56H')).toBe('2026-09-02')
 	})
+
+	it('names every day an oddly shaped all-day event reaches into', () => {
+		// A show_without_time event need not sit on midnight or run in whole days; the last
+		// day is wherever its final moment falls, not a rounded count of days from its start.
+		expect(lastDay('2026-08-17T14:00:00', 'PT12H', true)).toBe('2026-08-18')
+		expect(lastDay('2026-08-17T14:00:00', 'P1DT10H', true)).toBe('2026-08-18')
+		expect(lastDay('2026-08-17T14:00:00', 'PT0S', true)).toBe(null)
+		expect(lastDay('2026-08-17T00:00:00', 'PT1M', true)).toBe(null)
+	})
 })
 
 describe('formatEventWhen', () => {
@@ -133,9 +142,12 @@ describe('formatEventWhen', () => {
 		const compact = (start: string, duration?: string, options = {}) =>
 			when(start, duration, { compact: true, ...options })
 
+		// Abbreviated, not spelled out — and deliberately in both places that compact, mail's
+		// invite strip as well as a search result. The chip beside the label has already said
+		// `AUG 17`; `Monday` was the one long word on a line whose whole job is to be short.
 		it('leaves only the weekday when a date chip carries the rest', () => {
-			expect(compact('2026-08-17T00:00:00', 'P1D', { allDay: true })).toBe('Monday · All day')
-			expect(compact('2026-08-17T15:00:00', 'PT1H')).toBe('Monday · 3:00 – 4:00 pm · 1 hr')
+			expect(compact('2026-08-17T00:00:00', 'P1D', { allDay: true })).toBe('Mon · All day')
+			expect(compact('2026-08-17T15:00:00', 'PT1H')).toBe('Mon · 3:00 – 4:00 pm · 1 hr')
 			expect(compact('2026-08-13T15:00:00', 'PT1H')).toBe('Today · 3:00 – 4:00 pm · 1 hr')
 		})
 
@@ -145,6 +157,34 @@ describe('formatEventWhen', () => {
 				'Mon, 17 – Wed, 19 Aug · 3 days',
 			)
 			expect(compact('2027-01-09T15:00:00', 'PT1H')).toBe('Sat, 9 Jan 2027 · 3:00 – 4:00 pm · 1 hr')
+		})
+	})
+
+	describe('length', () => {
+		const noLength = (start: string, duration?: string, options = {}) =>
+			when(start, duration, { length: false, ...options })
+
+		it('leaves a timed event on its clock times', () => {
+			expect(noLength('2026-08-17T15:00:00', 'PT1H')).toBe('Mon, 17 Aug · 3:00 – 4:00 pm')
+			expect(when('2026-08-17T15:00:00', 'PT1H')).toBe('Mon, 17 Aug · 3:00 – 4:00 pm · 1 hr')
+		})
+
+		it('drops it from an overnight too, which the day names anyway', () => {
+			expect(noLength('2026-08-17T23:00:00', 'PT2H')).toBe(
+				'Mon, 17 Aug · 11:00 pm – 1:00 am Tue',
+			)
+		})
+
+		it('keeps what says an event has no clock times at all', () => {
+			// Nothing else on the line would say so once the times are gone.
+			expect(allDay('2026-08-17T00:00:00', 'P1D', { length: false })).toBe('Mon, 17 Aug · All day')
+			expect(allDay('2026-08-17T00:00:00', 'P3D', { length: false })).toBe(
+				'Mon, 17 – Wed, 19 Aug · 3 days',
+			)
+		})
+
+		it('changes nothing for an event with one instant and no span', () => {
+			expect(noLength('2026-08-17T15:00:00', 'PT0S')).toBe(when('2026-08-17T15:00:00', 'PT0S'))
 		})
 	})
 })

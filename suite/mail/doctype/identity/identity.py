@@ -1,7 +1,6 @@
 # Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import json
 from uuid import uuid7
 
 import frappe
@@ -12,7 +11,9 @@ from jmap import MethodError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import chunked_set, format_method_error, format_set_error, get_account_client
+from suite.mail.utils.html_to_text import html_to_text
 from suite.utils import parse_filters
+from suite.utils.validation import JSONList
 
 
 class Identity(Document):
@@ -54,6 +55,19 @@ class Identity(Document):
         for r in self.reply_to:
             reply_to.append({"name": r.display_name, "email": r.email})
         return reply_to
+
+    def validate(self) -> None:
+        self.set_text_signature()
+
+    def set_text_signature(self) -> None:
+        """Derive the plain-text signature from the HTML one.
+
+        JMAP carries both and a client picks whichever part it renders, so the text form has
+        to be the same signature rather than a flattened trace of it. Kept a method because
+        set_signature writes through db_update and never runs validate.
+        """
+
+        self.text_signature = html_to_text(self.html_signature) or None
 
     def db_insert(self, *args, **kwargs) -> None:
         self.id = add_identity(
@@ -141,11 +155,8 @@ def parse_identity_name(name: str) -> tuple[str, str]:
 
 
 @frappe.whitelist()
-def bulk_delete(names: str | list[str]) -> None:
+def bulk_delete(names: JSONList[str]) -> None:
     """Deletes multiple identities given their names."""
-
-    if isinstance(names, str):
-        names = json.loads(names)
 
     accounts_map = {}
     for name in names:

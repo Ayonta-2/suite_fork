@@ -39,10 +39,10 @@ class UserSettings(OwnerFromUser, Document):
 
         app_password: DF.Password | None
         backup_email: DF.Data | None
-        color_scheme: DF.Literal["System Default", "Light Mode", "Dark Mode"]
         disable_push_subscriptions: DF.Check
         group_messages_by: DF.Literal["None", "Day", "Month"]
         show_reading_pane: DF.Check
+        undo_send_period: DF.Literal["5", "10", "20", "30"]
         user: DF.Link
         username: DF.Data | None
     # end: auto-generated types
@@ -129,6 +129,22 @@ class UserSettings(OwnerFromUser, Document):
     def on_update(self) -> None:
         if client := self.client:
             sync_jmap_accounts(self.user, client.session.raw.get("accounts") or {})
+
+    @frappe.whitelist()
+    def sync_accounts(self) -> None:
+        """Reconcile the user's JMAP Account documents and User Account links with the JMAP server."""
+
+        self.check_permission("write")
+
+        client = self.client
+        if not client:
+            frappe.throw(
+                _(
+                    "Unable to connect to the JMAP server with the provided username and app password. Please check your settings."
+                )
+            )
+
+        sync_jmap_accounts(self.user, client.session.raw.get("accounts") or {})
 
     def validate_jmap_settings(self) -> None:
         """Validate the JMAP settings by connecting to the JMAP server."""

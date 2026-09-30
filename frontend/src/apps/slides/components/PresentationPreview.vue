@@ -9,7 +9,7 @@
 						name: 'slides-editor',
 						params: { presentationId: presentation?.name },
 					}"
-					class="aspect-video cursor-pointer rounded-2xl bg-white shadow-2xl"
+					class="aspect-video cursor-pointer rounded-8 bg-white shadow-2xl"
 					:style="previewStyles"
 				></router-link>
 
@@ -37,8 +37,8 @@
 				<Tooltip
 					v-for="action in presentationActions"
 					:text="action.label"
-					:hover-delay="0.3"
-					placement="right"
+					:hover-delay="300"
+					side="right"
 				>
 					<div :class="getActionButtonClasses(action.label)" @click="action.onClick">
 						<component
@@ -82,7 +82,7 @@ const previewOverlayClasses = computed(() => {
 })
 
 const getActionButtonClasses = (action) => {
-	const baseClasses = 'size-8 flex items-center justify-center rounded cursor-pointer'
+	const baseClasses = 'size-8 flex items-center justify-center rounded-4 cursor-pointer'
 	if (action === 'Present') {
 		return `${baseClasses} bg-surface-gray-10`
 	}

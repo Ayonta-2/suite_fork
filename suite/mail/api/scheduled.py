@@ -6,10 +6,10 @@
 The server's submissions are the source of truth: the listing browses all of them — held
 (FUTURERELEASE), in flight, and concluded — through EmailSubmission/query with the RFC 8621
 §7.3 filters (undoStatus, identity, email, thread, and a sendAt window), newest sends first.
-Emails submitted by other clients appear too, and nothing is reconciled into the Mail Queue —
-its rows are only a log of what this app submitted. Every action is keyed on the
-EmailSubmission id. Since undoStatus is a submission's only mutable property (RFC 8621 §7.5),
-reschedule and send-now cancel the held submission and create a replacement.
+Emails submitted by other clients appear too, and the Mail Queue is neither read nor written
+here — its rows only log what this app submitted, as it was submitted. Every action is keyed
+on the EmailSubmission id. Since undoStatus is a submission's only mutable property
+(RFC 8621 §7.5), reschedule and send-now cancel the held submission and create a replacement.
 
 Where the delivery actually stands is computed per recipient from the submission's
 deliveryStatus — delivered (queued/yes/no/unknown), displayed (unknown/yes, a read receipt),
@@ -29,8 +29,8 @@ landed — until they are retried or dismissed, or the server expunges the submi
 every other concluded row.
 """
 
-import re
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import uuid7
 
 import frappe
@@ -43,8 +43,8 @@ from frappe.utils import (
     now_datetime,
     time_diff_in_seconds,
 )
+from pydantic import BaseModel, model_validator
 
-from suite.mail import stalwart
 from suite.mail.jmap import (
     SuiteJMAPClient,
     build_submission_envelope,
@@ -56,17 +56,40 @@ from suite.mail.jmap import (
     get_set_error_message,
 )
 from suite.mail.utils import log_mail_error
-from suite.mail.utils.dt import UTC_DATETIME_FORMAT, from_utc_z, normalize_utc_z, to_utc_z
+from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
+from suite.mail.utils.validation import JMAPId, UtcZ
+from suite.utils.validation import parse, without_blanks
 
 SUBMISSION_PROPERTIES = ["id", "emailId", "threadId", "undoStatus", "sendAt", "envelope"]
 DETAIL_PROPERTIES = [*SUBMISSION_PROPERTIES, "deliveryStatus", "identityId", "dsnBlobIds", "mdnBlobIds"]
 EMAIL_SUMMARY_PROPERTIES = ["id", "threadId", "subject", "from", "to", "cc", "bcc"]
 
 
-UNDO_STATUSES = ("pending", "final", "canceled")
+class SubmissionFilter(BaseModel):
+    """The listing's RFC 8621 §7.3 FilterCondition, from its query parameters. Empty ones are dropped."""
 
-# RFC 8620 §1.2: a JMAP Id is 1 to 255 characters of [A-Za-z0-9_-].
-JMAP_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,255}\Z")
+    undo_status: Literal["pending", "final", "canceled"] | None = None
+    identity_id: JMAPId | None = None
+    email_id: JMAPId | None = None
+    thread_id: JMAPId | None = None
+    before: UtcZ | None = None
+    after: UtcZ | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _blank_means_absent(cls, data):
+        return without_blanks(data)
+
+    def to_jmap(self) -> dict:
+        filter = {
+            "undoStatus": self.undo_status,
+            "identityIds": [self.identity_id] if self.identity_id else None,
+            "emailIds": [self.email_id] if self.email_id else None,
+            "threadIds": [self.thread_id] if self.thread_id else None,
+            "before": self.before,
+            "after": self.after,
+        }
+        return {key: value for key, value in filter.items() if value}
 
 
 @frappe.whitelist()
@@ -88,29 +111,21 @@ def get_submissions(
     The filters are the RFC 8621 §7.3 FilterCondition properties: `undo_status` is one of
     pending/final/canceled, `before`/`after` bound sendAt (UTC `...Z` timestamps)."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(identity_id, "identity_id")
-    _validate_jmap_id(email_id, "email_id")
-    _validate_jmap_id(thread_id, "thread_id")
-
-    if undo_status and undo_status not in UNDO_STATUSES:
-        frappe.throw(_("undoStatus must be one of {0}.").format(", ".join(UNDO_STATUSES)))
-
-    before = _validate_utc_z(before, "before")
-    after = _validate_utc_z(after, "after")
+    _validate_ids(account=account)
+    filter = parse(
+        SubmissionFilter,
+        {
+            "undo_status": undo_status,
+            "identity_id": identity_id,
+            "email_id": email_id,
+            "thread_id": thread_id,
+            "before": before,
+            "after": after,
+        },
+    ).to_jmap()
 
     page = max(cint(page), 1)
     page_length = min(max(cint(page_length), 1), 100)
-
-    filter = {
-        "undoStatus": undo_status,
-        "identityIds": [identity_id] if identity_id else None,
-        "emailIds": [email_id] if email_id else None,
-        "threadIds": [thread_id] if thread_id else None,
-        "before": before,
-        "after": after,
-    }
-    filter = {key: value for key, value in filter.items() if value}
 
     client = get_account_client(account)
     ids, total = _query_submissions(
@@ -147,8 +162,7 @@ def get_scheduled_mail(account: str, id: str) -> dict:
     """Returns one submission with everything EmailSubmission/get knows about it, enriched with
     the referenced Email's summary and the MTA queue's live delivery state."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     client = get_account_client(account)
     submissions = _get_submissions(client, [id], DETAIL_PROPERTIES)
@@ -182,15 +196,13 @@ def get_scheduled_mail(account: str, id: str) -> dict:
 def reschedule_mail(account: str, id: str, send_at: str) -> dict:
     """Moves a held submission's delivery time. `send_at` is UTC `...Z`."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     client = get_account_client(account)
     submission = _get_pending_submission(client, id)
     send_at = _validate_send_at(client, account, from_utc_z(send_at))
 
     created = _replace_submission(client, account, submission, hold_until=_hold_until(send_at))
-    _sync_queue_log(id, submission_id=created["id"], send_at=send_at)
 
     return {"id": created["id"], "send_at": to_utc_z(send_at)}
 
@@ -199,14 +211,12 @@ def reschedule_mail(account: str, id: str, send_at: str) -> dict:
 def send_scheduled_mail_now(account: str, id: str) -> dict:
     """Delivers a held submission immediately."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     client = get_account_client(account)
     submission = _get_pending_submission(client, id)
 
     created = _replace_submission(client, account, submission, hold_until=None)
-    _sync_queue_log(id, submission_id=created["id"], submitted_at=now(), send_at=None)
 
     return {"id": created["id"], "thread_id": submission.get("threadId")}
 
@@ -215,8 +225,7 @@ def send_scheduled_mail_now(account: str, id: str) -> dict:
 def cancel_scheduled_mail(account: str, id: str) -> dict:
     """Cancels a held submission's delivery and moves the message back to Drafts."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     client = get_account_client(account)
     submission = _get_submission(client, id)
@@ -229,36 +238,8 @@ def cancel_scheduled_mail(account: str, id: str) -> dict:
     # Already canceled (e.g. a retried undo whose move below failed): skip straight to the move.
 
     email_id = _move_email_to_drafts(client, account, submission.get("emailId"))
-    # The row stays Submitted — it did get submitted; cancelled_at records the undone hold.
-    _sync_queue_log(id, cancelled_at=now())
 
     return {"id": email_id}
-
-
-@frappe.whitelist()
-def retry_delivery_now(account: str, id: str) -> None:
-    """Tells the MTA to attempt a released, still-queued (retrying) delivery again right away.
-
-    A release mid-retry is still undoStatus "pending" (it can be cancelled until it concludes),
-    so this gates on the hold — not on the submission being final; an unreleased hold must go
-    through send-now instead, which replaces the submission."""
-
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
-
-    client = get_account_client(account)
-    submission = _get_submission(client, id)
-
-    if submission.get("undoStatus") == "canceled":
-        frappe.throw(_("This scheduled delivery has been cancelled."))
-    if _hold_active(submission):
-        frappe.throw(_("This delivery is still scheduled — use send now instead."))
-
-    queue_message = _queue_messages_by_envid([submission]).get(_envid(submission))
-    if not queue_message:
-        frappe.throw(_("This delivery is no longer waiting in the outbound queue."))
-
-    stalwart.queue_retry([queue_message["id"]])
 
 
 @frappe.whitelist()
@@ -266,8 +247,7 @@ def retry_failed_mail(account: str, id: str) -> dict:
     """Resubmits a finalized submission's email for immediate delivery, replacing the failed
     record so the listing shows only the live attempt."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     client = get_account_client(account)
     submission = _get_final_submission(client, id)
@@ -276,7 +256,6 @@ def retry_failed_mail(account: str, id: str) -> dict:
         client, account, **_resubmit_args(client, submission), envelope_id=str(uuid7()), hold_until=None
     )
     _destroy_submission(client, id)
-    _sync_queue_log(id, submission_id=created["id"], submitted_at=now(), send_at=None)
 
     return {"id": created["id"]}
 
@@ -285,8 +264,7 @@ def retry_failed_mail(account: str, id: str) -> dict:
 def dismiss_failed_mail(account: str, id: str) -> None:
     """Drops a finalized submission's record from the Outbox listing."""
 
-    _validate_jmap_id(account, "account")
-    _validate_jmap_id(id, "id")
+    _validate_ids(account=account, id=id)
 
     client = get_account_client(account)
     _get_final_submission(client, id)
@@ -458,37 +436,11 @@ def _envid(submission: dict) -> str | None:
 def _queue_messages_by_envid(submissions: list[dict]) -> dict[str, dict]:
     """The MTA queue messages behind the given submissions, keyed by ENVID.
 
-    Read with the admin management connection but exposing only messages whose ENVID matches
-    one of the account's own submissions. Best-effort: without the management API the rows
-    just lack retry counts and live queue state.
+    The outbound queue lives on the shared cluster and is not exposed to sites, so this is
+    always empty: rows simply lack retry counts and live queue state.
     """
 
-    envids = {envid for s in submissions if (envid := _envid(s))}
-    senders = {
-        email
-        for s in submissions
-        if _envid(s) and (email := ((s.get("envelope") or {}).get("mailFrom") or {}).get("email"))
-    }
-    if not envids:
-        return {}
-
-    try:
-        messages = []
-        for sender in senders:
-            messages.extend(
-                stalwart.manage_get_all(
-                    "QueuedMessage",
-                    filter={"returnPath": sender},
-                    properties=["id", "envId", "recipients", "nextRetry"],
-                )
-            )
-    except Exception:
-        log_mail_error(
-            _("Failed to read the MTA queue for scheduled mails"), frappe.get_traceback(with_context=True)
-        )
-        return {}
-
-    return {m["envId"]: m for m in messages if m.get("envId") in envids}
+    return {}
 
 
 def _identity_email(account: str, identity_id: str | None) -> str | None:
@@ -678,37 +630,10 @@ def _get_final_submission(client: SuiteJMAPClient, id: str) -> dict:
     return submission
 
 
-def _validate_jmap_id(value: str | None, label: str) -> str | None:
-    """A client-supplied JMAP identifier: RFC 8620 §1.2 confines an Id to 1 to 255 characters of
-    [A-Za-z0-9_-], so anything else is refused before it reaches a JMAP operation. Empty
-    optional filters pass through (they are dropped, not forwarded)."""
+def _validate_ids(**ids: str) -> None:
+    """Refuses client-supplied JMAP identifiers, keyed by the parameter that carried them."""
 
-    if not value:
-        return None
-
-    if not JMAP_ID_PATTERN.fullmatch(value):
-        frappe.throw(_("{0} is not a valid JMAP identifier.").format(label))
-
-    return value
-
-
-def _validate_utc_z(value: str | None, label: str) -> str | None:
-    """A client-supplied sendAt bound: anything but an ISO timestamp is refused, and a valid
-    one is re-serialized to the canonical UTC ``...Z`` form — the only shape that ever reaches
-    the JMAP filter."""
-
-    if not value:
-        return None
-
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        frappe.throw(_("{0} must be a UTC timestamp like 2026-01-31T09:30:00Z.").format(label))
-
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-
-    return dt.astimezone(UTC).strftime(UTC_DATETIME_FORMAT)
+    parse(dict[str, JMAPId], ids)
 
 
 def _validate_send_at(client: SuiteJMAPClient, account: str, send_at: str) -> str:
@@ -766,7 +691,6 @@ def _replace_submission(
         # message lands back in Drafts instead of sitting in Sent never sending.
         log_mail_error(_("Failed to resubmit scheduled email"), frappe.get_traceback(with_context=True))
         _move_email_to_drafts(client, account, args["email_id"])
-        _sync_queue_log(submission["id"], cancelled_at=now())
         frappe.throw(
             _(
                 "The email could not be resubmitted; its delivery was cancelled and the message "
@@ -830,11 +754,3 @@ def _move_email_to_drafts(client: SuiteJMAPClient, account: str, email_id: str |
     )
 
     return email_id
-
-
-def _sync_queue_log(current_submission_id: str, **values) -> None:
-    """Best-effort mirror into the Mail Queue log for sends that originated here — submissions
-    created by other clients have no row. `values` may carry a replacement submission_id."""
-
-    if name := frappe.db.get_value("Mail Queue", {"submission_id": current_submission_id}):
-        frappe.db.set_value("Mail Queue", name, values)

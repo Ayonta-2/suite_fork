@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, provide, watchEffect } from 'vue'
-import { FrappeUIProvider, createResource } from 'frappe-ui'
+import { onMounted, onScopeDispose, onUnmounted, provide, ref } from 'vue'
+import { FrappeUIProvider, useKeyboardShortcut } from 'frappe-ui'
 
-import { raiseToast, shouldIgnoreKeypress } from '@/apps/calendar/utils'
+import { useScreenSize } from '@/composables/useScreenSize'
+import CalendarTabBar from '@/apps/calendar/components/mobile/CalendarTabBar.vue'
+import ShortcutsModal from '@/apps/calendar/components/Modals/ShortcutsModal.vue'
+import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
+
 import dayjs from '@/apps/calendar/utils/dayjs'
-import { useTheme } from '@/apps/calendar/utils/composables'
 import { userStore } from '@/apps/calendar/stores/user'
 import { initSocket } from '@/apps/calendar/socket'
+import { useRootStore } from '@/stores/root'
+import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
 
 /**
  * Calendar route-group layout.
@@ -14,78 +19,63 @@ import { initSocket } from '@/apps/calendar/socket'
  * The suite shell already provides the top-level chrome, so this layout only:
  *   - provides the calendar-local `$user` (mail/calendar userResource), `$dayjs`
  *     and `$socket` injections that calendar components depend on,
- *   - applies the user's color scheme to <html data-theme>,
- *   - ports the Cmd/Ctrl+Shift+L theme-cycle shortcut,
+ *   - registers the app-wide shortcuts and the dialog that lists them,
  *   - wraps children in FrappeUIProvider and renders the nested <router-view>.
  */
+const { isMobile } = useScreenSize()
 const { userResource } = userStore()
-const { dataTheme } = useTheme()
+const showSettings = ref(false)
+const { showShortcuts } = useShortcuts()
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
 provide('$socket', initSocket())
+provide('openCalendarSettings', () => (showSettings.value = true))
 
-watchEffect(() => document.documentElement.setAttribute('data-theme', dataTheme.value))
+const unregisterPaletteGroups = useRootStore().registerPaletteGroups('calendar-layout', [
+	{
+		commands: [
+			{
+				id: 'calendar-settings',
+				label: 'Settings',
+				shortcut: 'Mod+Shift+Comma',
+				enterHint: 'open settings',
+				icon: 'lucide-settings',
+				run: () => (showSettings.value = true),
+			},
+		],
+	},
+])
+onScopeDispose(unregisterPaletteGroups)
 
 // Mark <body> while calendar is mounted so the `.icon` helper below (see <style>) can
 // reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.
-onMounted(() => {
-	document.body.classList.add('calendar-app')
-	window.addEventListener('keydown', handleKeyDown)
-})
-onUnmounted(() => {
-	document.body.classList.remove('calendar-app')
-	window.removeEventListener('keydown', handleKeyDown)
-})
+onMounted(() => document.body.classList.add('calendar-app'))
+onUnmounted(() => document.body.classList.remove('calendar-app'))
 
-const handleKeyDown = (e: KeyboardEvent) => {
-	const key = e.key.toLowerCase()
-
-	// Handle Ctrl/Cmd+Shift+L (Cycle Theme)
-	if ((e.metaKey || e.ctrlKey) && e.shiftKey && key === 'l' && !shouldIgnoreKeypress(e, true)) {
-		e.preventDefault()
-		return cycleTheme()
-	}
-}
-
-const COLOR_SCHEME_CYCLE = ['System Default', 'Light Mode', 'Dark Mode'] as const
-
-const cycleTheme = () => {
-	const current = userResource.data?.color_scheme
-	if (!current) return
-
-	const idx = COLOR_SCHEME_CYCLE.indexOf(current)
-	const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
-
-	// Optimistic: flip the theme and confirm at once, before the server round-trip resolves.
-	userResource.data.color_scheme = next
-	raiseToast(__('Color scheme updated to {0}.', [next]))
-
-	updateColorScheme.submit(next, {
-		onError: () => {
-			userResource.data.color_scheme = current
-			raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
-		},
-	})
-}
-
-const updateColorScheme = createResource({
-	url: 'frappe.client.set_value',
-	makeParams: (color_scheme) => ({
-		doctype: 'User Settings',
-		name: userResource.data.user_settings,
-		fieldname: { color_scheme },
-	}),
-	onSuccess: () => {
-		// Reconcile the optimistic value against server truth (sets the same value; harmless).
-		userResource.reload()
-	},
+useKeyboardShortcut({
+	combo: 'Shift+Slash',
+	description: __('View Shortcuts'),
+	group: __('Other'),
+	enabled: () => !isMobile.value,
+	allowInDialog: true,
+	handler: () => (showShortcuts.value = !showShortcuts.value),
 })
 </script>
 
 <template>
 	<FrappeUIProvider>
-		<router-view />
+		<!-- The phone's chrome stands outside the routes so it is the same bar on the
+		     calendar and on Profile, and so a route change never remounts it. The height
+		     is owned here for the same reason: the views fill what is left above the bar
+		     rather than each measuring the viewport themselves. -->
+		<div v-if="isMobile" class="flex h-dvh min-h-0 flex-col pt-[env(safe-area-inset-top)]">
+			<div class="min-h-0 flex-1"><router-view /></div>
+			<CalendarTabBar />
+		</div>
+		<router-view v-else />
+		<SettingsModal v-model:open="showSettings" />
+		<ShortcutsModal v-model:open="showShortcuts" />
 	</FrappeUIProvider>
 </template>
 

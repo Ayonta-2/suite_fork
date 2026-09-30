@@ -7,7 +7,7 @@
 			<template #icon><Megaphone class="h-5 w-5" /></template>
 			<template #actions>
 				<Button :label="__('Edit')" @click="showEdit = true" />
-				<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+				<Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
 			</template>
 		</DashboardDetailHeader>
 
@@ -15,7 +15,7 @@
 			<!-- Email Addresses -->
 			<DashboardCard :title="__('Email Addresses')" :button-label="__('Add')" @action="showAddEmail = true">
 				<div class="flex flex-col">
-					<div class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded px-5 py-2.5 text-sm">
+					<div class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm">
 						<span class="flex-1">{{ __('Email Address') }}</span>
 						<span class="flex-1">{{ __('Description') }}</span>
 						<span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
@@ -77,56 +77,63 @@
 							</template>
 						</FormControl>
 					</div>
-					<template v-if="filteredRecipients.length">
+					<template v-if="recipients.rows.length">
 						<div
-							v-for="recipient in filteredRecipients"
-							:key="recipient"
+							v-for="recipient in recipients.rows"
+							:key="recipient.email"
 							class="group flex items-center border-b px-5 py-3 text-base last:border-b-0"
 						>
-							<span class="flex-1 truncate">{{ recipient }}</span>
+							<span class="flex-1 truncate">{{ recipient.email }}</span>
 							<Button
 								variant="ghost"
 								theme="red"
 								class="invisible group-hover:visible"
-								@click="removeRecipient(recipient)"
+								@click="removeRecipient(recipient.email)"
 							>
 								<template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
 							</Button>
 						</div>
 					</template>
-					<div v-else class="text-ink-gray-5 px-5 py-6 text-center text-sm">
+					<div v-else-if="recipients.loaded" class="text-ink-gray-5 px-5 py-6 text-center text-sm">
 						{{ __('No recipients found.') }}
 					</div>
+					<DashboardPager
+						v-if="recipients.loaded && recipients.total"
+						:count="recipients.rows.length"
+						:total="recipients.total"
+						:page-length="recipients.pageLength"
+						:has-more="recipients.hasMore"
+						:loading="recipients.loading"
+						:flush="false"
+						@update:page-length="recipients.setPageLength"
+						@load-more="recipients.loadMore"
+					/>
 				</div>
 			</DashboardCard>
 		</div>
 	</DashboardLayout>
-	<EditMailingListModal v-if="list.data" v-model="showEdit" :list="list.data" @reload="list.reload()" />
-	<AddMailingListEmailModal v-model="showAddEmail" :list-id="listId" @reload="list.reload()" />
-	<AddMailingListRecipientsModal v-model="showAddRecipients" :list-id="listId" @reload="list.reload()" />
-	<Dialog v-model="showDelete" :options="deleteDialogOptions" />
+	<EditMailingListModal v-if="list.data" v-model="showEdit" :list="list.data" @reload="reloadAll()" />
+	<AddMailingListEmailModal v-model="showAddEmail" :list-id="listId" @reload="reloadAll()" />
+	<AddMailingListRecipientsModal v-model="showAddRecipients" :list-id="listId" @reload="reloadAll()" />
+	<Dialog v-model:open="showDelete" v-bind="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { watchDebounced } from '@vueuse/core'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import {
-	Button,
-	Dialog,
-	Dropdown,
-	FeatherIcon,
-	FormControl,
-	Switch,
-	Tooltip,
-	createResource,
-	usePageMeta,
-} from 'frappe-ui'
+	Button, Dialog, Dropdown, FormControl, Switch, Tooltip, createResource, usePageMeta } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 import Megaphone from '~icons/lucide/megaphone'
 
 import { raiseToast } from '@/apps/mail/utils'
 import AddMailingListEmailModal from '@/apps/mail/components/Modals/AddMailingListEmailModal.vue'
 import AddMailingListRecipientsModal from '@/apps/mail/components/Modals/AddMailingListRecipientsModal.vue'
+import { usePagedList } from '@/apps/mail/utils/pagedList'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
+import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import EditMailingListModal from '@/apps/mail/components/Modals/EditMailingListModal.vue'
@@ -137,14 +144,14 @@ type ListData = {
 	email: string
 	description?: string
 	email_addresses: { email: string; description?: string; is_primary: boolean; enabled: boolean }[]
-	recipients: string[]
+	recipient_total: number
 }
 
 const { listId } = defineProps<{ listId: string }>()
 
 const router = useRouter()
 
-usePageMeta(() => ({ title: (list.data as ListData | undefined)?.email || listId }))
+usePageMeta(() => appPageMeta((list.data as ListData | undefined)?.email || listId, 'Mail'))
 
 const showEdit = ref(false)
 const showAddEmail = ref(false)
@@ -156,7 +163,6 @@ const list = createResource({
 	url: 'suite.mail.api.admin.get_mailing_list',
 	auto: true,
 	makeParams: () => ({ list_id: listId }),
-	cache: ['mailMailingList', listId],
 	onError: (error: { messages?: string[] }) => {
 		raiseToast(error.messages?.[0] || __('Mailing list not found.'), 'error')
 		router.replace({ name: 'mail-mailing-lists' })
@@ -165,14 +171,21 @@ const list = createResource({
 
 const data = computed(() => list.data as ListData | undefined)
 
-const filteredRecipients = computed(() => {
-	const recipients = data.value?.recipients || []
-	const q = recipientSearch.value.trim().toLowerCase()
-	return q ? recipients.filter((r) => r.toLowerCase().includes(q)) : recipients
-})
+// Recipients are searched and paged on Suite Cloud: a list can hold thousands, and the detail
+// call only carries the total, which the header shows.
+const recipients = usePagedList<{ email: string; enabled: boolean }>(
+	'suite.mail.api.admin.get_mailing_list_recipients',
+	() => ({ list_id: listId, search: recipientSearch.value }),
+)
+watchDebounced(() => recipientSearch.value, recipients.reload, { debounce: 300 })
+
+const reloadAll = () => {
+	list.reload()
+	recipients.reload()
+}
 
 const recipientCountLabel = computed(() => {
-	const count = data.value?.recipients.length ?? 0
+	const count = data.value?.recipient_total ?? 0
 	return count === 1 ? __('1 recipient') : __('{0} recipients', [String(count)])
 })
 
@@ -199,7 +212,7 @@ const removeEmail = (email: string) =>
 		url: 'suite.mail.api.admin.remove_mailing_list_email',
 		makeParams: () => ({ list_id: listId, email }),
 		onSuccess: () => {
-			list.reload()
+			reloadAll()
 			raiseToast(__('Email address removed.'))
 		},
 		onError: (error: { messages?: string[] }) =>
@@ -211,7 +224,7 @@ const removeRecipient = (email: string) =>
 		url: 'suite.mail.api.admin.remove_mailing_list_recipient',
 		makeParams: () => ({ list_id: listId, email }),
 		onSuccess: () => {
-			list.reload()
+			reloadAll()
 			raiseToast(__('Recipient removed.'))
 		},
 		onError: (error: { messages?: string[] }) =>
@@ -232,14 +245,14 @@ const deleteDialogOptions = computed(() => ({
 	title: __('Delete Mailing List'),
 	message: __('Are you sure you want to delete this mailing list? This action cannot be undone.'),
 	size: 'xl',
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: 'lucide-alert-triangle', theme: 'amber',
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteList.submit }],
 }))
 
 const dropdownOptions = computed(() => [
 	{
 		group: '',
-		items: [{ label: __('Delete'), icon: 'trash-2', onClick: () => (showDelete.value = true) }],
+		options: [{ label: __('Delete'), icon: 'lucide-trash-2', onClick: () => (showDelete.value = true) }],
 	},
 ])
 </script>

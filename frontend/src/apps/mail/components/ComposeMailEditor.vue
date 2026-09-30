@@ -7,17 +7,24 @@
 	<!-- 75vh is a modal's height — it has the screen to itself. Docked, the composer sits beside
 	     the mail it is being written about, so it takes a fixed 30rem and leaves the rest of the
 	     list visible; the panel's own max-h still clips it on a short viewport. In a thread the
-	     height is the thread's. -->
+	     height is the thread's — unless the draft is the whole thread, when the card it sits in
+	     is stretched to the pane and the composer fills that (`fillsHost`). -->
 	<TextEditor
 		ref="textEditor"
 		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
-		:extensions="[imageExtension, CustomParagraphExtension, ...mentionExtensions]"
+		:extensions="[imageExtension, CustomParagraphExtension, QuotedContentExtension, ...mentionExtensions]"
 		:content="editorContent"
 		:upload-function="uploadInlineImage"
 		class="flex flex-col"
 		:class="[
 			{ 'pointer-events-none opacity-50': !show },
-			isInThread ? '' : docked ? 'sm:h-[30rem]' : 'sm:h-[75vh]',
+			fillsHost
+				? 'sm:min-h-0 sm:flex-1'
+				: isInThread
+					? ''
+					: docked
+						? 'sm:h-[30rem]'
+						: 'sm:h-[75vh]',
 		]"
 		@change="onEditorChange"
 		@dragenter.prevent="handleDragEnter"
@@ -61,7 +68,7 @@
 								})) || []
 							"
 							trigger="button"
-							class="min-w-0 max-w-full"
+							class="min-w-0 max-w-full !text-ink-gray-8"
 						/>
 					</div>
 					<!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
@@ -95,6 +102,8 @@
 							<RecipientInput
 								ref="toInput"
 								v-model="mail.to"
+								field="to"
+								@move="moveRecipient"
 								@show-cc-bcc="showCcBcc = true"
 							/>
 							<div class="flex gap-1.5">
@@ -122,7 +131,12 @@
 										{{ __('Cc') }}
 									</span>
 								</Tooltip>
-								<RecipientInput ref="ccInput" v-model="mail.cc" />
+								<RecipientInput
+									ref="ccInput"
+									v-model="mail.cc"
+									field="cc"
+									@move="moveRecipient"
+								/>
 							</div>
 							<div class="flex gap-2">
 								<Tooltip :text="__('Select from contacts')">
@@ -133,7 +147,7 @@
 										{{ __('Bcc') }}
 									</span>
 								</Tooltip>
-								<RecipientInput v-model="mail.bcc" />
+								<RecipientInput v-model="mail.bcc" field="bcc" @move="moveRecipient" />
 							</div>
 						</template>
 					</div>
@@ -152,20 +166,24 @@
 			</div>
 		</template>
 		<template #editor="{ editor }">
+			<!-- In a thread the body scrolls on its own past 24rem, so a long reply does not push
+			     the conversation up out of view. Given the pane to itself it has no conversation
+			     to protect and takes whatever height the fields and toolbar leave. -->
 			<div
 				class="relative flex flex-1 cursor-text flex-col border-2 border-transparent py-2.5 text-sm max-sm:px-3 sm:overflow-y-auto"
 				:class="{
-					'max-h-96 min-h-32': isInThread,
-					'!border-outline-gray-3 rounded border-dashed': isDragging,
+					'max-h-96 min-h-32': isInThread && !fillsHost,
+					'sm:min-h-0': fillsHost,
+					'!border-outline-gray-3 rounded-4 border-dashed': isDragging,
 				}"
 				@click="editor.commands.focus('end')"
 			>
 				<div
 					v-if="isDragging"
-					class="bg-surface-gray-1/90 text-ink-gray-3 absolute inset-0 z-50 flex flex-col items-center justify-center space-y-1 rounded"
+					class="bg-surface-gray-1/90 text-ink-gray-3 absolute inset-0 z-50 flex flex-col items-center justify-center space-y-1 rounded-4"
 				>
 					<UploadCloud class="stroke-1.5 h-12 w-12" />
-					<p class="text-xl-semibold">{{ __('Drop files to upload') }}</p>
+					<p class="text-lg-semibold">{{ __('Drop files to upload') }}</p>
 				</div>
 
 				<EditorContent :editor :class="{ 'opacity-30': isDragging }" @click.stop />
@@ -189,7 +207,7 @@
 							(file: Attachment) => file.disposition === 'attachment',
 						)"
 						:key="index"
-						class="bg-surface-gray-2 text-ink-gray-6 flex cursor-pointer items-center rounded p-2.5"
+						class="bg-surface-gray-2 text-ink-gray-6 flex cursor-pointer items-center rounded-4 p-2.5"
 						:href="file.file_url"
 						target="_blank"
 						@click="openAttachment(file.blob_id, file.type)"
@@ -210,7 +228,7 @@
 					<div
 						v-for="(fileUpload, id) in fileUploads.filter((fu) => fu.isUploading)"
 						:key="id"
-						class="bg-surface-gray-2 text-ink-gray-6 mb-2 rounded p-2.5 text-sm"
+						class="bg-surface-gray-2 text-ink-gray-6 mb-2 rounded-4 p-2.5 text-sm"
 					>
 						<div class="mb-1.5 flex items-center">
 							<span class="mr-1 font-medium"> {{ fileUpload.name }} </span>
@@ -256,24 +274,10 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { EditorContent } from '@tiptap/vue-3'
 import {
-	ChevronDown,
-	ChevronUp,
-	ExternalLink,
-	Forward,
-	Reply,
-	ReplyAll,
-	UploadCloud,
-} from 'lucide-vue-next'
+	ChevronDown, ChevronUp, ExternalLink, Forward, Reply, ReplyAll, UploadCloud, } from 'lucide-vue-next'
 import {
-	Button,
-	Combobox,
-	Dropdown,
-	FeatherIcon,
-	Progress,
-	TextEditor,
-	Tooltip,
-	useFileUpload,
-} from 'frappe-ui'
+	Button, Combobox, Dropdown, Progress, Tooltip, useFileUpload } from 'frappe-ui'
+import { Icon as FeatherIcon, TextEditor } from 'frappe-ui/experimental'
 
 import { formatBytes, isOverlayPresent, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
@@ -283,6 +287,7 @@ import {
 	CustomParagraphExtension,
 	uploadFunction,
 } from '@/apps/mail/utils/text-editor'
+import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
 
 import type { Attachment, ComposeMailData, File as FileDoc, Identity } from '@/apps/mail/types'
@@ -298,12 +303,16 @@ const {
 	mailDetails,
 	isInThread = false,
 	docked = false,
+	fillsHost = false,
 } = defineProps<{
 	reloadMails: () => void
 	mailDetails?: ComposeMailData
 	isInThread?: boolean
 	// Docked composer: shorter than a modal, which has the screen to itself.
 	docked?: boolean
+	// The host is a flex column of a definite height, and the composer is to take all of it —
+	// a draft that is the whole thread, given the reading pane to itself.
+	fillsHost?: boolean
 }>()
 
 const emit = defineEmits(['discardMail', 'discardStarted', 'reply', 'replyAll', 'forward', 'popOut'])
@@ -340,6 +349,7 @@ const {
 	isLoading,
 	isDraftUpdated,
 	isRecipientsEmpty,
+	moveRecipient,
 	updateOriginalMail,
 	saveDraft,
 	payListDebt,
@@ -443,7 +453,7 @@ defineExpose({ mail, sendMail, discardMail, openScheduleModal })
 const localDraftActions = computed(() => [
 	{
 		group: '',
-		items: [
+		options: [
 			{ label: __('Reply'), icon: Reply, onClick: () => emit('reply') },
 			{ label: __('Reply All'), icon: ReplyAll, onClick: () => emit('replyAll') },
 			{ label: __('Forward'), icon: Forward, onClick: () => emit('forward') },
@@ -451,7 +461,7 @@ const localDraftActions = computed(() => [
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Pop Out'),
 				icon: ExternalLink,
@@ -463,9 +473,9 @@ const localDraftActions = computed(() => [
 ])
 
 const TYPE_ICON_MAP = {
-	reply: Reply,
-	replyAll: ReplyAll,
-	forward: Forward,
+	reply: 'lucide-reply',
+	replyAll: 'lucide-reply-all',
+	forward: 'lucide-forward',
 }
 
 // Shortcuts
@@ -488,11 +498,12 @@ const handleKeydown = (e: KeyboardEvent) => {
 	handleDiscardShortcut(e)
 }
 
+// ⌘Enter sends; with Shift it asks when to, as the split button's menu does.
 const handleSendShortcut = (e: KeyboardEvent) => {
-	if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-		e.preventDefault()
-		sendMail()
-	}
+	if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter') return
+	e.preventDefault()
+	if (e.shiftKey) openScheduleModal()
+	else sendMail()
 }
 
 const handleDiscardShortcut = (e: KeyboardEvent) => {
