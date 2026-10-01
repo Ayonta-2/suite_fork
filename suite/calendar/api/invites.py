@@ -21,6 +21,9 @@ from suite.mail.jmap import (
 )
 from suite.utils.rate_limiter import dynamic_rate_limit
 
+# How long a refused event is given to show up in the server's search index (seconds).
+SETTLE_TIMEOUT = 3.0
+
 
 @frappe.whitelist()
 @dynamic_rate_limit()
@@ -106,24 +109,19 @@ def rsvp_to_invite(account: str, blob_id: str, response: str) -> dict:
 
 def _ensure_on_calendar(client: SuiteJMAPClient, account: str, events: list[dict]) -> str:
     """Creates the parsed events that aren't on the calendar yet (idempotent by UID, on the default
-    calendar, no scheduling messages) and returns the master id of the invite's event."""
+    calendar, no scheduling messages) and returns the master id of the invite's event: the first
+    in the file, which is the one the reader is shown and answers."""
 
     uids = [e["uid"] for e in events if e.get("uid")]
     if not uids:
         frappe.throw(_("The attachment does not contain a valid calendar event."))
 
-    existing_ids = jmap_events.get_master_ids(client, uids)
-    existing_uids = (
-        {e["uid"] for e in jmap_events.get_events(client, existing_ids) if e.get("uid")}
-        if existing_ids
-        else set()
-    )
-
+    ids_by_uid = _master_ids_by_uid(client, uids)
     default_calendar_id = None
 
     payload = {}
     for event in events:
-        if not event.get("uid") or event["uid"] in existing_uids:
+        if not event.get("uid") or event["uid"] in ids_by_uid:
             continue
         if default_calendar_id is None:
             default_calendar_id = get_default_calendar_id(account, raise_exception=True)
@@ -137,35 +135,49 @@ def _ensure_on_calendar(client: SuiteJMAPClient, account: str, events: list[dict
             event["useDefaultAlerts"] = True
         payload[str(uuid7())] = event
 
-    created_ids = []
     if payload:
         with client.batch() as b:
             h = b.calendars.calendar_event.set(create=payload, sendSchedulingMessages=False)
         result = h.result
-        created_ids = [str(created.id) for created in result.created.values()]
+        for creation_id, created in result.created.items():
+            ids_by_uid[payload[creation_id]["uid"]] = str(created.id)
 
         if result.not_created:
             # The uid lookup runs on the server's async search index and can miss an event
-            # created moments ago; the server then refuses the duplicate uid. Re-resolve
-            # before failing so a repeated add stays idempotent.
-            if not created_ids and (existing_ids := _settled_master_ids(client, uids)):
-                return existing_ids[0]
+            # created moments ago; the server then refuses the duplicate uid. A refused event
+            # that turns out to be on the calendar is that case, and keeps a repeated add
+            # idempotent; one that does not is a failure.
+            refused = {
+                payload[creation_id]["uid"]: error for creation_id, error in result.not_created.items()
+            }
+            ids_by_uid.update(_settled_master_ids_by_uid(client, list(refused)))
+            if error := next((error for uid, error in refused.items() if uid not in ids_by_uid), None):
+                frappe.throw(
+                    _("Could not add the event to the calendar: {0}").format(format_set_error(error))
+                )
 
-            error = next(iter(result.not_created.values()), None)
-            frappe.throw(_("Could not add the event to the calendar: {0}").format(format_set_error(error)))
-
-    return (created_ids or existing_ids)[0]
+    return ids_by_uid[uids[0]]
 
 
-def _settled_master_ids(client: SuiteJMAPClient, uids: list[str], timeout: float = 3.0) -> list[str]:
-    """Polls the uid lookup briefly for events that exist but are not yet searchable."""
+def _master_ids_by_uid(client: SuiteJMAPClient, uids: list[str]) -> dict[str, str]:
+    """The master ids of the events already on the calendar, by uid (search-index backed)."""
 
-    deadline = time.monotonic() + timeout
+    ids = jmap_events.get_master_ids(client, uids)
+    if not ids:
+        return {}
+
+    return {e["uid"]: e["id"] for e in jmap_events.get_events(client, ids) if e.get("uid")}
+
+
+def _settled_master_ids_by_uid(client: SuiteJMAPClient, uids: list[str]) -> dict[str, str]:
+    """Polls the uid lookup briefly for events that exist but are not yet searchable, until every
+    one of `uids` has answered or the wait runs out."""
+
+    deadline = time.monotonic() + SETTLE_TIMEOUT
     while True:
-        if ids := jmap_events.get_master_ids(client, uids):
-            return ids
-        if time.monotonic() >= deadline:
-            return []
+        ids_by_uid = _master_ids_by_uid(client, uids)
+        if len(ids_by_uid) == len(set(uids)) or time.monotonic() >= deadline:
+            return ids_by_uid
         time.sleep(0.25)
 
 
