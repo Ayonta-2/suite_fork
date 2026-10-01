@@ -340,12 +340,16 @@ class MailQueue(OwnerFromUser, Document):
             elif self.status == "Failed to Submit":
                 data = response["methodResponses"][-1][1].get("notCreated", {}).get(f"submit-{self.name}")
         elif self.status == "Failed to Draft":
-            data = (response.get("draft") or {}).get("notCreated", {}).get(f"draft-{self.name}")
+            data = _refusal(response.get("draft"), f"draft-{self.name}")
         elif self.status == "Failed to Submit":
-            data = (response.get("submit") or {}).get("notCreated", {}).get(f"submit-{self.name}")
+            data = _refusal(response.get("submit"), f"submit-{self.name}")
 
         if data:
-            message = f"{data['type']}: {data['description']}"
+            # Only `type` is certain on a JMAP error; the rest is the server's to add.
+            message = data["type"]
+
+            if data.get("description"):
+                message += f": {data['description']}"
 
             if data.get("properties"):
                 message += f" ({', '.join(data['properties'])})"
@@ -810,11 +814,15 @@ class MailQueue(OwnerFromUser, Document):
 
             response_payload: dict[str, Any] = {}
 
+            # A call refused as a whole is a failure of that step like a refused object, and is
+            # retried the same way: left as it was, the row sat Drafted or Failed with no retry
+            # scheduled, and the mail was never sent.
             draft_created = draft_error = None
             try:
                 draft_result = draft_h.result
             except MethodError as e:
-                response_payload["draft"] = {"error": {"type": e.type, **e.arguments}}
+                draft_error = {"type": e.type, **e.arguments}
+                response_payload["draft"] = {"error": draft_error}
             else:
                 created_map = {k: v.to_wire() for k, v in draft_result.created.items()}
                 not_created = draft_result.not_created
@@ -828,7 +836,8 @@ class MailQueue(OwnerFromUser, Document):
                 try:
                     submit_result = submit_h.result
                 except MethodError as e:
-                    response_payload["submit"] = {"error": {"type": e.type, **e.arguments}}
+                    submit_error = {"type": e.type, **e.arguments}
+                    response_payload["submit"] = {"error": submit_error}
                 else:
                     created_map = {k: v.to_wire() for k, v in submit_result.created.items()}
                     response_payload["submit"] = {
@@ -944,6 +953,14 @@ def json_loads(data: str | None, default: Any = None) -> list | dict | None:
         return json.loads(data)
 
     return default
+
+
+def _refusal(answer: dict | None, creation_id: str) -> dict | None:
+    """The error a stored draft or submit answer carries: the call's own when the server refused
+    the whole call, else the one against the object."""
+
+    answer = answer or {}
+    return answer.get("error") or (answer.get("notCreated") or {}).get(creation_id)
 
 
 def get_next_retry_after(retries: int) -> str:
