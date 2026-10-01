@@ -69,6 +69,11 @@ class InviteEventResolution(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+        # Refusals of events other than the invite's are logged, not raised.
+        patcher = mock.patch.object(invites, "log_error")
+        self.logged = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def searchable(self, *answers: list[str]) -> None:
         """What the uid lookup finds, one answer per query; the last one stands from then on."""
 
@@ -116,6 +121,22 @@ class InviteEventResolution(unittest.TestCase):
         # duplicates; the other event then becomes searchable before the invite's does.
         self.searchable([], ["id-other"], ["id-invite", "id-other"])
         self.created()
+
+        self.assertEqual(self.ensure(INVITE, OTHER), "id-invite")
+
+    def test_another_event_being_refused_does_not_keep_the_reader_from_the_invite(self):
+        # The invite's own event is on the calendar; the file's other event is refused for good.
+        self.searchable(["id-invite"])
+        self.created()
+
+        self.assertEqual(self.ensure(INVITE, OTHER), "id-invite")
+
+        # Left out, not silently: the refusal is on record with the server's reason.
+        self.assertIn(DUPLICATE["description"], self.logged.call_args.kwargs["message"])
+
+    def test_an_invite_just_created_is_returned_though_another_event_was_refused(self):
+        self.searchable([])
+        self.created(uid_invite="id-invite")
 
         self.assertEqual(self.ensure(INVITE, OTHER), "id-invite")
 

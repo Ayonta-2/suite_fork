@@ -19,6 +19,7 @@ from suite.mail.jmap import (
     get_default_calendar_id,
     get_participant_identities,
 )
+from suite.utils import log_error
 from suite.utils.rate_limiter import dynamic_rate_limit
 
 # How long a refused event is given to show up in the server's search index (seconds).
@@ -110,12 +111,14 @@ def rsvp_to_invite(account: str, blob_id: str, response: str) -> dict:
 def _ensure_on_calendar(client: SuiteJMAPClient, account: str, events: list[dict]) -> str:
     """Creates the parsed events that aren't on the calendar yet (idempotent by UID, on the default
     calendar, no scheduling messages) and returns the master id of the invite's event: the first
-    in the file, which is the one the reader is shown and answers."""
+    in the file, which is the one the reader is shown and answers. Only that event failing to get
+    onto the calendar is an error; another one the server refuses is logged and left out."""
 
     uids = [e["uid"] for e in events if e.get("uid")]
     if not uids:
         frappe.throw(_("The attachment does not contain a valid calendar event."))
 
+    invite_uid = uids[0]
     ids_by_uid = _master_ids_by_uid(client, uids)
     default_calendar_id = None
 
@@ -142,21 +145,27 @@ def _ensure_on_calendar(client: SuiteJMAPClient, account: str, events: list[dict
         for creation_id, created in result.created.items():
             ids_by_uid[payload[creation_id]["uid"]] = str(created.id)
 
-        if result.not_created:
+        refused = {payload[creation_id]["uid"]: error for creation_id, error in result.not_created.items()}
+        if error := refused.pop(invite_uid, None):
             # The uid lookup runs on the server's async search index and can miss an event
-            # created moments ago; the server then refuses the duplicate uid. A refused event
+            # created moments ago; the server then refuses the duplicate uid. A refused invite
             # that turns out to be on the calendar is that case, and keeps a repeated add
             # idempotent; one that does not is a failure.
-            refused = {
-                payload[creation_id]["uid"]: error for creation_id, error in result.not_created.items()
-            }
-            ids_by_uid.update(_settled_master_ids_by_uid(client, list(refused)))
-            if error := next((error for uid, error in refused.items() if uid not in ids_by_uid), None):
+            if settled_id := _settled_master_id(client, invite_uid):
+                ids_by_uid[invite_uid] = settled_id
+            else:
                 frappe.throw(
                     _("Could not add the event to the calendar: {0}").format(format_set_error(error))
                 )
+        if refused:
+            # Not the event the reader is adding or answering: no reason to keep them from it.
+            log_error(
+                "Calendar",
+                title=_("Events of an invite could not be added"),
+                message="\n".join(f"{uid}: {format_set_error(error)}" for uid, error in refused.items()),
+            )
 
-    return ids_by_uid[uids[0]]
+    return ids_by_uid[invite_uid]
 
 
 def _master_ids_by_uid(client: SuiteJMAPClient, uids: list[str]) -> dict[str, str]:
@@ -169,15 +178,15 @@ def _master_ids_by_uid(client: SuiteJMAPClient, uids: list[str]) -> dict[str, st
     return {e["uid"]: e["id"] for e in jmap_events.get_events(client, ids) if e.get("uid")}
 
 
-def _settled_master_ids_by_uid(client: SuiteJMAPClient, uids: list[str]) -> dict[str, str]:
-    """Polls the uid lookup briefly for events that exist but are not yet searchable, until every
-    one of `uids` has answered or the wait runs out."""
+def _settled_master_id(client: SuiteJMAPClient, uid: str) -> str | None:
+    """Polls the uid lookup briefly for an event that exists but is not yet searchable."""
 
     deadline = time.monotonic() + SETTLE_TIMEOUT
     while True:
-        ids_by_uid = _master_ids_by_uid(client, uids)
-        if len(ids_by_uid) == len(set(uids)) or time.monotonic() >= deadline:
-            return ids_by_uid
+        if id := _master_ids_by_uid(client, [uid]).get(uid):
+            return id
+        if time.monotonic() >= deadline:
+            return None
         time.sleep(0.25)
 
 
