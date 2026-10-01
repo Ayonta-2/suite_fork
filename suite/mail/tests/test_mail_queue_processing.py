@@ -119,6 +119,20 @@ class RefusedMail(unittest.TestCase):
         self.assert_retried(doc, "Failed to Draft")
         self.assertEqual(doc.error_message, "invalidProperties (to)")
 
+    def test_a_refused_draft_stays_the_cause_when_its_submission_fails_with_it(self):
+        refusal = {"type": "tooLarge", "description": "The message is too large."}
+        self.server.respond("Email/set", {"notCreated": {f"draft-{QUEUE}": refusal}})
+        # The submission names a draft that was never created, so the server refuses it too.
+        self.server.respond(
+            "EmailSubmission/set",
+            {"notCreated": {f"submit-{QUEUE}": {"type": "invalidProperties", "properties": ["emailId"]}}},
+        )
+
+        doc = self.process()
+
+        self.assert_retried(doc, "Failed to Draft")
+        self.assertEqual(doc.error_message, "tooLarge: The message is too large.")
+
     def test_a_mail_the_server_takes_is_submitted(self):
         self.server.respond("Email/set", DRAFTED)
         self.server.respond("EmailSubmission/set", {"created": {f"submit-{QUEUE}": {"id": "s1"}}})

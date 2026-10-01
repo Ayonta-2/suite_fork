@@ -883,7 +883,9 @@ class MailQueue(OwnerFromUser, Document):
                             "submitted_at": now(),
                         }
                     )
-                elif submit_error:
+                elif submit_error and not draft_error:
+                    # A refused draft takes its submission down with it; the draft's refusal
+                    # is the cause, and stays the row's status.
                     retries = cint(self.retries) + 1
                     kwargs.update(
                         {
