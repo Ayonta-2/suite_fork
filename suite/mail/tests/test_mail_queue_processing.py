@@ -277,6 +277,7 @@ class UnansweredMail(_Processing):
         failures = {
             "connection refused": httpx.ConnectError("connection refused"),
             "connection timed out": httpx.ConnectTimeout("timed out"),
+            "proxy refused the tunnel": httpx.ProxyError("403 Forbidden"),
             "rate limited": httpx.Response(429),
         }
         for name, failure in failures.items():

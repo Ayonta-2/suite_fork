@@ -273,6 +273,7 @@ class NeverApplied(unittest.TestCase):
             "connection refused": httpx.ConnectError("connection refused"),
             "connection timed out": httpx.ConnectTimeout("timed out"),
             "no free connection": httpx.PoolTimeout("pool exhausted"),
+            "proxy refused the tunnel": httpx.ProxyError("403 Forbidden"),
             "rate limited": 429,
             "rejected credentials": 401,
             "bad request": 400,

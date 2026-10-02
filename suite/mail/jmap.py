@@ -328,8 +328,20 @@ JMAP_REFUSALS = (
 MAYBE_APPLIED_ERRORS = ("serverPartialFail", "malformedResult", MISSING_RESPONSE)
 
 # The httpx failures after which nothing can have been sent: the same three jmaplib counts as
-# "the connection never established" (jmap.client), plus a URL httpx will not open at all.
-NEVER_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, httpx.UnsupportedProtocol)
+# "the connection never established" (jmap.client), a URL httpx will not open at all, and a proxy
+# that refused the tunnel (httpcore raises ProxyError only for a CONNECT or SOCKS handshake that
+# failed, before the request is written).
+NEVER_SENT = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+    httpx.UnsupportedProtocol,
+    httpx.ProxyError,
+)
+
+# How long a failed JMAP Account sync is left alone (seconds), so that one which keeps failing is
+# not run, and logged, by every request.
+SYNC_BACK_OFF = 5 * 60
 
 MAIL_URN = "urn:ietf:params:jmap:mail"
 SUBMISSION_URN = "urn:ietf:params:jmap:submission"
