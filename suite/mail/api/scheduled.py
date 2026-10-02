@@ -43,11 +43,16 @@ from frappe.utils import (
     now_datetime,
     time_diff_in_seconds,
 )
+from jmap import MethodError
+from jmap.core.invocation import Handle
+from jmap.models.responses import SetResponse
 from pydantic import BaseModel, model_validator
 
 from suite.mail.jmap import (
     SuiteJMAPClient,
     build_submission_envelope,
+    check_delayed_send,
+    format_method_error,
     get_account_client,
     get_cached_identities,
     get_identity_id_by_email,
@@ -450,7 +455,13 @@ def _identity_email(account: str, identity_id: str | None) -> str | None:
     if not identity_id:
         return None
 
-    return next((i.get("email") for i in get_cached_identities(account) if i.get("id") == identity_id), None)
+    try:
+        identities = get_cached_identities(account)
+    except MethodError:
+        # The address is one detail of the row: a refused Identity/get must not cost the rest.
+        return None
+
+    return next((i.get("email") for i in identities if i.get("id") == identity_id), None)
 
 
 # --- submission plumbing -------------------------------------------------------------------------
@@ -526,6 +537,10 @@ def _get_submissions(client: SuiteJMAPClient, ids: list[str], properties: list[s
     with client.batch() as b:
         h = b.submission.email_submission.get(ids=ids, properties=properties)
 
+    if h.error:
+        # A refused get reads as nothing found: the caller answers that the submission is gone.
+        return []
+
     return [s.to_wire() for s in h.result.items]
 
 
@@ -546,8 +561,9 @@ def _cancel_submission(client: SuiteJMAPClient, submission_id: str) -> None:
     with client.batch() as b:
         h = b.submission.email_submission.set(update={submission_id: {"undoStatus": "canceled"}})
 
-    if submission_id not in h.result.updated:
-        raise ValueError(get_set_error_message(h.result, "update", submission_id))
+    result = _set_result(h)
+    if submission_id not in result.updated:
+        raise ValueError(get_set_error_message(result, "update", submission_id))
 
 
 def _destroy_submission(client: SuiteJMAPClient, submission_id: str) -> None:
@@ -557,8 +573,9 @@ def _destroy_submission(client: SuiteJMAPClient, submission_id: str) -> None:
     with client.batch() as b:
         h = b.submission.email_submission.set(destroy=[submission_id])
 
-    if submission_id not in h.result.destroyed:
-        raise ValueError(get_set_error_message(h.result, "destroy", submission_id))
+    result = _set_result(h)
+    if submission_id not in result.destroyed:
+        raise ValueError(get_set_error_message(result, "destroy", submission_id))
 
 
 def _resubmit(
@@ -594,11 +611,22 @@ def _resubmit(
             }
         )
 
-    created = h.result.created.get(submit_ref)
+    result = _set_result(h)
+    created = result.created.get(submit_ref)
     if not created:
-        raise ValueError(get_set_error_message(h.result, "create", submit_ref))
+        raise ValueError(get_set_error_message(result, "create", submit_ref))
 
     return created.to_wire()
+
+
+def _set_result(handle: Handle[SetResponse]) -> SetResponse:
+    """An EmailSubmission/set's response. A set the server refused outright raises the same
+    ValueError as one that refused the object, carrying the server's reason."""
+
+    if handle.error:
+        raise ValueError(format_method_error(handle.error))
+
+    return handle.result
 
 
 def _get_submission(client: SuiteJMAPClient, id: str) -> dict:
@@ -644,9 +672,7 @@ def _validate_send_at(client: SuiteJMAPClient, account: str, send_at: str) -> st
     if get_datetime(send_at) <= now_datetime():
         frappe.throw(_("Send At must be in the future."))
 
-    max_delay = get_max_delayed_send(client, account)
-    if time_diff_in_seconds(send_at, now()) > max_delay:
-        frappe.throw(_("Send At cannot be more than {0} days in the future.").format(max_delay // 86400))
+    check_delayed_send(time_diff_in_seconds(send_at, now()), get_max_delayed_send(client, account))
 
     return send_at
 
@@ -738,6 +764,8 @@ def _move_email_to_drafts(client: SuiteJMAPClient, account: str, email_id: str |
         h = b.mail.email.set(
             update={email_id: {"mailboxIds": {drafts_mailbox_id: True}, "keywords/$draft": True}}
         )
+    if h.error:
+        frappe.throw(format_method_error(h.error))
     if email_id not in h.result.updated:
         # The submission is already canceled; retrying this action skips the cancel
         # step (undoStatus is "canceled") and reattempts the move.

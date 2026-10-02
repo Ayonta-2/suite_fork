@@ -25,9 +25,13 @@ from datetime import datetime
 from unittest import mock
 
 import frappe
+import httpx
 from frappe.exceptions import FrappeTypeError
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, get_datetime, get_datetime_str, now, time_diff_in_seconds
+from jmap.auth import BasicAuth
+from jmap.core.retry import RetryPolicy
+from jmap.testing.fake import FakeJMAPServer
 
 from suite.mail.api.scheduled import (
     SUBMISSION_PROPERTIES,
@@ -40,7 +44,7 @@ from suite.mail.api.scheduled import (
     retry_failed_mail,
     send_scheduled_mail_now,
 )
-from suite.mail.jmap import get_account_client, get_cached_identities
+from suite.mail.jmap import SuiteJMAPClient, get_account_client, get_cached_identities
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 from suite.mail.utils.dt import to_utc_z
 from suite.utils.dt import convert_to_utc
@@ -738,3 +742,186 @@ class TestSubmissionQueryTotal(IntegrationTestCase):
         ids, total, requests = self._query_page(["a", "b", "c", "d"], limit=4, server_limit=2, server_total=4)
         self.assertEqual((ids, total), (["a", "b", "c", "d"], 4))
         self.assertEqual(requests, 2)
+
+
+CORE = "urn:ietf:params:jmap:core"
+MAIL = "urn:ietf:params:jmap:mail"
+SUBMISSION = "urn:ietf:params:jmap:submission"
+URNS = (CORE, MAIL, SUBMISSION)
+ACCOUNT = "f7"
+USER = "user@example.test"
+
+
+class _FakeServerCase(IntegrationTestCase):
+    """The Outbox endpoints against a fake server, which every test sets up through `serve`."""
+
+    def serve(self, submission: dict | None = None) -> FakeJMAPServer:
+        """Routes the endpoints' account client to a fake server; `submission` is what the
+        account advertises for the submission capability."""
+
+        server = FakeJMAPServer(
+            capabilities={urn: {} for urn in URNS},
+            accounts={
+                ACCOUNT: {
+                    "name": USER,
+                    "isPersonal": True,
+                    "accountCapabilities": {CORE: {}, MAIL: {}, SUBMISSION: submission or {}},
+                }
+            },
+            primary_accounts=dict.fromkeys(URNS, ACCOUNT),
+        )
+        http = httpx.Client(auth=BasicAuth(USER, "pw"), **server.client_kwargs())
+        self.client = SuiteJMAPClient.connect(
+            "https://jmap.example.com/.well-known/jmap",
+            auth=BasicAuth(USER, "pw"),
+            http=http,
+            experimental=True,
+            retry_policy=RetryPolicy(max_attempts=1),
+        )
+        for target in ("suite.mail.api.scheduled.get_account_client", "suite.mail.jmap.get_account_client"):
+            patcher = mock.patch(target, return_value=self.client)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+        return server
+
+    def hold(self, server: FakeJMAPServer, undo_status: str = "pending", **properties) -> None:
+        """Makes the server hold submission "sub1", of email "e1"."""
+
+        submission = {
+            "id": "sub1",
+            "emailId": "e1",
+            "threadId": "t1",
+            "undoStatus": undo_status,
+            "sendAt": to_utc_z(add_to_date(now(), hours=1)),
+            **properties,
+        }
+        server.respond("EmailSubmission/get", {"state": "s1", "list": [submission], "notFound": []})
+
+    def methods(self, server: FakeJMAPServer) -> list[str]:
+        """Every method the server was asked to run, in order."""
+
+        return [call[0] for request in server.requests for call in request["methodCalls"]]
+
+
+class TestSendAtWindow(_FakeServerCase):
+    """A reschedule is checked against how long the server says it can hold a message
+    (maxDelayedSend), and the refusal names that limit in a unit the user can read."""
+
+    def refusal(self, submission: dict | None, **ahead) -> str:
+        """What rescheduling "sub1" to `ahead` of now is refused with."""
+
+        server = self.serve(submission)
+        self.hold(server)
+
+        with self.assertRaises(frappe.ValidationError) as refused:
+            reschedule_mail(ACCOUNT, "sub1", to_utc_z(add_to_date(now(), **ahead)))
+
+        # Refused before the held submission is touched.
+        self.assertEqual(self.methods(server), ["EmailSubmission/get"])
+        return str(refused.exception)
+
+    def test_a_server_that_holds_nothing_says_scheduling_is_unsupported(self):
+        self.assertEqual(
+            self.refusal({"maxDelayedSend": 0}, hours=2),
+            "This mail server doesn't support scheduled sending.",
+        )
+
+    def test_a_limit_under_a_day_is_said_in_hours(self):
+        self.assertEqual(
+            self.refusal({"maxDelayedSend": 6 * 3600}, hours=7),
+            "Send At cannot be more than 6 hours in the future.",
+        )
+
+    def test_a_limit_under_an_hour_is_said_in_minutes(self):
+        self.assertEqual(
+            self.refusal({"maxDelayedSend": 45 * 60}, hours=2),
+            "Send At cannot be more than 45 minutes in the future.",
+        )
+
+    def test_a_limit_of_days_is_said_in_days(self):
+        self.assertEqual(
+            self.refusal({"maxDelayedSend": 2 * 86400}, days=3),
+            "Send At cannot be more than 2 days in the future.",
+        )
+
+    def test_a_server_that_names_no_limit_holds_for_thirty_days(self):
+        self.assertEqual(self.refusal(None, days=31), "Send At cannot be more than 30 days in the future.")
+
+    def test_a_time_in_the_past_is_refused_as_such_whatever_the_limit(self):
+        self.assertEqual(self.refusal({"maxDelayedSend": 0}, minutes=-5), "Send At must be in the future.")
+
+    def test_a_time_within_a_limit_under_a_day_is_accepted(self):
+        from suite.mail.api.scheduled import _validate_send_at
+
+        self.serve({"maxDelayedSend": 6 * 3600})
+        send_at = get_datetime_str(add_to_date(now(), hours=5))
+
+        self.assertEqual(_validate_send_at(self.client, ACCOUNT, send_at), send_at)
+
+
+class TestRefusedOutboxCalls(_FakeServerCase):
+    """What the Outbox answers when the server refuses a whole call (a method error) rather
+    than one object in it."""
+
+    def test_a_refused_lookup_reads_as_a_submission_that_is_gone(self):
+        server = self.serve()
+        server.fail("EmailSubmission/get", "serverFail", description="try again later")
+        send_at = to_utc_z(add_to_date(now(), hours=2))
+
+        for action in (
+            lambda: cancel_scheduled_mail(ACCOUNT, "sub1"),
+            lambda: send_scheduled_mail_now(ACCOUNT, "sub1"),
+            lambda: reschedule_mail(ACCOUNT, "sub1", send_at),
+            lambda: retry_failed_mail(ACCOUNT, "sub1"),
+            lambda: dismiss_failed_mail(ACCOUNT, "sub1"),
+        ):
+            with self.assertRaisesRegex(frappe.ValidationError, "This scheduled email no longer exists."):
+                action()
+
+        with self.assertRaisesRegex(frappe.ValidationError, "This submission no longer exists."):
+            get_scheduled_mail(ACCOUNT, "sub1")
+
+        # Nothing was changed on the strength of a lookup that failed.
+        self.assertEqual(set(self.methods(server)), {"EmailSubmission/get"})
+
+    def test_a_refused_cancel_fails_with_the_servers_reason(self):
+        server = self.serve()
+        self.hold(server)
+        server.fail("EmailSubmission/set", "serverFail", description="The queue is locked.")
+
+        with self.assertRaisesRegex(ValueError, "The queue is locked."):
+            cancel_scheduled_mail(ACCOUNT, "sub1")
+
+        # The delivery was not cancelled, so the message stays where it is.
+        self.assertNotIn("Email/set", self.methods(server))
+
+    def test_a_refused_move_to_drafts_fails_with_the_servers_reason(self):
+        # Already cancelled: the action goes straight to moving the message back.
+        server = self.serve()
+        self.hold(server, undo_status="canceled")
+        server.respond(
+            "Email/get",
+            {"state": "e1", "list": [{"id": "e1", "mailboxIds": {"mb-sent": True}}], "notFound": []},
+        )
+        server.fail("Email/set", "accountReadOnly", description="The account is read-only.")
+
+        with (
+            mock.patch("suite.mail.api.scheduled.get_mailbox_id_by_role", return_value="mb-drafts"),
+            self.assertRaisesRegex(frappe.ValidationError, "The account is read-only."),
+        ):
+            cancel_scheduled_mail(ACCOUNT, "sub1")
+
+    def test_details_survive_a_refused_identity_lookup(self):
+        server = self.serve()
+        self.hold(server, identityId="i1")
+        email = {"id": "e1", "threadId": "t1", "subject": "Quarterly report"}
+        server.respond("Email/get", {"state": "e1", "list": [email], "notFound": []})
+        server.fail("Identity/get", "forbidden")
+
+        details = get_scheduled_mail(ACCOUNT, "sub1")
+
+        self.assertEqual(details["id"], "sub1")
+        self.assertEqual(details["subject"], "Quarterly report")
+        self.assertEqual(details["status"], "scheduled")
+        self.assertIsNone(details["identity_email"])
