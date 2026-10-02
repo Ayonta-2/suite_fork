@@ -470,16 +470,16 @@ class SuiteJMAPClient(JMAPClient):
         finally:
             self.retry_policy = policy
 
-        if self.session_stale:
-            # The batch is answered and its handles are resolved: a refresh that fails must not
-            # turn an applied write into a failure the caller retries. The session stays marked
-            # stale, so the next call tries again.
-            try:
+        # The batch is answered and its handles are resolved: a refresh or a sync that fails must
+        # not turn an applied write into a failure the caller retries. A session that could not
+        # be refreshed stays marked stale, so the next call tries again.
+        try:
+            if self.session_stale:
                 self._refresh_and_sync()
-            except Exception:
-                log_mail_error(
-                    _("Failed to refresh the JMAP session"), frappe.get_traceback(with_context=True)
-                )
+            elif self.sync_owed_after is not None and time.time() >= self.sync_owed_after:
+                self._sync_accounts()
+        except Exception:
+            log_mail_error("Failed to refresh the JMAP session", frappe.get_traceback(with_context=True))
 
     def upload(self, content: bytes, **kwargs) -> UploadResult:
         with translated_errors():
@@ -503,19 +503,31 @@ class SuiteJMAPClient(JMAPClient):
                 )
                 peer.session_stale = False
 
-        if not self.user:
-            return
+        if self.user:
+            self._sync_accounts()
+
+    def _sync_accounts(self) -> None:
+        """Brings the JMAP Account documents in line with the session, and caches the session.
+
+        The session state only changes when the set of accounts available to the user changes
+        on the server, so after a refresh the local documents may be stale. A sync that fails
+        stays owed: the session is cached all the same - it is good, and need not be fetched by
+        every request - together with the time from which the sync may be tried again.
+        """
 
         # Lazy import to avoid a circular dependency (jmap_account -> suite.mail.jmap).
         from suite.mail.doctype.jmap_account.jmap_account import sync_jmap_accounts
 
-        # The session state only changes when the set of accounts available to the user
-        # changes on the server, so the local JMAP Account documents may be stale.
-        sync_jmap_accounts(self.user, self.session.raw.get("accounts") or {})
+        owed_after = None
+        try:
+            sync_jmap_accounts(self.user, self.session.raw.get("accounts") or {})
+        except Exception:
+            owed_after = time.time() + SYNC_BACK_OFF
+            log_mail_error("Failed to sync the JMAP accounts", frappe.get_traceback(with_context=True))
 
-        # Cached only once the accounts are synced: if the sync fails, the cache keeps the old
-        # session, the next request finds its state stale again, and the sync gets another try.
-        store_cached_session(self.user, self.session)
+        for peer in self.peers or (self,):
+            peer.sync_owed_after = owed_after
+        store_cached_session(self.user, self.session, sync_owed_after=owed_after)
 
 
 @request_cache
@@ -582,6 +594,7 @@ def get_jmap_client(
                 session_url=session_url,
                 experimental=True,
             )
+            client.sync_owed_after = cached.get("accountSyncOwedAfter")
         else:
             with translated_errors():
                 client = SuiteJMAPClient.connect(
@@ -628,6 +641,7 @@ def account_view(client: SuiteJMAPClient, account: str) -> SuiteJMAPClient:
         experimental=True,
     )
     view.user = client.user
+    view.sync_owed_after = client.sync_owed_after
     if not isinstance(client.peers, list):
         client.peers = [client]
     client.peers.append(view)
@@ -644,9 +658,10 @@ def get_cached_session(user: str) -> dict | None:
     return frappe.cache.hget("jmap:sessions", user)
 
 
-def store_cached_session(user: str, session: Session) -> None:
+def store_cached_session(user: str, session: Session, sync_owed_after: float | None = None) -> None:
     """Caches the session document with absolutized endpoint URLs so it can be revived
-    offline (`Session.from_wire` without a base_url does not resolve relative URLs)."""
+    offline (`Session.from_wire` without a base_url does not resolve relative URLs).
+    `sync_owed_after` travels with it: see SuiteJMAPClient.sync_owed_after."""
 
     doc = dict(session.raw)
     doc.update(
@@ -658,6 +673,10 @@ def store_cached_session(user: str, session: Session) -> None:
             "timestamp": time.time(),
         }
     )
+    # A revived session's document is the cached one, mark and all: set or cleared, never kept.
+    doc.pop("accountSyncOwedAfter", None)
+    if sync_owed_after is not None:
+        doc["accountSyncOwedAfter"] = sync_owed_after
     frappe.cache.hset("jmap:sessions", user, doc)
 
 

@@ -476,25 +476,64 @@ class ClientForUser(unittest.TestCase):
         self.assertEqual(server.blobs[uploaded.blob_id][0], b"sent")
         self.assertEqual(downloaded, b"stored")
 
-    def test_an_account_sync_that_fails_is_tried_again_by_the_next_request(self):
+    def failing_sync(self, *outcomes) -> mock.Mock:
+        """Has the JMAP Account sync end in `outcomes`, one per call: an error or None."""
+
+        sync = mock.patch(
+            "suite.mail.doctype.jmap_account.jmap_account.sync_jmap_accounts", side_effect=list(outcomes)
+        )
+        logged = mock.patch.object(suite_jmap, "log_mail_error")
+        self.addCleanup(sync.stop)
+        self.addCleanup(logged.stop)
+        self.logged = logged.start()
+        return sync.start()
+
+    def test_an_account_sync_that_fails_is_left_alone_for_a_while(self):
         server = _server()
         store_cached_session(self.user, _client(server).session)
         server.session_state = "changed"
+        sync = self.failing_sync(RuntimeError("database is busy"), None)
+        _mailboxes(self.client_for_user(server))  # the session is refreshed, the sync fails
+        http = _watch(server)
 
-        with (
-            mock.patch(
-                "suite.mail.doctype.jmap_account.jmap_account.sync_jmap_accounts",
-                side_effect=[RuntimeError("database is busy"), None],
-            ) as sync,
-            mock.patch.object(suite_jmap, "log_mail_error"),
-        ):
-            _mailboxes(self.client_for_user(server))  # the session is refreshed, the sync fails
-            self.assertNotEqual(get_cached_session(self.user)["state"], "changed")
+        _mailboxes(self.client_for_user(server))
+        _mailboxes(self.client_for_user(server))
 
+        # Neither fetched again nor synced again, by either request: the refreshed session is in use.
+        self.assertEqual(http, [API, API])
+        self.assertEqual(sync.call_count, 1)
+        self.logged.assert_called_once()
+        self.assertEqual(get_cached_session(self.user)["state"], "changed")
+
+    def test_an_account_sync_that_failed_is_tried_again_once_it_has_been_left_alone(self):
+        server = _server()
+        store_cached_session(self.user, _client(server).session)
+        server.session_state = "changed"
+        sync = self.failing_sync(RuntimeError("database is busy"), None)
+        with mock.patch.object(suite_jmap, "SYNC_BACK_OFF", -1):  # over as soon as it starts
             _mailboxes(self.client_for_user(server))
+        http = _watch(server)
+
+        _mailboxes(self.client_for_user(server))  # syncs, with the session it already has
+        _mailboxes(self.client_for_user(server))  # nothing is owed any more
+
+        self.assertEqual(http, [API, API])
+        self.assertEqual(sync.call_count, 2)
+
+    def test_within_one_job_the_sync_is_tried_again_by_a_later_call(self):
+        server = _server()
+        store_cached_session(self.user, _client(server).session)
+        server.session_state = "changed"
+        sync = self.failing_sync(RuntimeError("database is busy"), None)
+        client = self.client_for_user(server)
+        view = account_view(client, SHARED)
+
+        with mock.patch.object(suite_jmap, "SYNC_BACK_OFF", -1):
+            _mailboxes(client)
+        _mailboxes(view)  # the same job, through another view of the client
+        _mailboxes(client)
 
         self.assertEqual(sync.call_count, 2)
-        self.assertEqual(get_cached_session(self.user)["state"], "changed")
 
     def test_an_unreachable_server_is_reported_unavailable_and_nothing_is_cached(self):
         server = _server()
