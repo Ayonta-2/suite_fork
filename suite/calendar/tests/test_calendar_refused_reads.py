@@ -58,6 +58,15 @@ class RefusedReadsTestCase(unittest.TestCase):
     def refuse(self, method: str) -> None:
         self.server.fail(method, "serverFail", description=REASON)
 
+    def count_for_any_account(self, module) -> None:
+        """Has `module`'s list count answer for ACCOUNT, which belongs to no user here, and
+        forgets the total its listings cache once the test is over."""
+
+        patcher = mock.patch.object(module, "get_user_for_jmap_account", return_value=USER)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(frappe.cache.delete_value, module._get_total_cache_key(ACCOUNT))
+
     def sent(self, method: str) -> list[dict]:
         """The arguments of every `method` call the server received, in order."""
 
@@ -93,6 +102,28 @@ class Calendars(RefusedReadsTestCase):
         self.refuse("Calendar/get")
 
         self.assertEqual(calendar.fetch_calendars(ACCOUNT), [])
+
+    def test_a_refused_listing_leaves_the_count_of_the_last_one(self):
+        self.count_for_any_account(calendar)
+        calendars = [
+            {
+                "id": id,
+                "name": id,
+                "description": None,
+                "isSubscribed": True,
+                "color": None,
+                "sortOrder": 0,
+                "timeZone": None,
+            }
+            for id in ("cal-1", "cal-2")
+        ]
+        self.server.respond("Calendar/get", {"state": "s", "list": calendars, "notFound": []})
+        calendar.fetch_calendars(ACCOUNT)
+
+        self.refuse("Calendar/get")
+        calendar.fetch_calendars(ACCOUNT)
+
+        self.assertEqual(calendar.Calendar.get_count(filters=[["Calendar", "account", "=", ACCOUNT]]), 2)
 
     def test_a_refused_read_of_one_calendar_says_why(self):
         self.refuse("Calendar/get")
@@ -194,6 +225,21 @@ class ParticipantIdentities(RefusedReadsTestCase):
         self.refuse("ParticipantIdentity/get")
 
         self.assertEqual(participant_identity.fetch_participant_identities(ACCOUNT), [])
+
+    def test_a_refused_listing_leaves_the_count_of_the_last_one(self):
+        self.count_for_any_account(participant_identity)
+        identities = [
+            {"id": id, "name": id, "isDefault": False, "calendarAddress": f"mailto:{id}@example.test"}
+            for id in ("p1", "p2")
+        ]
+        self.server.respond("ParticipantIdentity/get", {"state": "s", "list": identities, "notFound": []})
+        participant_identity.fetch_participant_identities(ACCOUNT)
+
+        self.refuse("ParticipantIdentity/get")
+        participant_identity.fetch_participant_identities(ACCOUNT)
+
+        filters = [["Participant Identity", "account", "=", ACCOUNT]]
+        self.assertEqual(participant_identity.ParticipantIdentity.get_count(filters=filters), 2)
 
     def test_a_refused_read_of_one_identity_says_why(self):
         self.refuse("ParticipantIdentity/get")

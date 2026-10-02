@@ -221,8 +221,12 @@ def fetch_participant_identities(account: str, page: int = 1, limit: int = 10) -
     with client.batch() as b:
         h = b.calendars.participant_identity.get()
 
-    # A listing the server refuses is an empty one, not a failed page.
-    identities = [] if h.error else [i.to_wire() for i in h.result.items]
+    if h.error:
+        # A listing the server refuses is an empty one, not a failed page. It says nothing of how
+        # many identities there are, so the cached total is left as the last listing set it.
+        return []
+
+    identities = [i.to_wire() for i in h.result.items]
     formatted_identities = [format_participant_identity(account, identity) for identity in identities]
     frappe.cache.set_value(_get_total_cache_key(account), len(identities), expires_in_sec=600)
 
