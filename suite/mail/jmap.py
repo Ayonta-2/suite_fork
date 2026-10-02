@@ -526,6 +526,9 @@ class SuiteJMAPClient(JMAPClient):
         on the server, so after a refresh the local documents may be stale. A sync that fails
         stays owed: the session is cached all the same - it is good, and need not be fetched by
         every request - together with the time from which the sync may be tried again.
+
+        When another run is already syncing for the user, the outcome is that run's to record:
+        caching from here would put "nothing owed" over the mark of a sync that failed there.
         """
 
         # Lazy import to avoid a circular dependency (jmap_account -> suite.mail.jmap).
@@ -533,7 +536,8 @@ class SuiteJMAPClient(JMAPClient):
 
         owed_after = None
         try:
-            sync_jmap_accounts(self.user, self.session.raw.get("accounts") or {})
+            if not sync_jmap_accounts(self.user, self.session.raw.get("accounts") or {}):
+                return
         except Exception:
             owed_after = time.time() + SYNC_BACK_OFF
             log_mail_error("Failed to sync the JMAP accounts", frappe.get_traceback(with_context=True))

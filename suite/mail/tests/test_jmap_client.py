@@ -487,7 +487,8 @@ class ClientForUser(unittest.TestCase):
         self.assertEqual(downloaded, b"stored")
 
     def failing_sync(self, *outcomes) -> mock.Mock:
-        """Has the JMAP Account sync end in `outcomes`, one per call: an error or None."""
+        """Has the JMAP Account sync end in `outcomes`, one per call: an error, True for a sync
+        that ran, False for one left to another run that holds the user's lock."""
 
         sync = mock.patch(
             "suite.mail.doctype.jmap_account.jmap_account.sync_jmap_accounts", side_effect=list(outcomes)
@@ -502,7 +503,7 @@ class ClientForUser(unittest.TestCase):
         server = _server()
         store_cached_session(self.user, _client(server).session)
         server.session_state = "changed"
-        sync = self.failing_sync(RuntimeError("database is busy"), None)
+        sync = self.failing_sync(RuntimeError("database is busy"), True)
         _mailboxes(self.client_for_user(server))  # the session is refreshed, the sync fails
         http = _watch(server)
 
@@ -519,7 +520,7 @@ class ClientForUser(unittest.TestCase):
         server = _server()
         store_cached_session(self.user, _client(server).session)
         server.session_state = "changed"
-        sync = self.failing_sync(RuntimeError("database is busy"), None)
+        sync = self.failing_sync(RuntimeError("database is busy"), True)
         with mock.patch.object(suite_jmap, "SYNC_BACK_OFF", -1):  # over as soon as it starts
             _mailboxes(self.client_for_user(server))
         http = _watch(server)
@@ -534,7 +535,7 @@ class ClientForUser(unittest.TestCase):
         server = _server()
         store_cached_session(self.user, _client(server).session)
         server.session_state = "changed"
-        sync = self.failing_sync(RuntimeError("database is busy"), None)
+        sync = self.failing_sync(RuntimeError("database is busy"), True)
         client = self.client_for_user(server)
         view = account_view(client, SHARED)
 
@@ -544,6 +545,22 @@ class ClientForUser(unittest.TestCase):
         _mailboxes(client)
 
         self.assertEqual(sync.call_count, 2)
+
+    def test_a_request_that_left_the_sync_to_another_does_not_wipe_what_that_one_owes(self):
+        server = _server()
+        store_cached_session(self.user, _client(server).session)
+        # Two requests under way with the session as it was, when the server's changes.
+        first, second = self.client_for_user(server), self.client_for_user(server)
+        server.session_state = "changed"
+        sync = self.failing_sync(RuntimeError("database is busy"), False, True)
+
+        with mock.patch.object(suite_jmap, "SYNC_BACK_OFF", -1):
+            _mailboxes(first)  # refreshes; its sync fails
+        _mailboxes(second)  # refreshes too; finds the sync taken and leaves it
+
+        _mailboxes(self.client_for_user(server))  # the next request: the sync is still owed
+
+        self.assertEqual(sync.call_count, 3)
 
     def test_an_unreachable_server_is_reported_unavailable_and_nothing_is_cached(self):
         server = _server()

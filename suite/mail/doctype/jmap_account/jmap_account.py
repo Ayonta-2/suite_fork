@@ -260,8 +260,9 @@ def delete_orphaned_jmap_accounts() -> None:
         frappe.delete_doc("JMAP Account", account, ignore_permissions=True, delete_permanently=True)
 
 
-def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
-    """Ensure a shared JMAP Account document exists for each of the user's accounts.
+def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> bool:
+    """Ensure a shared JMAP Account document exists for each of the user's accounts. Returns
+    whether this call did the sync: False when it left it to another run (see below).
 
     Settings are shared by account ID across every user with access, so documents for
     accounts the user can no longer see are intentionally left untouched.
@@ -277,7 +278,7 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
     lockname = f"sync_jmap_accounts:{user}"
     identifier = acquire_lock(lockname, acquire_timeout=0)
     if not identifier:
-        return
+        return False
 
     # The skip flags only pause hook-triggered builds during the bulk sync below and must not
     # leak: flags survive the request in long-lived processes (workers, tests), where a leaked
@@ -305,6 +306,8 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
         frappe.flags.skip_automation_sieve_build = previous_sieve_flag
         frappe.flags.skip_archive_mailbox_creation = previous_archive_flag
         release_lock(lockname, identifier)
+
+    return True
 
 
 def _ensure_jmap_account_docs(user: str, accounts: dict[str, dict]) -> list[str]:
