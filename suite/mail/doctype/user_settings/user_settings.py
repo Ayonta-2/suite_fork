@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import json
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from functools import cached_property
 from urllib.parse import urljoin
@@ -100,22 +101,25 @@ class UserSettings(OwnerFromUser, Document):
             ),
         )
 
-        try:
-            with translated_errors():
-                client = SuiteJMAPClient.connect(
-                    urljoin(server_url, "/.well-known/jmap"),
-                    auth=auth,
-                    http=http,
-                    experimental=True,
-                    retry_policy=RetryPolicy(max_attempts=1),
-                )
-        except Exception:
-            http.close()
-            return None
+        # The pool is the returned client's to keep; on every other way out it is closed here.
+        with ExitStack() as stack:
+            stack.callback(http.close)
+            try:
+                with translated_errors():
+                    client = SuiteJMAPClient.connect(
+                        urljoin(server_url, "/.well-known/jmap"),
+                        auth=auth,
+                        http=http,
+                        experimental=True,
+                        retry_policy=RetryPolicy(max_attempts=1),
+                    )
+            except Exception:
+                return None
 
-        client.user = self.user
-        store_cached_session(self.user, client.session)
-        return client
+            client.user = self.user
+            store_cached_session(self.user, client.session)
+            stack.pop_all()
+            return client
 
     def autoname(self) -> None:
         self.name = str(uuid7())
