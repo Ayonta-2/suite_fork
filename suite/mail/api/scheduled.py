@@ -70,6 +70,15 @@ SUBMISSION_PROPERTIES = ["id", "emailId", "threadId", "undoStatus", "sendAt", "e
 DETAIL_PROPERTIES = [*SUBMISSION_PROPERTIES, "deliveryStatus", "identityId", "dsnBlobIds", "mdnBlobIds"]
 EMAIL_SUMMARY_PROPERTIES = ["id", "threadId", "subject", "from", "to", "cc", "bcc"]
 
+# Method errors that say the account (or the object) is not there — as opposed to a server
+# that could not answer just now.
+GONE_ERRORS = ("accountNotFound", "notFound")
+
+# How a lookup reads a call the server refused: "empty" as nothing found whatever the error
+# (a listing shows what it can), "gone" as nothing found only when the error says so, and
+# "throw" never.
+Refused = Literal["empty", "gone", "throw"]
+
 
 class SubmissionFilter(BaseModel):
     """The listing's RFC 8621 §7.3 FilterCondition, from its query parameters. Empty ones are dropped."""
@@ -144,7 +153,7 @@ def get_submissions(
     if not ids:
         return {"rows": [], "total": total}
 
-    fetched = _get_submissions(client, ids, [*SUBMISSION_PROPERTIES, "deliveryStatus"])
+    fetched = _get_submissions(client, ids, [*SUBMISSION_PROPERTIES, "deliveryStatus"], refused="empty")
     queue_by_envid = _queue_messages_by_envid(fetched)
 
     # The query's order (sentAt desc) is the listing's order; get() does not guarantee it.
@@ -156,7 +165,8 @@ def get_submissions(
     ]
 
     email_ids = list(dict.fromkeys(row["email_id"] for row in rows if row["email_id"]))
-    emails_by_id = {e["id"]: e for e in _get_emails(client, email_ids, EMAIL_SUMMARY_PROPERTIES)}
+    emails = _get_emails(client, email_ids, EMAIL_SUMMARY_PROPERTIES, refused="empty")
+    emails_by_id = {e["id"]: e for e in emails}
     for row in rows:
         _add_email_fields(row, emails_by_id.get(row["email_id"]))
 
@@ -261,7 +271,15 @@ def retry_failed_mail(account: str, id: str) -> dict:
     created = _resubmit(
         client, account, **_resubmit_args(client, submission), envelope_id=str(uuid7()), hold_until=None
     )
-    _destroy_submission(client, id)
+    try:
+        _destroy_submission(client, id)
+    except Exception:
+        # The email is already resubmitted: failing here would invite a second retry, and a
+        # second send. The old record just stays on the listing, where it can be dismissed.
+        log_mail_error(
+            _("Failed to remove the old record of a retried email"),
+            frappe.get_traceback(with_context=True),
+        )
 
     return {"id": created["id"]}
 
@@ -479,6 +497,10 @@ def _query_page(
             position=position, limit=limit, calculate_total=True, **omit_none(filter=filter, sort=sort)
         )
 
+    if h.error:
+        # Only the listing queries: a refused query reads as an Outbox with nothing in it.
+        return {"ids": [], "total": 0}
+
     return h.result.to_wire()
 
 
@@ -533,25 +555,42 @@ def _query_submissions(
     return ids, int(total)
 
 
-def _get_submissions(client: SuiteJMAPClient, ids: list[str], properties: list[str]) -> list[dict]:
+def _get_submissions(
+    client: SuiteJMAPClient, ids: list[str], properties: list[str], refused: Refused = "gone"
+) -> list[dict]:
     with client.batch() as b:
         h = b.submission.email_submission.get(ids=ids, properties=properties)
 
     if h.error:
-        # A refused get reads as nothing found: the caller answers that the submission is gone.
-        return []
+        return _refused_lookup(h.error, refused)
 
     return [s.to_wire() for s in h.result.items]
 
 
-def _get_emails(client: SuiteJMAPClient, ids: list[str | None], properties: list[str]) -> list[dict]:
+def _get_emails(
+    client: SuiteJMAPClient, ids: list[str | None], properties: list[str], refused: Refused = "gone"
+) -> list[dict]:
     if not (ids := [id for id in ids if id]):
         return []
 
     with client.batch() as b:
         h = b.mail.email.get(ids=ids, properties=properties)
 
+    if h.error:
+        return _refused_lookup(h.error, refused)
+
     return [e.to_wire() for e in h.result.items]
+
+
+def _refused_lookup(error: MethodError, refused: Refused) -> list:
+    """What a get the server refused reads as: nothing found where `refused` allows it — the
+    caller then answers as it does for an object that no longer exists. Otherwise the server's
+    reason is thrown: a server that is failing must not pass for a deletion."""
+
+    if refused == "empty" or (refused == "gone" and error.type in GONE_ERRORS):
+        return []
+
+    frappe.throw(format_method_error(error))
 
 
 def _cancel_submission(client: SuiteJMAPClient, submission_id: str) -> None:
@@ -750,7 +789,9 @@ def _move_email_to_drafts(client: SuiteJMAPClient, account: str, email_id: str |
 
     from suite.mail.doctype.mail_message.mail_message import _remove_cached_messages
 
-    emails = _get_emails(client, [email_id], ["mailboxIds"])
+    # Nothing to move must mean the message is known to be gone: after a refused lookup it
+    # may still sit in Sent, and answering as if it were handled would read as moved.
+    emails = _get_emails(client, [email_id], ["mailboxIds"], refused="throw")
     if not emails:
         return None
 

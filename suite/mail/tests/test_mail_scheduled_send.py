@@ -864,18 +864,28 @@ class TestRefusedOutboxCalls(_FakeServerCase):
     """What the Outbox answers when the server refuses a whole call (a method error) rather
     than one object in it."""
 
-    def test_a_refused_lookup_reads_as_a_submission_that_is_gone(self):
-        server = self.serve()
-        server.fail("EmailSubmission/get", "serverFail", description="try again later")
-        send_at = to_utc_z(add_to_date(now(), hours=2))
+    def actions(self) -> list:
+        """Every action on submission "sub1"."""
 
-        for action in (
+        send_at = to_utc_z(add_to_date(now(), hours=2))
+        return [
             lambda: cancel_scheduled_mail(ACCOUNT, "sub1"),
             lambda: send_scheduled_mail_now(ACCOUNT, "sub1"),
             lambda: reschedule_mail(ACCOUNT, "sub1", send_at),
             lambda: retry_failed_mail(ACCOUNT, "sub1"),
             lambda: dismiss_failed_mail(ACCOUNT, "sub1"),
-        ):
+        ]
+
+    def list_one(self, server: FakeJMAPServer) -> None:
+        """Makes the server's query find submission "sub1"."""
+
+        server.respond("EmailSubmission/query", {"ids": ["sub1"], "total": 1})
+
+    def test_a_lookup_refused_for_a_missing_account_reads_as_a_submission_that_is_gone(self):
+        server = self.serve()
+        server.fail("EmailSubmission/get", "accountNotFound")
+
+        for action in self.actions():
             with self.assertRaisesRegex(frappe.ValidationError, "This scheduled email no longer exists."):
                 action()
 
@@ -884,6 +894,91 @@ class TestRefusedOutboxCalls(_FakeServerCase):
 
         # Nothing was changed on the strength of a lookup that failed.
         self.assertEqual(set(self.methods(server)), {"EmailSubmission/get"})
+
+    def test_a_lookup_the_server_failed_fails_with_the_servers_reason(self):
+        # A server that could not answer has not said the submission is gone.
+        server = self.serve()
+        server.fail("EmailSubmission/get", "serverFail", description="Try again later.")
+
+        for call in (*self.actions(), lambda: get_scheduled_mail(ACCOUNT, "sub1")):
+            with self.assertRaises(frappe.ValidationError) as refused:
+                call()
+            self.assertEqual(str(refused.exception), "Try again later.")
+
+        self.assertEqual(set(self.methods(server)), {"EmailSubmission/get"})
+
+    def test_a_refused_query_lists_an_empty_outbox(self):
+        server = self.serve()
+        server.fail("EmailSubmission/query", "serverFail", description="Try again later.")
+
+        self.assertEqual(get_submissions(ACCOUNT), {"rows": [], "total": 0})
+        self.assertEqual(self.methods(server), ["EmailSubmission/query"])
+
+    def test_a_listing_whose_submissions_are_refused_is_an_empty_page(self):
+        server = self.serve()
+        self.list_one(server)
+        server.fail("EmailSubmission/get", "serverFail", description="Try again later.")
+
+        self.assertEqual(get_submissions(ACCOUNT), {"rows": [], "total": 1})
+
+    def test_a_listing_keeps_its_rows_when_their_messages_are_refused(self):
+        server = self.serve()
+        self.list_one(server)
+        self.hold(server)
+        server.fail("Email/get", "serverFail", description="Try again later.")
+
+        listing = get_submissions(ACCOUNT)
+
+        self.assertEqual(listing["total"], 1)
+        self.assertEqual([(row["id"], row["status"]) for row in listing["rows"]], [("sub1", "scheduled")])
+        self.assertIsNone(listing["rows"][0]["subject"])
+
+    def test_a_message_lookup_the_server_failed_fails_with_the_servers_reason(self):
+        # Not "the message was deleted": the server never said so.
+        for undo_status, call in (
+            ("pending", lambda: get_scheduled_mail(ACCOUNT, "sub1")),
+            ("pending", lambda: send_scheduled_mail_now(ACCOUNT, "sub1")),
+            ("final", lambda: retry_failed_mail(ACCOUNT, "sub1")),
+        ):
+            server = self.serve()
+            self.hold(server, undo_status=undo_status)
+            server.fail("Email/get", "serverFail", description="Try again later.")
+
+            with self.assertRaises(frappe.ValidationError) as refused:
+                call()
+
+            self.assertEqual(str(refused.exception), "Try again later.")
+            # The submission is left as it was: neither cancelled nor resubmitted.
+            self.assertEqual(self.methods(server), ["EmailSubmission/get", "Email/get"])
+
+    def test_a_message_lookup_refused_for_a_missing_account_reads_as_a_message_that_is_gone(self):
+        server = self.serve()
+        self.hold(server, undo_status="final")
+        server.fail("Email/get", "accountNotFound")
+
+        self.assertTrue(get_scheduled_mail(ACCOUNT, "sub1")["email_deleted"])
+
+        with self.assertRaisesRegex(frappe.ValidationError, "The original message no longer exists"):
+            retry_failed_mail(ACCOUNT, "sub1")
+
+        self.assertNotIn("EmailSubmission/set", self.methods(server))
+
+    def test_a_cancel_whose_message_lookup_is_refused_does_not_answer_as_moved(self):
+        # Answering without a message id reads as "nothing left to move"; a refused lookup
+        # says no such thing, whatever the error — the message may still sit in Sent.
+        for error in ("serverFail", "accountNotFound"):
+            server = self.serve()
+            self.hold(server)
+            server.respond("EmailSubmission/set", {"updated": {"sub1": None}})
+            server.fail("Email/get", error, description="Try again later.")
+
+            with self.assertRaises(frappe.ValidationError) as refused:
+                cancel_scheduled_mail(ACCOUNT, "sub1")
+
+            self.assertEqual(str(refused.exception), "Try again later.")
+            self.assertEqual(
+                self.methods(server), ["EmailSubmission/get", "EmailSubmission/set", "Email/get"]
+            )
 
     def test_a_refused_cancel_fails_with_the_servers_reason(self):
         server = self.serve()
@@ -925,3 +1020,78 @@ class TestRefusedOutboxCalls(_FakeServerCase):
         self.assertEqual(details["subject"], "Quarterly report")
         self.assertEqual(details["status"], "scheduled")
         self.assertIsNone(details["identity_email"])
+
+
+class TestRetryFailedMail(_FakeServerCase):
+    """A retry resubmits the email and then drops the failed record. Once the email is
+    resubmitted the retry has succeeded, whatever becomes of the old record: an error there
+    would have the user retry again, and the email sent twice."""
+
+    def retry(self, refuse_destroy) -> tuple[FakeJMAPServer, dict, mock.Mock]:
+        """Retries failed submission "sub1" on a server that accepts the new submission as
+        "sub2"; `refuse_destroy`, when given, is called with the server as the old record's
+        destroy arrives and returns what the server answers it with. Returns the server, the
+        endpoint's answer, and the error log."""
+
+        server = self.serve()
+        envelope = {"mailFrom": {"email": USER}, "rcptTo": [{"email": "to@example.test"}]}
+        self.hold(server, undo_status="final", envelope=envelope)
+        server.respond("Email/get", {"state": "e1", "list": [{"id": "e1"}], "notFound": []})
+
+        def set_submission(arguments: dict, server: FakeJMAPServer) -> dict:
+            if create := arguments.get("create"):
+                return {"created": {ref: {"id": "sub2"} for ref in create}}
+            if refuse_destroy:
+                return refuse_destroy(server)
+            return {"destroyed": arguments["destroy"]}
+
+        server.handle("EmailSubmission/set", set_submission)
+
+        with (
+            mock.patch("suite.mail.api.scheduled.get_identity_id_by_email", return_value="i1"),
+            mock.patch("suite.mail.api.scheduled.log_mail_error") as logged,
+        ):
+            answer = retry_failed_mail(ACCOUNT, "sub1")
+
+        return server, answer, logged
+
+    def sets(self, server: FakeJMAPServer, kind: str) -> list:
+        """The `kind` ("create" or "destroy") argument of every EmailSubmission/set sent
+        with one, in order."""
+
+        return [
+            call[1][kind]
+            for request in server.requests
+            for call in request["methodCalls"]
+            if call[0] == "EmailSubmission/set" and call[1].get(kind)
+        ]
+
+    def test_a_retry_resubmits_then_drops_the_failed_record(self):
+        server, answer, logged = self.retry(refuse_destroy=None)
+
+        self.assertEqual(answer, {"id": "sub2"})
+        (create,) = self.sets(server, "create")
+        self.assertEqual([submission["emailId"] for submission in create.values()], ["e1"])
+        self.assertEqual(self.sets(server, "destroy"), [["sub1"]])
+        logged.assert_not_called()
+
+    def test_a_refused_destroy_does_not_fail_a_retry_that_was_sent(self):
+        refusal = {"type": "forbidden", "description": "The record is locked."}
+        server, answer, logged = self.retry(lambda server: {"notDestroyed": {"sub1": refusal}})
+
+        self.assertEqual(answer, {"id": "sub2"})
+        # Sent once, and the destroy was attempted.
+        self.assertEqual(len(self.sets(server, "create")), 1)
+        self.assertEqual(self.sets(server, "destroy"), [["sub1"]])
+        logged.assert_called_once()
+        self.assertIn("The record is locked.", str(logged.call_args))
+
+    def test_a_destroy_that_never_lands_does_not_fail_a_retry_that_was_sent(self):
+        def drop_connection(server: FakeJMAPServer) -> dict:
+            raise httpx.ConnectError("connection reset")
+
+        server, answer, logged = self.retry(drop_connection)
+
+        self.assertEqual(answer, {"id": "sub2"})
+        self.assertEqual(len(self.sets(server, "create")), 1)
+        logged.assert_called_once()
