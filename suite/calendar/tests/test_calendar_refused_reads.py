@@ -205,12 +205,22 @@ class DefaultAlerts(RefusedReadsTestCase):
         self.logged.assert_called_once()
         self.assertIn(f"cal-2: {REASON}", self.logged.call_args.args[1])
 
-    def test_a_calendar_that_refused_its_alerts_is_asked_again_once_the_back_off_is_gone(self):
+    def test_creating_a_calendar_has_the_next_load_seed_despite_an_earlier_refusal(self):
         self.one_calendar_refuses_its_alerts()
         calendar.ensure_default_alerts(ACCOUNT)
 
         # What creating a calendar does, so the new one is not left waiting on the refusal.
         calendar.forget_default_alerts_seeded(ACCOUNT)
+        calendar.ensure_default_alerts(ACCOUNT)
+
+        self.assertEqual(len(self.sent("Calendar/set")), 2)
+
+    def test_a_calendar_that_refused_its_alerts_is_asked_again_once_the_back_off_is_over(self):
+        self.one_calendar_refuses_its_alerts()
+        calendar.ensure_default_alerts(ACCOUNT)
+
+        # The hour passes: the back-off mark expires, and nothing else stands in the way.
+        frappe.cache.delete_value(calendar._default_alerts_back_off_key(ACCOUNT))
         calendar.ensure_default_alerts(ACCOUNT)
 
         self.assertEqual(len(self.sent("Calendar/set")), 2)
