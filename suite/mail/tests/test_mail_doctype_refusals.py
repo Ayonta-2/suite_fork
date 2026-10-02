@@ -297,13 +297,21 @@ class PartlyRefused(_Doctypes):
         with self.assertRaisesRegex(frappe.ValidationError, "The mailbox cannot be moved."):
             self.position({"updated": {"m3": None}, "notUpdated": refused})
 
-    def test_a_mailbox_that_took_its_place_is_moved_though_a_neighbour_was_refused(self):
+    def test_a_neighbour_left_out_of_place_by_its_refusal_is_not_reported_as_the_order_asked_for(self):
+        # Making room renumbers m2, m1, m3 to 1000, 2000, 3000. Left at 201, m3 lists first.
         refused = {"m3": {"type": "forbidden", "description": "The mailbox cannot be moved."}}
 
-        with mock.patch.object(mailbox, "log_mail_error") as logged:
-            self.position({"updated": {"m1": None}, "notUpdated": refused})
+        with self.assertRaisesRegex(frappe.ValidationError, "The mailbox cannot be moved."):
+            self.position({"updated": {"m1": None, "m2": None}, "notUpdated": refused})
 
-        self.assertIn("m3: The mailbox cannot be moved.", logged.call_args.args[1])
+    def test_a_refused_neighbour_that_lists_where_it_would_have_is_only_logged(self):
+        # Left at 200, m2 still lists before m1 at 2000 and m3 at 3000.
+        refused = {"m2": {"type": "forbidden", "description": "The mailbox cannot be moved."}}
+
+        with mock.patch.object(mailbox, "log_mail_error") as logged:
+            self.position({"updated": {"m1": None, "m3": None}, "notUpdated": refused})
+
+        self.assertIn("m2: The mailbox cannot be moved.", logged.call_args.args[1])
 
     def test_an_error_being_raised_is_not_replaced_by_a_cache_that_fails_to_drop(self):
         self.invalidated.side_effect = RuntimeError("the store is locked")

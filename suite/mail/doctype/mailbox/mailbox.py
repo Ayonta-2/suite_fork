@@ -380,11 +380,21 @@ def update_mailbox_position(
     with client.batch() as b:
         h = b.mail.mailbox.get()
 
-    mailboxes = sorted(
-        (m.to_wire() for m in h.result.items),
-        key=lambda m: (m["sortOrder"], get_sort_order(m["role"]), m["name"], m["id"]),
-    )
-    updates = get_updates(mailboxes, target_mailbox_id, prior_mailbox_id)
+    def listed(sort_orders: dict[str, int]) -> list[dict]:
+        """The mailboxes as they are listed once the given sort orders have replaced their own."""
+
+        return sorted(
+            mailboxes,
+            key=lambda m: (
+                sort_orders.get(m["id"], m["sortOrder"]),
+                get_sort_order(m["role"]),
+                m["name"],
+                m["id"],
+            ),
+        )
+
+    mailboxes = [m.to_wire() for m in h.result.items]
+    updates = get_updates(listed({}), target_mailbox_id, prior_mailbox_id)
 
     title = _("Mailbox Position Update Error")
     try:
@@ -402,11 +412,21 @@ def update_mailbox_position(
             frappe.throw(_(format_set_error(result.not_updated.get(target_mailbox_id))), title=title)
 
         if result.not_updated:
-            # Only neighbours, renumbered to make room: the mailbox itself took its place.
-            log_mail_error(
-                "Mailbox Position Update",
-                "\n".join(f"{id}: {format_set_error(error)}" for id, error in result.not_updated.items()),
+            # Only neighbours, renumbered to make room. A neighbour left at its old sort order
+            # can end up on the wrong side of the mailboxes that took theirs, so the listing
+            # is checked against the one asked for.
+            refusals = "\n".join(
+                f"{id}: {format_set_error(error)}" for id, error in result.not_updated.items()
             )
+            applied = {id: sort_order for id, sort_order in updates.items() if id in result.updated}
+            if [m["id"] for m in listed(applied)] != [m["id"] for m in listed(updates)]:
+                frappe.throw(
+                    _("The mailboxes could not all be put in the new order: {0}").format(
+                        format_set_error(next(iter(result.not_updated.values())))
+                    ),
+                    title=title,
+                )
+            log_mail_error("Mailbox Position Update", refusals)
     finally:
         # The cached mailboxes carry their sort order, and a refusal can follow moves that took.
         _drop_cached_mailboxes(account)
