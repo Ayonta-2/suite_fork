@@ -3,6 +3,8 @@
 
 from unittest import mock
 
+import frappe
+
 from suite.mail.api.mail import create_mailbox, get_mailboxes, get_threads
 from suite.mail.api.sieve import (
     create_automation_script,
@@ -88,7 +90,7 @@ class TestMailSieve(StalwartIntegrationTestCase):
     def test_invalid_script_rejected(self):
         with self.set_user(self.member.email):
             self.assertRaises(
-                Exception,
+                frappe.ValidationError,
                 create_sieve_script,
                 self.account,
                 unique_name("broken"),
