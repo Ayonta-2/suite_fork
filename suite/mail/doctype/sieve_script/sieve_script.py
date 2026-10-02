@@ -11,8 +11,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, create_batch, today
-from jmap import CreationRef, MethodError
-from jmap.core.errors import CapabilityFieldError
+from jmap import CreationRef
 
 from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_settings
 from suite.mail.doctype.screened_email_address.screened_email_address import (
@@ -20,7 +19,9 @@ from suite.mail.doctype.screened_email_address.screened_email_address import (
 )
 from suite.mail.doctype.user_account.user_account import get_enabled_account_user, get_user_for_jmap_account
 from suite.mail.jmap import (
+    JMAP_REFUSALS,
     SuiteJMAPClient,
+    chunked_get,
     chunked_set,
     download_blobs,
     format_jmap_error,
@@ -40,7 +41,7 @@ from suite.mail.utils.user import get_account_emails
 from suite.utils import enqueue_job, execute_with_logging, parse_filters, user_context
 from suite.utils.validation import JSONList
 
-# The creation id of a script's blob when it travels inside the request (see _script_blob_id).
+# The creation id of a script's blob when it travels inside the request (see _script_blob).
 SCRIPT_BLOB = "script"
 
 _ACCOUNTS_PER_REBUILD_BATCH = 100
@@ -167,10 +168,11 @@ class SieveScript(Document):
         extra = {"onSuccessActivateScript": f"#{creation_id}"} if active else {}
         try:
             with client.batch() as b:
-                blob_id = _script_blob_id(client, b, content)
+                blob_id, upload = _script_blob(client, b, content)
                 h = b.sieve.sieve_script.set(create={creation_id: {"name": name, "blobId": blob_id}}, **extra)
+            _check_script_upload(upload, title)
             response = h.result
-        except (MethodError, CapabilityFieldError) as e:
+        except JMAP_REFUSALS as e:
             frappe.throw(format_method_error(e), title=title)
 
         if script_id := response.created_id(creation_id):
@@ -205,9 +207,8 @@ class SieveScript(Document):
             return []
 
         client = get_account_client(account)
-        with client.batch() as b:
-            h = b.sieve.sieve_script.get(ids=ids)
-        scripts = [s.to_wire() for s in h.result.items]
+        items = chunked_get(client, lambda b, chunk: b.sieve.sieve_script.get(ids=chunk), ids)
+        scripts = [s.to_wire() for s in items]
 
         if download_content:
             blobs = [(s["blobId"], None) for s in scripts if s["blobId"]]
@@ -235,9 +236,11 @@ class SieveScript(Document):
 
         try:
             with client.batch() as b:
-                h = b.sieve.sieve_script.validate(blob_id=_script_blob_id(client, b, content, argument=True))
+                blob_id, upload = _script_blob(client, b, content, argument=True)
+                h = b.sieve.sieve_script.validate(blob_id=blob_id)
+            _check_script_upload(upload, title)
             response = h.result
-        except (MethodError, CapabilityFieldError) as e:
+        except JMAP_REFUSALS as e:
             frappe.throw(format_method_error(e), title=title)
 
         # A syntactically invalid script is not a method error: the call succeeds and
@@ -282,10 +285,11 @@ class SieveScript(Document):
 
         try:
             with client.batch() as b:
-                blob_id = _script_blob_id(client, b, content)
+                blob_id, upload = _script_blob(client, b, content)
                 h = b.sieve.sieve_script.set(update={id: {"name": name, "blobId": blob_id}}, **extra)
+            _check_script_upload(upload, title)
             response = h.result
-        except (MethodError, CapabilityFieldError) as e:
+        except JMAP_REFUSALS as e:
             frappe.throw(format_method_error(e), title=title)
 
         if id not in response.updated:
@@ -300,7 +304,7 @@ class SieveScript(Document):
 
         try:
             result = chunked_set(client, lambda b, chunk: b.sieve.sieve_script.set(destroy=chunk), ids)
-        except (MethodError, CapabilityFieldError) as e:
+        except JMAP_REFUSALS as e:
             frappe.throw(format_method_error(e), title=title)
 
         if not_destroyed := result.not_destroyed:
@@ -502,8 +506,9 @@ def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 # Frappe Mail Automation Sieve Script
 
 
-def _script_blob_id(client: SuiteJMAPClient, b, content: str, argument: bool = False):
-    """The blob id a SieveScript call names for `content`, queued into the batch `b` where it can be.
+def _script_blob(client: SuiteJMAPClient, b, content: str, argument: bool = False) -> tuple:
+    """The blob id a SieveScript call names for `content`, queued into the batch `b` where it can be,
+    and the handle of the upload queued there, if one was (see _check_script_upload).
 
     A server offering RFC 9404 creates the blob from a Blob/upload in the same request - one round
     trip fewer for every save - and the id is then a creation reference: `#script` inside a /set
@@ -512,12 +517,26 @@ def _script_blob_id(client: SuiteJMAPClient, b, content: str, argument: bool = F
     """
 
     if "blob" not in client.capabilities.attrs:
-        return client.upload(content.encode("utf-8"), content_type="application/sieve").blob_id
+        return client.upload(content.encode("utf-8"), content_type="application/sieve").blob_id, None
 
     upload = b.blob.blob.upload(
         create={SCRIPT_BLOB: {"data": [{"data:asText": content}], "type": "application/sieve"}}
     )
-    return upload.ref_created(SCRIPT_BLOB) if argument else CreationRef(SCRIPT_BLOB)
+    return (upload.ref_created(SCRIPT_BLOB) if argument else CreationRef(SCRIPT_BLOB)), upload
+
+
+def _check_script_upload(upload, title: str) -> None:
+    """Throws the server's reason for refusing the script's Blob/upload, once the batch is back.
+
+    The call naming the blob fails with it, but only over a reference that did not resolve: why
+    the script could not be stored - too large, over quota - is in the upload's answer.
+    """
+
+    if upload is None:
+        return
+
+    if error := upload.result.not_created.get(SCRIPT_BLOB):
+        frappe.throw(format_set_error(error), title=title)
 
 
 SCREENER_MAILBOX_NAME = "Screener"

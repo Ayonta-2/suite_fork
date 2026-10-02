@@ -4,13 +4,16 @@
 """How a Sieve script's content reaches the server: in the request, or through the upload endpoint."""
 
 import unittest
+from unittest import mock
 
+import frappe
 import httpx
 from jmap.auth import BasicAuth
 from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
-from suite.mail.doctype.sieve_script.sieve_script import SCRIPT_BLOB, _script_blob_id
+from suite.mail.doctype.sieve_script import sieve_script
+from suite.mail.doctype.sieve_script.sieve_script import SCRIPT_BLOB, SieveScript, _script_blob
 from suite.mail.jmap import SuiteJMAPClient
 
 CORE = "urn:ietf:params:jmap:core"
@@ -53,7 +56,7 @@ class ScriptBlobs(unittest.TestCase):
         client = _client(server)
 
         with client.batch() as b:
-            blob_id = _script_blob_id(client, b, SCRIPT)
+            blob_id, _upload = _script_blob(client, b, SCRIPT)
             b.sieve.sieve_script.set(create={"c1": {"name": "bills", "blobId": blob_id}})
 
         # One request: the upload, then the /set naming the blob it is about to create.
@@ -72,7 +75,8 @@ class ScriptBlobs(unittest.TestCase):
         client = _client(server)
 
         with client.batch() as b:
-            handle = b.sieve.sieve_script.validate(blob_id=_script_blob_id(client, b, SCRIPT, argument=True))
+            blob_id, _upload = _script_blob(client, b, SCRIPT, argument=True)
+            handle = b.sieve.sieve_script.validate(blob_id=blob_id)
 
         (request,) = server.requests
         upload, validate = request["methodCalls"][0], request["methodCalls"][1]
@@ -88,7 +92,7 @@ class ScriptBlobs(unittest.TestCase):
         client = _client(server)
 
         with client.batch() as b:
-            blob_id = _script_blob_id(client, b, SCRIPT)
+            blob_id, _upload = _script_blob(client, b, SCRIPT)
             b.sieve.sieve_script.set(create={"c1": {"name": "bills", "blobId": blob_id}})
 
         # The blob exists before the request is sent, and the /set names its real id.
@@ -98,3 +102,62 @@ class ScriptBlobs(unittest.TestCase):
         self.assertEqual(create[1]["create"]["c1"]["blobId"], str(blob_id))
         self.assertFalse(str(blob_id).startswith("#"))
         self.assertEqual(server.blobs[str(blob_id)][0], SCRIPT.encode())
+
+
+OVER_QUOTA = "The script would take the account over its storage quota."
+UNRESOLVED = {"type": "invalidProperties", "properties": ["blobId"], "description": "Blob not found."}
+
+
+def _refuse_upload(arguments: dict, _server: FakeJMAPServer) -> dict:
+    refused = {key: {"type": "overQuota", "description": OVER_QUOTA} for key in arguments["create"]}
+    return {"accountId": arguments["accountId"], "created": None, "notCreated": refused}
+
+
+def _refuse_unresolved_blob(arguments: dict, _server: FakeJMAPServer) -> dict:
+    """A SieveScript/set whose `#script` names a blob that was never created."""
+
+    return {
+        "accountId": arguments["accountId"],
+        "notCreated": dict.fromkeys(arguments.get("create") or {}, UNRESOLVED),
+        "notUpdated": dict.fromkeys(arguments.get("update") or {}, UNRESOLVED),
+    }
+
+
+class RefusedUpload(unittest.TestCase):
+    """The user is told why the script could not be stored, not that a reference to it failed."""
+
+    def setUp(self) -> None:
+        self.server = _server(with_blob=True)
+        self.server.handle("Blob/upload", _refuse_upload)
+        self.server.handle("SieveScript/set", _refuse_unresolved_blob)
+        script = {"id": "s1", "name": "bills", "blobId": "B0", "isActive": False}
+        self.server.respond("SieveScript/get", {"state": "s", "list": [script], "notFound": []})
+
+        patcher = mock.patch.object(sieve_script, "get_account_client", return_value=_client(self.server))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def assert_reports_the_upload(self, save, *args) -> None:
+        with self.assertRaises(frappe.ValidationError) as raised:
+            save(*args)
+
+        self.assertIn(OVER_QUOTA, str(raised.exception))
+
+    def test_creating_a_script(self):
+        self.assert_reports_the_upload(SieveScript._add_sieve_script, ACCOUNT, "bills", SCRIPT)
+
+    def test_updating_a_script(self):
+        self.assert_reports_the_upload(SieveScript._update_sieve_script, ACCOUNT, "s1", "bills", SCRIPT)
+
+    def test_validating_a_script(self):
+        # Nothing is canned for the validate: its `blobId` points into an upload that created
+        # nothing, and the server answers that with invalidResultReference.
+        self.assert_reports_the_upload(SieveScript._validate_sieve_script, ACCOUNT, SCRIPT)
+
+    def test_an_upload_the_server_would_not_run(self):
+        self.server.fail("Blob/upload", "forbidden", description="Blob management is disabled.")
+
+        with self.assertRaises(frappe.ValidationError) as raised:
+            SieveScript._add_sieve_script(ACCOUNT, "bills", SCRIPT)
+
+        self.assertIn("Blob management is disabled.", str(raised.exception))

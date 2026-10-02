@@ -594,17 +594,20 @@ def format_set_error(error: SetError | dict | None) -> str:
     return error.get("description") or error.get("type") or _("An unknown error occurred.")
 
 
-def format_method_error(error: MethodError | CapabilityFieldError) -> str:
-    """Readable message for a method-level JMAP error, or for a request jmaplib refused before
-    sending because it breaks a limit the server advertises (a name too long for
-    maxSizeMailboxName, say) — what the server would have answered with a per-object error."""
+def format_method_error(error: Exception) -> str:
+    """Readable message for any of JMAP_REFUSALS: a method-level error, or a request jmaplib
+    refused before sending - because it breaks a limit the server advertises (a name too long for
+    maxSizeMailboxName, say), or aims at a read-only account or a method the session lacks."""
 
     if isinstance(error, CapabilityFieldError):
         return _("{0}: the server allows {1}, {2} was requested.").format(
             error.field, error.advertised, error.requested
         )
 
-    return error.arguments.get("description") or error.type or _("An unknown error occurred.")
+    if isinstance(error, MethodError):
+        return error.arguments.get("description") or error.type or _("An unknown error occurred.")
+
+    return str(error) or _("An unknown error occurred.")
 
 
 def get_set_error_message(
