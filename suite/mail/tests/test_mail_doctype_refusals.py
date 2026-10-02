@@ -73,10 +73,20 @@ class _Doctypes(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-        # What jmaplib said of a call it refused goes to the error log, not to the user.
+        # What jmaplib said of a call it refused is noted in the log file, not shown to the user -
+        # nor put in the Error Log, where a refusal a user can run into is no error.
+        patcher = mock.patch.object(suite_jmap.frappe, "logger")
+        self.noted = patcher.start().return_value.info
+        self.addCleanup(patcher.stop)
         patcher = mock.patch.object(suite_jmap, "log_mail_error")
         self.logged = patcher.start()
         self.addCleanup(patcher.stop)
+
+    def note(self) -> str:
+        """What the refusal left in the log file."""
+
+        self.logged.assert_not_called()
+        return self.noted.call_args.args[0]
 
     def sent(self) -> list[str]:
         return [call[0] for request in self.server.requests for call in request["methodCalls"]]
@@ -178,18 +188,21 @@ class UnofferedCall(_Doctypes):
 
         self.assertIn("This account is not available on the mail server.", message)
         self.assertNotIn("accountId", message)
-        self.assertIn("Mailbox/set needs an accountId", self.logged.call_args.args[1])
+        self.assertIn("Mailbox/set needs an accountId", self.note())
 
-    def test_a_method_the_server_does_not_offer_says_so_plainly(self):
-        self.serve(_server())
-        unoffered = UnsupportedMethodError("Mailbox/set", advertised=frozenset(URNS))
+    def test_a_method_the_session_does_not_provide_says_so_plainly(self):
+        # jmaplib refuses the method where it is queued by name. No doctype queues one that
+        # way, so this is the refusal itself, put through what the doctypes put theirs through.
+        self.serve(_server(urns=[CORE, "urn:ietf:params:jmap:mail"]))
+        client = mailbox.get_account_client(ACCOUNT)
 
-        with mock.patch.object(SuiteJMAPClient, "execute", side_effect=unoffered):
-            message = self.refusal_of(mailbox.add_mailbox, ACCOUNT, "Bills")
+        with self.assertRaises(UnsupportedMethodError) as refused, client.batch() as b:
+            b.add("AddressBook/set", {"create": {"k1": {"name": "Suppliers"}}})
+        message = suite_jmap.format_method_error(refused.exception)
 
-        self.assertIn("The mail server does not support this action.", message)
-        self.assertNotIn("Mailbox/set", message)
-        self.assertIn("Mailbox/set", self.logged.call_args.args[1])
+        self.assertEqual(message, "The mail server does not support this action.")
+        self.assertIn("AddressBook/set", self.note())
+        self.assertEqual(self.sent(), [])
 
     def test_a_write_to_a_read_only_account_does_not_name_the_account(self):
         self.serve(_server(isReadOnly=True))
@@ -198,7 +211,7 @@ class UnofferedCall(_Doctypes):
 
         self.assertIn("This account is read-only.", message)
         self.assertNotIn(ACCOUNT, message)
-        self.assertIn(ACCOUNT, self.logged.call_args.args[1])
+        self.assertIn(ACCOUNT, self.note())
 
 
 class NotARefusal(_Doctypes):
@@ -265,6 +278,44 @@ class PartlyRefused(_Doctypes):
             mailbox.update_mailbox_position(ACCOUNT, "m1", "m2")
 
         self.invalidated.assert_called_once_with(ACCOUNT)
+
+    def position(self, answer: dict) -> None:
+        """Moves mailbox "m1" after "m2" on a server that answers the reorder with `answer`."""
+
+        mailboxes = [
+            {"id": id, "name": id, "role": None, "sortOrder": order}
+            for id, order in (("m1", 100), ("m2", 200), ("m3", 201))
+        ]
+        self.server.respond("Mailbox/get", {"state": "m", "list": mailboxes, "notFound": []})
+        self.server.respond("Mailbox/set", answer)
+
+        mailbox.update_mailbox_position(ACCOUNT, "m1", "m2")
+
+    def test_a_mailbox_refused_its_place_is_not_reported_moved_for_its_neighbours_sake(self):
+        refused = {"m1": {"type": "forbidden", "description": "The mailbox cannot be moved."}}
+
+        with self.assertRaisesRegex(frappe.ValidationError, "The mailbox cannot be moved."):
+            self.position({"updated": {"m3": None}, "notUpdated": refused})
+
+    def test_a_mailbox_that_took_its_place_is_moved_though_a_neighbour_was_refused(self):
+        refused = {"m3": {"type": "forbidden", "description": "The mailbox cannot be moved."}}
+
+        with mock.patch.object(mailbox, "log_mail_error") as logged:
+            self.position({"updated": {"m1": None}, "notUpdated": refused})
+
+        self.assertIn("m3: The mailbox cannot be moved.", logged.call_args.args[1])
+
+    def test_an_error_being_raised_is_not_replaced_by_a_cache_that_fails_to_drop(self):
+        self.invalidated.side_effect = RuntimeError("the store is locked")
+        self.server.fail("Mailbox/set", "serverFail", description="try again later")
+
+        with (
+            mock.patch.object(mailbox, "log_mail_error") as logged,
+            self.assertRaisesRegex(frappe.ValidationError, "try again later"),
+        ):
+            mailbox.delete_mailboxes(ACCOUNT, ["m1"])
+
+        self.assertIn("the store is locked", logged.call_args.args[1])
 
     def test_a_vacation_response_the_server_refuses_as_an_object_is_not_reported_saved(self):
         self.server.respond(

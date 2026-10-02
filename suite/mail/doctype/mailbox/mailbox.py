@@ -17,6 +17,7 @@ from suite.mail.jmap import (
     get_account_client,
     invalidate_jmap_mailboxes_cache,
 )
+from suite.mail.utils import log_mail_error
 from suite.utils import parse_filters
 from suite.utils.validation import JSONList
 
@@ -250,7 +251,7 @@ def delete_mailboxes(account: str, ids: list[str], remove_emails: bool = True) -
                 ids,
             )
         except JMAP_REFUSALS as e:
-            frappe.throw(_(format_method_error(e)), title=_("Mailbox Deletion Error"))
+            frappe.throw(format_method_error(e), title=_("Mailbox Deletion Error"))
 
         if result.not_destroyed:
             error_messages = []
@@ -263,7 +264,7 @@ def delete_mailboxes(account: str, ids: list[str], remove_emails: bool = True) -
     finally:
         # Drop the stale list so later lookups (e.g. sieve regeneration) don't see a deleted
         # mailbox - also after a refusal, which can follow mailboxes that were deleted.
-        invalidate_jmap_mailboxes_cache(account)
+        _drop_cached_mailboxes(account)
 
 
 @frappe.whitelist()
@@ -394,13 +395,31 @@ def update_mailbox_position(
                 updates,
             )
         except JMAP_REFUSALS as e:
-            frappe.throw(_(format_method_error(e)), title=title)
+            frappe.throw(format_method_error(e), title=title)
 
-        if not result.updated:
-            frappe.throw(_(format_set_error(next(iter(result.not_updated.values()), None))), title=title)
+        if target_mailbox_id not in result.updated:
+            # The mailbox did not move, whatever became of the neighbours renumbered for it.
+            frappe.throw(_(format_set_error(result.not_updated.get(target_mailbox_id))), title=title)
+
+        if result.not_updated:
+            # Only neighbours, renumbered to make room: the mailbox itself took its place.
+            log_mail_error(
+                "Mailbox Position Update",
+                "\n".join(f"{id}: {format_set_error(error)}" for id, error in result.not_updated.items()),
+            )
     finally:
         # The cached mailboxes carry their sort order, and a refusal can follow moves that took.
+        _drop_cached_mailboxes(account)
+
+
+def _drop_cached_mailboxes(account: str) -> None:
+    """Invalidates the cached mailbox list from a `finally`, where a failure of its own would
+    take the place of the error being raised."""
+
+    try:
         invalidate_jmap_mailboxes_cache(account)
+    except Exception:
+        log_mail_error("Failed to drop the cached mailboxes", frappe.get_traceback(with_context=True))
 
 
 def format_mailbox(account: str, mailbox: dict) -> dict:

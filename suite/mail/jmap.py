@@ -725,15 +725,19 @@ def format_method_error(error: Exception) -> str:
     if isinstance(error, MethodError):
         return error.arguments.get("description") or error.type or _("An unknown error occurred.")
 
-    # jmaplib's own text names account ids, methods and capability URNs: for the log, not the user.
-    log_mail_error(_("JMAP call refused before sending"), str(error))
-    if isinstance(error, ReadOnlyAccountError):
-        return _("This account is read-only.")
-    if isinstance(error, NoAccountError):
-        return _("This account is not available on the mail server.")
-    if isinstance(error, CapabilityNotSupportedError):
-        return _("The mail server does not support this action.")
+    # jmaplib's own text names account ids, methods and capability URNs: for the log, not the
+    # user. The refusals a user can run into are noted; anything else is an error to look at.
+    expected = {
+        ReadOnlyAccountError: _("This account is read-only."),
+        NoAccountError: _("This account is not available on the mail server."),
+        CapabilityNotSupportedError: _("The mail server does not support this action."),
+    }
+    for refusal, message in expected.items():
+        if isinstance(error, refusal):
+            frappe.logger("mail").info(f"JMAP call refused before sending: {error}")
+            return message
 
+    log_mail_error("JMAP call refused before sending", str(error))
     return _("An unknown error occurred.")
 
 
