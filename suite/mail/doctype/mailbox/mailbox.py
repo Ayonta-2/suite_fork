@@ -243,25 +243,27 @@ def delete_mailboxes(account: str, ids: list[str], remove_emails: bool = True) -
 
     client = get_account_client(account)
     try:
-        result = chunked_set(
-            client,
-            lambda b, chunk: b.mail.mailbox.set(destroy=chunk, onDestroyRemoveEmails=remove_emails),
-            ids,
-        )
-    except JMAP_REFUSALS as e:
-        frappe.throw(_(format_method_error(e)), title=_("Mailbox Deletion Error"))
+        try:
+            result = chunked_set(
+                client,
+                lambda b, chunk: b.mail.mailbox.set(destroy=chunk, onDestroyRemoveEmails=remove_emails),
+                ids,
+            )
+        except JMAP_REFUSALS as e:
+            frappe.throw(_(format_method_error(e)), title=_("Mailbox Deletion Error"))
 
-    if result.not_destroyed:
-        error_messages = []
-        for id, error in result.not_destroyed.items():
-            error_messages.append(f"{id}: {format_set_error(error)}")
-        frappe.throw(
-            _("Mailbox Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-            title=_("Mailbox Deletion Error"),
-        )
-
-    # Drop the stale list so later lookups (e.g. sieve regeneration) don't see the deleted mailbox.
-    invalidate_jmap_mailboxes_cache(account)
+        if result.not_destroyed:
+            error_messages = []
+            for id, error in result.not_destroyed.items():
+                error_messages.append(f"{id}: {format_set_error(error)}")
+            frappe.throw(
+                _("Mailbox Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
+                title=_("Mailbox Deletion Error"),
+            )
+    finally:
+        # Drop the stale list so later lookups (e.g. sieve regeneration) don't see a deleted
+        # mailbox - also after a refusal, which can follow mailboxes that were deleted.
+        invalidate_jmap_mailboxes_cache(account)
 
 
 @frappe.whitelist()
@@ -385,16 +387,20 @@ def update_mailbox_position(
 
     title = _("Mailbox Position Update Error")
     try:
-        result = chunked_set(
-            client,
-            lambda b, chunk: b.mail.mailbox.set(update={k: {"sortOrder": v} for k, v in chunk.items()}),
-            updates,
-        )
-    except JMAP_REFUSALS as e:
-        frappe.throw(_(format_method_error(e)), title=title)
+        try:
+            result = chunked_set(
+                client,
+                lambda b, chunk: b.mail.mailbox.set(update={k: {"sortOrder": v} for k, v in chunk.items()}),
+                updates,
+            )
+        except JMAP_REFUSALS as e:
+            frappe.throw(_(format_method_error(e)), title=title)
 
-    if not result.updated:
-        frappe.throw(_(format_set_error(next(iter(result.not_updated.values()), None))), title=title)
+        if not result.updated:
+            frappe.throw(_(format_set_error(next(iter(result.not_updated.values()), None))), title=title)
+    finally:
+        # The cached mailboxes carry their sort order, and a refusal can follow moves that took.
+        invalidate_jmap_mailboxes_cache(account)
 
 
 def format_mailbox(account: str, mailbox: dict) -> dict:

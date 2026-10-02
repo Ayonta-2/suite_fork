@@ -9,16 +9,19 @@ from unittest import mock
 
 import frappe
 import httpx
+from jmap import AuthenticationError
 from jmap.auth import BasicAuth
+from jmap.capabilities.registry import UnsupportedMethodError
 from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
+from suite.mail import jmap as suite_jmap
 from suite.mail.doctype.address_book import address_book
 from suite.mail.doctype.contact_card import contact_card
 from suite.mail.doctype.mailbox import mailbox
 from suite.mail.doctype.sieve_script import sieve_script
 from suite.mail.doctype.vacation_response import vacation_response
-from suite.mail.jmap import SuiteJMAPClient
+from suite.mail.jmap import MailServerUnavailableError, SuiteJMAPClient
 
 CORE = "urn:ietf:params:jmap:core"
 URNS = [
@@ -35,14 +38,16 @@ SCRIPT = 'require ["fileinto"];\nkeep;\n'
 DOCTYPES = (address_book, contact_card, mailbox, sieve_script, vacation_response)
 
 
-def _server(core: dict | None = None, **account) -> FakeJMAPServer:
-    capabilities = {**{urn: {} for urn in URNS}, CORE: core or {}}
+def _server(
+    core: dict | None = None, urns: list[str] = URNS, primary: bool = True, **account
+) -> FakeJMAPServer:
+    capabilities = {**{urn: {} for urn in urns}, CORE: core or {}}
     return FakeJMAPServer(
         capabilities=capabilities,
         accounts={
             ACCOUNT: {"name": USER, "isPersonal": True, "accountCapabilities": capabilities, **account}
         },
-        primary_accounts=dict.fromkeys(URNS, ACCOUNT),
+        primary_accounts=dict.fromkeys(urns, ACCOUNT) if primary else {},
     )
 
 
@@ -68,8 +73,20 @@ class _Doctypes(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+        # What jmaplib said of a call it refused goes to the error log, not to the user.
+        patcher = mock.patch.object(suite_jmap, "log_mail_error")
+        self.logged = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def sent(self) -> list[str]:
         return [call[0] for request in self.server.requests for call in request["methodCalls"]]
+
+    def refusal_of(self, write, *args, **kwargs) -> str:
+        with self.assertRaises(frappe.ValidationError) as raised:
+            write(*args, **kwargs)
+
+        self.assertFalse([name for name in self.sent() if name.endswith(("/set", "/upload"))])
+        return str(raised.exception)
 
 
 class ReadOnlyAccount(_Doctypes):
@@ -148,6 +165,123 @@ class ReadOnlyAccount(_Doctypes):
 
     def test_a_vacation_response_is_not_updated(self):
         self.assert_refused(vacation_response.update_vacation_response, ACCOUNT, True, subject="Away")
+
+
+class UnofferedCall(_Doctypes):
+    """A call the session has no account or no capability for is refused in the user's words;
+    what jmaplib says of it - account ids, method names, capability URNs - is for the log."""
+
+    def test_a_write_to_an_account_the_session_does_not_name_says_so_plainly(self):
+        self.serve(_server(primary=False))
+
+        message = self.refusal_of(mailbox.add_mailbox, ACCOUNT, "Bills")
+
+        self.assertIn("This account is not available on the mail server.", message)
+        self.assertNotIn("accountId", message)
+        self.assertIn("Mailbox/set needs an accountId", self.logged.call_args.args[1])
+
+    def test_a_method_the_server_does_not_offer_says_so_plainly(self):
+        self.serve(_server())
+        unoffered = UnsupportedMethodError("Mailbox/set", advertised=frozenset(URNS))
+
+        with mock.patch.object(SuiteJMAPClient, "execute", side_effect=unoffered):
+            message = self.refusal_of(mailbox.add_mailbox, ACCOUNT, "Bills")
+
+        self.assertIn("The mail server does not support this action.", message)
+        self.assertNotIn("Mailbox/set", message)
+        self.assertIn("Mailbox/set", self.logged.call_args.args[1])
+
+    def test_a_write_to_a_read_only_account_does_not_name_the_account(self):
+        self.serve(_server(isReadOnly=True))
+
+        message = self.refusal_of(mailbox.add_mailbox, ACCOUNT, "Bills")
+
+        self.assertIn("This account is read-only.", message)
+        self.assertNotIn(ACCOUNT, message)
+        self.assertIn(ACCOUNT, self.logged.call_args.args[1])
+
+
+class NotARefusal(_Doctypes):
+    """What is not the server or jmaplib refusing the call is not reported as one."""
+
+    def setUp(self) -> None:
+        self.serve(_server())
+
+    def test_rejected_credentials_stay_an_authentication_error(self):
+        self.server.quirks.scripted_failures = [httpx.Response(401)]
+
+        with self.assertRaises(AuthenticationError):
+            mailbox.add_mailbox(ACCOUNT, "Bills")
+
+    def test_an_outage_stays_the_mail_server_being_unavailable(self):
+        for failure in (httpx.Response(503), httpx.ReadTimeout("timed out")):
+            with self.subTest(failure=failure):
+                if isinstance(failure, httpx.Response):
+                    self.server.quirks.scripted_failures = [failure]
+                else:
+                    self.server.intercept = mock.Mock(side_effect=failure)
+
+                with self.assertRaises(MailServerUnavailableError):
+                    mailbox.add_mailbox(ACCOUNT, "Bills")
+
+                self.server.intercept = None
+
+
+class PartlyRefused(_Doctypes):
+    """A write the server takes for some objects and refuses for others."""
+
+    def setUp(self) -> None:
+        self.serve(_server())
+        patcher = mock.patch.object(mailbox, "invalidate_jmap_mailboxes_cache")
+        self.invalidated = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_delete_refused_for_one_mailbox_still_drops_the_cached_list(self):
+        refused = {"m2": {"type": "mailboxHasChild", "description": "The mailbox has children."}}
+        self.server.respond("Mailbox/set", {"destroyed": ["m1"], "notDestroyed": refused})
+
+        with self.assertRaisesRegex(frappe.ValidationError, "The mailbox has children."):
+            mailbox.delete_mailboxes(ACCOUNT, ["m1", "m2"])
+
+        self.invalidated.assert_called_once_with(ACCOUNT)
+
+    def test_a_delete_refused_outright_still_drops_the_cached_list(self):
+        self.server.fail("Mailbox/set", "serverFail", description="try again later")
+
+        with self.assertRaisesRegex(frappe.ValidationError, "try again later"):
+            mailbox.delete_mailboxes(ACCOUNT, ["m1"])
+
+        self.invalidated.assert_called_once_with(ACCOUNT)
+
+    def test_a_refused_move_still_drops_the_cached_list(self):
+        mailboxes = [
+            {"id": id, "name": id, "role": None, "sortOrder": order}
+            for id, order in (("m1", 100), ("m2", 200))
+        ]
+        self.server.respond("Mailbox/get", {"state": "m", "list": mailboxes, "notFound": []})
+        self.server.respond("Mailbox/set", {"notUpdated": {"m1": {"type": "forbidden"}}})
+
+        with self.assertRaisesRegex(frappe.ValidationError, "forbidden"):
+            mailbox.update_mailbox_position(ACCOUNT, "m1", "m2")
+
+        self.invalidated.assert_called_once_with(ACCOUNT)
+
+    def test_a_vacation_response_the_server_refuses_as_an_object_is_not_reported_saved(self):
+        self.server.respond(
+            "VacationResponse/get",
+            {"state": "v", "list": [{"id": "singleton", "isEnabled": False}], "notFound": []},
+        )
+        self.server.respond("SieveScript/query", {"queryState": "q", "ids": [], "position": 0, "total": 0})
+        refused = {"singleton": {"type": "invalidProperties", "description": "toDate is before fromDate."}}
+        self.server.respond("VacationResponse/set", {"notUpdated": refused})
+
+        with (
+            mock.patch.object(vacation_response, "set_last_active_sieve_script_id") as remembered,
+            self.assertRaisesRegex(frappe.ValidationError, "toDate is before fromDate."),
+        ):
+            vacation_response.update_vacation_response(ACCOUNT, True, subject="Away")
+
+        remembered.assert_not_called()
 
 
 class LargeRead(_Doctypes):
