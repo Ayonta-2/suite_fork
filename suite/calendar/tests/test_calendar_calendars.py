@@ -134,11 +134,11 @@ class TestCalendarCalendars(StalwartIntegrationTestCase):
 
     def test_foreign_account_denied(self):
         other = self.create_member()
+        # Refused for whose account it is, not for anything about the calendar asked for.
+        denied = (frappe.ValidationError, "does not belong")
         with self.set_user(other.email):
-            self.assertRaises(frappe.ValidationError, add_calendar, self.account, unique_name("cal"))
-            self.assertRaises(frappe.ValidationError, create_calendar, self.account, unique_name("cal"))
-            self.assertRaises(
-                frappe.ValidationError, edit_calendar, self.account, "b", name=unique_name("cal")
-            )
-            self.assertRaises(frappe.ValidationError, delete_calendar, self.account, "b")
-            self.assertRaises(frappe.ValidationError, get_calendars_with_shared, self.account)
+            self.assertRaisesRegex(*denied, add_calendar, self.account, unique_name("cal"))
+            self.assertRaisesRegex(*denied, create_calendar, self.account, unique_name("cal"))
+            self.assertRaisesRegex(*denied, edit_calendar, self.account, "b", name=unique_name("cal"))
+            self.assertRaisesRegex(*denied, delete_calendar, self.account, "b")
+            self.assertRaisesRegex(*denied, get_calendars_with_shared, self.account)

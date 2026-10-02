@@ -303,20 +303,30 @@ DEFAULT_ALERTS_WITHOUT_TIME = {
 }
 
 
+# How long a seeding stays marked as done, and how long one that failed is left alone.
+DEFAULT_ALERTS_SEEDED_FOR = 24 * 60 * 60
+DEFAULT_ALERTS_BACK_OFF = 60 * 60
+
+
 def ensure_default_alerts(account: str) -> None:
     """Seeds the account's calendars with default alerts, where they have none.
 
     Idempotent, and deliberately only fills emptiness: a calendar whose defaults were set —
     by this, by another client, by a future settings page — is left alone. Until there is a
     place to clear defaults on purpose, empty always means unseeded. A day-long cache mark
-    keeps the extra round-trip off every sidebar load."""
+    keeps the extra round-trip off every sidebar load. A seeding that failed is marked too,
+    for an hour: a calendar that refuses every time is not asked, and logged, on every load."""
 
     cache_key = _default_alerts_cache_key(account)
-    if frappe.cache.get_value(cache_key):
+    back_off_key = _default_alerts_back_off_key(account)
+    if frappe.cache.get_value(cache_key) or frappe.cache.get_value(back_off_key):
         return
 
+    # Not part of the best-effort below: a caller the account does not belong to is refused
+    # here, as the listing refuses them, rather than leaving a mark on someone else's account.
+    client = get_account_client(account)
+
     try:
-        client = get_account_client(account)
         with client.batch() as b:
             h = b.calendars.calendar.get(
                 properties=["id", "myRights", "defaultAlertsWithTime", "defaultAlertsWithoutTime"]
@@ -344,24 +354,32 @@ def ensure_default_alerts(account: str) -> None:
                     "Calendar Default Alerts Seeding",
                     "\n".join(f"{id}: {format_set_error(error)}" for id, error in not_updated.items()),
                 )
+                frappe.cache.set_value(back_off_key, True, expires_in_sec=DEFAULT_ALERTS_BACK_OFF)
                 return
     except Exception:
-        # Best-effort: a seeding failure must never break calendar listing. The mark
-        # stays unset, so the next load retries.
+        # Best-effort: a seeding failure must never break calendar listing. The seeded mark
+        # stays unset, so it is retried once the back-off is over.
         log_mail_error("Calendar Default Alerts Seeding")
+        frappe.cache.set_value(back_off_key, True, expires_in_sec=DEFAULT_ALERTS_BACK_OFF)
         return
 
-    frappe.cache.set_value(cache_key, True, expires_in_sec=24 * 60 * 60)
+    frappe.cache.set_value(cache_key, True, expires_in_sec=DEFAULT_ALERTS_SEEDED_FOR)
 
 
 def _default_alerts_cache_key(account: str) -> str:
     return f"calendar|default_alerts_seeded|{account}"
 
 
+def _default_alerts_back_off_key(account: str) -> str:
+    return f"calendar|default_alerts_back_off|{account}"
+
+
 def forget_default_alerts_seeded(account: str) -> None:
-    """Has the next listing seed again, for a calendar created since the last one."""
+    """Has the next listing seed again, for a calendar created since the last one — whether
+    that one seeded or failed: the new calendar should not wait out another's refusal."""
 
     frappe.cache.delete_value(_default_alerts_cache_key(account))
+    frappe.cache.delete_value(_default_alerts_back_off_key(account))
 
 
 @frappe.whitelist()

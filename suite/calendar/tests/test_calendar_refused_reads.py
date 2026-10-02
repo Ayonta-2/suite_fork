@@ -146,8 +146,21 @@ class Calendars(RefusedReadsTestCase):
         self.assertEqual(self.sent("Calendar/set"), [])
 
 
+class EventSeries(RefusedReadsTestCase):
+    def test_events_whose_series_lookup_is_refused_come_back_as_they_were(self):
+        self.refuse("CalendarEvent/get")
+        events = [{"id": "e1", "title": "Standup"}, {"id": "e2", "title": "Review"}]
+
+        api.enrich_events_with_master_data(ACCOUNT, events)
+
+        self.assertEqual(events, [{"id": "e1", "title": "Standup"}, {"id": "e2", "title": "Review"}])
+        # Asked and refused, not a lookup that was never made.
+        self.assertEqual([call["ids"] for call in self.sent("CalendarEvent/get")], [["e1", "e2"]])
+
+
 class DefaultAlerts(RefusedReadsTestCase):
-    """Seeding is marked done for a day, so the mark must only follow a seeding that was."""
+    """Seeding is marked done for a day, so the mark must only follow a seeding that was. One
+    that failed is left alone for an hour instead, not asked for again on every load."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -170,7 +183,7 @@ class DefaultAlerts(RefusedReadsTestCase):
         self.assertEqual(len(self.sent("Calendar/set")), 1)
         self.logged.assert_not_called()
 
-    def test_a_calendar_that_refused_its_alerts_is_tried_again_on_the_next_load(self):
+    def one_calendar_refuses_its_alerts(self) -> None:
         self.server.respond(
             "Calendar/set",
             {
@@ -179,21 +192,83 @@ class DefaultAlerts(RefusedReadsTestCase):
             },
         )
 
+    def test_a_calendar_that_refused_its_alerts_is_not_asked_again_on_the_next_load(self):
+        self.one_calendar_refuses_its_alerts()
+
         calendar.ensure_default_alerts(ACCOUNT)
+        asked = len(self.server.requests)
+        calendar.ensure_default_alerts(ACCOUNT)
+
+        self.assertEqual(len(self.sent("Calendar/set")), 1)
+        self.assertEqual(len(self.server.requests), asked)
+        # On record once, with the calendar and the server's reason.
+        self.logged.assert_called_once()
+        self.assertIn(f"cal-2: {REASON}", self.logged.call_args.args[1])
+
+    def test_a_calendar_that_refused_its_alerts_is_asked_again_once_the_back_off_is_gone(self):
+        self.one_calendar_refuses_its_alerts()
+        calendar.ensure_default_alerts(ACCOUNT)
+
+        # What creating a calendar does, so the new one is not left waiting on the refusal.
+        calendar.forget_default_alerts_seeded(ACCOUNT)
         calendar.ensure_default_alerts(ACCOUNT)
 
         self.assertEqual(len(self.sent("Calendar/set")), 2)
-        # On record, with the calendar and the server's reason.
-        self.assertIn(f"cal-2: {REASON}", self.logged.call_args.args[1])
+
+    def test_a_refused_seeding_is_left_alone_for_an_hour_not_for_good(self):
+        self.one_calendar_refuses_its_alerts()
+
+        calendar.ensure_default_alerts(ACCOUNT)
+
+        back_off = frappe.cache.make_key(calendar._default_alerts_back_off_key(ACCOUNT))
+        self.assertGreater(frappe.cache.ttl(back_off), 0)
+        self.assertLessEqual(frappe.cache.ttl(back_off), 60 * 60)
+
+    def test_a_seeding_the_server_refuses_outright_is_not_asked_again_on_the_next_load(self):
+        self.refuse("Calendar/get")
+
+        calendar.ensure_default_alerts(ACCOUNT)
+        calendar.ensure_default_alerts(ACCOUNT)
+
+        self.assertEqual(len(self.server.requests), 1)
+        self.logged.assert_called_once()
+
+    def test_a_caller_the_account_turns_away_does_not_hold_off_its_seeding(self):
+        self.server.respond("Calendar/set", {"updated": {"cal-1": None, "cal-2": None}})
+
+        not_theirs = frappe.ValidationError("JMAP account does not belong to the user.")
+        with mock.patch.object(calendar, "get_account_client", side_effect=not_theirs):
+            self.assertRaises(frappe.ValidationError, calendar.ensure_default_alerts, ACCOUNT)
+        calendar.ensure_default_alerts(ACCOUNT)
+
+        self.assertEqual(len(self.sent("Calendar/set")), 1)
+        self.logged.assert_not_called()
 
 
 class EventNotifications(RefusedReadsTestCase):
     def test_a_refused_query_lists_nothing(self):
         self.refuse("CalendarEventNotification/query")
 
-        notifications, _total = event_notification.fetch_event_notifications(ACCOUNT)
+        notifications, total = event_notification.fetch_event_notifications(ACCOUNT)
 
         self.assertEqual(notifications, [])
+        # Not known, which is not the same as none.
+        self.assertIsNone(total)
+
+    def test_a_refused_listing_leaves_the_count_of_the_last_one(self):
+        self.count_for_any_account(event_notification)
+        filters = [["Event Notification", "account", "=", ACCOUNT]]
+        self.server.handle("CalendarEventNotification/get", _notifications)
+        self.server.respond(
+            "CalendarEventNotification/query",
+            {"ids": ["n1", "n2"], "total": 2, "queryState": "q", "position": 0},
+        )
+        event_notification.EventNotification.get_list(filters=filters)
+
+        self.refuse("CalendarEventNotification/query")
+        self.assertEqual(event_notification.EventNotification.get_list(filters=filters), [])
+
+        self.assertEqual(event_notification.EventNotification.get_count(filters=filters), 2)
 
     def test_a_refused_page_keeps_what_the_pages_before_it_found(self):
         self.serve(_server(core={"maxObjectsInGet": 2}))

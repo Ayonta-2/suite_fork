@@ -98,7 +98,10 @@ class EventNotification(Document):
         filter = {}
         limit = cint(kwargs.get("start")) + page_length
         notifications, total = fetch_event_notifications(account, filter, limit=limit)
-        frappe.cache.set_value(_get_total_cache_key(account), total, expires_in_sec=600)
+        if total is not None:
+            # A query the server refuses says nothing of how many notifications there are, so the
+            # cached total is left as the last listing set it.
+            frappe.cache.set_value(_get_total_cache_key(account), total, expires_in_sec=600)
 
         if not notifications:
             frappe.msgprint(_("No event notifications found."), alert=True)
@@ -149,15 +152,16 @@ def fetch_event_notifications(
     position: int = 0,
     limit: int = 50,
     sort: list[dict] | None = None,
-) -> tuple[list[dict], int]:
-    """Returns a list of event notifications and total count based on the provided filter."""
+) -> tuple[list[dict], int | None]:
+    """Returns a list of event notifications and total count based on the provided filter. The
+    total is None when the server refused the query: not known, rather than zero."""
 
     notifications = []
     client = get_account_client(account)
     data = _query_notifications(client, filter, position, limit, sort)
 
     ids = data.get("ids", [])
-    total = data.get("total", 0)
+    total = data.get("total")
 
     notifications.extend(get_event_notifications(account, ids))
 
