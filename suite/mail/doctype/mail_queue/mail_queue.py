@@ -26,9 +26,8 @@ from frappe.utils import (
     time_diff_in_seconds,
 )
 from jmap import CreationRef, MethodError
-from jmap.batch import MISSING_RESPONSE
 from jmap.capabilities.mail import check_attachment_size
-from jmap.core.errors import CapabilityFieldError, ServerPartialFailError
+from jmap.core.errors import CapabilityFieldError
 
 from suite.mail.doctype.mail_queue.payload import (
     Address,
@@ -49,6 +48,7 @@ from suite.mail.jmap import (
     get_mail_capability,
     get_mailbox_id_by_role,
     get_max_delayed_send,
+    never_applied,
 )
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import parsedate_to_datetime
@@ -58,10 +58,8 @@ from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
 from suite.utils.validation import JSONList, parse
 
-# Method errors after which the call may nonetheless have been applied: `serverPartialFail` (RFC
-# 8620 §3.6.2, the one error after which server state may have changed) and the two jmaplib
-# raises itself, for an answer it could not read and for a call the server left unanswered.
-_MAYBE_APPLIED_ERRORS = ("malformedResult", MISSING_RESPONSE)
+# What a row records in place of the server's answer when the request carrying the mail got none.
+_UNCONFIRMED = "unconfirmed"
 
 
 class MailQueue(OwnerFromUser, Document):
@@ -348,7 +346,17 @@ class MailQueue(OwnerFromUser, Document):
             data = _refusal(response.get("submit"), f"submit-{self.name}")
         else:
             # Failed, with an answer on record: a call that may have been applied (see _process).
-            data = (response.get("submit") or {}).get("error") or (response.get("draft") or {}).get("error")
+            data = (
+                response.get("error")
+                or (response.get("submit") or {}).get("error")
+                or (response.get("draft") or {}).get("error")
+            )
+
+        if data and data.get("type") == _UNCONFIRMED:
+            return _(
+                "The mail server did not confirm this mail. It may have been saved or sent: check "
+                "the mailbox before sending it again."
+            )
 
         if data:
             # Only `type` is certain on a JMAP error; the rest is the server's to add.
@@ -700,6 +708,9 @@ class MailQueue(OwnerFromUser, Document):
         kwargs = {}
         draft_ref = f"draft-{self.name}"
         submit_ref = f"submit-{self.name}"
+        # Set once the request carrying the mail is on its way: from then on a failure no longer
+        # means the mail is not with the server.
+        dispatched = False
 
         try:
             client = get_account_client(self.account)
@@ -826,6 +837,8 @@ class MailQueue(OwnerFromUser, Document):
                         **on_success,
                     )
 
+                dispatched = True
+
             response_payload: dict[str, Any] = {}
 
             # A call refused as a whole is a failure of that step like a refused object, and is
@@ -839,7 +852,7 @@ class MailQueue(OwnerFromUser, Document):
             except MethodError as e:
                 draft_error = {"type": e.type, **e.arguments}
                 response_payload["draft"] = {"error": draft_error}
-                maybe_applied = _maybe_applied(e)
+                maybe_applied = not never_applied(e)
             else:
                 created_map = {k: v.to_wire() for k, v in draft_result.created.items()}
                 not_created = draft_result.not_created
@@ -855,7 +868,7 @@ class MailQueue(OwnerFromUser, Document):
                 except MethodError as e:
                     submit_error = {"type": e.type, **e.arguments}
                     response_payload["submit"] = {"error": submit_error}
-                    maybe_applied = maybe_applied or _maybe_applied(e)
+                    maybe_applied = maybe_applied or not never_applied(e)
                 else:
                     created_map = {k: v.to_wire() for k, v in submit_result.created.items()}
                     response_payload["submit"] = {
@@ -892,13 +905,17 @@ class MailQueue(OwnerFromUser, Document):
                 if submit_created:
                     # For a scheduled send the server holds delivery (FUTURERELEASE); the row
                     # is still Submitted — the EmailSubmission object is the source of truth
-                    # for the hold's state, and send_at merely logs it.
+                    # for the hold's state, and send_at merely logs it. Sent is sent: no retry
+                    # stays scheduled, be it an earlier attempt's or one the draft's answer
+                    # asked for above.
                     kwargs.update(
                         {
                             "submission_id": submit_created["id"],
                             "mailbox_id": sent_mailbox_id,
                             "status": "Submitted",
                             "submitted_at": now(),
+                            "retries": cint(self.retries),
+                            "next_retry_after": None,
                         }
                     )
                 elif submit_error and not draft_error:
@@ -913,20 +930,30 @@ class MailQueue(OwnerFromUser, Document):
                         }
                     )
 
-            if maybe_applied:
+            if maybe_applied and not submit_created:
                 # Failed, for a person to look at: no retry of its own, nor one left over from
-                # an earlier attempt.
+                # an earlier attempt. A submission the server confirms is sent, whatever became
+                # of the draft's answer.
                 kwargs.update({"status": "Failed", "retries": cint(self.retries), "next_retry_after": None})
-        except Exception:
-            retries = cint(self.retries) + 1
+        except Exception as e:
+            # Whatever an earlier attempt recorded is not this failure's answer.
             kwargs.update(
-                {
-                    "status": "Failed",
-                    "retries": retries,
-                    "next_retry_after": get_next_retry_after(retries),
-                    "error_log": frappe.get_traceback(with_context=True),
-                }
+                {"status": "Failed", "_response": None, "error_log": frappe.get_traceback(with_context=True)}
             )
+            if dispatched and not never_applied(e):
+                # The request went out and nothing says it was not applied - no answer came, a
+                # gateway answered for the server, or reading the answer failed. Like a call that
+                # may have been applied: no retry, since that could send the mail twice.
+                kwargs.update(
+                    {
+                        "_response": json.dumps({"error": {"type": _UNCONFIRMED}}),
+                        "retries": cint(self.retries),
+                        "next_retry_after": None,
+                    }
+                )
+            else:
+                retries = cint(self.retries) + 1
+                kwargs.update({"retries": retries, "next_retry_after": get_next_retry_after(retries)})
 
         if frappe.flags.read_only:
             for key, value in kwargs.items():
@@ -978,12 +1005,6 @@ def json_loads(data: str | None, default: Any = None) -> list | dict | None:
         return json.loads(data)
 
     return default
-
-
-def _maybe_applied(error: MethodError) -> bool:
-    """Whether the call that failed with `error` may have changed the server all the same."""
-
-    return isinstance(error, ServerPartialFailError) or error.type in _MAYBE_APPLIED_ERRORS
 
 
 def _megabytes(octets: int) -> str:

@@ -5,7 +5,7 @@
 
 The pending-mail worker retries only rows marked failed with a retry time, so a refusal the row
 does not record that way is a mail that is never sent - and a call that may have been applied,
-recorded that way, is a mail sent twice.
+or a request that got no answer, recorded that way, is a mail sent twice.
 """
 
 import json
@@ -19,7 +19,7 @@ from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
 from suite.mail.doctype.mail_queue import mail_queue
-from suite.mail.jmap import SuiteJMAPClient
+from suite.mail.jmap import SuiteHTTPClient, SuiteJMAPClient
 
 CORE = "urn:ietf:params:jmap:core"
 MAIL = "urn:ietf:params:jmap:mail"
@@ -29,6 +29,7 @@ ACCOUNT = "f7"
 USER = "user@example.test"
 QUEUE = "q1"
 DRAFTED = {"created": {f"draft-{QUEUE}": {"id": "e1", "blobId": "B1", "threadId": "t1", "size": 42}}}
+SUBMITTED = {"created": {f"submit-{QUEUE}": {"id": "s1"}}}
 
 
 def _server() -> FakeJMAPServer:
@@ -42,7 +43,7 @@ def _server() -> FakeJMAPServer:
 
 
 def _client(server: FakeJMAPServer) -> SuiteJMAPClient:
-    http = httpx.Client(auth=BasicAuth(USER, "pw"), **server.client_kwargs())
+    http = SuiteHTTPClient(auth=BasicAuth(USER, "pw"), **server.client_kwargs())
     return SuiteJMAPClient.connect(
         "https://jmap.example.com/.well-known/jmap",
         auth=BasicAuth(USER, "pw"),
@@ -145,7 +146,7 @@ class RefusedMail(_Processing):
 
     def test_a_mail_the_server_takes_is_submitted(self):
         self.server.respond("Email/set", DRAFTED)
-        self.server.respond("EmailSubmission/set", {"created": {f"submit-{QUEUE}": {"id": "s1"}}})
+        self.server.respond("EmailSubmission/set", SUBMITTED)
 
         doc = self.process()
 
@@ -207,18 +208,127 @@ class MaybeAppliedMail(_Processing):
         self.assert_left_for_a_person(doc)
         self.assertIn("missingResponse", doc.error_message)
 
+    def test_a_submission_the_server_confirms_is_sent_whatever_became_of_the_drafts_answer(self):
+        self.server.respond("Email/set", {"created": "not a map of created objects"})
+        self.server.respond("EmailSubmission/set", SUBMITTED)
+
+        doc = self.process()
+
+        self.assertEqual((doc.status, doc.submission_id), ("Submitted", "s1"))
+        self.assertFalse(doc.retries)
+        self.assertFalse(doc.next_retry_after)
+
+
+class UnansweredMail(_Processing):
+    """A request that fails as a whole says nothing of the mail it carried. Unless the failure
+    proves the request did nothing, the mail may be sent - and is not sent a second time."""
+
+    EARLIER_ANSWER = json.dumps({"submit": {"error": {"type": "serverFail", "description": "earlier"}}})
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.server.respond("Email/set", DRAFTED)
+        self.server.respond("EmailSubmission/set", SUBMITTED)
+        self.sends = 0
+
+    def fail_the_send_with(self, failure: Exception | httpx.Response) -> None:
+        """The request carrying the mail fails; every other request is answered."""
+
+        def intercept(request: httpx.Request) -> httpx.Response | None:
+            if b"Email/set" not in request.content:
+                return None
+            self.sends += 1
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
+
+        self.server.intercept = intercept
+
+    def process_a_mail_already_retried_once(self, **fields) -> mail_queue.MailQueue:
+        return self.process(
+            retries=1, next_retry_after="2026-01-01 00:00:00", _response=self.EARLIER_ANSWER, **fields
+        )
+
+    def test_a_send_that_may_have_reached_the_server_is_not_sent_again(self):
+        failures = {
+            "no answer in time": httpx.ReadTimeout("timed out"),
+            "connection dropped": httpx.RemoteProtocolError("server disconnected"),
+            "bad gateway": httpx.Response(502),
+            "service unavailable": httpx.Response(503),
+            "gateway timeout": httpx.Response(504),
+            "server error": httpx.Response(500),
+        }
+        for name, failure in failures.items():
+            with self.subTest(name):
+                self.sends = 0
+                self.fail_the_send_with(failure)
+
+                doc = self.process_a_mail_already_retried_once()
+
+                self.assertEqual(doc.status, "Failed")
+                self.assertIsNone(doc.next_retry_after)
+                self.assertEqual(doc.retries, 1)
+                self.assertEqual(self.sends, 1)
+                # What the row says is about this attempt, not the one before it.
+                self.assertIn("may have been saved or sent", doc.error_message)
+                self.assertTrue(doc.error_log)
+
+    def test_a_send_that_cannot_have_reached_the_server_is_retried(self):
+        failures = {
+            "connection refused": httpx.ConnectError("connection refused"),
+            "connection timed out": httpx.ConnectTimeout("timed out"),
+            "rate limited": httpx.Response(429),
+        }
+        for name, failure in failures.items():
+            with self.subTest(name):
+                self.fail_the_send_with(failure)
+
+                doc = self.process(_response=self.EARLIER_ANSWER)
+
+                self.assert_retried(doc, "Failed")
+                self.assertIsNone(doc.error_message)
+
+    def test_a_failure_before_the_send_is_retried(self):
+        # The message is uploaded first; the request carrying the mail never goes out.
+        failures = {
+            "no answer in time": httpx.ReadTimeout("timed out"),
+            "bad gateway": httpx.Response(502),
+        }
+        for name, failure in failures.items():
+            with self.subTest(name):
+
+                def fail_the_upload(request: httpx.Request, failure=failure) -> httpx.Response:
+                    if "/upload/" not in request.url.path:
+                        return None
+                    if isinstance(failure, Exception):
+                        raise failure
+                    return failure
+
+                self.server.intercept = fail_the_upload
+
+                doc = self.process(
+                    raw_message="Subject: Hello\r\n\r\nHello there", _response=self.EARLIER_ANSWER
+                )
+
+                self.assert_retried(doc, "Failed")
+                self.assertIsNone(doc.error_message)
+                self.assertEqual(self.server.requests, [])
+
 
 class SentMail(_Processing):
     def test_a_session_refresh_that_fails_afterwards_does_not_undo_it(self):
         self.server.respond("Email/set", DRAFTED)
-        self.server.respond("EmailSubmission/set", {"created": {f"submit-{QUEUE}": {"id": "s1"}}})
+        self.server.respond("EmailSubmission/set", SUBMITTED)
         # The answer announces a session change, and fetching the new session fails.
         self.server.session_state = "changed"
 
-        with (
-            mock.patch("jmap.client._fetch_session", side_effect=httpx.ConnectError("connection refused")),
-            mock.patch("suite.mail.jmap.log_mail_error") as logged,
-        ):
+        def refuse_the_session(request: httpx.Request) -> httpx.Response | None:
+            if request.method == "GET":
+                raise httpx.ConnectError("connection refused")
+
+        self.server.intercept = refuse_the_session
+
+        with mock.patch("suite.mail.jmap.log_mail_error") as logged:
             doc = self.process()
 
         self.assertEqual((doc.status, doc.submission_id), ("Submitted", "s1"))
