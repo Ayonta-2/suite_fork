@@ -242,13 +242,16 @@ class DelayedSend(unittest.TestCase):
         with self.assertRaisesRegex(frappe.ValidationError, "doesn't support scheduled sending"):
             check_delayed_send(60, 0)
 
-    def test_a_delay_past_the_limit_is_told_the_limit_in_its_largest_unit(self):
+    def test_a_delay_past_the_limit_is_told_the_limit_in_the_largest_unit_that_says_it_exactly(self):
         limits = {
             30 * 24 * 60 * 60: "30 days",
             24 * 60 * 60: "1 day",
+            25 * 60 * 60: "25 hours",
             6 * 60 * 60: "6 hours",
             60 * 60: "1 hour",
+            90 * 60: "90 minutes",
             45 * 60: "45 minutes",
+            30: "30 seconds",
         }
         for limit, spoken in limits.items():
             with (

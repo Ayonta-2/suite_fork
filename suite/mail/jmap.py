@@ -1161,12 +1161,17 @@ def check_delayed_send(delay: float, max_delay: int) -> None:
 
 
 def _spoken_duration(seconds: int) -> str:
-    """A limit in the largest unit it fills: "30 days", "6 hours", "45 minutes"."""
+    """A limit in the largest unit that says it exactly: "30 days", "25 hours", "30 seconds"."""
 
-    units = ((86400, _("day"), _("days")), (3600, _("hour"), _("hours")), (60, _("minute"), _("minutes")))
+    units = (
+        (86400, _("day"), _("days")),
+        (3600, _("hour"), _("hours")),
+        (60, _("minute"), _("minutes")),
+        (1, _("second"), _("seconds")),
+    )
     for unit, singular, plural in units:
-        if seconds >= unit or unit == 60:
-            count = max(seconds // unit, 1)
+        if seconds % unit == 0:
+            count = seconds // unit
             return f"{count} {singular if count == 1 else plural}"
 
 
