@@ -31,7 +31,7 @@ every other concluded row.
 
 from datetime import UTC, datetime
 from typing import Literal
-from uuid import uuid7
+from uuid import UUID, uuid7
 
 import frappe
 from frappe import _
@@ -261,25 +261,25 @@ def cancel_scheduled_mail(account: str, id: str) -> dict:
 @frappe.whitelist()
 def retry_failed_mail(account: str, id: str) -> dict:
     """Resubmits a finalized submission's email for immediate delivery, replacing the failed
-    record so the listing shows only the live attempt."""
+    record so the listing shows only the live attempt. A record whose email was already
+    resubmitted - a retry that could not remove it - is only removed."""
 
     _validate_ids(account=account, id=id)
 
     client = get_account_client(account)
     submission = _get_final_submission(client, id)
 
-    created = _resubmit(
-        client, account, **_resubmit_args(client, submission), envelope_id=str(uuid7()), hold_until=None
-    )
-    try:
-        _destroy_submission(client, id)
-    except Exception:
-        # The email is already resubmitted: failing here would invite a second retry, and a
-        # second send. The old record just stays on the listing, where it can be dismissed.
-        log_mail_error(
-            _("Failed to remove the old record of a retried email"),
-            frappe.get_traceback(with_context=True),
-        )
+    args = _resubmit_args(client, submission)
+
+    if later := _later_submission(client, submission):
+        # Already retried: the email went out again as `later`, and only the removal of this
+        # record failed. Sending it once more would send the email twice, so the retry that
+        # is left to do is the removal.
+        _drop_retried_record(client, id)
+        return {"id": later["id"]}
+
+    created = _resubmit(client, account, **args, envelope_id=str(uuid7()), hold_until=None)
+    _drop_retried_record(client, id)
 
     return {"id": created["id"]}
 
@@ -656,6 +656,65 @@ def _resubmit(
         raise ValueError(get_set_error_message(result, "create", submit_ref))
 
     return created.to_wire()
+
+
+def _drop_retried_record(client: SuiteJMAPClient, submission_id: str) -> None:
+    """Removes the record a retry replaced. The email is already resubmitted: failing here
+    would invite a second retry. A record that could not be removed stays on the listing, where
+    retrying it again only comes back here (see _later_submission)."""
+
+    try:
+        _destroy_submission(client, submission_id)
+    except Exception:
+        log_mail_error(
+            _("Failed to remove the old record of a retried email"),
+            frappe.get_traceback(with_context=True),
+        )
+
+
+def _later_submission(client: SuiteJMAPClient, submission: dict) -> dict | None:
+    """The latest submission of the same email made after `submission`, if the server holds one:
+    what tells a record that was already retried from one that still needs it.
+
+    Read from the server like everything else here. Not knowing is not "none" - a lookup the
+    server refuses is thrown, since a retry sent on a guess is an email sent twice."""
+
+    with client.batch() as b:
+        h = b.submission.email_submission.query(filter={"emailIds": [submission["emailId"]]})
+    if h.error:
+        frappe.throw(format_method_error(h.error))
+
+    ids = [str(id) for id in h.result.ids if str(id) != submission["id"]]
+    if not ids:
+        return None
+
+    others = _get_submissions(client, ids, SUBMISSION_PROPERTIES, refused="throw")
+    later = [other for other in others if _made_after(other, submission)]
+    return max(later, key=lambda other: other.get("sendAt") or "", default=None)
+
+
+def _made_after(submission: dict, other: dict) -> bool:
+    """Whether `submission` was made after `other`. The ENVID this app writes is a UUIDv7,
+    which carries its creation time, and decides between two of ours: sendAt would not, a
+    send-now replacement being due before the held submission it replaced. sendAt decides
+    when either is another client's."""
+
+    made, other_made = _made_at(submission), _made_at(other)
+    if made is not None and other_made is not None:
+        return made > other_made
+
+    return (submission.get("sendAt") or "") > (other.get("sendAt") or "")
+
+
+def _made_at(submission: dict) -> int | None:
+    """When this app made the submission (Unix milliseconds), read from its ENVID."""
+
+    try:
+        envid = UUID(_envid(submission) or "")
+    except ValueError:
+        return None
+
+    return envid.int >> 80 if envid.version == 7 else None
 
 
 def _set_result(handle: Handle[SetResponse]) -> SetResponse:
