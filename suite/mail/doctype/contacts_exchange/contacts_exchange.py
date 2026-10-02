@@ -38,9 +38,11 @@ from suite.mail.jmap import (
     chunk_list,
     chunked_get,
     chunked_set,
+    format_set_error,
     get_cached_address_books,
     get_default_address_book_id,
     get_jmap_client,
+    get_set_error_message,
     omit_none,
     upload_blobs,
 )
@@ -748,13 +750,33 @@ class ContactsExchange(OwnerFromUser, Document):
         # Patch addressBookIds only and let the server manage the `updated` timestamp, so we never
         # depend on `updated` being client-writable for ContactCard.
         updates = {id: {"addressBookIds": book_ids} for id, book_ids in targets.items()}
-        result = chunked_set(client, lambda b, chunk: b.contacts.contact_card.set(update=chunk), updates)
+        try:
+            result = chunked_set(client, lambda b, chunk: b.contacts.contact_card.set(update=chunk), updates)
+        except Exception as e:
+            # The chunks before the one that failed are committed, and the rollback only removes
+            # what is still staged: say how much of the import stays in the account.
+            applied = getattr(e, "applied", None)
+            if applied and applied.updated:
+                logger.warning("import-cards-partially-moved", moved=len(applied.updated), total=len(updates))
+                self._log_output(
+                    _(
+                        "{0} of {1} contact(s) were already moved into the destination address "
+                        "book(s) and remain there; the rest were not imported."
+                    ).format(len(applied.updated), len(updates))
+                )
+            raise
 
         if result.not_updated:
-            logger.warning("import-card-not-moved", count=len(result.not_updated))
+            # Log the server's reasons, aggregated by message, and surface the first one to the user.
+            reasons: dict[str, int] = {}
+            for error in result.not_updated.values():
+                key = error.get("description") or error.get("type") or "unknown"
+                reasons[key] = reasons.get(key, 0) + 1
+            logger.warning("import-card-not-moved", count=len(result.not_updated), reasons=reasons)
             frappe.throw(
-                _("Failed to move {0} contact(s) into the destination address book(s).").format(
-                    len(result.not_updated)
+                _("Failed to move {0} contact(s) into the destination address book(s): {1}").format(
+                    len(result.not_updated),
+                    format_set_error(next(iter(result.not_updated.values()))),
                 )
             )
 
@@ -768,7 +790,14 @@ class ContactsExchange(OwnerFromUser, Document):
 
         try:
             with client.batch() as b:
-                b.contacts.address_book.set(destroy=[staging_address_book_id])
+                h = b.contacts.address_book.set(destroy=[staging_address_book_id])
+            if h.result.not_destroyed:
+                logger.warning(
+                    "import-staging-address-book-remove-failed",
+                    address_book=staging_address_book_id,
+                    reason=get_set_error_message(h.result, "destroy", staging_address_book_id),
+                )
+                return
             logger.info("import-staging-address-book-removed", address_book=staging_address_book_id)
         except Exception:
             logger.warning("import-staging-address-book-remove-failed", address_book=staging_address_book_id)
@@ -781,7 +810,16 @@ class ContactsExchange(OwnerFromUser, Document):
         self._log_output(_("Rolling back: removing the staging address book and any staged contacts."))
         try:
             with client.batch() as b:
-                b.contacts.address_book.set(destroy=[staging_address_book_id], onDestroyRemoveContents=True)
+                h = b.contacts.address_book.set(
+                    destroy=[staging_address_book_id], onDestroyRemoveContents=True
+                )
+            if h.result.not_destroyed:
+                logger.error(
+                    "import-rollback-failed",
+                    address_book=staging_address_book_id,
+                    reason=get_set_error_message(h.result, "destroy", staging_address_book_id),
+                )
+                return
             logger.info("import-rolled-back", address_book=staging_address_book_id)
         except Exception:
             logger.exception("import-rollback-failed", address_book=staging_address_book_id)

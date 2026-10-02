@@ -48,6 +48,8 @@ from suite.mail.jmap import (
     format_set_error,
     get_cached_mailboxes,
     get_jmap_client,
+    get_mail_capability,
+    get_set_error_message,
     omit_none,
     upload_blobs,
 )
@@ -1048,7 +1050,23 @@ class MailExchange(OwnerFromUser, Document):
 
         self._log_output(_("Moving {0} email(s) into the destination folder(s).").format(len(imported)))
         updates = {email_id: {"mailboxIds": mailbox_ids} for email_id, mailbox_ids in imported.items()}
-        result = chunked_set(client, lambda b, chunk: b.mail.email.set(update=chunk), updates)
+        try:
+            result = chunked_set(client, lambda b, chunk: b.mail.email.set(update=chunk), updates)
+        except Exception as e:
+            # The chunks before the one that failed are committed, and the rollback only removes
+            # what is still staged: say how much of the import stays in the account.
+            applied = getattr(e, "applied", None)
+            if applied and applied.updated:
+                logger.warning(
+                    "import-emails-partially-moved", moved=len(applied.updated), total=len(updates)
+                )
+                self._log_output(
+                    _(
+                        "{0} of {1} email(s) were already moved into the destination folder(s) and "
+                        "remain there; the rest were not imported."
+                    ).format(len(applied.updated), len(updates))
+                )
+            raise
 
         if result.not_updated:
             # 13k bare "failed to move" rows are undebuggable — log the server's reasons,
@@ -1068,13 +1086,17 @@ class MailExchange(OwnerFromUser, Document):
         logger.info("import-emails-moved", emails=len(result.updated))
 
     def _validate_destination_mailboxes(self, client: SuiteJMAPClient, meta: list[ImportEmailMeta]) -> None:
-        """Fails fast when the metadata names destination mailboxes that don't exist.
+        """Fails fast when the metadata names destination mailboxes that don't exist, or files an
+        email in more of them than the account allows.
 
         JMAP mailbox ids are account-local: an archive exported from another account (or from
         this account before its folders were recreated) names ids the server rejects one by one
         at the move step — after everything has already been staged — and any id that happens to
         collide with a real mailbox would silently land mail in the wrong folder. Checked against
         a fresh mailbox read so a stale cache can't produce false failures.
+
+        An email over maxMailboxesPerEmail gets its whole chunk of the move refused before it is
+        sent, by which time the chunks ahead of it are already in their destination folders.
         """
 
         wanted: set[str] = set()
@@ -1097,6 +1119,15 @@ class MailExchange(OwnerFromUser, Document):
                 ).format(len(unknown), shown)
             )
 
+        limit = get_mail_capability(client, self.account).max_mailboxes_per_email
+        if limit is not None and (crowded := [row for row in meta if len(row.mailbox_ids) > limit]):
+            frappe.throw(
+                _(
+                    "The import files {0} email(s) in more folders than this account allows for "
+                    "one email ({1})."
+                ).format(len(crowded), limit)
+            )
+
     def _discard_staging_mailbox(
         self, client: SuiteJMAPClient, staging_mailbox_id: str, logger: ExchangeLogger
     ) -> None:
@@ -1105,7 +1136,14 @@ class MailExchange(OwnerFromUser, Document):
 
         try:
             with client.batch() as b:
-                b.mail.mailbox.set(destroy=[staging_mailbox_id])
+                h = b.mail.mailbox.set(destroy=[staging_mailbox_id])
+            if h.result.not_destroyed:
+                logger.warning(
+                    "import-staging-mailbox-remove-failed",
+                    mailbox=staging_mailbox_id,
+                    reason=get_set_error_message(h.result, "destroy", staging_mailbox_id),
+                )
+                return
             logger.info("import-staging-mailbox-removed", mailbox=staging_mailbox_id)
         except Exception:
             logger.warning("import-staging-mailbox-remove-failed", mailbox=staging_mailbox_id)
@@ -1118,7 +1156,14 @@ class MailExchange(OwnerFromUser, Document):
         self._log_output(_("Rolling back: removing the staging folder and any staged emails."))
         try:
             with client.batch() as b:
-                b.mail.mailbox.set(destroy=[staging_mailbox_id], onDestroyRemoveEmails=True)
+                h = b.mail.mailbox.set(destroy=[staging_mailbox_id], onDestroyRemoveEmails=True)
+            if h.result.not_destroyed:
+                logger.error(
+                    "import-rollback-failed",
+                    mailbox=staging_mailbox_id,
+                    reason=get_set_error_message(h.result, "destroy", staging_mailbox_id),
+                )
+                return
             logger.info("import-rolled-back", mailbox=staging_mailbox_id)
         except Exception:
             logger.exception("import-rollback-failed", mailbox=staging_mailbox_id)
