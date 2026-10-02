@@ -58,8 +58,10 @@ from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
 from suite.utils.validation import JSONList, parse
 
-# What a row records in place of the server's answer when the request carrying the mail got none.
+# What a row records in place of the server's answer when the request carrying the mail got
+# none, and when it got one that could not be worked through here.
 _UNCONFIRMED = "unconfirmed"
+_UNPROCESSED = "unprocessed"
 
 
 class MailQueue(OwnerFromUser, Document):
@@ -356,6 +358,12 @@ class MailQueue(OwnerFromUser, Document):
             return _(
                 "The mail server did not confirm this mail. It may have been saved or sent: check "
                 "the mailbox before sending it again."
+            )
+
+        if data and data.get("type") == _UNPROCESSED:
+            return _(
+                "The mail server answered, but its answer could not be processed. The mail may "
+                "have been saved or sent: check the mailbox before sending it again."
             )
 
         if data:
@@ -709,8 +717,10 @@ class MailQueue(OwnerFromUser, Document):
         draft_ref = f"draft-{self.name}"
         submit_ref = f"submit-{self.name}"
         # Set once the request carrying the mail is on its way: from then on a failure no longer
-        # means the mail is not with the server.
-        dispatched = False
+        # means the mail is not with the server. And once it is answered: a failure after that
+        # is one of working through the answer, not the server's.
+        dispatched = answered = False
+        submit_created = None
 
         try:
             client = get_account_client(self.account)
@@ -839,6 +849,7 @@ class MailQueue(OwnerFromUser, Document):
 
                 dispatched = True
 
+            answered = True
             response_payload: dict[str, Any] = {}
 
             # A call refused as a whole is a failure of that step like a refused object, and is
@@ -884,10 +895,11 @@ class MailQueue(OwnerFromUser, Document):
                     {
                         "status": "Drafted",
                         "id": draft_created["id"],
-                        "blob_id": draft_created["blobId"],
-                        "size": draft_created["size"],
+                        # Set by the server, and its to leave out.
+                        "blob_id": draft_created.get("blobId"),
+                        "size": draft_created.get("size"),
                         "drafted_at": now(),
-                        "thread_id": draft_created["threadId"],
+                        "thread_id": draft_created.get("threadId"),
                         "mailbox_id": draft_mailbox_id,
                     }
                 )
@@ -936,14 +948,28 @@ class MailQueue(OwnerFromUser, Document):
                 # of the draft's answer.
                 kwargs.update({"status": "Failed", "retries": cint(self.retries), "next_retry_after": None})
         except Exception as e:
-            # Whatever an earlier attempt recorded is not this failure's answer.
-            kwargs.update(
-                {"status": "Failed", "_response": None, "error_log": frappe.get_traceback(with_context=True)}
-            )
-            if dispatched and not never_applied(e):
-                # The request went out and nothing says it was not applied - no answer came, a
-                # gateway answered for the server, or reading the answer failed. Like a call that
-                # may have been applied: no retry, since that could send the mail twice.
+            kwargs.update({"status": "Failed", "error_log": frappe.get_traceback(with_context=True)})
+            if answered:
+                # The server answered and working through the answer failed here. What the
+                # answer says stands: a submission it confirms is sent. Short of that the row is
+                # left for a person, without a retry that could send the mail twice.
+                log_mail_error("Mail Queue: failed to process the answer", kwargs["error_log"])
+                kwargs.update({"retries": cint(self.retries), "next_retry_after": None})
+                if submit_created:
+                    kwargs.update(
+                        {
+                            "status": "Submitted",
+                            "submission_id": submit_created["id"],
+                            "mailbox_id": sent_mailbox_id,
+                            "submitted_at": now(),
+                        }
+                    )
+                else:
+                    kwargs["_response"] = json.dumps({"error": {"type": _UNPROCESSED}})
+            elif dispatched and not never_applied(e):
+                # The request went out and nothing says it was not applied - no answer came, or a
+                # gateway answered for the server. Like a call that may have been applied: no
+                # retry, since that could send the mail twice.
                 kwargs.update(
                     {
                         "_response": json.dumps({"error": {"type": _UNCONFIRMED}}),
@@ -952,8 +978,11 @@ class MailQueue(OwnerFromUser, Document):
                     }
                 )
             else:
+                # Whatever an earlier attempt recorded is not this failure's answer.
                 retries = cint(self.retries) + 1
-                kwargs.update({"retries": retries, "next_retry_after": get_next_retry_after(retries)})
+                kwargs.update(
+                    {"_response": None, "retries": retries, "next_retry_after": get_next_retry_after(retries)}
+                )
 
         if frappe.flags.read_only:
             for key, value in kwargs.items():

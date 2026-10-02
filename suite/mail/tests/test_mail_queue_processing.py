@@ -219,6 +219,53 @@ class MaybeAppliedMail(_Processing):
         self.assertFalse(doc.next_retry_after)
 
 
+class AnsweredMail(_Processing):
+    """The server answered: what is made of the answer here does not change what it says."""
+
+    def test_a_draft_answered_without_its_server_set_properties_is_still_submitted(self):
+        self.server.respond("Email/set", {"created": {f"draft-{QUEUE}": {"id": "e1"}}})
+        self.server.respond("EmailSubmission/set", SUBMITTED)
+
+        doc = self.process()
+
+        self.assertEqual((doc.status, doc.submission_id, doc.id), ("Submitted", "s1", "e1"))
+        self.assertIsNone(doc.size)
+        self.assertFalse(doc.error_log)
+
+    def test_a_confirmed_submission_is_sent_though_working_through_the_answer_fails(self):
+        self.server.respond("Email/set", DRAFTED)
+        self.server.respond("EmailSubmission/set", SUBMITTED)
+
+        with (
+            mock.patch.object(mail_queue, "now", side_effect=[RuntimeError("clock"), "2026-10-02 10:00:00"]),
+            mock.patch.object(mail_queue, "log_mail_error") as logged,
+        ):
+            doc = self.process(retries=1, next_retry_after="2026-01-01 00:00:00")
+
+        self.assertEqual((doc.status, doc.submission_id), ("Submitted", "s1"))
+        self.assertIsNone(doc.next_retry_after)
+        self.assertEqual(doc.retries, 1)
+        self.assertIn("clock", doc.error_log)
+        logged.assert_called_once()
+
+    def test_an_answer_that_confirms_no_submission_and_cannot_be_worked_through_is_not_sent_again(self):
+        self.server.respond("Email/set", DRAFTED)
+        self.server.fail("EmailSubmission/set", "serverFail", description="try again later")
+
+        with (
+            mock.patch.object(mail_queue, "now", side_effect=RuntimeError("clock")),
+            mock.patch.object(mail_queue, "log_mail_error"),
+        ):
+            doc = self.process(retries=1, next_retry_after="2026-01-01 00:00:00")
+
+        self.assertEqual(doc.status, "Failed")
+        self.assertIsNone(doc.next_retry_after)
+        self.assertEqual(doc.retries, 1)
+        self.assertIn("could not be processed", doc.error_message)
+        # Not the server failing to confirm: it answered.
+        self.assertNotIn("did not confirm", doc.error_message)
+
+
 class UnansweredMail(_Processing):
     """A request that fails as a whole says nothing of the mail it carried. Unless the failure
     proves the request did nothing, the mail may be sent - and is not sent a second time."""
