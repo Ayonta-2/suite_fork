@@ -8,11 +8,12 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
-from jmap import MethodError
 
 from suite.mail.doctype.address_book.address_book import validate_address_book_name_format
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
+    JMAP_REFUSALS,
+    chunked_get,
     chunked_set,
     format_method_error,
     format_set_error,
@@ -282,7 +283,7 @@ def add_contact_card(
         with client.batch() as b:
             h = b.contacts.contact_card.set(create={creation_id: contact_card})
         response = h.result
-    except MethodError as e:
+    except JMAP_REFUSALS as e:
         frappe.throw(_(format_method_error(e)), title=title)
 
     if id := response.created_id(creation_id):
@@ -313,9 +314,14 @@ def bulk_add_contact_cards(account: str, contact_cards: list[dict], raise_except
     }
 
     client = get_account_client(account)
-    result = chunked_set(client, lambda b, chunk: b.contacts.contact_card.set(create=chunk), creates)
-
     title = _("Contact Card Creation Error")
+    try:
+        result = chunked_set(client, lambda b, chunk: b.contacts.contact_card.set(create=chunk), creates)
+    except JMAP_REFUSALS as e:
+        if raise_exception:
+            frappe.throw(_(format_method_error(e)), title=title)
+        return
+
     if result.not_created:
         if raise_exception:
             frappe.throw(_("One or more contact cards failed to create"), title=title)
@@ -364,10 +370,12 @@ def get_contact_cards(account: str, ids: list[str]) -> list[dict]:
 
     if ids_to_fetch:
         client = get_account_client(account)
-        with client.batch() as b:
-            h = b.contacts.contact_card.get(ids=ids_to_fetch, properties=CARD_PROPERTIES)
-
-        cards = [c.to_wire() for c in h.result.items]
+        items = chunked_get(
+            client,
+            lambda b, chunk: b.contacts.contact_card.get(ids=chunk, properties=CARD_PROPERTIES),
+            ids_to_fetch,
+        )
+        cards = [c.to_wire() for c in items]
         address_book_map = {ab["id"]: ab["name"] for ab in get_cached_address_books(account)}
 
         contact_cards_to_cache = {}
@@ -403,7 +411,7 @@ def update_contact_card(
         with client.batch() as b:
             h = b.contacts.contact_card.set(update={id: contact_card})
         response = h.result
-    except MethodError as e:
+    except JMAP_REFUSALS as e:
         frappe.throw(_(format_method_error(e)), title=title)
 
     if id not in response.updated:
@@ -449,11 +457,16 @@ def contact_card_update_address_books(
             payload[f"addressBookIds/{remove_address_book_id}"] = None
 
     client = get_account_client(account)
-    result = chunked_set(
-        client, lambda b, chunk: b.contacts.contact_card.set(update={id: payload for id in chunk}), ids
-    )
-
     title = _("Contact Card Update Error")
+    try:
+        result = chunked_set(
+            client, lambda b, chunk: b.contacts.contact_card.set(update={id: payload for id in chunk}), ids
+        )
+    except JMAP_REFUSALS as e:
+        # Chunks before the refused one are applied: their cached copies are stale either way.
+        _remove_cached_contact_cards(account, ids)
+        frappe.throw(_(format_method_error(e)), title=title)
+
     if not result.updated:
         error = result.not_updated.get(ids[0]) or next(iter(result.not_updated.values()), None)
         frappe.throw(_(format_set_error(error)), title=title)
@@ -509,8 +522,13 @@ def delete_contact_cards(account: str, ids: list[str]) -> None:
     """Deletes contact cards for the given account by its IDs."""
 
     client = get_account_client(account)
-    chunked_set(client, lambda b, chunk: b.contacts.contact_card.set(destroy=chunk), ids)
-    _remove_cached_contact_cards(account, ids)
+    try:
+        chunked_set(client, lambda b, chunk: b.contacts.contact_card.set(destroy=chunk), ids)
+    except JMAP_REFUSALS as e:
+        frappe.throw(_(format_method_error(e)), title=_("Contact Card Deletion Error"))
+    finally:
+        # Chunks before a refused one are applied: the cached copies go in every case.
+        _remove_cached_contact_cards(account, ids)
 
 
 def _get_total_cache_key(account: str) -> str:

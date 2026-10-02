@@ -7,10 +7,15 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
-from jmap import MethodError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import chunked_set, format_method_error, format_set_error, get_account_client
+from suite.mail.jmap import (
+    JMAP_REFUSALS,
+    chunked_set,
+    format_method_error,
+    format_set_error,
+    get_account_client,
+)
 from suite.utils import parse_filters
 from suite.utils.validation import JSONList
 
@@ -171,7 +176,7 @@ def add_address_book(
         with client.batch() as b:
             h = b.contacts.address_book.set(create={creation_id: address_book}, **kwargs)
         response = h.result
-    except MethodError as e:
+    except JMAP_REFUSALS as e:
         frappe.throw(_(format_method_error(e)), title=title)
 
     if id := response.created_id(creation_id):
@@ -226,7 +231,7 @@ def update_address_book(
         with client.batch() as b:
             h = b.contacts.address_book.set(update={id: address_book}, **kwargs)
         response = h.result
-    except MethodError as e:
+    except JMAP_REFUSALS as e:
         frappe.throw(_(format_method_error(e)), title=title)
 
     if id not in response.updated:
@@ -238,9 +243,14 @@ def delete_address_books(account: str, ids: list[str]) -> None:
     """Deletes address books for the given account and list of address book IDs."""
 
     client = get_account_client(account)
-    result = chunked_set(
-        client, lambda b, chunk: b.contacts.address_book.set(destroy=chunk, onDestroyRemoveContents=True), ids
-    )
+    try:
+        result = chunked_set(
+            client,
+            lambda b, chunk: b.contacts.address_book.set(destroy=chunk, onDestroyRemoveContents=True),
+            ids,
+        )
+    except JMAP_REFUSALS as e:
+        frappe.throw(_(format_method_error(e)), title=_("Address Book Deletion Error"))
 
     if result.not_destroyed:
         error_messages = []
