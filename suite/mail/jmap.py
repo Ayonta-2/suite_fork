@@ -14,9 +14,15 @@ from cachetools import TTLCache
 from frappe import _
 from frappe.utils import cint
 from frappe.utils.caching import request_cache
-from jmap import Id, MethodError, RequestError, SetError, TransportError
+from jmap import AuthenticationError, Id, MethodError, RequestError, SetError, TransportError
 from jmap.auth import BasicAuth
-from jmap.batch import NoAccountError, ReadOnlyAccountError, all_mutations_guarded, is_mutating
+from jmap.batch import (
+    MISSING_RESPONSE,
+    NoAccountError,
+    ReadOnlyAccountError,
+    all_mutations_guarded,
+    is_mutating,
+)
 from jmap.blobs import UploadResult
 from jmap.capabilities.mail import MailCapability, SubmissionCapability
 from jmap.client import JMAPClient
@@ -46,9 +52,16 @@ class MailServerUnavailableError(Exception):
     """
 
     http_status_code = 503
+    #: Whether the failure proves the request did nothing on the server: the connection was never
+    #: made, or the server turned the request away unread (429). False is "it may have" - a
+    #: timeout, a dropped connection, a gateway's 502/503/504 (see never_applied).
+    not_applied = False
 
-    def __init__(self, message: str = "The mail server is temporarily unavailable.") -> None:
+    def __init__(
+        self, message: str = "The mail server is temporarily unavailable.", *, not_applied: bool = False
+    ) -> None:
         super().__init__(message)
+        self.not_applied = not_applied
 
 
 def invalidate_jmap_identities_cache(account: str) -> None:
@@ -309,6 +322,15 @@ JMAP_REFUSALS = (
     NoAccountError,
 )
 
+# Method errors after which the call may nonetheless have been applied: `serverPartialFail` (RFC
+# 8620 §3.6.2, the one error after which server state may have changed) and the two jmaplib
+# raises itself, for an answer it could not read and for a call the server left unanswered.
+MAYBE_APPLIED_ERRORS = ("serverPartialFail", "malformedResult", MISSING_RESPONSE)
+
+# The httpx failures after which nothing can have been sent: the same three jmaplib counts as
+# "the connection never established" (jmap.client), plus a URL httpx will not open at all.
+NEVER_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, httpx.UnsupportedProtocol)
+
 MAIL_URN = "urn:ietf:params:jmap:mail"
 SUBMISSION_URN = "urn:ietf:params:jmap:submission"
 
@@ -345,26 +367,76 @@ def omit_none(**kwargs) -> dict:
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
+class SuiteHTTPClient(httpx.Client):
+    """An httpx.Client that remembers why its last request failed.
+
+    jmaplib reports a failed API call as a bare TransportError, without the httpx error behind
+    it - and that error is what tells a request that never left from one the server may have
+    acted on (see translated_errors).
+    """
+
+    last_error: Exception | None = None
+
+    def send(self, request: httpx.Request, **kwargs) -> httpx.Response:
+        self.last_error = None
+        try:
+            return super().send(request, **kwargs)
+        except Exception as e:
+            self.last_error = e
+            raise
+
+
 @contextmanager
-def translated_errors() -> Iterator[None]:
+def translated_errors(http: httpx.Client | None = None) -> Iterator[None]:
     """Translate transport-level failures into MailServerUnavailableError (HTTP 503).
 
     Gateway statuses mean the JMAP server behind a reverse proxy is down, not that the
     request was bad. AuthenticationError deliberately passes through: bad credentials are
     a configuration problem, not "the mail server is down".
+
+    `http` is the client the requests go through. jmaplib chains the httpx error it wraps on
+    the session, upload and download paths but not on an API call; a SuiteHTTPClient supplies
+    it there.
     """
 
     try:
         yield
     except TransportError as e:
-        if isinstance(e.__cause__, httpx.UnsupportedProtocol):
+        cause = e.__cause__ or getattr(http, "last_error", None)
+        if isinstance(cause, httpx.UnsupportedProtocol):
             # A server URL httpx cannot speak to is a misconfiguration, not an outage.
             raise
-        raise MailServerUnavailableError() from e
+        raise MailServerUnavailableError(not_applied=isinstance(cause, NEVER_SENT)) from e
     except RequestError as e:
         if e.status in UNAVAILABLE_STATUS_CODES:
-            raise MailServerUnavailableError() from e
+            raise MailServerUnavailableError(not_applied=e.status == 429) from e
         raise
+
+
+def never_applied(error: Exception) -> bool:
+    """Whether `error`, raised by a request that was to change something, proves it changed
+    nothing - so that sending it again cannot do the work twice.
+
+    True when the request never left (jmaplib refused it, the connection was never made, the URL
+    cannot be opened), the server turned it away without running it (bad credentials, a 4xx
+    problem, a rate limit), or the call was answered with a method error, which leaves the server
+    as it was (but see MAYBE_APPLIED_ERRORS). Anything else leaves it open: a timeout or a dropped
+    connection after the bytes went out, and a 5xx - a gateway's 502, 503 or 504 included, which
+    it can answer after it forwarded the request.
+    """
+
+    if isinstance(error, MethodError):
+        return error.type not in MAYBE_APPLIED_ERRORS
+    if isinstance(error, MailServerUnavailableError):
+        return error.not_applied
+    if isinstance(error, RequestError):
+        return error.status is not None and error.status < 500
+    if isinstance(error, TransportError):
+        # translated_errors lets one through only for a URL that cannot be opened.
+        return True
+
+    refused_unsent = (CapabilityFieldError, CapabilityNotSupportedError, ReadOnlyAccountError, NoAccountError)
+    return isinstance(error, (AuthenticationError, httpx.InvalidURL, *refused_unsent))
 
 
 class SuiteJMAPClient(JMAPClient):
@@ -381,7 +453,7 @@ class SuiteJMAPClient(JMAPClient):
         if is_mutating(batch, self.capabilities) and not all_mutations_guarded(batch, self.capabilities):
             self.retry_policy = NO_RETRY
         try:
-            with translated_errors():
+            with translated_errors(self.http):
                 super().execute(batch, extra_using=extra_using)
         finally:
             self.retry_policy = policy
@@ -470,7 +542,7 @@ def get_jmap_client(
 
     auth = BasicAuth(user_settings.username, user_settings.get_password("app_password"))
     connect_timeout, read_timeout = timeout
-    http = httpx.Client(
+    http = SuiteHTTPClient(
         follow_redirects=True,
         auth=auth,
         verify=bool(verify_ssl),

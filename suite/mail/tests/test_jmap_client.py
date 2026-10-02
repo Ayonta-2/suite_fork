@@ -10,21 +10,25 @@ from uuid import uuid4
 
 import frappe
 import httpx
-from jmap import AuthenticationError, RequestError, TransportError
+from jmap import AuthenticationError, MethodError, RequestError, TransportError
 from jmap import client as jmap_client
 from jmap.auth import BasicAuth
+from jmap.batch import NoAccountError, ReadOnlyAccountError
 from jmap.core.retry import RetryPolicy
+from jmap.core.session import Session
 from jmap.testing.fake import FakeJMAPServer
 
 from suite.mail import jmap as suite_jmap
 from suite.mail.jmap import (
     RETRY_POLICY,
     MailServerUnavailableError,
+    SuiteHTTPClient,
     SuiteJMAPClient,
     account_view,
     clear_jmap_session,
     get_cached_session,
     get_jmap_client,
+    never_applied,
     store_cached_session,
     translated_errors,
 )
@@ -63,7 +67,7 @@ def _server(server_class: type[FakeJMAPServer] = FakeJMAPServer) -> FakeJMAPServ
 
 
 def _client(server: FakeJMAPServer, retry_policy: RetryPolicy | None = None) -> SuiteJMAPClient:
-    http = httpx.Client(auth=BasicAuth(USER, "pw"), **server.client_kwargs())
+    http = SuiteHTTPClient(auth=BasicAuth(USER, "pw"), **server.client_kwargs())
     client = SuiteJMAPClient.connect(
         f"{SERVER_URL}/.well-known/jmap",
         auth=BasicAuth(USER, "pw"),
@@ -222,6 +226,89 @@ class Unavailability(unittest.TestCase):
 
         self.assertIsInstance(raised.exception.__cause__, httpx.UnsupportedProtocol)
 
+    def test_an_api_url_that_cannot_be_opened_is_not_an_outage_either(self):
+        # A revived session is taken at its word: no discovery request meets the URL first.
+        for api_url, error in {
+            "jmap.example.com/jmap/": TransportError,  # no scheme: httpx.UnsupportedProtocol
+            "ftp://jmap.example.com/jmap/": TransportError,
+            "https://jmap.example.com:port/jmap/": httpx.InvalidURL,
+        }.items():
+            with self.subTest(api_url), SuiteHTTPClient() as http:
+                session = Session.from_wire(self.server.session_document | {"apiUrl": api_url})
+                client = SuiteJMAPClient(
+                    session,
+                    self.client.registry.resolve(session, self.client.default_account, experimental=True),
+                    http,
+                    registry=self.client.registry,
+                    retry_policy=RetryPolicy(max_attempts=1),
+                    default_account=self.client.default_account,
+                    experimental=True,
+                )
+
+                with self.assertRaises(error):
+                    _mailboxes(client)
+
+
+class NeverApplied(unittest.TestCase):
+    """never_applied: whether a failed request provably changed nothing on the server."""
+
+    def setUp(self):
+        self.server = _server()
+        self.client = _client(self.server)
+
+    def failure_of_a_write(self, failure: Exception | int) -> Exception:
+        if isinstance(failure, int):
+            _answer_with(self.server, failure)
+        else:
+            self.server.intercept = mock.Mock(side_effect=failure)
+        self.addCleanup(setattr, self.server, "intercept", None)
+
+        with self.assertRaises(Exception) as raised, self.client.batch() as b:
+            b.mail.email.set(destroy=["e1"])
+        self.server.intercept = None
+        return raised.exception
+
+    def test_a_request_that_never_left_or_was_turned_away_changed_nothing(self):
+        failures = {
+            "connection refused": httpx.ConnectError("connection refused"),
+            "connection timed out": httpx.ConnectTimeout("timed out"),
+            "no free connection": httpx.PoolTimeout("pool exhausted"),
+            "rate limited": 429,
+            "rejected credentials": 401,
+            "bad request": 400,
+        }
+        for name, failure in failures.items():
+            with self.subTest(name):
+                self.assertTrue(never_applied(self.failure_of_a_write(failure)))
+
+    def test_a_request_that_went_out_and_got_no_answer_of_the_servers_may_have_been_applied(self):
+        failures = {
+            "no answer in time": httpx.ReadTimeout("timed out"),
+            "connection dropped": httpx.RemoteProtocolError("server disconnected"),
+            "connection reset": httpx.ReadError("reset by peer"),
+            "bad gateway": 502,
+            "service unavailable": 503,
+            "gateway timeout": 504,
+            "server error": 500,
+        }
+        for name, failure in failures.items():
+            with self.subTest(name):
+                self.assertFalse(never_applied(self.failure_of_a_write(failure)))
+
+    def test_a_request_jmaplib_refuses_to_send_changed_nothing(self):
+        self.assertTrue(never_applied(ReadOnlyAccountError("Email/set", PERSONAL)))
+        self.assertTrue(never_applied(NoAccountError("Email/set", MAIL)))
+
+    def test_an_error_that_says_nothing_of_the_request_proves_nothing(self):
+        self.assertFalse(never_applied(KeyError("blobId")))
+        self.assertFalse(never_applied(MailServerUnavailableError()))
+
+    def test_a_method_error_leaves_the_server_as_it_was_but_for_three(self):
+        self.assertTrue(never_applied(MethodError("serverFail", "c0", {})))
+        for type in ("serverPartialFail", "malformedResult", "missingResponse"):
+            with self.subTest(type):
+                self.assertFalse(never_applied(MethodError(type, "c0", {})))
+
 
 class Retries(unittest.TestCase):
     """RETRY_POLICY: a read or a state-guarded write gets a second attempt, any other write is
@@ -325,12 +412,12 @@ class ClientForUser(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def client_for_user(self, server: FakeJMAPServer) -> SuiteJMAPClient:
-        connect = httpx.Client
-
         def to_fake_server(**kwargs) -> httpx.Client:
-            return connect(auth=kwargs["auth"], **server.client_kwargs())
+            return SuiteHTTPClient(auth=kwargs["auth"], **server.client_kwargs())
 
-        with mock.patch.object(httpx, "Client", side_effect=to_fake_server):
+        # One client per request: this is the next request.
+        frappe.local.request_cache.clear()
+        with mock.patch.object(suite_jmap, "SuiteHTTPClient", side_effect=to_fake_server):
             return get_jmap_client(self.user, ignore_permissions=True)
 
     def test_without_a_cached_session_it_discovers_one_and_caches_it(self):
