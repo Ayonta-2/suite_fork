@@ -494,14 +494,16 @@ class SuiteJMAPClient(JMAPClient):
         if not self.user:
             return
 
-        store_cached_session(self.user, self.session)
-
         # Lazy import to avoid a circular dependency (jmap_account -> suite.mail.jmap).
         from suite.mail.doctype.jmap_account.jmap_account import sync_jmap_accounts
 
         # The session state only changes when the set of accounts available to the user
         # changes on the server, so the local JMAP Account documents may be stale.
         sync_jmap_accounts(self.user, self.session.raw.get("accounts") or {})
+
+        # Cached only once the accounts are synced: if the sync fails, the cache keeps the old
+        # session, the next request finds its state stale again, and the sync gets another try.
+        store_cached_session(self.user, self.session)
 
 
 @request_cache

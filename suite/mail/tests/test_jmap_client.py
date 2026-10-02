@@ -475,6 +475,26 @@ class ClientForUser(unittest.TestCase):
         self.assertEqual(server.blobs[uploaded.blob_id][0], b"sent")
         self.assertEqual(downloaded, b"stored")
 
+    def test_an_account_sync_that_fails_is_tried_again_by_the_next_request(self):
+        server = _server()
+        store_cached_session(self.user, _client(server).session)
+        server.session_state = "changed"
+
+        with (
+            mock.patch(
+                "suite.mail.doctype.jmap_account.jmap_account.sync_jmap_accounts",
+                side_effect=[RuntimeError("database is busy"), None],
+            ) as sync,
+            mock.patch.object(suite_jmap, "log_mail_error"),
+        ):
+            _mailboxes(self.client_for_user(server))  # the session is refreshed, the sync fails
+            self.assertNotEqual(get_cached_session(self.user)["state"], "changed")
+
+            _mailboxes(self.client_for_user(server))
+
+        self.assertEqual(sync.call_count, 2)
+        self.assertEqual(get_cached_session(self.user)["state"], "changed")
+
     def test_an_unreachable_server_is_reported_unavailable_and_nothing_is_cached(self):
         server = _server()
         server.intercept = mock.Mock(side_effect=httpx.ConnectError("connection refused"))
