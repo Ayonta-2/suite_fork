@@ -746,6 +746,8 @@ def chunked_set(
     jmaplib refuses a /set larger than maxObjectsInSet instead of splitting it, so bulk
     callers chunk here. `run(batch, chunk)` must queue exactly one /set for the chunk and
     return its handle; `items` is a dict (create/update payloads) or a list (destroy ids).
+    When a chunk raises, the exception carries the merged outcome of the chunks before it as
+    `applied`.
     """
 
     size = chunk_size or client.capabilities.limits.max_objects_in_set
@@ -753,9 +755,15 @@ def chunked_set(
 
     result = SetResult()
     for chunk in chunks:
-        with client.batch() as b:
-            handle = run(b, chunk)
-        result.absorb(handle.result)
+        try:
+            with client.batch() as b:
+                handle = run(b, chunk)
+            result.absorb(handle.result)
+        except Exception as e:
+            # The chunks before this one are applied. The error travels with what they did
+            # (`applied`), so a caller can report a partial outcome rather than a total failure.
+            e.applied = result
+            raise
 
     return result
 

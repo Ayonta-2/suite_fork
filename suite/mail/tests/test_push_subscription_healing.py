@@ -11,10 +11,14 @@ from types import SimpleNamespace
 from unittest import mock
 
 import frappe
+import httpx
 from frappe.utils.file_lock import LockTimeoutError
+from jmap.auth import BasicAuth
+from jmap.core.retry import RetryPolicy
+from jmap.testing.fake import FakeJMAPServer
 
 from suite.mail.doctype.push_subscription import push_subscription
-from suite.mail.jmap import SetResult
+from suite.mail.jmap import SetResult, SuiteJMAPClient
 from suite.utils.dt import get_utc_now
 
 USER = "user@example.test"
@@ -387,6 +391,96 @@ class DeleteSitePushSubscriptions(unittest.TestCase):
                 [{"id": "site-1", "deviceClientId": "site-device"}],
                 not_destroyed={"site-1": {"type": "notFound", "description": "gone"}},
             )
+
+
+class DeletePushSubscriptions(unittest.TestCase):
+    """``delete_push_subscriptions`` against a fake server that takes two ids to a set: a long
+    list goes out in several sets, and the ones before a refused set are already applied."""
+
+    IDS = ("sub-1", "sub-2", "sub-3", "sub-4", "sub-5")
+
+    def setUp(self) -> None:
+        core = "urn:ietf:params:jmap:core"
+        self.server = FakeJMAPServer(
+            capabilities={core: {"maxObjectsInSet": 2}},
+            accounts={"f7": {"name": USER, "isPersonal": True, "accountCapabilities": {}}},
+            primary_accounts={core: "f7"},
+        )
+        http = httpx.Client(auth=BasicAuth(USER, "pw"), **self.server.client_kwargs())
+        client = SuiteJMAPClient.connect(
+            "https://jmap.example.com/.well-known/jmap",
+            auth=BasicAuth(USER, "pw"),
+            http=http,
+            experimental=True,
+            retry_policy=RetryPolicy(max_attempts=1),
+        )
+        for patcher in (
+            mock.patch.object(push_subscription, "get_jmap_client", return_value=client),
+            mock.patch.object(push_subscription, "has_permission_for_user", return_value=True),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def refuse_after(self, answer: dict | None = None) -> None:
+        """Makes the server answer the first set (destroying all of it, unless `answer` says
+        otherwise) and refuse every set after it outright."""
+
+        def answer_then_refuse(arguments: dict, server: FakeJMAPServer) -> dict:
+            server.fail("PushSubscription/set", "serverFail", description="Storage is unavailable.")
+            return answer or {"destroyed": arguments["destroy"]}
+
+        self.server.handle("PushSubscription/set", answer_then_refuse)
+
+    def refusal(self) -> str:
+        with self.assertRaises(frappe.ValidationError) as refused:
+            push_subscription.delete_push_subscriptions(USER, list(self.IDS))
+
+        return str(refused.exception)
+
+    def test_every_id_is_destroyed_across_sets(self):
+        self.server.handle(
+            "PushSubscription/set", lambda arguments, server: {"destroyed": arguments["destroy"]}
+        )
+
+        push_subscription.delete_push_subscriptions(USER, list(self.IDS))
+
+        destroyed = [
+            call[1]["destroy"] for request in self.server.requests for call in request["methodCalls"]
+        ]
+        self.assertEqual(destroyed, [["sub-1", "sub-2"], ["sub-3", "sub-4"], ["sub-5"]])
+
+    def test_a_refusal_part_way_says_what_was_already_deleted(self):
+        self.refuse_after()
+
+        message = self.refusal()
+
+        self.assertIn("2 of 5 push subscription(s) were deleted", message)
+        self.assertIn("Storage is unavailable.", message)
+
+    def test_a_refusal_part_way_keeps_the_errors_of_the_applied_sets(self):
+        gone = {"type": "notFound", "description": "No such subscription."}
+        self.refuse_after({"destroyed": ["sub-1"], "notDestroyed": {"sub-2": gone}})
+
+        message = self.refusal()
+
+        self.assertIn("1 of 5 push subscription(s) were deleted", message)
+        self.assertIn("sub-2: No such subscription.", message)
+        self.assertIn("Storage is unavailable.", message)
+
+    def test_a_refusal_at_once_is_not_reported_as_partial(self):
+        self.server.fail("PushSubscription/set", "serverFail", description="Storage is unavailable.")
+
+        self.assertEqual(self.refusal(), "Storage is unavailable.")
+
+    def test_ids_the_server_refuses_are_named_with_their_reasons(self):
+        gone = {"type": "notFound", "description": "No such subscription."}
+        self.server.respond("PushSubscription/set", {"destroyed": ["sub-1"], "notDestroyed": {"sub-2": gone}})
+
+        with self.assertRaises(frappe.ValidationError) as refused:
+            push_subscription.delete_push_subscriptions(USER, ["sub-1", "sub-2"])
+
+        self.assertIn("sub-2: No such subscription.", str(refused.exception))
+        self.assertNotIn("sub-1", str(refused.exception))
 
 
 class DeletePushSubscriptionsOnDisable(unittest.TestCase):

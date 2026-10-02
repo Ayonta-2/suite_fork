@@ -578,7 +578,17 @@ def delete_push_subscriptions(user: str, ids: list[str]) -> None:
     try:
         result = _set_subscriptions(user, destroy=ids)
     except MethodError as e:
-        frappe.throw(format_method_error(e), title=_("Push Subscription Deletion Error"))
+        # The chunks before the refused one are applied: say what was deleted, not only what failed.
+        applied = getattr(e, "applied", None) or SetResult()
+        messages = [format_method_error(e), *_not_destroyed_messages(applied)]
+        if applied.destroyed:
+            messages.insert(
+                0,
+                _(
+                    "{0} of {1} push subscription(s) were deleted before the mail server refused the rest:"
+                ).format(len(applied.destroyed), len(ids)),
+            )
+        frappe.throw("<br>".join(messages), title=_("Push Subscription Deletion Error"))
 
     _raise_for_not_destroyed(result)
 
@@ -612,11 +622,16 @@ def _raise_for_not_destroyed(result: SetResult) -> None:
     if not result.not_destroyed:
         return
 
-    error_messages = [f"{id}: {format_set_error(error)}" for id, error in result.not_destroyed.items()]
     frappe.throw(
-        _("Push Subscription Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
+        _("Push Subscription Deletion Error(s):<br>{0}").format("<br>".join(_not_destroyed_messages(result))),
         title=_("Push Subscription Deletion Error"),
     )
+
+
+def _not_destroyed_messages(result: SetResult) -> list[str]:
+    """One line per id the server refused to destroy, with its reason."""
+
+    return [f"{id}: {format_set_error(error)}" for id, error in result.not_destroyed.items()]
 
 
 @frappe.whitelist()
