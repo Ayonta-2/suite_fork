@@ -43,6 +43,7 @@ from suite.mail.jmap import (
     get_default_address_book_id,
     get_jmap_client,
     get_set_error_message,
+    never_applied,
     omit_none,
     upload_blobs,
 )
@@ -750,20 +751,28 @@ class ContactsExchange(OwnerFromUser, Document):
         # Patch addressBookIds only and let the server manage the `updated` timestamp, so we never
         # depend on `updated` being client-writable for ContactCard.
         updates = {id: {"addressBookIds": book_ids} for id, book_ids in targets.items()}
+        total = len(updates)
         try:
             result = chunked_set(client, lambda b, chunk: b.contacts.contact_card.set(update=chunk), updates)
         except Exception as e:
             # The chunks before the one that failed are committed, and the rollback only removes
             # what is still staged: say how much of the import stays in the account.
             applied = getattr(e, "applied", None)
-            if applied and applied.updated:
-                logger.warning("import-cards-partially-moved", moved=len(applied.updated), total=len(updates))
+            moved = len(applied.updated) if applied else 0
+            if not never_applied(e):
+                # No answer, or one that says only some of it was done: the chunk that failed may
+                # be committed as well, so the count is only a floor - and worth saying even at zero.
+                logger.warning("import-cards-possibly-moved", moved=moved, total=total)
                 self._log_output(
                     _(
-                        "{0} of {1} contact(s) were already moved into the destination address "
-                        "book(s) and remain there; the rest were not imported."
-                    ).format(len(applied.updated), len(updates))
+                        "The mail server did not confirm the move. {0} of {1} contact(s) are known to "
+                        "have been moved into the destination address book(s); some of the rest may "
+                        "have been moved as well. Moved contact(s) remain in the account."
+                    ).format(moved, total)
                 )
+            elif moved:
+                logger.warning("import-cards-partially-moved", moved=moved, total=total)
+                self._log_output(self._partially_moved_message(moved, total))
             raise
 
         if result.not_updated:
@@ -772,15 +781,31 @@ class ContactsExchange(OwnerFromUser, Document):
             for error in result.not_updated.values():
                 key = error.get("description") or error.get("type") or "unknown"
                 reasons[key] = reasons.get(key, 0) + 1
-            logger.warning("import-card-not-moved", count=len(result.not_updated), reasons=reasons)
-            frappe.throw(
-                _("Failed to move {0} contact(s) into the destination address book(s): {1}").format(
-                    len(result.not_updated),
-                    format_set_error(next(iter(result.not_updated.values()))),
-                )
+            moved = len(result.updated)
+            logger.warning(
+                "import-card-not-moved", count=len(result.not_updated), moved=moved, reasons=reasons
             )
+            message = _("Failed to move {0} contact(s) into the destination address book(s): {1}").format(
+                len(result.not_updated),
+                format_set_error(next(iter(result.not_updated.values()))),
+            )
+            if moved:
+                # The cards beside the refused ones are committed, like the chunks above.
+                partially_moved = self._partially_moved_message(moved, total)
+                self._log_output(partially_moved)
+                message = f"{message}\n{partially_moved}"
+            frappe.throw(message)
 
         logger.info("import-cards-moved", cards=len(result.updated))
+
+    @staticmethod
+    def _partially_moved_message(moved: int, total: int) -> str:
+        """What a move that stopped short leaves behind, when the server said exactly how far it got."""
+
+        return _(
+            "{0} of {1} contact(s) were already moved into the destination address book(s) and remain "
+            "there; the rest were not imported."
+        ).format(moved, total)
 
     def _discard_staging_address_book(
         self, client: SuiteJMAPClient, staging_address_book_id: str, logger: ExchangeLogger

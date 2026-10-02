@@ -15,7 +15,7 @@ from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
 from suite.mail.doctype.contacts_exchange.contacts_exchange import ContactsExchange, parse_contact_blobs
-from suite.mail.jmap import SuiteJMAPClient
+from suite.mail.jmap import MailServerUnavailableError, SuiteJMAPClient
 
 CORE = "urn:ietf:params:jmap:core"
 CONTACTS = "urn:ietf:params:jmap:contacts"
@@ -91,6 +91,25 @@ class MoveToTargetAddressBooks(_Import):
         with self.assertRaisesRegex(frappe.ValidationError, "notFound"):
             self.move(server, {"c1": {"ab-personal": True}})
 
+        self.assertNotIn("moved", self.doc.output)
+
+    def test_cards_moved_beside_a_refused_one_are_said_to_stay(self):
+        server = _server()
+        server.respond(
+            "ContactCard/set",
+            {
+                "updated": {"c1": None, "c2": None},
+                "notUpdated": {"c3": {"type": "forbidden", "description": "Address book is read-only."}},
+            },
+        )
+
+        with self.assertRaises(frappe.ValidationError) as refused:
+            self.move(server, {id: {"ab-personal": True} for id in ("c1", "c2", "c3")})
+
+        stays = "2 of 3 contact(s) were already moved into the destination address book(s) and remain there"
+        self.assertIn(stays, str(refused.exception))
+        self.assertIn(stays, self.doc.output)
+
     def test_a_move_that_fails_part_way_says_what_was_already_moved(self):
         # Two cards to a set: the first set is applied, the server refuses the second outright.
         server = _server(core={"maxObjectsInSet": 2})
@@ -105,6 +124,29 @@ class MoveToTargetAddressBooks(_Import):
             self.move(server, {id: {"ab-personal": True} for id in ("c1", "c2", "c3")})
 
         self.assertIn("2 of 3 contact(s) were already moved", self.doc.output)
+
+    def test_a_lost_answer_part_way_leaves_the_rest_in_doubt(self):
+        # Two cards to a set: the first set is applied, the second gets no answer.
+        server = _server(core={"maxObjectsInSet": 2})
+        answered = []
+
+        def move(arguments: dict, server: FakeJMAPServer) -> dict:
+            answered.append(arguments)
+            return {"updated": dict.fromkeys(arguments["update"])}
+
+        def time_out_after_the_first_set(request: httpx.Request) -> None:
+            if b"ContactCard/set" in request.content and answered:
+                raise httpx.ReadTimeout("timed out")
+
+        server.handle("ContactCard/set", move)
+        server.intercept = time_out_after_the_first_set
+
+        with self.assertRaises(MailServerUnavailableError):
+            self.move(server, {id: {"ab-personal": True} for id in ("c1", "c2", "c3")})
+
+        self.assertIn("2 of 3 contact(s) are known to have been moved", self.doc.output)
+        self.assertIn("some of the rest may have been moved as well", self.doc.output)
+        self.assertNotIn("the rest were not imported", self.doc.output)
 
 
 class StagingAddressBookCleanup(_Import):

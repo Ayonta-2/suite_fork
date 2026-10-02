@@ -18,7 +18,7 @@ from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
 from suite.mail.doctype.push_subscription import push_subscription
-from suite.mail.jmap import SetResult, SuiteJMAPClient
+from suite.mail.jmap import MailServerUnavailableError, SetResult, SuiteJMAPClient
 from suite.utils.dt import get_utc_now
 
 USER = "user@example.test"
@@ -471,6 +471,26 @@ class DeletePushSubscriptions(unittest.TestCase):
         self.server.fail("PushSubscription/set", "serverFail", description="Storage is unavailable.")
 
         self.assertEqual(self.refusal(), "Storage is unavailable.")
+
+    def test_an_outage_part_way_says_what_was_already_deleted(self):
+        def answer_then_go_down(arguments: dict, server: FakeJMAPServer) -> dict:
+            server.intercept = lambda request: httpx.Response(503)
+            return {"destroyed": arguments["destroy"]}
+
+        self.server.handle("PushSubscription/set", answer_then_go_down)
+
+        message = self.refusal()
+
+        self.assertIn("2 of 5 push subscription(s) were deleted", message)
+        self.assertIn("mail server became unavailable", message)
+        # The set that went unanswered may have been applied.
+        self.assertIn("Some of the rest may have been deleted as well", message)
+
+    def test_an_outage_at_once_stays_an_outage(self):
+        self.server.intercept = mock.Mock(side_effect=httpx.ConnectError("connection refused"))
+
+        with self.assertRaises(MailServerUnavailableError):
+            push_subscription.delete_push_subscriptions(USER, list(self.IDS))
 
     def test_ids_the_server_refuses_are_named_with_their_reasons(self):
         gone = {"type": "notFound", "description": "No such subscription."}

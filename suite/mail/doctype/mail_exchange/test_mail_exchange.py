@@ -20,7 +20,7 @@ from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
 from suite.mail.doctype.mail_exchange.mail_exchange import ImportEmailMeta, MailExchange
-from suite.mail.jmap import SuiteJMAPClient
+from suite.mail.jmap import MailServerUnavailableError, SuiteJMAPClient
 
 CORE = "urn:ietf:params:jmap:core"
 MAIL = "urn:ietf:params:jmap:mail"
@@ -125,6 +125,22 @@ class MoveToTargetMailboxes(_Import):
     def move(self, server: FakeJMAPServer, imported: dict[str, dict[str, bool]]) -> None:
         self.doc._move_to_target_mailboxes(_client(server), imported, self.logger)
 
+    def lose_the_answer_after(self, server: FakeJMAPServer, sets: int) -> None:
+        """Makes the server apply `sets` Email/set calls, then stop answering."""
+
+        answered = []
+
+        def move(arguments: dict, server: FakeJMAPServer) -> dict:
+            answered.append(arguments)
+            return {"updated": dict.fromkeys(arguments["update"])}
+
+        def time_out(request: httpx.Request) -> None:
+            if b"Email/set" in request.content and len(answered) >= sets:
+                raise httpx.ReadTimeout("timed out")
+
+        server.handle("Email/set", move)
+        server.intercept = time_out
+
     def test_an_email_the_server_refuses_to_move_says_why(self):
         server = _server()
         server.respond(
@@ -147,6 +163,25 @@ class MoveToTargetMailboxes(_Import):
 
         with self.assertRaisesRegex(frappe.ValidationError, "notFound"):
             self.move(server, {"e1": {"mb-inbox": True}})
+
+        self.assertNotIn("moved", self.doc.output)
+
+    def test_emails_moved_beside_a_refused_one_are_said_to_stay(self):
+        server = _server()
+        server.respond(
+            "Email/set",
+            {
+                "updated": {"e1": None, "e2": None},
+                "notUpdated": {"e3": {"type": "invalidProperties", "description": "Mailbox is read-only."}},
+            },
+        )
+
+        with self.assertRaises(frappe.ValidationError) as refused:
+            self.move(server, {id: {"mb-inbox": True} for id in ("e1", "e2", "e3")})
+
+        stays = "2 of 3 email(s) were already moved into the destination folder(s) and remain there"
+        self.assertIn(stays, str(refused.exception))
+        self.assertIn(stays, self.doc.output)
 
     def test_a_move_that_fails_part_way_says_what_was_already_moved(self):
         # Two emails to a set: the first set is applied, the server refuses the second outright.
@@ -171,6 +206,37 @@ class MoveToTargetMailboxes(_Import):
             self.move(server, {"e1": {"mb-inbox": True}})
 
         self.assertNotIn("already moved", self.doc.output)
+
+    def test_a_lost_answer_part_way_leaves_the_rest_in_doubt(self):
+        # Two emails to a set: the first set is applied, the second gets no answer.
+        server = _server(core={"maxObjectsInSet": 2})
+        self.lose_the_answer_after(server, sets=1)
+
+        with self.assertRaises(MailServerUnavailableError):
+            self.move(server, {id: {"mb-inbox": True} for id in ("e1", "e2", "e3")})
+
+        self.assertIn("2 of 3 email(s) are known to have been moved", self.doc.output)
+        self.assertIn("some of the rest may have been moved as well", self.doc.output)
+        self.assertNotIn("the rest were not imported", self.doc.output)
+
+    def test_a_lost_answer_at_once_leaves_every_email_in_doubt(self):
+        server = _server()
+        self.lose_the_answer_after(server, sets=0)
+
+        with self.assertRaises(MailServerUnavailableError):
+            self.move(server, {"e1": {"mb-inbox": True}})
+
+        self.assertIn("0 of 1 email(s) are known to have been moved", self.doc.output)
+        self.assertIn("some of the rest may have been moved as well", self.doc.output)
+
+    def test_a_set_the_server_only_partly_made_leaves_the_rest_in_doubt(self):
+        server = _server()
+        server.fail("Email/set", "serverPartialFail")
+
+        with self.assertRaises(MethodError):
+            self.move(server, {"e1": {"mb-inbox": True}, "e2": {"mb-work": True}})
+
+        self.assertIn("some of the rest may have been moved as well", self.doc.output)
 
 
 class StagingMailboxCleanup(_Import):
