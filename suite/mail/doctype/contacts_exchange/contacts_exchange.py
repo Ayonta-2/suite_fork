@@ -43,6 +43,7 @@ from suite.mail.jmap import (
     get_default_address_book_id,
     get_jmap_client,
     get_set_error_message,
+    maybe_applied,
     never_applied,
     omit_none,
     upload_blobs,
@@ -759,7 +760,7 @@ class ContactsExchange(OwnerFromUser, Document):
             # what is still staged: say how much of the import stays in the account.
             applied = getattr(e, "applied", None)
             moved = len(applied.updated) if applied else 0
-            if not never_applied(e):
+            if maybe_applied(e):
                 # No answer, or one that says only some of it was done: the chunk that failed may
                 # be committed as well, so the count is only a floor - and worth saying even at zero.
                 logger.warning("import-cards-possibly-moved", moved=moved, total=total)
@@ -770,9 +771,19 @@ class ContactsExchange(OwnerFromUser, Document):
                         "have been moved as well. Moved contact(s) remain in the account."
                     ).format(moved, total)
                 )
-            elif moved:
+            elif moved and never_applied(e):
                 logger.warning("import-cards-partially-moved", moved=moved, total=total)
                 self._log_output(self._partially_moved_message(moved, total))
+            elif moved:
+                # Not the server's doing, and not known to have stopped short of the chunk it
+                # failed on: the count without a word on the server or on the rest.
+                logger.warning("import-cards-partially-moved", moved=moved, total=total)
+                self._log_output(
+                    _(
+                        "At least {0} of {1} contact(s) were moved into the destination address book(s) before the "
+                        "import failed, and remain there."
+                    ).format(moved, total)
+                )
             raise
 
         if result.not_updated:
@@ -793,7 +804,7 @@ class ContactsExchange(OwnerFromUser, Document):
                 # The cards beside the refused ones are committed, like the chunks above.
                 partially_moved = self._partially_moved_message(moved, total)
                 self._log_output(partially_moved)
-                message = f"{message}\n{partially_moved}"
+                message = f"{message}<br>{partially_moved}"
             frappe.throw(message)
 
         logger.info("import-cards-moved", cards=len(result.updated))

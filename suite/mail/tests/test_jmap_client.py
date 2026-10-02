@@ -28,6 +28,7 @@ from suite.mail.jmap import (
     clear_jmap_session,
     get_cached_session,
     get_jmap_client,
+    maybe_applied,
     never_applied,
     store_cached_session,
     translated_errors,
@@ -303,6 +304,15 @@ class NeverApplied(unittest.TestCase):
     def test_an_error_that_says_nothing_of_the_request_proves_nothing(self):
         self.assertFalse(never_applied(KeyError("blobId")))
         self.assertFalse(never_applied(MailServerUnavailableError()))
+
+    def test_only_the_server_or_the_way_to_it_failing_leaves_a_request_in_doubt(self):
+        self.assertTrue(maybe_applied(self.failure_of_a_write(httpx.ReadTimeout("timed out"))))
+        self.assertTrue(maybe_applied(self.failure_of_a_write(502)))
+        self.assertTrue(maybe_applied(MethodError("serverPartialFail", "c0", {})))
+        # Known not to be applied, and not about the server at all.
+        self.assertFalse(maybe_applied(self.failure_of_a_write(httpx.ConnectError("connection refused"))))
+        self.assertFalse(maybe_applied(MethodError("serverFail", "c0", {})))
+        self.assertFalse(maybe_applied(KeyError("blobId")))
 
     def test_a_method_error_leaves_the_server_as_it_was_but_for_three(self):
         self.assertTrue(never_applied(MethodError("serverFail", "c0", {})))

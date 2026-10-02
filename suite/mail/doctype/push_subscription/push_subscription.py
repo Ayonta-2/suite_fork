@@ -24,6 +24,7 @@ from suite.mail.jmap import (
     format_method_error,
     format_set_error,
     get_jmap_client,
+    never_applied,
 )
 from suite.mail.utils import generate_uuid_style_hash, log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
@@ -592,19 +593,23 @@ def delete_push_subscriptions(user: str, ids: list[str]) -> None:
         frappe.throw("<br>".join(messages), title=_("Push Subscription Deletion Error"))
     except MailServerUnavailableError as e:
         # An outage is the frontend's to report, which it does by this exception's type - unless
-        # chunks before it were applied: only a message of ours can say that, and that the chunk
-        # left unanswered may have been applied too.
+        # chunks before it were applied: only a message of ours can say that, and whether the
+        # chunk the outage met may have been applied too.
         applied = getattr(e, "applied", None) or SetResult()
         if not (applied.destroyed or applied.not_destroyed):
             raise
-        messages = [
-            _(
+        if never_applied(e):
+            deleted = _(
+                "{0} of {1} push subscription(s) were deleted before the mail server became "
+                "unavailable. The rest were not deleted: try again in a moment."
+            )
+        else:
+            deleted = _(
                 "{0} of {1} push subscription(s) were deleted before the mail server became "
                 "unavailable. Some of the rest may have been deleted as well: reload the list "
                 "before trying again."
-            ).format(len(applied.destroyed), len(ids)),
-            *_not_destroyed_messages(applied),
-        ]
+            )
+        messages = [deleted.format(len(applied.destroyed), len(ids)), *_not_destroyed_messages(applied)]
         frappe.throw("<br>".join(messages), title=_("Push Subscription Deletion Error"))
 
     _raise_for_not_destroyed(result)

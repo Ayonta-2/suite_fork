@@ -207,6 +207,24 @@ class MoveToTargetMailboxes(_Import):
 
         self.assertNotIn("already moved", self.doc.output)
 
+    def test_a_failure_of_our_own_part_way_is_not_laid_at_the_mail_servers_door(self):
+        server = _server(core={"maxObjectsInSet": 2})
+        answered = []
+
+        def move(arguments: dict, server: FakeJMAPServer) -> dict:
+            if answered:
+                raise KeyError("a bug on this side")
+            answered.append(arguments)
+            return {"updated": dict.fromkeys(arguments["update"])}
+
+        server.handle("Email/set", move)
+
+        with self.assertRaises(KeyError):
+            self.move(server, {id: {"mb-inbox": True} for id in ("e1", "e2", "e3")})
+
+        self.assertIn("At least 2 of 3 email(s) were moved", self.doc.output)
+        self.assertNotIn("mail server", self.doc.output)
+
     def test_a_lost_answer_part_way_leaves_the_rest_in_doubt(self):
         # Two emails to a set: the first set is applied, the second gets no answer.
         server = _server(core={"maxObjectsInSet": 2})

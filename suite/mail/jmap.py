@@ -451,11 +451,24 @@ def never_applied(error: Exception) -> bool:
     return isinstance(error, (AuthenticationError, httpx.InvalidURL, *refused_unsent))
 
 
+def maybe_applied(error: Exception) -> bool:
+    """Whether `error` is the mail server, or the way to it, failing in a manner that leaves open
+    whether the request was applied. False for an error never_applied vouches for - and for one
+    that is not about the server at all, such as a bug on this side."""
+
+    about_the_server = (MethodError, MailServerUnavailableError, RequestError, TransportError)
+    return isinstance(error, about_the_server) and not never_applied(error)
+
+
 class SuiteJMAPClient(JMAPClient):
     """JMAPClient that speaks Frappe: 503 translation on every request, and Redis session
     upkeep (re-cache + JMAP Account resync) when the server reports a new session state."""
 
     user: str | None = None
+    #: When the JMAP Account sync a session refresh owes may be tried again (time.time()), after
+    #: one that failed; None when none is owed. Shared by the peers, and kept with the cached
+    #: session for the requests that follow.
+    sync_owed_after: float | None = None
     #: This client and every account view made from it, which share one session: a refresh on
     #: any of them is a refresh for all. get_jmap_client and account_view keep the list.
     peers: list[SuiteJMAPClient] | tuple[SuiteJMAPClient, ...] = ()

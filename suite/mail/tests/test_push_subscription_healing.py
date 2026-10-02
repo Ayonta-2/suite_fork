@@ -486,6 +486,21 @@ class DeletePushSubscriptions(unittest.TestCase):
         # The set that went unanswered may have been applied.
         self.assertIn("Some of the rest may have been deleted as well", message)
 
+    def test_a_server_that_turned_the_rest_away_leaves_no_doubt_about_them(self):
+        def answer_then_limit(arguments: dict, server: FakeJMAPServer) -> dict:
+            # A rate limit: the request it answers was not run.
+            server.intercept = lambda request: httpx.Response(429)
+            return {"destroyed": arguments["destroy"]}
+
+        self.server.handle("PushSubscription/set", answer_then_limit)
+
+        message = self.refusal()
+
+        self.assertIn("2 of 5 push subscription(s) were deleted", message)
+        self.assertIn("mail server became unavailable", message)
+        self.assertIn("The rest were not deleted", message)
+        self.assertNotIn("may have been deleted", message)
+
     def test_an_outage_at_once_stays_an_outage(self):
         self.server.intercept = mock.Mock(side_effect=httpx.ConnectError("connection refused"))
 
