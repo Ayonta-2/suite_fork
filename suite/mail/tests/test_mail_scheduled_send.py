@@ -23,7 +23,6 @@ and retry/dismiss against delivered (final) submissions.
 
 from datetime import datetime
 from unittest import mock
-from uuid import UUID
 
 import frappe
 import httpx
@@ -1023,157 +1022,177 @@ class TestRefusedOutboxCalls(_FakeServerCase):
         self.assertIsNone(details["identity_email"])
 
 
-# When the failed submission under retry was made (Unix milliseconds).
-MADE = 1_790_000_000_000
-
-
 class TestRetryFailedMail(_FakeServerCase):
     """A retry resubmits the email and then drops the failed record. Once the email is
     resubmitted the retry has succeeded, whatever becomes of the old record: an error there
-    would have the user retry again, and the email sent twice."""
+    would have the user retry again, and the email sent twice - as would a record left behind
+    that could be retried once more, or two retries of one record at the same time."""
 
-    def retry(self, refuse_destroy, others: tuple[dict, ...] = ()) -> tuple[FakeJMAPServer, dict, mock.Mock]:
-        """Retries failed submission "sub1" on a server that accepts the new submission as
-        "sub2"; `refuse_destroy`, when given, is called with the server as the old record's
-        destroy arrives and returns what the server answers it with. `others` are further
-        submissions of the same email the server holds. Returns the server, the endpoint's
-        answer, and the error log."""
+    def setUp(self) -> None:
+        super().setUp()
+        self.server = self.serve()
+        # What the server holds: failed submission "sub1" of email "e1" to begin with. It takes
+        # each new submission as "sub2", "sub3", ... and keeps it, failed in its turn.
+        self.held = [self.submission("sub1", envid="0199c3f0-7a10-7c7e-9d3b-5b1f0a2c4d6e")]
+        self.refuse_destroy = None
+        self.on_create = None
 
-        server = self.serve()
-        held = [self.submission("sub1", made=MADE), *others]
+        def get(arguments: dict, server: FakeJMAPServer) -> dict:
+            found = [s for s in self.held if s["id"] in arguments["ids"]]
+            return {"state": "s1", "list": found, "notFound": []}
 
-        def get_submissions(arguments: dict, server: FakeJMAPServer) -> dict:
-            return {"state": "s1", "list": [s for s in held if s["id"] in arguments["ids"]], "notFound": []}
+        def query(arguments: dict, server: FakeJMAPServer) -> dict:
+            email_ids = arguments["filter"]["emailIds"]
+            return {"queryState": "q1", "ids": [s["id"] for s in self.held if s["emailId"] in email_ids]}
 
-        server.handle("EmailSubmission/get", get_submissions)
-        server.respond("EmailSubmission/query", {"queryState": "q1", "ids": [s["id"] for s in held]})
-        server.respond("Email/get", {"state": "e1", "list": [{"id": "e1"}], "notFound": []})
-
-        def set_submission(arguments: dict, server: FakeJMAPServer) -> dict:
+        def set_(arguments: dict, server: FakeJMAPServer) -> dict:
             if create := arguments.get("create"):
-                return {"created": {ref: {"id": "sub2"} for ref in create}}
-            if refuse_destroy:
-                return refuse_destroy(server)
+                if self.on_create:
+                    self.on_create()
+                created = {}
+                for ref, submission in create.items():
+                    created[ref] = {"id": f"sub{len(self.held) + 1}"}
+                    self.held.append(self.submission(created[ref]["id"]) | submission)
+                return {"created": created}
+            if self.refuse_destroy and (refusal := self.refuse_destroy(arguments["destroy"])):
+                return refusal
+            self.held = [s for s in self.held if s["id"] not in arguments["destroy"]]
             return {"destroyed": arguments["destroy"]}
 
-        server.handle("EmailSubmission/set", set_submission)
+        self.server.handle("EmailSubmission/get", get)
+        self.server.handle("EmailSubmission/query", query)
+        self.server.handle("EmailSubmission/set", set_)
+        self.server.respond("Email/get", {"state": "e1", "list": [{"id": "e1"}], "notFound": []})
 
-        with (
-            mock.patch("suite.mail.api.scheduled.get_identity_id_by_email", return_value="i1"),
-            mock.patch("suite.mail.api.scheduled.log_mail_error") as logged,
-        ):
-            answer = retry_failed_mail(ACCOUNT, "sub1")
+        patcher = mock.patch("suite.mail.api.scheduled.get_identity_id_by_email", return_value="i1")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch("suite.mail.api.scheduled.log_mail_error")
+        self.logged = patcher.start()
+        self.addCleanup(patcher.stop)
 
-        return server, answer, logged
+    def submission(self, id: str, envid: str | None = None, **properties) -> dict:
+        """A concluded submission of email "e1". `envid` is the ENVID this app wrote into its
+        envelope; None is a submission another client made."""
 
-    def submission(self, id: str, made: int | None, due_in_hours: int = 1) -> dict:
-        """A concluded submission of email "e1". `made` is when this app made it, which it
-        writes into the envelope as the ENVID; None is a submission another client made."""
-
-        mail_from = {"email": USER}
-        if made is not None:
-            mail_from["parameters"] = {"ENVID": str(UUID(int=(made << 80) | (7 << 76) | (2 << 62)))}
+        mail_from = {"email": USER, "parameters": {"ENVID": envid} if envid else None}
         return {
             "id": id,
             "emailId": "e1",
             "threadId": "t1",
             "undoStatus": "final",
-            "sendAt": to_utc_z(add_to_date(now(), hours=due_in_hours)),
+            "sendAt": to_utc_z(add_to_date(now(), hours=-1)),
             "envelope": {"mailFrom": mail_from, "rcptTo": [{"email": "to@example.test"}]},
+            **properties,
         }
 
-    def sets(self, server: FakeJMAPServer, kind: str) -> list:
+    def sets(self, kind: str) -> list:
         """The `kind` ("create" or "destroy") argument of every EmailSubmission/set sent
         with one, in order."""
 
         return [
             call[1][kind]
-            for request in server.requests
+            for request in self.server.requests
             for call in request["methodCalls"]
             if call[0] == "EmailSubmission/set" and call[1].get(kind)
         ]
 
     def test_a_retry_resubmits_then_drops_the_failed_record(self):
-        server, answer, logged = self.retry(refuse_destroy=None)
+        answer = retry_failed_mail(ACCOUNT, "sub1")
 
         self.assertEqual(answer, {"id": "sub2"})
-        (create,) = self.sets(server, "create")
+        (create,) = self.sets("create")
         self.assertEqual([submission["emailId"] for submission in create.values()], ["e1"])
-        self.assertEqual(self.sets(server, "destroy"), [["sub1"]])
-        logged.assert_not_called()
+        self.assertEqual(self.sets("destroy"), [["sub1"]])
+        self.logged.assert_not_called()
 
     def test_a_refused_destroy_does_not_fail_a_retry_that_was_sent(self):
         refusal = {"type": "forbidden", "description": "The record is locked."}
-        server, answer, logged = self.retry(lambda server: {"notDestroyed": {"sub1": refusal}})
+        self.refuse_destroy = lambda ids: {"notDestroyed": dict.fromkeys(ids, refusal)}
+
+        answer = retry_failed_mail(ACCOUNT, "sub1")
 
         self.assertEqual(answer, {"id": "sub2"})
         # Sent once, and the destroy was attempted.
-        self.assertEqual(len(self.sets(server, "create")), 1)
-        self.assertEqual(self.sets(server, "destroy"), [["sub1"]])
-        logged.assert_called_once()
-        self.assertIn("The record is locked.", str(logged.call_args))
+        self.assertEqual(len(self.sets("create")), 1)
+        self.assertEqual(self.sets("destroy"), [["sub1"]])
+        self.logged.assert_called_once()
+        self.assertIn("The record is locked.", str(self.logged.call_args))
 
     def test_a_destroy_that_never_lands_does_not_fail_a_retry_that_was_sent(self):
-        def drop_connection(server: FakeJMAPServer) -> dict:
+        def drop_connection(ids: list[str]) -> dict:
             raise httpx.ConnectError("connection reset")
 
-        server, answer, logged = self.retry(drop_connection)
+        self.refuse_destroy = drop_connection
+
+        answer = retry_failed_mail(ACCOUNT, "sub1")
 
         self.assertEqual(answer, {"id": "sub2"})
-        self.assertEqual(len(self.sets(server, "create")), 1)
-        logged.assert_called_once()
+        self.assertEqual(len(self.sets("create")), 1)
+        self.logged.assert_called_once()
 
-    def test_a_record_already_retried_is_removed_not_sent_again(self):
-        # An earlier retry sent the email again as "sub2" and could not remove "sub1".
-        server, answer, logged = self.retry(None, others=(self.submission("sub2", made=MADE + 60_000),))
-
-        self.assertEqual(answer, {"id": "sub2"})
-        self.assertEqual(self.sets(server, "create"), [])
-        self.assertEqual(self.sets(server, "destroy"), [["sub1"]])
-        logged.assert_not_called()
-
-    def test_a_record_already_retried_that_still_cannot_be_removed_is_not_sent_again(self):
+    def test_a_record_its_retry_could_not_remove_is_not_sent_again(self):
         refusal = {"type": "forbidden", "description": "The record is locked."}
-        server, answer, logged = self.retry(
-            lambda server: {"notDestroyed": {"sub1": refusal}},
-            others=(self.submission("sub2", made=MADE + 60_000),),
+        self.refuse_destroy = lambda ids: {"notDestroyed": dict.fromkeys(ids, refusal)}
+        retry_failed_mail(ACCOUNT, "sub1")
+
+        # "sub1" is still listed, with its Send Again action.
+        answer = retry_failed_mail(ACCOUNT, "sub1")
+
+        self.assertEqual(answer, {"id": "sub2"})
+        self.assertEqual(len(self.sets("create")), 1)
+        self.assertEqual(self.sets("destroy"), [["sub1"], ["sub1"]])
+
+    def test_a_retry_that_failed_in_its_turn_can_be_retried(self):
+        # "sub1" stays behind, older than its retry "sub2", which is the record retried now.
+        self.refuse_destroy = (
+            lambda ids: {"notDestroyed": {"sub1": {"type": "forbidden"}}} if "sub1" in ids else None
         )
+        retry_failed_mail(ACCOUNT, "sub1")
+
+        answer = retry_failed_mail(ACCOUNT, "sub2")
+
+        self.assertEqual(answer, {"id": "sub3"})
+        self.assertEqual(len(self.sets("create")), 2)
+        self.assertEqual([s["id"] for s in self.held], ["sub1", "sub3"])
+
+    def test_another_submission_of_the_same_email_is_not_this_records_retry(self):
+        # Made after "sub1" failed and due later: by another client, and by this app for some
+        # other reason than retrying "sub1".
+        later = to_utc_z(add_to_date(now(), hours=2))
+        self.held += [
+            self.submission("sub2", undoStatus="pending", sendAt=later),
+            self.submission("sub3", envid="0199c3f1-1b2c-7d3e-8f40-6a7b8c9d0e1f", sendAt=later),
+        ]
+
+        answer = retry_failed_mail(ACCOUNT, "sub1")
+
+        self.assertEqual(answer, {"id": "sub4"})
+        self.assertEqual(len(self.sets("create")), 1)
+        self.assertEqual(self.sets("destroy"), [["sub1"]])
+
+    def test_a_retry_arriving_while_another_is_under_way_sends_nothing(self):
+        second = []
+
+        def retry_again_meanwhile() -> None:
+            # The first retry has looked for a replacement, found none, and is creating one.
+            with self.assertRaises(frappe.ValidationError) as refused:
+                retry_failed_mail(ACCOUNT, "sub1")
+            second.append(str(refused.exception))
+
+        self.on_create = retry_again_meanwhile
+
+        with mock.patch("suite.mail.api.scheduled.RETRY_LOCK_WAIT", 0.2):
+            answer = retry_failed_mail(ACCOUNT, "sub1")
 
         self.assertEqual(answer, {"id": "sub2"})
-        self.assertEqual(self.sets(server, "create"), [])
-        logged.assert_called_once()
-
-    def test_a_replacement_made_later_counts_though_it_was_due_sooner(self):
-        # Send-now: the replacement goes out before the held submission it replaced was due.
-        replacement = self.submission("sub2", made=MADE + 60_000, due_in_hours=-1)
-        server, answer, _logged = self.retry(None, others=(replacement,))
-
-        self.assertEqual(answer, {"id": "sub2"})
-        self.assertEqual(self.sets(server, "create"), [])
-
-    def test_an_older_record_of_the_same_email_does_not_keep_the_latest_from_being_retried(self):
-        # "sub0" is what an earlier retry left behind; "sub1" is that retry, and failed too.
-        server, answer, _logged = self.retry(None, others=(self.submission("sub0", made=MADE - 60_000),))
-
-        self.assertEqual(answer, {"id": "sub2"})
-        self.assertEqual(len(self.sets(server, "create")), 1)
-        self.assertEqual(self.sets(server, "destroy"), [["sub1"]])
-
-    def test_another_clients_later_submission_of_the_email_counts_by_when_it_was_due(self):
-        later = self.submission("sub9", made=None, due_in_hours=2)
-        server, answer, _logged = self.retry(None, others=(later,))
-
-        self.assertEqual(answer, {"id": "sub9"})
-        self.assertEqual(self.sets(server, "create"), [])
+        self.assertEqual(second, ["This email is already being sent again."])
+        self.assertEqual(len(self.sets("create")), 1)
 
     def test_a_retry_is_not_sent_when_the_server_will_not_say_what_else_it_holds(self):
-        server = self.serve()
-        envelope = {"mailFrom": {"email": USER}, "rcptTo": [{"email": "to@example.test"}]}
-        self.hold(server, undo_status="final", envelope=envelope)
-        server.respond("Email/get", {"state": "e1", "list": [{"id": "e1"}], "notFound": []})
-        server.fail("EmailSubmission/query", "serverFail", description="Try again later.")
+        self.server.fail("EmailSubmission/query", "serverFail", description="Try again later.")
 
         with self.assertRaisesRegex(frappe.ValidationError, "Try again later."):
             retry_failed_mail(ACCOUNT, "sub1")
 
-        self.assertNotIn("EmailSubmission/set", self.methods(server))
+        self.assertNotIn("EmailSubmission/set", self.methods(self.server))

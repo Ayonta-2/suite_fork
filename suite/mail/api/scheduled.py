@@ -29,9 +29,11 @@ landed — until they are retried or dismissed, or the server expunges the submi
 every other concluded row.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from typing import Literal
-from uuid import UUID, uuid7
+from uuid import NAMESPACE_OID, uuid5, uuid7
 
 import frappe
 from frappe import _
@@ -47,6 +49,7 @@ from jmap import MethodError
 from jmap.core.invocation import Handle
 from jmap.models.responses import SetResponse
 from pydantic import BaseModel, model_validator
+from redis.exceptions import LockError
 
 from suite.mail.jmap import (
     SuiteJMAPClient,
@@ -78,6 +81,11 @@ GONE_ERRORS = ("accountNotFound", "notFound")
 # (a listing shows what it can), "gone" as nothing found only when the error says so, and
 # "throw" never.
 Refused = Literal["empty", "gone", "throw"]
+
+# How long a retry waits for another retry of the same record to finish (seconds), and how long
+# one may hold the record: past every request it makes timing out.
+RETRY_LOCK_WAIT = 10
+RETRY_LOCK_TIMEOUT = 600
 
 
 class SubmissionFilter(BaseModel):
@@ -261,25 +269,27 @@ def cancel_scheduled_mail(account: str, id: str) -> dict:
 @frappe.whitelist()
 def retry_failed_mail(account: str, id: str) -> dict:
     """Resubmits a finalized submission's email for immediate delivery, replacing the failed
-    record so the listing shows only the live attempt. A record whose email was already
-    resubmitted - a retry that could not remove it - is only removed."""
+    record so the listing shows only the live attempt. A record that was already retried - by
+    a retry that could not remove it - is only removed."""
 
     _validate_ids(account=account, id=id)
 
     client = get_account_client(account)
-    submission = _get_final_submission(client, id)
+    with _retrying(account, id):
+        submission = _get_final_submission(client, id)
+        args = _resubmit_args(client, submission)
 
-    args = _resubmit_args(client, submission)
+        if replacement := _replacement_of(client, submission):
+            # Already retried: the email went out again as `replacement`, and only the removal
+            # of this record failed. Sending it once more would send the email twice, so the
+            # retry that is left to do is the removal.
+            _drop_retried_record(client, id)
+            return {"id": replacement["id"]}
 
-    if later := _later_submission(client, submission):
-        # Already retried: the email went out again as `later`, and only the removal of this
-        # record failed. Sending it once more would send the email twice, so the retry that
-        # is left to do is the removal.
+        created = _resubmit(
+            client, account, **args, envelope_id=_retry_envelope_id(submission), hold_until=None
+        )
         _drop_retried_record(client, id)
-        return {"id": later["id"]}
-
-    created = _resubmit(client, account, **args, envelope_id=str(uuid7()), hold_until=None)
-    _drop_retried_record(client, id)
 
     return {"id": created["id"]}
 
@@ -661,7 +671,7 @@ def _resubmit(
 def _drop_retried_record(client: SuiteJMAPClient, submission_id: str) -> None:
     """Removes the record a retry replaced. The email is already resubmitted: failing here
     would invite a second retry. A record that could not be removed stays on the listing, where
-    retrying it again only comes back here (see _later_submission)."""
+    retrying it again only comes back here (see _replacement_of)."""
 
     try:
         _destroy_submission(client, submission_id)
@@ -672,9 +682,39 @@ def _drop_retried_record(client: SuiteJMAPClient, submission_id: str) -> None:
         )
 
 
-def _later_submission(client: SuiteJMAPClient, submission: dict) -> dict | None:
-    """The latest submission of the same email made after `submission`, if the server holds one:
-    what tells a record that was already retried from one that still needs it.
+@contextmanager
+def _retrying(account: str, submission_id: str) -> Iterator[None]:
+    """Holds the retry of one record to a single request at a time: looking for its replacement
+    and creating one must not interleave with another request doing the same, or both find
+    none and both send."""
+
+    lock = frappe.cache.lock(
+        f"mail-outbox-retry:{frappe.local.site}:{account}:{submission_id}", timeout=RETRY_LOCK_TIMEOUT
+    )
+    if not lock.acquire(blocking=True, blocking_timeout=RETRY_LOCK_WAIT):
+        frappe.throw(_("This email is already being sent again."))
+
+    try:
+        yield
+    finally:
+        # A lock that ran out is no longer ours to release, and no reason to fail the retry.
+        with suppress(LockError):
+            lock.release()
+
+
+def _retry_envelope_id(submission: dict) -> str:
+    """The ENVID of the submission that a retry of `submission` creates. It is derived from the
+    failed record's own, so that record's replacement can be told from every other submission
+    of the same email - another client's, an older retry's."""
+
+    retried = _envid(submission) or "|".join(
+        str(submission.get(key) or "") for key in ("id", "emailId", "sendAt")
+    )
+    return str(uuid5(NAMESPACE_OID, f"suite.mail.outbox.retry:{retried}"))
+
+
+def _replacement_of(client: SuiteJMAPClient, submission: dict) -> dict | None:
+    """The submission a retry of `submission` already created, if the server holds one.
 
     Read from the server like everything else here. Not knowing is not "none" - a lookup the
     server refuses is thrown, since a retry sent on a guess is an email sent twice."""
@@ -688,33 +728,9 @@ def _later_submission(client: SuiteJMAPClient, submission: dict) -> dict | None:
     if not ids:
         return None
 
+    envelope_id = _retry_envelope_id(submission)
     others = _get_submissions(client, ids, SUBMISSION_PROPERTIES, refused="throw")
-    later = [other for other in others if _made_after(other, submission)]
-    return max(later, key=lambda other: other.get("sendAt") or "", default=None)
-
-
-def _made_after(submission: dict, other: dict) -> bool:
-    """Whether `submission` was made after `other`. The ENVID this app writes is a UUIDv7,
-    which carries its creation time, and decides between two of ours: sendAt would not, a
-    send-now replacement being due before the held submission it replaced. sendAt decides
-    when either is another client's."""
-
-    made, other_made = _made_at(submission), _made_at(other)
-    if made is not None and other_made is not None:
-        return made > other_made
-
-    return (submission.get("sendAt") or "") > (other.get("sendAt") or "")
-
-
-def _made_at(submission: dict) -> int | None:
-    """When this app made the submission (Unix milliseconds), read from its ENVID."""
-
-    try:
-        envid = UUID(_envid(submission) or "")
-    except ValueError:
-        return None
-
-    return envid.int >> 80 if envid.version == 7 else None
+    return next((other for other in others if _envid(other) == envelope_id), None)
 
 
 def _set_result(handle: Handle[SetResponse]) -> SetResponse:
