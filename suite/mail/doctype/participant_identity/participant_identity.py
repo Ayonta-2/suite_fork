@@ -149,10 +149,14 @@ def get_participant_identity(account: str, id: str) -> dict:
     """Returns participant identity details for the given account and identity ID."""
 
     client = get_account_client(account)
-    with client.batch() as b:
-        h = b.calendars.participant_identity.get(ids=[id])
+    try:
+        with client.batch() as b:
+            h = b.calendars.participant_identity.get(ids=[id])
+        identities = h.result.items
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Participant Identity Fetch Error"))
 
-    if identities := h.result.items:
+    if identities:
         return format_participant_identity(account, identities[0].to_wire())
 
     frappe.throw(
@@ -217,7 +221,8 @@ def fetch_participant_identities(account: str, page: int = 1, limit: int = 10) -
     with client.batch() as b:
         h = b.calendars.participant_identity.get()
 
-    identities = [i.to_wire() for i in h.result.items]
+    # A listing the server refuses is an empty one, not a failed page.
+    identities = [] if h.error else [i.to_wire() for i in h.result.items]
     formatted_identities = [format_participant_identity(account, identity) for identity in identities]
     frappe.cache.set_value(_get_total_cache_key(account), len(identities), expires_in_sec=600)
 

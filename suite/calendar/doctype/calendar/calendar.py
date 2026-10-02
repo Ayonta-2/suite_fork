@@ -209,10 +209,14 @@ def get_calendar(account: str, id: str) -> dict:
     """Returns calendar details for the given account and id."""
 
     client = get_account_client(account)
-    with client.batch() as b:
-        h = b.calendars.calendar.get(ids=[id], properties=CALENDAR_PROPERTIES)
+    try:
+        with client.batch() as b:
+            h = b.calendars.calendar.get(ids=[id], properties=CALENDAR_PROPERTIES)
+        calendars = h.result.items
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Fetch Error"))
 
-    if calendars := h.result.items:
+    if calendars:
         return format_calendar(account, calendars[0].to_wire())
 
     frappe.throw(
@@ -334,7 +338,13 @@ def ensure_default_alerts(account: str) -> None:
         if update:
             with client.batch() as b:
                 h = b.calendars.calendar.set(update=update)
-            h.result  # a refused write is a failure to log, not a seeding to mark
+            # a refused write is a failure to log, not a seeding to mark
+            if not_updated := h.result.not_updated:
+                log_mail_error(
+                    "Calendar Default Alerts Seeding",
+                    "\n".join(f"{id}: {format_set_error(error)}" for id, error in not_updated.items()),
+                )
+                return
     except Exception:
         # Best-effort: a seeding failure must never break calendar listing. The mark
         # stays unset, so the next load retries.
@@ -362,7 +372,8 @@ def fetch_calendars(account: str, page: int = 1, limit: int = 10) -> list:
     with client.batch() as b:
         h = b.calendars.calendar.get(properties=CALENDAR_PROPERTIES)
 
-    calendars = [c.to_wire() for c in h.result.items]
+    # A listing the server refuses is an empty one, not a failed page.
+    calendars = [] if h.error else [c.to_wire() for c in h.result.items]
     formatted_calendars = [format_calendar(account, calendar) for calendar in calendars]
     frappe.cache.set_value(_get_total_cache_key(account), len(calendars), expires_in_sec=600)
 

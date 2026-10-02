@@ -11,6 +11,7 @@ from jmap import MethodError
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
     SuiteJMAPClient,
+    chunked_get,
     chunked_set,
     format_method_error,
     format_set_error,
@@ -169,8 +170,14 @@ def get_event_notifications(account: str, ids: list[str]) -> list[dict]:
 
     client = get_account_client(account)
 
+    try:
+        fetched = fetch_notifications(client, ids)
+    except MethodError:
+        # A read the server refuses finds nothing, rather than failing the page that asked.
+        fetched = []
+
     notifications = {}
-    for notification in fetch_notifications(client, ids):
+    for notification in fetched:
         notification = format_event_notification(account, notification)
         notifications[notification["id"]] = notification
 
@@ -203,18 +210,27 @@ def fetch_notifications(
     client: SuiteJMAPClient, ids: list[str] | None = None, properties: list[str] | None = None
 ) -> list[dict]:
     """Fetches raw notification objects, always naming the properties (``[]`` means "no
-    preference", not "no properties" — an empty set would fetch nothing usable). jmaplib
-    chunks oversized id lists itself, carrying the properties on every chunk."""
+    preference", not "no properties" — an empty set would fetch nothing usable). Large id
+    lists are chunked, the properties carried on every chunk, and concatenated like the old
+    client — a concurrent change must not abort the read."""
 
     properties = properties or EVENT_NOTIFICATION_PROPERTIES
 
-    with client.batch() as b:
-        if ids:
-            h = b.calendars.calendar_event_notification.get(ids=ids, properties=properties)
-        else:
+    if ids is None:
+        with client.batch() as b:
             h = b.calendars.calendar_event_notification.get(properties=properties)
+        notifications = h.result.items
+    elif not ids:
+        # A query that matched nothing asks for nothing: `ids: []` is not "every notification".
+        notifications = []
+    else:
+        notifications = chunked_get(
+            client,
+            lambda b, chunk: b.calendars.calendar_event_notification.get(ids=chunk, properties=properties),
+            ids,
+        )
 
-    return [n.to_wire() for n in h.result.items]
+    return [n.to_wire() for n in notifications]
 
 
 def _query_notifications(
@@ -246,6 +262,10 @@ def _query_notifications(
                 calculate_total=total is None,
                 **filter_kwargs,
             )
+        if h.error:
+            # A refused page ends the listing with what the pages before it found, as an
+            # empty one would.
+            break
         response = h.result
 
         ids.extend(response.ids)

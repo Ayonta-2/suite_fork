@@ -135,8 +135,10 @@ class TestCalendarCalendars(StalwartIntegrationTestCase):
     def test_foreign_account_denied(self):
         other = self.create_member()
         with self.set_user(other.email):
-            self.assertRaises(Exception, add_calendar, self.account, unique_name("cal"))
-            self.assertRaises(Exception, create_calendar, self.account, unique_name("cal"))
-            self.assertRaises(Exception, edit_calendar, self.account, "b", name=unique_name("cal"))
-            self.assertRaises(Exception, delete_calendar, self.account, "b")
-            self.assertRaises(Exception, get_calendars_with_shared, self.account)
+            self.assertRaises(frappe.ValidationError, add_calendar, self.account, unique_name("cal"))
+            self.assertRaises(frappe.ValidationError, create_calendar, self.account, unique_name("cal"))
+            self.assertRaises(
+                frappe.ValidationError, edit_calendar, self.account, "b", name=unique_name("cal")
+            )
+            self.assertRaises(frappe.ValidationError, delete_calendar, self.account, "b")
+            self.assertRaises(frappe.ValidationError, get_calendars_with_shared, self.account)

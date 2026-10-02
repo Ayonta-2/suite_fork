@@ -214,7 +214,11 @@ def delete_calendar(account: str, id: str) -> None:
     """Deletes a calendar and the events on it. The default calendar stays: it is
     where new events go, invitations included."""
 
-    calendars = jmap_events.get_calendars(get_account_client(account), [id])
+    try:
+        calendars = jmap_events.get_calendars(get_account_client(account), [id])
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Deletion Error"))
+
     if not calendars:
         frappe.throw(_("Calendar not found."), frappe.DoesNotExistError)
     if calendars[0].get("isDefault"):
@@ -832,18 +836,23 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
         return
 
     client = get_account_client(account)
-    base_ids = jmap_events.get_base_event_ids(client, [event["id"] for event in events])
-    if not base_ids:
-        return
+    try:
+        base_ids = jmap_events.get_base_event_ids(client, [event["id"] for event in events])
+        if not base_ids:
+            return
 
-    master_ids = sorted(set(base_ids.values()))
-    # The raw copies carry recurrenceOverrides, which the formatter drops — and the override is
-    # the only thing that says which properties an occurrence owns rather than inherits.
-    overrides = {
-        master["id"]: master.get("recurrenceOverrides") or {}
-        for master in jmap_events.get_events(client, master_ids)
-    }
-    masters = {master["id"]: master for master in get_calendar_events_by_ids(account, master_ids)}
+        master_ids = sorted(set(base_ids.values()))
+        # The raw copies carry recurrenceOverrides, which the formatter drops — and the override is
+        # the only thing that says which properties an occurrence owns rather than inherits.
+        overrides = {
+            master["id"]: master.get("recurrenceOverrides") or {}
+            for master in jmap_events.get_events(client, master_ids)
+        }
+        masters = {master["id"]: master for master in get_calendar_events_by_ids(account, master_ids)}
+    except MethodError:
+        # The events are the answer; what their series say about them is an addition to it. A
+        # lookup the server refuses leaves them as they came rather than failing the whole read.
+        return
 
     for event in events:
         master = masters.get(base_ids.get(event["id"]))
