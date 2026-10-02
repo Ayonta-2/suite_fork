@@ -1,10 +1,11 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-"""What a Mail Queue row records when the server refuses to draft or submit it.
+"""What a Mail Queue row records when drafting or submitting it does not go through.
 
 The pending-mail worker retries only rows marked failed with a retry time, so a refusal the row
-does not record that way is a mail that is never sent.
+does not record that way is a mail that is never sent - and a call that may have been applied,
+recorded that way, is a mail sent twice.
 """
 
 import json
@@ -51,7 +52,7 @@ def _client(server: FakeJMAPServer) -> SuiteJMAPClient:
     )
 
 
-class RefusedMail(unittest.TestCase):
+class _Processing(unittest.TestCase):
     def setUp(self) -> None:
         self.server = _server()
         mailboxes = {"drafts": "mb-drafts", "sent": "mb-sent"}
@@ -91,6 +92,15 @@ class RefusedMail(unittest.TestCase):
         self.assertEqual(doc.retries, 1)
         self.assertTrue(doc.next_retry_after)
 
+    def submissions_sent(self) -> int:
+        return sum(
+            call[0] == "EmailSubmission/set"
+            for request in self.server.requests
+            for call in request["methodCalls"]
+        )
+
+
+class RefusedMail(_Processing):
     def test_a_submission_the_server_refuses_outright_is_retried(self):
         self.server.respond("Email/set", DRAFTED)
         self.server.fail("EmailSubmission/set", "serverFail", description="try again later")
@@ -141,3 +151,76 @@ class RefusedMail(unittest.TestCase):
 
         self.assertEqual((doc.status, doc.submission_id, doc.id), ("Submitted", "s1", "e1"))
         self.assertFalse(doc.retries)
+
+
+class MaybeAppliedMail(_Processing):
+    """An error after which the submission may have happened all the same: sending it again
+    could send the mail twice, so the row waits for a person instead of the retry worker."""
+
+    def process_a_mail_already_retried_once(self) -> mail_queue.MailQueue:
+        return self.process(retries=1, next_retry_after="2026-01-01 00:00:00")
+
+    def assert_left_for_a_person(self, doc: mail_queue.MailQueue) -> None:
+        self.assertEqual(doc.status, "Failed")
+        # Neither a retry of its own nor the one an earlier attempt had scheduled.
+        self.assertIsNone(doc.next_retry_after)
+        self.assertEqual(doc.retries, 1)
+        self.assertEqual(self.submissions_sent(), 1)
+
+    def test_a_partial_failure_is_not_sent_again(self):
+        self.server.respond("Email/set", DRAFTED)
+        self.server.fail("EmailSubmission/set", "serverPartialFail", description="some of it happened")
+
+        doc = self.process_a_mail_already_retried_once()
+
+        self.assert_left_for_a_person(doc)
+        self.assertEqual(doc.error_message, "serverPartialFail: some of it happened")
+
+    def test_an_answer_that_cannot_be_read_is_not_sent_again(self):
+        self.server.respond("Email/set", DRAFTED)
+        self.server.respond("EmailSubmission/set", {"created": "not a map of created objects"})
+
+        doc = self.process_a_mail_already_retried_once()
+
+        self.assert_left_for_a_person(doc)
+        self.assertIn("malformedResult", doc.error_message)
+
+    def test_a_call_the_server_left_unanswered_is_not_sent_again(self):
+        def answer_the_draft_only(request: httpx.Request) -> httpx.Response | None:
+            if b"EmailSubmission/set" not in request.content:
+                return None
+            body = json.loads(request.content)
+            self.server.requests.append(body)
+            call_id = next(call[2] for call in body["methodCalls"] if call[0] == "Email/set")
+            return httpx.Response(
+                200,
+                json={
+                    "methodResponses": [["Email/set", {"accountId": ACCOUNT, **DRAFTED}, call_id]],
+                    "sessionState": self.server.session_state,
+                },
+            )
+
+        self.server.intercept = answer_the_draft_only
+
+        doc = self.process_a_mail_already_retried_once()
+
+        self.assert_left_for_a_person(doc)
+        self.assertIn("missingResponse", doc.error_message)
+
+
+class SentMail(_Processing):
+    def test_a_session_refresh_that_fails_afterwards_does_not_undo_it(self):
+        self.server.respond("Email/set", DRAFTED)
+        self.server.respond("EmailSubmission/set", {"created": {f"submit-{QUEUE}": {"id": "s1"}}})
+        # The answer announces a session change, and fetching the new session fails.
+        self.server.session_state = "changed"
+
+        with (
+            mock.patch("jmap.client._fetch_session", side_effect=httpx.ConnectError("connection refused")),
+            mock.patch("suite.mail.jmap.log_mail_error") as logged,
+        ):
+            doc = self.process()
+
+        self.assertEqual((doc.status, doc.submission_id), ("Submitted", "s1"))
+        self.assertFalse(doc.retries)
+        logged.assert_called_once()

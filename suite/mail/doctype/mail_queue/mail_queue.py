@@ -26,8 +26,9 @@ from frappe.utils import (
     time_diff_in_seconds,
 )
 from jmap import CreationRef, MethodError
+from jmap.batch import MISSING_RESPONSE
 from jmap.capabilities.mail import check_attachment_size
-from jmap.core.errors import CapabilityFieldError
+from jmap.core.errors import CapabilityFieldError, ServerPartialFailError
 
 from suite.mail.doctype.mail_queue.payload import (
     Address,
@@ -41,14 +42,13 @@ from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs
 from suite.mail.jmap import (
     build_email_draft,
     build_submission_envelope,
-    format_method_error,
+    check_delayed_send,
     get_account_client,
     get_identities,
     get_identity_id_by_email,
     get_mail_capability,
     get_mailbox_id_by_role,
     get_max_delayed_send,
-    get_set_error_message,
 )
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import parsedate_to_datetime
@@ -58,7 +58,10 @@ from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
 from suite.utils.validation import JSONList, parse
 
-SUBMISSION_PROPERTIES = ["id", "emailId", "undoStatus", "sendAt"]
+# Method errors after which the call may nonetheless have been applied: `serverPartialFail` (RFC
+# 8620 §3.6.2, the one error after which server state may have changed) and the two jmaplib
+# raises itself, for an answer it could not read and for a call the server left unanswered.
+_MAYBE_APPLIED_ERRORS = ("malformedResult", MISSING_RESPONSE)
 
 
 class MailQueue(OwnerFromUser, Document):
@@ -327,7 +330,7 @@ class MailQueue(OwnerFromUser, Document):
     def error_message(self) -> str | None:
         """Returns the error message."""
 
-        if not self._response or self.status not in ["Failed to Draft", "Failed to Submit"]:
+        if not self._response or self.status not in ["Failed", "Failed to Draft", "Failed to Submit"]:
             return None
 
         response = json_loads(self._response)
@@ -343,6 +346,9 @@ class MailQueue(OwnerFromUser, Document):
             data = _refusal(response.get("draft"), f"draft-{self.name}")
         elif self.status == "Failed to Submit":
             data = _refusal(response.get("submit"), f"submit-{self.name}")
+        else:
+            # Failed, with an answer on record: a call that may have been applied (see _process).
+            data = (response.get("submit") or {}).get("error") or (response.get("draft") or {}).get("error")
 
         if data:
             # Only `type` is certain on a JMAP error; the rest is the server's to add.
@@ -495,8 +501,7 @@ class MailQueue(OwnerFromUser, Document):
         except Exception:
             pass  # best-effort; the server enforces its own limit at submission
 
-        if time_diff_in_seconds(self.send_at, now()) > max_delay:
-            frappe.throw(_("Send At cannot be more than {0} days in the future.").format(max_delay // 86400))
+        check_delayed_send(time_diff_in_seconds(self.send_at, now()), max_delay)
 
     def validate_destroy_after_submit(self) -> None:
         """Validates the destroy after submit setting."""
@@ -553,25 +558,34 @@ class MailQueue(OwnerFromUser, Document):
         user = self.user if is_administrator(frappe.session.user) else frappe.session.user
 
         attachments = parse(Attachments, json_loads(self.attachments, default=[]), "attachments")
-        octets = 0
+        octets: int | None = 0
         for attachment in attachments:
             if attachment.blob_id:
-                octets += attachment.size or 0
+                size = attachment.size
             else:
                 file = MailQueue._get_file(
                     file_url=attachment.file_url, user=user, check_permission=attachment.is_private_file
                 )
-                octets += file.file_size or 0
+                size = file.file_size
+            # An attachment of unknown size leaves the total unknown, not smaller.
+            octets = None if octets is None or size is None else octets + size
 
-        if attachments:
+        if octets:
             # The server's own ceiling on what one email may carry, refused here rather than after
-            # every attachment has been uploaded and the draft sent.
+            # every attachment has been uploaded and the draft sent. Best-effort: with the server
+            # out of reach the mail is still queued, and the server applies its limit on sending.
             try:
                 check_attachment_size(
                     octets, get_mail_capability(get_account_client(self.account), self.account)
                 )
             except CapabilityFieldError as e:
-                frappe.throw(format_method_error(e))
+                frappe.throw(
+                    _("The attachments come to {0}, and this mail server allows {1} per email.").format(
+                        _megabytes(e.requested), _megabytes(e.advertised)
+                    )
+                )
+            except Exception:
+                pass
 
         self.attachments = to_json(attachments)
 
@@ -816,13 +830,16 @@ class MailQueue(OwnerFromUser, Document):
 
             # A call refused as a whole is a failure of that step like a refused object, and is
             # retried the same way: left as it was, the row sat Drafted or Failed with no retry
-            # scheduled, and the mail was never sent.
+            # scheduled, and the mail was never sent. Not so a call that may have been applied
+            # all the same: sending that again could send the mail twice.
+            maybe_applied = False
             draft_created = draft_error = None
             try:
                 draft_result = draft_h.result
             except MethodError as e:
                 draft_error = {"type": e.type, **e.arguments}
                 response_payload["draft"] = {"error": draft_error}
+                maybe_applied = _maybe_applied(e)
             else:
                 created_map = {k: v.to_wire() for k, v in draft_result.created.items()}
                 not_created = draft_result.not_created
@@ -838,6 +855,7 @@ class MailQueue(OwnerFromUser, Document):
                 except MethodError as e:
                     submit_error = {"type": e.type, **e.arguments}
                     response_payload["submit"] = {"error": submit_error}
+                    maybe_applied = maybe_applied or _maybe_applied(e)
                 else:
                     created_map = {k: v.to_wire() for k, v in submit_result.created.items()}
                     response_payload["submit"] = {
@@ -894,6 +912,11 @@ class MailQueue(OwnerFromUser, Document):
                             "next_retry_after": get_next_retry_after(retries),
                         }
                     )
+
+            if maybe_applied:
+                # Failed, for a person to look at: no retry of its own, nor one left over from
+                # an earlier attempt.
+                kwargs.update({"status": "Failed", "retries": cint(self.retries), "next_retry_after": None})
         except Exception:
             retries = cint(self.retries) + 1
             kwargs.update(
@@ -955,6 +978,16 @@ def json_loads(data: str | None, default: Any = None) -> list | dict | None:
         return json.loads(data)
 
     return default
+
+
+def _maybe_applied(error: MethodError) -> bool:
+    """Whether the call that failed with `error` may have changed the server all the same."""
+
+    return isinstance(error, ServerPartialFailError) or error.type in _MAYBE_APPLIED_ERRORS
+
+
+def _megabytes(octets: int) -> str:
+    return f"{octets / (1024 * 1024):.1f} MB"
 
 
 def _refusal(answer: dict | None, creation_id: str) -> dict | None:

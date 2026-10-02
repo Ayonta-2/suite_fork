@@ -1053,6 +1053,29 @@ def get_mail_capability(client: SuiteJMAPClient, account: str) -> MailCapability
     return MailCapability.of(client.session.capability_value(MAIL_URN, Id(account)))
 
 
+def check_delayed_send(delay: float, max_delay: int) -> None:
+    """Throws when a message may not be held for `delay` seconds by a server that holds one for
+    at most `max_delay` (see get_max_delayed_send)."""
+
+    if delay <= max_delay:
+        return
+
+    if not max_delay:
+        frappe.throw(_("This mail server doesn't support scheduled sending."))
+
+    frappe.throw(_("Send At cannot be more than {0} in the future.").format(_spoken_duration(max_delay)))
+
+
+def _spoken_duration(seconds: int) -> str:
+    """A limit in the largest unit it fills: "30 days", "6 hours", "45 minutes"."""
+
+    units = ((86400, _("day"), _("days")), (3600, _("hour"), _("hours")), (60, _("minute"), _("minutes")))
+    for unit, singular, plural in units:
+        if seconds >= unit or unit == 60:
+            count = max(seconds // unit, 1)
+            return f"{count} {singular if count == 1 else plural}"
+
+
 def get_max_delayed_send(client: SuiteJMAPClient, account: str) -> int:
     """Maximum delay in seconds allowed for a FUTURERELEASE (RFC 4865) submission: 30 days
     when the server does not say, and 0 when it says it cannot hold a message at all."""
