@@ -57,10 +57,15 @@ def get_invite_details(account: str, blob_id: str) -> dict | None:
 
     exists = False
     event = None
-    if master_ids := jmap_events.get_master_ids(client, [uid]):
-        if existing := get_calendar_events(account, master_ids[:1]):
-            exists = True
-            event = existing[0]
+    try:
+        if master_ids := jmap_events.get_master_ids(client, [uid]):
+            if existing := get_calendar_events(account, master_ids[:1]):
+                exists = True
+                event = existing[0]
+    except MethodError:
+        # A lookup the server refuses says nothing about the calendar: the invite is still
+        # shown, as one not added yet.
+        pass
 
     if event is None:
         event = _format_preview(account, invite)
@@ -146,7 +151,9 @@ def _ensure_on_calendar(client: SuiteJMAPClient, account: str, events: list[dict
             ids_by_uid[payload[creation_id]["uid"]] = str(created.id)
 
         refused = {payload[creation_id]["uid"]: error for creation_id, error in result.not_created.items()}
-        if error := refused.pop(invite_uid, None):
+        # A file can carry the invite's uid twice: the server creates one and refuses the other
+        # as its duplicate, which is no refusal of the invite.
+        if (error := refused.pop(invite_uid, None)) and invite_uid not in ids_by_uid:
             # The uid lookup runs on the server's async search index and can miss an event
             # created moments ago; the server then refuses the duplicate uid. A refused invite
             # that turns out to be on the calendar is that case, and keeps a repeated add
@@ -164,6 +171,10 @@ def _ensure_on_calendar(client: SuiteJMAPClient, account: str, events: list[dict
                 title=_("Events of an invite could not be added"),
                 message="\n".join(f"{uid}: {format_set_error(error)}" for uid, error in refused.items()),
             )
+
+    if invite_uid not in ids_by_uid:
+        # The server's answer names the invite neither as created nor as refused.
+        frappe.throw(_("Could not add the event to the calendar."))
 
     return ids_by_uid[invite_uid]
 

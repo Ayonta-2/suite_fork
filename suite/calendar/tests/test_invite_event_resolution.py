@@ -86,15 +86,17 @@ class InviteEventResolution(unittest.TestCase):
         self.server.handle("CalendarEvent/query", answer)
 
     def created(self, **ids_by_uid: str) -> None:
-        """The server creates the events named (by uid, underscores for dashes) and refuses the rest."""
+        """The server creates the events named (by uid, underscores for dashes), each once, and
+        refuses the rest: a uid it was not told to take, and a second event under one it took."""
 
         wanted = {uid.replace("_", "-"): id for uid, id in ids_by_uid.items()}
 
         def answer(args, _server) -> dict:
-            created, refused = {}, {}
+            created, refused, taken = {}, {}, set()
             for creation_id, event in args["create"].items():
-                if event["uid"] in wanted:
+                if event["uid"] in wanted and event["uid"] not in taken:
                     created[creation_id] = {"id": wanted[event["uid"]]}
+                    taken.add(event["uid"])
                 else:
                     refused[creation_id] = DUPLICATE
             return {"created": created, "notCreated": refused}
@@ -151,3 +153,20 @@ class InviteEventResolution(unittest.TestCase):
             self.ensure(INVITE)
 
         self.assertIn(DUPLICATE["description"], str(raised.exception))
+
+    def test_an_invite_the_file_carries_twice_resolves_to_the_copy_that_was_created(self):
+        # One uid, two events: the server takes the first and refuses the second as its duplicate.
+        self.searchable([])
+        self.created(uid_invite="id-invite")
+
+        with mock.patch.object(invites, "SETTLE_TIMEOUT", 0):
+            self.assertEqual(self.ensure(INVITE, dict(INVITE)), "id-invite")
+
+    def test_an_invite_the_server_answers_for_neither_way_fails_readably(self):
+        self.searchable([])
+        self.server.respond("CalendarEvent/set", {"created": {}, "notCreated": {}})
+
+        with self.assertRaises(frappe.ValidationError) as raised:
+            self.ensure(INVITE)
+
+        self.assertIn("Could not add the event to the calendar", str(raised.exception))
