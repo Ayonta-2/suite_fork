@@ -16,10 +16,11 @@ from frappe.utils import cint
 from frappe.utils.caching import request_cache
 from jmap import Id, MethodError, RequestError, SetError, TransportError
 from jmap.auth import BasicAuth
+from jmap.batch import NoAccountError, ReadOnlyAccountError, all_mutations_guarded, is_mutating
 from jmap.blobs import UploadResult
 from jmap.capabilities.mail import MailCapability, SubmissionCapability
 from jmap.client import JMAPClient
-from jmap.core.errors import CapabilityFieldError
+from jmap.core.errors import CapabilityFieldError, CapabilityNotSupportedError
 from jmap.core.retry import RetryPolicy
 from jmap.core.session import Session
 from jmap.defaults import default_registry
@@ -27,11 +28,12 @@ from jmap.models.responses import SetResponse
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.store import Entity, get_data_store
-from suite.mail.utils import get_config
+from suite.mail.utils import get_config, log_mail_error
 from suite.utils.user import is_system_manager
 
-# Gateway statuses a reverse proxy returns when the JMAP server behind it is down or overloaded.
-UNAVAILABLE_STATUS_CODES = (502, 503, 504)
+# Gateway statuses a reverse proxy returns when the JMAP server behind it is down or overloaded,
+# and the rate limit a retry did not clear: all of them "try again shortly", none a bug here.
+UNAVAILABLE_STATUS_CODES = (429, 502, 503, 504)
 
 
 class MailServerUnavailableError(Exception):
@@ -287,11 +289,25 @@ def format_jmap_error(error: dict | None) -> str:
 DEFAULT_TIMEOUT: tuple[float, float] = (30.0, 60.0)
 EXCHANGE_TIMEOUT: tuple[float, float] = (60.0, 180.0)
 
-# One retry. jmaplib re-sends a batch only when the request provably never reached the server
-# (a connection failure, a 429 or a 503) or a literal ifInState guards it, so a blip heals without
-# a duplicate write; a Retry-After past a few seconds is not waited out, since that would park the
+# One retry, for what cannot be done twice: a read, or a write every mutation of which a literal
+# ifInState guards. A Retry-After past a few seconds is not waited out, since that would park the
 # web worker holding the request.
 RETRY_POLICY = RetryPolicy(max_attempts=2, max_retry_after=5.0)
+# Any other write goes out once. jmaplib counts a 429 or a 503 as "never reached the server" and
+# would re-send it, but a proxy can answer 503 after it forwarded the request - and a mail
+# submitted twice is worse than one reported as failed.
+NO_RETRY = RetryPolicy(max_attempts=1)
+
+# What a call can be refused with, short of the transport failing: by the server (a method
+# error) or by jmaplib before anything is sent - a limit the account advertises, a read-only
+# account, a method or account the session does not offer.
+JMAP_REFUSALS = (
+    MethodError,
+    CapabilityFieldError,
+    CapabilityNotSupportedError,
+    ReadOnlyAccountError,
+    NoAccountError,
+)
 
 MAIL_URN = "urn:ietf:params:jmap:mail"
 SUBMISSION_URN = "urn:ietf:params:jmap:submission"
@@ -341,6 +357,9 @@ def translated_errors() -> Iterator[None]:
     try:
         yield
     except TransportError as e:
+        if isinstance(e.__cause__, httpx.UnsupportedProtocol):
+            # A server URL httpx cannot speak to is a misconfiguration, not an outage.
+            raise
         raise MailServerUnavailableError() from e
     except RequestError as e:
         if e.status in UNAVAILABLE_STATUS_CODES:
@@ -358,10 +377,25 @@ class SuiteJMAPClient(JMAPClient):
     peers: list[SuiteJMAPClient] | tuple[SuiteJMAPClient, ...] = ()
 
     def execute(self, batch, *, extra_using: frozenset[str] = frozenset()) -> None:
-        with translated_errors():
-            super().execute(batch, extra_using=extra_using)
+        policy = self.retry_policy
+        if is_mutating(batch, self.capabilities) and not all_mutations_guarded(batch, self.capabilities):
+            self.retry_policy = NO_RETRY
+        try:
+            with translated_errors():
+                super().execute(batch, extra_using=extra_using)
+        finally:
+            self.retry_policy = policy
+
         if self.session_stale:
-            self._refresh_and_sync()
+            # The batch is answered and its handles are resolved: a refresh that fails must not
+            # turn an applied write into a failure the caller retries. The session stays marked
+            # stale, so the next call tries again.
+            try:
+                self._refresh_and_sync()
+            except Exception:
+                log_mail_error(
+                    _("Failed to refresh the JMAP session"), frappe.get_traceback(with_context=True)
+                )
 
     def upload(self, content: bytes, **kwargs) -> UploadResult:
         with translated_errors():
