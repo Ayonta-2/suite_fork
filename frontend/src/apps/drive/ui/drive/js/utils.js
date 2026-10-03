@@ -21,6 +21,8 @@ export function getFileLink(entity, copy = true) {
   if (entity.file_type === 'Link') link = entity.file_url
   else if (entity.content_doctype === 'Presentation') {
     link = `${window.location.origin}/slides/presentation/${entity.content_docname}`
+  } else if (entity.content_doctype === 'Sheet') {
+    link = `${window.location.origin}/sheets/${entity.content_docname || entity.name}`
   } else if (entity.file_type === 'Document' || entity.file_type === 'Markdown') {
     link = `${window.location.origin}/writer/w/${entity.name}`
   } else {
@@ -69,7 +71,7 @@ export const copyToClipboard = (str) => {
   }
 }
 
-export function formatSize(size, nDigits = 1) {
+function formatSize(size, nDigits = 1) {
   if (size === 0) return '0 KB'
   var i = -1
   var byteUnits = ['KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
