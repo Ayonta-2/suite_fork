@@ -21,8 +21,15 @@ import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 interface EditorHost {
 	$el?: HTMLElement
 	editor?: {
-		commands: { insertContent: (content: string) => void; focus: () => void }
-		state: { doc: { descendants: (fn: (node: any) => void) => void } }
+		commands: {
+			insertContent: (content: string) => void
+			focus: () => void
+			setTextSelection: (range: { from: number; to: number }) => void
+		}
+		state: {
+			doc: { descendants: (fn: (node: any) => void) => void }
+			selection: { from: number; to: number }
+		}
 	}
 }
 
