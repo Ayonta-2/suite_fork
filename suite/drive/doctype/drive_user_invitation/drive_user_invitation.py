@@ -5,6 +5,8 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import add_days, get_datetime, now, validate_email_address
 
+from suite.suite_core.outgoing_email import email_type, sendmail_now
+
 EXPIRY_DAYS = 1
 
 
@@ -40,7 +42,7 @@ class DriveUserInvitation(Document):
     def invite_via_email(self):
         from suite.drive.api.notifications import drive_logo_inline_images
 
-        frappe.sendmail(
+        sendmail_now(
             recipients=self.email,
             subject="Frappe Drive - Invitation",
             template="drive_invitation",
@@ -51,7 +53,7 @@ class DriveUserInvitation(Document):
                 "user": frappe.session.user,
             },
             inline_images=drive_logo_inline_images(),
-            now=True,
+            email_headers=email_type("drive-invite"),
         )
 
     def accept(self, redirect=True):

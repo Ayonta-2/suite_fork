@@ -51,6 +51,7 @@ from suite.mail.utils.user import (
     get_user_email_address,
     is_jmap_configured,
 )
+from suite.suite_core.outgoing_email import email_type
 from suite.utils import log_error, reconnect_on_failure
 from suite.utils.file import compress_directory, extract_compressed_file
 from suite.utils.permissions import OwnerFromUser
@@ -812,6 +813,7 @@ class CalendarExchange(OwnerFromUser, Document):
                 "link": get_url(f"/mail/calendar-exchanges/{self.name}"),
             },
             now=True,
+            email_headers=email_type("calendar-exchange"),
         )
 
     def _log_output(self, message: str) -> None:

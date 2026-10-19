@@ -41,11 +41,20 @@ class SuiteSettings(Document):
             )
 
     def on_update(self) -> None:
-        """Suite Cloud shows the workspace name as the site's title and mails the contact address.
+        """Suite Cloud shows the workspace name as the site's title and mails the contact address,
+        and sends the site's mail once the site connects to it.
 
-        The push runs after commit in the background: a slow or unreachable Suite Cloud must not
-        hold up, or undo, an admin saving the settings.
+        Both run after commit in the background: a slow or unreachable Suite Cloud must not hold
+        up, or undo, an admin saving the settings, and only then are the saved values read.
         """
+
+        if self.suite_cloud_url and self.has_value_changed("suite_cloud_url"):
+            frappe.enqueue(
+                "suite.suite_core.outgoing_email.ensure_email_account",
+                enqueue_after_commit=True,
+                job_id="suite-cloud-email-account",
+                deduplicate=True,
+            )
 
         changes = self._profile_changes()
         if changes:

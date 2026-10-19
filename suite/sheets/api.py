@@ -5,6 +5,7 @@ import frappe
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
 from suite.sheets.versioning import save as save_mod
+from suite.suite_core.outgoing_email import email_type
 
 MAX_TITLE_LEN = 280
 
@@ -251,6 +252,7 @@ def _notify_sheet_shared(sheet_name: str, recipient: str, can_edit: bool) -> Non
             reference_doctype="Sheet",
             reference_name=sheet_name,
             now=False,
+            email_headers=email_type("sheet-share"),
         )
     except Exception:
         # Don't let notification failures roll back the share — the

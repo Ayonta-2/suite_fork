@@ -19,6 +19,7 @@ from frappe import _
 from frappe.utils import add_to_date, cint, format_datetime, get_datetime, get_system_timezone, now_datetime
 
 from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
+from suite.suite_core.outgoing_email import email_type
 
 if TYPE_CHECKING:
     from suite.drive.utils.files import FileManager
@@ -562,6 +563,7 @@ def deliver_recording_notification(recording_name: str):
                 reference_name=recording.name,
                 message_id=message_id,
                 now=False,
+                email_headers=email_type("meet-recording"),
             )
         recording = _locked_recording(recording_name)
         recording.notification_pending = 0

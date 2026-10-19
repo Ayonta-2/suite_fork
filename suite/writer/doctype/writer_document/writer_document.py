@@ -9,6 +9,7 @@ import pycrdt
 from frappe.model.document import Document
 
 from suite.drive.api.notifications import create_notification, get_link
+from suite.suite_core.outgoing_email import email_type
 
 COLLISION_ERRORS = (
     frappe.exceptions.QueryDeadlockError,
@@ -159,6 +160,7 @@ def notify_comments(file, mentions):
                         "link": get_link(file),
                     },
                     now=True,
+                    email_headers=email_type("writer-mention"),
                 )
             except Exception:
                 frappe.log_error(frappe.get_traceback())

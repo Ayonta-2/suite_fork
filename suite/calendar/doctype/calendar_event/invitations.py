@@ -37,6 +37,7 @@ from suite.calendar.doctype.calendar_exchange.calendar_exchange import (
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_account_client, get_participant_identities
+from suite.suite_core.outgoing_email import email_type
 from suite.utils import log_error
 from suite.utils.dt import get_utc_now
 
@@ -184,6 +185,7 @@ def notify_organizer_of_response(account: str, event_id: str, participant_email:
             reply_to=participant_email,
             inline_images=_response_inline_images(),
             now=True,
+            email_headers=email_type("calendar-rsvp"),
         )
     except Exception:
         log_error("Calendar", title=_("Failed to notify organizer of RSVP for event {0}").format(event_id))

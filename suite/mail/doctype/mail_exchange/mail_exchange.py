@@ -70,6 +70,7 @@ from suite.mail.utils.validation import (
     validate_maildir_or_maildirpp,
     validate_nested_maildir_tree,
 )
+from suite.suite_core.outgoing_email import email_type
 from suite.utils import log_error, reconnect_on_failure
 from suite.utils.dt import parse_iso_datetime
 from suite.utils.file import compress_directory, extract_compressed_file
@@ -1320,6 +1321,7 @@ class MailExchange(OwnerFromUser, Document):
                 "link": get_url(f"/mail/mail-exchanges/{self.name}"),
             },
             now=True,
+            email_headers=email_type("mail-exchange"),
         )
 
     def _log_output(self, message: str) -> None:

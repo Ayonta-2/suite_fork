@@ -2,6 +2,8 @@ import frappe
 from frappe.model.document import Document
 from pypika import Order
 
+from suite.suite_core.outgoing_email import email_type
+
 
 def get_link(entity):
     if entity.file_type == "Document":
@@ -155,6 +157,7 @@ def send_share_email(to, message, link, type_):
                 "link": link,
             },
             inline_images=drive_logo_inline_images(),
+            email_headers=email_type("drive-share"),
         )
     except Exception:
         pass
