@@ -40,7 +40,8 @@ def send(email_type: str, recipient: str, params: dict, local: dict, request_key
 
 def enqueue(email_type: str, recipient: str, params: dict, local: dict) -> None:
     """For a notice nobody waits on: sent once the request commits, and tried again when Suite
-    Cloud or its mail server fails. One key for every try, so it is sent once."""
+    Cloud or its mail server fails or throttles the site. One key for every try, so it is sent
+    once."""
 
     if not is_suite_cloud_configured():
         frappe.sendmail(recipients=[recipient], **local)  # Email Queue sends and retries it
@@ -61,5 +62,5 @@ def send_in_background(**kwargs) -> None:
 
     try:
         send(**kwargs)
-    except (EmailNotSentError, SuiteCloudUnavailableError) as e:
+    except (EmailNotSentError, SuiteCloudUnavailableError, frappe.TooManyRequestsError) as e:
         raise frappe.RetryBackgroundJobError(str(e)) from e

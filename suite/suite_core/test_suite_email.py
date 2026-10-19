@@ -71,13 +71,21 @@ class TestSuiteEmail(IntegrationTestCase):
             refused = {"status": "Failed", "error": "421 Try later"}
             with patch.object(cloud, "send_email", return_value=refused):
                 self.assertRaises(frappe.RetryBackgroundJobError, suite_email.send_in_background, **kwargs)
+            throttled = frappe.TooManyRequestsError("Too many requests")
+            with patch.object(cloud, "send_email", side_effect=throttled):
+                self.assertRaises(frappe.RetryBackgroundJobError, suite_email.send_in_background, **kwargs)
             suite_email.send_in_background(**kwargs)
 
         self.assertEqual(cloud.emails[-1]["request_key"], kwargs["request_key"])
 
     def test_the_patch_drops_only_the_old_notification_account(self) -> None:
-        for email_id, kept in (("notification@acme.example.test", False), ("alerts@acme.example.test", True)):
-            with self.subTest(email_id):
+        for connected, email_id, kept in (
+            (True, "notification@acme.example.test", False),
+            (True, "alerts@acme.example.test", True),
+            (False, "notification@acme.example.test", True),  # the site's own: Suite Cloud never set it up
+        ):
+            with self.subTest(email_id=email_id, connected=connected):
+                self.connect(connected)
                 if frappe.db.exists("Email Account", "Notifications"):
                     frappe.delete_doc("Email Account", "Notifications", force=True)
                 frappe.get_doc(
