@@ -41,13 +41,20 @@ class TestOutgoingEmail(IntegrationTestCase):
             **kwargs,
         }
 
-    def test_connecting_in_suite_settings_sets_up_the_account(self) -> None:
+    def test_each_change_to_the_connection_sets_up_the_account(self) -> None:
         with patch("frappe.enqueue") as enqueue:
             frappe.get_single("Suite Settings").save()  # no change: nothing to set up
             enqueue.assert_not_called()
-            self.connect(url="https://other-cloud.example.test")
-
-        self.assertEqual(enqueue.call_args.args[0], "suite.suite_core.outgoing_email.ensure_email_account")
+            for values in (
+                {"suite_cloud_url": "https://other-cloud.example.test"},
+                {"suite_cloud_tenant": "another-tenant"},
+                {"suite_cloud_secret": "a-new-secret"},  # e.g. the last of the three an admin fills in
+            ):
+                with self.subTest(values), self.change_settings("Suite Settings", **values):
+                    self.assertEqual(
+                        enqueue.call_args.args[0], "suite.suite_core.outgoing_email.ensure_email_account"
+                    )
+                enqueue.reset_mock()
 
     def test_connecting_to_suite_cloud_makes_its_account_the_default(self) -> None:
         account = frappe.get_doc("Email Account", EMAIL_ACCOUNT)

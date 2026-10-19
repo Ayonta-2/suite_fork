@@ -28,6 +28,12 @@ class SuiteSettings(Document):
     def validate(self) -> None:
         if not frappe.flags.in_migrate:
             self.warn_about_plain_http()
+        # Read here: once saved, a new secret is masked like the old one.
+        self.flags.connection_changed = (
+            self.has_value_changed("suite_cloud_url")
+            or self.has_value_changed("suite_cloud_tenant")
+            or bool(self.suite_cloud_secret and not self.is_dummy_password(self.suite_cloud_secret))
+        )
 
     def warn_about_plain_http(self) -> None:
         """The tenant secret travels with every request; over http it is readable on the way."""
@@ -48,7 +54,7 @@ class SuiteSettings(Document):
         up, or undo, an admin saving the settings, and only then are the saved values read.
         """
 
-        if self.suite_cloud_url and self.has_value_changed("suite_cloud_url"):
+        if self.flags.connection_changed and (self.suite_cloud_url or frappe.conf.suite_cloud_url):
             frappe.enqueue(
                 "suite.suite_core.outgoing_email.ensure_email_account",
                 enqueue_after_commit=True,
