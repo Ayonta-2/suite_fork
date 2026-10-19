@@ -1,23 +1,24 @@
 import frappe
 
 from suite.suite_core.outgoing_email import EMAIL_ACCOUNT, ensure_email_account
+from suite.suite_core.utils import is_suite_cloud_configured
 
 # A hosted site sent through its own notification@ mailbox, which Suite Cloud drops. Suite Cloud
-# sends the site's mail now: the Suite Cloud account takes over, queued mail included.
+# sends the site's mail now: the Suite Cloud account takes over, queued mail included. A default
+# account of the site's own stays the default.
 OLD_ACCOUNT = "Notifications"
 
 
 def execute() -> None:
-    ensure_email_account()
-    email_id = frappe.db.get_value("Email Account", OLD_ACCOUNT, "email_id")
-    if not frappe.db.exists("Email Account", EMAIL_ACCOUNT) or not (email_id or "").startswith(
-        "notification@"
-    ):
+    if not is_suite_cloud_configured():
         return
+    if (frappe.db.get_value("Email Account", OLD_ACCOUNT, "email_id") or "").startswith("notification@"):
+        # First: while it is the default, the Suite Cloud account would not become one.
+        frappe.delete_doc("Email Account", OLD_ACCOUNT, ignore_permissions=True, force=True)
+    ensure_email_account()
     frappe.db.set_value(
         "Email Queue",
         {"email_account": OLD_ACCOUNT, "status": ["in", ["Not Sent", "Partially Sent"]]},
         "email_account",
         EMAIL_ACCOUNT,
     )
-    frappe.delete_doc("Email Account", OLD_ACCOUNT, ignore_permissions=True, force=True)

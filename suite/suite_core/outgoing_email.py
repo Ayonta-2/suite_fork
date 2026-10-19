@@ -3,7 +3,7 @@
 The site's default outgoing Email Account, ``Suite Cloud``, only marks the mail: Frappe's
 ``override_email_send`` hook hands each built email to Suite Cloud, which sends it there and then
 and answers whether it went. A failure raises: Email Queue tries a queued email again, and
-``sendmail_now`` tells its caller.
+``sendmail_now`` tells its caller. A default outgoing account of the site's own sends instead.
 """
 
 from urllib.parse import urlparse
@@ -85,13 +85,15 @@ def send_with_email_account(account, queue, sender: str, recipient: str, message
 
 
 def ensure_email_account() -> None:
-    """The ``Suite Cloud`` account, made the default outgoing one, once Suite Cloud is configured.
+    """The ``Suite Cloud`` account, once Suite Cloud is configured. It is the default outgoing
+    one unless the site already has its own: a default the site set keeps sending its mail.
 
     It never logs in anywhere: its address only stands in until Suite Cloud sets the sender.
     """
 
     if not is_suite_cloud_configured() or frappe.db.exists("Email Account", EMAIL_ACCOUNT):
         return
+    has_default = frappe.db.exists("Email Account", {"enable_outgoing": 1, "default_outgoing": 1})
     host = urlparse(get_suite_cloud_config("suite_cloud_url")).hostname
     frappe.get_doc(
         {
@@ -101,6 +103,6 @@ def ensure_email_account() -> None:
             "smtp_server": host,
             "no_smtp_authentication": 1,
             "enable_outgoing": 1,
-            "default_outgoing": 1,
+            "default_outgoing": 0 if has_default else 1,
         }
     ).insert(ignore_permissions=True)

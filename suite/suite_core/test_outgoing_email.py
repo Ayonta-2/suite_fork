@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import frappe
+from frappe.email.doctype.email_account.email_account import EmailAccount
 from frappe.tests import IntegrationTestCase
 
 from suite.suite_core import outgoing_email
@@ -14,7 +15,7 @@ class TestOutgoingEmail(IntegrationTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.enterContext(patch.object(frappe.db, "commit"))  # Email Queue commits as it sends
-        for name in (EMAIL_ACCOUNT, "Notifications"):
+        for name in (EMAIL_ACCOUNT, "Notifications", "Support"):
             if frappe.db.exists("Email Account", name):
                 frappe.delete_doc("Email Account", name, force=True)
         self.connect()
@@ -102,6 +103,25 @@ class TestOutgoingEmail(IntegrationTestCase):
         keys = {call.kwargs["request_key"] for call in self.client.call.call_args_list}
         self.assertEqual(keys, {f"{queue.name}:{RECIPIENT}"})  # Suite Cloud sends a key only once
 
+    def test_a_default_the_site_already_has_stays_the_default(self) -> None:
+        frappe.delete_doc("Email Account", EMAIL_ACCOUNT, force=True)
+        make_support_account()
+
+        outgoing_email.ensure_email_account()
+
+        self.assertEqual(frappe.db.get_value("Email Account", EMAIL_ACCOUNT, "default_outgoing"), 0)
+        self.assertEqual(frappe.db.get_value("Email Account", "Support", "default_outgoing"), 1)
+
+    def test_a_default_the_site_sets_later_sends_its_mail(self) -> None:
+        make_support_account()  # Frappe keeps one default: the Suite Cloud account is no longer it
+
+        with patch.object(EmailAccount, "get_smtp_server") as smtp:
+            sendmail_now(**self.sendmail())
+
+        self.assertEqual(frappe.db.get_value("Email Account", EMAIL_ACCOUNT, "default_outgoing"), 0)
+        self.assertEqual(smtp.return_value.session.sendmail.call_args.kwargs["to_addrs"], RECIPIENT)
+        self.client.call.assert_not_called()
+
     def test_another_accounts_mail_is_sent_as_frappe_sends_it(self) -> None:
         account = MagicMock(service="")
         account.name = "Support"
@@ -143,3 +163,19 @@ class TestOutgoingEmail(IntegrationTestCase):
         self.assertFalse(frappe.db.exists("Email Account", "Notifications"))
         self.assertEqual(frappe.db.get_value("Email Account", EMAIL_ACCOUNT, "default_outgoing"), 1)
         self.assertEqual(frappe.db.get_value("Email Queue", queued.name, "email_account"), EMAIL_ACCOUNT)
+
+
+def make_support_account() -> None:
+    """The site's own outgoing account, made the default."""
+
+    frappe.get_doc(
+        {
+            "doctype": "Email Account",
+            "email_account_name": "Support",
+            "email_id": "support@acme.example.test",
+            "smtp_server": "smtp.acme.example.test",
+            "enable_outgoing": 1,
+            "default_outgoing": 1,
+            "no_smtp_authentication": 1,
+        }
+    ).insert()
