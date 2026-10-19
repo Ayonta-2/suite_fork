@@ -25,7 +25,7 @@ from suite.mail.suite_cloud import SuiteCloudUnavailableError
 from suite.mail.utils import is_jmap_server_configured, log_mail_error
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.validation import is_subaddressed_email
-from suite.suite_core.outgoing_email import email_type, sendmail_now
+from suite.suite_core import suite_email
 from suite.suite_core.utils import is_suite_cloud_configured
 from suite.utils import execute_with_logging, generate_otp
 from suite.utils.user import is_suite_admin, is_system_manager
@@ -283,34 +283,42 @@ class MailAccountRequest(Document):
     def _send_otp_email(self) -> None:
         """Emails the pending signup OTP to the backup email, consuming it."""
 
-        sendmail_now(
-            recipients=self.backup_email,
-            subject=_("Frappe Mail - Verification Code"),
-            template="generic",
-            args={
-                "title": _("Your verification code is {0}.").format(self._signup_otp),
-                "description": _(
-                    "Enter this code to verify your email address. It expires in {0} minutes."
-                ).format(OTP_TTL_SECONDS // 60),
+        minutes = OTP_TTL_SECONDS // 60
+        suite_email.send(
+            "signup-code",
+            self.backup_email,
+            {"code": self._signup_otp, "expires_in_minutes": minutes},
+            local={
+                "subject": _("Frappe Mail - Verification Code"),
+                "template": "generic",
+                "args": {
+                    "title": _("Your verification code is {0}.").format(self._signup_otp),
+                    "description": _(
+                        "Enter this code to verify your email address. It expires in {0} minutes."
+                    ).format(minutes),
+                },
             },
-            email_headers=email_type("signup-code"),
         )
         self._signup_otp = None
 
     def _send_invite_email(self) -> None:
         """Emails the invite link to the backup email."""
 
-        sendmail_now(
-            recipients=self.backup_email,
-            subject=_("You have been invited by {0} to join Frappe Mail").format(self.invited_by),
-            template="generic",
-            args={
-                "title": _("You have been invited by {0} to join Frappe Mail.").format(self.invited_by),
-                "description": _("Please confirm your email address by clicking the button below."),
-                "button": _("Verify Account"),
-                "link": get_url("/mail/signup/" + self.request_key),
+        link = get_url("/mail/signup/" + self.request_key)
+        suite_email.send(
+            "account-invite",
+            self.backup_email,
+            {"inviter": self.invited_by, "link": link},
+            local={
+                "subject": _("You have been invited by {0} to join Frappe Mail").format(self.invited_by),
+                "template": "generic",
+                "args": {
+                    "title": _("You have been invited by {0} to join Frappe Mail.").format(self.invited_by),
+                    "description": _("Please confirm your email address by clicking the button below."),
+                    "button": _("Verify Account"),
+                    "link": link,
+                },
             },
-            email_headers=email_type("account-invite"),
         )
         frappe.msgprint(_("Verification email sent successfully."), indicator="green", alert=True)
 

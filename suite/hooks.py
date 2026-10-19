@@ -336,9 +336,6 @@ after_migrate = "suite.suite_core.boot.after_migrate"
 after_app_install = "suite.suite_core.boot.after_app_install"
 extend_bootinfo = "suite.suite_core.boot.extend_bootinfo"
 
-# Suite Cloud sends the site's mail
-override_email_send = "suite.suite_core.outgoing_email.send"
-
 # drive — custom upload + after_request middleware (single definers)
 after_file_upload = "suite.drive.overrides.file.after_file_upload"
 after_request = "suite.drive.api.product.after_request"
