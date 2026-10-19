@@ -137,32 +137,23 @@ class TestOutgoingEmail(IntegrationTestCase):
 
     def test_the_patch_moves_the_notification_accounts_queue_to_suite_cloud(self) -> None:
         frappe.delete_doc("Email Account", EMAIL_ACCOUNT, force=True)
-        frappe.get_doc(
-            {
-                "doctype": "Email Account",
-                "email_account_name": "Notifications",
-                "email_id": "notification@acme.example.test",
-                "smtp_server": "mail.example.test",
-                "enable_outgoing": 1,
-                "default_outgoing": 1,
-                "no_smtp_authentication": 1,
-            }
-        ).insert()
-        queued = frappe.get_doc(
-            {
-                "doctype": "Email Queue",
-                "email_account": "Notifications",
-                "sender": "notification@acme.example.test",
-                "message": "Subject: hi\r\n\r\nhi",
-                "status": "Not Sent",
-            }
-        ).insert(ignore_permissions=True)
+        queued = make_notifications_account("notification@acme.example.test")
 
         send_mail_through_suite_cloud.execute()
 
         self.assertFalse(frappe.db.exists("Email Account", "Notifications"))
         self.assertEqual(frappe.db.get_value("Email Account", EMAIL_ACCOUNT, "default_outgoing"), 1)
-        self.assertEqual(frappe.db.get_value("Email Queue", queued.name, "email_account"), EMAIL_ACCOUNT)
+        self.assertEqual(frappe.db.get_value("Email Queue", queued, "email_account"), EMAIL_ACCOUNT)
+
+    def test_the_patch_leaves_a_notifications_account_of_the_sites_own(self) -> None:
+        frappe.delete_doc("Email Account", EMAIL_ACCOUNT, force=True)
+        queued = make_notifications_account("alerts@acme.example.test")
+
+        send_mail_through_suite_cloud.execute()
+
+        self.assertEqual(frappe.db.get_value("Email Account", "Notifications", "default_outgoing"), 1)
+        self.assertEqual(frappe.db.get_value("Email Account", EMAIL_ACCOUNT, "default_outgoing"), 0)
+        self.assertEqual(frappe.db.get_value("Email Queue", queued, "email_account"), "Notifications")
 
 
 def make_support_account() -> None:
@@ -179,3 +170,30 @@ def make_support_account() -> None:
             "no_smtp_authentication": 1,
         }
     ).insert()
+
+
+def make_notifications_account(email_id: str) -> str:
+    """A default outgoing account named Notifications at ``email_id``, with one email queued; its
+    queue row's name."""
+
+    frappe.get_doc(
+        {
+            "doctype": "Email Account",
+            "email_account_name": "Notifications",
+            "email_id": email_id,
+            "smtp_server": "mail.example.test",
+            "enable_outgoing": 1,
+            "default_outgoing": 1,
+            "no_smtp_authentication": 1,
+        }
+    ).insert()
+    queued = frappe.get_doc(
+        {
+            "doctype": "Email Queue",
+            "email_account": "Notifications",
+            "sender": email_id,
+            "message": "Subject: hi\r\n\r\nhi",
+            "status": "Not Sent",
+        }
+    ).insert(ignore_permissions=True)
+    return queued.name

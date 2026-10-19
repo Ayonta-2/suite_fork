@@ -12,13 +12,18 @@ OLD_ACCOUNT = "Notifications"
 def execute() -> None:
     if not is_suite_cloud_configured():
         return
-    if (frappe.db.get_value("Email Account", OLD_ACCOUNT, "email_id") or "").startswith("notification@"):
+    # A Notifications account of the site's own, at another address, keeps its mail.
+    dropped = (frappe.db.get_value("Email Account", OLD_ACCOUNT, "email_id") or "").startswith(
+        "notification@"
+    )
+    if dropped:
         # First: while it is the default, the Suite Cloud account would not become one.
         frappe.delete_doc("Email Account", OLD_ACCOUNT, ignore_permissions=True, force=True)
     ensure_email_account()
-    frappe.db.set_value(
-        "Email Queue",
-        {"email_account": OLD_ACCOUNT, "status": ["in", ["Not Sent", "Partially Sent"]]},
-        "email_account",
-        EMAIL_ACCOUNT,
-    )
+    if dropped:
+        frappe.db.set_value(
+            "Email Queue",
+            {"email_account": OLD_ACCOUNT, "status": ["in", ["Not Sent", "Partially Sent"]]},
+            "email_account",
+            EMAIL_ACCOUNT,
+        )
