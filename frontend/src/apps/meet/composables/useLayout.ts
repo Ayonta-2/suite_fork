@@ -1,4 +1,4 @@
-import { type ComputedRef, computed, type Ref } from "vue";
+import { type ComputedRef, computed, shallowRef, watch, watchEffect, type Ref } from "vue";
 import type { Participant } from "../utils/media/ParticipantManager";
 import type { PinnedTile } from "./useGridLayout";
 import { useResponsiveGrid } from "./useResponsiveGrid";
@@ -8,6 +8,7 @@ interface LayoutDeps {
 	activeSpeakerIds: Ref<string[]>;
 	stableSpeakerIds: Ref<string[]>;
 	sharedStageParticipantIds?: Ref<string[]>;
+	sharedStagePresentationOrders?: Ref<Record<string, string[]>>;
 }
 
 interface DisplayParticipantsResult {
@@ -27,6 +28,8 @@ interface UseLayoutReturn {
 	displayParticipants: ComputedRef<DisplayParticipantsResult>;
 	allParticipants: ComputedRef<LayoutParticipant[]>;
 	visibleTileCount: ComputedRef<number>;
+	vacantStripSlots: ComputedRef<number[]>;
+	overflowSlotIndex: ComputedRef<number>;
 	hiddenParticipantsTooltip: ComputedRef<string>;
 }
 
@@ -52,10 +55,29 @@ export function useLayout(
 		return participants.value;
 	});
 
+	const getPinnedParticipantId = (): string[] =>
+		pinnedTiles.value.filter((t) => t.type === "participant").map((t) => t.id);
+
+	// Pin, viewport and screen changes start a new layout session. Joins do not.
+	const sidebarColumns = shallowRef(1);
+	watch(
+		() => JSON.stringify([
+			pinnedTiles.value, isMobile.value, sidebarMaxColumns.value, extraTiles.value,
+		]),
+		() => {
+			const pinned = new Set(getPinnedParticipantId());
+			const count = Object.keys(participants.value).filter(id => !pinned.has(id)).length
+				+ localTileCount + extraTiles.value;
+			sidebarColumns.value = isMobile.value
+				? 1 : Math.min(sidebarMaxColumns.value, count > 4 ? 2 : 1);
+		},
+		{ immediate: true, flush: "sync" },
+	);
+
 	const maxVisibleTiles = computed<number>(() => {
 		if (mode.value === "sidebar") {
 			if (isMobile.value) return 3;
-			return sidebarMaxColumns.value * 4;
+			return sidebarColumns.value * 4;
 		}
 		return maxColumns.value * 4;
 	});
@@ -80,8 +102,6 @@ export function useLayout(
 		return 6;
 	};
 
-	const getPinnedParticipantId = (): string[] =>
-		pinnedTiles.value.filter((t) => t.type === "participant").map((t) => t.id);
 
 	const getRemoteCapacity = (
 		remoteCount: number,
@@ -125,65 +145,41 @@ export function useLayout(
 		return priorityMap;
 	};
 
-	const ensurePinnedParticipantVisible = (
-		visibleRemotes: Participant[],
-		remotes: Participant[],
-		pinnedParticipantIds: string[],
-		remoteCapacity: number,
-	): Participant[] => {
-		if (pinnedParticipantIds.length === 0 || remoteCapacity <= 0)
-			return visibleRemotes;
-
-		const newVisible = [...visibleRemotes];
-
-		for (const pinnedId of pinnedParticipantIds) {
-			const isPinnedVisible = newVisible.some((p) => p.user_id === pinnedId);
-
-			if (!isPinnedVisible) {
-				const pinnedParticipant = remotes.find((p) => p.user_id === pinnedId);
-				if (pinnedParticipant) {
-					if (newVisible.length >= remoteCapacity) {
-						newVisible.pop();
-					}
-					newVisible.unshift(pinnedParticipant);
-				}
-			}
-		}
-		return newVisible;
-	};
-
 	const partitionVisibleAndHidden = (
 		sortedRemotes: Participant[],
 		remoteCapacity: number,
-		remotes: Participant[],
-		pinnedParticipantId: string[],
+		pinnedParticipantIds: string[],
 	): DisplayParticipantsResult => {
-		const visibleRemotes = ensurePinnedParticipantVisible(
-			sortedRemotes.slice(0, remoteCapacity),
-			remotes,
-			pinnedParticipantId,
-			remoteCapacity,
-		);
-
-		const visibleIds = new Set(
-			visibleRemotes.map((participant) => participant.user_id),
-		);
-		const hidden = sortedRemotes.filter(
-			(participant) => !visibleIds.has(participant.user_id),
-		);
-
+		const pins = new Set(pinnedParticipantIds);
+		const pinned = sortedRemotes.filter((p) => pins.has(p.user_id));
+		const unpinned = sortedRemotes.filter((p) => !pins.has(p.user_id));
+		const stripCapacity = Math.max(0, remoteCapacity - pinned.length);
 		return {
-			list: visibleRemotes,
-			hidden,
-			extra: hidden.length,
+			list: [...unpinned.slice(0, stripCapacity), ...pinned],
+			hidden: unpinned.slice(stripCapacity),
+			extra: Math.max(0, unpinned.length - stripCapacity),
 		};
 	};
 
+	let personalSlots: (string | undefined)[] = [];
+	let personalLayoutKey = "";
+	let personalOverflowSlot: number | undefined;
+	const stripSlots = new Map<string, number>();
+	let vacancies: number[] = [];
+
 	// ── Display participants ──────────────────────────────────────────────────
 
-	const displayParticipants = computed<DisplayParticipantsResult>(() => {
+	const projection = shallowRef<{
+		display: DisplayParticipantsResult;
+		slots: Map<string, number>;
+		vacancies: number[];
+		overflow: number | undefined;
+	}>();
+	watchEffect(() => {
 		const remotes = Object.values(stripParticipants.value || {});
-		const pinnedParticipantIds = getPinnedParticipantId();
+		const pinnedParticipantIds = [...new Set(getPinnedParticipantId())].filter(
+			(id) => remotes.some((p) => p.user_id === id),
+		);
 		const remoteCapacity = getRemoteCapacity(
 			remotes.length,
 			pinnedParticipantIds,
@@ -202,7 +198,10 @@ export function useLayout(
 			raisedHands,
 		);
 		const ranking = new Map(
-			(layoutDeps.sharedStageParticipantIds?.value ?? []).map((id, index) => [id, index]),
+			(layoutDeps.sharedStageParticipantIds?.value ?? []).map((id, index) => [
+				id,
+				index,
+			]),
 		);
 		const sortedRemotes = [...remotes].sort((a, b) => {
 			if (ranking.size)
@@ -213,18 +212,94 @@ export function useLayout(
 				);
 			return (
 				(priorityMap.get(a.user_id) ?? 6) - (priorityMap.get(b.user_id) ?? 6) ||
-				(raisedHands[a.user_id] ?? "").localeCompare(raisedHands[b.user_id] ?? "") ||
+				(raisedHands[a.user_id] ?? "").localeCompare(
+					raisedHands[b.user_id] ?? "",
+				) ||
 				(a.user_id < b.user_id ? -1 : a.user_id > b.user_id ? 1 : 0)
 			);
 		});
 		const partitioned = partitionVisibleAndHidden(
 			sortedRemotes,
 			remoteCapacity,
-			remotes,
 			pinnedParticipantIds,
 		);
 
-		return partitioned;
+		// Seed personal layouts from the shared presentation; subsequent selection
+		// changes replace vacancies without moving retained strip tiles.
+		const pins = new Set(pinnedParticipantIds);
+		const strip = partitioned.list.filter((p) => !pins.has(p.user_id));
+		const presentationCapacity = strip.length
+			? sortedRemotes.findIndex(
+					(p) => p.user_id === strip[strip.length - 1].user_id,
+				) + 1
+			: 0;
+		const order =
+			layoutDeps.sharedStagePresentationOrders?.value[presentationCapacity];
+		if (order) {
+			const positions = new Map(order.map((id, index) => [id, index]));
+			partitioned.list.sort(
+				(a, b) =>
+					(positions.get(a.user_id) ?? Infinity) -
+					(positions.get(b.user_id) ?? Infinity),
+			);
+		}
+		const key = JSON.stringify([
+			pinnedTiles.value, maxVisibleTiles.value, extraTiles.value,
+		]);
+		stripSlots.clear();
+		vacancies = [];
+		if (key !== personalLayoutKey || !pinnedTiles.value.length) {
+			personalSlots = [];
+			personalOverflowSlot = undefined;
+		}
+		personalLayoutKey = key;
+		if (pinnedTiles.value.length) {
+			const selected = partitioned.list.filter((p) => !pins.has(p.user_id));
+			const selectedIds = new Set(selected.map((p) => p.user_id));
+			personalSlots = personalSlots.map((id) => id && selectedIds.has(id) ? id : undefined);
+			if (!partitioned.extra) personalOverflowSlot = undefined;
+			for (const participant of selected) {
+				if (personalSlots.includes(participant.user_id)) continue;
+				const vacancy = personalSlots.findIndex(
+					(id, index) => id === undefined && index !== personalOverflowSlot,
+				);
+				if (vacancy < 0) personalSlots.push(participant.user_id);
+				else personalSlots[vacancy] = participant.user_id;
+			}
+			if (partitioned.extra && personalOverflowSlot === undefined) {
+				const vacancy = personalSlots.indexOf(undefined);
+				personalOverflowSlot = vacancy < 0 ? personalSlots.length : vacancy;
+				if (vacancy < 0) personalSlots.push(undefined);
+			}
+			while (
+				personalSlots.length > 0 &&
+				personalSlots[personalSlots.length - 1] === undefined &&
+				personalSlots.length - 1 !== personalOverflowSlot
+			) personalSlots.pop();
+			personalSlots.forEach((id, index) => {
+				if (id) stripSlots.set(id, index);
+				else if (index !== personalOverflowSlot) vacancies.push(index);
+			});
+			const byId = new Map(selected.map((p) => [p.user_id, p]));
+			partitioned.list = [
+				...personalSlots.flatMap((id) => id ? [byId.get(id)!] : []),
+				...pinnedParticipantIds.map((id) => participants.value[id]),
+			];
+		}
+		projection.value = {
+			display: partitioned, slots: new Map(stripSlots),
+			vacancies, overflow: personalOverflowSlot,
+		};
+	}, { flush: "sync" });
+	const displayParticipants = computed(() => projection.value!.display);
+
+	const vacantStripSlots = computed(() => {
+		return projection.value!.vacancies;
+	});
+
+	const overflowSlotIndex = computed(() => {
+		const { list, hidden } = displayParticipants.value;
+		return projection.value!.overflow ?? list.length + hidden.length;
 	});
 
 	const visibleTileCount = computed<number>(
@@ -232,19 +307,14 @@ export function useLayout(
 			localTileCount +
 			extraTiles.value +
 			displayParticipants.value.list.length +
+			vacantStripSlots.value.length +
 			(displayParticipants.value.extra > 0 ? 1 : 0),
 	);
 
 	const gridColumns = computed<number>(() => {
 		if (mode.value === "sidebar") {
 			if (isMobile.value) return 1;
-			const pinnedParticipantIds = new Set(getPinnedParticipantId());
-			const stripTileCount =
-				visibleTileCount.value -
-				displayParticipants.value.list.filter((participant) =>
-					pinnedParticipantIds.has(participant.user_id),
-				).length;
-			return Math.min(stripTileCount > 4 ? 2 : 1, sidebarMaxColumns.value);
+			return sidebarColumns.value;
 		}
 		const count = visibleTileCount.value;
 		if (count <= 0) return 1;
@@ -258,7 +328,7 @@ export function useLayout(
 		const visible: LayoutParticipant[] = list.map((p, idx) => ({
 			...p,
 			isVisible: true,
-			slotIndex: idx,
+			slotIndex: projection.value!.slots.get(p.user_id) ?? idx,
 		}));
 
 		const invisible: LayoutParticipant[] = hidden.map((p, idx) => ({
@@ -288,6 +358,8 @@ export function useLayout(
 		displayParticipants,
 		allParticipants,
 		visibleTileCount,
+		vacantStripSlots,
+		overflowSlotIndex,
 		hiddenParticipantsTooltip,
 	};
 }
