@@ -1,5 +1,9 @@
 import unittest
 from unittest import mock
+from uuid import uuid4
+
+import frappe
+from frappe.tests import IntegrationTestCase
 
 from suite.api import account
 
@@ -34,7 +38,7 @@ class MarkOnboarded(AccountTestBase):
     def setUp(self):
         super().setUp()
         self.engine = self.enterContext(
-            mock.patch("frappe.desk.page.setup_wizard.setup_wizard.complete_app_setup")
+            mock.patch("frappe.desk.page.setup_wizard.setup_wizard.complete_app_setup", create=True)
         )
         self.suite_wizard = self.enterContext(
             mock.patch("suite.api.account.uses_suite_setup_wizard", return_value=True)
@@ -124,3 +128,14 @@ class GetUsers(AccountTestBase):
         users = account.get_users()
 
         self.assertEqual([u["is_admin"] for u in users], [True, False])
+
+
+class GetUsersOnSite(IntegrationTestCase):
+    def test_lists_members_who_have_no_desk_access(self):
+        member = frappe.new_doc("User")
+        member.email = f"member-{uuid4().hex[:8]}@example.com"
+        member.first_name = "Member"
+        member.insert(ignore_permissions=True)
+        self.assertEqual(member.user_type, "Website User")
+
+        self.assertIn(member.name, [user["name"] for user in account.get_users()])

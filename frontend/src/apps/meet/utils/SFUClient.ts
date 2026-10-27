@@ -152,18 +152,19 @@ interface ParticipantConnectionConflictDetails {
 	conflictId: string;
 }
 
-export interface SFUWebRtcTransportResponse {
+interface SFUWebRtcTransportResponse {
 	id: string;
 	iceParameters: IceParameters;
 	iceCandidates: IceCandidate[];
 	dtlsParameters: DtlsParameters;
 }
 
-export interface SFUProducerResponse {
+interface SFUProducerResponse {
 	id: string;
 }
 
-export interface SFUConsumerResponse {
+interface SFUConsumerResponse {
+	paused: boolean;
 	id: string;
 	producerId: string;
 	kind: MediaKind;
@@ -199,7 +200,7 @@ export interface ScreenShareSignalData extends ProducerCloseMetadata {
 
 type SFUEventHandler = (...args: unknown[]) => void;
 
-export type SFURequestErrorCode = "DISCONNECTED" | "TIMEOUT";
+type SFURequestErrorCode = "DISCONNECTED" | "TIMEOUT";
 
 export class SFURequestError extends Error {
 	readonly code: SFURequestErrorCode;
@@ -329,6 +330,7 @@ function normalizeConsumerResponse(value: unknown): SFUConsumerResponse {
 	}
 	return {
 		id: payload.id,
+		paused: payload.paused === true,
 		producerId: payload.producerId,
 		kind: payload.kind,
 		rtpParameters: payload.rtpParameters as RtpParameters,
@@ -807,6 +809,7 @@ export class SFUClient {
 				}
 			},
 			participant_joined: () => {},
+			participant_updated: () => {},
 			participant_left: () => {},
 			producer_created: () => {},
 			producer_closed: () => {},
@@ -823,6 +826,8 @@ export class SFUClient {
 			"chat:pin_updated": () => {},
 			"existing_pinned_message": () => {},
 			active_speaker: () => {},
+			shared_stage: () => {},
+			shared_stage_snapshot: () => {},
 			hand_raised: () => {},
 			existing_raised_hands: () => {},
 		};
@@ -940,12 +945,14 @@ export class SFUClient {
 		transportId: string,
 		producerId: string,
 		rtpCapabilities: RtpCapabilities,
+		startPaused = false,
 	): Promise<SFUConsumerResponse> {
 		console.log(`Creating consumer for producer ${producerId} @ ${Date.now()}`);
 		return normalizeConsumerResponse(await this.sendRequest("create_consumer", {
 			transportId,
 			producerId,
 			rtpCapabilities,
+			startPaused,
 		}));
 	}
 
@@ -975,6 +982,16 @@ export class SFUClient {
 
 	async closeConsumer(consumerId: string): Promise<unknown> {
 		return this.sendRequest("close_consumer", { consumerId });
+	}
+
+	async resumeConsumer(consumerId: string): Promise<void> {
+		const response = requireObject(
+			await this.sendRequest("resume_consumer", { consumerId }),
+			"consumer resume",
+		);
+		if (response.success !== true || response.resumed !== true) {
+			throw new Error("Failed to resume consumer");
+		}
 	}
 
 	async requestConsumerKeyFrame(consumerId: string): Promise<unknown> {

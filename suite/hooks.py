@@ -245,10 +245,11 @@ doc_events = {
     "User": {
         # Roles are assigned before insert so they are present when Frappe's
         # User.validate runs — assigning them after insert triggers a spurious
-        # "No Roles Specified" warning and leaves user_type mis-resolved.
+        # "No Roles Specified" warning.
         "before_insert": [
             "suite.utils.user.assign_suite_role",
         ],
+        "before_validate": ["suite.mail.events.keep_new_password"],
         "after_insert": [
             "suite.drive.utils.users.create_drive_settings",
             "suite.mail.events.create_user_settings",
@@ -261,12 +262,20 @@ doc_events = {
             "suite.mail.events.clear_sessions_on_disable",
             "suite.mail.events.apply_disabled_account_role",
             "suite.mail.events.remove_disabled_account_role",
+            "suite.mail.email_suggestions.clear_directory_addresses",
         ],
         "on_trash": [
             "suite.mail.events.delete_account",
             "suite.mail.events.delete_user_accounts",
             "suite.mail.events.delete_user_settings",
+            "suite.mail.email_suggestions.clear_directory_addresses",
         ],
+        "after_rename": ["suite.mail.email_suggestions.clear_directory_addresses"],
+    },
+    # Recipient suggestions list every account by its address; inserts fire on_update too.
+    "JMAP Account": {
+        "on_update": ["suite.mail.email_suggestions.clear_directory_addresses"],
+        "on_trash": ["suite.mail.email_suggestions.clear_directory_addresses"],
     },
 }
 

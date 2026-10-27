@@ -19,6 +19,7 @@ function createManager({ e2eeRequired = false } = {}) {
 	};
 	const mediaManager = {
 		cancelPendingSubscriptions: vi.fn(),
+		unsubscribeFromRemoteProducer: vi.fn().mockResolvedValue(undefined),
 		cleanup: vi.fn(),
 		rebuildSendSide: vi.fn().mockResolvedValue({}),
 		repairLocalPublication: vi.fn().mockResolvedValue(undefined),
@@ -74,6 +75,41 @@ describe("ParticipantConnection", () => {
 		E2EEMeeting.instance.wipeMeetingContext();
 	});
 
+	it("keeps hidden camera discovery, subscribes on demand, and releases it without changing media state", async () => {
+		const { handlers, manager, mediaManager, participantManager } =
+			createManager();
+		participantManager.addParticipant({
+			participantId: "remote-1",
+			userData: { name: "Remote" },
+		});
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "camera-1",
+			kind: "video",
+		});
+		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
+		expect(participantManager.getParticipant("remote-1")?.video_enabled).toBe(
+			true,
+		);
+		await manager.setVisibleCameraParticipants(["remote-1"]);
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
+			participantId: "remote-1",
+			producerId: "camera-1",
+			isScreen: false,
+		});
+		await manager.setVisibleCameraParticipants([]);
+		expect(mediaManager.unsubscribeFromRemoteProducer).toHaveBeenCalledWith(
+			expect.objectContaining({ producerId: "camera-1" }),
+		);
+		expect(participantManager.getParticipant("remote-1")?.video_enabled).toBe(
+			true,
+		);
+		mediaManager.subscribeToRemoteProducer.mockClear();
+		await manager.reconcileExpectedMedia();
+		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
+	});
+
 	it("subscribes to remote audio producers", async () => {
 		const { handlers, manager, mediaManager, participantManager } = createManager();
 		participantManager.addParticipant({
@@ -92,6 +128,37 @@ describe("ParticipantConnection", () => {
 			participantId: "remote-1",
 			producerId: "producer-1",
 			isScreen: false,
+		});
+	});
+
+	it("updates participant media state when a participant reconnects", async () => {
+		const { handlers, manager, participantManager } = createManager();
+		participantManager.addParticipant({
+			participantId: "remote-1",
+			userData: { name: "Remote", audio_enabled: false, video_enabled: false },
+		});
+
+		await manager.connect("token");
+		handlers.get("participant_updated")?.({
+			participantId: "remote-1",
+			userData: {
+				name: "Remote",
+				userId: "remote-1",
+				audio_enabled: true,
+				video_enabled: false,
+			},
+		});
+		expect(participantManager.getParticipant("remote-1")?.audio_enabled).toBe(false);
+
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "audio",
+		});
+
+		expect(participantManager.getParticipant("remote-1")).toMatchObject({
+			audio_enabled: true,
+			video_enabled: false,
 		});
 	});
 
@@ -371,6 +438,7 @@ describe("ParticipantConnection", () => {
 			e2eeRequired: true,
 		});
 
+		await manager.setVisibleCameraParticipants(["remote-1"]);
 		await manager.connect("token");
 		const producerPromise = handlers.get("producer_created")?.({
 			participantId: "remote-1",
@@ -542,11 +610,13 @@ describe("ParticipantConnection", () => {
 	it("rejoins the room and rebuilds media after signaling reconnect", async () => {
 		const { manager, mediaManager, sfuClient, transportManager, recoveryManager } =
 			createManager();
-		manager.initialize("meeting-1", { user_id: "me" });
+		const onRoomRejoined = vi.fn();
+		manager.initialize("meeting-1", { user_id: "me" }, { onRoomRejoined });
 		await manager.joinRoom(
 			{ name: "Me", userId: "me" },
 			{ audio_enabled: true, video_enabled: true },
 		);
+		expect(onRoomRejoined).not.toHaveBeenCalled();
 
 		await manager.rejoinAfterSignalingReconnect();
 
@@ -557,6 +627,7 @@ describe("ParticipantConnection", () => {
 			"meeting-1",
 			{ name: "Me", userId: "me" },
 			{ audio_enabled: true, video_enabled: true },
+			sfuClient.joinRoom.mock.calls[0][3],
 		);
 		expect(transportManager.closeReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(recoveryManager.reset).toHaveBeenCalledTimes(1);
@@ -564,6 +635,21 @@ describe("ParticipantConnection", () => {
 		expect(transportManager.createReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(mediaManager.rebuildSendSide).toHaveBeenCalledTimes(1);
 		expect(recoveryManager.setupTransportEventHandlers).toHaveBeenCalledTimes(1);
+		expect(onRoomRejoined).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not notify room rejoin when the join request fails", async () => {
+		const { manager, sfuClient } = createManager();
+		const onRoomRejoined = vi.fn();
+		manager.initialize("meeting-1", { user_id: "me" }, { onRoomRejoined });
+		await manager.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+		sfuClient.joinRoom.mockRejectedValue(new Error("join failed"));
+
+		await manager.rejoinAfterSignalingReconnect();
+		expect(onRoomRejoined).not.toHaveBeenCalled();
 	});
 
 	it("resubscribes expected remote media on a fresh Participant Connection", async () => {
@@ -609,6 +695,7 @@ describe("ParticipantConnection", () => {
 			"meeting-1",
 			expect.anything(),
 			{ audio_enabled: true, video_enabled: false },
+			sfuClient.joinRoom.mock.calls[0][3],
 		);
 	});
 
@@ -754,4 +841,18 @@ describe("ParticipantConnection", () => {
 
 		expect(transportManager.createReceiveTransport).not.toHaveBeenCalled();
 	});
+});
+
+
+it("delivers canonical join snapshots and updates through the connection, rejecting malformed state", async () => {
+ const { manager, handlers } = createManager();
+ const onSharedStageChanged = vi.fn();
+ manager.eventHandlers.onSharedStageChanged = onSharedStageChanged;
+ await manager.connect("token");
+ const state = { epoch: "room", protocolVersion: 1, version: 4, participantIds: ["me", "other"], activeSpeakerIds: ["other"] };
+ handlers.get("shared_stage_snapshot")?.(state);
+ handlers.get("shared_stage")?.({ ...state, version: 5 });
+ handlers.get("shared_stage")?.({ ...state, participantIds: ["me", "me"] });
+ expect(onSharedStageChanged.mock.calls).toEqual([[state, true], [{ ...state, version: 5 }]]);
+ await manager.disconnect();
 });

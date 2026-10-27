@@ -1,4 +1,4 @@
-import { computed, inject, onScopeDispose, reactive, ref, watch } from 'vue'
+import { computed, inject, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import { createResource, toast } from 'frappe-ui'
@@ -7,23 +7,33 @@ import { Mention } from 'frappe-ui/editor'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { processInlineImages, raiseToast } from '@/apps/mail/utils'
 import { useUndo } from '@/apps/mail/utils/composables'
+import { createEditorBody } from '@/apps/mail/utils/editorBody'
 import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
+import { moveRecipient as moveRecipientBetweenFields } from '@/apps/mail/utils/recipientFields'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 
-import type { ComposeMailData, Identity, UserResource } from '@/apps/mail/types'
+import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
+import type { RecipientField } from '@/apps/mail/utils/recipientFields'
 import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 
 /** The mounted TextEditor instance, as far as this composable cares about it. */
 interface EditorHost {
 	$el?: HTMLElement
 	editor?: {
-		commands: { insertContent: (content: string) => void; focus: () => void }
-		state: { doc: { descendants: (fn: (node: any) => void) => void } }
+		commands: {
+			insertContent: (content: string) => void
+			focus: () => void
+			setTextSelection: (range: { from: number; to: number }) => void
+		}
+		state: {
+			doc: { descendants: (fn: (node: any) => void) => void }
+			selection: { from: number; to: number }
+		}
 	}
 }
 
-export interface ComposeMailOptions {
+interface ComposeMailOptions {
 	/** A draft being resumed, or the reply/forward this composition starts from. */
 	mailDetails?: ComposeMailData
 	/** Inline in a thread (desktop), rather than a composer of its own. */
@@ -140,6 +150,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
 	const isRecipientsEmpty = computed(() => [mail.to, mail.cc, mail.bcc].every((d) => !d.length))
 
+	/**
+	 * Re-addressing someone: To → Cc, Cc → Bcc, either way round. Held here because the draft owns
+	 * all three lists and a recipient field owns only its own — a field asked to give someone up has
+	 * nowhere to put them.
+	 */
+	const moveRecipient = (recipient: DraftRecipient, from: RecipientField, to: RecipientField) =>
+		moveRecipientBetweenFields(mail, recipient.email, from, to)
+
 	const isBodyEmpty = computed(() => {
 		if (!mail.html_body) return true
 
@@ -158,9 +176,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 			isBodyEmpty.value,
 	)
 
+	// The editor takes the unfolded body as new content, and leaves the quote selected: the next
+	// keystroke would type it away. The caret goes back to where the writer left it.
 	const openQuotedContent = () => {
+		const editor = host()?.editor
+		const caret = editor?.state.selection
 		mail.html_body += `<br>${mail.quoted_content}`
 		mail.quoted_content = ''
+		if (editor && caret)
+			nextTick(() => editor.commands.setTextSelection({ from: caret.from, to: caret.to }))
 	}
 
 	// ── Signature ───────────────────────────────────────────────────────────────────────────────
@@ -576,10 +600,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		editor?.commands.focus()
 	}
 
-	/** The body as the editor should receive it, and the inverse on the way back out. */
-	const editorContent = computed(() => mail.html_body.replaceAll('<div><br></div>', '<div></div>'))
+	const editorBody = createEditorBody()
+	const editorContent = computed(() => editorBody.toEditor(mail.html_body))
 	const onEditorChange = (value: string) => {
-		mail.html_body = value.replaceAll('<div></div>', '<div><br></div>')
+		mail.html_body = editorBody.fromEditor(value)
 		dropUnmentionedRecipients()
 	}
 
@@ -592,6 +616,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		updateOriginalMail,
 		isDraftUpdated,
 		isRecipientsEmpty,
+		moveRecipient,
 		isBodyEmpty,
 		isMailEmpty,
 		isLoading,

@@ -1,7 +1,7 @@
 /** Owns MediaStream attachment and playback recovery for Meet media elements. */
 import { selectedSpeakerId } from "../../data/mediaPreferences";
 
-export type MediaAttachmentRole =
+type MediaAttachmentRole =
 	| "remote-video"
 	| "remote-audio"
 	| "local-preview"
@@ -309,6 +309,21 @@ export class VideoElementManager implements MediaAttachmentFacade {
 			deferred.reject?.(new Error("Video element manager cleaned up"));
 		}
 		this.deferredAttachments.clear();
+	}
+
+	detachVideoStream(participantId: string): void {
+		const attachment = this.getAttachment("remote-video", participantId);
+		if (attachment) {
+			attachment.revision++;
+			attachment.stream = null;
+			attachment.attachedStreamId = undefined;
+			attachment.attachedTrackIds = "";
+			if (attachment.element) {
+				this.clearPlaybackHandler(attachment.element);
+				attachment.element.srcObject = null;
+			}
+		}
+		this.cancelDeferredAttachment(participantId);
 	}
 
 	cleanup(): void {

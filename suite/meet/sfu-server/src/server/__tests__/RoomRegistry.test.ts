@@ -1,5 +1,5 @@
 import type { Server, Socket } from 'socket.io';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { UserData } from '../../types';
 import { RoomRegistry } from '../RoomRegistry';
 
@@ -453,6 +453,34 @@ describe('RoomRegistry', () => {
 			);
 		});
 
+		it('emitToFullAccessSockets reaches only selected full sockets', () => {
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
+			const subscribed = makeSocket('subscribed');
+			const other = makeSocket('other');
+			const preview = makeSocket('preview');
+			addFullSocket(setup, 'r1', subscribed);
+			addFullSocket(setup, 'r1', other);
+			addPreviewSocket(setup, 'r1', preview);
+
+			registry.emitToFullAccessSockets(
+				'r1',
+				new Set(['subscribed', 'preview']),
+				'hello',
+				{ x: 1 },
+			);
+
+			expect(
+				(subscribed as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([{ event: 'hello', data: { x: 1 } }]);
+			expect(
+				(other as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
+			expect(
+				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
+		});
+
 		it('emitToScope is a no-op when the room has no sockets', () => {
 			const { io } = makeIo();
 			const registry = new RoomRegistry(io);
@@ -644,7 +672,8 @@ describe('RoomRegistry', () => {
 					{
 						event: 'participant_joined',
 						data: { roomId: 'r1', participantId: 'u-1', userData },
-					},
+     },
+     { event: 'shared_stage', data: { epoch: expect.any(String), protocolVersion: 1, version: 1, participantIds: ['u-1'], activeSpeakerIds: [], presentationOrders: Object.fromEntries(Array.from({ length: 16 }, (_, index) => [index + 1, ['u-1']])) } },
 				],
 			);
 			expect(
@@ -698,7 +727,7 @@ describe('RoomRegistry', () => {
 			]);
 			expect(
 				calls.filter((call) => call.event === 'recording:projection'),
-			).toHaveLength(2);
+			).toHaveLength(4);
 		});
 
 		it('participant_joined for a preview-* id only emits to full sockets (preview sockets get nothing)', () => {
@@ -719,7 +748,7 @@ describe('RoomRegistry', () => {
 
 			expect(
 				(full as unknown as { _emitCalls: unknown[] })._emitCalls,
-			).toHaveLength(1);
+			).toHaveLength(2);
 			expect(
 				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
 			).toEqual([]);
@@ -824,9 +853,11 @@ describe('RoomRegistry', () => {
 			});
 		});
 
-		it('omits empty avatars and projects participant updates without a legacy join', () => {
+		it('broadcasts participant updates and projects them without a legacy join', () => {
 			const setup = makeIo();
 			const registry = new RoomRegistry(setup.io);
+			const viewer = makeSocket('viewer-1');
+			addFullSocket(setup, 'r1', viewer);
 			const recorder = makeSocket('recorder-1');
 			addRecorderSocket(setup, registry, 'r1', recorder);
 			registry.emitParticipantEvent('r1', 'participant_joined', 'p1', {
@@ -842,6 +873,25 @@ describe('RoomRegistry', () => {
 				avatar: '',
 				audio_enabled: false,
 				video_enabled: false,
+			});
+			const viewerCalls = (
+				viewer as unknown as {
+					_emitCalls: Array<{ event: string; data: unknown }>;
+				}
+			)._emitCalls;
+			expect(viewerCalls).toContainEqual({
+				event: 'participant_updated',
+				data: {
+					roomId: 'r1',
+					participantId: 'p1',
+					userData: {
+						name: 'Alice Updated',
+						userId: 'p1',
+						avatar: '',
+						audio_enabled: false,
+						video_enabled: false,
+					},
+				},
 			});
 			const calls = (
 				recorder as unknown as {
@@ -949,7 +999,7 @@ describe('RoomRegistry', () => {
 				}
 			)._emitCalls.filter((call) => call.event === 'recording:projection');
 			expect(projections.map((call) => call.data.cursor)).toEqual([
-				1, 2, 3, 4, 5, 6, 7,
+				1, 2, 3, 4, 5, 6, 7, 8,
 			]);
 			const timestamps = projections.map((call) =>
 				String(call.data.observed_at),
@@ -967,7 +1017,7 @@ describe('RoomRegistry', () => {
 			expect(snapshot).toMatchObject({
 				protocol_version: 1,
 				room_id: 'r1',
-				cursor: 7,
+				cursor: 8,
 				participants: [
 					{
 						participant_id: 'p1',
@@ -1108,4 +1158,44 @@ describe('RoomRegistry', () => {
 			expect(registry.isJoinedActiveRecorder(recorder, 'r1')).toBe(true);
 		});
 	});
+});
+
+
+it('shares late snapshots, orders updates, removes departures and cancels room ranking timers', () => {
+ vi.useFakeTimers(); vi.setSystemTime(10000);
+ try {
+  const setup = makeIo(), registry = new RoomRegistry(setup.io);
+  const receiver = makeSocket('receiver'); addFullSocket(setup, 'r1', receiver);
+  for (const id of ['d','c','b','a']) registry.emitParticipantEvent('r1', 'participant_joined', id, { name: id, audio_enabled: true, video_enabled: true });
+  registry.emitActiveSpeaker('r1', ['d']); vi.advanceTimersByTime(1000); registry.emitActiveSpeaker('r1', []);
+  registry.emitActiveSpeaker('r1', ['c']); vi.advanceTimersByTime(1000); registry.emitActiveSpeaker('r1', []);
+  const late = registry.getSharedStageSnapshot('r1');
+  expect(late.participantIds).toEqual(['c','d','b','a']);
+  expect(late.presentationOrders?.[3]).toEqual(['d','c','b']);
+  expect(late.activeSpeakerIds).toEqual([]);
+  expect(registry.getRecorderStageSnapshot('r1').shared_stage).toEqual(late);
+  registry.emitParticipantEvent('r1', 'participant_left', 'c');
+  const current = registry.getSharedStageSnapshot('r1');
+  expect(current.participantIds).toEqual(['d','b','a']);
+  expect(current.presentationOrders?.[3]).toEqual(['d','a','b']);
+  expect(current.version).toBeGreaterThan(late.version);
+  registry.cleanupMediaRoom('r1');
+  expect(vi.getTimerCount()).toBe(0);
+  expect(registry.getSharedStageSnapshot('r1').epoch).not.toBe(late.epoch);
+ } finally { vi.useRealTimers(); }
+});
+
+it('delivers each human self-excluded slot snapshot while retaining the recorder room view', () => {
+ const setup = makeIo(), registry = new RoomRegistry(setup.io);
+ const left = Object.assign(makeSocket('left'), { participantId: 'a' });
+ const right = Object.assign(makeSocket('right'), { participantId: 'b' });
+ vi.spyOn(left, 'emit'); vi.spyOn(right, 'emit');
+ addFullSocket(setup, 'r1', left); addFullSocket(setup, 'r1', right);
+ for (const id of ['a', 'b', 'c']) registry.emitParticipantEvent('r1', 'participant_joined', id, { name: id, video_enabled: true });
+ expect(left.emit).toHaveBeenCalledWith('shared_stage', registry.getSharedStageSnapshot('r1', 'a'));
+ expect(right.emit).toHaveBeenCalledWith('shared_stage', registry.getSharedStageSnapshot('r1', 'b'));
+ expect(registry.getSharedStageSnapshot('r1', 'a').presentationOrders?.[2]).toEqual(['b', 'c']);
+ expect(registry.getSharedStageSnapshot('r1', 'b').presentationOrders?.[2]).toEqual(['a', 'c']);
+ expect(registry.getRecorderStageSnapshot('r1').shared_stage?.presentationOrders?.[3]).toEqual(['a', 'b', 'c']);
+ registry.cleanupMediaRoom('r1');
 });
